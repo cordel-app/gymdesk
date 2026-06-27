@@ -1,0 +1,17 @@
+{
+  "name": "gymdesk",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/backoffice/backend",
+    "apps/backoffice/frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace apps/backoffice/backend run dev",
+    "dev:frontend": "npm --workspace apps/backoffice/frontend run dev",
+    "build:backend": "npm --workspace apps/backoffice/backend run build",
+    "build:frontend": "npm --workspace apps/backoffice/frontend run build",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
+  }
+}
