@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Sidebar } from '@/components/Sidebar';
 
 export const metadata: Metadata = {
   title: 'Gymdesk',
@@ -8,11 +9,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f5f5f5' }}>
-        <nav style={{ background: '#1a1a2e', color: '#fff', padding: '0 24px', display: 'flex', alignItems: 'center', height: 56 }}>
-          <strong style={{ fontSize: 18 }}>Gymdesk</strong>
-        </nav>
-        <main style={{ maxWidth: 960, margin: '32px auto', padding: '0 24px' }}>
+      <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f5f5f5', display: 'flex', minHeight: '100vh' }}>
+        <Sidebar />
+        <main style={{ flex: 1, padding: '32px 40px', overflowY: 'auto' }}>
           {children}
         </main>
       </body>
