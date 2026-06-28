@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
-import { createClerkClient } from '@clerk/backend';
+import { createClerkClient, verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
 import { membersRouter } from './api/members';
 import { classesRouter } from './api/classes';
@@ -33,7 +33,7 @@ function requireAuth() {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
-      const payload = await clerk.verifyToken(token);
+      const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
       (req as any).auth = { userId: payload.sub };
       next();
     } catch {
