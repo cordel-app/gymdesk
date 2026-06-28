@@ -1,0 +1,38 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const BACKEND_URL = process.env.BACKEND_URL!;
+
+async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
+  const url = `${BACKEND_URL}/${path.join('/')}${req.nextUrl.search}`;
+
+  const headers: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    if (['authorization', 'x-gym-id', 'content-type'].includes(key.toLowerCase())) {
+      headers[key] = value;
+    }
+  });
+
+  const body = req.method !== 'GET' && req.method !== 'HEAD'
+    ? await req.text()
+    : undefined;
+
+  const res = await fetch(url, {
+    method: req.method,
+    headers,
+    body,
+  });
+
+  const resBody = res.status === 204 ? null : await res.text();
+
+  return new NextResponse(resBody, {
+    status: res.status,
+    headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
+  });
+}
+
+export const GET = handler;
+export const POST = handler;
+export const PUT = handler;
+export const DELETE = handler;
+export const PATCH = handler;

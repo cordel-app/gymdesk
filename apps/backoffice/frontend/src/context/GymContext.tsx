@@ -38,7 +38,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
     async function loadGyms() {
       try {
         const token = await getToken();
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/gyms`, {
+        const res = await fetch(`/api/proxy/gyms`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error('Failed to load gyms');

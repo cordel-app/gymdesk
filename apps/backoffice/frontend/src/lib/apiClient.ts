@@ -14,7 +14,7 @@ export function useApiClient() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (activeGymId) headers['x-gym-id'] = activeGymId;
 
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}${path}`, {
+    const res = await fetch(`/api/proxy${path}`, {
       ...options,
       headers,
     });

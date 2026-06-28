@@ -21,7 +21,8 @@ if (!process.env.CLERK_SECRET_KEY) {
 const app = express();
 const port = process.env.PORT ?? 3001;
 
-app.use(cors({ origin: process.env.FRONTEND_URL }));
+const allowedOrigins = (process.env.FRONTEND_URL ?? '').split(',').map((o) => o.trim());
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 app.use(clerkMiddleware());
 
