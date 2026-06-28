@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+      FRONTEND_URL: http://localhost:3000
+      PORT: 3001
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        working-directory: apps/backoffice/backend
+        run: npx tsc --noEmit
+
+      - name: Run migrations
+        working-directory: apps/backoffice/backend
+        run: npm run db:migrate
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:3001
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /en/sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /en/sign-up
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /en
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /en
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        working-directory: apps/backoffice/frontend
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: apps/backoffice/frontend
+        run: npm run build
