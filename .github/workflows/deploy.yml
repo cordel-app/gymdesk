@@ -62,6 +62,7 @@ jobs:
           script: |
             echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
+            docker image prune -af
             docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest
 
             docker stop gymdesk-backend || true
