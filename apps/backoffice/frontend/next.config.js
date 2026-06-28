@@ -7,6 +7,11 @@ const nextConfig = {
   env: {
     TENANT: process.env.TENANT ?? '',
   },
+  experimental: {
+    outputFileTracingIncludes: {
+      '/**': ['./locales/**'],
+    },
+  },
 };
 
 module.exports = withNextIntl(nextConfig);
