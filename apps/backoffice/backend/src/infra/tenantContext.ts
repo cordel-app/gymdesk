@@ -28,6 +28,14 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // Superadmins get full admin access to any gym without a membership row
+  const user = await clerkClient.users.getUser(userId);
+  const meta = (user.publicMetadata ?? {}) as Record<string, unknown>;
+  if (meta.platform_role === 'superadmin') {
+    req.tenantCtx = { userId, gymId, role: 'admin' };
+    return next();
+  }
+
   const { rows } = await db.query<{ role: GymRole }>(
     'SELECT role FROM gym_memberships WHERE user_id = $1 AND gym_id = $2',
     [userId, gymId],
