@@ -4,6 +4,20 @@ Use the **Fares** module as the canonical reference for an admin-only feature, a
 
 ---
 
+## Deployment
+
+Migrations run automatically as part of the backend deploy pipeline (`.github/workflows/deploy.yml`). The order is:
+
+1. Build and push Docker image
+2. **Run `node-pg-migrate up`** against the production DB (from the CI runner, before the container is swapped)
+3. Pull new image and restart container
+
+This means: **never deploy backend code that depends on a new table without a migration file.** The migration must be committed in the same push as the code that uses it. If the migration step is ever removed or skipped, new routes that query new tables will fail in production even though they work locally.
+
+If you add a new deploy workflow or a second environment (staging, etc.), make sure the migration step is present there too.
+
+---
+
 ## Checklist: Adding a New Domain Entity
 
 ### 1. Migration
