@@ -6,7 +6,8 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "db:migrate": "node -r tsx/cjs src/infra/migrate.ts",
+    "db:migrate": "npx node-pg-migrate up --envPath .env --migrations-dir src/infra/migrations --no-lock",
+    "db:migrate:down": "npx node-pg-migrate down --envPath .env --migrations-dir src/infra/migrations --no-lock",
     "db:seed": "node -r tsx/cjs src/infra/seed.ts"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "cors": "2.8.6",
     "dotenv": "16.6.1",
     "express": "4.22.2",
+    "node-pg-migrate": "8.0.4",
     "pg": "8.22.0"
   },
   "devDependencies": {
