@@ -37,6 +37,7 @@ jobs:
           file: apps/backoffice/backend/Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          no-cache: true
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
