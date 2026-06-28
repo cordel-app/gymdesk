@@ -2,16 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
-import { clerkMiddleware, getAuth } from '@clerk/express';
+import { createClerkClient } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
-
-function requireAuth() {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const { userId } = getAuth(req);
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    next();
-  };
-}
 import { membersRouter } from './api/members';
 import { classesRouter } from './api/classes';
 import { bookingsRouter } from './api/bookings';
@@ -34,7 +26,21 @@ const port = process.env.PORT ?? 3001;
 const allowedOrigins = (process.env.FRONTEND_URL ?? '').split(',').map((o) => o.trim());
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
-app.use(clerkMiddleware());
+const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
+
+function requireAuth() {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+      const payload = await clerk.verifyToken(token);
+      (req as any).auth = { userId: payload.sub };
+      next();
+    } catch {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  };
+}
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });

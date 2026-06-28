@@ -1,4 +1,5 @@
-import { getAuth, clerkClient } from '@clerk/express';
+import { createClerkClient } from '@clerk/backend';
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
 
@@ -20,7 +21,7 @@ declare global {
 }
 
 export async function tenantContext(req: Request, res: Response, next: NextFunction) {
-  const userId = getAuth(req).userId;
+  const userId = (req as any).auth?.userId;
   const gymId = req.headers['x-gym-id'] as string | undefined;
 
   if (!userId || !gymId) {
@@ -55,7 +56,7 @@ export function requireRole(...roles: GymRole[]) {
 }
 
 export async function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
-  const { userId } = getAuth(req);
+  const userId = (req as any).auth?.userId;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   const user = await clerkClient.users.getUser(userId);
   const meta = (user.publicMetadata ?? {}) as Record<string, unknown>;
