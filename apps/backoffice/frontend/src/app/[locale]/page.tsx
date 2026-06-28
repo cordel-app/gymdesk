@@ -24,7 +24,7 @@ export default function DashboardPage() {
   }, [gymsLoading, gyms, locale, router]);
 
   useEffect(() => {
-    fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/health`, { cache: 'no-store' })
+    fetch('/api/proxy/health', { cache: 'no-store' })
       .then((r) => r.json())
       .then(setHealth)
       .catch(() => setHealth(null));
