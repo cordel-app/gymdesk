@@ -29,8 +29,8 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }));
 app.get('/docs', (_req, res) => res.redirect('/docs/'));
+app.use('/docs/', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }));
 
 // Gym listing/membership — auth required but no tenant context (gymId not known yet)
 app.use('/gyms', requireAuth(), gymsRouter);
