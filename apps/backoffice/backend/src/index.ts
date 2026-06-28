@@ -9,6 +9,7 @@ import { bookingsRouter } from './api/bookings';
 import { subscriptionsRouter } from './api/subscriptions';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { tenantContext } from './infra/tenantContext';
+import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
 
 if (!process.env.FRONTEND_URL) {
@@ -28,6 +29,21 @@ app.use(clerkMiddleware());
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
+});
+
+// One-time dev seed — remove after use
+app.post('/dev/seed-gym', async (req: any, res: any) => {
+  const { user_id, gym_name, gym_slug } = req.body;
+  if (!user_id || !gym_name || !gym_slug) return res.status(400).json({ error: 'user_id, gym_name, gym_slug required' });
+  const { rows: [gym] } = await db.query(
+    `INSERT INTO gyms (name, slug, plan) VALUES ($1, $2, 'free') ON CONFLICT (slug) DO UPDATE SET name=$1 RETURNING *`,
+    [gym_name, gym_slug]
+  );
+  await db.query(
+    `INSERT INTO gym_memberships (user_id, gym_id, role) VALUES ($1, $2, 'admin') ON CONFLICT (user_id, gym_id) DO NOTHING`,
+    [user_id, gym.id]
+  );
+  res.json({ gym, message: 'Gym created and user assigned as admin' });
 });
 
 app.use('/docs', swaggerUi.serve);
