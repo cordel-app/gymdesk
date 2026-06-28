@@ -61,7 +61,7 @@ export function Sidebar() {
       minHeight: '100vh',
     }}>
       <nav style={{ padding: '12px 0', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ flex: 1 }}>
+        <div>
           {links.map(({ href, label, children }) => {
             const active = pathname === href;
             const isParentOfActive = !!children && pathname.startsWith(href);
@@ -94,26 +94,26 @@ export function Sidebar() {
               </div>
             );
           })}
-        </div>
 
-        {isSuperadmin && (
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 8 }}>
-            <p style={{
-              padding: '6px 20px',
-              fontSize: 11,
-              fontWeight: 600,
-              letterSpacing: '0.08em',
-              color: 'rgba(255,255,255,0.35)',
-              margin: 0,
-              textTransform: 'uppercase',
-            }}>
-              {t('nav.system')}
-            </p>
-            {systemLinks.map(({ href, label }) => (
-              <NavLink key={href} href={href} label={label} />
-            ))}
-          </div>
-        )}
+          {isSuperadmin && (
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 8 }}>
+              <p style={{
+                padding: '6px 20px',
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                color: 'rgba(255,255,255,0.35)',
+                margin: 0,
+                textTransform: 'uppercase',
+              }}>
+                {t('nav.system')}
+              </p>
+              {systemLinks.map(({ href, label }) => (
+                <NavLink key={href} href={href} label={label} />
+              ))}
+            </div>
+          )}
+        </div>
       </nav>
     </aside>
   );
