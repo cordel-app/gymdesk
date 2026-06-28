@@ -6,6 +6,7 @@ on:
     paths:
       - 'apps/backoffice/backend/**'
       - '.github/workflows/deploy.yml'
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
