@@ -5,7 +5,9 @@
     "members_deleted": "Socios eliminados",
     "classes": "Clases",
     "bookings": "Reservas",
-    "subscriptions": "Suscripciones"
+    "subscriptions": "Suscripciones",
+    "system": "Sistema",
+    "gyms": "Gimnasios"
   },
   "dashboard": {
     "title": "Panel",

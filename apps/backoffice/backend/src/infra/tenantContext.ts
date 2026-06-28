@@ -1,4 +1,4 @@
-import { getAuth } from '@clerk/express';
+import { getAuth, clerkClient } from '@clerk/express';
 import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
 
@@ -54,8 +54,11 @@ export function requireRole(...roles: GymRole[]) {
   };
 }
 
-export function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
-  const meta = (getAuth(req).sessionClaims?.publicMetadata ?? {}) as Record<string, unknown>;
+export async function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
+  const { userId } = getAuth(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const user = await clerkClient.users.getUser(userId);
+  const meta = (user.publicMetadata ?? {}) as Record<string, unknown>;
   if (meta.platform_role !== 'superadmin') {
     return res.status(403).json({ error: 'Forbidden' });
   }

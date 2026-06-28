@@ -3,8 +3,11 @@
 import { UserButton } from '@clerk/nextjs';
 import { LanguagePicker } from './LanguagePicker';
 import { GymSelector } from './GymSelector';
+import { useGym } from '@/context/GymContext';
 
 export function TopHeader() {
+  const { isSuperadmin, activeGym, loading } = useGym();
+
   return (
     <header style={{
       position: 'fixed',
@@ -23,7 +26,19 @@ export function TopHeader() {
     }}>
       <strong style={{ color: '#fff', fontSize: 18 }}>Gymdesk</strong>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <GymSelector />
+        {!loading && isSuperadmin && <GymSelector />}
+        {!loading && !isSuperadmin && activeGym && (
+          <span style={{
+            color: 'rgba(255,255,255,0.8)',
+            fontSize: 13,
+            background: 'rgba(255,255,255,0.1)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: 6,
+            padding: '4px 10px',
+          }}>
+            {activeGym.name}
+          </span>
+        )}
         <LanguagePicker />
         <UserButton />
       </div>

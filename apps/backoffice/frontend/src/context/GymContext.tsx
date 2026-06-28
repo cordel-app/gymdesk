@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, useUser } from '@clerk/nextjs';
 
 export interface GymOption {
   id: string;
@@ -16,6 +16,7 @@ interface GymContextValue {
   activeGym: GymOption | null;
   setActiveGymId: (id: string) => void;
   loading: boolean;
+  isSuperadmin: boolean;
 }
 
 const GymContext = createContext<GymContextValue>({
@@ -24,29 +25,40 @@ const GymContext = createContext<GymContextValue>({
   activeGym: null,
   setActiveGymId: () => {},
   loading: true,
+  isSuperadmin: false,
 });
 
 export function GymProvider({ children }: { children: ReactNode }) {
   const { getToken, isSignedIn } = useAuth();
+  const { user } = useUser();
+  const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
+
   const [gyms, setGyms] = useState<GymOption[]>([]);
   const [activeGymId, setActiveGymIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isSignedIn) return;
+    if (!isSignedIn || !user) return;
 
     async function loadGyms() {
       try {
         const token = await getToken();
-        const res = await fetch(`/api/proxy/gyms`, {
+        const endpoint = isSuperadmin ? '/api/proxy/platform/gyms' : '/api/proxy/gyms';
+        const res = await fetch(endpoint, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error('Failed to load gyms');
-        const data: GymOption[] = await res.json();
-        setGyms(data);
+        const data = await res.json();
+
+        // Platform endpoint returns gyms without role — add synthetic 'admin' for superadmin
+        const gymsWithRole: GymOption[] = isSuperadmin
+          ? data.map((g: Omit<GymOption, 'role'>) => ({ ...g, role: 'admin' as const }))
+          : data;
+
+        setGyms(gymsWithRole);
 
         const stored = typeof window !== 'undefined' ? localStorage.getItem('activeGymId') : null;
-        const initial = stored && data.find((g) => g.id === stored) ? stored : data[0]?.id ?? null;
+        const initial = stored && gymsWithRole.find((g) => g.id === stored) ? stored : gymsWithRole[0]?.id ?? null;
         setActiveGymIdState(initial);
       } finally {
         setLoading(false);
@@ -54,7 +66,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
     }
 
     loadGyms();
-  }, [isSignedIn, getToken]);
+  }, [isSignedIn, user, isSuperadmin]);
 
   function setActiveGymId(id: string) {
     setActiveGymIdState(id);
@@ -64,7 +76,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
   const activeGym = gyms.find((g) => g.id === activeGymId) ?? null;
 
   return (
-    <GymContext.Provider value={{ gyms, activeGymId, activeGym, setActiveGymId, loading }}>
+    <GymContext.Provider value={{ gyms, activeGymId, activeGym, setActiveGymId, loading, isSuperadmin }}>
       {children}
     </GymContext.Provider>
   );

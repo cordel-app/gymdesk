@@ -5,7 +5,9 @@
     "members_deleted": "Socis eliminats",
     "classes": "Classes",
     "bookings": "Reserves",
-    "subscriptions": "Subscripcions"
+    "subscriptions": "Subscripcions",
+    "system": "Sistema",
+    "gyms": "Gimnasos"
   },
   "dashboard": {
     "title": "Tauler",

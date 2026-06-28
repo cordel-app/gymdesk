@@ -5,7 +5,9 @@
     "members_deleted": "Deleted Members",
     "classes": "Classes",
     "bookings": "Bookings",
-    "subscriptions": "Subscriptions"
+    "subscriptions": "Subscriptions",
+    "system": "System",
+    "gyms": "Gyms"
   },
   "dashboard": {
     "title": "Dashboard",
