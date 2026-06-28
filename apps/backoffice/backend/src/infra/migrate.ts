@@ -39,6 +39,33 @@ async function migrate() {
       status      TEXT NOT NULL DEFAULT 'active',
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+
+    -- Fix pre-existing schema gap
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    -- Multi-tenant tables
+    CREATE TABLE IF NOT EXISTS gyms (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name       TEXT NOT NULL,
+      slug       TEXT NOT NULL UNIQUE,
+      plan       TEXT NOT NULL DEFAULT 'free',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS gym_memberships (
+      id         SERIAL PRIMARY KEY,
+      user_id    TEXT NOT NULL,
+      gym_id     UUID NOT NULL REFERENCES gyms(id) ON DELETE CASCADE,
+      role       TEXT NOT NULL CHECK (role IN ('admin','coach','staff')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (user_id, gym_id)
+    );
+
+    -- Scope all domain tables to a gym
+    ALTER TABLE members       ADD COLUMN IF NOT EXISTS gym_id UUID REFERENCES gyms(id);
+    ALTER TABLE classes        ADD COLUMN IF NOT EXISTS gym_id UUID REFERENCES gyms(id);
+    ALTER TABLE bookings       ADD COLUMN IF NOT EXISTS gym_id UUID REFERENCES gyms(id);
+    ALTER TABLE subscriptions  ADD COLUMN IF NOT EXISTS gym_id UUID REFERENCES gyms(id);
   `);
 
   console.log('Migration complete');

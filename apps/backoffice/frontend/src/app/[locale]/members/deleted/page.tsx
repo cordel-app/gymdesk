@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-
-const BACKEND = process.env.BACKEND_URL as string;
+import { useApiClient } from '@/lib/apiClient';
+import { useGym } from '@/context/GymContext';
 
 interface Member {
   id: number;
@@ -14,21 +14,33 @@ interface Member {
 
 export default function DeletedMembersPage() {
   const t = useTranslations();
+  const { apiFetch } = useApiClient();
+  const { activeGymId } = useGym();
   const [deleted, setDeleted] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function load() {
+    if (!activeGymId) return;
     setLoading(true);
-    const res = await fetch(`${BACKEND}/members/deleted`);
-    setDeleted(res.ok ? await res.json() : []);
-    setLoading(false);
+    try {
+      const data = await apiFetch<Member[]>('/members/deleted');
+      setDeleted(data);
+    } catch {
+      setDeleted([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [activeGymId]);
 
   async function handleRestore(id: number) {
-    await fetch(`${BACKEND}/members/${id}/restore`, { method: 'POST' });
-    load();
+    try {
+      await apiFetch(`/members/${id}/restore`, { method: 'POST' });
+      load();
+    } catch (err: any) {
+      alert(err.message);
+    }
   }
 
   return (

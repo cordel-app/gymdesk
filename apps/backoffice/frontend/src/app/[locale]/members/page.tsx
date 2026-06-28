@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-
-const BACKEND = process.env.BACKEND_URL as string;
+import { useApiClient } from '@/lib/apiClient';
+import { useGym } from '@/context/GymContext';
 
 interface Member {
   id: number;
@@ -16,6 +16,8 @@ const emptyForm = { name: '', email: '', phone: '' };
 
 export default function MembersPage() {
   const t = useTranslations();
+  const { apiFetch } = useApiClient();
+  const { activeGymId } = useGym();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -25,13 +27,19 @@ export default function MembersPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
+    if (!activeGymId) return;
     setLoading(true);
-    const res = await fetch(`${BACKEND}/members`);
-    setMembers(res.ok ? await res.json() : []);
-    setLoading(false);
+    try {
+      const data = await apiFetch<Member[]>('/members');
+      setMembers(data);
+    } catch {
+      setMembers([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [activeGymId]);
 
   function openAdd() {
     setEditing(null);
@@ -62,25 +70,29 @@ export default function MembersPage() {
     setSaving(true);
     setError(null);
     const body = { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null };
-    const res = editing
-      ? await fetch(`${BACKEND}/members/${editing.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      : await fetch(`${BACKEND}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? t('members.error_generic'));
+    try {
+      if (editing) {
+        await apiFetch(`/members/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await apiFetch('/members', { method: 'POST', body: JSON.stringify(body) });
+      }
+      closeModal();
+      load();
+    } catch (err: any) {
+      setError(err.message ?? t('members.error_generic'));
+    } finally {
       setSaving(false);
-      return;
     }
-    setSaving(false);
-    closeModal();
-    load();
   }
 
   async function handleDelete(id: number) {
     if (!confirm(t('members.confirm_delete'))) return;
-    await fetch(`${BACKEND}/members/${id}`, { method: 'DELETE' });
-    load();
+    try {
+      await apiFetch(`/members/${id}`, { method: 'DELETE' });
+      load();
+    } catch (err: any) {
+      alert(err.message);
+    }
   }
 
   return (

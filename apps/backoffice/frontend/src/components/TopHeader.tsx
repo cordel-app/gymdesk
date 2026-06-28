@@ -1,6 +1,8 @@
 'use client';
 
+import { UserButton } from '@clerk/nextjs';
 import { LanguagePicker } from './LanguagePicker';
+import { GymSelector } from './GymSelector';
 
 export function TopHeader() {
   return (
@@ -20,7 +22,11 @@ export function TopHeader() {
       boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
     }}>
       <strong style={{ color: '#fff', fontSize: 18 }}>Gymdesk</strong>
-      <LanguagePicker />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <GymSelector />
+        <LanguagePicker />
+        <UserButton />
+      </div>
     </header>
   );
 }

@@ -6,9 +6,12 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "db:migrate": "node -r tsx/cjs src/infra/migrate.ts"
+    "db:migrate": "node -r tsx/cjs src/infra/migrate.ts",
+    "db:seed": "node -r tsx/cjs src/infra/seed.ts"
   },
   "dependencies": {
+    "@clerk/backend": "3.8.4",
+    "@clerk/express": "2.1.32",
     "@types/cors": "2.8.19",
     "cors": "2.8.6",
     "dotenv": "16.6.1",

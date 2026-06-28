@@ -1,29 +1,41 @@
-import { getTranslations } from 'next-intl/server';
+'use client';
 
-async function getHealth(): Promise<{ status: string } | null> {
-  try {
-    const res = await fetch(`${process.env.BACKEND_URL}/health`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    return res.json();
-  } catch {
-    return null;
-  }
-}
+import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { useApiClient } from '@/lib/apiClient';
+import { useGym } from '@/context/GymContext';
+import { useRouter } from 'next/navigation';
+import { useLocale } from 'next-intl';
 
-async function getMemberCount(): Promise<number> {
-  try {
-    const res = await fetch(`${process.env.BACKEND_URL}/members/count`, { cache: 'no-store' });
-    if (!res.ok) return 0;
-    const data = await res.json();
-    return data.count ?? 0;
-  } catch {
-    return 0;
-  }
-}
+export default function DashboardPage() {
+  const t = useTranslations();
+  const locale = useLocale();
+  const router = useRouter();
+  const { apiFetch } = useApiClient();
+  const { activeGymId, gyms, loading: gymsLoading } = useGym();
+  const [health, setHealth] = useState<{ status: string } | null>(null);
+  const [memberCount, setMemberCount] = useState<number>(0);
 
-export default async function DashboardPage() {
-  const t = await getTranslations();
-  const [health, memberCount] = await Promise.all([getHealth(), getMemberCount()]);
+  // Redirect users with no gym
+  useEffect(() => {
+    if (!gymsLoading && gyms.length === 0) {
+      router.replace(`/${locale}/no-gym`);
+    }
+  }, [gymsLoading, gyms, locale, router]);
+
+  useEffect(() => {
+    fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/health`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then(setHealth)
+      .catch(() => setHealth(null));
+  }, []);
+
+  useEffect(() => {
+    if (!activeGymId) return;
+    apiFetch<{ count: number }>('/members/count')
+      .then((data) => setMemberCount(data.count))
+      .catch(() => setMemberCount(0));
+  }, [activeGymId]);
 
   return (
     <div>
