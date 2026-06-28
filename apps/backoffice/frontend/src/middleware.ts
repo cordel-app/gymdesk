@@ -15,6 +15,9 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  if (req.nextUrl.pathname.startsWith('/api/proxy')) {
+    return NextResponse.next();
+  }
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
