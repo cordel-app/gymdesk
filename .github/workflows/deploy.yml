@@ -45,6 +45,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           script: |
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+
             docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest
 
             docker stop gymdesk-backend || true
