@@ -17,7 +17,7 @@ const emptyForm = { name: '', email: '', phone: '' };
 export default function MembersPage() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
-  const { activeGymId } = useGym();
+  const { activeGymId, loading: gymLoading } = useGym();
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -27,7 +27,10 @@ export default function MembersPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    if (!activeGymId) return;
+    if (!activeGymId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await apiFetch<Member[]>('/members');
@@ -39,7 +42,7 @@ export default function MembersPage() {
     }
   }
 
-  useEffect(() => { load(); }, [activeGymId]);
+  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading]);
 
   function openAdd() {
     setEditing(null);

@@ -15,12 +15,15 @@ interface Member {
 export default function DeletedMembersPage() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
-  const { activeGymId } = useGym();
+  const { activeGymId, loading: gymLoading } = useGym();
   const [deleted, setDeleted] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    if (!activeGymId) return;
+    if (!activeGymId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await apiFetch<Member[]>('/members/deleted');
@@ -32,7 +35,7 @@ export default function DeletedMembersPage() {
     }
   }
 
-  useEffect(() => { load(); }, [activeGymId]);
+  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading]);
 
   async function handleRestore(id: number) {
     try {
