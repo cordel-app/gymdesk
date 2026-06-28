@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build for Cloudflare Pages
         working-directory: apps/backoffice/frontend
         env:
           BACKEND_URL: http://87.106.124.190:3001
@@ -37,11 +37,11 @@ jobs:
           NEXT_PUBLIC_CLERK_SIGN_UP_URL: /en/sign-up
           NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /en
           NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /en
-        run: npm run build
+        run: npx @cloudflare/next-on-pages
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy apps/backoffice/frontend/.next --project-name=gymdesk-frontend --commit-dirty=true
+          command: pages deploy apps/backoffice/frontend/.vercel/output/static --project-name=gymdesk-frontend --commit-dirty=true
