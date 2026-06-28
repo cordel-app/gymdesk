@@ -1,0 +1,9 @@
+apps/backoffice/frontend
+apps/backoffice/backend/node_modules
+apps/backoffice/backend/dist
+apps/backoffice/backend/.env
+node_modules
+.github
+skills
+scripts
+*.md
