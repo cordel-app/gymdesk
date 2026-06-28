@@ -11,8 +11,8 @@
     "dev:frontend": "npm --workspace apps/backoffice/frontend run dev",
     "build:backend": "npm --workspace apps/backoffice/backend run build",
     "build:frontend": "npm --workspace apps/backoffice/frontend run build",
-    "db:up": "docker compose up -d",
-    "db:down": "docker compose down",
+    "db:migrate": "npm --workspace apps/backoffice/backend run db:migrate",
+    "db:seed": "npm --workspace apps/backoffice/backend run db:seed",
     "env:pull": "bash scripts/env-pull.sh"
   }
 }
