@@ -18,9 +18,9 @@ jobs:
       PORT: 3001
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -48,9 +48,9 @@ jobs:
       NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /en
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
