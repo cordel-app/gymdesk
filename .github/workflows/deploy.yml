@@ -39,6 +39,20 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           no-cache: true
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend dependencies
+        run: npm ci --workspace=apps/backoffice/backend
+
+      - name: Run database migrations
+        working-directory: apps/backoffice/backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npx node-pg-migrate up --migrations-dir src/infra/migrations --no-lock
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
