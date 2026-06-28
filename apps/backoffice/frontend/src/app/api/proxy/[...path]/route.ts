@@ -8,7 +8,9 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
   const { path } = await params;
   const url = `${BACKEND_URL}/${path.join('/')}${req.nextUrl.search}`;
 
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    'ngrok-skip-browser-warning': '1',
+  };
   req.headers.forEach((value, key) => {
     if (['authorization', 'x-gym-id', 'content-type'].includes(key.toLowerCase())) {
       headers[key] = value;
