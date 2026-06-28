@@ -2,7 +2,16 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
-import { clerkMiddleware, requireAuth } from '@clerk/express';
+import { clerkMiddleware, getAuth } from '@clerk/express';
+import { Request, Response, NextFunction } from 'express';
+
+function requireAuth() {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const { userId } = getAuth(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    next();
+  };
+}
 import { membersRouter } from './api/members';
 import { classesRouter } from './api/classes';
 import { bookingsRouter } from './api/bookings';
