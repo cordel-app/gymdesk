@@ -9,6 +9,7 @@ import { classesRouter } from './api/classes';
 import { bookingsRouter } from './api/bookings';
 import { subscriptionsRouter } from './api/subscriptions';
 import { gymsRouter, platformRouter } from './api/gyms';
+import { faresRouter } from './api/fares';
 import { tenantContext } from './infra/tenantContext';
 import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
@@ -75,6 +76,7 @@ app.use('/members',       requireAuth(), tenantContext, membersRouter);
 app.use('/classes',       requireAuth(), tenantContext, classesRouter);
 app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
 app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter);
+app.use('/fares',         requireAuth(), tenantContext, faresRouter);
 
 app.listen(port, () => {
   console.log(`Backend running on http://localhost:${port}`);

@@ -5,20 +5,30 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 
+interface Fare {
+  id: number;
+  name: string;
+  price: string;
+}
+
 interface Member {
   id: number;
   name: string;
   email: string;
   phone: string | null;
+  fare_id: number | null;
+  fare_name: string | null;
+  fare_price: string | null;
 }
 
-const emptyForm = { name: '', email: '', phone: '' };
+const emptyForm = { name: '', email: '', phone: '', fare_id: '' };
 
 export default function MembersPage() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { activeGymId, loading: gymLoading } = useGym();
   const [members, setMembers] = useState<Member[]>([]);
+  const [fares, setFares] = useState<Fare[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
@@ -33,8 +43,12 @@ export default function MembersPage() {
     }
     setLoading(true);
     try {
-      const data = await apiFetch<Member[]>('/members');
-      setMembers(data);
+      const [membersData, faresData] = await Promise.all([
+        apiFetch<Member[]>('/members'),
+        apiFetch<Fare[]>('/fares').catch(() => []),
+      ]);
+      setMembers(membersData);
+      setFares(faresData);
     } catch {
       setMembers([]);
     } finally {
@@ -53,7 +67,7 @@ export default function MembersPage() {
 
   function openEdit(m: Member) {
     setEditing(m);
-    setForm({ name: m.name, email: m.email, phone: m.phone ?? '' });
+    setForm({ name: m.name, email: m.email, phone: m.phone ?? '', fare_id: m.fare_id ? String(m.fare_id) : '' });
     setError(null);
     setModalOpen(true);
   }
@@ -72,7 +86,7 @@ export default function MembersPage() {
     }
     setSaving(true);
     setError(null);
-    const body = { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null };
+    const body = { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null, fare_id: form.fare_id ? parseInt(form.fare_id) : null };
     try {
       if (editing) {
         await apiFetch(`/members/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -116,6 +130,7 @@ export default function MembersPage() {
               <th style={th}>{t('members.col_name')}</th>
               <th style={th}>{t('members.col_email')}</th>
               <th style={th}>{t('members.col_phone')}</th>
+              <th style={th}>{t('members.col_fare')}</th>
               <th style={{ ...th, width: 120 }}>{t('members.col_actions')}</th>
             </tr>
           </thead>
@@ -125,6 +140,7 @@ export default function MembersPage() {
                 <td style={td}>{m.name}</td>
                 <td style={td}>{m.email}</td>
                 <td style={td}>{m.phone ?? '—'}</td>
+                <td style={td}>{m.fare_name ? `${m.fare_name} (${parseFloat(m.fare_price!).toFixed(2)})` : '—'}</td>
                 <td style={{ ...td, display: 'flex', gap: 8 }}>
                   <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('members.edit')}</button>
                   <button onClick={() => handleDelete(m.id)} style={btnSmall('#c0392b')}>{t('members.delete')}</button>
@@ -148,6 +164,18 @@ export default function MembersPage() {
 
             <label style={labelStyle}>{t('members.label_phone')}</label>
             <input style={inputStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
+
+            {fares.length > 0 && (
+              <>
+                <label style={labelStyle}>{t('members.label_fare')}</label>
+                <select style={inputStyle} value={form.fare_id} onChange={(e) => setForm({ ...form, fare_id: e.target.value })}>
+                  <option value="">{t('members.fare_none')}</option>
+                  {fares.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name} — {parseFloat(f.price).toFixed(2)}</option>
+                  ))}
+                </select>
+              </>
+            )}
 
             {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 

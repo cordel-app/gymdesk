@@ -9,7 +9,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useTranslations();
   const locale = useLocale();
   const pathname = usePathname();
-  const { isSuperadmin } = useGym();
+  const { isSuperadmin, activeGym } = useGym();
+  const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   const links = [
     { href: `/${locale}`, label: t('nav.dashboard') },
@@ -23,6 +24,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     { href: `/${locale}/classes`, label: t('nav.classes') },
     { href: `/${locale}/bookings`, label: t('nav.bookings') },
     { href: `/${locale}/subscriptions`, label: t('nav.subscriptions') },
+    ...(isAdmin ? [{ href: `/${locale}/fares`, label: t('nav.fares') }] : []),
   ];
 
   const systemLinks = [
