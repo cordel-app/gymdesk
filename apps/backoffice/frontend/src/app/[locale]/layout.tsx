@@ -6,6 +6,8 @@ import { getMessages } from 'next-intl/server';
 import { GymProvider } from '@/context/GymContext';
 import { AppShell } from '@/components/AppShell';
 
+export const runtime = 'edge';
+
 export const metadata: Metadata = {
   title: 'Gymdesk',
   description: 'Gym Management Backoffice',
