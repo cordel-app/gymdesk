@@ -49,5 +49,28 @@
   },
   "common": {
     "coming_soon": "Coming soon."
+  },
+  "system_gyms": {
+    "title": "Gyms",
+    "create": "+ Create Gym",
+    "loading": "Loading...",
+    "empty": "No gyms yet.",
+    "col_name": "Name",
+    "col_slug": "Slug",
+    "col_plan": "Plan",
+    "col_created": "Created",
+    "col_actions": "Actions",
+    "manage": "Manage",
+    "modal_title": "Create Gym",
+    "label_name": "Name *",
+    "label_slug": "Slug *",
+    "label_plan": "Plan",
+    "plan_free": "Free",
+    "plan_pro": "Pro",
+    "error_required": "Name and slug are required",
+    "error_generic": "Failed to create gym",
+    "cancel": "Cancel",
+    "saving": "Creating...",
+    "save": "Create Gym"
   }
 }

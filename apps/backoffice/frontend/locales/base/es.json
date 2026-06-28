@@ -49,5 +49,28 @@
   },
   "common": {
     "coming_soon": "Próximamente."
+  },
+  "system_gyms": {
+    "title": "Gimnasios",
+    "create": "+ Crear gimnasio",
+    "loading": "Cargando...",
+    "empty": "Aún no hay gimnasios.",
+    "col_name": "Nombre",
+    "col_slug": "Slug",
+    "col_plan": "Plan",
+    "col_created": "Creado",
+    "col_actions": "Acciones",
+    "manage": "Gestionar",
+    "modal_title": "Crear gimnasio",
+    "label_name": "Nombre *",
+    "label_slug": "Slug *",
+    "label_plan": "Plan",
+    "plan_free": "Gratuito",
+    "plan_pro": "Pro",
+    "error_required": "El nombre y el slug son obligatorios",
+    "error_generic": "Error al crear el gimnasio",
+    "cancel": "Cancelar",
+    "saving": "Creando...",
+    "save": "Crear gimnasio"
   }
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useRouter } from 'next/navigation';
-import { useLocale } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 interface Gym {
   id: string;
@@ -17,6 +17,7 @@ interface Gym {
 const emptyForm = { name: '', slug: '', plan: 'free' };
 
 export default function SystemGymsPage() {
+  const t = useTranslations('system_gyms');
   const { apiFetch } = useApiClient();
   const { isSuperadmin, setActiveGymId } = useGym();
   const router = useRouter();
@@ -51,7 +52,7 @@ export default function SystemGymsPage() {
 
   async function handleCreate() {
     if (!form.name.trim() || !form.slug.trim()) {
-      setError('Name and slug are required');
+      setError(t('error_required'));
       return;
     }
     setSaving(true);
@@ -65,7 +66,7 @@ export default function SystemGymsPage() {
       setForm(emptyForm);
       load();
     } catch (err: any) {
-      setError(err.message ?? 'Failed to create gym');
+      setError(err.message ?? t('error_generic'));
     } finally {
       setSaving(false);
     }
@@ -79,25 +80,25 @@ export default function SystemGymsPage() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h1 style={{ margin: 0 }}>Gyms</h1>
+        <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <button onClick={() => { setModalOpen(true); setForm(emptyForm); setError(null); }} style={btnStyle('#6c63ff')}>
-          + Create Gym
+          {t('create')}
         </button>
       </div>
 
       {loading ? (
-        <p style={{ color: '#666' }}>Loading...</p>
+        <p style={{ color: '#666' }}>{t('loading')}</p>
       ) : gyms.length === 0 ? (
-        <p style={{ color: '#666' }}>No gyms yet.</p>
+        <p style={{ color: '#666' }}>{t('empty')}</p>
       ) : (
         <table style={tableStyle}>
           <thead>
             <tr style={{ background: '#f0f0f0', textAlign: 'left' }}>
-              <th style={th}>Name</th>
-              <th style={th}>Slug</th>
-              <th style={th}>Plan</th>
-              <th style={th}>Created</th>
-              <th style={{ ...th, width: 120 }}>Actions</th>
+              <th style={th}>{t('col_name')}</th>
+              <th style={th}>{t('col_slug')}</th>
+              <th style={th}>{t('col_plan')}</th>
+              <th style={th}>{t('col_created')}</th>
+              <th style={{ ...th, width: 120 }}>{t('col_actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -108,7 +109,7 @@ export default function SystemGymsPage() {
                 <td style={td}>{g.plan}</td>
                 <td style={td}>{new Date(g.created_at).toLocaleDateString()}</td>
                 <td style={td}>
-                  <button onClick={() => handleManage(g.id)} style={btnSmall('#444')}>Manage</button>
+                  <button onClick={() => handleManage(g.id)} style={btnSmall('#444')}>{t('manage')}</button>
                 </td>
               </tr>
             ))}
@@ -119,9 +120,9 @@ export default function SystemGymsPage() {
       {modalOpen && (
         <div style={overlayStyle} onClick={() => setModalOpen(false)}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 20px' }}>Create Gym</h2>
+            <h2 style={{ margin: '0 0 20px' }}>{t('modal_title')}</h2>
 
-            <label style={labelStyle}>Name *</label>
+            <label style={labelStyle}>{t('label_name')}</label>
             <input
               style={inputStyle}
               value={form.name}
@@ -130,7 +131,7 @@ export default function SystemGymsPage() {
               autoFocus
             />
 
-            <label style={labelStyle}>Slug *</label>
+            <label style={labelStyle}>{t('label_slug')}</label>
             <input
               style={inputStyle}
               value={form.slug}
@@ -138,18 +139,18 @@ export default function SystemGymsPage() {
               placeholder="my-gym"
             />
 
-            <label style={labelStyle}>Plan</label>
+            <label style={labelStyle}>{t('label_plan')}</label>
             <select style={inputStyle} value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })}>
-              <option value="free">Free</option>
-              <option value="pro">Pro</option>
+              <option value="free">{t('plan_free')}</option>
+              <option value="pro">{t('plan_pro')}</option>
             </select>
 
             {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
-              <button onClick={() => setModalOpen(false)} style={btnStyle('#aaa')} disabled={saving}>Cancel</button>
+              <button onClick={() => setModalOpen(false)} style={btnStyle('#aaa')} disabled={saving}>{t('cancel')}</button>
               <button onClick={handleCreate} style={btnStyle('#6c63ff')} disabled={saving}>
-                {saving ? 'Creating...' : 'Create Gym'}
+                {saving ? t('saving') : t('save')}
               </button>
             </div>
           </div>

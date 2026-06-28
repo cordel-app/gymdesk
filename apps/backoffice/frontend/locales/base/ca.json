@@ -49,5 +49,28 @@
   },
   "common": {
     "coming_soon": "Pròximament."
+  },
+  "system_gyms": {
+    "title": "Gimnasos",
+    "create": "+ Crear gimnàs",
+    "loading": "Carregant...",
+    "empty": "Encara no hi ha gimnasos.",
+    "col_name": "Nom",
+    "col_slug": "Slug",
+    "col_plan": "Pla",
+    "col_created": "Creat",
+    "col_actions": "Accions",
+    "manage": "Gestionar",
+    "modal_title": "Crear gimnàs",
+    "label_name": "Nom *",
+    "label_slug": "Slug *",
+    "label_plan": "Pla",
+    "plan_free": "Gratuït",
+    "plan_pro": "Pro",
+    "error_required": "El nom i el slug són obligatoris",
+    "error_generic": "Error en crear el gimnàs",
+    "cancel": "Cancel·lar",
+    "saving": "Creant...",
+    "save": "Crear gimnàs"
   }
 }
