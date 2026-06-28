@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 
-export function Sidebar() {
+export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useTranslations();
   const locale = useLocale();
   const pathname = usePathname();
@@ -34,6 +34,7 @@ export function Sidebar() {
     return (
       <Link
         href={href}
+        onClick={onNavigate}
         style={{
           display: 'block',
           padding: indent ? '8px 20px 8px 36px' : '10px 20px',
@@ -70,6 +71,7 @@ export function Sidebar() {
               <div key={href}>
                 <Link
                   href={href}
+                  onClick={onNavigate}
                   style={{
                     display: 'block',
                     padding: '10px 20px',
