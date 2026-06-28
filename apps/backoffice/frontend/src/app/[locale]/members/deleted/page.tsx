@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 
 const BACKEND = process.env.BACKEND_URL as string;
 
@@ -12,6 +13,7 @@ interface Member {
 }
 
 export default function DeletedMembersPage() {
+  const t = useTranslations();
   const [deleted, setDeleted] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,20 +33,20 @@ export default function DeletedMembersPage() {
 
   return (
     <div>
-      <h1 style={{ margin: '0 0 24px' }}>Deleted Members</h1>
+      <h1 style={{ margin: '0 0 24px' }}>{t('deleted_members.title')}</h1>
 
       {loading ? (
-        <p style={{ color: '#666' }}>Loading…</p>
+        <p style={{ color: '#666' }}>{t('deleted_members.loading')}</p>
       ) : deleted.length === 0 ? (
-        <p style={{ color: '#666' }}>No deleted members.</p>
+        <p style={{ color: '#666' }}>{t('deleted_members.empty')}</p>
       ) : (
         <table style={tableStyle}>
           <thead>
             <tr style={{ background: '#f0f0f0', textAlign: 'left' }}>
-              <th style={th}>Name</th>
-              <th style={th}>Email</th>
-              <th style={th}>Phone</th>
-              <th style={{ ...th, width: 100 }}>Actions</th>
+              <th style={th}>{t('members.col_name')}</th>
+              <th style={th}>{t('members.col_email')}</th>
+              <th style={th}>{t('members.col_phone')}</th>
+              <th style={{ ...th, width: 100 }}>{t('members.col_actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -54,7 +56,7 @@ export default function DeletedMembersPage() {
                 <td style={{ ...td, color: '#999', textDecoration: 'line-through' }}>{m.email}</td>
                 <td style={{ ...td, color: '#999' }}>{m.phone ?? '—'}</td>
                 <td style={td}>
-                  <button onClick={() => handleRestore(m.id)} style={btnRestore}>Restore</button>
+                  <button onClick={() => handleRestore(m.id)} style={btnRestore}>{t('deleted_members.restore')}</button>
                 </td>
               </tr>
             ))}
@@ -65,17 +67,7 @@ export default function DeletedMembersPage() {
   );
 }
 
-const tableStyle: React.CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  background: '#fff',
-  borderRadius: 8,
-  overflow: 'hidden',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-};
-const th: React.CSSProperties = { padding: '12px 16px', fontWeight: 600, fontSize: 13 };
-const td: React.CSSProperties = { padding: '12px 16px', fontSize: 14 };
-const btnRestore: React.CSSProperties = {
-  background: '#27ae60', color: '#fff', border: 'none', borderRadius: 4,
-  padding: '5px 10px', cursor: 'pointer', fontSize: 12,
-};
+const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' };
+const th: React.CSSProperties = { padding: '12px 16px', fontWeight: 600, fontSize: 15 };
+const td: React.CSSProperties = { padding: '12px 16px', fontSize: 15 };
+const btnRestore: React.CSSProperties = { background: '#27ae60', color: '#fff', border: 'none', borderRadius: 4, padding: '6px 12px', cursor: 'pointer', fontSize: 13 };

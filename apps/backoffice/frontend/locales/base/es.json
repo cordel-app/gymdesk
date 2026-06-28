@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "dashboard": "Panel",
+    "members": "Socios",
+    "members_deleted": "Socios eliminados",
+    "classes": "Clases",
+    "bookings": "Reservas",
+    "subscriptions": "Suscripciones"
+  },
+  "dashboard": {
+    "title": "Panel",
+    "api_online": "API en línea",
+    "api_offline": "API fuera de línea",
+    "total_members": "Total de socios"
+  },
+  "members": {
+    "title": "Socios",
+    "add": "+ Añadir socio",
+    "loading": "Cargando…",
+    "empty": "Aún no hay socios.",
+    "col_name": "Nombre",
+    "col_email": "Correo electrónico",
+    "col_phone": "Teléfono",
+    "col_actions": "Acciones",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "modal_add": "Añadir socio",
+    "modal_edit": "Editar socio",
+    "label_name": "Nombre *",
+    "label_email": "Correo electrónico *",
+    "label_phone": "Teléfono",
+    "placeholder_name": "Nombre completo",
+    "placeholder_email": "correo@ejemplo.com",
+    "placeholder_phone": "+34 600 000 000",
+    "confirm_delete": "¿Eliminar este socio?",
+    "error_required": "El nombre y el correo son obligatorios.",
+    "error_generic": "Algo ha ido mal.",
+    "cancel": "Cancelar",
+    "saving": "Guardando…",
+    "save_changes": "Guardar cambios"
+  },
+  "deleted_members": {
+    "title": "Socios eliminados",
+    "loading": "Cargando…",
+    "empty": "No hay socios eliminados.",
+    "restore": "Restaurar"
+  },
+  "common": {
+    "coming_soon": "Próximamente."
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "dashboard": "Tauler",
+    "members": "Socis",
+    "members_deleted": "Socis eliminats",
+    "classes": "Classes",
+    "bookings": "Reserves",
+    "subscriptions": "Subscripcions"
+  },
+  "dashboard": {
+    "title": "Tauler",
+    "api_online": "API en línia",
+    "api_offline": "API fora de línia",
+    "total_members": "Total de socis"
+  },
+  "members": {
+    "title": "Socis",
+    "add": "+ Afegir soci",
+    "loading": "Carregant…",
+    "empty": "Encara no hi ha socis.",
+    "col_name": "Nom",
+    "col_email": "Correu electrònic",
+    "col_phone": "Telèfon",
+    "col_actions": "Accions",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "modal_add": "Afegir soci",
+    "modal_edit": "Editar soci",
+    "label_name": "Nom *",
+    "label_email": "Correu electrònic *",
+    "label_phone": "Telèfon",
+    "placeholder_name": "Nom complet",
+    "placeholder_email": "correu@exemple.com",
+    "placeholder_phone": "+34 600 000 000",
+    "confirm_delete": "Eliminar aquest soci?",
+    "error_required": "El nom i el correu són obligatoris.",
+    "error_generic": "Alguna cosa ha anat malament.",
+    "cancel": "Cancel·lar",
+    "saving": "Desant…",
+    "save_changes": "Desar canvis"
+  },
+  "deleted_members": {
+    "title": "Socis eliminats",
+    "loading": "Carregant…",
+    "empty": "No hi ha socis eliminats.",
+    "restore": "Restaurar"
+  },
+  "common": {
+    "coming_soon": "Pròximament."
+  }
+}

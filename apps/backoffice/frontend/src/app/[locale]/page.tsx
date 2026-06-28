@@ -1,3 +1,5 @@
+import { getTranslations } from 'next-intl/server';
+
 async function getHealth(): Promise<{ status: string } | null> {
   try {
     const res = await fetch(`${process.env.BACKEND_URL}/health`, { cache: 'no-store' });
@@ -20,22 +22,21 @@ async function getMemberCount(): Promise<number> {
 }
 
 export default async function DashboardPage() {
+  const t = await getTranslations();
   const [health, memberCount] = await Promise.all([getHealth(), getMemberCount()]);
 
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 40 }}>
-        <h1 style={{ margin: 0 }}>Dashboard</h1>
-        <span
-          style={{
-            padding: '4px 10px',
-            borderRadius: 12,
-            fontSize: 13,
-            background: health?.status === 'ok' ? '#d4edda' : '#f8d7da',
-            color: health?.status === 'ok' ? '#155724' : '#721c24',
-          }}
-        >
-          API {health?.status === 'ok' ? 'online' : 'offline'}
+        <h1 style={{ margin: 0 }}>{t('dashboard.title')}</h1>
+        <span style={{
+          padding: '4px 10px',
+          borderRadius: 12,
+          fontSize: 13,
+          background: health?.status === 'ok' ? '#d4edda' : '#f8d7da',
+          color: health?.status === 'ok' ? '#155724' : '#721c24',
+        }}>
+          {health?.status === 'ok' ? t('dashboard.api_online') : t('dashboard.api_offline')}
         </span>
       </div>
 
@@ -47,7 +48,7 @@ export default async function DashboardPage() {
           boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
           minWidth: 160,
         }}>
-          <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>Total Members</div>
+          <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>{t('dashboard.total_members')}</div>
           <div style={{ fontSize: 36, fontWeight: 700, color: '#1a1a2e' }}>{memberCount}</div>
         </div>
       </div>

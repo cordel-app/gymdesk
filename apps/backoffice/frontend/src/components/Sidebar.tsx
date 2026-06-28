@@ -2,23 +2,26 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-
-const links = [
-  { href: '/', label: 'Dashboard' },
-  {
-    href: '/members',
-    label: 'Members',
-    children: [
-      { href: '/members/deleted', label: 'Deleted Members' },
-    ],
-  },
-  { href: '/classes', label: 'Classes' },
-  { href: '/bookings', label: 'Bookings' },
-  { href: '/subscriptions', label: 'Subscriptions' },
-];
+import { useLocale, useTranslations } from 'next-intl';
 
 export function Sidebar() {
+  const t = useTranslations();
+  const locale = useLocale();
   const pathname = usePathname();
+
+  const links = [
+    { href: `/${locale}`, label: t('nav.dashboard') },
+    {
+      href: `/${locale}/members`,
+      label: t('nav.members'),
+      children: [
+        { href: `/${locale}/members/deleted`, label: t('nav.members_deleted') },
+      ],
+    },
+    { href: `/${locale}/classes`, label: t('nav.classes') },
+    { href: `/${locale}/bookings`, label: t('nav.bookings') },
+    { href: `/${locale}/subscriptions`, label: t('nav.subscriptions') },
+  ];
 
   return (
     <aside style={{
@@ -30,12 +33,9 @@ export function Sidebar() {
       flexShrink: 0,
       minHeight: '100vh',
     }}>
-      <div style={{ padding: '24px 20px 20px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-        <strong style={{ fontSize: 18 }}>Gymdesk</strong>
-      </div>
-      <nav style={{ padding: '12px 0' }}>
+      <nav style={{ padding: '12px 0', flex: 1 }}>
         {links.map(({ href, label, children }) => {
-          const active = href === '/' ? pathname === href : pathname === href || (!!children && pathname.startsWith(href));
+          const active = pathname === href;
           const isParentOfActive = !!children && pathname.startsWith(href);
 
           return (
@@ -50,7 +50,7 @@ export function Sidebar() {
                   background: active && !isParentOfActive ? 'rgba(255,255,255,0.1)' : 'transparent',
                   borderLeft: active && !isParentOfActive ? '3px solid #6c63ff' : '3px solid transparent',
                   fontWeight: active ? 600 : 400,
-                  fontSize: 14,
+                  fontSize: 15,
                 }}
               >
                 {label}
@@ -72,7 +72,7 @@ export function Sidebar() {
                           background: childActive ? 'rgba(255,255,255,0.1)' : 'transparent',
                           borderLeft: childActive ? '3px solid #6c63ff' : '3px solid transparent',
                           fontWeight: childActive ? 600 : 400,
-                          fontSize: 13,
+                          fontSize: 14,
                         }}
                       >
                         {child.label}
@@ -85,6 +85,7 @@ export function Sidebar() {
           );
         })}
       </nav>
+
     </aside>
   );
 }

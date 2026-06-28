@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "members": "Members",
+    "members_deleted": "Deleted Members",
+    "classes": "Classes",
+    "bookings": "Bookings",
+    "subscriptions": "Subscriptions"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "api_online": "API online",
+    "api_offline": "API offline",
+    "total_members": "Total Members"
+  },
+  "members": {
+    "title": "Members",
+    "add": "+ Add Member",
+    "loading": "Loading…",
+    "empty": "No members yet.",
+    "col_name": "Name",
+    "col_email": "Email",
+    "col_phone": "Phone",
+    "col_actions": "Actions",
+    "edit": "Edit",
+    "delete": "Delete",
+    "modal_add": "Add Member",
+    "modal_edit": "Edit Member",
+    "label_name": "Name *",
+    "label_email": "Email *",
+    "label_phone": "Phone",
+    "placeholder_name": "Full name",
+    "placeholder_email": "email@example.com",
+    "placeholder_phone": "+1 555 000 0000",
+    "confirm_delete": "Remove this member?",
+    "error_required": "Name and email are required.",
+    "error_generic": "Something went wrong.",
+    "cancel": "Cancel",
+    "saving": "Saving…",
+    "save_changes": "Save Changes"
+  },
+  "deleted_members": {
+    "title": "Deleted Members",
+    "loading": "Loading…",
+    "empty": "No deleted members.",
+    "restore": "Restore"
+  },
+  "common": {
+    "coming_soon": "Coming soon."
+  }
+}
