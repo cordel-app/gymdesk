@@ -10,6 +10,7 @@ import { bookingsRouter } from './api/bookings';
 import { subscriptionsRouter } from './api/subscriptions';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { faresRouter } from './api/fares';
+import { publicRouter } from './api/public';
 import { tenantContext } from './infra/tenantContext';
 import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
@@ -64,6 +65,9 @@ app.post('/dev/seed-gym', async (req: any, res: any) => {
 
 app.use('/docs', swaggerUi.serve);
 app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }));
+
+// Public endpoints — no auth, no tenant context (identified by gym slug)
+app.use('/public', publicRouter);
 
 // Gym listing/membership — auth required but no tenant context (gymId not known yet)
 app.use('/gyms', requireAuth(), gymsRouter);

@@ -49,22 +49,50 @@ gymdesk/
 - Attaches `req.tenantCtx = { userId, gymId, role }`.
 - Helper `getTenantContext(req)` retrieves it safely inside route handlers.
 
-### Gym-level roles (`gym_memberships.role`)
-| Role | Typical permissions |
-|------|---------------------|
-| `admin` | Full CRUD including delete and sensitive settings |
-| `coach` | Create/update classes; read members/bookings |
-| `staff` | Create/update members and bookings; no delete |
+### Roles
+
+| Role | Scope | Who | How identified |
+|------|-------|-----|----------------|
+| `superadmin` | Platform | Cordel internal | Clerk `publicMetadata.platform_role === 'superadmin'` |
+| `admin` | Gym | Gym/studio owner | `gym_memberships.role` |
+| `coach` | Gym | Trainer | `gym_memberships.role` |
+| `staff` | Gym | Front desk | `gym_memberships.role` |
+| `guest` | Public | Anonymous visitor | No auth — `/public/*` routes only |
+
+### Permission matrix
+
+| Endpoint | superadmin | admin | coach | staff | guest |
+|----------|-----------|-------|-------|-------|-------|
+| GET /members | ✓ | ✓ | ✓ | ✓ | ✗ |
+| POST/PUT /members | ✓ | ✓ | ✗ | ✓ | ✗ |
+| DELETE /members | ✓ | ✓ | ✗ | ✗ | ✗ |
+| GET /classes | ✓ | ✓ | ✓ | ✓ | ✗ |
+| POST/PUT /classes | ✓ | ✓ | ✓ | ✗ | ✗ |
+| DELETE /classes | ✓ | ✓ | ✗ | ✗ | ✗ |
+| GET /bookings | ✓ | ✓ | ✓ | ✓ | ✗ |
+| POST/PUT /bookings | ✓ | ✓ | ✗ | ✓ | ✗ |
+| DELETE /bookings | ✓ | ✓ | ✗ | ✗ | ✗ |
+| GET /subscriptions | ✓ | ✓ | ✓ | ✓ | ✗ |
+| POST/PUT /subscriptions | ✓ | ✓ | ✗ | ✓ | ✗ |
+| DELETE /subscriptions | ✓ | ✓ | ✗ | ✗ | ✗ |
+| GET /fares | ✓ | ✓ | ✓ | ✓ | ✗ |
+| POST/PUT/DELETE /fares | ✓ | ✓ | ✗ | ✗ | ✗ |
+| GET /public/gyms/:slug | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GET /public/gyms/:slug/classes | ✓ | ✓ | ✓ | ✓ | ✓ |
+| /platform/* | ✓ | ✗ | ✗ | ✗ | ✗ |
 
 Usage in routes:
 ```ts
 router.delete('/:id', requireRole('admin'), handler);
 router.post('/',      requireRole('admin', 'staff'), handler);
+// Public routes — no middleware at all:
+app.use('/public', publicRouter);
 ```
 
 ### Platform superadmin (Clerk metadata)
 - `requireSuperadmin` middleware checks `user.publicMetadata.platform_role === 'superadmin'`.
 - Only used for `/platform/*` routes (gym creation, full gym list).
+- `tenantContext` grants superadmins synthetic `admin` role for any gym, so they can access all domain routes.
 - Frontend: `GymContext` exposes `isSuperadmin` from Clerk's `useUser()`.
 
 ---
