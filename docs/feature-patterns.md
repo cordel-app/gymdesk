@@ -58,15 +58,39 @@ try {
 
 ## Deployment
 
-Migrations run automatically as part of the backend deploy pipeline (`.github/workflows/deploy.yml`). The order is:
+Three separate deploy workflows in `.github/workflows/`:
+
+| Workflow | Triggers on | Deploys |
+|----------|------------|---------|
+| `deploy.yml` | `backend/**` | Docker image to VPS via SSH |
+| `deploy-backoffice.yml` | `apps/backoffice/**` | Vercel project `gymdesk-backoffice` |
+| `deploy-app.yml` | `apps/app/**` | Vercel project `gymdesk-member-app` |
+
+### Backend deploy order
 
 1. Build and push Docker image
 2. **Run `node-pg-migrate up`** against the production DB (from the CI runner, before the container is swapped)
 3. Pull new image and restart container
 
-This means: **never deploy backend code that depends on a new table without a migration file.** The migration must be committed in the same push as the code that uses it. If the migration step is ever removed or skipped, new routes that query new tables will fail in production even though they work locally.
+**Never deploy backend code that depends on a new table without a migration file.** The migration must be committed in the same push as the code that uses it.
 
-If you add a new deploy workflow or a second environment (staging, etc.), make sure the migration step is present there too.
+### Frontend deploy notes (Vercel + monorepo)
+
+Both Vercel projects use `rootDirectory` pointing to their app folder. The workflows run `vercel build` from the repo root and explicitly source `.vercel/.env.production.local` before building so `NEXT_PUBLIC_*` vars are baked into the bundle:
+
+```yaml
+- run: vercel pull --yes --environment=production --token=...
+- run: |
+    set -a; source .vercel/.env.production.local; set +a
+    vercel build --prod --token=...
+- run: vercel deploy --prebuilt --prod --token=...
+```
+
+Required Vercel env vars for both frontends:
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — baked at build time
+- `CLERK_SECRET_KEY` — available at runtime in Edge middleware
+- `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`
+- `BACKEND_URL`
 
 ---
 
