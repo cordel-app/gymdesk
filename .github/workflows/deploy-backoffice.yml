@@ -1,11 +1,11 @@
-name: Deploy Frontend
+name: Deploy Backoffice
 
 on:
   push:
     branches: [main]
     paths:
       - 'apps/backoffice/**'
-      - '.github/workflows/deploy-frontend.yml'
+      - '.github/workflows/deploy-backoffice.yml'
   workflow_dispatch:
 
 jobs:
