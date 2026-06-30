@@ -30,7 +30,8 @@ export default async function middleware(req: NextRequest) {
   } catch (e: unknown) {
     if (e instanceof Response) throw e;
     console.error('[middleware] crash:', e);
-    return handleI18nRouting(req) ?? NextResponse.next();
+    const msg = e instanceof Error ? e.message + '\n' + e.stack : String(e);
+    return new NextResponse('CLERK_ERROR: ' + msg, { status: 200 });
   }
 }
 
