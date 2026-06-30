@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useToast } from '@/components/Toast';
 
 interface Fare {
   id: number;
@@ -21,6 +22,7 @@ export default function FaresPage() {
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { toast } = useToast();
 
   const [fares, setFares] = useState<Fare[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,7 +98,7 @@ export default function FaresPage() {
       closeModal();
       load();
     } catch (err: any) {
-      setError(err.message ?? t('fares.error_generic'));
+      toast(err.message ?? t('fares.error_generic'));
     } finally {
       setSaving(false);
     }
@@ -108,7 +110,7 @@ export default function FaresPage() {
       await apiFetch(`/fares/${id}`, { method: 'DELETE' });
       load();
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message ?? t('fares.error_generic'));
     }
   }
 

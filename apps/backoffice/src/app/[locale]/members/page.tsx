@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useToast } from '@/components/Toast';
 
 interface Fare {
   id: number;
@@ -27,6 +28,7 @@ export default function MembersPage() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { activeGymId, loading: gymLoading } = useGym();
+  const { toast } = useToast();
   const [members, setMembers] = useState<Member[]>([]);
   const [fares, setFares] = useState<Fare[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,7 +98,7 @@ export default function MembersPage() {
       closeModal();
       load();
     } catch (err: any) {
-      setError(err.message ?? t('members.error_generic'));
+      toast(err.message ?? t('members.error_generic'));
     } finally {
       setSaving(false);
     }
@@ -108,7 +110,7 @@ export default function MembersPage() {
       await apiFetch(`/members/${id}`, { method: 'DELETE' });
       load();
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message ?? t('members.error_generic'));
     }
   }
 
@@ -179,7 +181,7 @@ export default function MembersPage() {
 
             {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={closeModal} style={btnStyle('#aaa')} disabled={saving}>{t('members.cancel')}</button>
               <button onClick={handleSave} style={btnStyle('#6c63ff')} disabled={saving}>
                 {saving ? t('members.saving') : editing ? t('members.save_changes') : t('members.modal_add')}
