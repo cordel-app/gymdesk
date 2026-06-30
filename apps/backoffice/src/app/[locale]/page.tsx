@@ -6,11 +6,13 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
+import { useAuth } from '@clerk/nextjs';
 
 export default function DashboardPage() {
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
+  const { isSignedIn, isLoaded } = useAuth();
   const { apiFetch } = useApiClient();
   const { activeGymId, gyms, loading: gymsLoading } = useGym();
   const [health, setHealth] = useState<{ status: string } | null>(null);
@@ -36,6 +38,25 @@ export default function DashboardPage() {
       .then((data) => setMemberCount(data.count))
       .catch(() => setMemberCount(0));
   }, [activeGymId]);
+
+  if (!isLoaded) return null;
+
+  if (!isSignedIn) {
+    return (
+      <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5', padding: 24 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: '48px 40px', maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 2px 16px rgba(0,0,0,0.08)' }}>
+          <h1 style={{ margin: '0 0 8px', fontSize: 32, fontWeight: 700, color: '#18181b' }}>Gymdesk</h1>
+          <p style={{ margin: '0 0 32px', color: '#71717a', fontSize: 16 }}>Gym management, simplified.</p>
+          <button
+            style={{ display: 'block', width: '100%', padding: '14px 0', background: '#18181b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 16, fontWeight: 600, cursor: 'pointer' }}
+            onClick={() => router.push(`/${locale}/sign-in`)}
+          >
+            Sign in
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <div>
