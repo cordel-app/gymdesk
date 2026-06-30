@@ -1,6 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import createIntlMiddleware from 'next-intl/middleware';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 const handleI18nRouting = createIntlMiddleware({
   locales: ['en', 'es', 'ca'],
@@ -14,7 +14,7 @@ const isPublicRoute = createRouteMatcher([
   '/api/proxy(.*)',
 ]);
 
-const clerkHandler = clerkMiddleware(async (auth, req) => {
+export default clerkMiddleware(async (auth, req) => {
   if (req.nextUrl.pathname.startsWith('/api/proxy')) {
     return NextResponse.next();
   }
@@ -23,17 +23,6 @@ const clerkHandler = clerkMiddleware(async (auth, req) => {
   }
   return handleI18nRouting(req) ?? NextResponse.next();
 });
-
-export default async function middleware(req: NextRequest) {
-  try {
-    return await clerkHandler(req, {} as never);
-  } catch (e: unknown) {
-    if (e instanceof Response) throw e;
-    console.error('[middleware] crash:', e);
-    const msg = e instanceof Error ? e.message + '\n' + e.stack : String(e);
-    return new NextResponse('CLERK_ERROR: ' + msg, { status: 200 });
-  }
-}
 
 export const config = {
   matcher: [
