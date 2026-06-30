@@ -3,16 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "apps/backoffice/backend",
-    "apps/backoffice/frontend"
+    "backend",
+    "apps/backoffice",
+    "apps/app"
   ],
   "scripts": {
-    "dev:backend": "npm --workspace apps/backoffice/backend run dev",
-    "dev:frontend": "npm --workspace apps/backoffice/frontend run dev",
-    "build:backend": "npm --workspace apps/backoffice/backend run build",
-    "build:frontend": "npm --workspace apps/backoffice/frontend run build",
-    "db:migrate": "npm --workspace apps/backoffice/backend run db:migrate",
-    "db:seed": "npm --workspace apps/backoffice/backend run db:seed",
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:backoffice": "npm --workspace apps/backoffice run dev",
+    "dev:app": "npm --workspace apps/app run dev",
+    "build:backend": "npm --workspace backend run build",
+    "build:backoffice": "npm --workspace apps/backoffice run build",
+    "build:app": "npm --workspace apps/app run build",
+    "db:migrate": "npm --workspace backend run db:migrate",
+    "db:seed": "npm --workspace backend run db:seed",
     "env:pull": "bash scripts/env-pull.sh"
   }
 }

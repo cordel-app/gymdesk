@@ -51,6 +51,6 @@ export interface GymMembership {
   id: number;
   user_id: string;
   gym_id: string;
-  role: 'admin' | 'coach' | 'staff';
+  role: 'admin' | 'coach' | 'staff' | 'member';
   created_at: string;
 }

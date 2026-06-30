@@ -29,11 +29,11 @@ jobs:
         run: npm ci
 
       - name: Type check
-        working-directory: apps/backoffice/backend
+        working-directory: backend
         run: npx tsc --noEmit
 
       - name: Run migrations
-        working-directory: apps/backoffice/backend
+        working-directory: backend
         run: npm run db:migrate
 
   frontend:
@@ -59,9 +59,9 @@ jobs:
         run: npm ci
 
       - name: Type check
-        working-directory: apps/backoffice/frontend
+        working-directory: apps/backoffice
         run: npx tsc --noEmit
 
       - name: Build
-        working-directory: apps/backoffice/frontend
+        working-directory: apps/backoffice
         run: npm run build

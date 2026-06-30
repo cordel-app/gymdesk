@@ -3,7 +3,7 @@ const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY!
 import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
 
-export type GymRole = 'admin' | 'coach' | 'staff';
+export type GymRole = 'admin' | 'coach' | 'staff' | 'member';
 
 export interface TenantContext {
   userId: string;

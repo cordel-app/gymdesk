@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/backoffice/backend/**'
+      - 'backend/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -34,7 +34,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: apps/backoffice/backend/Dockerfile
+          file: backend/Dockerfile
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           no-cache: true
@@ -45,10 +45,10 @@ jobs:
           node-version: '20'
 
       - name: Install backend dependencies
-        run: npm ci --workspace=apps/backoffice/backend
+        run: npm ci --workspace=backend
 
       - name: Run database migrations
-        working-directory: apps/backoffice/backend
+        working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx node-pg-migrate up --migrations-dir src/infra/migrations --no-lock

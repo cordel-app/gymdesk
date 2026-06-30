@@ -11,6 +11,7 @@ import { subscriptionsRouter } from './api/subscriptions';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { faresRouter } from './api/fares';
 import { publicRouter } from './api/public';
+import { meRouter, meLinkRouter } from './api/me';
 import { tenantContext } from './infra/tenantContext';
 import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
@@ -76,11 +77,21 @@ app.use('/gyms', requireAuth(), gymsRouter);
 app.use('/platform', requireAuth(), platformRouter);
 
 // Domain routes — require auth + tenant context (gym_id from x-gym-id header)
+// /me/link must come before tenantContext (no membership row exists yet on first link)
+app.use('/me/link', requireAuth(), meLinkRouter);
+app.use('/me',      requireAuth(), tenantContext, meRouter);
+
 app.use('/members',       requireAuth(), tenantContext, membersRouter);
 app.use('/classes',       requireAuth(), tenantContext, classesRouter);
 app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
 app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter);
 app.use('/fares',         requireAuth(), tenantContext, faresRouter);
+
+// Global error handler — must be last, after all routes
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error(err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 app.listen(port, () => {
   console.log(`Backend running on http://localhost:${port}`);
