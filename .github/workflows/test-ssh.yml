@@ -13,7 +13,7 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.CORFRONT_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.CORFRONT_SSH_HOST_STAGING }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.CORFRONT_SSH_HOST }} >> ~/.ssh/known_hosts
 
       - name: Test corfront connection
         run: |
