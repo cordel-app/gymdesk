@@ -11,6 +11,7 @@ const isPublicRoute = createRouteMatcher([
   '/:locale/sign-in(.*)',
   '/:locale/classes(.*)',
   '/:locale',
+  '/',
   '/api/proxy(.*)',
 ]);
 
