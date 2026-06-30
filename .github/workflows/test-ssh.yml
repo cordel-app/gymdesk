@@ -1,19 +1,36 @@
-name: Test SSH
+name: Test SSH corfront + corback
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  test-ssh_corfront:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup SSH key
+      - name: Setup SSH (corfront)
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          echo "${{ secrets.CORFRONT_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.CORFRONT_SSH_HOST_STAGING }} >> ~/.ssh/known_hosts
 
-      - name: Test connection
-        run: ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "echo '✅ SSH OK desde GitHub Actions'"
+      - name: Test staging connection
+        run: |
+          ssh github@${{ secrets.CORFRONT_SSH_HOST }} "echo '✅ CORFRONT SSH OK'"
+
+  test-ssh_corback:
+    runs-on: ubuntu-latest
+    needs: test-staging
+
+    steps:
+      - name: Setup SSH (corback)
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.CORBACK_SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.CORBACK_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Test prod connection
+        run: |
+          ssh github@${{ secrets.CORBACK_SSH_HOST }} "echo '🚀 CORBACK SSH OK'"
