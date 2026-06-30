@@ -2,16 +2,19 @@
 
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
 import { ToastProvider } from './Toast';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { isSignedIn, isLoaded } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isAuthPage = /\/(sign-in|sign-up)/.test(pathname);
+  const isHomePage = /^\/[a-z]{2}$/.test(pathname);
 
-  if (isAuthPage) {
+  if (isAuthPage || (isHomePage && (!isLoaded || !isSignedIn))) {
     return <>{children}</>;
   }
 
