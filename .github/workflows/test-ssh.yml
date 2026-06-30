@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-ssh_corfront:
+  test-ssh-corfront:
     runs-on: ubuntu-latest
 
     steps:
@@ -15,13 +15,12 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.CORFRONT_SSH_HOST_STAGING }} >> ~/.ssh/known_hosts
 
-      - name: Test staging connection
+      - name: Test corfront connection
         run: |
           ssh github@${{ secrets.CORFRONT_SSH_HOST }} "echo '✅ CORFRONT SSH OK'"
 
-  test-ssh_corback:
+  test-ssh-corback:
     runs-on: ubuntu-latest
-    needs: test-staging
 
     steps:
       - name: Setup SSH (corback)
@@ -31,6 +30,6 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.CORBACK_SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Test prod connection
+      - name: Test corback connection
         run: |
           ssh github@${{ secrets.CORBACK_SSH_HOST }} "echo '🚀 CORBACK SSH OK'"
