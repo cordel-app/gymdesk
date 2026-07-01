@@ -24,5 +24,5 @@ RUN npm ci --workspace=backend --omit=dev
 COPY --from=builder /app/backend/dist ./backend/dist
 
 WORKDIR /app/backend
-EXPOSE 3001
+EXPOSE 3000
 CMD ["node", "dist/index.js"]

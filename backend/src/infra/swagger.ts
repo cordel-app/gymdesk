@@ -9,8 +9,8 @@ export const swaggerSpec = swaggerJsdoc({
       description: 'Gym Management SaaS — backoffice REST API',
     },
     servers: [
-      { url: 'http://localhost:3001', description: 'Local' },
-      { url: 'http://87.106.124.190:3001', description: 'Production' },
+      { url: 'http://localhost:3000', description: 'Local' },
+      { url: 'http://87.106.124.190:3000', description: 'Production' },
     ],
     components: {
       securitySchemes: {

@@ -29,10 +29,10 @@ That's it — no Docker, no manual `.env` copying.
 ## Running locally
 
 ```bash
-# Terminal 1 — backend (http://localhost:3001)
+# Terminal 1 — backend (http://localhost:3000)
 npm run dev:backend
 
-# Terminal 2 — frontend (http://localhost:3000)
+# Terminal 2 — frontend (http://localhost:3001)
 npm run dev:frontend
 ```
 
@@ -138,8 +138,8 @@ Managed automatically by `npm run env:pull`. Do not commit `.env` files.
 | `DATABASE_URL` | Neon PostgreSQL connection string |
 | `CLERK_SECRET_KEY` | Clerk backend secret key |
 | `CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `PORT` | API port (default: `3001`) |
-| `FRONTEND_URL` | Allowed CORS origin (default: `http://localhost:3000`) |
+| `PORT` | API port (default: `3000`) |
+| `FRONTEND_URL` | Allowed CORS origin (default: `http://localhost:3001`) |
 | `SEED_USER_ID` | Clerk user ID for the seed script (one-time use) |
 
 **Frontend** (`apps/backoffice/frontend/.env`)
@@ -147,6 +147,6 @@ Managed automatically by `npm run env:pull`. Do not commit `.env` files.
 | Variable | Description |
 |----------|-------------|
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `NEXT_PUBLIC_BACKEND_URL` | Backend base URL (default: `http://localhost:3001`) |
+| `NEXT_PUBLIC_BACKEND_URL` | Backend base URL (default: `http://localhost:3000`) |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Sign-in path |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | Sign-up path |

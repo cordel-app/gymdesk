@@ -21,7 +21,7 @@ gymdesk/
       swagger.ts
       seed.ts
   apps/
-    backoffice/src/                # Staff/admin Next.js app (port 3000)
+    backoffice/src/                # Staff/admin Next.js app (port 3001)
       app/[locale]/                # Next.js App Router pages (one folder per domain)
       components/
         Sidebar.tsx                # Nav — conditionally renders links by role

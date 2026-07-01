@@ -24,7 +24,7 @@ if (!process.env.CLERK_SECRET_KEY) {
 }
 
 const app = express();
-const port = process.env.PORT ?? 3001;
+const port = process.env.PORT ?? 3000;
 
 const allowedOrigins = (process.env.FRONTEND_URL ?? '').split(',').map((o) => o.trim());
 app.use(cors({ origin: allowedOrigins }));
