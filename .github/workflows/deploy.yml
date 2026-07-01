@@ -103,3 +103,8 @@ jobs:
             sleep 3
             podman inspect gymdesk-backend --format='{{.State.Status}}' | grep -q running || \
               { echo "ERROR: Container failed to start"; podman logs gymdesk-backend; exit 1; }
+
+            # Verify the app responds from inside the server
+            curl -sf --max-time 5 http://localhost:3000/health || \
+              { echo "ERROR: /health not responding"; podman logs gymdesk-backend; exit 1; }
+            echo "Health check OK"
