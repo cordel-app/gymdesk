@@ -1,0 +1,30 @@
+name: Debug VPS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    name: Inspect corback state
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: github
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          script: |
+            echo "=== whoami / id ==="
+            whoami; id
+            echo "=== linger status ==="
+            loginctl show-user github --property=Linger 2>&1 || echo "linger query failed"
+            ls /var/lib/systemd/linger/ 2>&1 || true
+            echo "=== podman containers ==="
+            podman ps -a 2>&1
+            echo "=== listeners on 3000-3002 ==="
+            (ss -tln | grep -E ':300[0-2]') || echo "nothing listening on 3000-3002"
+            echo "=== localhost health ==="
+            curl -s --max-time 5 http://localhost:3000/health || echo "localhost health FAILED"
+            echo "=== podman logs (last 20) ==="
+            podman logs --tail 20 gymdesk-backend 2>&1 || echo "no container logs"
