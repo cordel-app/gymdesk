@@ -53,6 +53,19 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx node-pg-migrate up --migrations-dir src/infra/migrations --no-lock
 
+      - name: Ensure Docker is installed on VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: github
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+            if ! command -v docker &> /dev/null; then
+              curl -fsSL https://get.docker.com | sudo sh
+              sudo usermod -aG docker github
+            fi
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
