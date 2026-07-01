@@ -5,6 +5,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { GymProvider } from '@/context/GymContext';
 import { AppShell } from '@/components/AppShell';
+import { ToastProvider } from '@/components/Toast';
 
 export const metadata: Metadata = {
   title: 'Gymdesk',
@@ -28,9 +29,11 @@ export default async function LocaleLayout({
       <html lang={params.locale}>
         <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f5f5f5', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
-            <GymProvider>
-              <AppShell>{children}</AppShell>
-            </GymProvider>
+            <ToastProvider>
+              <GymProvider>
+                <AppShell>{children}</AppShell>
+              </GymProvider>
+            </ToastProvider>
           </NextIntlClientProvider>
         </body>
       </html>

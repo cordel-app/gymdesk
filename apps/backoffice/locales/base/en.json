@@ -75,7 +75,8 @@
     "restore": "Restore"
   },
   "common": {
-    "coming_soon": "Coming soon."
+    "coming_soon": "Coming soon.",
+    "error_load_gyms": "Failed to load gyms"
   },
   "system_gyms": {
     "title": "Gyms",
@@ -96,6 +97,7 @@
     "plan_pro": "Pro",
     "error_required": "Name and slug are required",
     "error_generic": "Failed to create gym",
+    "error_load": "Failed to load gyms",
     "cancel": "Cancel",
     "saving": "Creating...",
     "save": "Create Gym"

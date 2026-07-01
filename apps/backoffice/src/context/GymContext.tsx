@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
+import { useTranslations } from 'next-intl';
+import { useToast } from '@/components/Toast';
 
 export interface GymOption {
   id: string;
@@ -31,6 +33,8 @@ const GymContext = createContext<GymContextValue>({
 export function GymProvider({ children }: { children: ReactNode }) {
   const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
+  const { toast } = useToast();
+  const t = useTranslations('common');
   const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
 
   const [gyms, setGyms] = useState<GymOption[]>([]);
@@ -60,6 +64,8 @@ export function GymProvider({ children }: { children: ReactNode }) {
         const stored = typeof window !== 'undefined' ? localStorage.getItem('activeGymId') : null;
         const initial = stored && gymsWithRole.find((g) => g.id === stored) ? stored : gymsWithRole[0]?.id ?? null;
         setActiveGymIdState(initial);
+      } catch (err: any) {
+        toast(err.message ?? t('error_load_gyms'));
       } finally {
         setLoading(false);
       }

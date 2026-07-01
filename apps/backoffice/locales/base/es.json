@@ -75,7 +75,8 @@
     "restore": "Restaurar"
   },
   "common": {
-    "coming_soon": "Próximamente."
+    "coming_soon": "Próximamente.",
+    "error_load_gyms": "Error al cargar los gimnasios"
   },
   "system_gyms": {
     "title": "Gimnasios",
@@ -96,6 +97,7 @@
     "plan_pro": "Pro",
     "error_required": "El nombre y el slug son obligatorios",
     "error_generic": "Error al crear el gimnasio",
+    "error_load": "Error al cargar los gimnasios",
     "cancel": "Cancelar",
     "saving": "Creando...",
     "save": "Crear gimnasio"

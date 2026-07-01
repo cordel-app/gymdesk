@@ -51,8 +51,9 @@ export default function MembersPage() {
       ]);
       setMembers(membersData);
       setFares(faresData);
-    } catch {
+    } catch (err: any) {
       setMembers([]);
+      toast(err.message ?? t('members.error_generic'));
     } finally {
       setLoading(false);
     }

@@ -75,7 +75,8 @@
     "restore": "Restaurar"
   },
   "common": {
-    "coming_soon": "Pròximament."
+    "coming_soon": "Pròximament.",
+    "error_load_gyms": "Error en carregar els gimnasos"
   },
   "system_gyms": {
     "title": "Gimnasos",
@@ -96,6 +97,7 @@
     "plan_pro": "Pro",
     "error_required": "El nom i el slug són obligatoris",
     "error_generic": "Error en crear el gimnàs",
+    "error_load": "Error en carregar els gimnasos",
     "cancel": "Cancel·lar",
     "saving": "Creant...",
     "save": "Crear gimnàs"

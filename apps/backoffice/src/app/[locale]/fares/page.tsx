@@ -46,8 +46,9 @@ export default function FaresPage() {
     try {
       const data = await apiFetch<Fare[]>('/fares');
       setFares(data);
-    } catch {
+    } catch (err: any) {
       setFares([]);
+      toast(err.message ?? t('fares.error_generic'));
     } finally {
       setLoading(false);
     }

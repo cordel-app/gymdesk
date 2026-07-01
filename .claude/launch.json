@@ -2,10 +2,17 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "frontend",
+      "name": "backoffice",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:frontend"],
+      "runtimeArgs": ["run", "dev:backoffice"],
       "port": 3001,
+      "autoPort": false
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:backend"],
+      "port": 3000,
       "autoPort": false
     }
   ]

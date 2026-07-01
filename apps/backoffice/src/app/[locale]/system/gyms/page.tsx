@@ -5,6 +5,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { useToast } from '@/components/Toast';
 
 interface Gym {
   id: string;
@@ -22,6 +23,7 @@ export default function SystemGymsPage() {
   const { isSuperadmin, setActiveGymId } = useGym();
   const router = useRouter();
   const locale = useLocale();
+  const { toast } = useToast();
 
   const [gyms, setGyms] = useState<Gym[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,8 +45,9 @@ export default function SystemGymsPage() {
     try {
       const data = await apiFetch<Gym[]>('/platform/gyms');
       setGyms(data);
-    } catch {
+    } catch (err: any) {
       setGyms([]);
+      toast(err.message ?? t('error_load'));
     } finally {
       setLoading(false);
     }

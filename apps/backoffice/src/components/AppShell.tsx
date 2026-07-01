@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
-import { ToastProvider } from './Toast';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -19,7 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ToastProvider>
+    <>
       <TopHeader onMenuToggle={() => setSidebarOpen((v) => !v)} />
 
       {/* Mobile overlay */}
@@ -70,6 +69,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }
         }
       `}</style>
-    </ToastProvider>
+    </>
   );
 }
