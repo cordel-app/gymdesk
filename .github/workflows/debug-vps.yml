@@ -28,3 +28,14 @@ jobs:
             curl -s --max-time 5 http://localhost:3000/health || echo "localhost health FAILED"
             echo "=== podman logs (last 20) ==="
             podman logs --tail 20 gymdesk-backend 2>&1 || echo "no container logs"
+            echo "=== server public IP (egress) ==="
+            curl -s --max-time 5 ifconfig.me || echo "could not determine"
+            echo ""
+
+      - name: Test ports from runner
+        if: always()
+        run: |
+          echo "--- health via CORBACK_SSH_HOST secret ---"
+          curl -s --max-time 8 -o /dev/null -w "HTTP %{http_code}\n" http://${{ secrets.CORBACK_SSH_HOST }}:3000/health || echo "curl exit: $?"
+          echo "--- health via 150.230.157.145 ---"
+          curl -s --max-time 8 -o /dev/null -w "HTTP %{http_code}\n" http://150.230.157.145:3000/health || echo "curl exit: $?"
