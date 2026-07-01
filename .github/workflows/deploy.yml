@@ -53,19 +53,6 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx node-pg-migrate up --migrations-dir src/infra/migrations --no-lock
 
-      - name: Ensure Docker is installed on VPS
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.CORBACK_SSH_HOST }}
-          username: github
-          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
-          script: |
-            set -euo pipefail
-            if ! command -v docker &> /dev/null; then
-              curl -fsSL https://get.docker.com | sudo sh
-              sudo usermod -aG docker github
-            fi
-
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
@@ -75,7 +62,7 @@ jobs:
           script: |
             set -euo pipefail
 
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+            echo "${{ secrets.GHCR_PAT }}" | podman login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
             # Check disk space before pulling (fail if less than 1GB free)
             AVAILABLE=$(df / --output=avail | tail -1)
@@ -84,13 +71,16 @@ jobs:
               exit 1
             fi
 
-            docker image prune -af
-            docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest
+            # Keep rootless containers running after this SSH session ends
+            loginctl enable-linger github || true
 
-            docker stop gymdesk-backend || true
-            docker rm gymdesk-backend || true
+            podman image prune -af
+            podman pull ghcr.io/${{ env.IMAGE_NAME }}:latest
 
-            docker run -d \
+            podman stop gymdesk-backend || true
+            podman rm gymdesk-backend || true
+
+            podman run -d \
               --name gymdesk-backend \
               --restart unless-stopped \
               -p 3000:3000 \
@@ -104,5 +94,5 @@ jobs:
 
             # Verify the container actually started
             sleep 3
-            docker inspect gymdesk-backend --format='{{.State.Status}}' | grep -q running || \
-              { echo "ERROR: Container failed to start"; docker logs gymdesk-backend; exit 1; }
+            podman inspect gymdesk-backend --format='{{.State.Status}}' | grep -q running || \
+              { echo "ERROR: Container failed to start"; podman logs gymdesk-backend; exit 1; }
