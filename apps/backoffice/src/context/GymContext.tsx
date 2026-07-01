@@ -72,7 +72,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
     }
 
     loadGyms();
-  }, [isSignedIn, user, isSuperadmin]);
+  }, [isSignedIn, user?.id, isSuperadmin]);
 
   function setActiveGymId(id: string) {
     setActiveGymIdState(id);

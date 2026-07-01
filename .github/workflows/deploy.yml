@@ -56,9 +56,9 @@ jobs:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: github
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
 

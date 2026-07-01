@@ -10,7 +10,7 @@ export const swaggerSpec = swaggerJsdoc({
     },
     servers: [
       { url: 'http://localhost:3000', description: 'Local' },
-      { url: 'http://87.106.124.190:3000', description: 'Production' },
+      { url: 'http://150.230.157.145:3000', description: 'Production' },
     ],
     components: {
       securitySchemes: {
