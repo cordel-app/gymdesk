@@ -139,7 +139,6 @@ Managed automatically by `npm run env:pull`. Do not commit `.env` files.
 | `CLERK_SECRET_KEY` | Clerk backend secret key |
 | `CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
 | `PORT` | API port (default: `3000`) |
-| `FRONTEND_URL` | Allowed CORS origin (default: `http://localhost:3001`) |
 | `SEED_USER_ID` | Clerk user ID for the seed script (one-time use) |
 
 **Frontend** (`apps/backoffice/frontend/.env`)

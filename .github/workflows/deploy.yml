@@ -96,7 +96,6 @@ jobs:
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
               -e CLERK_PUBLISHABLE_KEY="${{ secrets.CLERK_PUBLISHABLE_KEY }}" \
-              -e FRONTEND_URL="http://localhost:3001,https://gymdesk-frontend.vercel.app" \
               ghcr.io/${{ env.IMAGE_NAME }}:latest
 
             # Verify the container actually started

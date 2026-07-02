@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
@@ -16,9 +15,6 @@ import { tenantContext } from './infra/tenantContext';
 import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
 
-if (!process.env.FRONTEND_URL) {
-  throw new Error('FRONTEND_URL environment variable is required');
-}
 if (!process.env.CLERK_SECRET_KEY) {
   throw new Error('CLERK_SECRET_KEY environment variable is required');
 }
@@ -26,8 +22,7 @@ if (!process.env.CLERK_SECRET_KEY) {
 const app = express();
 const port = process.env.PORT ?? 3000;
 
-const allowedOrigins = (process.env.FRONTEND_URL ?? '').split(',').map((o) => o.trim());
-app.use(cors({ origin: allowedOrigins }));
+// No CORS middleware: the API is only called server-to-server (Next.js proxy routes)
 app.use(express.json());
 const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 

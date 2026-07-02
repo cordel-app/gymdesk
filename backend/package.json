@@ -13,8 +13,6 @@
   "dependencies": {
     "@clerk/backend": "3.8.4",
     "@clerk/express": "2.1.32",
-    "@types/cors": "2.8.19",
-    "cors": "2.8.6",
     "dotenv": "16.6.1",
     "express": "4.22.2",
     "node-pg-migrate": "8.0.4",

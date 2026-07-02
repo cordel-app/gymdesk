@@ -97,7 +97,7 @@ membersRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) 
 
 membersRouter.post('/:id/invite', requireRole('admin', 'staff'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const memberAppUrl = process.env.MEMBER_APP_URL ?? process.env.FRONTEND_URL?.split(',')[0] ?? '';
+  const memberAppUrl = process.env.MEMBER_APP_URL ?? '';
   try {
     const { rows } = await db.query(
       'SELECT email FROM members WHERE id = $1 AND gym_id = $2 AND deleted_at IS NULL',
