@@ -27,8 +27,18 @@ jobs:
             (ss -tln | grep -E ':300[0-2]') || echo "nothing listening on 3000-3002"
             echo "=== localhost health ==="
             curl -s --max-time 5 http://localhost:3000/health || echo "localhost health FAILED"
-            echo "=== podman logs (last 20) ==="
-            podman logs --tail 20 gymdesk-backend 2>&1 || echo "no container logs"
+            echo "=== podman logs (last 200) ==="
+            podman logs --tail 200 gymdesk-backend 2>&1 || echo "no container logs"
+            echo "=== container exit state ==="
+            podman inspect gymdesk-backend --format '{{json .State}}' 2>&1 || echo "no container"
+            echo "=== restart container if exited ==="
+            if [ "$(podman inspect gymdesk-backend --format '{{.State.Status}}' 2>/dev/null)" != "running" ]; then
+              podman start gymdesk-backend && echo "container started"
+              sleep 3
+              curl -s --max-time 5 http://localhost:3000/health || echo "health after restart FAILED"
+            else
+              echo "already running"
+            fi
             echo "=== server public IP (egress) ==="
             curl -s --max-time 5 ifconfig.me || echo "could not determine"
             echo ""
