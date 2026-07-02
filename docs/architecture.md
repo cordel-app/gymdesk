@@ -230,3 +230,29 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | `/bookings` | `GET /me/bookings` | Member only. |
 | `/subscriptions` | `GET /me/subscriptions` | Member only. |
 | `/profile` | `GET /me/profile` | Member only. |
+
+---
+
+## CI/CD Configuration (GitHub Actions)
+
+Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows declare `environment: dev` and read them via `secrets.*` / `vars.*`. When PRO arrives, create a `production` environment with the same names and point its workflows at it — no workflow rewrites needed.
+
+### Environment-scoped (per env: `dev` today, `production` later)
+
+| Name | Kind | Why per-environment |
+|------|------|---------------------|
+| `DATABASE_URL` | secret | Each env has its own database |
+| `CLERK_SECRET_KEY` | secret | Clerk test instance (dev) vs live instance (PRO) |
+| `CLERK_PUBLISHABLE_KEY` | secret | Same |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Same |
+| `MEMBER_APP_URL` | variable | Each env has its own member-app URL |
+
+### Repo-scoped (cross-env)
+
+| Name | Kind | Notes |
+|------|------|-------|
+| `GHCR_PAT` | secret | Container registry access, shared |
+| `VERCEL_TOKEN`, `VERCEL_ORG_ID` | secret | Shared Vercel account |
+| `VERCEL_PROJECT_ID`, `VERCEL_PROJECT_ID_APP` | secret | Per-app project ids; move to environments if PRO gets separate Vercel projects |
+| `CORBACK_SSH_HOST`, `CORBACK_SSH_PRIVATE_KEY` | secret | Dev VPS. Environment-dependent by nature — move into the `dev` environment when PRO's server exists (values must be re-entered; secrets are write-only) |
+| `CORFRONT_SSH_HOST`, `CORFRONT_SSH_PRIVATE_KEY` | secret | Reserved for future frontend VPS |

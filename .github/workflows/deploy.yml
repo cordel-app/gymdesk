@@ -16,6 +16,7 @@ jobs:
   build-and-deploy:
     name: Build & Deploy
     runs-on: ubuntu-latest
+    environment: dev
     permissions:
       contents: read
       packages: write
@@ -96,7 +97,7 @@ jobs:
               -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
               -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
               -e CLERK_PUBLISHABLE_KEY="${{ secrets.CLERK_PUBLISHABLE_KEY }}" \
-              -e MEMBER_APP_URL="https://gymdesk-member-app.vercel.app" \
+              -e MEMBER_APP_URL="${{ vars.MEMBER_APP_URL }}" \
               ghcr.io/${{ env.IMAGE_NAME }}:latest
 
             # Verify the container actually started

@@ -10,6 +10,7 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    environment: dev
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
@@ -38,6 +39,7 @@ jobs:
   frontend:
     name: Frontend
     runs-on: ubuntu-latest
+    environment: dev
     env:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
       NEXT_PUBLIC_BACKEND_URL: http://localhost:3000
