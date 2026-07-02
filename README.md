@@ -40,28 +40,28 @@ npm run dev:frontend
 
 ```
 gymdesk/
+  backend/            # Express + TypeScript REST API (port 3000)
+    src/
+      api/            # Route handlers (members, classes, bookings, subscriptions, gyms, fares)
+      domain/         # TypeScript types
+      infra/          # Database connection, migrations, seed, tenant context
   apps/
-    backoffice/
-      backend/        # Express + TypeScript REST API
-        src/
-          api/        # Route handlers (members, classes, bookings, subscriptions, gyms)
-          domain/     # TypeScript types
-          infra/      # Database connection, migrations, seed, tenant context
-      frontend/       # Next.js admin dashboard
-        src/
-          app/        # Pages and layout
-          components/ # UI components
-          context/    # GymContext (active tenant)
-          lib/        # apiClient (authenticated fetch wrapper)
+    backoffice/       # Next.js staff/admin dashboard (port 3001)
+      src/
+        app/          # Pages and layout ([locale] routing)
+        components/   # UI components
+        context/      # GymContext (active tenant)
+        lib/          # apiClient (authenticated fetch wrapper)
+    app/              # Next.js member-facing app (port 3002)
   scripts/
     env-pull.sh       # Developer onboarding script
   skills/
     business/         # Business domain guidelines
     technical/        # Technical conventions
     procedures/       # Operational runbooks
+  docs/               # architecture.md + feature-patterns.md (read before building features)
   .github/
-    workflows/
-      ci.yml          # Type-check + build + migrations on every push
+    workflows/        # ci.yml, deploy.yml (backend→VPS), deploy-backoffice.yml, deploy-app.yml
 ```
 
 ## Architecture
@@ -131,7 +131,7 @@ All endpoints except `GET /health` require a valid Clerk session token (`Authori
 
 Managed automatically by `npm run env:pull`. Do not commit `.env` files.
 
-**Backend** (`apps/backoffice/backend/.env`)
+**Backend** (`backend/.env`)
 
 | Variable | Description |
 |----------|-------------|
@@ -141,7 +141,7 @@ Managed automatically by `npm run env:pull`. Do not commit `.env` files.
 | `PORT` | API port (default: `3000`) |
 | `SEED_USER_ID` | Clerk user ID for the seed script (one-time use) |
 
-**Frontend** (`apps/backoffice/frontend/.env`)
+**Frontend** (`apps/backoffice/.env`)
 
 | Variable | Description |
 |----------|-------------|

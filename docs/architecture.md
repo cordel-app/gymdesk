@@ -34,7 +34,7 @@ gymdesk/
       locales/base/en.json …
     app/src/                       # Member-facing PWA (port 3002)
       app/[locale]/                # Public home, sign-in, bookings, subscriptions, profile
-      app/api/proxy/[...path]/     # Edge proxy → backend
+      app/api/proxy/[...path]/     # Proxy → backend (Node runtime — edge fetch can't reach port 3000)
       context/AppContext.tsx       # gymId + linked member profile
       lib/apiClient.ts
       middleware.ts                # Public routes: /, /:locale, /classes, /sign-in, /api/proxy
@@ -170,7 +170,7 @@ All requests go through `apiFetch()` (from `useApiClient()`), which:
 1. Gets a fresh Clerk token.
 2. Attaches `Authorization: Bearer <token>`.
 3. Attaches `x-gym-id: <activeGymId>`.
-4. Hits `/api/proxy/<path>` → Next.js Edge proxy → backend.
+4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`): Vercel edge fetch only allows ports 80/443, and the backend listens on 3000. Backend has no CORS — it is reachable only through these proxies.
 
 ### Backoffice: GymContext
 Available via `useGym()`. Key fields:
@@ -230,6 +230,22 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | `/bookings` | `GET /me/bookings` | Member only. |
 | `/subscriptions` | `GET /me/subscriptions` | Member only. |
 | `/profile` | `GET /me/profile` | Member only. |
+
+---
+
+## Deployment (dev)
+
+| Piece | Where | How |
+|-------|-------|-----|
+| Backend | "corback" VPS `150.230.157.145` = `backend-dev.gymdesk.uk:3000` (Cloudflare DNS, unproxied) | `deploy.yml`: multi-arch image (amd64+arm64 — the VPS is **Oracle Cloud ARM/Ampere**) → GHCR → SSH as `github` → **rootless Podman** (`--restart unless-stopped` + linger). No sudo available in CI. In-server health check after start. |
+| Backoffice | `gymdesk-backoffice.vercel.app` | `deploy-backoffice.yml`: vercel CLI (pull env → build → deploy), not git integration |
+| Member app | `gymdesk-member-app.vercel.app` | `deploy-app.yml`, same pattern |
+
+Notes:
+- Inbound ports on corback are controlled by the **OCI VCN Security List** (cloud console); the OS firewall is disabled. If a port times out from outside but works on localhost, it's the Security List.
+- Vercel side needs `BACKEND_URL=http://backend-dev.gymdesk.uk:3000` (production env). Inspect/update it via the `fix-vercel-env.yml` workflow (workflow_dispatch) — the projects are not always visible from local Vercel accounts.
+- `debug-vps.yml` (workflow_dispatch) prints container/listener/health state from inside the VPS when SSH access isn't available locally.
+- `gymdesk-frontend.vercel.app` is legacy — do not reference it.
 
 ---
 
