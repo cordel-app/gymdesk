@@ -18,6 +18,8 @@ jobs:
           script: |
             echo "=== whoami / id ==="
             whoami; id
+            echo "=== uptime / last boot ==="
+            uptime; uptime -s 2>&1 || who -b
             echo "=== linger status ==="
             loginctl show-user github --property=Linger 2>&1 || echo "linger query failed"
             ls /var/lib/systemd/linger/ 2>&1 || true
