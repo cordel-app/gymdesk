@@ -9,6 +9,11 @@ criteria live in the issue bodies; this doc is the map.
 
 ## Decisions
 
+- **Database (updated 2026-07-03)**: migrate from Neon PostgreSQL to **Oracle HeatWave MySQL**
+  (paid tier, ~€50/mo) for predictable pricing and single-vendor infra. Tracked as
+  **Phase M ([#45](https://github.com/cordel-app/gymdesk/issues/45)–[#49](https://github.com/cordel-app/gymdesk/issues/49))**, which **blocks Phase 1**. MySQL consequences for later tickets:
+  partial unique indexes (P1.5, P2.5) become generated column + unique index; `jsonb`/`inet`
+  (P6.1) become `JSON`/`VARCHAR(45)`; `RETURNING` is replaced by insert + select helpers.
 - **Multi-location** is deferred to Phase 7 (additive nullable FKs; nothing earlier blocks on it).
 - **Payments**: internal `billing_events` ledger first (staff-recorded); Stripe is Phase 8.
 - `fares` → `membership_plans` and `subscriptions` → `user_memberships` **evolve in place**
@@ -29,6 +34,15 @@ backoffice page (Members page as staff-level/soft-delete template, Fares page as
 template) → Sidebar → i18n (en/es/ca).
 
 ## Phases
+
+### Phase M — MySQL migration (blocks Phase 1)
+| Ticket | Issue | Size | Depends on |
+|---|---|---|---|
+| M1 Provision HeatWave MySQL on OCI (backups + PITR) | [#45](https://github.com/cordel-app/gymdesk/issues/45) | S | — |
+| M2 Replace node-pg-migrate with Knex targeting MySQL | [#46](https://github.com/cordel-app/gymdesk/issues/46) | M | — |
+| M3 Port backend data layer and queries to mysql2 | [#47](https://github.com/cordel-app/gymdesk/issues/47) | L | #46 |
+| M4 Migrate data from Neon to HeatWave | [#48](https://github.com/cordel-app/gymdesk/issues/48) | M | #45 #47 |
+| M5 Cutover deploy, CI on MySQL, roadmap amendments | [#49](https://github.com/cordel-app/gymdesk/issues/49) | M | #48 |
 
 ### Phase 0 — Foundation
 | Ticket | Issue | Size | Depends on |
