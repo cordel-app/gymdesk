@@ -1,5 +1,6 @@
 import { getAuth } from '@clerk/express';
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { db } from '../infra/db';
 import { tenantContext, requireRole, requireSuperadmin } from '../infra/tenantContext';
 
@@ -14,7 +15,7 @@ gymsRouter.get('/', async (req, res) => {
     `SELECT g.*, gm.role
      FROM gyms g
      JOIN gym_memberships gm ON gm.gym_id = g.id
-     WHERE gm.user_id = $1
+     WHERE gm.user_id = ?
      ORDER BY g.created_at ASC`,
     [userId],
   );
@@ -25,7 +26,7 @@ gymsRouter.get('/', async (req, res) => {
 
 gymsRouter.get('/:gymId/memberships', tenantContext, requireRole('admin'), async (req, res) => {
   const { rows } = await db.query(
-    'SELECT * FROM gym_memberships WHERE gym_id = $1 ORDER BY created_at ASC',
+    'SELECT * FROM gym_memberships WHERE gym_id = ? ORDER BY created_at ASC',
     [req.params.gymId],
   );
   res.json(rows);
@@ -38,20 +39,21 @@ gymsRouter.post('/:gymId/memberships', tenantContext, requireRole('admin'), asyn
     return res.status(400).json({ error: 'role must be admin, coach, or staff' });
   }
   try {
-    const { rows } = await db.query(
-      'INSERT INTO gym_memberships (user_id, gym_id, role) VALUES ($1, $2, $3) RETURNING *',
+    const { insertId } = await db.query(
+      'INSERT INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, ?)',
       [user_id, req.params.gymId, role],
     );
+    const { rows } = await db.query('SELECT * FROM gym_memberships WHERE id = ?', [insertId]);
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.code === '23505') return res.status(409).json({ error: 'User already a member of this gym' });
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'User already a member of this gym' });
     throw err;
   }
 });
 
 gymsRouter.delete('/:gymId/memberships/:userId', tenantContext, requireRole('admin'), async (req, res) => {
   const { rowCount } = await db.query(
-    'DELETE FROM gym_memberships WHERE gym_id = $1 AND user_id = $2',
+    'DELETE FROM gym_memberships WHERE gym_id = ? AND user_id = ?',
     [req.params.gymId, req.params.userId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Membership not found' });
@@ -68,14 +70,16 @@ platformRouter.get('/gyms', requireSuperadmin, async (_req, res) => {
 platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
   const { name, slug, plan } = req.body;
   if (!name || !slug) return res.status(400).json({ error: 'name and slug are required' });
+  const id = randomUUID();
   try {
-    const { rows } = await db.query(
-      `INSERT INTO gyms (name, slug, plan) VALUES ($1, $2, $3) RETURNING *`,
-      [name, slug, plan ?? 'free'],
+    await db.query(
+      'INSERT INTO gyms (id, name, slug, plan) VALUES (?, ?, ?, ?)',
+      [id, name, slug, plan ?? 'free'],
     );
+    const { rows } = await db.query('SELECT * FROM gyms WHERE id = ?', [id]);
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Slug already taken' });
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Slug already taken' });
     throw err;
   }
 });
@@ -84,13 +88,18 @@ platformRouter.post('/gyms/:gymId/admins', requireSuperadmin, async (req, res) =
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
   try {
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'admin') AS new
+       ON DUPLICATE KEY UPDATE role = new.role`,
+      [user_id, req.params.gymId],
+    );
     const { rows } = await db.query(
-      'INSERT INTO gym_memberships (user_id, gym_id, role) VALUES ($1, $2, $3) ON CONFLICT (user_id, gym_id) DO UPDATE SET role = $3 RETURNING *',
-      [user_id, req.params.gymId, 'admin'],
+      'SELECT * FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
+      [user_id, req.params.gymId],
     );
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.code === '23503') return res.status(404).json({ error: 'Gym not found' });
+    if (err.code === 'ER_NO_REFERENCED_ROW_2') return res.status(404).json({ error: 'Gym not found' });
     throw err;
   }
 });

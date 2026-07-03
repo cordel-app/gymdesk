@@ -37,7 +37,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
   }
 
   const { rows } = await db.query<{ role: GymRole }>(
-    'SELECT role FROM gym_memberships WHERE user_id = $1 AND gym_id = $2',
+    'SELECT role FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
     [userId, gymId],
   );
 

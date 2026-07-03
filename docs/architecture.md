@@ -2,7 +2,7 @@
 
 ## Overview
 
-Multi-tenant Gym Management SaaS. One Express backend, one Next.js frontend, one PostgreSQL database. Authentication via Clerk. Tenant isolation via `gym_id` on every domain table and `x-gym-id` request header.
+Multi-tenant Gym Management SaaS. One Express backend, one Next.js frontend, one MySQL 8 database (Oracle HeatWave in deployed environments). Authentication via Clerk. Tenant isolation via `gym_id` on every domain table and `x-gym-id` request header.
 
 ---
 
@@ -15,9 +15,9 @@ gymdesk/
     api/                           # One file per domain (members.ts, classes.ts, …)
     domain/types.ts                # Shared TypeScript interfaces
     infra/
-      db.ts                        # pg Pool
+      db.ts                        # mysql2 pool + query/transaction helpers
       tenantContext.ts             # Middleware: resolves gym role, enforces requireRole()
-      migrations/                  # node-pg-migrate .js files (001_, 002_, …)
+      migrations/                  # Knex migration .js files (001_, 002_, …)
       swagger.ts
       seed.ts
   apps/
@@ -112,10 +112,10 @@ app.use('/public', publicRouter);
 
 ## Multi-tenancy Pattern
 
-Every domain table has `gym_id uuid REFERENCES gyms`. Every query filters by it:
+Every domain table has `gym_id CHAR(36) REFERENCES gyms`. Every query filters by it:
 
 ```sql
-SELECT * FROM members WHERE gym_id = $1 AND deleted_at IS NULL
+SELECT * FROM members WHERE gym_id = ? AND deleted_at IS NULL
 ```
 
 The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it from `GymContext.activeGymId`.
@@ -124,10 +124,15 @@ The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it 
 
 ## Database Conventions
 
-- **Migrations**: `node-pg-migrate` JS files in `infra/migrations/`. Numbered sequentially (`001_`, `002_`, …). Run with `npm run db:migrate`.
-- **Primary keys**: `serial` for domain tables, `uuid` for `gyms` (tenant root).
-- **Soft deletes**: Add `deleted_at timestamptz` and filter `WHERE deleted_at IS NULL`. Used for members; consider for other user-facing entities.
+- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_`, `002_`, …). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable.
+- **Primary keys**: auto-increment `INT UNSIGNED` for domain tables, `CHAR(36)` UUID for `gyms` (tenant root, `DEFAULT (UUID())`).
+- **Timestamps**: `DATETIME`, always UTC (the mysql2 pool uses `timezone: 'Z'`; use `UTC_TIMESTAMP()` in SQL, never `NOW()`).
+- **Indexed text columns**: `VARCHAR(n)`, not `TEXT` (MySQL cannot index TEXT without a prefix length).
+- **Soft deletes**: Add `deleted_at DATETIME` and filter `WHERE deleted_at IS NULL`. Used for members; consider for other user-facing entities.
 - **Cascade**: FK `ON DELETE CASCADE` when the child has no meaning without the parent (e.g. `fares → gyms`). Use `ON DELETE SET NULL` when the reference is optional (e.g. `members.fare_id → fares`).
+- **Duplicates**: unique-key violations surface as `err.code === 'ER_DUP_ENTRY'` (errno 1062) → return 409.
+- **No partial/filtered indexes** in MySQL: for "unique among non-deleted/active rows" use a generated column + unique index.
+- **Inserts**: no `RETURNING` in MySQL — insert, then `SELECT` by `insertId` (returned by the `db.query` helper). Upserts use `INSERT ... AS new ON DUPLICATE KEY UPDATE col = new.col`; "insert if absent" uses `INSERT IGNORE`.
 
 ---
 

@@ -5,7 +5,7 @@ export const publicRouter = Router();
 
 publicRouter.get('/gyms/:slug', async (req, res) => {
   const { rows } = await db.query(
-    'SELECT id, name, slug, plan FROM gyms WHERE slug = $1',
+    'SELECT id, name, slug, plan FROM gyms WHERE slug = ?',
     [req.params.slug],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Gym not found' });
@@ -14,7 +14,7 @@ publicRouter.get('/gyms/:slug', async (req, res) => {
 
 publicRouter.get('/gyms/:slug/classes', async (req, res) => {
   const { rows: gyms } = await db.query(
-    'SELECT id FROM gyms WHERE slug = $1',
+    'SELECT id FROM gyms WHERE slug = ?',
     [req.params.slug],
   );
   if (gyms.length === 0) return res.status(404).json({ error: 'Gym not found' });
@@ -22,7 +22,7 @@ publicRouter.get('/gyms/:slug/classes', async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, name, description, capacity, starts_at, ends_at
      FROM classes
-     WHERE gym_id = $1 AND starts_at > now()
+     WHERE gym_id = ? AND starts_at > UTC_TIMESTAMP()
      ORDER BY starts_at ASC`,
     [gymId],
   );

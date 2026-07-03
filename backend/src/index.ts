@@ -48,12 +48,13 @@ app.get('/health', (_req, res) => {
 app.post('/dev/seed-gym', async (req: any, res: any) => {
   const { user_id, gym_name, gym_slug } = req.body;
   if (!user_id || !gym_name || !gym_slug) return res.status(400).json({ error: 'user_id, gym_name, gym_slug required' });
-  const { rows: [gym] } = await db.query(
-    `INSERT INTO gyms (name, slug, plan) VALUES ($1, $2, 'free') ON CONFLICT (slug) DO UPDATE SET name=$1 RETURNING *`,
+  await db.query(
+    `INSERT INTO gyms (name, slug, plan) VALUES (?, ?, 'free') AS new ON DUPLICATE KEY UPDATE name = new.name`,
     [gym_name, gym_slug]
   );
+  const { rows: [gym] } = await db.query('SELECT * FROM gyms WHERE slug = ?', [gym_slug]);
   await db.query(
-    `INSERT INTO gym_memberships (user_id, gym_id, role) VALUES ($1, $2, 'admin') ON CONFLICT (user_id, gym_id) DO NOTHING`,
+    `INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'admin')`,
     [user_id, gym.id]
   );
   res.json({ gym, message: 'Gym created and user assigned as admin' });
