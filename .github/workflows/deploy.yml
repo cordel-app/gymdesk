@@ -55,11 +55,13 @@ jobs:
       - name: Install backend dependencies
         run: npm ci --workspace=backend
 
+      # NOTE (Phase M): once the DB moves to HeatWave on a private VCN, this step
+      # must run inside the VPS SSH session instead (runner cannot reach the DB) — M5 (#49).
       - name: Run database migrations
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx node-pg-migrate up --migrations-dir src/infra/migrations --no-lock
+        run: npx knex migrate:latest --knexfile knexfile.cjs
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1

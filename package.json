@@ -14,6 +14,8 @@
     "build:backend": "npm --workspace backend run build",
     "build:backoffice": "npm --workspace apps/backoffice run build",
     "build:app": "npm --workspace apps/app run build",
+    "db:up": "docker compose up -d mysql --wait",
+    "db:down": "docker compose down",
     "db:migrate": "npm --workspace backend run db:migrate",
     "db:seed": "npm --workspace backend run db:seed",
     "env:pull": "bash scripts/env-pull.sh"
