@@ -101,5 +101,13 @@
     "cancel": "Cancel·lar",
     "saving": "Creant...",
     "save": "Crear gimnàs"
+  },
+  "status": {
+    "all": "Tots els estats",
+    "active": "Actiu",
+    "inactive": "Inactiu",
+    "paused": "Pausat",
+    "cancelled": "Cancel·lat",
+    "expired": "Caducat"
   }
 }

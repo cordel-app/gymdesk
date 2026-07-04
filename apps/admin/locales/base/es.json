@@ -101,5 +101,13 @@
     "cancel": "Cancelar",
     "saving": "Creando...",
     "save": "Crear gimnasio"
+  },
+  "status": {
+    "all": "Todos los estados",
+    "active": "Activo",
+    "inactive": "Inactivo",
+    "paused": "Pausado",
+    "cancelled": "Cancelado",
+    "expired": "Caducado"
   }
 }

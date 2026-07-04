@@ -101,5 +101,13 @@
     "cancel": "Cancel",
     "saving": "Creating...",
     "save": "Create Gym"
+  },
+  "status": {
+    "all": "All statuses",
+    "active": "Active",
+    "inactive": "Inactive",
+    "paused": "Paused",
+    "cancelled": "Cancelled",
+    "expired": "Expired"
   }
 }
