@@ -11,8 +11,23 @@ jobs:
     name: Backend
     runs-on: ubuntu-latest
     environment: dev
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: gymdesk
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -pci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Migrations run against a throwaway MySQL service container — the real
+      # HeatWave DB is VCN-private and unreachable from CI runners.
+      DATABASE_URL: mysql://root:ci@127.0.0.1:3306/gymdesk
       CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
       CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
       PORT: 3000

@@ -5,6 +5,11 @@ name: Migrate data Neon -> HeatWave
 # Step 1 applies Knex migrations (schema), step 2 copies the data.
 on:
   workflow_dispatch:
+    inputs:
+      reset:
+        description: 'Drop all tables in the target schema first (clean rehearsal)'
+        type: boolean
+        default: false
 
 jobs:
   migrate:
@@ -37,17 +42,32 @@ jobs:
         env:
           SOURCE_URL: ${{ secrets.DATABASE_URL }}
           TARGET_URL: ${{ secrets.DATABASE_URL_MIGRATIONS }}
+          RESET: ${{ inputs.reset }}
         with:
           host: ${{ secrets.CORBACK_SSH_HOST }}
           username: github
           key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
-          envs: SOURCE_URL,TARGET_URL
+          envs: SOURCE_URL,TARGET_URL,RESET
           command_timeout: 20m
           script: |
-            podman run --rm -v ~/migrate:/app -w /app \
+            if [ "$RESET" = "true" ]; then
+              echo "=== RESET: dropping all tables in target schema ==="
+              U=$(echo "$TARGET_URL" | sed -E 's|mysql://([^:]+):.*|\1|')
+              P=$(echo "$TARGET_URL" | sed -E 's|mysql://[^:]+:([^@]+)@.*|\1|')
+              H=$(echo "$TARGET_URL" | sed -E 's|.*@([^:/]+):.*|\1|')
+              podman run --rm docker.io/library/mysql:8.4 mysql -h "$H" -u "$U" -p"$P" gymdesk -N -e \
+                "SET FOREIGN_KEY_CHECKS=0;
+                 SET GROUP_CONCAT_MAX_LEN=8192;
+                 SELECT IFNULL(CONCAT('DROP TABLE ', GROUP_CONCAT(CONCAT('\`', table_name, '\`')), ';'), 'SELECT 1;')
+                 INTO @sql FROM information_schema.tables WHERE table_schema='gymdesk';
+                 PREPARE s FROM @sql; EXECUTE s;
+                 SET FOREIGN_KEY_CHECKS=1;" 2>&1 | grep -v Warning
+              echo "reset done"
+            fi
+            podman run --rm -v ~/migrate:/app:z -w /app \
               -e DATABASE_URL="$TARGET_URL" \
               -e SOURCE_URL="$SOURCE_URL" -e TARGET_URL="$TARGET_URL" \
               docker.io/library/node:20 \
-              bash -c "npm install --no-save knex mysql2 dotenv pg >/dev/null 2>&1 && \
+              bash -c "npm install --no-save --no-audit --no-fund knex mysql2 dotenv pg 2>&1 | tail -2 && \
                        npx knex migrate:latest --knexfile knexfile.cjs && \
                        node migrate-data-pg-to-mysql.mjs"

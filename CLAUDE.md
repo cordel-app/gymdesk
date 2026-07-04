@@ -1,6 +1,6 @@
 # Gymdesk
 
-Multi-tenant Gym Management SaaS. Express backend + Next.js frontend + PostgreSQL + Clerk auth.
+Multi-tenant Gym Management SaaS. Express backend + Next.js frontend + MySQL 8 (Oracle HeatWave) + Clerk auth.
 
 ## Before implementing any feature
 
@@ -15,7 +15,7 @@ Use **Fares** as the reference implementation for admin-only CRUD.
 ## Hard constraints
 
 - No microservices, no event sourcing, no AI/LLM integrations.
-- One database: PostgreSQL. No additional stores without a concrete reason.
+- One database: MySQL 8 (HeatWave when deployed). No additional stores without a concrete reason.
 - Every domain table must have `gym_id`. Every query must filter by it.
 - All config via environment variables. No hardcoded values.
 - Backend-first: define the API contract before building UI.
@@ -24,7 +24,7 @@ Use **Fares** as the reference implementation for admin-only CRUD.
 ## Local development
 
 ```bash
-npm run db:up          # start PostgreSQL
+npm run db:up          # start MySQL 8 (docker compose)
 npm run db:migrate     # run pending migrations
 npm run dev:backend    # Express on :3000
 npm run dev:frontend   # Next.js on :3001

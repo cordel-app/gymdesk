@@ -1,19 +1,23 @@
-/** @type {import('node-pg-migrate').MigrationBuilder} */
-exports.up = (pgm) => {
-  pgm.createTable('fares', {
-    id:         { type: 'serial', primaryKey: true },
-    gym_id:     { type: 'uuid', notNull: true, references: 'gyms', onDelete: 'CASCADE' },
-    name:       { type: 'text', notNull: true },
-    price:      { type: 'numeric(10,2)', notNull: true },
-    created_at: { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
+exports.up = async (knex) => {
+  await knex.schema.createTable('fares', (t) => {
+    t.increments('id').primary();
+    t.specificType('gym_id', 'char(36)').notNullable()
+      .references('id').inTable('gyms').onDelete('CASCADE');
+    t.string('name', 255).notNullable();
+    t.decimal('price', 10, 2).notNullable();
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
   });
 
-  pgm.addColumn('members', {
-    fare_id: { type: 'integer', references: 'fares', onDelete: 'SET NULL' },
+  await knex.schema.alterTable('members', (t) => {
+    t.integer('fare_id').unsigned()
+      .references('id').inTable('fares').onDelete('SET NULL');
   });
 };
 
-exports.down = (pgm) => {
-  pgm.dropColumn('members', 'fare_id');
-  pgm.dropTable('fares');
+exports.down = async (knex) => {
+  await knex.schema.alterTable('members', (t) => {
+    t.dropForeign('fare_id');
+    t.dropColumn('fare_id');
+  });
+  await knex.schema.dropTableIfExists('fares');
 };

@@ -23,17 +23,19 @@ All API errors must return JSON in this shape — never HTML, never a raw string
 
 **Backend rules:**
 - Every route that does a DB write must wrap the query in `try/catch` and forward unexpected errors to Express via `next(err)`.
-- Catch PG unique-constraint errors (`err.code === '23505'`) explicitly and return 409 before calling `next(err)`.
+- Catch MySQL duplicate-key errors (`err.code === 'ER_DUP_ENTRY'`, errno 1062) explicitly and return 409 before calling `next(err)`.
+- MySQL has no `RETURNING`: insert first, then `SELECT` the row via the `insertId` that `db.query` returns.
 - A global error handler in `index.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500.
 
 ```ts
 // Pattern for a write route:
 router.post('/', requireRole('admin'), async (req, res, next) => {
   try {
-    const { rows } = await db.query('INSERT INTO ...', [...]);
+    const { insertId } = await db.query('INSERT INTO ... VALUES (?, ?)', [...]);
+    const { rows } = await db.query('SELECT * FROM ... WHERE id = ?', [insertId]);
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Already exists.' });
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Already exists.' });
     next(err); // falls through to global handler → 500
   }
 });
@@ -69,7 +71,7 @@ Three separate deploy workflows in `.github/workflows/`:
 ### Backend deploy order
 
 1. Build and push Docker image
-2. **Run `node-pg-migrate up`** against the production DB (from the CI runner, before the container is swapped)
+2. **Run `knex migrate:latest`** against the production DB (before the container is swapped)
 3. Pull new image and restart container
 
 **Never deploy backend code that depends on a new table without a migration file.** The migration must be committed in the same push as the code that uses it.
@@ -97,20 +99,22 @@ Required Vercel env vars for both frontends:
 ## Checklist: Adding a New Domain Entity
 
 ### 1. Migration
-Create `infra/migrations/00N_add_<entity>.js`:
+Create `infra/migrations/00N_add_<entity>.js` (Knex, MySQL 8):
 ```js
-exports.up = (pgm) => {
-  pgm.createTable('widgets', {
-    id:         { type: 'serial', primaryKey: true },
-    gym_id:     { type: 'uuid', notNull: true, references: 'gyms', onDelete: 'CASCADE' },
-    name:       { type: 'text', notNull: true },
-    // ...other columns
-    created_at: { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
+exports.up = async (knex) => {
+  await knex.schema.createTable('widgets', (t) => {
+    t.increments('id').primary();
+    t.specificType('gym_id', 'char(36)').notNullable()
+      .references('id').inTable('gyms').onDelete('CASCADE');
+    t.string('name', 255).notNullable();          // VARCHAR for indexed/unique text
+    // ...other columns; statuses: t.string('status', 20) + named CHECK via knex.raw
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
   });
 };
-exports.down = (pgm) => pgm.dropTable('widgets');
+exports.down = async (knex) => knex.schema.dropTableIfExists('widgets');
 ```
-Run: `npm run db:migrate`
+Run: `npm run db:migrate` (local MySQL via `npm run db:up`).
+⚠️ MySQL DDL is non-transactional: keep migrations small; name CHECK constraints so they can be dropped/re-added later.
 
 ### 2. Backend router (`api/widgets.ts`)
 ```ts
@@ -124,7 +128,7 @@ export const widgetsRouter = Router();
 widgetsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    'SELECT * FROM widgets WHERE gym_id = $1 ORDER BY name ASC',
+    'SELECT * FROM widgets WHERE gym_id = ? ORDER BY name ASC',
     [gymId],
   );
   res.json(rows);
@@ -135,10 +139,11 @@ widgetsRouter.post('/', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
-  const { rows } = await db.query(
-    'INSERT INTO widgets (name, gym_id) VALUES ($1, $2) RETURNING *',
+  const { insertId } = await db.query(
+    'INSERT INTO widgets (name, gym_id) VALUES (?, ?)',
     [name.trim(), gymId],
   );
+  const { rows } = await db.query('SELECT * FROM widgets WHERE id = ?', [insertId]);
   res.status(201).json(rows[0]);
 });
 
@@ -146,11 +151,15 @@ widgetsRouter.post('/', requireRole('admin'), async (req, res) => {
 widgetsRouter.put('/:id', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { name } = req.body;
-  const { rows } = await db.query(
-    'UPDATE widgets SET name = COALESCE($1, name) WHERE id = $2 AND gym_id = $3 RETURNING *',
+  const { rowCount } = await db.query(
+    'UPDATE widgets SET name = COALESCE(?, name) WHERE id = ? AND gym_id = ?',
     [name ?? null, req.params.id, gymId],
   );
-  if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+  if (rowCount === 0) return res.status(404).json({ error: 'Not found' });
+  const { rows } = await db.query(
+    'SELECT * FROM widgets WHERE id = ? AND gym_id = ?',
+    [req.params.id, gymId],
+  );
   res.json(rows[0]);
 });
 
@@ -158,13 +167,14 @@ widgetsRouter.put('/:id', requireRole('admin'), async (req, res) => {
 widgetsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rowCount } = await db.query(
-    'DELETE FROM widgets WHERE id = $1 AND gym_id = $2',
+    'DELETE FROM widgets WHERE id = ? AND gym_id = ?',
     [req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
   res.status(204).send();
 });
 ```
+Multi-statement writes: use `db.transaction(async (tx) => { ... })` — never `BEGIN`/`COMMIT` through `db.query` (pooled connections).
 
 ### 3. Register in `index.ts`
 ```ts
@@ -210,17 +220,17 @@ Add a `"widgets"` namespace to each file:
 
 ## Soft Delete Pattern (when needed)
 
-Add `deleted_at timestamptz` to the table. Then:
+Add `deleted_at DATETIME` to the table. Then:
 
 ```ts
 // List active
-'SELECT * FROM things WHERE gym_id = $1 AND deleted_at IS NULL'
+'SELECT * FROM things WHERE gym_id = ? AND deleted_at IS NULL'
 
 // Soft delete
-'UPDATE things SET deleted_at = now() WHERE id = $1 AND gym_id = $2 AND deleted_at IS NULL'
+'UPDATE things SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ? AND deleted_at IS NULL'
 
-// Restore
-'UPDATE things SET deleted_at = NULL WHERE id = $1 AND gym_id = $2 AND deleted_at IS NOT NULL RETURNING *'
+// Restore (then SELECT the row to return it — no RETURNING in MySQL)
+'UPDATE things SET deleted_at = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL'
 ```
 
 Add a `/deleted` sub-page and a `children` entry in the Sidebar link. See Members for reference.

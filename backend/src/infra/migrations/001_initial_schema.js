@@ -1,70 +1,84 @@
-/** @type {import('node-pg-migrate').MigrationBuilder} */
-exports.up = (pgm) => {
-  pgm.createTable('gyms', {
-    id:         { type: 'uuid', primaryKey: true, default: pgm.func('gen_random_uuid()') },
-    name:       { type: 'text', notNull: true },
-    slug:       { type: 'text', notNull: true, unique: true },
-    plan:       { type: 'text', notNull: true, default: 'free' },
-    created_at: { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
+/**
+ * Initial schema (MySQL 8, Knex). Equivalent of the original Postgres schema:
+ * - uuid            -> CHAR(36), DB default (UUID())
+ * - timestamptz     -> DATETIME, UTC by convention, default CURRENT_TIMESTAMP
+ * - text (indexed)  -> VARCHAR (MySQL cannot index TEXT without a prefix length)
+ * - CHECK constraints are named so later migrations can drop/replace them
+ */
+
+exports.up = async (knex) => {
+  await knex.schema.createTable('gyms', (t) => {
+    t.specificType('id', 'char(36)').primary().defaultTo(knex.raw('(UUID())'));
+    t.string('name', 255).notNullable();
+    t.string('slug', 255).notNullable().unique();
+    t.string('plan', 50).notNullable().defaultTo('free');
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
   });
 
-  pgm.createTable('gym_memberships', {
-    id:         { type: 'serial', primaryKey: true },
-    user_id:    { type: 'text', notNull: true },
-    gym_id:     { type: 'uuid', notNull: true, references: 'gyms', onDelete: 'CASCADE' },
-    role:       { type: 'text', notNull: true, check: "role IN ('admin','coach','staff')" },
-    created_at: { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
+  await knex.schema.createTable('gym_memberships', (t) => {
+    t.increments('id').primary();
+    t.string('user_id', 255).notNullable();
+    t.specificType('gym_id', 'char(36)').notNullable()
+      .references('id').inTable('gyms').onDelete('CASCADE');
+    t.string('role', 20).notNullable();
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
+    t.unique(['user_id', 'gym_id'], { indexName: 'gym_memberships_user_gym_unique' });
   });
-  pgm.addConstraint('gym_memberships', 'gym_memberships_user_gym_unique', 'UNIQUE (user_id, gym_id)');
+  await knex.raw(
+    "ALTER TABLE gym_memberships ADD CONSTRAINT gym_memberships_role_check CHECK (role IN ('admin','coach','staff'))",
+  );
 
-  pgm.createTable('members', {
-    id:         { type: 'serial', primaryKey: true },
-    gym_id:     { type: 'uuid', references: 'gyms' },
-    name:       { type: 'text', notNull: true },
-    email:      { type: 'text', notNull: true, unique: true },
-    phone:      { type: 'text' },
-    deleted_at: { type: 'timestamptz' },
-    created_at: { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
-  });
-
-  pgm.createTable('classes', {
-    id:          { type: 'serial', primaryKey: true },
-    gym_id:      { type: 'uuid', references: 'gyms' },
-    name:        { type: 'text', notNull: true },
-    description: { type: 'text' },
-    capacity:    { type: 'integer', notNull: true, default: 10 },
-    starts_at:   { type: 'timestamptz', notNull: true },
-    ends_at:     { type: 'timestamptz', notNull: true },
-    created_at:  { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
+  await knex.schema.createTable('members', (t) => {
+    t.increments('id').primary();
+    t.specificType('gym_id', 'char(36)').references('id').inTable('gyms');
+    t.string('name', 255).notNullable();
+    t.string('email', 255).notNullable().unique();
+    t.string('phone', 50);
+    t.datetime('deleted_at');
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
   });
 
-  pgm.createTable('bookings', {
-    id:         { type: 'serial', primaryKey: true },
-    gym_id:     { type: 'uuid', references: 'gyms' },
-    member_id:  { type: 'integer', notNull: true, references: 'members', onDelete: 'CASCADE' },
-    class_id:   { type: 'integer', notNull: true, references: 'classes', onDelete: 'CASCADE' },
-    status:     { type: 'text', notNull: true, default: 'confirmed' },
-    created_at: { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
+  await knex.schema.createTable('classes', (t) => {
+    t.increments('id').primary();
+    t.specificType('gym_id', 'char(36)').references('id').inTable('gyms');
+    t.string('name', 255).notNullable();
+    t.text('description');
+    t.integer('capacity').notNullable().defaultTo(10);
+    t.datetime('starts_at').notNullable();
+    t.datetime('ends_at').notNullable();
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
   });
-  pgm.addConstraint('bookings', 'bookings_member_class_unique', 'UNIQUE (member_id, class_id)');
 
-  pgm.createTable('subscriptions', {
-    id:         { type: 'serial', primaryKey: true },
-    gym_id:     { type: 'uuid', references: 'gyms' },
-    member_id:  { type: 'integer', notNull: true, references: 'members', onDelete: 'CASCADE' },
-    plan:       { type: 'text', notNull: true },
-    starts_at:  { type: 'date', notNull: true },
-    ends_at:    { type: 'date' },
-    status:     { type: 'text', notNull: true, default: 'active' },
-    created_at: { type: 'timestamptz', notNull: true, default: pgm.func('now()') },
+  await knex.schema.createTable('bookings', (t) => {
+    t.increments('id').primary();
+    t.specificType('gym_id', 'char(36)').references('id').inTable('gyms');
+    t.integer('member_id').unsigned().notNullable()
+      .references('id').inTable('members').onDelete('CASCADE');
+    t.integer('class_id').unsigned().notNullable()
+      .references('id').inTable('classes').onDelete('CASCADE');
+    t.string('status', 20).notNullable().defaultTo('confirmed');
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
+    t.unique(['member_id', 'class_id'], { indexName: 'bookings_member_class_unique' });
+  });
+
+  await knex.schema.createTable('subscriptions', (t) => {
+    t.increments('id').primary();
+    t.specificType('gym_id', 'char(36)').references('id').inTable('gyms');
+    t.integer('member_id').unsigned().notNullable()
+      .references('id').inTable('members').onDelete('CASCADE');
+    t.string('plan', 255).notNullable();
+    t.date('starts_at').notNullable();
+    t.date('ends_at');
+    t.string('status', 20).notNullable().defaultTo('active');
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
   });
 };
 
-exports.down = (pgm) => {
-  pgm.dropTable('subscriptions');
-  pgm.dropTable('bookings');
-  pgm.dropTable('members');
-  pgm.dropTable('classes');
-  pgm.dropTable('gym_memberships');
-  pgm.dropTable('gyms');
+exports.down = async (knex) => {
+  await knex.schema.dropTableIfExists('subscriptions');
+  await knex.schema.dropTableIfExists('bookings');
+  await knex.schema.dropTableIfExists('classes');
+  await knex.schema.dropTableIfExists('members');
+  await knex.schema.dropTableIfExists('gym_memberships');
+  await knex.schema.dropTableIfExists('gyms');
 };

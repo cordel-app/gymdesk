@@ -7,7 +7,7 @@ export const subscriptionsRouter = Router();
 subscriptionsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    'SELECT * FROM subscriptions WHERE gym_id = $1 ORDER BY created_at DESC',
+    'SELECT * FROM subscriptions WHERE gym_id = ? ORDER BY created_at DESC',
     [gymId],
   );
   res.json(rows);
@@ -16,7 +16,7 @@ subscriptionsRouter.get('/', async (req, res) => {
 subscriptionsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    'SELECT * FROM subscriptions WHERE id = $1 AND gym_id = $2',
+    'SELECT * FROM subscriptions WHERE id = ? AND gym_id = ?',
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Subscription not found' });
@@ -29,33 +29,35 @@ subscriptionsRouter.post('/', requireRole('admin', 'staff'), async (req, res) =>
   if (!member_id || !plan || !starts_at) {
     return res.status(400).json({ error: 'member_id, plan and starts_at are required' });
   }
-  const { rows } = await db.query(
-    'INSERT INTO subscriptions (member_id, plan, starts_at, ends_at, gym_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+  const { insertId } = await db.query(
+    'INSERT INTO subscriptions (member_id, plan, starts_at, ends_at, gym_id) VALUES (?, ?, ?, ?, ?)',
     [member_id, plan, starts_at, ends_at ?? null, gymId],
   );
+  const { rows } = await db.query('SELECT * FROM subscriptions WHERE id = ?', [insertId]);
   res.status(201).json(rows[0]);
 });
 
 subscriptionsRouter.put('/:id', requireRole('admin', 'staff'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { plan, starts_at, ends_at, status } = req.body;
-  const { rows } = await db.query(
+  const { rowCount } = await db.query(
     `UPDATE subscriptions SET
-      plan      = COALESCE($1, plan),
-      starts_at = COALESCE($2, starts_at),
-      ends_at   = COALESCE($3, ends_at),
-      status    = COALESCE($4, status)
-     WHERE id = $5 AND gym_id = $6 RETURNING *`,
+      plan      = COALESCE(?, plan),
+      starts_at = COALESCE(?, starts_at),
+      ends_at   = COALESCE(?, ends_at),
+      status    = COALESCE(?, status)
+     WHERE id = ? AND gym_id = ?`,
     [plan ?? null, starts_at ?? null, ends_at ?? null, status ?? null, req.params.id, gymId],
   );
-  if (rows.length === 0) return res.status(404).json({ error: 'Subscription not found' });
+  if (rowCount === 0) return res.status(404).json({ error: 'Subscription not found' });
+  const { rows } = await db.query('SELECT * FROM subscriptions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
   res.json(rows[0]);
 });
 
 subscriptionsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rowCount } = await db.query(
-    'DELETE FROM subscriptions WHERE id = $1 AND gym_id = $2',
+    'DELETE FROM subscriptions WHERE id = ? AND gym_id = ?',
     [req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Subscription not found' });

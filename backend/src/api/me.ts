@@ -24,7 +24,7 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     // Find an unlinked member row matching this email in the gym
     const { rows: memberRows } = await db.query(
       `SELECT * FROM members
-       WHERE email = $1 AND gym_id = $2 AND clerk_user_id IS NULL AND deleted_at IS NULL`,
+       WHERE email = ? AND gym_id = ? AND clerk_user_id IS NULL AND deleted_at IS NULL`,
       [email, gymId],
     );
     if (!memberRows[0]) {
@@ -33,23 +33,17 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     const member = memberRows[0];
 
     // Link the Clerk user and create membership in a transaction
-    await db.query('BEGIN');
-    try {
-      await db.query(
-        'UPDATE members SET clerk_user_id = $1 WHERE id = $2',
+    await db.transaction(async (tx) => {
+      await tx.query(
+        'UPDATE members SET clerk_user_id = ? WHERE id = ?',
         [userId, member.id],
       );
-      await db.query(
-        `INSERT INTO gym_memberships (user_id, gym_id, role)
-         VALUES ($1, $2, 'member')
-         ON CONFLICT (user_id, gym_id) DO NOTHING`,
+      // INSERT IGNORE = the old ON CONFLICT DO NOTHING (row may exist from a retry)
+      await tx.query(
+        `INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'member')`,
         [userId, gymId],
       );
-      await db.query('COMMIT');
-    } catch (err) {
-      await db.query('ROLLBACK');
-      throw err;
-    }
+    });
 
     res.json({ ...member, clerk_user_id: userId });
   } catch (err) {
@@ -64,7 +58,7 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
       `SELECT m.*, f.name AS fare_name, f.price AS fare_price
        FROM members m
        LEFT JOIN fares f ON f.id = m.fare_id
-       WHERE m.gym_id = $1 AND m.clerk_user_id = $2 AND m.deleted_at IS NULL`,
+       WHERE m.gym_id = ? AND m.clerk_user_id = ? AND m.deleted_at IS NULL`,
       [gymId, userId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
@@ -82,7 +76,7 @@ meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Respo
        FROM bookings b
        JOIN classes c ON c.id = b.class_id
        JOIN members m ON m.id = b.member_id
-       WHERE b.gym_id = $1 AND m.clerk_user_id = $2
+       WHERE b.gym_id = ? AND m.clerk_user_id = ?
        ORDER BY c.starts_at ASC`,
       [gymId, userId],
     );
@@ -99,7 +93,7 @@ meRouter.get('/subscriptions', requireRole('member'), async (req: Request, res: 
       `SELECT s.*
        FROM subscriptions s
        JOIN members m ON m.id = s.member_id
-       WHERE s.gym_id = $1 AND m.clerk_user_id = $2
+       WHERE s.gym_id = ? AND m.clerk_user_id = ?
        ORDER BY s.starts_at DESC`,
       [gymId, userId],
     );

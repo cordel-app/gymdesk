@@ -15,20 +15,17 @@ async function seed() {
   console.log(`✓ Set platform_role=superadmin for user ${seedUserId}`);
 
   // Create a default gym
-  const { rows } = await db.query(
-    `INSERT INTO gyms (name, slug, plan)
-     VALUES ('My Gym', 'my-gym', 'free')
-     ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-     RETURNING *`,
+  await db.query(
+    `INSERT INTO gyms (name, slug, plan) VALUES ('My Gym', 'my-gym', 'free') AS new
+     ON DUPLICATE KEY UPDATE name = new.name`,
   );
-  const gym = rows[0];
+  const { rows: [gym] } = await db.query(`SELECT * FROM gyms WHERE slug = 'my-gym'`);
   console.log(`✓ Gym ready: ${gym.name} (${gym.id})`);
 
   // Add the seed user as admin of the default gym
   await db.query(
-    `INSERT INTO gym_memberships (user_id, gym_id, role)
-     VALUES ($1, $2, 'admin')
-     ON CONFLICT (user_id, gym_id) DO UPDATE SET role = 'admin'`,
+    `INSERT INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'admin') AS new
+     ON DUPLICATE KEY UPDATE role = new.role`,
     [seedUserId, gym.id],
   );
   console.log(`✓ User ${seedUserId} is admin of gym ${gym.id}`);
