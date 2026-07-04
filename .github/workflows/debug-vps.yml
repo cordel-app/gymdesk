@@ -45,6 +45,44 @@ jobs:
             curl -s --max-time 5 ifconfig.me || echo "could not determine"
             echo ""
 
+      - name: Test HeatWave MySQL from VPS (both users)
+        if: always()
+        uses: appleboy/ssh-action@v1
+        env:
+          URL_MIG: ${{ secrets.DATABASE_URL_MIGRATIONS }}
+          URL_APP: ${{ secrets.DATABASE_URL_MYSQL }}
+        with:
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: github
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          envs: URL_MIG,URL_APP
+          script: |
+            parse() { echo "$1" | sed -E "s|mysql://([^:]+):([^@]+)@([^:/]+):([0-9]+)/(.*)|\\$2|"; }
+            for role in MIG APP; do
+              eval "URL=\$URL_$role"
+              U=$(echo "$URL" | sed -E 's|mysql://([^:]+):.*|\1|')
+              P=$(echo "$URL" | sed -E 's|mysql://[^:]+:([^@]+)@.*|\1|')
+              H=$(echo "$URL" | sed -E 's|.*@([^:/]+):.*|\1|')
+              DB=$(echo "$URL" | sed -E 's|.*/([^/?]+)$|\1|')
+              echo "=== $role: tcp $H:3306 ==="
+              timeout 5 bash -c "</dev/tcp/$H/3306" && echo "tcp OK" || echo "tcp FAILED"
+              echo "=== $role: auth + grants (user $U) ==="
+              podman run --rm mysql:8.4 mysql -h "$H" -u "$U" -p"$P" -e "SELECT 1 AS ok; SHOW GRANTS;" 2>&1 | grep -v Warning
+              echo "=== $role: schema $DB visible ==="
+              podman run --rm mysql:8.4 mysql -h "$H" -u "$U" -p"$P" -e "SHOW DATABASES LIKE '$DB';" 2>&1 | grep -v Warning
+            done
+            echo "=== DDL smoke as deploy user (create/drop scratch table) ==="
+            U=$(echo "$URL_MIG" | sed -E 's|mysql://([^:]+):.*|\1|')
+            P=$(echo "$URL_MIG" | sed -E 's|mysql://[^:]+:([^@]+)@.*|\1|')
+            H=$(echo "$URL_MIG" | sed -E 's|.*@([^:/]+):.*|\1|')
+            podman run --rm mysql:8.4 mysql -h "$H" -u "$U" -p"$P" gymdesk \
+              -e "CREATE TABLE _m1_smoke (id INT); DROP TABLE _m1_smoke; SELECT 'ddl OK' AS result;" 2>&1 | grep -v Warning
+            echo "=== DDL as app user must FAIL (least privilege) ==="
+            U=$(echo "$URL_APP" | sed -E 's|mysql://([^:]+):.*|\1|')
+            P=$(echo "$URL_APP" | sed -E 's|mysql://[^:]+:([^@]+)@.*|\1|')
+            podman run --rm mysql:8.4 mysql -h "$H" -u "$U" -p"$P" gymdesk \
+              -e "CREATE TABLE _m1_smoke2 (id INT);" 2>&1 | grep -v Warning || echo "(correctly denied)"
+
       - name: Test ports from runner
         if: always()
         run: |
