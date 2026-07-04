@@ -47,22 +47,6 @@ jobs:
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           no-cache: true
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install backend dependencies
-        run: npm ci --workspace=backend
-
-      # NOTE (Phase M): once the DB moves to HeatWave on a private VCN, this step
-      # must run inside the VPS SSH session instead (runner cannot reach the DB) — M5 (#49).
-      - name: Run database migrations
-        working-directory: backend
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npx knex migrate:latest --knexfile knexfile.cjs
-
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
@@ -86,6 +70,13 @@ jobs:
 
             podman image prune -af
             podman pull ghcr.io/${{ env.IMAGE_NAME }}:latest
+
+            # Run DB migrations from the VPS (HeatWave is VCN-private; the CI
+            # runner cannot reach it). Uses the DDL-privileged migrations user.
+            podman run --rm \
+              -e DATABASE_URL="${{ secrets.DATABASE_URL_MIGRATIONS }}" \
+              ghcr.io/${{ env.IMAGE_NAME }}:latest \
+              npx knex migrate:latest --knexfile knexfile.cjs
 
             systemctl --user stop gymdesk-backend.service 2>/dev/null || true
             podman stop gymdesk-backend || true

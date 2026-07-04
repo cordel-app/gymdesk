@@ -23,6 +23,10 @@ RUN npm ci --workspace=backend --omit=dev
 
 COPY --from=builder /app/backend/dist ./backend/dist
 
+# Migrations run from this image on the VPS (DB is VCN-private; CI can't reach it)
+COPY backend/knexfile.cjs ./backend/
+COPY backend/src/infra/migrations ./backend/src/infra/migrations
+
 WORKDIR /app/backend
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
