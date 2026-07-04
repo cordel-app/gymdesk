@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  backend:
-    name: Backend
+  api:
+    name: API
     runs-on: ubuntu-latest
     environment: dev
     services:
@@ -44,15 +44,15 @@ jobs:
         run: npm ci
 
       - name: Type check
-        working-directory: backend
+        working-directory: api
         run: npx tsc --noEmit
 
       - name: Run migrations
-        working-directory: backend
+        working-directory: api
         run: npm run db:migrate
 
-  frontend:
-    name: Frontend
+  admin:
+    name: Admin
     runs-on: ubuntu-latest
     environment: dev
     env:
@@ -75,9 +75,9 @@ jobs:
         run: npm ci
 
       - name: Type check
-        working-directory: apps/backoffice
+        working-directory: apps/admin
         run: npx tsc --noEmit
 
       - name: Build
-        working-directory: apps/backoffice
+        working-directory: apps/admin
         run: npm run build

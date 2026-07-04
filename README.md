@@ -1,12 +1,12 @@
 # Gymdesk
 
-Gym Management SaaS — backoffice for managing members, classes, bookings, and subscriptions.
+Gym Management SaaS — admin app for managing members, classes, bookings, and subscriptions.
 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) v20+
 - [Clerk](https://clerk.com) account with access to the `gymdesk` application
-- [Neon](https://neon.tech) account with access to the `gymdesk` project
+- Docker (for the local MySQL 8 database: `npm run db:up`)
 
 ## First-time setup
 
@@ -14,54 +14,54 @@ Gym Management SaaS — backoffice for managing members, classes, bookings, and 
 # 1. Install dependencies
 npm install
 
-# 2. Pull all secrets (Clerk + Neon) into local .env files
-#    This opens a browser login for each service on first run
-npm run env:pull
+# 2. Copy .env.example to .env in api/, apps/admin/, apps/member/ and fill in Clerk keys
 
-# 3. Run database migrations
+# 3. Start MySQL and run database migrations
+npm run db:up
 npm run db:migrate
 ```
 
-That's it — no Docker, no manual `.env` copying.
 
-> **New to the team?** Ask the project owner to grant you access to the Clerk `gymdesk` app and the Neon `gymdesk` project. Once you have access, `npm run env:pull` handles everything automatically.
+
+> **New to the team?** Ask the project owner to grant you access to the Clerk `gymdesk` app.
 
 ## Running locally
 
 ```bash
-# Terminal 1 — backend (http://localhost:3000)
-npm run dev:backend
+# Terminal 1 — API (http://localhost:3000)
+npm run dev:api
 
-# Terminal 2 — frontend (http://localhost:3001)
-npm run dev:frontend
+# Terminal 2 — admin app (http://localhost:3001)
+npm run dev:admin
+
+# Terminal 3 — member app (http://localhost:3002)
+npm run dev:member
 ```
 
 ## Project structure
 
 ```
 gymdesk/
-  backend/            # Express + TypeScript REST API (port 3000)
+  api/                # Express + TypeScript REST API (port 3000)
     src/
       api/            # Route handlers (members, classes, bookings, subscriptions, gyms, fares)
       domain/         # TypeScript types
       infra/          # Database connection, migrations, seed, tenant context
   apps/
-    backoffice/       # Next.js staff/admin dashboard (port 3001)
+    admin/            # Next.js staff/admin dashboard (port 3001)
       src/
         app/          # Pages and layout ([locale] routing)
         components/   # UI components
         context/      # GymContext (active tenant)
         lib/          # apiClient (authenticated fetch wrapper)
-    app/              # Next.js member-facing app (port 3002)
-  scripts/
-    env-pull.sh       # Developer onboarding script
+    member/           # Next.js member-facing app (port 3002)
   skills/
     business/         # Business domain guidelines
     technical/        # Technical conventions
     procedures/       # Operational runbooks
   docs/               # architecture.md + feature-patterns.md (read before building features)
   .github/
-    workflows/        # ci.yml, deploy.yml (backend→VPS), deploy-backoffice.yml, deploy-app.yml
+    workflows/        # ci.yml, deploy.yml (api), deploy-admin.yml, deploy-member.yml, migrate-data.yml, debug-vps.yml
 ```
 
 ## Architecture
@@ -69,7 +69,7 @@ gymdesk/
 - **Auth** — [Clerk](https://clerk.com) handles sign-in, sign-up, and session management
 - **Multi-tenant** — each gym is a tenant; all data is scoped by `gym_id`
 - **Roles** — `superadmin` (platform-level) · `admin` · `coach` · `staff` (gym-level)
-- **Database** — [Neon](https://neon.tech) serverless PostgreSQL
+- **Database** — MySQL 8 (Oracle HeatWave when deployed; Docker locally)
 
 ### Role permissions
 
@@ -129,19 +129,19 @@ All endpoints except `GET /health` require a valid Clerk session token (`Authori
 
 ## Environment variables
 
-Managed automatically by `npm run env:pull`. Do not commit `.env` files.
+Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` files.
 
-**Backend** (`backend/.env`)
+**API** (`api/.env`)
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | Neon PostgreSQL connection string |
+| `DATABASE_URL` | MySQL connection string (local: `mysql://root:gymdesk@localhost:3306/gymdesk`) |
 | `CLERK_SECRET_KEY` | Clerk backend secret key |
 | `CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
 | `PORT` | API port (default: `3000`) |
 | `SEED_USER_ID` | Clerk user ID for the seed script (one-time use) |
 
-**Frontend** (`apps/backoffice/.env`)
+**Admin** (`apps/admin/.env`) / **Member** (`apps/member/.env`)
 
 | Variable | Description |
 |----------|-------------|

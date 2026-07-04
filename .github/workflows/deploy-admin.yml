@@ -1,0 +1,100 @@
+name: Deploy Admin
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/admin/**'
+      - '.github/workflows/deploy-admin.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/gymdesk-admin
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/admin/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          build-args: |
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+
+      - name: Deploy to corfront
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.CORFRONT_SSH_HOST }}
+          username: github
+          key: ${{ secrets.CORFRONT_SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+
+            echo "${{ secrets.GHCR_PAT }}" | podman login ghcr.io -u ${{ github.repository_owner }} --password-stdin
+
+            AVAILABLE=$(df / --output=avail | tail -1)
+            if [ "$AVAILABLE" -lt 1048576 ]; then
+              echo "ERROR: Less than 1GB free on disk (${AVAILABLE}KB available). Aborting deploy."
+              exit 1
+            fi
+
+            # Keep rootless containers running after this SSH session ends
+            loginctl enable-linger github || true
+
+            podman image prune -af
+            podman pull ghcr.io/${{ env.IMAGE_NAME }}:latest
+
+            systemctl --user stop gymdesk-admin.service 2>/dev/null || true
+            podman stop gymdesk-admin || true
+            podman rm gymdesk-admin || true
+
+            podman run -d \
+              --name gymdesk-admin \
+              --restart unless-stopped \
+              -p 8081:8081 \
+              -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
+              -e BACKEND_URL="http://10.0.2.101:3000" \
+              ghcr.io/${{ env.IMAGE_NAME }}:latest
+
+            sleep 3
+            podman inspect gymdesk-admin --format='{{.State.Status}}' | grep -q running || \
+              { echo "ERROR: Container failed to start"; podman logs gymdesk-admin; exit 1; }
+
+            curl -sf --max-time 10 -o /dev/null http://localhost:8081/en || \
+              { echo "ERROR: app not responding"; podman logs gymdesk-admin; exit 1; }
+            echo "Health check OK"
+
+            # Rootless podman's --restart policy does not survive host reboots.
+            mkdir -p ~/.config/systemd/user
+            podman generate systemd --new --name gymdesk-admin --restart-policy=always \
+              > ~/.config/systemd/user/gymdesk-admin.service
+            systemctl --user daemon-reload
+            systemctl --user enable gymdesk-admin.service
+            echo "Boot persistence unit installed"

@@ -6,11 +6,11 @@ export const swaggerSpec = swaggerJsdoc({
     info: {
       title: 'Gymdesk API',
       version: '1.0.0',
-      description: 'Gym Management SaaS — backoffice REST API',
+      description: 'Gym Management SaaS — REST API',
     },
     servers: [
       { url: 'http://localhost:3000', description: 'Local' },
-      { url: 'http://150.230.157.145:3000', description: 'Production' },
+      { url: 'https://api.vdicube.com', description: 'Production (dev env)' },
     ],
     components: {
       securitySchemes: {

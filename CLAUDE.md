@@ -26,8 +26,9 @@ Use **Fares** as the reference implementation for admin-only CRUD.
 ```bash
 npm run db:up          # start MySQL 8 (docker compose)
 npm run db:migrate     # run pending migrations
-npm run dev:backend    # Express on :3000
-npm run dev:frontend   # Next.js on :3001
+npm run dev:api        # Express on :3000
+npm run dev:admin      # Next.js admin on :3001
+npm run dev:member     # Next.js member app on :3002
 ```
 
 Copy `.env.example` to `.env` in each app directory before starting.
