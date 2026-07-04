@@ -44,10 +44,10 @@ jobs:
           envs: SOURCE_URL,TARGET_URL
           command_timeout: 20m
           script: |
-            podman run --rm -v ~/migrate:/app -w /app \
+            podman run --rm -v ~/migrate:/app:z -w /app \
               -e DATABASE_URL="$TARGET_URL" \
               -e SOURCE_URL="$SOURCE_URL" -e TARGET_URL="$TARGET_URL" \
               docker.io/library/node:20 \
-              bash -c "npm install --no-save knex mysql2 dotenv pg >/dev/null 2>&1 && \
+              bash -c "npm install --no-save --no-audit --no-fund knex mysql2 dotenv pg 2>&1 | tail -2 && \
                        npx knex migrate:latest --knexfile knexfile.cjs && \
                        node migrate-data-pg-to-mysql.mjs"
