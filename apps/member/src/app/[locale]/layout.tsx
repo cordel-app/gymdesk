@@ -4,6 +4,7 @@ import { enUS, esES, caES } from '@clerk/localizations';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { AppProvider } from '@/context/AppContext';
+import { BottomNav } from '@/components/BottomNav';
 
 export const metadata: Metadata = {
   title: 'Gymdesk',
@@ -37,7 +38,10 @@ export default async function LocaleLayout({
         <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f5f5f5', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
             <AppProvider gymId={null}>
-              {children}
+              <div style={{ paddingBottom: 72 }}>
+                {children}
+              </div>
+              <BottomNav />
             </AppProvider>
           </NextIntlClientProvider>
         </body>

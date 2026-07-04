@@ -5,5 +5,12 @@
     "sign_in": "Sign in",
     "go_to_bookings": "Go to my bookings",
     "hint": "Members only. Ask your gym for an invitation."
+  },
+  "nav": {
+    "home": "Home",
+    "schedule": "Schedule",
+    "membership": "Membership",
+    "training": "Training",
+    "profile": "Profile"
   }
 }

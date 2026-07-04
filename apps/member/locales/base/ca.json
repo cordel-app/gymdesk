@@ -5,5 +5,12 @@
     "sign_in": "Inicia sessió",
     "go_to_bookings": "Veure les meves reserves",
     "hint": "Només per a membres. Demana una invitació al teu gimnàs."
+  },
+  "nav": {
+    "home": "Inici",
+    "schedule": "Horari",
+    "membership": "Quota",
+    "training": "Entreno",
+    "profile": "Perfil"
   }
 }
