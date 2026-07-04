@@ -10,7 +10,7 @@ Multi-tenant Gym Management SaaS. One Express backend, one Next.js frontend, one
 
 ```
 gymdesk/
-  backend/src/                     # Express API (shared by both frontends)
+  api/src/                         # Express API (shared by both frontends)
     index.ts                       # App entrypoint, route registration, requireAuth()
     api/                           # One file per domain (members.ts, classes.ts, …)
     domain/types.ts                # Shared TypeScript interfaces
@@ -21,7 +21,7 @@ gymdesk/
       swagger.ts
       seed.ts
   apps/
-    backoffice/src/                # Staff/admin Next.js app (port 3001)
+    admin/src/                     # Staff/admin Next.js app (dev port 3001, deployed :8081)
       app/[locale]/                # Next.js App Router pages (one folder per domain)
       components/
         Sidebar.tsx                # Nav — conditionally renders links by role
@@ -32,7 +32,7 @@ gymdesk/
       lib/apiClient.ts             # apiFetch() — attaches Bearer token + x-gym-id
       middleware.ts                # Clerk auth + next-intl locale routing
       locales/base/en.json …
-    app/src/                       # Member-facing PWA (port 3002)
+    member/src/                    # Member-facing PWA (dev port 3002, deployed :8082)
       app/[locale]/                # Public home, sign-in, bookings, subscriptions, profile
       app/api/proxy/[...path]/     # Proxy → backend (Node runtime — edge fetch can't reach port 3000)
       context/AppContext.tsx       # gymId + linked member profile
@@ -160,7 +160,7 @@ app.use('/fares',         requireAuth(), tenantContext, faresRouter);
 ### Member invite + auto-link flow
 
 1. Staff calls `POST /members/:id/invite` → Clerk sends invitation email with redirect URL `MEMBER_APP_URL/en/link?gym_id=...`
-2. Member clicks email link, signs in via Clerk in `apps/app`
+2. Member clicks email link, signs in via Clerk in `apps/member`
 3. On first sign-in, app calls `POST /me/link` (no gym_memberships row yet) — backend matches by email + gym_id, sets `members.clerk_user_id`, inserts `gym_memberships(role='member')`
 4. Subsequent requests use `/me/*` routes with `tenantContext` resolving the member role normally
 
@@ -168,14 +168,14 @@ app.use('/fares',         requireAuth(), tenantContext, faresRouter);
 
 ## Frontend Patterns
 
-Both frontends follow the same proxy + context pattern. The backoffice uses `GymContext`; the member app uses `AppContext`.
+Both frontends follow the same proxy + context pattern. The admin app uses `GymContext`; the member app uses `AppContext`.
 
 ### API calls
 All requests go through `apiFetch()` (from `useApiClient()`), which:
 1. Gets a fresh Clerk token.
 2. Attaches `Authorization: Bearer <token>`.
 3. Attaches `x-gym-id: <activeGymId>`.
-4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`): Vercel edge fetch only allows ports 80/443, and the backend listens on 3000. Backend has no CORS — it is reachable only through these proxies.
+4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`): edge fetch only allows ports 80/443, and the API listens on 3000. The API has no CORS — it is reachable only through these proxies (deployed: `BACKEND_URL=http://10.0.2.101:3000`, private VCN address).
 
 ### Backoffice: GymContext
 Available via `useGym()`. Key fields:
@@ -195,15 +195,15 @@ isLinked: boolean
 loading: boolean
 ```
 
-### AppShell (backoffice)
-Wraps all backoffice pages. Hides sidebar + header for:
+### AppShell (admin)
+Wraps all admin pages. Hides sidebar + header for:
 - Sign-in / sign-up pages
 - Home page (`/:locale`) when user is not authenticated
 
 ### Middleware (both apps)
-Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both apps require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime) as Vercel env vars.
+Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both apps require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime) as env vars (baked as Docker build args / runtime env).
 
-### Sidebar visibility (backoffice)
+### Sidebar visibility (admin)
 - Regular links: visible to all authenticated gym members.
 - Admin-only links (e.g. Fares): check `activeGym?.role === 'admin' || isSuperadmin`.
 - Superadmin-only section (System > Gyms): check `isSuperadmin`.
@@ -215,7 +215,7 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 
 ## Existing Domain Modules
 
-### Backoffice (`apps/backoffice`)
+### Admin (`apps/admin`)
 
 | Module | Backend | Frontend page | Notes |
 |--------|---------|---------------|-------|
@@ -226,7 +226,7 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Fares | `api/fares.ts` | `[locale]/fares/` | Admin-only. FK from members.fare_id. |
 | Gyms (platform) | `api/gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
 
-### Member app (`apps/app`) — in progress
+### Member app (`apps/member`) — in progress
 
 | Route | Backend | Notes |
 |-------|---------|-------|
@@ -240,17 +240,20 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 
 ## Deployment (dev)
 
-| Piece | Where | How |
-|-------|-------|-----|
-| Backend | "corback" VPS `150.230.157.145` = `backend-dev.gymdesk.uk:3000` (Cloudflare DNS, unproxied) | `deploy.yml`: multi-arch image (amd64+arm64 — the VPS is **Oracle Cloud ARM/Ampere**) → GHCR → SSH as `github` → **rootless Podman** (`--restart unless-stopped` + linger). No sudo available in CI. In-server health check after start. |
-| Backoffice | `gymdesk-backoffice.vercel.app` | `deploy-backoffice.yml`: vercel CLI (pull env → build → deploy), not git integration |
-| Member app | `gymdesk-member-app.vercel.app` | `deploy-app.yml`, same pattern |
+All traffic enters through **Traefik on corfront** (`10.0.2.100`), which terminates TLS (Let's Encrypt) for the `vdicube.com` subdomains:
+
+| Piece | Public URL | Runs on | How |
+|-------|-----------|---------|-----|
+| API | `https://api.vdicube.com` → corback `10.0.2.101:3000` | "corback" VPS (`150.230.157.145`) | `deploy.yml`: multi-arch image (amd64+arm64 — Oracle ARM/Ampere) → GHCR `gymdesk-api` → SSH as `github` → rootless Podman + systemd user unit (reboot-safe). Knex migrations run on the VPS from the image (DB is VCN-private). |
+| Admin | `https://admin.vdicube.com` → corfront `:8081` | "corfront" VPS (`10.0.2.100`) | `deploy-admin.yml`: same pattern, GHCR `gymdesk-admin`, Next.js standalone container |
+| Member | `https://members.vdicube.com` → corfront `:8082` | "corfront" VPS | `deploy-member.yml`, GHCR `gymdesk-member` |
 
 Notes:
-- Inbound ports on corback are controlled by the **OCI VCN Security List** (cloud console); the OS firewall is disabled. If a port times out from outside but works on localhost, it's the Security List.
-- Vercel side needs `BACKEND_URL=http://backend-dev.gymdesk.uk:3000` (production env). Inspect/update it via the `fix-vercel-env.yml` workflow (workflow_dispatch) — the projects are not always visible from local Vercel accounts.
-- `debug-vps.yml` (workflow_dispatch) prints container/listener/health state from inside the VPS when SSH access isn't available locally.
-- `gymdesk-frontend.vercel.app` is legacy — do not reference it.
+- Frontend containers call the API over the **private VCN** (`BACKEND_URL=http://10.0.2.101:3000`); no CORS anywhere.
+- Inbound ports are controlled by the **OCI VCN Security List** (cloud console); OS firewalls are disabled. If a port times out from outside but works on localhost, it's the Security List. Public `:3000` on corback should be closed once Traefik fronting is confirmed.
+- Traefik config lives on corfront at `/srv/containers/traefik/config/dynamic/backend.yml` (managed by Oscar).
+- `debug-vps.yml` (workflow_dispatch) prints container/listener/health state from inside corback when SSH access isn't available locally.
+- Legacy: `gymdesk-*.vercel.app` and `backend-dev.gymdesk.uk` are retired — do not reference them.
 
 ---
 
@@ -273,7 +276,5 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | Name | Kind | Notes |
 |------|------|-------|
 | `GHCR_PAT` | secret | Container registry access, shared |
-| `VERCEL_TOKEN`, `VERCEL_ORG_ID` | secret | Shared Vercel account |
-| `VERCEL_PROJECT_ID`, `VERCEL_PROJECT_ID_APP` | secret | Per-app project ids; move to environments if PRO gets separate Vercel projects |
 | `CORBACK_SSH_HOST`, `CORBACK_SSH_PRIVATE_KEY` | secret | Dev VPS. Environment-dependent by nature — move into the `dev` environment when PRO's server exists (values must be re-entered; secrets are write-only) |
 | `CORFRONT_SSH_HOST`, `CORFRONT_SSH_PRIVATE_KEY` | secret | Reserved for future frontend VPS |

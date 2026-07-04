@@ -2,17 +2,24 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "backoffice",
+      "name": "admin",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:backoffice"],
+      "runtimeArgs": ["run", "dev:admin"],
       "port": 3001,
       "autoPort": false
     },
     {
-      "name": "backend",
+      "name": "api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:backend"],
+      "runtimeArgs": ["run", "dev:api"],
       "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "member",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:member"],
+      "port": 3002,
       "autoPort": false
     }
   ]

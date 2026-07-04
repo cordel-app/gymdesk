@@ -3,22 +3,21 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "backend",
-    "apps/backoffice",
-    "apps/app"
+    "api",
+    "apps/admin",
+    "apps/member"
   ],
   "scripts": {
-    "dev:backend": "npm --workspace backend run dev",
-    "dev:backoffice": "npm --workspace apps/backoffice run dev",
-    "dev:app": "npm --workspace apps/app run dev",
-    "build:backend": "npm --workspace backend run build",
-    "build:backoffice": "npm --workspace apps/backoffice run build",
-    "build:app": "npm --workspace apps/app run build",
+    "dev:api": "npm --workspace api run dev",
+    "dev:admin": "npm --workspace apps/admin run dev",
+    "dev:member": "npm --workspace apps/member run dev",
+    "build:api": "npm --workspace api run build",
+    "build:admin": "npm --workspace apps/admin run build",
+    "build:member": "npm --workspace apps/member run build",
     "db:up": "docker compose up -d mysql --wait",
     "db:down": "docker compose down",
-    "db:migrate": "npm --workspace backend run db:migrate",
-    "db:seed": "npm --workspace backend run db:seed",
-    "env:pull": "bash scripts/env-pull.sh"
+    "db:migrate": "npm --workspace api run db:migrate",
+    "db:seed": "npm --workspace api run db:seed"
   },
   "devDependencies": {
     "pg": "^8.22.0"

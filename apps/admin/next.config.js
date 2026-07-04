@@ -4,6 +4,10 @@ const withNextIntl = createNextIntlPlugin('./src/i18n.ts');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
+  env: {
+    TENANT: process.env.TENANT ?? '',
+  },
   experimental: {
     outputFileTracingIncludes: {
       '/**': ['./locales/**'],

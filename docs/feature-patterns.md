@@ -60,39 +60,25 @@ try {
 
 ## Deployment
 
-Three separate deploy workflows in `.github/workflows/`:
+Three separate deploy workflows in `.github/workflows/` — all follow the same pattern (multi-arch Docker build → GHCR → SSH → rootless Podman + systemd user unit):
 
 | Workflow | Triggers on | Deploys |
 |----------|------------|---------|
-| `deploy.yml` | `backend/**` | Docker image to VPS via SSH |
-| `deploy-backoffice.yml` | `apps/backoffice/**` | Vercel project `gymdesk-backoffice` |
-| `deploy-app.yml` | `apps/app/**` | Vercel project `gymdesk-member-app` |
+| `deploy.yml` | `api/**` | `gymdesk-api` container on corback (`api.vdicube.com`) |
+| `deploy-admin.yml` | `apps/admin/**` | `gymdesk-admin` container on corfront `:8081` (`admin.vdicube.com`) |
+| `deploy-member.yml` | `apps/member/**` | `gymdesk-member` container on corfront `:8082` (`members.vdicube.com`) |
 
-### Backend deploy order
+### API deploy order
 
 1. Build and push Docker image
-2. **Run `knex migrate:latest`** against the production DB (before the container is swapped)
-3. Pull new image and restart container
+2. **Run `knex migrate:latest` on the VPS from the image** (the DB is VCN-private; CI runners cannot reach it)
+3. Swap the container and health check
 
-**Never deploy backend code that depends on a new table without a migration file.** The migration must be committed in the same push as the code that uses it.
+**Never deploy API code that depends on a new table without a migration file.** The migration must be committed in the same push as the code that uses it.
 
-### Frontend deploy notes (Vercel + monorepo)
+### Frontend containers
 
-Both Vercel projects use `rootDirectory` pointing to their app folder. The workflows run `vercel build` from the repo root and explicitly source `.vercel/.env.production.local` before building so `NEXT_PUBLIC_*` vars are baked into the bundle:
-
-```yaml
-- run: vercel pull --yes --environment=production --token=...
-- run: |
-    set -a; source .vercel/.env.production.local; set +a
-    vercel build --prod --token=...
-- run: vercel deploy --prebuilt --prod --token=...
-```
-
-Required Vercel env vars for both frontends:
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — baked at build time
-- `CLERK_SECRET_KEY` — available at runtime in Edge middleware
-- `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL`
-- `BACKEND_URL`
+Next.js `output: 'standalone'`; `NEXT_PUBLIC_*` values are baked at build time via Docker build args; `CLERK_SECRET_KEY` and `BACKEND_URL` (private VCN address of the API) are runtime env on the container.
 
 ---
 
