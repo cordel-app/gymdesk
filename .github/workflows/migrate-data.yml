@@ -1,0 +1,53 @@
+name: Migrate data Neon -> HeatWave
+
+# Manual, repeatable (truncate-and-reload). Runs ON THE VPS because HeatWave
+# is only reachable inside the VCN. Used for M4 rehearsals and the M5 cutover.
+# Step 1 applies Knex migrations (schema), step 2 copies the data.
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    name: Schema + data to HeatWave MySQL
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Stage files
+        run: |
+          mkdir -p stage/src/infra
+          cp scripts/migrate-data-pg-to-mysql.mjs stage/
+          cp backend/knexfile.cjs stage/
+          cp -r backend/src/infra/migrations stage/src/infra/migrations
+
+      - name: Copy to VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: github
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          source: stage/*
+          target: ~/migrate/
+          strip_components: 1
+          overwrite: true
+
+      - name: Run schema migrations + data copy on VPS
+        uses: appleboy/ssh-action@v1
+        env:
+          SOURCE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_URL: ${{ secrets.DATABASE_URL_MIGRATIONS }}
+        with:
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: github
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          envs: SOURCE_URL,TARGET_URL
+          command_timeout: 20m
+          script: |
+            podman run --rm -v ~/migrate:/app -w /app \
+              -e DATABASE_URL="$TARGET_URL" \
+              -e SOURCE_URL="$SOURCE_URL" -e TARGET_URL="$TARGET_URL" \
+              docker.io/library/node:20 \
+              bash -c "npm install --no-save knex mysql2 dotenv pg >/dev/null 2>&1 && \
+                       npx knex migrate:latest --knexfile knexfile.cjs && \
+                       node migrate-data-pg-to-mysql.mjs"
