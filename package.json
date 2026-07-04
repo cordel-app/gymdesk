@@ -19,5 +19,8 @@
     "db:migrate": "npm --workspace backend run db:migrate",
     "db:seed": "npm --workspace backend run db:seed",
     "env:pull": "bash scripts/env-pull.sh"
+  },
+  "devDependencies": {
+    "pg": "^8.22.0"
   }
 }
