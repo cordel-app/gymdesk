@@ -113,6 +113,23 @@
     "error_generic": "Something went wrong.",
     "cancel": "Cancel",
     "saving": "Saving…",
-    "save_changes": "Save Changes"
+    "save_changes": "Save Changes",
+    "prices": "Prices"
+  },
+  "prices": {
+    "title": "Prices",
+    "loading": "Loading…",
+    "empty": "No prices yet — the plan uses its base price.",
+    "col_from": "From",
+    "col_to": "To",
+    "col_price": "Price",
+    "ongoing": "Ongoing",
+    "add": "Add",
+    "add_heading": "Add a price window",
+    "edit_heading": "Edit price window",
+    "confirm_delete": "Remove this price window?",
+    "close": "Close",
+    "error_required": "A start date and price are required.",
+    "error_price": "Price must be a non-negative number."
   }
 }

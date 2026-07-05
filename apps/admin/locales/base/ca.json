@@ -113,6 +113,23 @@
     "error_generic": "Alguna cosa ha anat malament.",
     "cancel": "Cancel·lar",
     "saving": "Desant…",
-    "save_changes": "Desar canvis"
+    "save_changes": "Desar canvis",
+    "prices": "Preus"
+  },
+  "prices": {
+    "title": "Preus",
+    "loading": "Carregant…",
+    "empty": "Encara no hi ha preus — la quota fa servir el seu preu base.",
+    "col_from": "Des de",
+    "col_to": "Fins a",
+    "col_price": "Preu",
+    "ongoing": "En curs",
+    "add": "Afegir",
+    "add_heading": "Afegir un període de preu",
+    "edit_heading": "Editar període de preu",
+    "confirm_delete": "Vols eliminar aquest període de preu?",
+    "close": "Tancar",
+    "error_required": "La data d'inici i el preu són obligatoris.",
+    "error_price": "El preu ha de ser un número no negatiu."
   }
 }

@@ -113,6 +113,23 @@
     "error_generic": "Algo ha ido mal.",
     "cancel": "Cancelar",
     "saving": "Guardando…",
-    "save_changes": "Guardar cambios"
+    "save_changes": "Guardar cambios",
+    "prices": "Precios"
+  },
+  "prices": {
+    "title": "Precios",
+    "loading": "Cargando…",
+    "empty": "Aún no hay precios — la cuota usa su precio base.",
+    "col_from": "Desde",
+    "col_to": "Hasta",
+    "col_price": "Precio",
+    "ongoing": "En curso",
+    "add": "Añadir",
+    "add_heading": "Añadir un periodo de precio",
+    "edit_heading": "Editar periodo de precio",
+    "confirm_delete": "¿Eliminar este periodo de precio?",
+    "close": "Cerrar",
+    "error_required": "La fecha de inicio y el precio son obligatorios.",
+    "error_price": "El precio debe ser un número no negativo."
   }
 }
