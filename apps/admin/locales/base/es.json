@@ -114,7 +114,8 @@
     "cancel": "Cancelar",
     "saving": "Guardando…",
     "save_changes": "Guardar cambios",
-    "prices": "Precios"
+    "prices": "Precios",
+    "benefits": "Beneficios"
   },
   "prices": {
     "title": "Precios",
@@ -131,5 +132,30 @@
     "close": "Cerrar",
     "error_required": "La fecha de inicio y el precio son obligatorios.",
     "error_price": "El precio debe ser un número no negativo."
+  },
+  "benefits": {
+    "title": "Beneficios",
+    "loading": "Cargando…",
+    "empty": "Aún no hay beneficios.",
+    "add": "Añadir",
+    "add_heading": "Añadir un beneficio",
+    "edit_heading": "Editar beneficio",
+    "label_type": "Beneficio",
+    "label_quantity": "Cant.",
+    "label_duration": "Días",
+    "label_recurrence": "Recurrencia",
+    "recurrence_once": "Única vez",
+    "recurrence_monthly": "Mensual",
+    "recurrence_yearly": "Anual",
+    "days": "{n} días",
+    "confirm_delete": "¿Eliminar este beneficio?",
+    "error_type": "Elige un tipo de beneficio."
+  },
+  "benefit_type": {
+    "priority_booking": "Reserva prioritaria",
+    "free_locker": "Taquilla gratis",
+    "free_parking": "Parking gratis",
+    "waived_charge": "Cuota exenta",
+    "class_package_credit": "Crédito de bono de clases"
   }
 }

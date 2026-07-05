@@ -114,7 +114,8 @@
     "cancel": "Cancel",
     "saving": "Saving…",
     "save_changes": "Save Changes",
-    "prices": "Prices"
+    "prices": "Prices",
+    "benefits": "Benefits"
   },
   "prices": {
     "title": "Prices",
@@ -131,5 +132,30 @@
     "close": "Close",
     "error_required": "A start date and price are required.",
     "error_price": "Price must be a non-negative number."
+  },
+  "benefits": {
+    "title": "Benefits",
+    "loading": "Loading…",
+    "empty": "No benefits yet.",
+    "add": "Add",
+    "add_heading": "Add a benefit",
+    "edit_heading": "Edit benefit",
+    "label_type": "Benefit",
+    "label_quantity": "Qty",
+    "label_duration": "Days",
+    "label_recurrence": "Recurrence",
+    "recurrence_once": "One-time",
+    "recurrence_monthly": "Monthly",
+    "recurrence_yearly": "Yearly",
+    "days": "{n} days",
+    "confirm_delete": "Remove this benefit?",
+    "error_type": "Pick a benefit type."
+  },
+  "benefit_type": {
+    "priority_booking": "Priority booking",
+    "free_locker": "Free locker",
+    "free_parking": "Free parking",
+    "waived_charge": "Waived fee",
+    "class_package_credit": "Class package credit"
   }
 }

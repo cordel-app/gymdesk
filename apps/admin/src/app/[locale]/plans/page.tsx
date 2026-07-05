@@ -14,6 +14,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { PlanPricesModal } from './PlanPricesModal';
+import { PlanBenefitsModal } from './PlanBenefitsModal';
 
 interface Plan {
   id: number;
@@ -44,6 +45,7 @@ export default function PlansPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Plan | null>(null);
   const [pricesFor, setPricesFor] = useState<Plan | null>(null);
+  const [benefitsFor, setBenefitsFor] = useState<Plan | null>(null);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
@@ -144,10 +146,11 @@ export default function PlansPage() {
     { header: t('plans.col_status'), width: 110, render: (p) => <StatusBadge status={p.status} label={t(`status.${p.status}`)} /> },
     {
       header: t('plans.col_actions'),
-      width: 200,
+      width: 280,
       render: (p) => (
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setPricesFor(p)} style={btnSmall('#6c63ff')}>{t('plans.prices')}</button>
+          <button onClick={() => setBenefitsFor(p)} style={btnSmall('#1e7e40')}>{t('plans.benefits')}</button>
           <button onClick={() => openEdit(p)} style={btnSmall('#444')}>{t('plans.edit')}</button>
           <button onClick={() => setDeleting(p)} style={btnSmall('#c0392b')}>{t('plans.delete')}</button>
         </div>
@@ -237,6 +240,10 @@ export default function PlansPage() {
 
       {pricesFor && (
         <PlanPricesModal planId={pricesFor.id} planName={pricesFor.name} onClose={() => setPricesFor(null)} />
+      )}
+
+      {benefitsFor && (
+        <PlanBenefitsModal planId={benefitsFor.id} planName={benefitsFor.name} onClose={() => setBenefitsFor(null)} />
       )}
     </div>
   );

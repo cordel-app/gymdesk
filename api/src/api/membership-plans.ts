@@ -197,3 +197,111 @@ membershipPlansRouter.delete('/:id/prices/:priceId', requireRole('admin'), async
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Price not found' });
   res.status(204).send();
 });
+
+// ─── Nested: benefits (P1.4 #8) ──────────────────────────────────────────────
+
+const RECURRENCES = [null, 'monthly', 'yearly'];
+
+function parseBenefitBody(body: any):
+  | { benefit_type_id: number; quantity: number | null; duration_days: number | null; recurrence: string | null; valid_from: string | null; valid_to: string | null }
+  | string
+{
+  const btId = Number(body.benefit_type_id);
+  if (!Number.isInteger(btId) || btId <= 0) return 'benefit_type_id is required';
+  const qty = body.quantity == null || body.quantity === '' ? null : Number(body.quantity);
+  if (qty !== null && (!Number.isInteger(qty) || qty <= 0)) return 'quantity must be a positive integer';
+  const dur = body.duration_days == null || body.duration_days === '' ? null : Number(body.duration_days);
+  if (dur !== null && (!Number.isInteger(dur) || dur <= 0)) return 'duration_days must be a positive integer';
+  const rec = body.recurrence == null || body.recurrence === '' ? null : body.recurrence;
+  if (!RECURRENCES.includes(rec)) return 'recurrence must be monthly, yearly, or empty';
+  const from = body.valid_from == null || body.valid_from === '' ? null : body.valid_from;
+  const to   = body.valid_to   == null || body.valid_to   === '' ? null : body.valid_to;
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (from !== null && !dateRe.test(from)) return 'valid_from must be YYYY-MM-DD';
+  if (to !== null && !dateRe.test(to))     return 'valid_to must be YYYY-MM-DD';
+  if (from !== null && to !== null && to < from) return 'valid_to must be on or after valid_from';
+  return { benefit_type_id: btId, quantity: qty, duration_days: dur, recurrence: rec, valid_from: from, valid_to: to };
+}
+
+async function benefitTypeIsActive(id: number): Promise<boolean> {
+  const { rows } = await db.query('SELECT active FROM benefit_types WHERE id = ?', [id]);
+  return rows.length > 0 && rows[0].active === 1;
+}
+
+membershipPlansRouter.get('/:id/benefits', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { rows } = await db.query(
+    `SELECT mpb.*, bt.code AS benefit_code
+     FROM membership_plan_benefits mpb
+     JOIN benefit_types bt ON bt.id = mpb.benefit_type_id
+     WHERE mpb.membership_plan_id = ? AND mpb.gym_id = ?
+     ORDER BY mpb.id ASC`,
+    [req.params.id, gymId],
+  );
+  res.json(rows);
+});
+
+membershipPlansRouter.post('/:id/benefits', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const parsed = parseBenefitBody(req.body);
+  if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
+  if (!(await benefitTypeIsActive(parsed.benefit_type_id))) {
+    return res.status(400).json({ error: 'This benefit type is not available yet.' });
+  }
+  try {
+    const { insertId } = await db.query(
+      `INSERT INTO membership_plan_benefits
+       (membership_plan_id, gym_id, benefit_type_id, quantity, duration_days, recurrence, valid_from, valid_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.params.id, gymId, parsed.benefit_type_id, parsed.quantity, parsed.duration_days, parsed.recurrence, parsed.valid_from, parsed.valid_to],
+    );
+    const { rows } = await db.query(
+      `SELECT mpb.*, bt.code AS benefit_code FROM membership_plan_benefits mpb
+       JOIN benefit_types bt ON bt.id = mpb.benefit_type_id WHERE mpb.id = ?`,
+      [insertId],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+membershipPlansRouter.put('/:id/benefits/:benefitId', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const parsed = parseBenefitBody(req.body);
+  if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
+  if (!(await benefitTypeIsActive(parsed.benefit_type_id))) {
+    return res.status(400).json({ error: 'This benefit type is not available yet.' });
+  }
+  try {
+    const { rowCount } = await db.query(
+      `UPDATE membership_plan_benefits
+       SET benefit_type_id = ?, quantity = ?, duration_days = ?, recurrence = ?, valid_from = ?, valid_to = ?
+       WHERE id = ? AND membership_plan_id = ? AND gym_id = ?`,
+      [parsed.benefit_type_id, parsed.quantity, parsed.duration_days, parsed.recurrence, parsed.valid_from, parsed.valid_to,
+       req.params.benefitId, req.params.id, gymId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Benefit not found' });
+    const { rows } = await db.query(
+      `SELECT mpb.*, bt.code AS benefit_code FROM membership_plan_benefits mpb
+       JOIN benefit_types bt ON bt.id = mpb.benefit_type_id WHERE mpb.id = ?`,
+      [req.params.benefitId],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+membershipPlansRouter.delete('/:id/benefits/:benefitId', requireRole('admin'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rowCount } = await db.query(
+    'DELETE FROM membership_plan_benefits WHERE id = ? AND membership_plan_id = ? AND gym_id = ?',
+    [req.params.benefitId, req.params.id, gymId],
+  );
+  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Benefit not found' });
+  res.status(204).send();
+});

@@ -114,7 +114,8 @@
     "cancel": "Cancel·lar",
     "saving": "Desant…",
     "save_changes": "Desar canvis",
-    "prices": "Preus"
+    "prices": "Preus",
+    "benefits": "Beneficis"
   },
   "prices": {
     "title": "Preus",
@@ -131,5 +132,30 @@
     "close": "Tancar",
     "error_required": "La data d'inici i el preu són obligatoris.",
     "error_price": "El preu ha de ser un número no negatiu."
+  },
+  "benefits": {
+    "title": "Beneficis",
+    "loading": "Carregant…",
+    "empty": "Encara no hi ha beneficis.",
+    "add": "Afegir",
+    "add_heading": "Afegir un benefici",
+    "edit_heading": "Editar benefici",
+    "label_type": "Benefici",
+    "label_quantity": "Quant.",
+    "label_duration": "Dies",
+    "label_recurrence": "Recurrència",
+    "recurrence_once": "Un sol cop",
+    "recurrence_monthly": "Mensual",
+    "recurrence_yearly": "Anual",
+    "days": "{n} dies",
+    "confirm_delete": "Vols eliminar aquest benefici?",
+    "error_type": "Tria un tipus de benefici."
+  },
+  "benefit_type": {
+    "priority_booking": "Reserva prioritària",
+    "free_locker": "Taquilla gratuïta",
+    "free_parking": "Pàrquing gratuït",
+    "waived_charge": "Quota exempta",
+    "class_package_credit": "Crèdit de bo de classes"
   }
 }
