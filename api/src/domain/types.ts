@@ -39,6 +39,16 @@ export interface Subscription {
   created_at: string;
 }
 
+export interface MembershipPlan {
+  id: number;
+  gym_id: string;
+  name: string;
+  description: string | null;
+  base_price: string;
+  status: 'active' | 'inactive';
+  created_at: string;
+}
+
 export interface Gym {
   id: string;
   name: string;

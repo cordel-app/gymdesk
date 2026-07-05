@@ -9,6 +9,7 @@ import { bookingsRouter } from './api/bookings';
 import { subscriptionsRouter } from './api/subscriptions';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { faresRouter } from './api/fares';
+import { membershipPlansRouter } from './api/membership-plans';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter } from './api/me';
 import { tenantContext } from './infra/tenantContext';
@@ -81,6 +82,8 @@ app.use('/members',       requireAuth(), tenantContext, membersRouter);
 app.use('/classes',       requireAuth(), tenantContext, classesRouter);
 app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
 app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter);
+app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
+// DEPRECATED alias for the old Fares page — removed in P1.7 (#11)
 app.use('/fares',         requireAuth(), tenantContext, faresRouter);
 
 // Global error handler — must be last, after all routes
