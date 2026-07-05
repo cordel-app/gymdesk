@@ -90,11 +90,13 @@ meRouter.get('/subscriptions', requireRole('member'), async (req: Request, res: 
   const { gymId, userId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT s.*
-       FROM subscriptions s
-       JOIN members m ON m.id = s.member_id
-       WHERE s.gym_id = ? AND m.clerk_user_id = ?
-       ORDER BY s.starts_at DESC`,
+      `SELECT um.id, um.member_id, COALESCE(p.name, um.plan) AS plan,
+              um.starts_at, um.ends_at, um.status, um.created_at
+       FROM user_memberships um
+       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+       JOIN members m ON m.id = um.member_id
+       WHERE um.gym_id = ? AND m.clerk_user_id = ?
+       ORDER BY um.starts_at DESC`,
       [gymId, userId],
     );
     res.json(rows);

@@ -7,6 +7,7 @@ import { membersRouter } from './api/members';
 import { classesRouter } from './api/classes';
 import { bookingsRouter } from './api/bookings';
 import { subscriptionsRouter } from './api/subscriptions';
+import { userMembershipsRouter } from './api/user-memberships';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { faresRouter } from './api/fares';
 import { membershipPlansRouter } from './api/membership-plans';
@@ -82,7 +83,9 @@ app.use('/me',      requireAuth(), tenantContext, meRouter);
 app.use('/members',       requireAuth(), tenantContext, membersRouter);
 app.use('/classes',       requireAuth(), tenantContext, classesRouter);
 app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
-app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter);
+app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
+// DEPRECATED alias for the old Subscriptions page — removed in P1.7 (#11)
+app.use('/subscriptions',    requireAuth(), tenantContext, subscriptionsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
 // DEPRECATED alias for the old Fares page — removed in P1.7 (#11)
