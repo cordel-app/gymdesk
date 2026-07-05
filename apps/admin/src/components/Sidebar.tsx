@@ -24,7 +24,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     { href: `/${locale}/classes`, label: t('nav.classes') },
     { href: `/${locale}/bookings`, label: t('nav.bookings') },
     { href: `/${locale}/subscriptions`, label: t('nav.subscriptions') },
-    ...(isAdmin ? [{ href: `/${locale}/fares`, label: t('nav.fares') }] : []),
+    ...(isAdmin ? [{ href: `/${locale}/plans`, label: t('nav.plans') }] : []),
   ];
 
   const systemLinks = [
