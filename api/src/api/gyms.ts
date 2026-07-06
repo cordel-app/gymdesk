@@ -10,7 +10,7 @@ export const platformRouter = Router();
 // ─── User-facing: list gyms for the authenticated user ───────────────────────
 
 gymsRouter.get('/', async (req, res) => {
-  const userId = getAuth(req).userId;
+  const userId = getAuth(req as any).userId;
   const { rows } = await db.query(
     `SELECT g.*, gm.role
      FROM gyms g

@@ -98,7 +98,7 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 // ─── Nested: time-boxed prices (P1.3 #7) ─────────────────────────────────────
 
 // Confirms the plan exists in this gym before touching its prices.
-async function planExists(planId: string, gymId: string): Promise<boolean> {
+async function planExists(planId: string | string[], gymId: string): Promise<boolean> {
   const { rows } = await db.query('SELECT 1 FROM membership_plans WHERE id = ? AND gym_id = ?', [planId, gymId]);
   return rows.length > 0;
 }
@@ -119,7 +119,7 @@ function parsePriceBody(body: any): { price: number; from: string; to: string | 
 
 // Any existing row whose window overlaps [from, to] (NULL to = open-ended).
 // Two ranges overlap when each starts on/before the other ends.
-async function overlaps(planId: string, from: string, to: string | null, excludeId?: string): Promise<boolean> {
+async function overlaps(planId: string | string[], from: string, to: string | null, excludeId?: string | string[]): Promise<boolean> {
   const params: any[] = [planId, from];
   let sql = `SELECT 1 FROM membership_plan_prices
              WHERE membership_plan_id = ?

@@ -63,8 +63,8 @@ app.post('/dev/seed-gym', async (req: any, res: any) => {
   res.json({ gym, message: 'Gym created and user assigned as admin' });
 });
 
-app.use('/docs', swaggerUi.serve);
-app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }));
+app.use('/docs', swaggerUi.serve as any);
+app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }) as any);
 
 // Public endpoints — no auth, no tenant context (identified by gym slug)
 app.use('/public', publicRouter);
