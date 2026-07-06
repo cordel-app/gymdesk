@@ -10,19 +10,28 @@
  * dropped in P1.7.
  */
 
+// MySQL DDL is non-transactional, so this up() is guarded to be re-runnable
+// against a partially-applied database (e.g. after a mid-migration failure).
 exports.up = async (knex) => {
-  await knex.schema.renameTable('subscriptions', 'user_memberships');
+  if (await knex.schema.hasTable('subscriptions')) {
+    await knex.schema.renameTable('subscriptions', 'user_memberships');
+  }
 
-  await knex.schema.alterTable('user_memberships', (t) => {
-    t.integer('membership_plan_id').unsigned()
-      .references('id').inTable('membership_plans').onDelete('RESTRICT');
-    t.decimal('base_price', 10, 2);
-    t.integer('plan_price_id').unsigned()
-      .references('id').inTable('membership_plan_prices').onDelete('SET NULL');
-    t.decimal('final_price', 10, 2);
-    t.text('discount_reason');
-    t.date('discount_expires_at');
-  });
+  const addColumns = [
+    ['membership_plan_id', (t) => t.integer('membership_plan_id').unsigned()
+      .references('id').inTable('membership_plans').onDelete('RESTRICT')],
+    ['base_price',         (t) => t.decimal('base_price', 10, 2)],
+    ['plan_price_id',      (t) => t.integer('plan_price_id').unsigned()
+      .references('id').inTable('membership_plan_prices').onDelete('SET NULL')],
+    ['final_price',        (t) => t.decimal('final_price', 10, 2)],
+    ['discount_reason',    (t) => t.text('discount_reason')],
+    ['discount_expires_at',(t) => t.date('discount_expires_at')],
+  ];
+  for (const [col, add] of addColumns) {
+    if (!(await knex.schema.hasColumn('user_memberships', col))) {
+      await knex.schema.alterTable('user_memberships', add);
+    }
+  }
 
   // Legacy `plan` text column is nullable from now on — new rows carry the FK
   // and leave it NULL; unmatched historical rows keep their string value until
@@ -31,12 +40,19 @@ exports.up = async (knex) => {
 
   // Normalise existing status values before the CHECK is applied.
   await knex.raw("UPDATE user_memberships SET status = 'active' WHERE status NOT IN ('active','paused','cancelled','expired')");
-  await knex.raw(
-    "ALTER TABLE user_memberships ADD CONSTRAINT user_memberships_status_check " +
-    "CHECK (status IN ('active','paused','cancelled','expired'))",
+  const [checkRows] = await knex.raw(
+    "SELECT 1 FROM information_schema.CHECK_CONSTRAINTS " +
+    "WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'user_memberships_status_check'",
   );
+  if (checkRows.length === 0) {
+    await knex.raw(
+      "ALTER TABLE user_memberships ADD CONSTRAINT user_memberships_status_check " +
+      "CHECK (status IN ('active','paused','cancelled','expired'))",
+    );
+  }
 
-  // Backfill FK + prices from matching plan name (case-insensitive, per gym)
+  // Backfill FK + prices from matching plan name (case-insensitive, per gym).
+  // Idempotent: only touches rows whose FK is still NULL.
   await knex.raw(`
     UPDATE user_memberships um
     JOIN membership_plans p
@@ -44,16 +60,30 @@ exports.up = async (knex) => {
     SET um.membership_plan_id = p.id,
         um.base_price = p.base_price,
         um.final_price = p.base_price
+    WHERE um.membership_plan_id IS NULL
   `);
 
   // Generated column + unique index enforces the one-active-per-member rule.
   // NULLs don't collide in unique indexes, so non-active rows are exempt.
-  await knex.raw(`
-    ALTER TABLE user_memberships
-      ADD COLUMN active_member_key INT UNSIGNED
-        GENERATED ALWAYS AS (IF(status = 'active', member_id, NULL)) STORED,
-      ADD UNIQUE KEY user_memberships_one_active (active_member_key)
-  `);
+  // Split into two ALTERs: on HeatWave, adding a STORED generated column and a
+  // UNIQUE key in the same statement triggers a COPY-algorithm rebuild that
+  // re-validates every FK on the table and fails with a misleading
+  // "Cannot add foreign key constraint" error. Adding them separately avoids it.
+  if (!(await knex.schema.hasColumn('user_memberships', 'active_member_key'))) {
+    await knex.raw(
+      "ALTER TABLE user_memberships " +
+      "ADD COLUMN active_member_key INT UNSIGNED " +
+      "GENERATED ALWAYS AS (IF(status = 'active', member_id, NULL)) STORED",
+    );
+  }
+  const [indexRows] = await knex.raw(
+    "SHOW INDEX FROM user_memberships WHERE Key_name = 'user_memberships_one_active'",
+  );
+  if (indexRows.length === 0) {
+    await knex.raw(
+      "ALTER TABLE user_memberships ADD UNIQUE KEY user_memberships_one_active (active_member_key)",
+    );
+  }
 };
 
 exports.down = async (knex) => {
