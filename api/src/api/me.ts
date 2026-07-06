@@ -55,9 +55,10 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
   const { gymId, userId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT m.*, f.name AS fare_name, f.price AS fare_price
+      `SELECT m.*, m.membership_plan_id AS fare_id,
+              p.name AS fare_name, p.base_price AS fare_price
        FROM members m
-       LEFT JOIN fares f ON f.id = m.fare_id
+       LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
        WHERE m.gym_id = ? AND m.clerk_user_id = ? AND m.deleted_at IS NULL`,
       [gymId, userId],
     );

@@ -10,9 +10,10 @@ export const membersRouter = Router();
 membersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    `SELECT m.*, f.name AS fare_name, f.price AS fare_price
+    `SELECT m.*, m.membership_plan_id AS fare_id,
+            p.name AS fare_name, p.base_price AS fare_price
      FROM members m
-     LEFT JOIN fares f ON f.id = m.fare_id
+     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      WHERE m.deleted_at IS NULL AND m.gym_id = ?
      ORDER BY m.created_at DESC`,
     [gymId],
@@ -65,7 +66,7 @@ membersRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =>
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
   try {
     const { insertId } = await db.query(
-      'INSERT INTO members (name, email, phone, fare_id, gym_id) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO members (name, email, phone, membership_plan_id, gym_id) VALUES (?, ?, ?, ?, ?)',
       [name, email, phone ?? null, fare_id ?? null, gymId],
     );
     const { rows } = await db.query('SELECT * FROM members WHERE id = ?', [insertId]);
@@ -82,10 +83,10 @@ membersRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) 
   try {
     const { rowCount } = await db.query(
       `UPDATE members SET
-        name    = COALESCE(?, name),
-        email   = COALESCE(?, email),
-        phone   = COALESCE(?, phone),
-        fare_id = IF(?, ?, fare_id)
+        name               = COALESCE(?, name),
+        email              = COALESCE(?, email),
+        phone              = COALESCE(?, phone),
+        membership_plan_id = IF(?, ?, membership_plan_id)
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [name ?? null, email ?? null, phone ?? null, 'fare_id' in req.body ? 1 : 0, fare_id ?? null, req.params.id, gymId],
     );
