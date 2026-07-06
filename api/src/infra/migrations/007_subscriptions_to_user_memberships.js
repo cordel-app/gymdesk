@@ -65,15 +65,18 @@ exports.up = async (knex) => {
 
   // Generated column + unique index enforces the one-active-per-member rule.
   // NULLs don't collide in unique indexes, so non-active rows are exempt.
-  // Split into two ALTERs: on HeatWave, adding a STORED generated column and a
-  // UNIQUE key in the same statement triggers a COPY-algorithm rebuild that
-  // re-validates every FK on the table and fails with a misleading
-  // "Cannot add foreign key constraint" error. Adding them separately avoids it.
+  //
+  // VIRTUAL (not STORED): STORED generated columns whose expression references
+  // an FK column (here, member_id → members.id) are rejected by MySQL 8.4 and
+  // HeatWave with a misleading "Cannot add foreign key constraint" error —
+  // even in a standalone ALTER. VIRTUAL sidesteps this: the column is computed
+  // on read, and MySQL 8.0.13+ still supports a UNIQUE secondary index on it
+  // (the index is physically materialised, which is what we need).
   if (!(await knex.schema.hasColumn('user_memberships', 'active_member_key'))) {
     await knex.raw(
       "ALTER TABLE user_memberships " +
       "ADD COLUMN active_member_key INT UNSIGNED " +
-      "GENERATED ALWAYS AS (IF(status = 'active', member_id, NULL)) STORED",
+      "GENERATED ALWAYS AS (IF(status = 'active', member_id, NULL)) VIRTUAL",
     );
   }
   const [indexRows] = await knex.raw(
