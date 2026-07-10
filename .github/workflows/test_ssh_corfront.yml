@@ -1,0 +1,20 @@
+name: Test SSH
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ssh:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Test connection
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.CORFRONT_SSH_HOST }}
+          username: podman
+          key: ${{ secrets.CORFRONT_SSH_PRIVATE_KEY }}
+          script: |
+            hostname
+            whoami
+            id
