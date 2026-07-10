@@ -17,7 +17,7 @@ jobs:
 
       - name: Test corfront connection
         run: |
-          ssh github@${{ secrets.CORFRONT_SSH_HOST }} "echo '✅ CORFRONT SSH OK'"
+          ssh podman@${{ secrets.CORFRONT_SSH_HOST }} "echo '✅ CORFRONT SSH OK'"
 
   test-ssh-corback:
     runs-on: ubuntu-latest
@@ -32,4 +32,4 @@ jobs:
 
       - name: Test corback connection
         run: |
-          ssh github@${{ secrets.CORBACK_SSH_HOST }} "echo '🚀 CORBACK SSH OK'"
+          ssh podman@${{ secrets.CORBACK_SSH_HOST }} "echo '🚀 CORBACK SSH OK'"
