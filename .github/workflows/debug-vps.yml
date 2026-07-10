@@ -75,12 +75,14 @@ jobs:
             U=$(echo "$URL_MIG" | sed -E 's|mysql://([^:]+):.*|\1|')
             P=$(echo "$URL_MIG" | sed -E 's|mysql://[^:]+:([^@]+)@.*|\1|')
             H=$(echo "$URL_MIG" | sed -E 's|.*@([^:/]+):.*|\1|')
-            podman run --rm docker.io/library/mysql:8.4 mysql -h "$H" -u "$U" -p"$P" gymdesk \
+            DB=$(echo "$URL_MIG" | sed -E 's|.*/([^/?]+)$|\1|')
+            podman run --rm docker.io/library/mysql:8.4 mysql -h "$H" -u "$U" -p"$P" "$DB" \
               -e "CREATE TABLE _m1_smoke (id INT); DROP TABLE _m1_smoke; SELECT 'ddl OK' AS result;" 2>&1 | grep -v Warning
             echo "=== DDL as app user must FAIL (least privilege) ==="
             U=$(echo "$URL_APP" | sed -E 's|mysql://([^:]+):.*|\1|')
             P=$(echo "$URL_APP" | sed -E 's|mysql://[^:]+:([^@]+)@.*|\1|')
-            podman run --rm docker.io/library/mysql:8.4 mysql -h "$H" -u "$U" -p"$P" gymdesk \
+            DB=$(echo "$URL_APP" | sed -E 's|.*/([^/?]+)$|\1|')
+            podman run --rm docker.io/library/mysql:8.4 mysql -h "$H" -u "$U" -p"$P" "$DB" \
               -e "CREATE TABLE _m1_smoke2 (id INT);" 2>&1 | grep -v Warning || echo "(correctly denied)"
 
       - name: Test ports from runner
