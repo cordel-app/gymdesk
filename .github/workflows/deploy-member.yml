@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/gymdesk-member
+  IMAGE_NAME: ${{ github.repository_owner }}/fitness-members
 
 jobs:
   build-and-deploy:
@@ -52,7 +52,7 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.CORFRONT_SSH_HOST }}
-          username: github
+          username: podman
           key: ${{ secrets.CORFRONT_SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
@@ -66,35 +66,40 @@ jobs:
             fi
 
             # Keep rootless containers running after this SSH session ends
-            loginctl enable-linger github || true
+            loginctl enable-linger podman || true
 
             podman image prune -af
             podman pull ghcr.io/${{ env.IMAGE_NAME }}:latest
 
-            systemctl --user stop gymdesk-member.service 2>/dev/null || true
-            podman stop gymdesk-member || true
-            podman rm gymdesk-member || true
+            # One-time rename migration: retire the old gymdesk-member container/unit
+            systemctl --user disable --now gymdesk-member.service 2>/dev/null || true
+            rm -f "$HOME/.config/systemd/user/gymdesk-member.service"
+            podman rm -f gymdesk-member 2>/dev/null || true
+
+            systemctl --user stop fitness-members.service 2>/dev/null || true
+            podman stop fitness-members || true
+            podman rm fitness-members || true
 
             podman run -d \
-              --name gymdesk-member \
+              --name fitness-members \
               --restart unless-stopped \
               -p 8082:8082 \
               -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
-              -e BACKEND_URL="http://10.0.2.101:3000" \
+              -e CORDEL_FITNESS_API_URL="https://api.vdicube.com" \
               ghcr.io/${{ env.IMAGE_NAME }}:latest
 
             sleep 3
-            podman inspect gymdesk-member --format='{{.State.Status}}' | grep -q running || \
-              { echo "ERROR: Container failed to start"; podman logs gymdesk-member; exit 1; }
+            podman inspect fitness-members --format='{{.State.Status}}' | grep -q running || \
+              { echo "ERROR: Container failed to start"; podman logs fitness-members; exit 1; }
 
             curl -sf --max-time 10 -o /dev/null http://localhost:8082/en || \
-              { echo "ERROR: app not responding"; podman logs gymdesk-member; exit 1; }
+              { echo "ERROR: app not responding"; podman logs fitness-members; exit 1; }
             echo "Health check OK"
 
             # Rootless podman's --restart policy does not survive host reboots.
             mkdir -p ~/.config/systemd/user
-            podman generate systemd --new --name gymdesk-member --restart-policy=always \
-              > ~/.config/systemd/user/gymdesk-member.service
+            podman generate systemd --new --name fitness-members --restart-policy=always \
+              > ~/.config/systemd/user/fitness-members.service
             systemctl --user daemon-reload
-            systemctl --user enable gymdesk-member.service
+            systemctl --user enable fitness-members.service
             echo "Boot persistence unit installed"

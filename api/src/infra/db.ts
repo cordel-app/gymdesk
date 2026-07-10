@@ -1,8 +1,19 @@
 import mysql from 'mysql2/promise';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is required');
+const dbHostRaw = process.env.CORDEL_FITNESS_DB_HOST;
+const dbUser = process.env.CORDEL_FITNESS_DB_USER;
+const dbPassword = process.env.CORDEL_FITNESS_DB_PASSWORD;
+const dbName = process.env.CORDEL_FITNESS_DB_NAME;
+
+if (!dbHostRaw || !dbUser || !dbPassword || !dbName) {
+  throw new Error(
+    'CORDEL_FITNESS_DB_HOST, _USER, _PASSWORD and _NAME environment variables are required',
+  );
 }
+
+// HOST may be "host" or "host:port"; port defaults to 3306.
+const [dbHost, dbPortRaw] = dbHostRaw.split(':');
+const dbPort = dbPortRaw ? Number(dbPortRaw) : 3306;
 
 export interface QueryResult<T = any> {
   rows: T[];
@@ -14,7 +25,11 @@ export interface QueryResult<T = any> {
 // timezone 'Z': DATETIME columns are UTC by convention (docs/architecture.md)
 // FOUND_ROWS: UPDATE rowCount counts matched rows (pg parity), not only changed rows
 const pool = mysql.createPool({
-  uri: process.env.DATABASE_URL,
+  host: dbHost,
+  port: dbPort,
+  user: dbUser,
+  password: dbPassword,
+  database: dbName,
   timezone: 'Z',
   flags: ['+FOUND_ROWS'],
   connectionLimit: 10,

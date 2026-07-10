@@ -13,7 +13,7 @@ jobs:
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.CORBACK_SSH_HOST }}
-          username: github
+          username: podman
           key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
           script: |
             echo "=== whoami / id ==="
@@ -21,7 +21,7 @@ jobs:
             echo "=== uptime / last boot ==="
             uptime; uptime -s 2>&1 || who -b
             echo "=== linger status ==="
-            loginctl show-user github --property=Linger 2>&1 || echo "linger query failed"
+            loginctl show-user podman --property=Linger 2>&1 || echo "linger query failed"
             ls /var/lib/systemd/linger/ 2>&1 || true
             echo "=== podman containers ==="
             podman ps -a 2>&1
@@ -30,12 +30,12 @@ jobs:
             echo "=== localhost health ==="
             curl -s --max-time 5 http://localhost:3000/health || echo "localhost health FAILED"
             echo "=== podman logs (last 200) ==="
-            podman logs --tail 200 gymdesk-backend 2>&1 || echo "no container logs"
+            podman logs --tail 200 fitness-api 2>&1 || echo "no container logs"
             echo "=== container exit state ==="
-            podman inspect gymdesk-backend --format '{{json .State}}' 2>&1 || echo "no container"
+            podman inspect fitness-api --format '{{json .State}}' 2>&1 || echo "no container"
             echo "=== restart container if exited ==="
-            if [ "$(podman inspect gymdesk-backend --format '{{.State.Status}}' 2>/dev/null)" != "running" ]; then
-              podman start gymdesk-backend && echo "container started"
+            if [ "$(podman inspect fitness-api --format '{{.State.Status}}' 2>/dev/null)" != "running" ]; then
+              podman start fitness-api && echo "container started"
               sleep 3
               curl -s --max-time 5 http://localhost:3000/health || echo "health after restart FAILED"
             else
@@ -53,7 +53,7 @@ jobs:
           URL_APP: ${{ secrets.DATABASE_URL_MYSQL }}
         with:
           host: ${{ secrets.CORBACK_SSH_HOST }}
-          username: github
+          username: podman
           key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
           envs: URL_MIG,URL_APP
           script: |

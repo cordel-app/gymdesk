@@ -1,7 +1,7 @@
 // Node runtime (not edge): edge fetch only allows ports 80/443, backend runs on 3000
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL!;
+const BACKEND_URL = process.env.CORDEL_FITNESS_API_URL!;
 
 async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
