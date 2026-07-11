@@ -65,41 +65,13 @@ jobs:
               exit 1
             fi
 
-            # Keep rootless containers running after this SSH session ends
-            loginctl enable-linger podman || true
-
-            podman image prune -af
             podman pull ghcr.io/${{ env.IMAGE_NAME }}:latest
 
-            # One-time rename migration: retire the old gymdesk-admin container/unit
-            systemctl --user disable --now gymdesk-admin.service 2>/dev/null || true
-            rm -f "$HOME/.config/systemd/user/gymdesk-admin.service"
-            podman rm -f gymdesk-admin 2>/dev/null || true
-
-            systemctl --user stop fitness-admin.service 2>/dev/null || true
-            podman stop fitness-admin || true
-            podman rm fitness-admin || true
-
-            podman run -d \
-              --name fitness-admin \
-              --restart unless-stopped \
-              -p 8081:8081 \
-              -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
-              -e CORDEL_FITNESS_API_URL="https://api.vdicube.com" \
-              ghcr.io/${{ env.IMAGE_NAME }}:latest
+            # Oscar owns the systemd unit (ports, env vars, restart policy);
+            # we just refresh the image and restart it.
+            systemctl --user restart fitness-admin.service
 
             sleep 3
-            podman inspect fitness-admin --format='{{.State.Status}}' | grep -q running || \
-              { echo "ERROR: Container failed to start"; podman logs fitness-admin; exit 1; }
-
             curl -sf --max-time 10 -o /dev/null http://localhost:8081/en || \
-              { echo "ERROR: app not responding"; podman logs fitness-admin; exit 1; }
+              { echo "ERROR: app not responding"; systemctl --user status fitness-admin.service --no-pager || true; podman logs fitness-admin 2>/dev/null || true; exit 1; }
             echo "Health check OK"
-
-            # Rootless podman's --restart policy does not survive host reboots.
-            mkdir -p ~/.config/systemd/user
-            podman generate systemd --new --name fitness-admin --restart-policy=always \
-              > ~/.config/systemd/user/fitness-admin.service
-            systemctl --user daemon-reload
-            systemctl --user enable fitness-admin.service
-            echo "Boot persistence unit installed"

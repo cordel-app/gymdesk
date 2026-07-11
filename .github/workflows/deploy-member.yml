@@ -65,41 +65,13 @@ jobs:
               exit 1
             fi
 
-            # Keep rootless containers running after this SSH session ends
-            loginctl enable-linger podman || true
-
-            podman image prune -af
             podman pull ghcr.io/${{ env.IMAGE_NAME }}:latest
 
-            # One-time rename migration: retire the old gymdesk-member container/unit
-            systemctl --user disable --now gymdesk-member.service 2>/dev/null || true
-            rm -f "$HOME/.config/systemd/user/gymdesk-member.service"
-            podman rm -f gymdesk-member 2>/dev/null || true
-
-            systemctl --user stop fitness-members.service 2>/dev/null || true
-            podman stop fitness-members || true
-            podman rm fitness-members || true
-
-            podman run -d \
-              --name fitness-members \
-              --restart unless-stopped \
-              -p 8082:8082 \
-              -e CLERK_SECRET_KEY="${{ secrets.CLERK_SECRET_KEY }}" \
-              -e CORDEL_FITNESS_API_URL="https://api.vdicube.com" \
-              ghcr.io/${{ env.IMAGE_NAME }}:latest
+            # Oscar owns the systemd unit (ports, env vars, restart policy);
+            # we just refresh the image and restart it.
+            systemctl --user restart fitness-members.service
 
             sleep 3
-            podman inspect fitness-members --format='{{.State.Status}}' | grep -q running || \
-              { echo "ERROR: Container failed to start"; podman logs fitness-members; exit 1; }
-
             curl -sf --max-time 10 -o /dev/null http://localhost:8082/en || \
-              { echo "ERROR: app not responding"; podman logs fitness-members; exit 1; }
+              { echo "ERROR: app not responding"; systemctl --user status fitness-members.service --no-pager || true; podman logs fitness-members 2>/dev/null || true; exit 1; }
             echo "Health check OK"
-
-            # Rootless podman's --restart policy does not survive host reboots.
-            mkdir -p ~/.config/systemd/user
-            podman generate systemd --new --name fitness-members --restart-policy=always \
-              > ~/.config/systemd/user/fitness-members.service
-            systemctl --user daemon-reload
-            systemctl --user enable fitness-members.service
-            echo "Boot persistence unit installed"
