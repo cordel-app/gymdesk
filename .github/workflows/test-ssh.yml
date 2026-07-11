@@ -25,9 +25,11 @@ jobs:
           -i ~/.ssh/id_ed25519 \
           -o IdentitiesOnly=yes \
           -o PreferredAuthentications=publickey \
-          -v \
           podman@${{ secrets.CORFRONT_SSH_HOST }} \
-          "hostname && echo \"arch: \$(uname -m)\" && echo ' - ✅ CORFRONT SSH OK'"
+          "hostname && echo \"arch: \$(uname -m)\" && \
+           echo '--- listeners on 3000/8081/8082 ---' && ss -tln | grep -E ':(3000|8081|8082) ' || echo '(no listeners)' && \
+           echo '--- podman ps for user podman ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
+           echo ' - ✅ CORFRONT SSH OK'"
 
   test-ssh-corback:
     runs-on: ubuntu-latest
