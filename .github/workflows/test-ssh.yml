@@ -27,36 +27,10 @@ jobs:
           -o PreferredAuthentications=publickey \
           podman@${{ secrets.CORFRONT_SSH_HOST }} \
           "hostname && echo \"arch: \$(uname -m)\" && \
-           echo '--- identity ---' && whoami && id && echo \"HOME=\$HOME  XDG_RUNTIME_DIR=\$XDG_RUNTIME_DIR\" && \
+           echo '--- identity ---' && whoami && id && \
            echo '--- listeners on 3000/8081/8082 ---' && (ss -tln | grep -E ':(3000|8081|8082) ' || echo '(none)') && \
            echo '--- podman ps -a as user podman ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
-           echo '--- linger status for all users ---' && (ls /var/lib/systemd/linger/ 2>&1 || true) && \
-           echo '--- pid 1 of process on 8081/8082 (best effort) ---' && (ss -tlnp 2>/dev/null | grep -E ':(8081|8082) ' || echo '(no -p access without root; expected as non-root)') && \
            echo ' - ✅ CORFRONT SSH OK'"
-
-      - name: Probe sudo rights for user podman
-        run: |
-          ssh \
-          -i ~/.ssh/id_ed25519 \
-          -o IdentitiesOnly=yes \
-          -o PreferredAuthentications=publickey \
-          podman@${{ secrets.CORFRONT_SSH_HOST }} \
-          "echo '--- sudo -n true ---' && (sudo -n true 2>&1 && echo 'HAS PASSWORDLESS SUDO' || echo 'no sudo (or password required)') && \
-           echo '--- sudo -l (list allowed) ---' && (sudo -n -l 2>&1 || true)"
-
-      - name: Probe old github user (does the key still work? what does it run?)
-        run: |
-          ssh \
-          -i ~/.ssh/id_ed25519 \
-          -o IdentitiesOnly=yes \
-          -o PreferredAuthentications=publickey \
-          -o ConnectTimeout=10 \
-          github@${{ secrets.CORFRONT_SSH_HOST }} \
-          "echo '--- identity ---' && whoami && id && \
-           echo '--- podman ps -a as github ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
-           echo '--- systemd user units (gymdesk) ---' && (systemctl --user list-units --all 'gymdesk-*' --no-pager --no-legend || true) && \
-           echo ' - 🔎 GITHUB USER PROBE OK'" \
-          || echo "github@corfront rejected the key (Oscar removed it) — probe inconclusive"
 
   test-ssh-corback:
     runs-on: ubuntu-latest
@@ -79,6 +53,9 @@ jobs:
           -i ~/.ssh/id_ed25519 \
           -o IdentitiesOnly=yes \
           -o PreferredAuthentications=publickey \
-          -v \
           podman@${{ secrets.CORBACK_SSH_HOST }} \
-          "hostname && echo \"arch: \$(uname -m)\" && echo ' - 🚀 CORBACK SSH OK'"
+          "hostname && echo \"arch: \$(uname -m)\" && \
+           echo '--- identity ---' && whoami && id && \
+           echo '--- listeners on 3000 ---' && (ss -tln | grep -E ':3000 ' || echo '(none)') && \
+           echo '--- podman ps -a as user podman ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
+           echo ' - 🚀 CORBACK SSH OK'"
