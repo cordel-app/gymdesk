@@ -66,7 +66,13 @@ jobs:
 
             # Oscar owns the systemd unit (ports, env vars, restart policy);
             # we just refresh the image and restart it.
-            systemctl --user restart fitness-admin.service
+            if ! systemctl --user restart fitness-admin.service; then
+              echo "ERROR: systemctl restart failed"
+              systemctl --user status fitness-admin.service --no-pager --lines=40 || true
+              journalctl --user -xeu fitness-admin.service --no-pager -n 60 || true
+              podman ps -a --filter name=fitness-admin || true
+              exit 1
+            fi
 
             sleep 3
             curl -sf --max-time 10 -o /dev/null http://localhost:8081/en || \
