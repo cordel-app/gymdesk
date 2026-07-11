@@ -49,6 +49,29 @@ export interface MembershipPlan {
   created_at: string;
 }
 
+export interface ChargeType {
+  id: number;
+  code: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface BillingEvent {
+  id: number;
+  gym_id: string;
+  user_membership_id: number | null;
+  member_id: number | null;
+  event_type: 'charge_created' | 'payment_recorded' | 'status_changed' | 'adjustment';
+  charge_type_id: number | null;
+  previous_status: string | null;
+  new_status: string | null;
+  source: 'admin' | 'system' | 'employee' | 'customer' | 'provider';
+  actor_user_id: string | null;
+  amount: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
 export interface Gym {
   id: string;
   name: string;

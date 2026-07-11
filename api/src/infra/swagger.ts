@@ -91,6 +91,32 @@ export const swaggerSpec = swaggerJsdoc({
             created_at: { type: 'string', format: 'date-time' },
           },
         },
+        ChargeType: {
+          type: 'object',
+          properties: {
+            id:     { type: 'integer' },
+            code:   { type: 'string' },
+            active: { type: 'boolean' },
+          },
+        },
+        BillingEvent: {
+          type: 'object',
+          properties: {
+            id:                 { type: 'integer' },
+            gym_id:             { type: 'string', format: 'uuid' },
+            user_membership_id: { type: 'integer', nullable: true },
+            member_id:          { type: 'integer', nullable: true },
+            event_type:         { type: 'string', enum: ['charge_created', 'payment_recorded', 'status_changed', 'adjustment'] },
+            charge_type_id:     { type: 'integer', nullable: true },
+            previous_status:    { type: 'string', nullable: true },
+            new_status:         { type: 'string', nullable: true },
+            source:             { type: 'string', enum: ['admin', 'system', 'employee', 'customer', 'provider'] },
+            actor_user_id:      { type: 'string', nullable: true },
+            amount:             { type: 'string', nullable: true },
+            notes:              { type: 'string', nullable: true },
+            created_at:         { type: 'string', format: 'date-time' },
+          },
+        },
         Subscription: {
           type: 'object',
           properties: {
@@ -115,6 +141,7 @@ export const swaggerSpec = swaggerJsdoc({
       { name: 'Classes' },
       { name: 'Bookings' },
       { name: 'Subscriptions' },
+      { name: 'Billing', description: 'Charge types + append-only billing ledger (P1.6)' },
     ],
     paths: {
       '/health': {
@@ -317,6 +344,43 @@ export const swaggerSpec = swaggerJsdoc({
           summary: 'Delete a booking (admin)',
           parameters: [{ $ref: '#/components/parameters/gymId' }, { in: 'path', name: 'id', required: true, schema: { type: 'integer' } }],
           responses: { '204': { description: 'Deleted' }, '404': { description: 'Not found' } },
+        },
+      },
+      '/charge-types': {
+        get: {
+          tags: ['Billing'],
+          summary: 'List charge types (global vocabulary)',
+          parameters: [{ $ref: '#/components/parameters/gymId' }],
+          responses: { '200': { description: 'Charge types', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/ChargeType' } } } } } },
+        },
+      },
+      '/billing-events': {
+        get: {
+          tags: ['Billing'],
+          summary: 'List billing ledger events (admin, staff) — paginated',
+          parameters: [
+            { $ref: '#/components/parameters/gymId' },
+            { in: 'query', name: 'member_id', schema: { type: 'integer' } },
+            { in: 'query', name: 'user_membership_id', schema: { type: 'integer' } },
+            { in: 'query', name: 'event_type', schema: { type: 'string', enum: ['charge_created', 'payment_recorded', 'status_changed', 'adjustment'] } },
+            { in: 'query', name: 'from', schema: { type: 'string', format: 'date' } },
+            { in: 'query', name: 'to', schema: { type: 'string', format: 'date' } },
+            { in: 'query', name: 'limit', schema: { type: 'integer', default: 50, maximum: 200 } },
+            { in: 'query', name: 'offset', schema: { type: 'integer', default: 0 } },
+          ],
+          responses: {
+            '200': { description: 'Paginated ledger page', content: { 'application/json': { schema: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/components/schemas/BillingEvent' } }, total: { type: 'integer' }, limit: { type: 'integer' }, offset: { type: 'integer' } } } } } },
+          },
+        },
+        post: {
+          tags: ['Billing'],
+          summary: 'Append a ledger event (admin, staff) — no update/delete; status_changed is system-emitted',
+          parameters: [{ $ref: '#/components/parameters/gymId' }],
+          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['event_type'], properties: { event_type: { type: 'string', enum: ['charge_created', 'payment_recorded', 'adjustment'] }, member_id: { type: 'integer' }, user_membership_id: { type: 'integer' }, charge_type_id: { type: 'integer' }, amount: { type: 'number' }, notes: { type: 'string' }, source: { type: 'string', enum: ['admin', 'system', 'employee', 'customer', 'provider'] } } } } } },
+          responses: {
+            '201': { description: 'Event appended', content: { 'application/json': { schema: { $ref: '#/components/schemas/BillingEvent' } } } },
+            '400': { description: 'Validation error (payments require amount > 0 and a charge type)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          },
         },
       },
       '/subscriptions': {

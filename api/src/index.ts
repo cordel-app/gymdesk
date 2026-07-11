@@ -11,6 +11,8 @@ import { userMembershipsRouter } from './api/user-memberships';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { membershipPlansRouter } from './api/membership-plans';
 import { benefitTypesRouter } from './api/benefit-types';
+import { chargeTypesRouter } from './api/charge-types';
+import { billingEventsRouter } from './api/billing-events';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter } from './api/me';
 import { tenantContext } from './infra/tenantContext';
@@ -87,6 +89,8 @@ app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter
 app.use('/subscriptions',    requireAuth(), tenantContext, subscriptionsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
+app.use('/charge-types',     requireAuth(), tenantContext, chargeTypesRouter);
+app.use('/billing-events',   requireAuth(), tenantContext, billingEventsRouter);
 
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

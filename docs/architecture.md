@@ -84,8 +84,9 @@ gymdesk/
 | GET /user-memberships | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
 | POST/PUT /user-memberships | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | DELETE /user-memberships | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| GET /membership-plans, /benefit-types | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| GET /membership-plans, /benefit-types, /charge-types | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
 | POST/PUT/DELETE /membership-plans | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| GET/POST /billing-events | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | POST /me/link | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 | GET /me/profile | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
 | GET /me/bookings | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
@@ -156,6 +157,8 @@ app.use('/bookings',         requireAuth(), tenantContext, bookingsRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
+app.use('/charge-types',     requireAuth(), tenantContext, chargeTypesRouter);
+app.use('/billing-events',   requireAuth(), tenantContext, billingEventsRouter);
 
 // Legacy — kept mounted until their replacement frontend ships, then DELETE:
 app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter); // replaced by /user-memberships (P1.5); page replaced in P1.7
@@ -228,7 +231,9 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Bookings | `api/bookings.ts` | `[locale]/bookings/` | |
 | Plans | `api/membership-plans.ts` | `[locale]/plans/` | Canonical admin-only CRUD reference. Includes plan prices (validity windows) + benefits. Replaced Fares (P1.1/P1.2). |
 | Benefit types | `api/benefit-types.ts` | (used inside Plans) | Global lookup table (no `gym_id`), seeded in its migration. |
-| User memberships | `api/user-memberships.ts` | `[locale]/subscriptions/` (until P1.7) | Replaced Subscriptions (P1.5). Memberships page is ticket P1.7. |
+| User memberships | `api/user-memberships.ts` | `[locale]/subscriptions/` (until P1.7) | Replaced Subscriptions (P1.5). Memberships page is ticket P1.7. Status changes write a `status_changed` billing event in the same transaction. |
+| Billing ledger | `api/billing-events.ts` | — (page is P1.7) | Append-only: GET (paginated, filter by member/membership/type/date) + POST only. `status_changed` rows are system-emitted, not POSTable. |
+| Charge types | `api/charge-types.ts` | (used when recording payments) | Global lookup table (no `gym_id`), seeded in its migration. |
 | Subscriptions (legacy) | `api/subscriptions.ts` | `[locale]/subscriptions/` | Delete both once P1.7 ships. |
 | Gyms (platform) | `api/gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
 
