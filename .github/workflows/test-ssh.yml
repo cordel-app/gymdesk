@@ -34,6 +34,20 @@ jobs:
            echo '--- pid 1 of process on 8081/8082 (best effort) ---' && (ss -tlnp 2>/dev/null | grep -E ':(8081|8082) ' || echo '(no -p access without root; expected as non-root)') && \
            echo ' - ✅ CORFRONT SSH OK'"
 
+      - name: Probe old github user (does the key still work? what does it run?)
+        run: |
+          ssh \
+          -i ~/.ssh/id_ed25519 \
+          -o IdentitiesOnly=yes \
+          -o PreferredAuthentications=publickey \
+          -o ConnectTimeout=10 \
+          github@${{ secrets.CORFRONT_SSH_HOST }} \
+          "echo '--- identity ---' && whoami && id && \
+           echo '--- podman ps -a as github ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
+           echo '--- systemd user units (gymdesk) ---' && (systemctl --user list-units --all 'gymdesk-*' --no-pager --no-legend || true) && \
+           echo ' - 🔎 GITHUB USER PROBE OK'" \
+          || echo "github@corfront rejected the key (Oscar removed it) — probe inconclusive"
+
   test-ssh-corback:
     runs-on: ubuntu-latest
 
