@@ -29,8 +29,8 @@ Ticket order and current status live in `docs/roadmap.md`; full scope is in the 
 npm run db:up          # start MySQL 8 (docker compose)
 npm run db:migrate     # run pending migrations
 npm run dev:api        # Express on :3000
-npm run dev:admin      # Next.js admin on :3001
-npm run dev:member     # Next.js member app on :3002
+npm run dev:admin      # Next.js admin on :8081
+npm run dev:member     # Next.js member app on :8082
 ```
 
 Copy `.env.example` to `.env` in each app directory before starting.

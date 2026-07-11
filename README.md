@@ -31,10 +31,10 @@ npm run db:migrate
 # Terminal 1 — API (http://localhost:3000)
 npm run dev:api
 
-# Terminal 2 — admin app (http://localhost:3001)
+# Terminal 2 — admin app (http://localhost:8081)
 npm run dev:admin
 
-# Terminal 3 — member app (http://localhost:3002)
+# Terminal 3 — member app (http://localhost:8082)
 npm run dev:member
 ```
 
@@ -48,13 +48,13 @@ gymdesk/
       domain/         # TypeScript types
       infra/          # Database connection, migrations, seed, tenant context
   apps/
-    admin/            # Next.js staff/admin dashboard (port 3001)
+    admin/            # Next.js staff/admin dashboard (port 8081)
       src/
         app/          # Pages and layout ([locale] routing)
         components/   # UI components
         context/      # GymContext (active tenant)
         lib/          # apiClient (authenticated fetch wrapper)
-    member/           # Next.js member-facing app (port 3002)
+    member/           # Next.js member-facing app (port 8082)
   skills/
     business/         # Business domain guidelines
     technical/        # Technical conventions

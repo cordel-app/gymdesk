@@ -5,7 +5,7 @@
       "name": "admin",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:admin"],
-      "port": 3001,
+      "port": 8081,
       "autoPort": false
     },
     {
@@ -19,7 +19,7 @@
       "name": "member",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:member"],
-      "port": 3002,
+      "port": 8082,
       "autoPort": false
     }
   ]

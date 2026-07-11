@@ -21,7 +21,7 @@ gymdesk/
       swagger.ts
       seed.ts
   apps/
-    admin/src/                     # Staff/admin Next.js app (dev port 3001, deployed :8081)
+    admin/src/                     # Staff/admin Next.js app (port :8081 both locally and deployed)
       app/[locale]/                # Next.js App Router pages (one folder per domain)
       components/
         Sidebar.tsx                # Nav — conditionally renders links by role
@@ -32,7 +32,7 @@ gymdesk/
       lib/apiClient.ts             # apiFetch() — attaches Bearer token + x-gym-id
       middleware.ts                # Clerk auth + next-intl locale routing
       locales/base/en.json …
-    member/src/                    # Member-facing PWA (dev port 3002, deployed :8082)
+    member/src/                    # Member-facing PWA (port :8082 both locally and deployed)
       app/[locale]/                # Public home, sign-in, bookings, subscriptions, profile
       app/api/proxy/[...path]/     # Proxy → backend (Node runtime — edge fetch can't reach port 3000)
       context/AppContext.tsx       # gymId + linked member profile
