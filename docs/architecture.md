@@ -159,7 +159,6 @@ app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
 
 // Legacy — kept mounted until their replacement frontend ships, then DELETE:
 app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter); // replaced by /user-memberships (P1.5); page replaced in P1.7
-app.use('/fares',         requireAuth(), tenantContext, faresRouter);         // replaced by /membership-plans (P1.1); Plans page shipped — safe to delete
 ```
 
 ### Member invite + auto-link flow
@@ -210,7 +209,7 @@ Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes
 
 ### Sidebar visibility (admin)
 - Regular links: visible to all authenticated gym members.
-- Admin-only links (e.g. Fares): check `activeGym?.role === 'admin' || isSuperadmin`.
+- Admin-only links (e.g. Plans): check `activeGym?.role === 'admin' || isSuperadmin`.
 - Superadmin-only section (System > Gyms): check `isSuperadmin`.
 
 ### i18n
@@ -231,7 +230,6 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Benefit types | `api/benefit-types.ts` | (used inside Plans) | Global lookup table (no `gym_id`), seeded in its migration. |
 | User memberships | `api/user-memberships.ts` | `[locale]/subscriptions/` (until P1.7) | Replaced Subscriptions (P1.5). Memberships page is ticket P1.7. |
 | Subscriptions (legacy) | `api/subscriptions.ts` | `[locale]/subscriptions/` | Delete both once P1.7 ships. |
-| Fares (legacy) | `api/fares.ts` | — (page already deleted) | Router still mounted; safe to delete. |
 | Gyms (platform) | `api/gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
 
 Shared admin components (P0.1/P0.2, in `apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`. Use these in every new page — don't hand-roll tables/modals. Member app has `BottomNav` (P0.3).

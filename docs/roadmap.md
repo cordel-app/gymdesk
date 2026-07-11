@@ -13,8 +13,8 @@ criteria live in the issue bodies; this doc is the map.
 - **Next**: **P1.6 charge_types + billing_events ledger (#10)**, then P1.7 (#11), P1.8 (#12).
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
-- Pending cleanup: delete legacy `/fares` router (page already replaced by Plans);
-  delete `/subscriptions` router + page when P1.7 ships.
+- Pending cleanup: delete `/subscriptions` router + page when P1.7 ships
+  (legacy `/fares` router deleted 2026-07-12).
 
 ## Decisions
 

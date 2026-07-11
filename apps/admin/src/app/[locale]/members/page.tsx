@@ -6,10 +6,10 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
 
-interface Fare {
+interface Plan {
   id: number;
   name: string;
-  price: string;
+  base_price: string;
 }
 
 interface Member {
@@ -30,7 +30,7 @@ export default function MembersPage() {
   const { activeGymId, loading: gymLoading } = useGym();
   const { toast } = useToast();
   const [members, setMembers] = useState<Member[]>([]);
-  const [fares, setFares] = useState<Fare[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
@@ -45,12 +45,12 @@ export default function MembersPage() {
     }
     setLoading(true);
     try {
-      const [membersData, faresData] = await Promise.all([
+      const [membersData, plansData] = await Promise.all([
         apiFetch<Member[]>('/members'),
-        apiFetch<Fare[]>('/fares').catch(() => []),
+        apiFetch<Plan[]>('/membership-plans?status=active').catch(() => []),
       ]);
       setMembers(membersData);
-      setFares(faresData);
+      setPlans(plansData);
     } catch (err: any) {
       setMembers([]);
       toast(err.message ?? t('members.error_generic'));
@@ -168,13 +168,13 @@ export default function MembersPage() {
             <label style={labelStyle}>{t('members.label_phone')}</label>
             <input style={inputStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
 
-            {fares.length > 0 && (
+            {plans.length > 0 && (
               <>
                 <label style={labelStyle}>{t('members.label_fare')}</label>
                 <select style={inputStyle} value={form.fare_id} onChange={(e) => setForm({ ...form, fare_id: e.target.value })}>
                   <option value="">{t('members.fare_none')}</option>
-                  {fares.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name} — {parseFloat(f.price).toFixed(2)}</option>
+                  {plans.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name} — {parseFloat(p.base_price).toFixed(2)}</option>
                   ))}
                 </select>
               </>
