@@ -42,6 +42,7 @@ jobs:
           push: true
           platforms: linux/arm64
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          no-cache: true
           build-args: |
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
 
@@ -71,6 +72,12 @@ jobs:
               systemctl --user status fitness-admin.service --no-pager --lines=40 || true
               journalctl --user -xeu fitness-admin.service --no-pager -n 60 || true
               podman ps -a --filter name=fitness-admin || true
+              echo "--- image inspection ---"
+              podman image inspect ghcr.io/${{ env.IMAGE_NAME }}:latest --format '{{.Architecture}} / {{.Os}} / cmd={{.Config.Cmd}} / entrypoint={{.Config.Entrypoint}}' || true
+              echo "--- direct run: node --version ---"
+              podman run --rm --entrypoint /bin/sh ghcr.io/${{ env.IMAGE_NAME }}:latest -c 'node --version && ls -la /app/apps/admin/server.js 2>&1' 2>&1 || echo "(entrypoint probe failed)"
+              echo "--- direct run: actual CMD to stderr (no port, will fail on bind if reached) ---"
+              timeout 5 podman run --rm ghcr.io/${{ env.IMAGE_NAME }}:latest 2>&1 | head -20 || true
               exit 1
             fi
 
