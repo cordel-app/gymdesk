@@ -34,6 +34,16 @@ jobs:
            echo '--- pid 1 of process on 8081/8082 (best effort) ---' && (ss -tlnp 2>/dev/null | grep -E ':(8081|8082) ' || echo '(no -p access without root; expected as non-root)') && \
            echo ' - ✅ CORFRONT SSH OK'"
 
+      - name: Probe sudo rights for user podman
+        run: |
+          ssh \
+          -i ~/.ssh/id_ed25519 \
+          -o IdentitiesOnly=yes \
+          -o PreferredAuthentications=publickey \
+          podman@${{ secrets.CORFRONT_SSH_HOST }} \
+          "echo '--- sudo -n true ---' && (sudo -n true 2>&1 && echo 'HAS PASSWORDLESS SUDO' || echo 'no sudo (or password required)') && \
+           echo '--- sudo -l (list allowed) ---' && (sudo -n -l 2>&1 || true)"
+
       - name: Probe old github user (does the key still work? what does it run?)
         run: |
           ssh \
