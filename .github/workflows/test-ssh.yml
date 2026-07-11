@@ -27,8 +27,11 @@ jobs:
           -o PreferredAuthentications=publickey \
           podman@${{ secrets.CORFRONT_SSH_HOST }} \
           "hostname && echo \"arch: \$(uname -m)\" && \
-           echo '--- listeners on 3000/8081/8082 ---' && ss -tln | grep -E ':(3000|8081|8082) ' || echo '(no listeners)' && \
-           echo '--- podman ps for user podman ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
+           echo '--- identity ---' && whoami && id && echo \"HOME=\$HOME  XDG_RUNTIME_DIR=\$XDG_RUNTIME_DIR\" && \
+           echo '--- listeners on 3000/8081/8082 ---' && (ss -tln | grep -E ':(3000|8081|8082) ' || echo '(none)') && \
+           echo '--- podman ps -a as user podman ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
+           echo '--- linger status for all users ---' && (ls /var/lib/systemd/linger/ 2>&1 || true) && \
+           echo '--- pid 1 of process on 8081/8082 (best effort) ---' && (ss -tlnp 2>/dev/null | grep -E ':(8081|8082) ' || echo '(no -p access without root; expected as non-root)') && \
            echo ' - ✅ CORFRONT SSH OK'"
 
   test-ssh-corback:
