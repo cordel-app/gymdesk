@@ -1,6 +1,8 @@
 # Feature Implementation Patterns
 
-Use the **Fares** module as the canonical reference for an admin-only feature, and **Members** for a full-staff feature with soft-delete.
+Use the **Plans** module (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the canonical reference for an admin-only feature, and **Members** for a full-staff feature with soft-delete.
+
+Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast` — never hand-roll tables, modals, or status chips.
 
 ---
 
@@ -60,25 +62,25 @@ try {
 
 ## Deployment
 
-Three separate deploy workflows in `.github/workflows/` — all follow the same pattern (multi-arch Docker build → GHCR → SSH → rootless Podman + systemd user unit):
+Three separate deploy workflows in `.github/workflows/` — all follow the same pattern: build `linux/arm64` image on the native ARM runner (`ubuntu-24.04-arm`) → push to GHCR → SSH as user `podman` → `podman pull` → `systemctl --user restart <unit>` → health check. The systemd (Quadlet) units — ports, env vars, restart policy — are owned by Oscar on the VPS; workflows never `podman run` the app containers (see `docs/architecture.md` § Deployment).
 
 | Workflow | Triggers on | Deploys |
 |----------|------------|---------|
-| `deploy.yml` | `api/**` | `gymdesk-api` container on corback (`api.vdicube.com`) |
-| `deploy-admin.yml` | `apps/admin/**` | `gymdesk-admin` container on corfront `:8081` (`admin.vdicube.com`) |
-| `deploy-member.yml` | `apps/member/**` | `gymdesk-member` container on corfront `:8082` (`members.vdicube.com`) |
+| `deploy.yml` | `api/**` | `fitness-api` container on corback (`api.vdicube.com`) |
+| `deploy-admin.yml` | `apps/admin/**` | `fitness-admin` container on corfront `:8081` (`admin.vdicube.com`) |
+| `deploy-member.yml` | `apps/member/**` | `fitness-members` container on corfront `:8082` (`members.vdicube.com`) |
 
 ### API deploy order
 
 1. Build and push Docker image
-2. **Run `knex migrate:latest` on the VPS from the image** (the DB is VCN-private; CI runners cannot reach it)
-3. Swap the container and health check
+2. **Run `knex migrate:latest` on the VPS from the image** (the DB is VCN-private; CI runners cannot reach it — uses `DATABASE_URL_MIGRATIONS`, DDL user `fitness_deploy`)
+3. `systemctl --user restart fitness-api.service` and health check
 
 **Never deploy API code that depends on a new table without a migration file.** The migration must be committed in the same push as the code that uses it.
 
 ### Frontend containers
 
-Next.js `output: 'standalone'`; `NEXT_PUBLIC_*` values are baked at build time via Docker build args; `CLERK_SECRET_KEY` and `BACKEND_URL` (private VCN address of the API) are runtime env on the container.
+Next.js `output: 'standalone'`; `NEXT_PUBLIC_*` values are baked at build time via Docker build args; `CLERK_SECRET_KEY` and `CORDEL_FITNESS_API_URL` are runtime env, set in Oscar's Quadlet unit on the VPS (to change them, ask Oscar — the workflow doesn't control runtime env).
 
 ---
 
@@ -175,7 +177,8 @@ app.use('/widgets', requireAuth(), tenantContext, widgetsRouter);
 - `useGym()` for `activeGymId`, `activeGym`, `isSuperadmin`
 - Guard: if admin-only, redirect non-admins with `router.replace('/${locale}')`
 - Pattern: load on mount + on `activeGymId` change, modal for add/edit, confirm for delete
-- Copy the Fares page as a starting point.
+- Build with the shared components (`DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`)
+- Copy the Plans page (`[locale]/plans/`) as a starting point.
 
 ### 5. Sidebar entry (`components/Sidebar.tsx`)
 ```ts

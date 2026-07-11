@@ -2,7 +2,7 @@
 
 ## Overview
 
-Multi-tenant Gym Management SaaS. One Express backend, one Next.js frontend, one MySQL 8 database (Oracle HeatWave in deployed environments). Authentication via Clerk. Tenant isolation via `gym_id` on every domain table and `x-gym-id` request header.
+Multi-tenant Gym Management SaaS. One Express backend, two Next.js frontends (admin + member), one MySQL 8 database (Oracle HeatWave in deployed environments; schema `fitness`). Authentication via Clerk. Tenant isolation via `gym_id` on every domain table and `x-gym-id` request header.
 
 ---
 
@@ -81,11 +81,11 @@ gymdesk/
 | GET /bookings | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
 | POST/PUT /bookings | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
 | DELETE /bookings | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| GET /subscriptions | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| POST/PUT /subscriptions | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| DELETE /subscriptions | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| GET /fares | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| POST/PUT/DELETE /fares | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| GET /user-memberships | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| POST/PUT /user-memberships | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
+| DELETE /user-memberships | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
+| GET /membership-plans, /benefit-types | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| POST/PUT/DELETE /membership-plans | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
 | POST /me/link | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
 | GET /me/profile | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
 | GET /me/bookings | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
@@ -150,11 +150,16 @@ app.use('/gyms',    requireAuth(), gymsRouter);
 app.use('/platform',requireAuth(), platformRouter);   // superadmin only
 
 // All domain routes — auth + tenant context required
-app.use('/members',       requireAuth(), tenantContext, membersRouter);
-app.use('/classes',       requireAuth(), tenantContext, classesRouter);
-app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
-app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter);
-app.use('/fares',         requireAuth(), tenantContext, faresRouter);
+app.use('/members',          requireAuth(), tenantContext, membersRouter);
+app.use('/classes',          requireAuth(), tenantContext, classesRouter);
+app.use('/bookings',         requireAuth(), tenantContext, bookingsRouter);
+app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
+app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
+app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
+
+// Legacy — kept mounted until their replacement frontend ships, then DELETE:
+app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter); // replaced by /user-memberships (P1.5); page replaced in P1.7
+app.use('/fares',         requireAuth(), tenantContext, faresRouter);         // replaced by /membership-plans (P1.1); Plans page shipped — safe to delete
 ```
 
 ### Member invite + auto-link flow
@@ -175,7 +180,7 @@ All requests go through `apiFetch()` (from `useApiClient()`), which:
 1. Gets a fresh Clerk token.
 2. Attaches `Authorization: Bearer <token>`.
 3. Attaches `x-gym-id: <activeGymId>`.
-4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`): edge fetch only allows ports 80/443, and the API listens on 3000. The API has no CORS — it is reachable only through these proxies (deployed: `BACKEND_URL=http://10.0.2.101:3000`, private VCN address).
+4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`). The API has no CORS — it is reachable only through these proxies. The proxy target is `CORDEL_FITNESS_API_URL` (deployed: `https://api.vdicube.com` — public URL through Traefik, deliberate choice for flexibility; local dev: `http://localhost:3000`).
 
 ### Backoffice: GymContext
 Available via `useGym()`. Key fields:
@@ -219,12 +224,17 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 
 | Module | Backend | Frontend page | Notes |
 |--------|---------|---------------|-------|
-| Members | `api/members.ts` | `[locale]/members/` | Canonical CRUD reference. Soft-delete + restore. Has `clerk_user_id` column. |
+| Members | `api/members.ts` | `[locale]/members/` | Canonical staff-level CRUD reference. Soft-delete + restore. Has `clerk_user_id` column. |
 | Classes | `api/classes.ts` | `[locale]/classes/` | |
 | Bookings | `api/bookings.ts` | `[locale]/bookings/` | |
-| Subscriptions | `api/subscriptions.ts` | `[locale]/subscriptions/` | |
-| Fares | `api/fares.ts` | `[locale]/fares/` | Admin-only. FK from members.fare_id. |
+| Plans | `api/membership-plans.ts` | `[locale]/plans/` | Canonical admin-only CRUD reference. Includes plan prices (validity windows) + benefits. Replaced Fares (P1.1/P1.2). |
+| Benefit types | `api/benefit-types.ts` | (used inside Plans) | Global lookup table (no `gym_id`), seeded in its migration. |
+| User memberships | `api/user-memberships.ts` | `[locale]/subscriptions/` (until P1.7) | Replaced Subscriptions (P1.5). Memberships page is ticket P1.7. |
+| Subscriptions (legacy) | `api/subscriptions.ts` | `[locale]/subscriptions/` | Delete both once P1.7 ships. |
+| Fares (legacy) | `api/fares.ts` | — (page already deleted) | Router still mounted; safe to delete. |
 | Gyms (platform) | `api/gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
+
+Shared admin components (P0.1/P0.2, in `apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`. Use these in every new page — don't hand-roll tables/modals. Member app has `BottomNav` (P0.3).
 
 ### Member app (`apps/member`) — in progress
 
@@ -240,20 +250,27 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 
 ## Deployment (dev)
 
-All traffic enters through **Traefik on corfront** (`10.0.2.100`), which terminates TLS (Let's Encrypt) for the `vdicube.com` subdomains:
+All traffic enters through **Traefik on corfront** (`10.0.2.100`), which terminates TLS (Let's Encrypt) for the `vdicube.com` subdomains. Both VPSs are **Oracle Ampere aarch64** — images are built `linux/arm64`-only on GitHub's native ARM runner (`ubuntu-24.04-arm`; never add amd64 back — QEMU emulation times builds out).
 
-| Piece | Public URL | Runs on | How |
-|-------|-----------|---------|-----|
-| API | `https://api.vdicube.com` → corback `10.0.2.101:3000` | "corback" VPS (`150.230.157.145`) | `deploy.yml`: multi-arch image (amd64+arm64 — Oracle ARM/Ampere) → GHCR `gymdesk-api` → SSH as `github` → rootless Podman + systemd user unit (reboot-safe). Knex migrations run on the VPS from the image (DB is VCN-private). |
-| Admin | `https://admin.vdicube.com` → corfront `:8081` | "corfront" VPS (`10.0.2.100`) | `deploy-admin.yml`: same pattern, GHCR `gymdesk-admin`, Next.js standalone container |
-| Member | `https://members.vdicube.com` → corfront `:8082` | "corfront" VPS | `deploy-member.yml`, GHCR `gymdesk-member` |
+| Piece | Public URL | Runs on | Container / image |
+|-------|-----------|---------|-------------------|
+| API | `https://api.vdicube.com` → corback `10.0.2.101:3000` | "corback" VPS (`150.230.157.145`) | `fitness-api` / GHCR `fitness-api` |
+| Admin | `https://admin.vdicube.com` → corfront `:8081` | "corfront" VPS (`10.0.2.100`) | `fitness-admin` / GHCR `fitness-admin` |
+| Member | `https://members.vdicube.com` → corfront `:8082` | "corfront" VPS | `fitness-members` (**plural**) / GHCR `fitness-members` |
+
+**Ownership split (important):**
+- **Oscar owns the runtime**: rootless Podman under VPS user `podman`, one **Quadlet unit** per container at `/home/podman/.config/containers/systemd/<name>.container` defining ports, env vars, and restart policy. Containers are managed with `systemctl --user {start|stop|restart} <name>`.
+- **Our workflows own build + release only**: build arm64 image → push to GHCR → SSH as `podman` → `podman pull` → (API only: run Knex migrations from the image — the DB is VCN-private, CI can't reach it) → `systemctl --user restart <unit>` → health check.
+- Workflows must **never** `podman run` the app containers or `podman generate systemd` — that fights the running unit for the port (exit 126) or overwrites Oscar's env config. To change a runtime env var or port, ask Oscar to edit the unit.
 
 Notes:
-- Frontend containers call the API over the **private VCN** (`BACKEND_URL=http://10.0.2.101:3000`); no CORS anywhere.
-- Inbound ports are controlled by the **OCI VCN Security List** (cloud console); OS firewalls are disabled. If a port times out from outside but works on localhost, it's the Security List. Public `:3000` on corback should be closed once Traefik fronting is confirmed.
+- API runtime DB config = `CORDEL_FITNESS_DB_HOST/_USER/_PASSWORD/_NAME` (split vars, set in Oscar's unit). Knex migrations still use a single `DATABASE_URL` (deploy passes `DATABASE_URL_MIGRATIONS`).
+- Frontends reach the API via `CORDEL_FITNESS_API_URL=https://api.vdicube.com` (public URL through Traefik — Oscar's deliberate choice for flexibility; traffic stays in the Frankfurt region). API invite emails use `CORDEL_FITNESS_MEMBERS_URL=https://members.vdicube.com`.
+- corfront also runs Oscar's `traefik` (:80/:443) and `wordpress_eforge` (:8080) under the same `podman` user — visible in `podman ps`, don't touch.
+- Inbound ports are controlled by the **OCI VCN Security List** (cloud console); OS firewalls are disabled. If a port times out from outside but works on localhost, it's the Security List.
 - Traefik config lives on corfront at `/srv/containers/traefik/config/dynamic/backend.yml` (managed by Oscar).
-- `debug-vps.yml` (workflow_dispatch) prints container/listener/health state from inside corback when SSH access isn't available locally.
-- Legacy: `gymdesk-*.vercel.app` and `backend-dev.gymdesk.uk` are retired — do not reference them.
+- Diagnostics: `test-ssh.yml` (workflow_dispatch) prints identity/ports/`podman ps` on both VPSs; `debug-vps.yml` does deeper corback checks.
+- Legacy names are fully retired: `gymdesk-*` containers/images, VPS user `github`, Vercel, `backend-dev.gymdesk.uk` — do not reference them.
 
 ---
 
@@ -263,18 +280,21 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 
 ### Environment-scoped (per env: `dev` today, `production` later)
 
-| Name | Kind | Why per-environment |
-|------|------|---------------------|
-| `DATABASE_URL` | secret | Each env has its own database |
-| `CLERK_SECRET_KEY` | secret | Clerk test instance (dev) vs live instance (PRO) |
-| `CLERK_PUBLISHABLE_KEY` | secret | Same |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Same |
-| `MEMBER_APP_URL` | variable | Each env has its own member-app URL |
+| Name | Kind | Used by |
+|------|------|---------|
+| `CORDEL_FITNESS_DB_HOST/_USER/_PASSWORD/_NAME` | secrets | (reserved — runtime DB config lives in Oscar's unit; kept in sync here) |
+| `DATABASE_URL_MIGRATIONS` | secret | `deploy.yml` — Knex migrations on the VPS (DDL user `fitness_deploy`) |
+| `DATABASE_URL_MYSQL` | secret | `debug-vps.yml` — connectivity probe (DML user `fitness`) |
+| `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | secrets | CI + deploys (Clerk test instance in dev) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Frontend builds (baked as build arg) |
+| `CORDEL_FITNESS_MEMBERS_URL` | variable | Member-app URL for invite emails |
 
 ### Repo-scoped (cross-env)
 
 | Name | Kind | Notes |
 |------|------|-------|
 | `GHCR_PAT` | secret | Container registry access, shared |
-| `CORBACK_SSH_HOST`, `CORBACK_SSH_PRIVATE_KEY` | secret | Dev VPS. Environment-dependent by nature — move into the `dev` environment when PRO's server exists (values must be re-entered; secrets are write-only) |
-| `CORFRONT_SSH_HOST`, `CORFRONT_SSH_PRIVATE_KEY` | secret | Reserved for future frontend VPS |
+| `CORBACK_SSH_HOST`, `CORBACK_SSH_PRIVATE_KEY` | secret | SSH as user `podman` on corback |
+| `CORFRONT_SSH_HOST`, `CORFRONT_SSH_PRIVATE_KEY` | secret | SSH as user `podman` on corfront |
+
+CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container** (schema `fitness`, plain `DATABASE_URL`) — the real HeatWave DB is unreachable from CI runners.

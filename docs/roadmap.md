@@ -7,6 +7,15 @@ onto the existing `members` + `gym_memberships` split — no new users table).
 Each ticket below is a GitHub issue in `cordel-app/gymdesk`. Full scope and acceptance
 criteria live in the issue bodies; this doc is the map.
 
+## Status (2026-07-12)
+
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.5.
+- **Next**: **P1.6 charge_types + billing_events ledger (#10)**, then P1.7 (#11), P1.8 (#12).
+- Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
+  `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
+- Pending cleanup: delete legacy `/fares` router (page already replaced by Plans);
+  delete `/subscriptions` router + page when P1.7 ships.
+
 ## Decisions
 
 - **Database (updated 2026-07-03)**: migrate from Neon PostgreSQL to **Oracle HeatWave MySQL**
@@ -29,8 +38,8 @@ criteria live in the issue bodies; this doc is the map.
 ## Conventions
 
 Every feature ticket follows `docs/feature-patterns.md`: migration → Express router
-(`requireRole` guards, `gym_id` filter, 23505→409) → register in `backend/src/index.ts` →
-backoffice page (Members page as staff-level/soft-delete template, Fares page as admin-only
+(`requireRole` guards, `gym_id` filter, `ER_DUP_ENTRY`→409) → register in `api/src/index.ts` →
+admin page (Members page as staff-level/soft-delete template, Plans page as admin-only
 template) → Sidebar → i18n (en/es/ca).
 
 ## Phases

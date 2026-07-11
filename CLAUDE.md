@@ -10,7 +10,9 @@ Read these two files first — they contain the full architecture map and step-b
 - `docs/feature-patterns.md` — checklist and code templates for new features
 
 Use **Members** as the reference implementation for staff-level CRUD with soft-delete.
-Use **Fares** as the reference implementation for admin-only CRUD.
+Use **Plans** (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the reference implementation for admin-only CRUD.
+
+Ticket order and current status live in `docs/roadmap.md`; full scope is in the GitHub issues.
 
 ## Hard constraints
 
