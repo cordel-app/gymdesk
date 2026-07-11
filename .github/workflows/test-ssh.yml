@@ -27,7 +27,7 @@ jobs:
           -o PreferredAuthentications=publickey \
           -v \
           podman@${{ secrets.CORFRONT_SSH_HOST }} \
-          "hostname && echo ' - ✅ CORFRONT SSH OK'"
+          "hostname && echo \"arch: \$(uname -m)\" && echo ' - ✅ CORFRONT SSH OK'"
 
   test-ssh-corback:
     runs-on: ubuntu-latest
@@ -52,4 +52,4 @@ jobs:
           -o PreferredAuthentications=publickey \
           -v \
           podman@${{ secrets.CORBACK_SSH_HOST }} \
-          "hostname && echo ' - 🚀 CORBACK SSH OK'"
+          "hostname && echo \"arch: \$(uname -m)\" && echo ' - 🚀 CORBACK SSH OK'"
