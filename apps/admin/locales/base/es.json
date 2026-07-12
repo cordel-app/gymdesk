@@ -14,6 +14,7 @@
     "promotions": "Promociones",
     "exercises": "Ejercicios",
     "workouts": "Rutinas",
+    "audit": "Registro de auditoría",
     "system": "Sistema",
     "gyms": "Gimnasios"
   },
@@ -265,6 +266,24 @@
     "paid_months": "Meses pagados",
     "free_periods": "Periodos gratis",
     "pay_get": "Paga {paid} meses, {free} gratis"
+  },
+  "audit": {
+    "title": "Registro de auditoría",
+    "loading": "Cargando…",
+    "empty": "No hay entradas que coincidan con los filtros.",
+    "filter_entity": "Tipo de entidad",
+    "filter_actor": "Actor",
+    "filter_from": "Desde",
+    "filter_to": "Hasta",
+    "col_when": "Cuándo",
+    "col_actor": "Actor",
+    "col_action": "Acción",
+    "col_entity": "Entidad",
+    "col_source": "Origen",
+    "previous": "Anterior",
+    "next": "Nuevo",
+    "page_info": "{start}–{end} de {total}",
+    "error_generic": "Algo ha ido mal."
   },
   "workouts": {
     "title": "Rutinas",

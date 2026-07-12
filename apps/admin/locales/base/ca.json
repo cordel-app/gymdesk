@@ -14,6 +14,7 @@
     "promotions": "Promocions",
     "exercises": "Exercicis",
     "workouts": "Rutines",
+    "audit": "Registre d'auditoria",
     "system": "Sistema",
     "gyms": "Gimnasos"
   },
@@ -265,6 +266,24 @@
     "paid_months": "Mesos pagats",
     "free_periods": "Períodes gratis",
     "pay_get": "Paga {paid} mesos, {free} gratis"
+  },
+  "audit": {
+    "title": "Registre d'auditoria",
+    "loading": "Carregant…",
+    "empty": "No hi ha entrades que coincideixin amb els filtres.",
+    "filter_entity": "Tipus d'entitat",
+    "filter_actor": "Actor",
+    "filter_from": "Des de",
+    "filter_to": "Fins a",
+    "col_when": "Quan",
+    "col_actor": "Actor",
+    "col_action": "Acció",
+    "col_entity": "Entitat",
+    "col_source": "Origen",
+    "previous": "Anterior",
+    "next": "Nou",
+    "page_info": "{start}–{end} de {total}",
+    "error_generic": "Alguna cosa ha anat malament."
   },
   "workouts": {
     "title": "Rutines",

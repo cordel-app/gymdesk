@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordStatusChange, sourceForRole } from './billing-events';
+import { recordAudit } from '../infra/audit';
 
 const STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
@@ -115,6 +116,7 @@ userMembershipsRouter.post('/', requireRole('admin', 'staff'), async (req, res, 
       return insertId;
     });
     const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ?`, [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'user_membership', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -181,6 +183,7 @@ userMembershipsRouter.put('/:id', requireRole('admin', 'staff'), async (req, res
     });
     if (!found) return res.status(404).json({ error: 'Membership not found' });
     const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
+    recordAudit(req, { action: 'update', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') {
@@ -212,5 +215,6 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     return true;
   });
   if (!found) return res.status(404).json({ error: 'Membership not found or already cancelled' });
+  recordAudit(req, { action: 'cancel', entityType: 'user_membership', entityId: req.params.id });
   res.status(204).send();
 });

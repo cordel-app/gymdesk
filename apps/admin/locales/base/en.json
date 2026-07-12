@@ -14,6 +14,7 @@
     "promotions": "Promotions",
     "exercises": "Exercises",
     "workouts": "Workouts",
+    "audit": "Audit log",
     "system": "System",
     "gyms": "Gyms"
   },
@@ -265,6 +266,24 @@
     "paid_months": "Paid months",
     "free_periods": "Free periods",
     "pay_get": "Pay {paid} months, get {free} free"
+  },
+  "audit": {
+    "title": "Audit log",
+    "loading": "Loading…",
+    "empty": "No audit entries match the current filters.",
+    "filter_entity": "Entity type",
+    "filter_actor": "Actor",
+    "filter_from": "From",
+    "filter_to": "To",
+    "col_when": "When",
+    "col_actor": "Actor",
+    "col_action": "Action",
+    "col_entity": "Entity",
+    "col_source": "Source",
+    "previous": "Previous",
+    "next": "New",
+    "page_info": "{start}–{end} of {total}",
+    "error_generic": "Something went wrong."
   },
   "workouts": {
     "title": "Workouts",

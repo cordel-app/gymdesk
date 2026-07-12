@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, GymRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 /**
  * P1.6 (#10): append-only billing ledger. GET + POST only — rows are never
@@ -145,6 +146,7 @@ billingEventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, ne
       ],
     );
     const { rows } = await db.query(`${LIST_SELECT} WHERE be.id = ?`, [insertId]);
+    recordAudit(req, { action: 'append', entityType: 'billing_event', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err: any) {
     next(err);

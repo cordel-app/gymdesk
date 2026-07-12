@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 /**
  * P4.4: apply/revoke promotions on a user_membership.
@@ -142,6 +143,7 @@ membershipPromotionsRouter.post('/', requireRole('admin', 'staff'), async (req, 
       }
       return { user_membership_id: umId, promotion_id, final_price: calc.price };
     });
+    recordAudit(req, { action: 'apply_promotion', entityType: 'user_membership', entityId: umId, next: applied });
     res.status(201).json(applied);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -177,6 +179,7 @@ membershipPromotionsRouter.delete('/:promotionId', requireRole('admin', 'staff')
       return { final_price: calc.price };
     });
     if (!result) return res.status(404).json({ error: 'Applied promotion not found' });
+    recordAudit(req, { action: 'revoke_promotion', entityType: 'user_membership', entityId: umId, next: { promotion_id: promotionId, ...result } });
     res.status(200).json(result);
   } catch (err) { next(err); }
 });

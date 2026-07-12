@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -70,6 +71,7 @@ membersRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =>
       [name, email, phone ?? null, fare_id ?? null, gymId],
     );
     const { rows } = await db.query('SELECT * FROM members WHERE id = ?', [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'member', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A member with this email already exists.' });
@@ -130,5 +132,6 @@ membersRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     [req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Member not found' });
+  recordAudit(req, { action: 'soft_delete', entityType: 'member', entityId: req.params.id });
   res.status(204).send();
 });

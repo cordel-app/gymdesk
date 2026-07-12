@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
 
@@ -97,6 +98,7 @@ classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req
        new Date(starts_at), new Date(ends_at), cap, userId],
     );
     const { rows } = await db.query(`${SELECT} WHERE cs.id = ?`, [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'class_session', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (e) { next(e); }
 });
@@ -147,5 +149,6 @@ classSessionsRouter.post('/:id/cancel', requireRole('admin', 'coach', 'staff'), 
     [reason, req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
+  recordAudit(req, { action: 'cancel', entityType: 'class_session', entityId: req.params.id, next: { cancellation_reason: reason } });
   res.status(204).send();
 });

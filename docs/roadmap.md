@@ -9,8 +9,8 @@ criteria live in the issue bodies; this doc is the map.
 
 ## Status (2026-07-12)
 
-- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.7.
-- **Next**: **P1.8 Member app: my membership + payment history (#12)**.
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3.
+- **Deferred**: Phase 7 (multi-location), Phase 8 (Stripe payments).
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
 - Legacy cleanup complete: `/fares` and `/subscriptions` routers + the old

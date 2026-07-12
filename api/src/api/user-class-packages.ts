@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 /**
  * P3.2: user class packages nested under members.
@@ -95,6 +96,7 @@ userClassPackagesRouter.post('/', requireRole('admin', 'staff'), async (req, res
       return insertId;
     });
     const { rows } = await db.query(`${SELECT} WHERE ucp.id = ?`, [insertId]);
+    recordAudit(req, { action: 'assign', entityType: 'user_class_package', entityId: insertId, next: rows[0] });
     res.status(201).json(applyLazyStatus(rows[0]));
   } catch (err) { next(err); }
 });

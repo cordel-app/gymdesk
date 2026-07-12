@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 const STATUSES = ['active', 'inactive'];
 
@@ -44,6 +45,7 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
       [name.trim(), description ?? null, parsed, status ?? 'active', gymId],
     );
     const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'membership_plan', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A plan with this name already exists.' });
