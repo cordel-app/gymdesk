@@ -4,7 +4,6 @@ import swaggerUi from 'swagger-ui-express';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
 import { membersRouter } from './api/members';
-import { classesRouter } from './api/classes';
 import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { gymsRouter, platformRouter } from './api/gyms';
@@ -86,7 +85,6 @@ app.use('/me/link', requireAuth(), meLinkRouter);
 app.use('/me',      requireAuth(), tenantContext, meRouter);
 
 app.use('/members',       requireAuth(), tenantContext, membersRouter);
-app.use('/classes',       requireAuth(), tenantContext, classesRouter);
 app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);

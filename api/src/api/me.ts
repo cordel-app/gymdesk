@@ -72,13 +72,18 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
 meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);
   try {
+    // P2.5: joined via class_sessions + class_types (the flat classes table is gone).
     const { rows } = await db.query(
-      `SELECT b.*, c.name AS class_name, c.starts_at, c.ends_at, c.description
+      `SELECT b.id, b.status, b.waitlist_position, b.booked_at, b.cancelled_at,
+              b.class_session_id,
+              cs.starts_at, cs.ends_at, cs.status AS session_status,
+              ct.name AS class_name, ct.description
        FROM bookings b
-       JOIN classes c ON c.id = b.class_id
+       JOIN class_sessions cs ON cs.id = b.class_session_id
+       JOIN class_types ct ON ct.id = cs.class_type_id
        JOIN members m ON m.id = b.member_id
        WHERE b.gym_id = ? AND m.clerk_user_id = ?
-       ORDER BY c.starts_at ASC`,
+       ORDER BY cs.starts_at ASC`,
       [gymId, userId],
     );
     res.json(rows);

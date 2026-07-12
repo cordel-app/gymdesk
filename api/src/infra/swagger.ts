@@ -125,7 +125,6 @@ export const swaggerSpec = swaggerJsdoc({
       { name: 'Gyms' },
       { name: 'Platform', description: 'Superadmin only' },
       { name: 'Members' },
-      { name: 'Classes' },
       { name: 'Bookings' },
       { name: 'Billing', description: 'Charge types + append-only billing ledger (P1.6)' },
     ],
@@ -260,42 +259,6 @@ export const swaggerSpec = swaggerJsdoc({
           responses: { '200': { description: 'Restored member', content: { 'application/json': { schema: { $ref: '#/components/schemas/Member' } } } }, '404': { description: 'Not found or not deleted' } },
         },
       },
-      '/classes': {
-        get: {
-          tags: ['Classes'],
-          summary: 'List classes',
-          parameters: [{ $ref: '#/components/parameters/gymId' }],
-          responses: { '200': { description: 'Classes list', content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Class' } } } } } },
-        },
-        post: {
-          tags: ['Classes'],
-          summary: 'Create a class (admin, coach)',
-          parameters: [{ $ref: '#/components/parameters/gymId' }],
-          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['name', 'starts_at', 'ends_at'], properties: { name: { type: 'string' }, description: { type: 'string' }, capacity: { type: 'integer', default: 10 }, starts_at: { type: 'string', format: 'date-time' }, ends_at: { type: 'string', format: 'date-time' } } } } } },
-          responses: { '201': { description: 'Class created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Class' } } } } },
-        },
-      },
-      '/classes/{id}': {
-        get: {
-          tags: ['Classes'],
-          summary: 'Get a class',
-          parameters: [{ $ref: '#/components/parameters/gymId' }, { in: 'path', name: 'id', required: true, schema: { type: 'integer' } }],
-          responses: { '200': { description: 'Class', content: { 'application/json': { schema: { $ref: '#/components/schemas/Class' } } } }, '404': { description: 'Not found' } },
-        },
-        put: {
-          tags: ['Classes'],
-          summary: 'Update a class (admin, coach)',
-          parameters: [{ $ref: '#/components/parameters/gymId' }, { in: 'path', name: 'id', required: true, schema: { type: 'integer' } }],
-          requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, capacity: { type: 'integer' }, starts_at: { type: 'string', format: 'date-time' }, ends_at: { type: 'string', format: 'date-time' } } } } } },
-          responses: { '200': { description: 'Updated class', content: { 'application/json': { schema: { $ref: '#/components/schemas/Class' } } } }, '404': { description: 'Not found' } },
-        },
-        delete: {
-          tags: ['Classes'],
-          summary: 'Delete a class (admin)',
-          parameters: [{ $ref: '#/components/parameters/gymId' }, { in: 'path', name: 'id', required: true, schema: { type: 'integer' } }],
-          responses: { '204': { description: 'Deleted' }, '404': { description: 'Not found' } },
-        },
-      },
       '/bookings': {
         get: {
           tags: ['Bookings'],
@@ -307,7 +270,7 @@ export const swaggerSpec = swaggerJsdoc({
           tags: ['Bookings'],
           summary: 'Create a booking (admin, staff)',
           parameters: [{ $ref: '#/components/parameters/gymId' }],
-          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['member_id', 'class_id'], properties: { member_id: { type: 'integer' }, class_id: { type: 'integer' } } } } } },
+          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['member_id', 'class_session_id'], properties: { member_id: { type: 'integer' }, class_session_id: { type: 'integer' } } } } } },
           responses: { '201': { description: 'Booking created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Booking' } } } } },
         },
       },
