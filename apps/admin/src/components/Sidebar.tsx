@@ -30,6 +30,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     ...(isAdmin ? [{ href: `/${locale}/class-types`, label: t('nav.class_types') }] : []),
     ...(isAdmin ? [{ href: `/${locale}/class-packages`, label: t('nav.class_packages') }] : []),
     ...(isAdmin ? [{ href: `/${locale}/promotions`, label: t('nav.promotions') }] : []),
+    { href: `/${locale}/exercises`, label: t('nav.exercises') },
   ];
 
   const systemLinks = [
