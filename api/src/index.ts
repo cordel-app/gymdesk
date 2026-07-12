@@ -22,6 +22,7 @@ import { userClassPackagesRouter } from './api/user-class-packages';
 import { actionTypesRouter } from './api/action-types';
 import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
+import { membershipPromotionsRouter } from './api/membership-promotions';
 // Side-effect import: registers the booking access hook for package credits.
 // Must be imported BEFORE plan-class-types so its hook is queued first
 // (plan-access checks getPackageIntent to know whether to bail on 403).
@@ -97,6 +98,7 @@ app.use('/me',      requireAuth(), tenantContext, meRouter);
 app.use('/members',       requireAuth(), tenantContext, membersRouter);
 app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
+app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, membershipPromotionsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
 app.use('/membership-plans/:id/class-types', requireAuth(), tenantContext, planClassTypesRouter);
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
