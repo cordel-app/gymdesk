@@ -6,21 +6,26 @@ import { useGym } from '@/context/GymContext';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useToast } from '@/components/Toast';
+import { DataTable, Column } from '@/components/DataTable';
+import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { btnStyle, btnSmall } from '@/components/ui';
+import { THEME_KEYS, THEMES, DEFAULT_THEME, type ThemeKey } from '@/lib/themes';
 
 interface Gym {
   id: string;
   name: string;
   slug: string;
   plan: string;
+  theme_key: ThemeKey;
   created_at: string;
 }
 
-const emptyForm = { name: '', slug: '', plan: 'free' };
+const emptyForm = { name: '', slug: '', plan: 'free', theme_key: DEFAULT_THEME as ThemeKey };
 
 export default function SystemGymsPage() {
   const t = useTranslations('system_gyms');
   const { apiFetch } = useApiClient();
-  const { isSuperadmin, setActiveGymId } = useGym();
+  const { isSuperadmin, setActiveGymId, refreshGyms } = useGym();
   const router = useRouter();
   const locale = useLocale();
   const { toast } = useToast();
@@ -28,6 +33,7 @@ export default function SystemGymsPage() {
   const [gyms, setGyms] = useState<Gym[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Gym | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,21 +59,52 @@ export default function SystemGymsPage() {
     }
   }
 
-  async function handleCreate() {
-    if (!form.name.trim() || !form.slug.trim()) {
+  function openAdd() {
+    setEditing(null);
+    setForm(emptyForm);
+    setError(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(g: Gym) {
+    setEditing(g);
+    setForm({ name: g.name, slug: g.slug, plan: g.plan, theme_key: g.theme_key ?? DEFAULT_THEME });
+    setError(null);
+    setModalOpen(true);
+  }
+
+  async function handleSave() {
+    if (!form.name.trim() || (!editing && !form.slug.trim())) {
       setError(t('error_required'));
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      await apiFetch('/platform/gyms', {
-        method: 'POST',
-        body: JSON.stringify({ name: form.name.trim(), slug: form.slug.trim(), plan: form.plan }),
-      });
+      if (editing) {
+        // PATCH: only send editable fields (slug/plan aren't touched here).
+        await apiFetch(`/platform/gyms/${editing.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: form.name.trim(), theme_key: form.theme_key }),
+        });
+      } else {
+        await apiFetch('/platform/gyms', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: form.name.trim(),
+            slug: form.slug.trim(),
+            plan: form.plan,
+            theme_key: form.theme_key,
+          }),
+        });
+      }
       setModalOpen(false);
+      setEditing(null);
       setForm(emptyForm);
-      load();
+      await load();
+      // Refresh the global gym list so the theme picker's change lands in
+      // GymContext immediately (chrome themes update live via ThemeProvider).
+      await refreshGyms();
     } catch (err: any) {
       setError(err.message ?? t('error_generic'));
     } finally {
@@ -80,99 +117,122 @@ export default function SystemGymsPage() {
     router.push(`/${locale}/members`);
   }
 
+  const columns: Column<Gym>[] = [
+    { header: t('col_name'), render: (g) => g.name },
+    { header: t('col_slug'), render: (g) => <code style={{ fontSize: 13 }}>{g.slug}</code> },
+    { header: t('col_plan'), width: 90, render: (g) => g.plan },
+    {
+      header: t('col_theme'),
+      width: 80,
+      render: (g) => (
+        <span
+          aria-label={t(`theme_${g.theme_key}`)}
+          title={t(`theme_${g.theme_key}`)}
+          style={{
+            display: 'inline-block',
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            background: THEMES[g.theme_key]?.brand ?? THEMES[DEFAULT_THEME].brand,
+            border: '1px solid rgba(0,0,0,0.1)',
+          }}
+        />
+      ),
+    },
+    { header: t('col_created'), width: 130, render: (g) => new Date(g.created_at).toLocaleDateString() },
+    {
+      header: t('col_actions'),
+      width: 200,
+      render: (g) => (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => handleManage(g.id)} style={btnSmall('#444')}>{t('manage')}</button>
+          <button onClick={() => openEdit(g)} style={btnSmall()}>{t('edit')}</button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
-        <button onClick={() => { setModalOpen(true); setForm(emptyForm); setError(null); }} style={btnStyle('#6c63ff')}>
-          {t('create')}
-        </button>
+        <button onClick={openAdd} style={btnStyle()}>{t('create')}</button>
       </div>
 
-      {loading ? (
-        <p style={{ color: '#666' }}>{t('loading')}</p>
-      ) : gyms.length === 0 ? (
-        <p style={{ color: '#666' }}>{t('empty')}</p>
-      ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr style={{ background: '#f0f0f0', textAlign: 'left' }}>
-              <th style={th}>{t('col_name')}</th>
-              <th style={th}>{t('col_slug')}</th>
-              <th style={th}>{t('col_plan')}</th>
-              <th style={th}>{t('col_created')}</th>
-              <th style={{ ...th, width: 120 }}>{t('col_actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {gyms.map((g) => (
-              <tr key={g.id} style={{ borderTop: '1px solid #eee' }}>
-                <td style={td}>{g.name}</td>
-                <td style={td}><code style={{ fontSize: 13 }}>{g.slug}</code></td>
-                <td style={td}>{g.plan}</td>
-                <td style={td}>{new Date(g.created_at).toLocaleDateString()}</td>
-                <td style={td}>
-                  <button onClick={() => handleManage(g.id)} style={btnSmall('#444')}>{t('manage')}</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <DataTable
+        columns={columns}
+        rows={gyms}
+        rowKey={(g) => g.id}
+        loading={loading}
+        loadingText={t('loading')}
+        emptyText={t('empty')}
+      />
 
-      {modalOpen && (
-        <div style={overlayStyle} onClick={() => setModalOpen(false)}>
-          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 20px' }}>{t('modal_title')}</h2>
+      <CrudModal
+        open={modalOpen}
+        title={editing ? t('modal_edit') : t('modal_title')}
+        error={error}
+        saving={saving}
+        cancelLabel={t('cancel')}
+        saveLabel={saving ? t('saving') : editing ? t('save_changes') : t('save')}
+        onCancel={() => { setModalOpen(false); setEditing(null); setForm(emptyForm); setError(null); }}
+        onSave={handleSave}
+      >
+        <FormLabel>{t('label_name')}</FormLabel>
+        <FormInput
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="My Gym"
+          autoFocus
+        />
 
-            <label style={labelStyle}>{t('label_name')}</label>
-            <input
-              style={inputStyle}
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="My Gym"
-              autoFocus
-            />
-
-            <label style={labelStyle}>{t('label_slug')}</label>
-            <input
-              style={inputStyle}
+        {!editing && (
+          <>
+            <FormLabel>{t('label_slug')}</FormLabel>
+            <FormInput
               value={form.slug}
               onChange={(e) => setForm({ ...form, slug: e.target.value.toLowerCase().replace(/\s+/g, '-') })}
               placeholder="my-gym"
             />
 
-            <label style={labelStyle}>{t('label_plan')}</label>
-            <select style={inputStyle} value={form.plan} onChange={(e) => setForm({ ...form, plan: e.target.value })}>
+            <FormLabel>{t('label_plan')}</FormLabel>
+            <select
+              value={form.plan}
+              onChange={(e) => setForm({ ...form, plan: e.target.value })}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}
+            >
               <option value="free">{t('plan_free')}</option>
               <option value="pro">{t('plan_pro')}</option>
             </select>
+          </>
+        )}
 
-            {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
-              <button onClick={() => setModalOpen(false)} style={btnStyle('#aaa')} disabled={saving}>{t('cancel')}</button>
-              <button onClick={handleCreate} style={btnStyle('#6c63ff')} disabled={saving}>
-                {saving ? t('saving') : t('save')}
-              </button>
-            </div>
-          </div>
+        <FormLabel>{t('label_theme')}</FormLabel>
+        <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
+          {THEME_KEYS.map((k) => {
+            const selected = form.theme_key === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setForm({ ...form, theme_key: k })}
+                aria-label={t(`theme_${k}`)}
+                title={t(`theme_${k}`)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  background: THEMES[k].brand,
+                  border: selected ? '3px solid #333' : '2px solid #ccc',
+                  cursor: 'pointer',
+                  padding: 0,
+                  outline: 'none',
+                }}
+              />
+            );
+          })}
         </div>
-      )}
+      </CrudModal>
     </div>
   );
 }
-
-const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' };
-const th: React.CSSProperties = { padding: '12px 16px', fontWeight: 600, fontSize: 15 };
-const td: React.CSSProperties = { padding: '12px 16px', fontSize: 15 };
-function btnStyle(bg: string): React.CSSProperties {
-  return { background: bg, color: '#fff', border: 'none', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
-}
-function btnSmall(bg: string): React.CSSProperties {
-  return { background: bg, color: '#fff', border: 'none', borderRadius: 4, padding: '6px 12px', cursor: 'pointer', fontSize: 13 };
-}
-const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
-const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 420, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };
-const labelStyle: React.CSSProperties = { display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 4, marginTop: 14, color: '#333' };
-const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' };

@@ -1,15 +1,17 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useTranslations } from 'next-intl';
 import { useToast } from '@/components/Toast';
+import type { ThemeKey } from '@/lib/themes';
 
 export interface GymOption {
   id: string;
   name: string;
   slug: string;
   role: 'admin' | 'coach' | 'staff';
+  theme_key?: ThemeKey;
 }
 
 interface GymContextValue {
@@ -19,6 +21,7 @@ interface GymContextValue {
   setActiveGymId: (id: string) => void;
   loading: boolean;
   isSuperadmin: boolean;
+  refreshGyms: () => Promise<void>;
 }
 
 const GymContext = createContext<GymContextValue>({
@@ -28,6 +31,7 @@ const GymContext = createContext<GymContextValue>({
   setActiveGymId: () => {},
   loading: true,
   isSuperadmin: false,
+  refreshGyms: async () => {},
 });
 
 export function GymProvider({ children }: { children: ReactNode }) {
@@ -41,38 +45,39 @@ export function GymProvider({ children }: { children: ReactNode }) {
   const [activeGymId, setActiveGymIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadGyms = useCallback(async () => {
     if (!isSignedIn || !user) return;
+    try {
+      const token = await getToken();
+      const endpoint = isSuperadmin ? '/api/proxy/platform/gyms' : '/api/proxy/gyms';
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to load gyms');
+      const data = await res.json();
 
-    async function loadGyms() {
-      try {
-        const token = await getToken();
-        const endpoint = isSuperadmin ? '/api/proxy/platform/gyms' : '/api/proxy/gyms';
-        const res = await fetch(endpoint, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!res.ok) throw new Error('Failed to load gyms');
-        const data = await res.json();
+      // Platform endpoint returns gyms without role — add synthetic 'admin' for superadmin
+      const gymsWithRole: GymOption[] = isSuperadmin
+        ? data.map((g: Omit<GymOption, 'role'>) => ({ ...g, role: 'admin' as const }))
+        : data;
 
-        // Platform endpoint returns gyms without role — add synthetic 'admin' for superadmin
-        const gymsWithRole: GymOption[] = isSuperadmin
-          ? data.map((g: Omit<GymOption, 'role'>) => ({ ...g, role: 'admin' as const }))
-          : data;
+      setGyms(gymsWithRole);
 
-        setGyms(gymsWithRole);
-
+      // Only pick an initial selection on the FIRST load; refreshGyms after an
+      // edit shouldn't jump the user to a different gym.
+      setActiveGymIdState((prev) => {
+        if (prev && gymsWithRole.find((g) => g.id === prev)) return prev;
         const stored = typeof window !== 'undefined' ? localStorage.getItem('activeGymId') : null;
-        const initial = stored && gymsWithRole.find((g) => g.id === stored) ? stored : gymsWithRole[0]?.id ?? null;
-        setActiveGymIdState(initial);
-      } catch (err: any) {
-        toast(err.message ?? t('error_load_gyms'));
-      } finally {
-        setLoading(false);
-      }
+        return (stored && gymsWithRole.find((g) => g.id === stored) ? stored : gymsWithRole[0]?.id) ?? null;
+      });
+    } catch (err: any) {
+      toast(err.message ?? t('error_load_gyms'));
+    } finally {
+      setLoading(false);
     }
+  }, [isSignedIn, user?.id, isSuperadmin, getToken, toast, t]);
 
-    loadGyms();
-  }, [isSignedIn, user?.id, isSuperadmin]);
+  useEffect(() => { loadGyms(); }, [loadGyms]);
 
   function setActiveGymId(id: string) {
     setActiveGymIdState(id);
@@ -82,7 +87,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
   const activeGym = gyms.find((g) => g.id === activeGymId) ?? null;
 
   return (
-    <GymContext.Provider value={{ gyms, activeGymId, activeGym, setActiveGymId, loading, isSuperadmin }}>
+    <GymContext.Provider value={{ gyms, activeGymId, activeGym, setActiveGymId, loading, isSuperadmin, refreshGyms: loadGyms }}>
       {children}
     </GymContext.Provider>
   );

@@ -15,7 +15,7 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       left: 0,
       right: 0,
       height: 52,
-      background: '#1a1a2e',
+      background: 'var(--chrome, #1a1a2e)',
       borderBottom: '1px solid rgba(255,255,255,0.1)',
       display: 'flex',
       alignItems: 'center',
@@ -39,23 +39,13 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
           <span style={{ display: 'block', width: 22, height: 2, background: '#fff', borderRadius: 2 }} />
           <span style={{ display: 'block', width: 22, height: 2, background: '#fff', borderRadius: 2 }} />
         </button>
-        <strong style={{ color: '#fff', fontSize: 18 }}>Gymdesk</strong>
+        <strong style={{ color: '#fff', fontSize: 18 }}>
+          {activeGym?.name ?? 'Gymdesk'}
+        </strong>
       </div>
       <style>{`@media (max-width: 768px) { .hamburger-btn { display: flex !important; } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         {!loading && isSuperadmin && <GymSelector />}
-        {!loading && !isSuperadmin && activeGym && (
-          <span style={{
-            color: 'rgba(255,255,255,0.8)',
-            fontSize: 13,
-            background: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 6,
-            padding: '4px 10px',
-          }}>
-            {activeGym.name}
-          </span>
-        )}
         <LanguagePicker />
         <UserButton />
       </div>

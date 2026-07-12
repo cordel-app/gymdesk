@@ -37,6 +37,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   const systemLinks = [
     { href: `/${locale}/system/gyms`, label: t('nav.gyms') },
+    { href: `/${locale}/system/users`, label: t('nav.system_users') },
   ];
 
   function NavLink({ href, label, indent = false }: { href: string; label: string; indent?: boolean }) {
@@ -51,7 +52,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           color: active ? '#fff' : 'rgba(255,255,255,0.6)',
           textDecoration: 'none',
           background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
-          borderLeft: active ? '3px solid #6c63ff' : '3px solid transparent',
+          borderLeft: active ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
           fontWeight: active ? 600 : 400,
           fontSize: indent ? 14 : 15,
         }}
@@ -64,7 +65,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <aside style={{
       width: 220,
-      background: '#1a1a2e',
+      background: 'var(--chrome, #1a1a2e)',
       color: '#fff',
       display: 'flex',
       flexDirection: 'column',
@@ -88,7 +89,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                     color: active ? '#fff' : 'rgba(255,255,255,0.6)',
                     textDecoration: 'none',
                     background: active && !isParentOfActive ? 'rgba(255,255,255,0.1)' : 'transparent',
-                    borderLeft: active && !isParentOfActive ? '3px solid #6c63ff' : '3px solid transparent',
+                    borderLeft: active && !isParentOfActive ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
                     fontWeight: active ? 600 : 400,
                     fontSize: 15,
                   }}

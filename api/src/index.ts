@@ -7,6 +7,7 @@ import { membersRouter } from './api/members';
 import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { gymsRouter, platformRouter } from './api/gyms';
+import { superadminsRouter } from './api/superadmins';
 import { membershipPlansRouter } from './api/membership-plans';
 import { benefitTypesRouter } from './api/benefit-types';
 import { chargeTypesRouter } from './api/charge-types';
@@ -94,6 +95,7 @@ app.use('/gyms', requireAuth(), gymsRouter);
 
 // Platform superadmin routes
 app.use('/platform', requireAuth(), platformRouter);
+app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 
 // Domain routes — require auth + tenant context (gym_id from x-gym-id header)
 // /me/link must come before tenantContext (no membership row exists yet on first link)

@@ -22,7 +22,7 @@ export function GymSelector() {
       }}
     >
       {gyms.map((g) => (
-        <option key={g.id} value={g.id} style={{ background: '#1a1a2e', color: '#fff' }}>
+        <option key={g.id} value={g.id} style={{ background: 'var(--chrome, #1a1a2e)', color: '#fff' }}>
           {g.name}
         </option>
       ))}
