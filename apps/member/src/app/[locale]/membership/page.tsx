@@ -29,6 +29,15 @@ interface Membership {
   benefits: Benefit[];
 }
 
+interface UserPackage {
+  id: number;
+  package_name: string;
+  package_sessions: number;
+  sessions_remaining: number;
+  expires_at: string;
+  status: 'active' | 'consumed' | 'expired' | 'cancelled';
+}
+
 interface BillingEvent {
   id: number;
   event_type: 'charge_created' | 'payment_recorded' | 'status_changed' | 'adjustment';
@@ -50,6 +59,7 @@ export default function MembershipPage() {
   const { isLinked, loading: appLoading } = useApp();
 
   const [membership, setMembership] = useState<Membership | null>(null);
+  const [packages, setPackages] = useState<UserPackage[]>([]);
   const [events, setEvents] = useState<BillingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,13 +70,15 @@ export default function MembershipPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [mship, ledger] = await Promise.all([
+        const [mship, ledger, pkgs] = await Promise.all([
           apiFetch<{ membership: Membership | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
+          apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
         setEvents(ledger.items);
+        setPackages(pkgs);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -153,6 +165,28 @@ export default function MembershipPage() {
                 {b.recurrence && (
                   <span style={styles.benefitMeta}>· {t(`membership.recurrence.${b.recurrence}`)}</span>
                 )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {packages.length > 0 && (
+        <section style={styles.section}>
+          <h2 style={styles.h2}>{t('membership.packages_heading')}</h2>
+          <ul style={styles.eventList}>
+            {packages.map((p) => (
+              <li key={p.id} style={styles.eventItem}>
+                <div style={styles.eventLine}>
+                  <span style={styles.eventLabel}>{p.package_name}</span>
+                  <span style={styles.eventAmount}>
+                    {p.sessions_remaining} / {p.package_sessions}
+                  </span>
+                </div>
+                <div style={styles.eventSub}>
+                  {t(`membership.package_status.${p.status}`)}
+                  {p.status === 'active' && ` · ${t('membership.expires', { date: p.expires_at.slice(0, 10) })}`}
+                </div>
               </li>
             ))}
           </ul>

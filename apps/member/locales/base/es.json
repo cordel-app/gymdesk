@@ -41,6 +41,14 @@
     "starts": "Inicio",
     "ends": "Fin",
     "ongoing": "En curso",
+    "packages_heading": "Bonos de clases",
+    "package_status": {
+      "active": "Activo",
+      "consumed": "Créditos agotados",
+      "expired": "Caducado",
+      "cancelled": "Cancelado"
+    },
+    "expires": "caduca el {date}",
     "benefits_heading": "Beneficios incluidos",
     "history_heading": "Historial de pagos",
     "history_empty": "Aún no hay pagos registrados.",

@@ -41,6 +41,14 @@
     "starts": "Inici",
     "ends": "Fi",
     "ongoing": "En curs",
+    "packages_heading": "Bons de classes",
+    "package_status": {
+      "active": "Actiu",
+      "consumed": "Crèdits esgotats",
+      "expired": "Caducat",
+      "cancelled": "Cancel·lat"
+    },
+    "expires": "caduca el {date}",
     "benefits_heading": "Beneficis inclosos",
     "history_heading": "Historial de pagaments",
     "history_empty": "Encara no hi ha pagaments registrats.",

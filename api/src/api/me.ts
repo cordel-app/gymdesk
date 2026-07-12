@@ -188,6 +188,33 @@ meRouter.post('/bookings', requireRole('member'), async (req: Request, res: Resp
   }
 });
 
+/**
+ * P3.4: caller's class packages with lazy status flip so the client can
+ * render "expired" without duplicating the rule.
+ */
+meRouter.get('/class-packages', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT ucp.id, ucp.sessions_remaining, ucp.expires_at, ucp.purchased_at, ucp.status,
+              cp.name AS package_name, cp.number_of_sessions AS package_sessions, cp.price AS package_price
+       FROM user_class_packages ucp
+       JOIN class_packages cp ON cp.id = ucp.class_package_id
+       JOIN members m ON m.id = ucp.member_id
+       WHERE ucp.gym_id = ? AND m.clerk_user_id = ?
+       ORDER BY ucp.purchased_at DESC`,
+      [gymId, userId],
+    );
+    const shaped = rows.map((r: any) => {
+      let status = r.status;
+      if (status === 'active' && Number(r.sessions_remaining) <= 0) status = 'consumed';
+      else if (status === 'active' && r.expires_at && new Date(r.expires_at) < new Date()) status = 'expired';
+      return { ...r, status };
+    });
+    res.json(shaped);
+  } catch (err) { next(err); }
+});
+
 /** Cancel own booking. Rejected once the session has already started. */
 meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);

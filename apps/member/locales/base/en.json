@@ -41,6 +41,14 @@
     "starts": "Starts",
     "ends": "Ends",
     "ongoing": "Ongoing",
+    "packages_heading": "Class packages",
+    "package_status": {
+      "active": "Active",
+      "consumed": "All credits used",
+      "expired": "Expired",
+      "cancelled": "Cancelled"
+    },
+    "expires": "expires {date}",
     "benefits_heading": "Included benefits",
     "history_heading": "Payment history",
     "history_empty": "No payments recorded yet.",
