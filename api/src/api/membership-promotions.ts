@@ -154,7 +154,7 @@ membershipPromotionsRouter.post('/', requireRole('admin', 'staff'), async (req, 
 membershipPromotionsRouter.delete('/:promotionId', requireRole('admin', 'staff'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const umId = parseInt((req.params as any).id, 10);
-  const promotionId = parseInt(req.params.promotionId, 10);
+  const promotionId = parseInt(String(req.params.promotionId), 10);
   try {
     const result = await db.transaction(async (tx) => {
       const { rowCount } = await tx.query(
