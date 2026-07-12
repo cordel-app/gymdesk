@@ -16,6 +16,23 @@
   "common": {
     "error": "Alguna cosa ha anat malament."
   },
+  "member_schedule": {
+    "title": "Horari",
+    "loading": "Carregant…",
+    "empty": "No hi ha properes sessions.",
+    "book": "Reservar",
+    "join_waitlist": "Afegir-me a la llista d'espera",
+    "cancel_booking": "Cancel·lar reserva",
+    "status_booked": "Reservada",
+    "waitlist_pos": "Espera #{pos}",
+    "spots_left": "{n} places disponibles",
+    "full": "Plena",
+    "plan_only": "Només amb quota",
+    "plan_required": "Aquesta classe requereix una quota compatible.",
+    "booked": "Ja tens la plaça.",
+    "waitlisted_at": "A la llista d'espera — posició {pos}.",
+    "cancelled": "Reserva cancel·lada."
+  },
   "membership": {
     "title": "La meva quota",
     "loading": "Carregant…",

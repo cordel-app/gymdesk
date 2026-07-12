@@ -16,6 +16,23 @@
   "common": {
     "error": "Something went wrong."
   },
+  "member_schedule": {
+    "title": "Schedule",
+    "loading": "Loading…",
+    "empty": "No upcoming sessions.",
+    "book": "Book",
+    "join_waitlist": "Join waitlist",
+    "cancel_booking": "Cancel booking",
+    "status_booked": "Booked",
+    "waitlist_pos": "Waitlist #{pos}",
+    "spots_left": "{n} spots left",
+    "full": "Full",
+    "plan_only": "Members only",
+    "plan_required": "This class needs a matching plan.",
+    "booked": "You're booked.",
+    "waitlisted_at": "Added to waitlist — position {pos}.",
+    "cancelled": "Booking cancelled."
+  },
   "membership": {
     "title": "My membership",
     "loading": "Loading…",

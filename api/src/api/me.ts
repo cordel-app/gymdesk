@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { bookMemberOnSession, cancelBooking } from './bookings';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -88,6 +89,125 @@ meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Respo
     );
     res.json(rows);
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * P2.8: upcoming schedule for the current member with per-session status:
+ *   - spots_left: capacity minus current booked/attended/no_show count
+ *   - my_booking_status: their own booking on this session (or null)
+ *   - my_waitlist_position: their queue position if waitlisted
+ *   - access_locked: true if the class type is plan-restricted AND the member
+ *     doesn't hold a qualifying active membership; front-ends render this as a
+ *     lock icon rather than a Book button.
+ */
+meRouter.get('/schedule', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  try {
+    const { rows: memberRows } = await db.query(
+      'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
+      [gymId, userId],
+    );
+    if (memberRows.length === 0) return res.json([]);
+    const memberId = memberRows[0].id;
+
+    const from = (req.query.from as string) || new Date().toISOString();
+    const to = req.query.to as string | undefined;
+    const where: string[] = ["cs.gym_id = ?", "cs.status = 'scheduled'", "cs.starts_at >= ?"];
+    const params: any[] = [gymId, from];
+    if (to) { where.push('cs.starts_at <= ?'); params.push(to); }
+
+    const { rows } = await db.query(
+      `SELECT cs.id, cs.class_type_id, cs.starts_at, cs.ends_at,
+              ct.name AS class_type_name, ct.description AS class_type_description,
+              r.name AS room_name,
+              COALESCE(cs.max_capacity_override, ct.max_capacity) AS effective_capacity,
+              (
+                SELECT COUNT(*) FROM bookings b
+                WHERE b.class_session_id = cs.id AND b.status IN ('booked','attended','no_show')
+              ) AS booked_count,
+              (
+                SELECT b.status FROM bookings b
+                WHERE b.class_session_id = cs.id AND b.member_id = ? AND b.status <> 'cancelled'
+                LIMIT 1
+              ) AS my_booking_status,
+              (
+                SELECT b.waitlist_position FROM bookings b
+                WHERE b.class_session_id = cs.id AND b.member_id = ? AND b.status = 'waitlisted'
+                LIMIT 1
+              ) AS my_waitlist_position,
+              (
+                SELECT b.id FROM bookings b
+                WHERE b.class_session_id = cs.id AND b.member_id = ? AND b.status <> 'cancelled'
+                LIMIT 1
+              ) AS my_booking_id,
+              (
+                SELECT COUNT(*) FROM class_type_user_memberships ctum
+                WHERE ctum.class_type_id = cs.class_type_id AND ctum.gym_id = cs.gym_id
+              ) > 0 AND NOT EXISTS (
+                SELECT 1 FROM user_memberships um
+                JOIN class_type_user_memberships ctum
+                  ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
+                WHERE um.gym_id = cs.gym_id AND um.member_id = ? AND um.status = 'active'
+                  AND ctum.class_type_id = cs.class_type_id
+              ) AS access_locked
+       FROM class_sessions cs
+       JOIN class_types ct ON ct.id = cs.class_type_id
+       LEFT JOIN rooms r ON r.id = cs.room_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY cs.starts_at ASC`,
+      [memberId, memberId, memberId, memberId, ...params],
+    );
+    const shaped = rows.map((r: any) => ({
+      ...r,
+      spots_left: Math.max(0, Number(r.effective_capacity) - Number(r.booked_count)),
+      access_locked: !!Number(r.access_locked),
+    }));
+    res.json(shaped);
+  } catch (err) { next(err); }
+});
+
+/** Book self on a session. Returns the booking with booked/waitlisted status. */
+meRouter.post('/bookings', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const { class_session_id } = req.body;
+  if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
+  try {
+    const { rows: memberRows } = await db.query(
+      'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
+      [gymId, userId],
+    );
+    if (memberRows.length === 0) return res.status(404).json({ error: 'Member profile not found' });
+    const result = await bookMemberOnSession(gymId, memberRows[0].id, Number(class_session_id));
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You already have a booking for this session.' });
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    next(err);
+  }
+});
+
+/** Cancel own booking. Rejected once the session has already started. */
+meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT b.id, cs.starts_at
+       FROM bookings b
+       JOIN class_sessions cs ON cs.id = b.class_session_id
+       JOIN members m ON m.id = b.member_id
+       WHERE b.id = ? AND b.gym_id = ? AND m.clerk_user_id = ?`,
+      [req.params.id, gymId, userId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
+    if (new Date(rows[0].starts_at) <= new Date()) {
+      return res.status(400).json({ error: 'Cannot cancel a booking after the session has started.' });
+    }
+    await cancelBooking(gymId, Number(req.params.id));
+    res.status(204).send();
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });

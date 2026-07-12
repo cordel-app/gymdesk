@@ -13,7 +13,7 @@ const TABS = [
   { key: 'profile', path: '/profile', icon: '◉' },
 ] as const;
 
-const ENABLED_TABS: ReadonlyArray<(typeof TABS)[number]['key']> = ['home', 'membership'];
+const ENABLED_TABS: ReadonlyArray<(typeof TABS)[number]['key']> = ['home', 'schedule', 'membership'];
 
 export function BottomNav() {
   const pathname = usePathname();
