@@ -28,6 +28,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     ...(isAdmin ? [{ href: `/${locale}/rooms`, label: t('nav.rooms') }] : []),
     ...(isAdmin ? [{ href: `/${locale}/specialities`, label: t('nav.specialities') }] : []),
     ...(isAdmin ? [{ href: `/${locale}/trainers`, label: t('nav.trainers') }] : []),
+    ...(isAdmin ? [{ href: `/${locale}/class-types`, label: t('nav.class_types') }] : []),
   ];
 
   const systemLinks = [
