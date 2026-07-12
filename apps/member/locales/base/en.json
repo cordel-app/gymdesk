@@ -16,6 +16,25 @@
   "common": {
     "error": "Something went wrong."
   },
+  "training": {
+    "title": "Training",
+    "loading": "Loading…",
+    "empty": "No training plan assigned yet.",
+    "no_plan_today": "No plan for this day.",
+    "series": "Set",
+    "weight": "Weight",
+    "reps": "Reps",
+    "log": "Log",
+    "logged": "Set logged.",
+    "history": "Recent sets",
+    "weekday_short_0": "Mon",
+    "weekday_short_1": "Tue",
+    "weekday_short_2": "Wed",
+    "weekday_short_3": "Thu",
+    "weekday_short_4": "Fri",
+    "weekday_short_5": "Sat",
+    "weekday_short_6": "Sun"
+  },
   "member_schedule": {
     "title": "Schedule",
     "loading": "Loading…",

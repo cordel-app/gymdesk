@@ -16,6 +16,25 @@
   "common": {
     "error": "Alguna cosa ha anat malament."
   },
+  "training": {
+    "title": "Entrenament",
+    "loading": "Carregant…",
+    "empty": "Encara no tens un pla assignat.",
+    "no_plan_today": "No hi ha pla per aquest dia.",
+    "series": "Sèrie",
+    "weight": "Pes",
+    "reps": "Reps",
+    "log": "Registrar",
+    "logged": "Sèrie registrada.",
+    "history": "Sèries recents",
+    "weekday_short_0": "Dl",
+    "weekday_short_1": "Dm",
+    "weekday_short_2": "Dc",
+    "weekday_short_3": "Dj",
+    "weekday_short_4": "Dv",
+    "weekday_short_5": "Ds",
+    "weekday_short_6": "Dg"
+  },
   "member_schedule": {
     "title": "Horari",
     "loading": "Carregant…",

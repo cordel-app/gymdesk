@@ -16,6 +16,25 @@
   "common": {
     "error": "Algo ha ido mal."
   },
+  "training": {
+    "title": "Entrenamiento",
+    "loading": "Cargando…",
+    "empty": "Aún no tienes un plan asignado.",
+    "no_plan_today": "No hay plan para este día.",
+    "series": "Serie",
+    "weight": "Peso",
+    "reps": "Reps",
+    "log": "Registrar",
+    "logged": "Serie registrada.",
+    "history": "Series recientes",
+    "weekday_short_0": "Lun",
+    "weekday_short_1": "Mar",
+    "weekday_short_2": "Mié",
+    "weekday_short_3": "Jue",
+    "weekday_short_4": "Vie",
+    "weekday_short_5": "Sáb",
+    "weekday_short_6": "Dom"
+  },
   "member_schedule": {
     "title": "Horario",
     "loading": "Cargando…",
