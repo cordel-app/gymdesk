@@ -96,9 +96,9 @@ userMembershipsRouter.post('/', requireRole('admin', 'staff'), async (req, res, 
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, plan, base_price, plan_price_id, final_price,
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, final_price,
           discount_reason, discount_expires_at, starts_at, ends_at, status)
-         VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
         [
           member_id, gymId, membership_plan_id,
           eff.base_price, eff.plan_price_id, parsedFinal,

@@ -23,7 +23,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     },
     { href: `/${locale}/classes`, label: t('nav.classes') },
     { href: `/${locale}/bookings`, label: t('nav.bookings') },
-    { href: `/${locale}/subscriptions`, label: t('nav.subscriptions') },
+    { href: `/${locale}/memberships`, label: t('nav.memberships') },
     ...(isAdmin ? [{ href: `/${locale}/plans`, label: t('nav.plans') }] : []),
   ];
 

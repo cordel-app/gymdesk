@@ -28,17 +28,6 @@ export interface Booking {
   created_at: string;
 }
 
-export interface Subscription {
-  id: number;
-  gym_id: string;
-  member_id: number;
-  plan: string;
-  starts_at: string;
-  ends_at: string | null;
-  status: string;
-  created_at: string;
-}
-
 export interface MembershipPlan {
   id: number;
   gym_id: string;

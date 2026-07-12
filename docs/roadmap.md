@@ -9,12 +9,14 @@ criteria live in the issue bodies; this doc is the map.
 
 ## Status (2026-07-12)
 
-- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.6.
-- **Next**: **P1.7 Memberships page (#11)**, then P1.8 (#12).
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.7.
+- **Next**: **P1.8 Member app: my membership + payment history (#12)**.
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
-- Pending cleanup: delete `/subscriptions` router + page when P1.7 ships
-  (legacy `/fares` router deleted 2026-07-12).
+- Legacy cleanup complete: `/fares` and `/subscriptions` routers + the old
+  Subscriptions page deleted, `user_memberships.plan` column dropped
+  (migrations 004, 007, 009). Only `/me/subscriptions` (member app) remains
+  under the old URL — renamed with P1.8.
 
 ## Decisions
 

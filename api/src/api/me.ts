@@ -91,7 +91,7 @@ meRouter.get('/subscriptions', requireRole('member'), async (req: Request, res: 
   const { gymId, userId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT um.id, um.member_id, COALESCE(p.name, um.plan) AS plan,
+      `SELECT um.id, um.member_id, p.name AS plan,
               um.starts_at, um.ends_at, um.status, um.created_at
        FROM user_memberships um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id

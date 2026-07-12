@@ -231,10 +231,9 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Bookings | `api/bookings.ts` | `[locale]/bookings/` | |
 | Plans | `api/membership-plans.ts` | `[locale]/plans/` | Canonical admin-only CRUD reference. Includes plan prices (validity windows) + benefits. Replaced Fares (P1.1/P1.2). |
 | Benefit types | `api/benefit-types.ts` | (used inside Plans) | Global lookup table (no `gym_id`), seeded in its migration. |
-| User memberships | `api/user-memberships.ts` | `[locale]/subscriptions/` (until P1.7) | Replaced Subscriptions (P1.5). Memberships page is ticket P1.7. Status changes write a `status_changed` billing event in the same transaction. |
-| Billing ledger | `api/billing-events.ts` | — (page is P1.7) | Append-only: GET (paginated, filter by member/membership/type/date) + POST only. `status_changed` rows are system-emitted, not POSTable. |
-| Charge types | `api/charge-types.ts` | (used when recording payments) | Global lookup table (no `gym_id`), seeded in its migration. |
-| Subscriptions (legacy) | `api/subscriptions.ts` | `[locale]/subscriptions/` | Delete both once P1.7 ships. |
+| User memberships | `api/user-memberships.ts` | `[locale]/memberships/` | Replaced Subscriptions (P1.5/P1.7). Status changes write a `status_changed` billing event in the same transaction. Members page reads plans from `/membership-plans?status=active`. |
+| Billing ledger | `api/billing-events.ts` | Ledger drawer inside `[locale]/memberships/` | Append-only: GET (paginated, filter by member/membership/type/date) + POST only. `status_changed` rows are system-emitted, not POSTable. |
+| Charge types | `api/charge-types.ts` | (used inside the ledger drawer's Record payment modal) | Global lookup table (no `gym_id`), seeded in its migration. |
 | Gyms (platform) | `api/gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
 
 Shared admin components (P0.1/P0.2, in `apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`. Use these in every new page — don't hand-roll tables/modals. Member app has `BottomNav` (P0.3).
