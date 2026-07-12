@@ -97,7 +97,7 @@ superadminsRouter.post('/', requireSuperadmin, async (req, res, next) => {
 
 superadminsRouter.delete('/:userId', requireSuperadmin, async (req, res, next) => {
   const { userId: callerUserId } = getTenantContext(req);
-  const targetId = req.params.userId;
+  const targetId = String(req.params.userId);
   if (targetId === callerUserId) {
     return res.status(400).json({ error: 'Cannot revoke your own superadmin role. Ask another superadmin to do it.' });
   }
