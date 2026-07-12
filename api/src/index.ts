@@ -16,6 +16,7 @@ import { roomsRouter } from './api/rooms';
 import { specialitiesRouter } from './api/specialities';
 import { trainersRouter } from './api/trainers';
 import { classTypesRouter } from './api/class-types';
+import { classSessionsRouter } from './api/class-sessions';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter } from './api/me';
 import { tenantContext } from './infra/tenantContext';
@@ -96,6 +97,7 @@ app.use('/rooms',            requireAuth(), tenantContext, roomsRouter);
 app.use('/specialities',     requireAuth(), tenantContext, specialitiesRouter);
 app.use('/trainers',         requireAuth(), tenantContext, trainersRouter);
 app.use('/class-types',      requireAuth(), tenantContext, classTypesRouter);
+app.use('/class-sessions',   requireAuth(), tenantContext, classSessionsRouter);
 
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
