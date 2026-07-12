@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { registerBookingAccessHook } from './bookings';
+import { getPackageIntent } from './package-credits';
 
 /**
  * P2.7: /membership-plans/:id/class-types — nested list/replace.
@@ -89,10 +90,14 @@ registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
     [gymId, memberId, classTypeId],
   );
   if (matchRows.length === 0) {
+    // P3.3: if the package hook has already claimed responsibility for this
+    // booking (member has an active package with credits), let the booking
+    // through and debit the package post-insert.
+    if (getPackageIntent(tx)) return;
     // Translated by the caller via error message; the "plan_required" code lets
     // clients surface a localized string, and the human message is a safe fallback.
     throw Object.assign(
-      new Error('This class type is only available to members on a qualifying plan.'),
+      new Error('This class type is only available to members on a qualifying plan or a class package.'),
       { status: 403, code: 'plan_required' },
     );
   }

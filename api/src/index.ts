@@ -19,6 +19,10 @@ import { classSessionsRouter } from './api/class-sessions';
 import { planClassTypesRouter } from './api/plan-class-types';
 import { classPackagesRouter } from './api/class-packages';
 import { userClassPackagesRouter } from './api/user-class-packages';
+// Side-effect import: registers the booking access hook for package credits.
+// Must be imported BEFORE plan-class-types so its hook is queued first
+// (plan-access checks getPackageIntent to know whether to bail on 403).
+import './api/package-credits';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter } from './api/me';
 import { tenantContext } from './infra/tenantContext';

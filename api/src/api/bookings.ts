@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+// Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
+let packageCreditsModule: typeof import('./package-credits') | null = null;
+async function packageCredits() {
+  if (!packageCreditsModule) packageCreditsModule = await import('./package-credits');
+  return packageCreditsModule;
+}
 
 /**
  * P2.5 bookings: waitlist + attendance.
@@ -92,6 +98,9 @@ export async function bookMemberOnSession(gymId: string, memberId: number, sessi
          VALUES (?, ?, ?, 'booked', UTC_TIMESTAMP())`,
         [gymId, memberId, sessionId],
       );
+      // P3.3: settle a package debit if one was claimed by the access hook.
+      const pc = await packageCredits();
+      await pc.debitPackageIfClaimed(tx, insertId, gymId);
       return { id: insertId, status: 'booked', waitlist_position: null };
     }
 
@@ -114,7 +123,7 @@ export async function bookMemberOnSession(gymId: string, memberId: number, sessi
 export async function cancelBooking(gymId: string, bookingId: number) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
-      "SELECT id, member_id, class_session_id, status FROM bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
+      "SELECT id, member_id, class_session_id, status, user_class_package_id FROM bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
       [bookingId, gymId],
     );
     if (bookingRows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
@@ -126,12 +135,19 @@ export async function cancelBooking(gymId: string, bookingId: number) {
       [bookingId],
     );
 
+    // P3.3: refund the credit if this booking spent one. no_show is handled by
+    // the attendance route, not here — the row stays 'no_show' and keeps the debit.
+    if (b.user_class_package_id) {
+      const pc = await packageCredits();
+      await pc.refundPackageCredit(tx, bookingId, b.user_class_package_id, gymId);
+    }
+
     // Only a freed 'booked' slot promotes someone; cancelling a 'waitlisted' or
     // 'attended' booking doesn't create a new spot.
     if (b.status !== 'booked') return { promoted: null };
 
     const { rows: waitRows } = await tx.query(
-      `SELECT id, waitlist_position FROM bookings
+      `SELECT id, member_id, waitlist_position FROM bookings
        WHERE class_session_id = ? AND status = 'waitlisted'
        ORDER BY waitlist_position ASC LIMIT 1 FOR UPDATE`,
       [b.class_session_id],
@@ -141,6 +157,21 @@ export async function cancelBooking(gymId: string, bookingId: number) {
       "UPDATE bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
       [waitRows[0].id],
     );
+
+    // Promoted member may now need to debit a package. Re-run the access
+    // hooks against the promoted member to establish intent, then debit.
+    const promotedMemberId = waitRows[0].member_id;
+    const { rows: sessionRow } = await tx.query(
+      'SELECT class_type_id FROM class_sessions WHERE id = ?',
+      [b.class_session_id],
+    );
+    for (const hook of accessHooks) {
+      try { await hook(tx, gymId, promotedMemberId, sessionRow[0].class_type_id); }
+      catch { /* promotion never fails; if hook throws, the promoted member just doesn't get a package debit */ }
+    }
+    const pc = await packageCredits();
+    await pc.debitPackageIfClaimed(tx, waitRows[0].id, gymId);
+
     return { promoted: waitRows[0].id };
   });
 }
