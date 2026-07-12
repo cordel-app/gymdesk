@@ -118,7 +118,10 @@
     "saving": "Guardando…",
     "save_changes": "Guardar cambios",
     "prices": "Precios",
-    "benefits": "Beneficios"
+    "benefits": "Beneficios",
+    "class_access": "Acceso a clases",
+    "class_access_title": "Acceso a tipos de clase",
+    "class_access_empty": "Aún no hay tipos de clase definidos."
   },
   "prices": {
     "title": "Precios",

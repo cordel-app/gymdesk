@@ -118,7 +118,10 @@
     "saving": "Desant…",
     "save_changes": "Desar canvis",
     "prices": "Preus",
-    "benefits": "Beneficis"
+    "benefits": "Beneficis",
+    "class_access": "Accés a classes",
+    "class_access_title": "Accés a tipus de classe",
+    "class_access_empty": "Encara no hi ha tipus de classe definits."
   },
   "prices": {
     "title": "Preus",
