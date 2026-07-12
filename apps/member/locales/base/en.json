@@ -12,5 +12,49 @@
     "membership": "Membership",
     "training": "Training",
     "profile": "Profile"
+  },
+  "common": {
+    "error": "Something went wrong."
+  },
+  "membership": {
+    "title": "My membership",
+    "loading": "Loading…",
+    "empty": "You don't have a membership yet. Ask your gym to set one up.",
+    "price": "Monthly price",
+    "starts": "Starts",
+    "ends": "Ends",
+    "ongoing": "Ongoing",
+    "benefits_heading": "Included benefits",
+    "history_heading": "Payment history",
+    "history_empty": "No payments recorded yet.",
+    "status": {
+      "active": "Active",
+      "paused": "Paused",
+      "cancelled": "Cancelled",
+      "expired": "Expired"
+    },
+    "event": {
+      "charge_created": "Charge",
+      "payment_recorded": "Payment",
+      "status_changed": "Status change",
+      "adjustment": "Adjustment"
+    },
+    "charge_type": {
+      "membership_fee": "Membership fee",
+      "registration_fee": "Registration fee",
+      "insurance_fee": "Insurance",
+      "class_package": "Class package"
+    },
+    "benefit": {
+      "priority_booking": "Priority booking",
+      "free_locker": "Free locker",
+      "free_parking": "Free parking",
+      "waived_charge": "Waived fee",
+      "class_package_credit": "Class package credit"
+    },
+    "recurrence": {
+      "monthly": "Monthly",
+      "yearly": "Yearly"
+    }
   }
 }

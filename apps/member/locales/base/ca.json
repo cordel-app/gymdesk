@@ -12,5 +12,49 @@
     "membership": "Quota",
     "training": "Entreno",
     "profile": "Perfil"
+  },
+  "common": {
+    "error": "Alguna cosa ha anat malament."
+  },
+  "membership": {
+    "title": "La meva quota",
+    "loading": "Carregant…",
+    "empty": "Encara no tens cap quota assignada. Demana-la al teu gimnàs.",
+    "price": "Preu mensual",
+    "starts": "Inici",
+    "ends": "Fi",
+    "ongoing": "En curs",
+    "benefits_heading": "Beneficis inclosos",
+    "history_heading": "Historial de pagaments",
+    "history_empty": "Encara no hi ha pagaments registrats.",
+    "status": {
+      "active": "Activa",
+      "paused": "Pausada",
+      "cancelled": "Cancel·lada",
+      "expired": "Caducada"
+    },
+    "event": {
+      "charge_created": "Càrrec",
+      "payment_recorded": "Pagament",
+      "status_changed": "Canvi d'estat",
+      "adjustment": "Ajust"
+    },
+    "charge_type": {
+      "membership_fee": "Quota de soci",
+      "registration_fee": "Matrícula",
+      "insurance_fee": "Assegurança",
+      "class_package": "Bo de classes"
+    },
+    "benefit": {
+      "priority_booking": "Reserva prioritària",
+      "free_locker": "Taquilla gratuïta",
+      "free_parking": "Pàrquing gratuït",
+      "waived_charge": "Quota exempta",
+      "class_package_credit": "Crèdit de bo"
+    },
+    "recurrence": {
+      "monthly": "Mensual",
+      "yearly": "Anual"
+    }
   }
 }

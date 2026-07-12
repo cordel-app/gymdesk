@@ -12,5 +12,49 @@
     "membership": "Cuota",
     "training": "Entreno",
     "profile": "Perfil"
+  },
+  "common": {
+    "error": "Algo ha ido mal."
+  },
+  "membership": {
+    "title": "Mi cuota",
+    "loading": "Cargando…",
+    "empty": "Aún no tienes una cuota asignada. Pídelo a tu gimnasio.",
+    "price": "Precio mensual",
+    "starts": "Inicio",
+    "ends": "Fin",
+    "ongoing": "En curso",
+    "benefits_heading": "Beneficios incluidos",
+    "history_heading": "Historial de pagos",
+    "history_empty": "Aún no hay pagos registrados.",
+    "status": {
+      "active": "Activa",
+      "paused": "Pausada",
+      "cancelled": "Cancelada",
+      "expired": "Caducada"
+    },
+    "event": {
+      "charge_created": "Cargo",
+      "payment_recorded": "Pago",
+      "status_changed": "Cambio de estado",
+      "adjustment": "Ajuste"
+    },
+    "charge_type": {
+      "membership_fee": "Cuota de socio",
+      "registration_fee": "Cuota de inscripción",
+      "insurance_fee": "Seguro",
+      "class_package": "Bono de clases"
+    },
+    "benefit": {
+      "priority_booking": "Reserva prioritaria",
+      "free_locker": "Taquilla gratis",
+      "free_parking": "Parking gratis",
+      "waived_charge": "Cuota exenta",
+      "class_package_credit": "Crédito de bono"
+    },
+    "recurrence": {
+      "monthly": "Mensual",
+      "yearly": "Anual"
+    }
   }
 }

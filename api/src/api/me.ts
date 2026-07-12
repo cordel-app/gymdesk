@@ -87,20 +87,74 @@ meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Respo
   }
 });
 
-meRouter.get('/subscriptions', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+// P1.8: current membership (single record) with plan + benefits inline. Returns
+// { membership: {...} | null } — null when the member has none, so the client
+// can render an empty state without treating 404 as an error.
+meRouter.get('/membership', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);
   try {
-    const { rows } = await db.query(
-      `SELECT um.id, um.member_id, p.name AS plan,
-              um.starts_at, um.ends_at, um.status, um.created_at
+    // Prefer active > paused > any non-cancelled > most recent by starts_at.
+    const { rows: mships } = await db.query(
+      `SELECT um.id, um.member_id, um.membership_plan_id,
+              um.base_price, um.final_price, um.discount_reason, um.discount_expires_at,
+              um.starts_at, um.ends_at, um.status, um.created_at,
+              p.name AS plan_name, p.description AS plan_description, p.base_price AS plan_base_price
        FROM user_memberships um
-       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        JOIN members m ON m.id = um.member_id
+       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        WHERE um.gym_id = ? AND m.clerk_user_id = ?
-       ORDER BY um.starts_at DESC`,
+       ORDER BY
+         FIELD(um.status, 'active','paused','expired','cancelled'),
+         um.starts_at DESC
+       LIMIT 1`,
       [gymId, userId],
     );
-    res.json(rows);
+    if (!mships[0]) return res.json({ membership: null });
+
+    const um = mships[0];
+    let benefits: any[] = [];
+    if (um.membership_plan_id) {
+      const { rows } = await db.query(
+        `SELECT mpb.quantity, mpb.duration_days, mpb.recurrence,
+                mpb.valid_from, mpb.valid_to, bt.code AS benefit_code
+         FROM membership_plan_benefits mpb
+         JOIN benefit_types bt ON bt.id = mpb.benefit_type_id
+         WHERE mpb.membership_plan_id = ? AND mpb.gym_id = ?
+         ORDER BY mpb.id ASC`,
+        [um.membership_plan_id, gymId],
+      );
+      benefits = rows;
+    }
+    res.json({ membership: { ...um, benefits } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// P1.8: read-only paginated ledger for the caller's own member row.
+meRouter.get('/billing-events', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 50), 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
+  try {
+    // JOIN via members.clerk_user_id — never trust client-supplied member_id.
+    const { rows: countRows } = await db.query(
+      `SELECT COUNT(*) AS total FROM billing_events be
+       JOIN members m ON m.id = be.member_id
+       WHERE be.gym_id = ? AND m.clerk_user_id = ?`,
+      [gymId, userId],
+    );
+    const { rows } = await db.query(
+      `SELECT be.id, be.user_membership_id, be.event_type, be.previous_status, be.new_status,
+              be.amount, be.notes, be.created_at, ct.code AS charge_type_code
+       FROM billing_events be
+       JOIN members m ON m.id = be.member_id
+       LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
+       WHERE be.gym_id = ? AND m.clerk_user_id = ?
+       ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
+      [gymId, userId],
+    );
+    res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
   } catch (err) {
     next(err);
   }
