@@ -239,6 +239,25 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
   }
 });
 
+/** P4.5: names of promotions applied to the caller's current membership, if any. */
+meRouter.get('/promotions', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT p.id, p.name, p.description
+       FROM user_membership_promotions ump
+       JOIN promotions p ON p.id = ump.promotion_id
+       JOIN user_memberships um ON um.id = ump.user_membership_id
+       JOIN members m ON m.id = um.member_id
+       WHERE ump.gym_id = ? AND m.clerk_user_id = ?
+         AND ump.status = 'applied' AND um.status = 'active'
+       ORDER BY ump.applied_at DESC`,
+      [gymId, userId],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 // P1.8: current membership (single record) with plan + benefits inline. Returns
 // { membership: {...} | null } — null when the member has none, so the client
 // can render an empty state without treating 404 as an error.

@@ -29,6 +29,8 @@ interface Membership {
   benefits: Benefit[];
 }
 
+interface Promotion { id: number; name: string; description: string | null }
+
 interface UserPackage {
   id: number;
   package_name: string;
@@ -60,6 +62,7 @@ export default function MembershipPage() {
 
   const [membership, setMembership] = useState<Membership | null>(null);
   const [packages, setPackages] = useState<UserPackage[]>([]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [events, setEvents] = useState<BillingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,15 +73,17 @@ export default function MembershipPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [mship, ledger, pkgs] = await Promise.all([
+        const [mship, ledger, pkgs, promos] = await Promise.all([
           apiFetch<{ membership: Membership | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
+          apiFetch<Promotion[]>('/me/promotions').catch(() => []),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
         setEvents(ledger.items);
         setPackages(pkgs);
+        setPromotions(promos);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -138,6 +143,11 @@ export default function MembershipPage() {
               {membership.final_price ? parseFloat(membership.final_price).toFixed(2) : '—'}
               {membership.discount_reason && (
                 <span style={styles.discount}> · {membership.discount_reason}</span>
+              )}
+              {promotions.length > 0 && (
+                <div style={styles.promoLine}>
+                  {promotions.map((p) => p.name).join(', ')}
+                </div>
               )}
             </dd>
           </div>
@@ -258,6 +268,7 @@ const styles: Record<string, React.CSSProperties> = {
   dt: { margin: 0, fontSize: 13, color: '#71717a' },
   dd: { margin: 0, fontSize: 15, color: '#18181b', fontWeight: 500 },
   discount: { fontSize: 12, color: '#b26a00', fontWeight: 400 },
+  promoLine: { fontSize: 12, color: '#7d3cbd', fontWeight: 400, marginTop: 2 },
   section: { marginTop: 24 },
   h2: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: '#18181b' },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },

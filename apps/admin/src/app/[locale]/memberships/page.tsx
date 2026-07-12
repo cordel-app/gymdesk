@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { MembershipLedgerModal } from './MembershipLedgerModal';
+import { PromotionApplyModal } from './PromotionApplyModal';
 
 interface Membership {
   id: number;
@@ -83,6 +84,7 @@ export default function MembershipsPage() {
 
   const [cancelling, setCancelling] = useState<Membership | null>(null);
   const [ledgerFor, setLedgerFor] = useState<Membership | null>(null);
+  const [promotionsFor, setPromotionsFor] = useState<Membership | null>(null);
 
   const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'staff';
   const isAdmin  = isSuperadmin || activeGym?.role === 'admin';
@@ -257,6 +259,7 @@ export default function MembershipsPage() {
       render: (m) => (
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={() => setLedgerFor(m)} style={btnSmall('#6c63ff')}>{t('memberships.ledger')}</button>
+          {canWrite && <button onClick={() => setPromotionsFor(m)} style={btnSmall('#7d3cbd')}>{t('memberships.promotions')}</button>}
           {canWrite && <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('memberships.edit')}</button>}
           {isAdmin && m.status !== 'cancelled' && (
             <button onClick={() => setCancelling(m)} style={btnSmall('#c0392b')}>{t('memberships.cancel_action')}</button>
@@ -411,6 +414,13 @@ export default function MembershipsPage() {
           membership={ledgerFor}
           canRecord={canWrite}
           onClose={() => setLedgerFor(null)}
+        />
+      )}
+
+      {promotionsFor && (
+        <PromotionApplyModal
+          membership={promotionsFor}
+          onClose={() => { setPromotionsFor(null); load(); }}
         />
       )}
     </div>
