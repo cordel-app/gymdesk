@@ -12,7 +12,7 @@ import { db } from './db';
 export interface AuditPayload {
   action: string;
   entityType: string;
-  entityId?: string | number;
+  entityId?: unknown; // stringified below — accepts numbers, req.params.id (string | string[]), etc.
   previous?: unknown;
   next?: unknown;
 }

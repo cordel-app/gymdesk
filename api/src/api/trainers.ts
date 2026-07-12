@@ -38,7 +38,7 @@ trainersRouter.get('/', async (req, res) => {
 
 trainersRouter.put('/:membershipId/specialities', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const membershipId = parseInt(req.params.membershipId, 10);
+  const membershipId = parseInt(String((req.params as any).membershipId), 10);
   const { speciality_ids } = req.body;
   if (!Array.isArray(speciality_ids)) return res.status(400).json({ error: 'speciality_ids must be an array' });
 
