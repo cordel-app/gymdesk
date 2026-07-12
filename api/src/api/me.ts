@@ -239,6 +239,97 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
   }
 });
 
+/** P5.5: caller's active training plans with full exercise detail. */
+meRouter.get('/training-plans', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  try {
+    const { rows: memberRows } = await db.query(
+      'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
+      [gymId, userId],
+    );
+    if (memberRows.length === 0) return res.json([]);
+    const memberId = memberRows[0].id;
+    const { rows } = await db.query(
+      `SELECT tp.id, tp.name, tp.description, tp.reps, tp.rest_seconds, tp.weekday, tp.activated_at,
+              w.name AS workout_name,
+              (
+                SELECT JSON_ARRAYAGG(JSON_OBJECT(
+                  'id', we.id, 'position', we.position,
+                  'exercise_id', e.id, 'name', e.name,
+                  'video_url', e.video_url, 'image_url', e.image_url,
+                  'reps', COALESCE(we.reps, tp.reps, e.default_reps),
+                  'rest_seconds', COALESCE(we.rest_seconds, tp.rest_seconds, e.default_rest_seconds)
+                ))
+                FROM (SELECT * FROM workout_exercises WHERE workout_id = tp.workout_id ORDER BY position ASC) we
+                JOIN exercises e ON e.id = we.exercise_id
+              ) AS exercises
+       FROM training_plans tp
+       JOIN workouts w ON w.id = tp.workout_id
+       WHERE tp.gym_id = ? AND tp.member_id = ? AND tp.deactivated_at IS NULL
+       ORDER BY tp.weekday, tp.activated_at DESC`,
+      [gymId, memberId],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+/** P5.5: log a set. Member can only log against their own active plan. */
+meRouter.post('/workout-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const { training_plan_id, workout_exercise_id, logged_date, series, weight, reps } = req.body;
+  if (!training_plan_id || !workout_exercise_id || !series || !reps) {
+    return res.status(400).json({ error: 'training_plan_id, workout_exercise_id, series and reps are required' });
+  }
+  try {
+    // Ownership + active check (403 rather than 404 to distinguish access vs missing).
+    const { rows: planRows } = await db.query(
+      `SELECT tp.id FROM training_plans tp
+       JOIN members m ON m.id = tp.member_id
+       WHERE tp.id = ? AND tp.gym_id = ? AND m.clerk_user_id = ? AND tp.deactivated_at IS NULL`,
+      [training_plan_id, gymId, userId],
+    );
+    if (planRows.length === 0) return res.status(403).json({ error: 'You can only log against your own active plan.' });
+
+    const { rows: memberRows } = await db.query(
+      'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ?',
+      [gymId, userId],
+    );
+    const memberId = memberRows[0].id;
+
+    const { insertId } = await db.query(
+      `INSERT INTO workout_logs (gym_id, member_id, training_plan_id, workout_exercise_id, logged_date, series, weight, reps)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, memberId, training_plan_id, workout_exercise_id,
+       logged_date ? new Date(logged_date) : new Date(),
+       parseInt(series, 10),
+       weight != null && weight !== '' ? parseFloat(weight) : null,
+       parseInt(reps, 10)],
+    );
+    const { rows } = await db.query('SELECT * FROM workout_logs WHERE id = ?', [insertId]);
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+/** P5.5: history for progress charts — filter by exercise id. */
+meRouter.get('/workout-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const exerciseId = req.query.exercise as string | undefined;
+  try {
+    const params: any[] = [gymId, userId];
+    let sql = `SELECT wl.id, wl.logged_date, wl.series, wl.weight, wl.reps, wl.workout_exercise_id,
+                      e.id AS exercise_id, e.name AS exercise_name
+               FROM workout_logs wl
+               JOIN workout_exercises we ON we.id = wl.workout_exercise_id
+               JOIN exercises e ON e.id = we.exercise_id
+               JOIN members m ON m.id = wl.member_id
+               WHERE wl.gym_id = ? AND m.clerk_user_id = ?`;
+    if (exerciseId) { sql += ' AND e.id = ?'; params.push(exerciseId); }
+    sql += ' ORDER BY wl.logged_date DESC, wl.series ASC';
+    const { rows } = await db.query(sql, params);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 /** P4.5: names of promotions applied to the caller's current membership, if any. */
 meRouter.get('/promotions', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);

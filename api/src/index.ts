@@ -26,6 +26,7 @@ import { membershipPromotionsRouter } from './api/membership-promotions';
 import { musclesRouter, exercisesRouter } from './api/exercises';
 import { workoutsRouter } from './api/workouts';
 import { trainingTemplatesRouter, memberTrainingPlansRouter } from './api/training-plans';
+import { memberWorkoutLogsRouter } from './api/member-workout-logs';
 // Side-effect import: registers the booking access hook for package credits.
 // Must be imported BEFORE plan-class-types so its hook is queued first
 // (plan-access checks getPackageIntent to know whether to bail on 403).
@@ -107,6 +108,7 @@ app.use('/exercises',        requireAuth(), tenantContext, exercisesRouter);
 app.use('/workouts',         requireAuth(), tenantContext, workoutsRouter);
 app.use('/training-plan-templates', requireAuth(), tenantContext, trainingTemplatesRouter);
 app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, memberTrainingPlansRouter);
+app.use('/members/:memberId/workout-logs', requireAuth(), tenantContext, memberWorkoutLogsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
 app.use('/membership-plans/:id/class-types', requireAuth(), tenantContext, planClassTypesRouter);
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
