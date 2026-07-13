@@ -169,12 +169,14 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
     // No Clerk user yet — send an invitation with gym_invite metadata
     const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
+    console.log('Creating Clerk invitation:', { email, adminUrl, gym_id: gymId, role });
     try {
       await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role } },
         ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
       });
+      console.log('Clerk invitation created successfully for:', email);
 
       // Create a placeholder membership row with 'invited' status so admin can see who was invited
       // Use a temporary user_id and store the email for later matching
