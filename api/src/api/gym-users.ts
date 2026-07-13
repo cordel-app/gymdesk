@@ -170,7 +170,8 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
     // No Clerk user yet — send an invitation with gym_invite metadata
     const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
-    console.log('Creating Clerk invitation:', { email, adminUrl, gym_id: gymId, role });
+    const clerkOrgId = process.env.CORDEL_FITNESS_CLERK_ORG_ID ?? '';
+    console.log('Creating Clerk invitation:', { email, adminUrl, gym_id: gymId, role, org_id: clerkOrgId });
 
     let clerkInvitation: any = null;
     try {
@@ -178,6 +179,7 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       clerkInvitation = await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role } },
+        ...(clerkOrgId ? { organizationId: clerkOrgId } : {}),
         ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
       });
       console.log('Clerk invitation created successfully for:', email);
@@ -317,12 +319,14 @@ gymUsersRouter.post('/:id/reinvite', requireRole('admin'), async (req, res, next
 
     const email = membership.email;
     const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
+    const clerkOrgId = process.env.CORDEL_FITNESS_CLERK_ORG_ID ?? '';
 
     try {
       // Create new Clerk invitation
       await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
+        ...(clerkOrgId ? { organizationId: clerkOrgId } : {}),
         ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
       });
 
