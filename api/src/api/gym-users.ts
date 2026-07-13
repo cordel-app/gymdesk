@@ -34,6 +34,19 @@ interface GymUser {
 }
 
 function shapeGymUser(row: any, clerkUser: any): GymUser {
+  // For invited users, clerkUser will be empty
+  if (!clerkUser || !clerkUser.id) {
+    return {
+      id: row.id,
+      user_id: row.user_id,
+      email: row.email ?? null, // Use email column for invited users
+      first_name: null,
+      last_name: null,
+      role: row.role,
+      created_at: row.created_at,
+    };
+  }
+
   const primaryEmail = clerkUser.emailAddresses?.find((e: any) => e.id === clerkUser.primaryEmailAddressId)
     ?? clerkUser.emailAddresses?.[0];
   return {
@@ -52,20 +65,29 @@ gymUsersRouter.get('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query<any>(
-      'SELECT id, user_id, role, created_at FROM gym_memberships WHERE gym_id = ? AND role IN ("admin","coach","staff") ORDER BY created_at DESC',
+      'SELECT id, user_id, role, status, email, created_at FROM gym_memberships WHERE gym_id = ? AND role IN ("admin","coach","staff") ORDER BY created_at DESC',
       [gymId],
     );
 
-    // Batch-fetch Clerk users by user_id
-    const userIds = rows.map((r) => r.user_id);
+    // Separate invited users from active users
+    const activeRows = rows.filter((r) => r.status === 'active' && !r.user_id.startsWith('invited_'));
+    const invitedRows = rows.filter((r) => r.status === 'invited');
+
+    // Batch-fetch Clerk users only for active users
     let clerkUsers: any[] = [];
-    if (userIds.length > 0) {
+    if (activeRows.length > 0) {
+      const userIds = activeRows.map((r) => r.user_id);
       const { data } = await clerkClient.users.getUserList({ userId: userIds });
       clerkUsers = data;
     }
     const clerkMap = Object.fromEntries(clerkUsers.map((u) => [u.id, u]));
 
-    const shaped = rows.map((row) => shapeGymUser(row, clerkMap[row.user_id] ?? {}));
+    // Shape all users
+    const shaped = [
+      ...activeRows.map((row) => shapeGymUser(row, clerkMap[row.user_id] ?? {})),
+      ...invitedRows.map((row) => shapeGymUser(row, {})), // Invited users have no Clerk data
+    ];
+
     res.json(shaped);
   } catch (err) { next(err); }
 });
@@ -144,6 +166,15 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
         publicMetadata: { gym_invite: { gym_id: gymId, role } },
         ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
       });
+
+      // Create a placeholder membership row with 'invited' status so admin can see who was invited
+      // Use a temporary user_id and store the email for later matching
+      const tempUserId = `invited_${Date.now()}`;
+      const { insertId } = await db.query(
+        'INSERT INTO gym_memberships (user_id, gym_id, role, status, email) VALUES (?, ?, ?, ?, ?)',
+        [tempUserId, gymId, role, 'invited', email],
+      );
+
       recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
       return res.status(201).json({ status: 'invited', email });
     } catch (err: any) {
@@ -279,11 +310,28 @@ gymUsersLinkRouter.post('/', async (req: Request, res: Response, next: NextFunct
 
     const { gym_id: gymId, role } = gymInvite;
 
-    // Insert the membership (INSERT IGNORE for idempotent retries)
-    await db.query(
-      'INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, ?)',
-      [userId, gymId, role],
+    // Get the user's email to match against invited row
+    const userEmail = clerkUser.emailAddresses?.[0]?.emailAddress ?? (clerkUser as any).email;
+
+    // Check if there's an invited placeholder row and update it, or insert new row
+    const { rows: existingInvited } = await db.query<any>(
+      'SELECT id FROM gym_memberships WHERE gym_id = ? AND role = ? AND status = ? AND email = ?',
+      [gymId, role, 'invited', userEmail],
     );
+
+    if (existingInvited.length > 0) {
+      // Update the placeholder invited row to active with the real user_id
+      await db.query(
+        'UPDATE gym_memberships SET user_id = ?, status = ?, email = NULL WHERE id = ?',
+        [userId, 'active', existingInvited[0].id],
+      );
+    } else {
+      // Insert new row as active (for direct grants)
+      await db.query(
+        'INSERT IGNORE INTO gym_memberships (user_id, gym_id, role, status) VALUES (?, ?, ?, ?)',
+        [userId, gymId, role, 'active'],
+      );
+    }
 
     // Fetch the inserted/existing row
     const { rows } = await db.query<any>(
