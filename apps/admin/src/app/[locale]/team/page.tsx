@@ -47,7 +47,7 @@ export default function TeamPage() {
   const [editing, setEditing] = useState<TeamMember | null>(null);
   const [removing, setRemoving] = useState<TeamMember | null>(null);
   const [reinviting, setReinviting] = useState<TeamMember | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'invited' | 'active'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'invited'>('all');
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
@@ -285,21 +285,6 @@ export default function TeamPage() {
           }}
         >
           {t('filter_invited')}
-        </button>
-        <button
-          onClick={() => setStatusFilter('active')}
-          style={{
-            padding: '6px 12px',
-            border: statusFilter === 'active' ? '2px solid #2980b9' : '1px solid #ddd',
-            borderRadius: 4,
-            background: statusFilter === 'active' ? '#ecf0f1' : '#fff',
-            cursor: 'pointer',
-            fontSize: 13,
-            fontWeight: statusFilter === 'active' ? 600 : 400,
-            color: statusFilter === 'active' ? '#2980b9' : '#666',
-          }}
-        >
-          {t('filter_active')}
         </button>
       </div>
 
