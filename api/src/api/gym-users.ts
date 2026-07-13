@@ -274,7 +274,7 @@ gymUsersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
 
     // Update role and/or name (name only for invited users)
     const updates = ['role = ?'];
-    const values = [role];
+    const values: any[] = [role];
     if (name !== undefined && membership.status === 'invited') {
       updates.push('name = ?');
       values.push(name || null);
