@@ -83,8 +83,14 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
   try {
     // Look up existing Clerk user
-    const { data: matches } = await clerkClient.users.getUserList({ emailAddress: [email], limit: 1 });
-    const existing = matches[0];
+    let existing;
+    try {
+      const { data: matches } = await clerkClient.users.getUserList({ emailAddress: [email], limit: 1 });
+      existing = matches[0];
+    } catch (err: any) {
+      console.error('Clerk getUserList error:', err);
+      return res.status(500).json({ error: 'Failed to lookup user in Clerk: ' + (err.message || 'Unknown error') });
+    }
 
     if (existing) {
       // User exists in Clerk — insert or update gym_memberships
@@ -134,11 +140,12 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
       return res.status(201).json({ status: 'invited', email });
     } catch (err: any) {
+      console.error('Clerk invitations.createInvitation error:', err);
       // Clerk returns 422 for duplicate pending invitations
       if (err.status === 422) {
         return res.status(409).json({ error: 'An invitation is already pending for this email.' });
       }
-      throw err;
+      return res.status(500).json({ error: 'Failed to send invitation: ' + (err.message || 'Unknown error') });
     }
   } catch (err) { next(err); }
 });
@@ -186,12 +193,13 @@ gymUsersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
     );
     recordAudit(req, { action: 'change_role', entityType: 'gym_user', entityId: String(membershipId), previous: { role: membership.role }, next: { role } });
 
-    // Return updated row
+    // Return updated row with Clerk data
     const { rows: updated } = await db.query<any>(
       'SELECT * FROM gym_memberships WHERE id = ?',
       [membershipId],
     );
-    res.json(updated[0]);
+    const clerkUser = await clerkClient.users.getUser(updated[0].user_id);
+    res.json(shapeGymUser(updated[0], clerkUser));
   } catch (err) { next(err); }
 });
 
