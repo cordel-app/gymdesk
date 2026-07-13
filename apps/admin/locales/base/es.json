@@ -16,9 +16,18 @@
     "exercises": "Ejercicios",
     "workouts": "Rutinas",
     "audit": "Registro de auditoría",
+    "customize": "Personalizar",
     "system": "Sistema",
     "gyms": "Gimnasios",
-    "system_users": "Usuarios"
+    "system_users": "Usuarios",
+    "groups": {
+      "membership": "Membresía",
+      "organization": "Organización",
+      "training": "Entrenamiento",
+      "nutrition": "Nutrición",
+      "financials": "Finanzas",
+      "system": "Sistema"
+    }
   },
   "dashboard": {
     "title": "Panel",

@@ -16,9 +16,18 @@
     "exercises": "Exercises",
     "workouts": "Workouts",
     "audit": "Audit log",
+    "customize": "Customize",
     "system": "System",
     "gyms": "Gyms",
-    "system_users": "Users"
+    "system_users": "Users",
+    "groups": {
+      "membership": "Membership",
+      "organization": "Organization",
+      "training": "Training",
+      "nutrition": "Nutrition",
+      "financials": "Financials",
+      "system": "System"
+    }
   },
   "dashboard": {
     "title": "Dashboard",

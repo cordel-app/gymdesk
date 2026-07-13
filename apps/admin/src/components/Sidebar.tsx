@@ -1,65 +1,147 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
+import { navigationGroups, filterNavGroups, NavItem as NavItemType, NavGroup as NavGroupType } from '@/config/navigationGroups';
+import { NavGroup } from './NavGroup';
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useTranslations();
   const locale = useLocale();
   const pathname = usePathname();
   const { isSuperadmin, activeGym } = useGym();
-  const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  const links = [
-    { href: `/${locale}`, label: t('nav.dashboard') },
-    {
-      href: `/${locale}/members`,
-      label: t('nav.members'),
-      children: [
-        { href: `/${locale}/members/deleted`, label: t('nav.members_deleted') },
-      ],
-    },
-    { href: `/${locale}/schedule`, label: t('nav.schedule') },
-    { href: `/${locale}/memberships`, label: t('nav.memberships') },
-    ...(isAdmin ? [{ href: `/${locale}/team`, label: t('nav.team') }] : []),
-    ...(isAdmin ? [{ href: `/${locale}/plans`, label: t('nav.plans') }] : []),
-    ...(isAdmin ? [{ href: `/${locale}/rooms`, label: t('nav.rooms') }] : []),
-    ...(isAdmin ? [{ href: `/${locale}/specialities`, label: t('nav.specialities') }] : []),
-    ...(isAdmin ? [{ href: `/${locale}/trainers`, label: t('nav.trainers') }] : []),
-    ...(isAdmin ? [{ href: `/${locale}/class-types`, label: t('nav.class_types') }] : []),
-    ...(isAdmin ? [{ href: `/${locale}/class-packages`, label: t('nav.class_packages') }] : []),
-    ...(isAdmin ? [{ href: `/${locale}/promotions`, label: t('nav.promotions') }] : []),
-    { href: `/${locale}/exercises`, label: t('nav.exercises') },
-    { href: `/${locale}/workouts`, label: t('nav.workouts') },
-    ...(isAdmin ? [{ href: `/${locale}/audit`, label: t('nav.audit') }] : []),
-  ];
+  // Determine user role for filtering
+  const userRole = isSuperadmin ? 'superadmin' : activeGym?.role === 'admin' ? 'admin' : 'staff';
 
-  const systemLinks = [
-    { href: `/${locale}/system/gyms`, label: t('nav.gyms') },
-    { href: `/${locale}/system/users`, label: t('nav.system_users') },
-  ];
+  // Load expanded state from sessionStorage on mount
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = sessionStorage.getItem('navGroupsExpanded');
+    if (saved) {
+      try {
+        setExpandedGroups(new Set(JSON.parse(saved)));
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+  }, []);
 
-  function NavLink({ href, label, indent = false }: { href: string; label: string; indent?: boolean }) {
-    const active = pathname === href;
+  // Save expanded state to sessionStorage whenever it changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem('navGroupsExpanded', JSON.stringify([...expandedGroups]));
+  }, [expandedGroups]);
+
+  // Auto-expand group containing active route
+  useEffect(() => {
+    const filteredGroups = filterNavGroups(navigationGroups, userRole);
+
+    for (const group of filteredGroups) {
+      const hasActiveItem = group.items.some(item =>
+        pathname === item.href ||
+        (item.children?.some(child => pathname === child.href))
+      );
+
+      if (hasActiveItem && !expandedGroups.has(group.id)) {
+        setExpandedGroups(prev => new Set(prev).add(group.id));
+      }
+    }
+  }, [pathname, userRole]);
+
+  // Replace {{locale}} placeholder in hrefs
+  const replaceLocale = (href: string) => href.replace(/\{\{locale\}\}/g, locale);
+
+  // Translate an item with locale replacement
+  const translateItem = (item: NavItemType): NavItemType => ({
+    ...item,
+    href: replaceLocale(item.href),
+    children: item.children?.map(child => translateItem(child)),
+  });
+
+  // Translate all groups
+  const translatedGroups = filterNavGroups(navigationGroups, userRole).map(group => ({
+    ...group,
+    items: group.items.map(translateItem),
+  }));
+
+  function toggleGroup(groupId: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }
+
+  function renderNavItem(item: NavItemType) {
+    const active = pathname === item.href;
+    const isParentOfActive = !!item.children && pathname.startsWith(item.href);
+
     return (
-      <Link
-        href={href}
-        onClick={onNavigate}
-        style={{
-          display: 'block',
-          padding: indent ? '8px 20px 8px 36px' : '10px 20px',
-          color: active ? '#fff' : 'rgba(255,255,255,0.6)',
-          textDecoration: 'none',
-          background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
-          borderLeft: active ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
-          fontWeight: active ? 600 : 400,
-          fontSize: indent ? 14 : 15,
-        }}
-      >
-        {label}
-      </Link>
+      <div key={item.href}>
+        <Link
+          href={item.href}
+          onClick={onNavigate}
+          style={{
+            display: 'block',
+            padding: '10px 20px',
+            color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+            textDecoration: 'none',
+            background: active && !isParentOfActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderLeft: active && !isParentOfActive ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
+            fontWeight: active ? 600 : 400,
+            fontSize: 15,
+          }}
+        >
+          {t(item.labelKey as any)}
+        </Link>
+
+        {item.children && isParentOfActive && (
+          <div>
+            {item.children.map((child) => renderChildNavItem(child))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderChildNavItem(item: NavItemType) {
+    const active = pathname === item.href;
+    const isParentOfActive = !!item.children && pathname.startsWith(item.href);
+
+    return (
+      <div key={item.href}>
+        <Link
+          href={item.href}
+          onClick={onNavigate}
+          style={{
+            display: 'block',
+            padding: '8px 20px 8px 36px',
+            color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+            textDecoration: 'none',
+            background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+            borderLeft: active ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
+            fontWeight: active ? 600 : 400,
+            fontSize: 14,
+          }}
+        >
+          {t(item.labelKey as any)}
+        </Link>
+
+        {item.children && isParentOfActive && (
+          <div>
+            {item.children.map((child) => renderChildNavItem(child))}
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -73,61 +155,25 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       flexShrink: 0,
       minHeight: '100vh',
     }}>
-      <nav style={{ padding: '12px 0', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div>
-          {links.map(({ href, label, children }) => {
-            const active = pathname === href;
-            const isParentOfActive = !!children && pathname.startsWith(href);
+      <nav style={{ padding: '12px 0', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+        {translatedGroups.map(group => {
+          const isAnyChildActive = group.items.some(item =>
+            pathname === item.href ||
+            (item.children?.some(child => pathname === child.href))
+          );
 
-            return (
-              <div key={href}>
-                <Link
-                  href={href}
-                  onClick={onNavigate}
-                  style={{
-                    display: 'block',
-                    padding: '10px 20px',
-                    color: active ? '#fff' : 'rgba(255,255,255,0.6)',
-                    textDecoration: 'none',
-                    background: active && !isParentOfActive ? 'rgba(255,255,255,0.1)' : 'transparent',
-                    borderLeft: active && !isParentOfActive ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
-                    fontWeight: active ? 600 : 400,
-                    fontSize: 15,
-                  }}
-                >
-                  {label}
-                </Link>
-
-                {children && isParentOfActive && (
-                  <div>
-                    {children.map((child) => (
-                      <NavLink key={child.href} href={child.href} label={child.label} indent />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {isSuperadmin && (
-            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8, marginTop: 8 }}>
-              <p style={{
-                padding: '6px 20px',
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: '0.08em',
-                color: 'rgba(255,255,255,0.35)',
-                margin: 0,
-                textTransform: 'uppercase',
-              }}>
-                {t('nav.system')}
-              </p>
-              {systemLinks.map(({ href, label }) => (
-                <NavLink key={href} href={href} label={label} />
-              ))}
-            </div>
-          )}
-        </div>
+          return (
+            <NavGroup
+              key={group.id}
+              group={group}
+              label={t(`nav.groups.${group.id}` as any)}
+              isExpanded={expandedGroups.has(group.id)}
+              onToggle={() => toggleGroup(group.id)}
+              onNavigate={onNavigate}
+              isAnyChildActive={isAnyChildActive}
+            />
+          );
+        })}
       </nav>
     </aside>
   );

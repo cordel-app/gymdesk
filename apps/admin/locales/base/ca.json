@@ -16,9 +16,18 @@
     "exercises": "Exercicis",
     "workouts": "Rutines",
     "audit": "Registre d'auditoria",
+    "customize": "Personalitzar",
     "system": "Sistema",
     "gyms": "Gimnasos",
-    "system_users": "Usuaris"
+    "system_users": "Usuaris",
+    "groups": {
+      "membership": "Subscripció",
+      "organization": "Organització",
+      "training": "Entrenament",
+      "nutrition": "Nutrició",
+      "financials": "Finances",
+      "system": "Sistema"
+    }
   },
   "dashboard": {
     "title": "Tauler",
