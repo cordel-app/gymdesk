@@ -207,8 +207,8 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       // 400 Bad Request - often means invitation already exists
       if (err.status === 400) {
         const errorMsg = err.errors?.[0]?.message || err.message || '';
-        if (errorMsg.includes('existing') || errorMsg.includes('already') || errorMsg.includes('pending')) {
-          return res.status(409).json({ error: 'An invitation is already pending for this email.' });
+        if (errorMsg.includes('existing') || errorMsg.includes('already') || errorMsg.includes('pending') || errorMsg.includes('duplicate')) {
+          return res.status(409).json({ error: 'An invitation is already pending for this email. Please cancel it in Clerk and try again.' });
         }
         return res.status(400).json({ error: 'Invalid request: ' + errorMsg });
       }
