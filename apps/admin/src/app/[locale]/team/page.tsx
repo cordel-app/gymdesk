@@ -40,8 +40,7 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [email, setEmail] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [name, setName] = useState('');
   const [role, setRole] = useState<'admin' | 'coach' | 'staff'>('coach');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,8 +74,7 @@ export default function TeamPage() {
   function openAdd() {
     setEditing(null);
     setEmail('');
-    setFirstName('');
-    setLastName('');
+    setName('');
     setRole('coach');
     setError(null);
     setModalOpen(true);
@@ -94,8 +92,7 @@ export default function TeamPage() {
     setModalOpen(false);
     setEditing(null);
     setEmail('');
-    setFirstName('');
-    setLastName('');
+    setName('');
     setRole('coach');
     setError(null);
   }
@@ -137,8 +134,7 @@ export default function TeamPage() {
           method: 'POST',
           body: JSON.stringify({
             email: email.trim().toLowerCase(),
-            first_name: firstName.trim() || undefined,
-            last_name: lastName.trim() || undefined,
+            name: name.trim() || undefined,
             role
           }),
         });
@@ -321,27 +317,20 @@ export default function TeamPage() {
       >
         {!editing && (
           <>
+            <FormLabel>{t('label_name')}</FormLabel>
+            <FormInput
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('placeholder_name')}
+              autoFocus
+            />
             <FormLabel>{t('label_email')}</FormLabel>
             <FormInput
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
-              autoFocus
-            />
-            <FormLabel>{t('label_first_name')}</FormLabel>
-            <FormInput
-              type="text"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              placeholder={t('placeholder_first_name')}
-            />
-            <FormLabel>{t('label_last_name')}</FormLabel>
-            <FormInput
-              type="text"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              placeholder={t('placeholder_last_name')}
             />
           </>
         )}
