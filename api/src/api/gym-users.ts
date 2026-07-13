@@ -178,7 +178,7 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       clerkInvitation = await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role } },
-        ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
+        ...(adminUrl ? { redirectUrl: `${adminUrl}/` } : {}),
       });
       console.log('Clerk invitation created successfully for:', email);
 
@@ -323,7 +323,7 @@ gymUsersRouter.post('/:id/reinvite', requireRole('admin'), async (req, res, next
       await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
-        ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
+        ...(adminUrl ? { redirectUrl: `${adminUrl}/` } : {}),
       });
 
       recordAudit(req, { action: 'reinvite', entityType: 'gym_user', entityId: String(membershipId), next: { email } });

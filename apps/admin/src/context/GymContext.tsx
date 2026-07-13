@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useTranslations } from 'next-intl';
 import { useToast } from '@/components/Toast';
@@ -44,17 +44,38 @@ export function GymProvider({ children }: { children: ReactNode }) {
   const [gyms, setGyms] = useState<GymOption[]>([]);
   const [activeGymId, setActiveGymIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const linkAttempted = useRef(false);
 
   const loadGyms = useCallback(async () => {
     if (!isSignedIn || !user) return;
     try {
       const token = await getToken();
       const endpoint = isSuperadmin ? '/api/proxy/platform/gyms' : '/api/proxy/gyms';
-      const res = await fetch(endpoint, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('Failed to load gyms');
-      const data = await res.json();
+      const fetchGyms = async () => {
+        const res = await fetch(endpoint, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error('Failed to load gyms');
+        return res.json();
+      };
+
+      let data = await fetchGyms();
+
+      // Freshly-invited team member: their gym_memberships row is still a
+      // pending 'invited' placeholder, so they show zero gyms. Materialize it
+      // from the Clerk invitation metadata (once), then reload.
+      if (!isSuperadmin && Array.isArray(data) && data.length === 0 && !linkAttempted.current) {
+        linkAttempted.current = true;
+        try {
+          await fetch('/api/proxy/gym-users/link', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          data = await fetchGyms();
+        } catch {
+          // No pending invitation — leave gyms empty; home page routes to /no-gym.
+        }
+      }
 
       // Platform endpoint returns gyms without role — add synthetic 'admin' for superadmin
       const gymsWithRole: GymOption[] = isSuperadmin
