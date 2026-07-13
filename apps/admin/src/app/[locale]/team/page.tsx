@@ -60,7 +60,7 @@ export default function TeamPage() {
       setRows(await apiFetch<TeamMember[]>('/gym-users'));
     } catch (err: any) {
       setRows([]);
-      toast(err.message ?? t('error_generic'));
+      toast(err.message ?? t('error_generic'), 'error');
     } finally {
       setLoading(false);
     }
@@ -103,13 +103,13 @@ export default function TeamPage() {
         });
         closeModal();
         load();
-        toast(t('toast_role_changed'));
+        toast(t('toast_role_changed'), 'success');
       } catch (err: any) {
         const msg = err.message ?? t('error_generic');
         if (msg.includes('Cannot')) {
           setError(msg);
         } else {
-          toast(msg);
+          toast(msg, 'error');
           closeModal();
         }
       } finally {
@@ -130,11 +130,11 @@ export default function TeamPage() {
         });
         closeModal();
         if (res.status === 'invited') {
-          toast(t('toast_invited', { email: res.email ?? email }));
+          toast(t('toast_invited', { email: res.email ?? email }), 'success');
         } else if (res.status === 'already_granted') {
-          toast(t('toast_already_granted'));
+          toast(t('toast_already_granted'), 'info');
         } else {
-          toast(t('toast_granted'));
+          toast(t('toast_granted'), 'success');
         }
         load();
       } catch (err: any) {
@@ -150,12 +150,12 @@ export default function TeamPage() {
     try {
       await apiFetch(`/gym-users/${removing.id}`, { method: 'DELETE' });
       setRemoving(null);
-      toast(t('toast_removed'));
+      toast(t('toast_removed'), 'success');
       load();
     } catch (err: any) {
       const msg = err.message ?? t('error_generic');
       setRemoving(null);
-      toast(msg);
+      toast(msg, 'error');
     }
   }
 
