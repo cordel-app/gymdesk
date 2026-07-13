@@ -99,13 +99,17 @@ export default function TeamPage() {
 
   async function handleSave() {
     if (editing) {
-      // Editing role only
+      // Editing role and/or name (for invited users)
       setSaving(true);
       setError(null);
       try {
+        const body: any = { role };
+        if (editing.status === 'invited') {
+          body.name = name.trim() || null;
+        }
         await apiFetch(`/gym-users/${editing.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({ role }),
+          body: JSON.stringify(body),
         });
         closeModal();
         load();
@@ -334,6 +338,18 @@ export default function TeamPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
+            />
+          </>
+        )}
+        {editing && editing.status === 'invited' && (
+          <>
+            <FormLabel>{t('label_name')}</FormLabel>
+            <FormInput
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('placeholder_name')}
+              autoFocus
             />
           </>
         )}

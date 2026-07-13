@@ -233,11 +233,12 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   }
 });
 
-// PATCH /:id — change role of an existing gym_user
+// PATCH /:id — change role/name of an existing gym_user
 gymUsersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   const { userId: callerUserId, gymId } = getTenantContext(req);
   const membershipId = Number(req.params.id);
   const role = String(req.body?.role ?? '').trim();
+  const name = req.body?.name ? String(req.body.name).trim() : undefined;
 
   if (!['admin', 'coach', 'staff'].includes(role)) {
     return res.status(400).json({ error: 'role must be one of: admin, coach, staff' });
@@ -269,10 +270,18 @@ gymUsersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
       }
     }
 
-    // Update role
+    // Update role and/or name (name only for invited users)
+    const updates = ['role = ?'];
+    const values = [role];
+    if (name !== undefined && membership.status === 'invited') {
+      updates.push('name = ?');
+      values.push(name || null);
+    }
+    values.push(membershipId);
+
     await db.query(
-      'UPDATE gym_memberships SET role = ? WHERE id = ?',
-      [role, membershipId],
+      `UPDATE gym_memberships SET ${updates.join(', ')} WHERE id = ?`,
+      values,
     );
     recordAudit(req, { action: 'change_role', entityType: 'gym_user', entityId: String(membershipId), previous: { role: membership.role }, next: { role } });
 
