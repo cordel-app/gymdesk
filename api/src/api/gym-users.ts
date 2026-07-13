@@ -187,8 +187,8 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       // This ensures we don't create a DB record for an invitation that doesn't exist in Clerk
       const tempUserId = `invited_${Date.now()}`;
       const { insertId } = await db.query(
-        'INSERT INTO gym_memberships (user_id, gym_id, role, status, email, first_name, last_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [tempUserId, gymId, role, 'invited', email, firstName, lastName],
+        'INSERT INTO gym_memberships (user_id, gym_id, role, status, email, first_name, last_name, invitation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [tempUserId, gymId, role, 'invited', email, firstName, lastName, clerkInvitation.id],
       );
 
       recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
@@ -363,6 +363,17 @@ gymUsersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
       );
       if (adminCount[0].cnt === 1) {
         return res.status(400).json({ error: 'Cannot remove the last admin in this gym.' });
+      }
+    }
+
+    // If user is invited, revoke the Clerk invitation
+    if (membership.status === 'invited' && membership.invitation_id) {
+      try {
+        await clerkClient.invitations.revoke(membership.invitation_id);
+        console.log('Revoked Clerk invitation:', membership.invitation_id);
+      } catch (err: any) {
+        console.error('Failed to revoke Clerk invitation:', { invitationId: membership.invitation_id, error: err.message });
+        // Continue with deletion even if revoke fails
       }
     }
 
