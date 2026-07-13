@@ -158,6 +158,15 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       return res.status(201).json({ status: 'granted', membership: shapeGymUser(updated[0], existing) });
     }
 
+    // Check if already invited to this gym (with 'invited' status)
+    const { rows: invitedRows } = await db.query<any>(
+      'SELECT id FROM gym_memberships WHERE email = ? AND gym_id = ? AND status = ?',
+      [email, gymId, 'invited'],
+    );
+    if (invitedRows.length > 0) {
+      return res.status(409).json({ error: `${email} has already been invited to this gym. They can accept the invitation to join.` });
+    }
+
     // No Clerk user yet — send an invitation with gym_invite metadata
     const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
     try {
@@ -178,10 +187,20 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
       return res.status(201).json({ status: 'invited', email });
     } catch (err: any) {
-      console.error('Clerk invitations.createInvitation error:', { message: err.message, status: err.status, errors: err.errors });
+      const errorDetails = { message: err.message, status: err.status, errors: err.errors, clerkErrors: err.clerkErrors };
+      console.error('Clerk invitations.createInvitation error:', errorDetails);
+
       // Clerk returns 422 for duplicate pending invitations
       if (err.status === 422) {
         return res.status(409).json({ error: 'An invitation is already pending for this email.' });
+      }
+      // 400 Bad Request - often means invitation already exists
+      if (err.status === 400) {
+        const errorMsg = err.errors?.[0]?.message || err.message || '';
+        if (errorMsg.includes('existing') || errorMsg.includes('already') || errorMsg.includes('pending')) {
+          return res.status(409).json({ error: 'An invitation is already pending for this email.' });
+        }
+        return res.status(400).json({ error: 'Invalid request: ' + errorMsg });
       }
       if (err.status === 401) {
         return res.status(500).json({ error: 'Clerk authentication failed. Check CLERK_SECRET_KEY.' });
