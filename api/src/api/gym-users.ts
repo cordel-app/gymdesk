@@ -452,6 +452,22 @@ gymUsersLinkRouter.post('/', async (req: Request, res: Response, next: NextFunct
       publicMetadata: { ...meta, gym_invite: null },
     });
 
+    // Add user to Clerk organization if not already a member
+    const clerkOrgId = process.env.CORDEL_FITNESS_CLERK_ORG_ID ?? '';
+    if (clerkOrgId) {
+      try {
+        await clerkClient.organizations.createOrganizationMembership({
+          organizationId: clerkOrgId,
+          userId,
+          role: 'basic_member',
+        });
+        console.log('Added user to Clerk organization:', { userId, orgId: clerkOrgId });
+      } catch (err: any) {
+        // User might already be a member or error adding - log but continue
+        console.warn('Failed to add user to Clerk organization:', { userId, error: err.message });
+      }
+    }
+
     recordAudit(
       { tenantCtx: { userId, gymId, role: 'admin' } } as any,
       { action: 'link', entityType: 'gym_user', entityId: userId, next: { gym_id: gymId, role } },
