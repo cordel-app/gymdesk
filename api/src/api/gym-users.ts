@@ -27,9 +27,9 @@ interface GymUser {
   id: number;
   user_id: string;
   email: string | null;
-  first_name: string | null;
-  last_name: string | null;
+  name: string | null;
   role: 'admin' | 'coach' | 'staff';
+  status: 'invited' | 'active';
   created_at: string;
 }
 
@@ -39,10 +39,10 @@ function shapeGymUser(row: any, clerkUser: any): GymUser {
     return {
       id: row.id,
       user_id: row.user_id,
-      email: row.email ?? null, // Use email column for invited users
-      first_name: null,
-      last_name: null,
+      email: row.email ?? null,
+      name: row.name ?? null,
       role: row.role,
+      status: row.status ?? 'active',
       created_at: row.created_at,
     };
   }
@@ -53,9 +53,9 @@ function shapeGymUser(row: any, clerkUser: any): GymUser {
     id: row.id,
     user_id: row.user_id,
     email: primaryEmail?.emailAddress ?? null,
-    first_name: clerkUser.firstName ?? null,
-    last_name: clerkUser.lastName ?? null,
+    name: row.name ?? null,
     role: row.role,
+    status: row.status ?? 'active',
     created_at: row.created_at,
   };
 }
