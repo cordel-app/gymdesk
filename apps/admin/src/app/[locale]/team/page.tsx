@@ -25,6 +25,7 @@ interface TeamResponse {
   status: 'granted' | 'invited' | 'already_granted';
   membership?: TeamMember;
   email?: string;
+  note?: string;
 }
 
 export default function TeamPage() {
