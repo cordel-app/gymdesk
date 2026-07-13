@@ -192,6 +192,7 @@ export default function TeamPage() {
 
   if (gymLoading || !isAdmin) return null;
 
+  const invitedCount = rows.filter(r => r.status === 'invited').length;
   const filteredRows = statusFilter === 'all'
     ? rows
     : rows.filter(r => r.status === statusFilter);
@@ -284,7 +285,7 @@ export default function TeamPage() {
             color: statusFilter === 'invited' ? '#2980b9' : '#666',
           }}
         >
-          {t('filter_invited')}
+          {t('filter_pending')} {invitedCount > 0 && `(${invitedCount})`}
         </button>
       </div>
 
