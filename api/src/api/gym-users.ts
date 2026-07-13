@@ -170,30 +170,16 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
     // No Clerk user yet — send an invitation with gym_invite metadata
     const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
-    const clerkOrgId = process.env.CORDEL_FITNESS_CLERK_ORG_ID ?? '';
-    console.log('Creating Clerk invitation:', { email, adminUrl, gym_id: gymId, role, org_id: clerkOrgId });
+    console.log('Creating Clerk invitation:', { email, adminUrl, gym_id: gymId, role });
 
     let clerkInvitation: any = null;
     try {
-      // Step 1: Create Clerk invitation FIRST.
-      // Use an ORGANIZATION invitation when an org is configured — a plain user
-      // invitation never adds the user to the organization, which forced Clerk's
-      // "Setup your organization" screen on first sign-in.
-      if (clerkOrgId) {
-        clerkInvitation = await clerkClient.organizations.createOrganizationInvitation({
-          organizationId: clerkOrgId,
-          emailAddress: email,
-          role: 'org:member',
-          publicMetadata: { gym_invite: { gym_id: gymId, role } },
-          ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
-        });
-      } else {
-        clerkInvitation = await clerkClient.invitations.createInvitation({
-          emailAddress: email,
-          publicMetadata: { gym_invite: { gym_id: gymId, role } },
-          ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
-        });
-      }
+      // Step 1: Create Clerk invitation FIRST
+      clerkInvitation = await clerkClient.invitations.createInvitation({
+        emailAddress: email,
+        publicMetadata: { gym_invite: { gym_id: gymId, role } },
+        ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
+      });
       console.log('Clerk invitation created successfully for:', email);
 
       // Step 2: Only after Clerk succeeds, create database record
@@ -331,25 +317,14 @@ gymUsersRouter.post('/:id/reinvite', requireRole('admin'), async (req, res, next
 
     const email = membership.email;
     const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
-    const clerkOrgId = process.env.CORDEL_FITNESS_CLERK_ORG_ID ?? '';
 
     try {
-      // Create new Clerk invitation (organization invitation when an org is configured)
-      if (clerkOrgId) {
-        await clerkClient.organizations.createOrganizationInvitation({
-          organizationId: clerkOrgId,
-          emailAddress: email,
-          role: 'org:member',
-          publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
-          ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
-        });
-      } else {
-        await clerkClient.invitations.createInvitation({
-          emailAddress: email,
-          publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
-          ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
-        });
-      }
+      // Create new Clerk invitation
+      await clerkClient.invitations.createInvitation({
+        emailAddress: email,
+        publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
+        ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
+      });
 
       recordAudit(req, { action: 'reinvite', entityType: 'gym_user', entityId: String(membershipId), next: { email } });
       return res.json({ status: 'reinvited', email });
@@ -404,26 +379,12 @@ gymUsersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
 
     // If user is invited, revoke the Clerk invitation
     if (membership.status === 'invited' && membership.invitation_id) {
-      const clerkOrgId = process.env.CORDEL_FITNESS_CLERK_ORG_ID ?? '';
       try {
-        if (clerkOrgId) {
-          await clerkClient.organizations.revokeOrganizationInvitation({
-            organizationId: clerkOrgId,
-            invitationId: membership.invitation_id,
-          });
-        } else {
-          await clerkClient.invitations.revokeInvitation(membership.invitation_id);
-        }
+        await clerkClient.invitations.revokeInvitation(membership.invitation_id);
         console.log('Revoked Clerk invitation:', membership.invitation_id);
       } catch (err: any) {
-        // Fall back to the plain-invitation revoke for rows created before org invitations
-        try {
-          await clerkClient.invitations.revokeInvitation(membership.invitation_id);
-          console.log('Revoked Clerk invitation (fallback):', membership.invitation_id);
-        } catch (err2: any) {
-          console.error('Failed to revoke Clerk invitation:', { invitationId: membership.invitation_id, error: err2.message });
-          // Continue with deletion even if revoke fails
-        }
+        console.error('Failed to revoke Clerk invitation:', { invitationId: membership.invitation_id, error: err.message });
+        // Continue with deletion even if revoke fails
       }
     }
 
@@ -445,29 +406,16 @@ gymUsersLinkRouter.post('/', async (req: Request, res: Response, next: NextFunct
   try {
     const clerkUser = await clerkClient.users.getUser(userId);
     const meta = (clerkUser.publicMetadata as any) ?? {};
-
-    // Get the user's email to match against invited row
-    const userEmail = clerkUser.emailAddresses?.[0]?.emailAddress ?? (clerkUser as any).email;
-
-    // gym_invite lives in user publicMetadata for plain invitations. Organization
-    // invitations attach metadata to the org membership instead, so fall back to
-    // the invited placeholder row in the DB, matched by email.
-    let gymInvite = meta.gym_invite;
-    if (!gymInvite && userEmail) {
-      const { rows: pendingRows } = await db.query<any>(
-        'SELECT gym_id, role FROM gym_memberships WHERE email = ? AND status = ?',
-        [userEmail, 'invited'],
-      );
-      if (pendingRows[0]) {
-        gymInvite = { gym_id: pendingRows[0].gym_id, role: pendingRows[0].role };
-      }
-    }
+    const gymInvite = meta.gym_invite;
 
     if (!gymInvite) {
       return res.status(404).json({ error: 'No pending team invitation found.' });
     }
 
     const { gym_id: gymId, role } = gymInvite;
+
+    // Get the user's email to match against invited row
+    const userEmail = clerkUser.emailAddresses?.[0]?.emailAddress ?? (clerkUser as any).email;
 
     // Check if there's an invited placeholder row and update it, or insert new row
     const { rows: existingInvited } = await db.query<any>(
@@ -499,22 +447,6 @@ gymUsersLinkRouter.post('/', async (req: Request, res: Response, next: NextFunct
     await clerkClient.users.updateUserMetadata(userId, {
       publicMetadata: { ...meta, gym_invite: null },
     });
-
-    // Add user to Clerk organization if not already a member
-    const clerkOrgId = process.env.CORDEL_FITNESS_CLERK_ORG_ID ?? '';
-    if (clerkOrgId) {
-      try {
-        await clerkClient.organizations.createOrganizationMembership({
-          organizationId: clerkOrgId,
-          userId,
-          role: 'basic_member',
-        });
-        console.log('Added user to Clerk organization:', { userId, orgId: clerkOrgId });
-      } catch (err: any) {
-        // User might already be a member or error adding - log but continue
-        console.warn('Failed to add user to Clerk organization:', { userId, error: err.message });
-      }
-    }
 
     recordAudit(
       { tenantCtx: { userId, gymId, role: 'admin' } } as any,
