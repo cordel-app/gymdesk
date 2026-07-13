@@ -365,18 +365,7 @@ gymUsersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
       }
     }
 
-    // If user is invited, revoke the Clerk invitation
-    if (membership.status === 'invited' && membership.invitation_id) {
-      try {
-        await clerkClient.invitations.revoke(membership.invitation_id);
-        console.log('Revoked Clerk invitation:', membership.invitation_id);
-      } catch (err: any) {
-        console.error('Failed to revoke Clerk invitation:', { invitationId: membership.invitation_id, error: err.message });
-        // Continue with deletion even if revoke fails
-      }
-    }
-
-    // Delete
+    // Delete (note: Clerk invitations will be orphaned but harmless - they won't link without a matching gym_memberships row)
     await db.query(
       'DELETE FROM gym_memberships WHERE id = ?',
       [membershipId],
