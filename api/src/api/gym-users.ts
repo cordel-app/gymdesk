@@ -88,8 +88,15 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       const { data: matches } = await clerkClient.users.getUserList({ emailAddress: [email], limit: 1 });
       existing = matches[0];
     } catch (err: any) {
-      console.error('Clerk getUserList error:', err);
-      return res.status(500).json({ error: 'Failed to lookup user in Clerk: ' + (err.message || 'Unknown error') });
+      console.error('Clerk getUserList error:', { message: err.message, status: err.status, errors: err.errors });
+      // Provide more specific error message based on Clerk error
+      if (err.status === 401) {
+        return res.status(500).json({ error: 'Clerk authentication failed. Check CLERK_SECRET_KEY.' });
+      }
+      if (err.message?.includes('rate_limited')) {
+        return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+      }
+      return res.status(500).json({ error: 'Failed to lookup user: ' + (err.message || 'Unknown Clerk error') });
     }
 
     if (existing) {
@@ -140,14 +147,26 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
       return res.status(201).json({ status: 'invited', email });
     } catch (err: any) {
-      console.error('Clerk invitations.createInvitation error:', err);
+      console.error('Clerk invitations.createInvitation error:', { message: err.message, status: err.status, errors: err.errors });
       // Clerk returns 422 for duplicate pending invitations
       if (err.status === 422) {
         return res.status(409).json({ error: 'An invitation is already pending for this email.' });
       }
+      if (err.status === 401) {
+        return res.status(500).json({ error: 'Clerk authentication failed. Check CLERK_SECRET_KEY.' });
+      }
+      if (err.status === 429) {
+        return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+      }
+      if (err.message?.includes('invalid_email')) {
+        return res.status(400).json({ error: 'Invalid email address format.' });
+      }
       return res.status(500).json({ error: 'Failed to send invitation: ' + (err.message || 'Unknown error') });
     }
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    console.error('Unexpected error in POST /gym-users:', { message: err.message, stack: err.stack });
+    return res.status(500).json({ error: 'Internal server error: ' + (err.message || 'Unknown error') });
+  }
 });
 
 // PATCH /:id — change role of an existing gym_user
