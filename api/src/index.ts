@@ -35,6 +35,7 @@ import { auditLogsRouter } from './api/audit-logs';
 import './api/package-credits';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter } from './api/me';
+import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { tenantContext } from './infra/tenantContext';
 import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
@@ -98,10 +99,12 @@ app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 
 // Domain routes — require auth + tenant context (gym_id from x-gym-id header)
-// /me/link must come before tenantContext (no membership row exists yet on first link)
+// /me/link + /gym-users/link must come before tenantContext (no membership row exists yet on first link)
 app.use('/me/link', requireAuth(), meLinkRouter);
+app.use('/gym-users/link', requireAuth(), gymUsersLinkRouter);
 app.use('/me',      requireAuth(), tenantContext, meRouter);
 
+app.use('/gym-users',     requireAuth(), tenantContext, gymUsersRouter);
 app.use('/members',       requireAuth(), tenantContext, membersRouter);
 app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
