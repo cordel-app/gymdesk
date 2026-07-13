@@ -15,8 +15,7 @@ interface TeamMember {
   id: number;
   user_id: string;
   email: string | null;
-  first_name: string | null;
-  last_name: string | null;
+  name: string | null;
   role: 'admin' | 'coach' | 'staff';
   status?: 'invited' | 'active';
   created_at: string;
@@ -192,7 +191,7 @@ export default function TeamPage() {
   const columns: Column<TeamMember>[] = [
     {
       header: t('col_name'),
-      render: (r) => [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || '—',
+      render: (r) => r.name || r.email || '—',
     },
     { header: t('col_email'), render: (r) => r.email ?? '—' },
     {
