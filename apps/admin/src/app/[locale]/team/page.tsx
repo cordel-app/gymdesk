@@ -18,6 +18,7 @@ interface TeamMember {
   first_name: string | null;
   last_name: string | null;
   role: 'admin' | 'coach' | 'staff';
+  status?: 'invited' | 'active';
   created_at: string;
 }
 
@@ -46,6 +47,7 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<TeamMember | null>(null);
   const [removing, setRemoving] = useState<TeamMember | null>(null);
+  const [reinviting, setReinviting] = useState<TeamMember | null>(null);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
@@ -170,6 +172,20 @@ export default function TeamPage() {
     }
   }
 
+  async function handleReinvite() {
+    if (!reinviting) return;
+    try {
+      await apiFetch(`/gym-users/${reinviting.id}/reinvite`, { method: 'POST' });
+      setReinviting(null);
+      toast(t('toast_reinvited', { email: reinviting.email ?? '' }), 'success');
+      load();
+    } catch (err: any) {
+      const msg = err.message ?? t('error_generic');
+      setReinviting(null);
+      toast(msg, 'error');
+    }
+  }
+
   if (gymLoading || !isAdmin) return null;
 
   const columns: Column<TeamMember>[] = [
@@ -189,16 +205,27 @@ export default function TeamPage() {
     },
     {
       header: t('col_actions'),
-      width: 140,
+      width: 200,
       render: (r) => (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => openEdit(r)}
-            style={btnSmall('#444')}
-            title={t('action_edit_title')}
-          >
-            {t('action_edit')}
-          </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {r.status === 'invited' && (
+            <button
+              onClick={() => setReinviting(r)}
+              style={btnSmall('#2980b9')}
+              title={t('action_reinvite_title')}
+            >
+              {t('action_reinvite')}
+            </button>
+          )}
+          {r.status !== 'invited' && (
+            <button
+              onClick={() => openEdit(r)}
+              style={btnSmall('#444')}
+              title={t('action_edit_title')}
+            >
+              {t('action_edit')}
+            </button>
+          )}
           <button
             onClick={() => setRemoving(r)}
             style={btnSmall('#c0392b')}
@@ -291,6 +318,15 @@ export default function TeamPage() {
         cancelLabel={t('cancel')}
         onConfirm={handleRemove}
         onCancel={() => setRemoving(null)}
+      />
+
+      <ConfirmDialog
+        open={reinviting !== null}
+        message={t('confirm_reinvite', { email: reinviting?.email ?? '' })}
+        confirmLabel={t('confirm_reinvite_btn')}
+        cancelLabel={t('cancel')}
+        onConfirm={handleReinvite}
+        onCancel={() => setReinviting(null)}
       />
     </div>
   );

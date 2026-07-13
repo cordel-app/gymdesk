@@ -284,6 +284,57 @@ gymUsersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /:id/reinvite — resend invitation email for invited (not yet accepted) users
+gymUsersRouter.post('/:id/reinvite', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const membershipId = Number(req.params.id);
+
+  try {
+    // Fetch the target membership
+    const { rows } = await db.query<any>(
+      'SELECT * FROM gym_memberships WHERE id = ? AND gym_id = ?',
+      [membershipId, gymId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+
+    const membership = rows[0];
+
+    // Only allow reinviting users with status='invited'
+    if (membership.status !== 'invited') {
+      return res.status(400).json({ error: 'Can only reinvite users who are pending invitation. This user has already accepted.' });
+    }
+
+    const email = membership.email;
+    const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
+
+    try {
+      // Create new Clerk invitation
+      await clerkClient.invitations.createInvitation({
+        emailAddress: email,
+        publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
+        ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
+      });
+
+      recordAudit(req, { action: 'reinvite', entityType: 'gym_user', entityId: String(membershipId), next: { email } });
+      return res.json({ status: 'reinvited', email });
+    } catch (err: any) {
+      const errorMsg = err.errors?.[0]?.message || err.message || '';
+      console.error('Clerk invitation error on reinvite:', { message: err.message, status: err.status, email });
+
+      if (err.status === 422 || errorMsg.includes('duplicate') || errorMsg.includes('pending')) {
+        return res.status(409).json({ error: 'An invitation is already pending for this email.' });
+      }
+      if (err.status === 400) {
+        return res.status(400).json({ error: 'Invalid request: ' + errorMsg });
+      }
+      if (err.status === 401) {
+        return res.status(500).json({ error: 'Clerk authentication failed.' });
+      }
+      return res.status(500).json({ error: 'Failed to send invitation: ' + (err.message || 'Unknown error') });
+    }
+  } catch (err) { next(err); }
+});
+
 // DELETE /:id — remove a gym_user
 gymUsersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   const { userId: callerUserId, gymId } = getTenantContext(req);
