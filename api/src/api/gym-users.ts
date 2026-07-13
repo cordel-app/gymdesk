@@ -170,16 +170,19 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
     // No Clerk user yet — send an invitation with gym_invite metadata
     const adminUrl = process.env.CORDEL_FITNESS_ADMIN_URL ?? '';
     console.log('Creating Clerk invitation:', { email, adminUrl, gym_id: gymId, role });
+
+    let clerkInvitation: any = null;
     try {
-      await clerkClient.invitations.createInvitation({
+      // Step 1: Create Clerk invitation FIRST
+      clerkInvitation = await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role } },
         ...(adminUrl ? { redirectUrl: `${adminUrl}/en/link-team` } : {}),
       });
       console.log('Clerk invitation created successfully for:', email);
 
-      // Create a placeholder membership row with 'invited' status so admin can see who was invited
-      // Use a temporary user_id and store the email for later matching
+      // Step 2: Only after Clerk succeeds, create database record
+      // This ensures we don't create a DB record for an invitation that doesn't exist in Clerk
       const tempUserId = `invited_${Date.now()}`;
       const { insertId } = await db.query(
         'INSERT INTO gym_memberships (user_id, gym_id, role, status, email) VALUES (?, ?, ?, ?, ?)',
@@ -189,6 +192,11 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
       return res.status(201).json({ status: 'invited', email });
     } catch (err: any) {
+      // If Clerk invitation succeeded but DB insert failed, we have an inconsistency
+      if (clerkInvitation && err.message?.includes('INSERT')) {
+        console.error('Database insert failed after Clerk invitation created. Clerk invitation exists but DB record failed:', { email, error: err.message });
+        return res.status(500).json({ error: 'Failed to save invitation to database. Please contact support.' });
+      }
       const errorDetails = { message: err.message, status: err.status, errors: err.errors, clerkErrors: err.clerkErrors };
       console.error('Clerk invitations.createInvitation error:', errorDetails);
 
