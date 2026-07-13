@@ -6,7 +6,11 @@ import { GymSelector } from './GymSelector';
 import { useGym } from '@/context/GymContext';
 
 export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
-  const { isSuperadmin, activeGym, loading } = useGym();
+  const { isSuperadmin, activeGym, gyms, loading } = useGym();
+  // Superadmins always see the selector (they can jump to any gym); regular
+  // users only see it when they belong to more than one, so a single-gym
+  // admin/staff/coach isn't shown a pointless dropdown.
+  const showSelector = !loading && (isSuperadmin || gyms.length > 1);
 
   return (
     <header style={{
@@ -45,7 +49,7 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       </div>
       <style>{`@media (max-width: 768px) { .hamburger-btn { display: flex !important; } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        {!loading && isSuperadmin && <GymSelector />}
+        {showSelector && <GymSelector />}
         <LanguagePicker />
         <UserButton />
       </div>

@@ -25,7 +25,7 @@ const emptyForm = { name: '', slug: '', plan: 'free', theme_key: DEFAULT_THEME a
 export default function SystemGymsPage() {
   const t = useTranslations('system_gyms');
   const { apiFetch } = useApiClient();
-  const { isSuperadmin, setActiveGymId, refreshGyms } = useGym();
+  const { isSuperadmin, setActiveGymId, refreshGyms, loading: gymLoading } = useGym();
   const router = useRouter();
   const locale = useLocale();
   const { toast } = useToast();
@@ -39,12 +39,15 @@ export default function SystemGymsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Wait for Clerk metadata to arrive before deciding — otherwise the initial
+    // render (isSuperadmin=false) would redirect a legitimate superadmin away.
+    if (gymLoading) return;
     if (!isSuperadmin) {
       router.replace(`/${locale}`);
       return;
     }
     load();
-  }, [isSuperadmin]);
+  }, [gymLoading, isSuperadmin]);
 
   async function load() {
     setLoading(true);
