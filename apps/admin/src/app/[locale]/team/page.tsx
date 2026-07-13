@@ -139,7 +139,10 @@ export default function TeamPage() {
         });
         closeModal();
         if (res.status === 'invited') {
-          toast(t('toast_invited', { email: res.email ?? email }), 'success');
+          const message = res.note === 'Invitation already sent'
+            ? t('toast_invited_resent', { email: res.email ?? email })
+            : t('toast_invited', { email: res.email ?? email });
+          toast(message, 'success');
         } else if (res.status === 'already_granted') {
           toast(t('toast_already_granted'), 'info');
         } else {

@@ -632,6 +632,7 @@
     "toast_granted": "Team member added.",
     "toast_already_granted": "That user is already on the team.",
     "toast_invited": "Invitation sent to {email}.",
+    "toast_invited_resent": "Invitation already sent to {email}. We'll make sure they receive it.",
     "toast_reinvited": "Invitation resent to {email}.",
     "toast_removed": "Team member removed.",
     "toast_role_changed": "Role updated.",

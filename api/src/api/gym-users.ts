@@ -201,15 +201,18 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       const errorDetails = { message: err.message, status: err.status, errors: err.errors, clerkErrors: err.clerkErrors };
       console.error('Clerk invitations.createInvitation error:', errorDetails);
 
-      // Clerk returns 422 for duplicate pending invitations
+      // 422 Unprocessable Entity - duplicate pending invitations
       if (err.status === 422) {
-        return res.status(409).json({ error: 'An invitation is already pending for this email.' });
+        recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
+        return res.status(201).json({ status: 'invited', email, note: 'Invitation already sent' });
       }
       // 400 Bad Request - often means invitation already exists
       if (err.status === 400) {
         const errorMsg = err.errors?.[0]?.message || err.message || '';
         if (errorMsg.includes('existing') || errorMsg.includes('already') || errorMsg.includes('pending') || errorMsg.includes('duplicate')) {
-          return res.status(409).json({ error: 'An invitation is already pending for this email. Please cancel it in Clerk and try again.' });
+          // Invitation already pending - return success with resent message
+          recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });
+          return res.status(201).json({ status: 'invited', email, note: 'Invitation already sent' });
         }
         return res.status(400).json({ error: 'Invalid request: ' + errorMsg });
       }
