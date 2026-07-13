@@ -192,7 +192,7 @@ export default function TeamPage() {
   const columns: Column<TeamMember>[] = [
     {
       header: t('col_name'),
-      render: (r) => [r.first_name, r.last_name].filter(Boolean).join(' ') || '—',
+      render: (r) => [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || '—',
     },
     { header: t('col_email'), render: (r) => r.email ?? '—' },
     {

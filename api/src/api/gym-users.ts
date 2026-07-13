@@ -97,7 +97,12 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const email = String(req.body?.email ?? '').trim().toLowerCase();
   const role = String(req.body?.role ?? '').trim();
-  const name = String(req.body?.name ?? '').trim() || null;
+  const fullName = String(req.body?.name ?? '').trim();
+
+  // Split full name into first and last name
+  const nameParts = fullName ? fullName.split(' ').filter(Boolean) : [];
+  const firstName = nameParts.length > 0 ? nameParts[0] : null;
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null;
 
   if (!email) return res.status(400).json({ error: 'email is required' });
   if (!['admin', 'coach', 'staff'].includes(role)) {
@@ -186,8 +191,8 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       // This ensures we don't create a DB record for an invitation that doesn't exist in Clerk
       const tempUserId = `invited_${Date.now()}`;
       const { insertId } = await db.query(
-        'INSERT INTO gym_memberships (user_id, gym_id, role, status, email, name, invitation_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [tempUserId, gymId, role, 'invited', email, name, clerkInvitation.id],
+        'INSERT INTO gym_memberships (user_id, gym_id, role, status, email, first_name, last_name, invitation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [tempUserId, gymId, role, 'invited', email, firstName, lastName, clerkInvitation.id],
       );
 
       recordAudit(req, { action: 'invite', entityType: 'gym_user', entityId: email, next: { email, role } });

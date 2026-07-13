@@ -624,7 +624,7 @@
     "label_name": "Full name",
     "label_email": "Email *",
     "label_role": "Role *",
-    "placeholder_name": "Full name (optional)",
+    "placeholder_name": "John Doe",
     "role_admin": "Admin",
     "role_coach": "Coach",
     "role_staff": "Staff",
