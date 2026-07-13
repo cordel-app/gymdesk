@@ -48,6 +48,7 @@ export default function TeamPage() {
   const [editing, setEditing] = useState<TeamMember | null>(null);
   const [removing, setRemoving] = useState<TeamMember | null>(null);
   const [reinviting, setReinviting] = useState<TeamMember | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'invited' | 'active'>('all');
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
@@ -188,6 +189,10 @@ export default function TeamPage() {
 
   if (gymLoading || !isAdmin) return null;
 
+  const filteredRows = statusFilter === 'all'
+    ? rows
+    : rows.filter(r => r.status === statusFilter);
+
   const columns: Column<TeamMember>[] = [
     {
       header: t('col_name'),
@@ -247,9 +252,57 @@ export default function TeamPage() {
         </button>
       </div>
 
+      <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+        <button
+          onClick={() => setStatusFilter('all')}
+          style={{
+            padding: '6px 12px',
+            border: statusFilter === 'all' ? '2px solid #2980b9' : '1px solid #ddd',
+            borderRadius: 4,
+            background: statusFilter === 'all' ? '#ecf0f1' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: statusFilter === 'all' ? 600 : 400,
+            color: statusFilter === 'all' ? '#2980b9' : '#666',
+          }}
+        >
+          {t('filter_all')}
+        </button>
+        <button
+          onClick={() => setStatusFilter('invited')}
+          style={{
+            padding: '6px 12px',
+            border: statusFilter === 'invited' ? '2px solid #2980b9' : '1px solid #ddd',
+            borderRadius: 4,
+            background: statusFilter === 'invited' ? '#ecf0f1' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: statusFilter === 'invited' ? 600 : 400,
+            color: statusFilter === 'invited' ? '#2980b9' : '#666',
+          }}
+        >
+          {t('filter_invited')}
+        </button>
+        <button
+          onClick={() => setStatusFilter('active')}
+          style={{
+            padding: '6px 12px',
+            border: statusFilter === 'active' ? '2px solid #2980b9' : '1px solid #ddd',
+            borderRadius: 4,
+            background: statusFilter === 'active' ? '#ecf0f1' : '#fff',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: statusFilter === 'active' ? 600 : 400,
+            color: statusFilter === 'active' ? '#2980b9' : '#666',
+          }}
+        >
+          {t('filter_active')}
+        </button>
+      </div>
+
       <DataTable
         columns={columns}
-        rows={rows}
+        rows={filteredRows}
         rowKey={(r) => r.id}
         loading={loading}
         loadingText={t('loading')}
