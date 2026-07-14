@@ -2,7 +2,7 @@
 
 Use the **Plans** module (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the canonical reference for an admin-only feature, and **Members** for a full-staff feature with soft-delete.
 
-Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast` — never hand-roll tables, modals, or status chips.
+Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast` (plus `ui.tsx` primitives) — never hand-roll tables, modals, or status chips. The sidebar is config-driven from `config/navigationGroups.ts` (grouped, role-gated), so nav changes are data, not JSX.
 
 ---
 
@@ -62,7 +62,7 @@ try {
 
 ## Deployment
 
-Three separate deploy workflows in `.github/workflows/` — all follow the same pattern: build `linux/arm64` image on the native ARM runner (`ubuntu-24.04-arm`) → push to GHCR → SSH as user `podman` → `podman pull` → `systemctl --user restart <unit>` → health check. The systemd (Quadlet) units — ports, env vars, restart policy — are owned by Oscar on the VPS; workflows never `podman run` the app containers (see `docs/architecture.md` § Deployment).
+Three separate deploy workflows in `.github/workflows/` — all follow the same pattern: build `linux/arm64` image on the native ARM runner (`ubuntu-24.04-arm`) → push to GHCR → SSH as user `podman` → `podman pull` → `systemctl --user restart <unit>` → health check. The systemd (Quadlet) units — ports, env vars, restart policy — are owned by Oscar on the VPS; workflows never `podman run` the app containers (see `docs/architecture.md` § Deployment). `ci.yml` runs lint/build + migrations against a throwaway MySQL 8.4 service.
 
 | Workflow | Triggers on | Deploys |
 |----------|------------|---------|
@@ -180,13 +180,18 @@ app.use('/widgets', requireAuth(), tenantContext, widgetsRouter);
 - Build with the shared components (`DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`)
 - Copy the Plans page (`[locale]/plans/`) as a starting point.
 
-### 5. Sidebar entry (`components/Sidebar.tsx`)
+### 5. Sidebar entry (`config/navigationGroups.ts`)
+Navigation is config-driven — add an item to the right group instead of editing `Sidebar.tsx`. Use `{{locale}}` in `href` (replaced at render time), a `labelKey` for i18n, and an optional `requiredRole` (`staff | admin | superadmin`, hierarchical — `filterNavGroups` hides items above the user's role). A group with a `requiredRole` gates all its items.
 ```ts
-// Visible to all gym members:
-{ href: `/${locale}/widgets`, label: t('nav.widgets') }
+// Inside the matching group's `items` array:
+{ href: '/{{locale}}/widgets', labelKey: 'nav.widgets' },
 
-// Visible to admin + superadmin only:
-...(isAdmin ? [{ href: `/${locale}/widgets`, label: t('nav.widgets') }] : [])
+// Admin-only item (or put it in a group that already has requiredRole: 'admin'):
+{ href: '/{{locale}}/widgets', labelKey: 'nav.widgets', requiredRole: 'admin' },
+
+// With a soft-delete sub-page:
+{ href: '/{{locale}}/widgets', labelKey: 'nav.widgets',
+  children: [{ href: '/{{locale}}/widgets/deleted', labelKey: 'nav.widgets_deleted' }] },
 ```
 
 ### 6. i18n (`locales/base/{en,es,ca}.json`)
@@ -222,7 +227,7 @@ Add `deleted_at DATETIME` to the table. Then:
 'UPDATE things SET deleted_at = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL'
 ```
 
-Add a `/deleted` sub-page and a `children` entry in the Sidebar link. See Members for reference.
+Add a `/deleted` sub-page and a `children` entry in the nav item. See Members for reference.
 
 ---
 
@@ -232,7 +237,28 @@ Add a `/deleted` sub-page and a `children` entry in the Sidebar link. See Member
 |---------------------|-----|
 | Any gym member | No `requireRole` check (tenantContext alone is enough) |
 | Staff can create/update, admin can delete | `requireRole('admin', 'staff')` on write, `requireRole('admin')` on delete |
+| Coaches manage training content | `requireRole('admin', 'coach')` (exercises, workouts, training templates) |
 | Admin only | `requireRole('admin')` on all mutations |
 | Platform level | `requireSuperadmin` middleware, route under `/platform` |
 
 Frontend: show/hide UI elements using `activeGym?.role === 'admin'` or `isSuperadmin`. Always also enforce on the backend — never rely on frontend-only guards.
+
+---
+
+## Audit Logging (high-value mutations)
+
+For mutations worth an audit trail (role/permission changes, membership status, deletes), call the fire-and-forget writer after the business write. It never throws into the request path.
+
+```ts
+import { recordAudit } from '../infra/audit';
+
+recordAudit(req, {
+  action: 'change_role',           // verb
+  entityType: 'gym_user',          // what kind of thing
+  entityId: String(membershipId),  // which one
+  previous: { role: old },         // optional before-snapshot
+  next: { role },                  // optional after-snapshot
+});
+```
+
+Actor, gym, IP, user-agent, and `source` are pulled from `req.tenantCtx` automatically. Rows are read back through `GET /audit-logs` (admin only) in the admin **Audit** page.
