@@ -65,7 +65,7 @@ gymUsersRouter.get('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query<any>(
-      'SELECT id, user_id, role, status, email, created_at FROM gym_memberships WHERE gym_id = ? AND role IN ("admin","coach","staff") ORDER BY created_at DESC',
+      'SELECT id, user_id, role, status, email, name, created_at FROM gym_memberships WHERE gym_id = ? AND role IN ("admin","coach","staff") ORDER BY created_at DESC',
       [gymId],
     );
 
