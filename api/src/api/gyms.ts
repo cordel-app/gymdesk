@@ -1,4 +1,3 @@
-import { getAuth } from '@clerk/express';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { db } from '../infra/db';
@@ -15,7 +14,11 @@ export const platformRouter = Router();
 // ─── User-facing: list gyms for the authenticated user ───────────────────────
 
 gymsRouter.get('/', async (req, res) => {
-  const userId = getAuth(req as any).userId;
+  // /gyms is guarded by the custom requireAuth() (sets req.auth), not Clerk's
+  // express middleware — so read req.auth, consistent with every other route.
+  // getAuth() here throws (no clerkMiddleware registered) → 500, which broke
+  // the admin-app self-heal for freshly-invited non-superadmin users.
+  const userId = (req as any).auth?.userId;
   const { rows } = await db.query(
     `SELECT g.*, gm.role
      FROM gyms g
