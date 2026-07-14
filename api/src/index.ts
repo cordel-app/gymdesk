@@ -36,6 +36,7 @@ import './api/package-credits';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter } from './api/me';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
+import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext } from './infra/tenantContext';
 import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
@@ -48,6 +49,11 @@ const app = express();
 const port = process.env.PORT ?? 3000;
 
 // No CORS middleware: the API is only called server-to-server (Next.js proxy routes)
+
+// Clerk webhooks must be mounted BEFORE express.json(): signature verification
+// needs the exact raw request bytes, so this route parses its own raw body.
+app.use('/webhooks/clerk', express.raw({ type: 'application/json' }), clerkWebhookRouter);
+
 app.use(express.json());
 const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 

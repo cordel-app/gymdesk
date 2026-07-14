@@ -178,7 +178,7 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
       clerkInvitation = await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role } },
-        ...(adminUrl ? { redirectUrl: `${adminUrl}/` } : {}),
+        ...(adminUrl ? { redirectUrl: `${adminUrl}/en/sign-up` } : {}),
       });
       console.log('Clerk invitation created successfully for:', email);
 
@@ -323,7 +323,7 @@ gymUsersRouter.post('/:id/reinvite', requireRole('admin'), async (req, res, next
       await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
-        ...(adminUrl ? { redirectUrl: `${adminUrl}/` } : {}),
+        ...(adminUrl ? { redirectUrl: `${adminUrl}/en/sign-up` } : {}),
       });
 
       recordAudit(req, { action: 'reinvite', entityType: 'gym_user', entityId: String(membershipId), next: { email } });
@@ -398,61 +398,74 @@ gymUsersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/**
+ * Materialize a gym_memberships row from a user's Clerk `gym_invite` metadata.
+ * Shared by the admin-app self-heal (POST /link) and the Clerk `user.created`
+ * webhook, so activation happens whichever path fires first. Idempotent: once
+ * the metadata is cleared, subsequent calls return { linked: false }.
+ *
+ * @returns the materialized row, or null when there is no pending invite.
+ */
+export async function linkGymInvite(userId: string): Promise<any | null> {
+  const clerkUser = await clerkClient.users.getUser(userId);
+  const meta = (clerkUser.publicMetadata as any) ?? {};
+  const gymInvite = meta.gym_invite;
+
+  if (!gymInvite) return null;
+
+  const { gym_id: gymId, role } = gymInvite;
+
+  // Get the user's email to match against invited row (case-insensitive: the
+  // placeholder row stored the email lowercased at invite time).
+  const userEmail = clerkUser.emailAddresses?.[0]?.emailAddress ?? (clerkUser as any).email;
+
+  // Check if there's an invited placeholder row and update it, or insert new row
+  const { rows: existingInvited } = await db.query<any>(
+    'SELECT id FROM gym_memberships WHERE gym_id = ? AND role = ? AND status = ? AND LOWER(email) = LOWER(?)',
+    [gymId, role, 'invited', userEmail],
+  );
+
+  if (existingInvited.length > 0) {
+    // Update the placeholder invited row to active with the real user_id
+    await db.query(
+      'UPDATE gym_memberships SET user_id = ?, status = ?, email = NULL WHERE id = ?',
+      [userId, 'active', existingInvited[0].id],
+    );
+  } else {
+    // Insert new row as active (for direct grants)
+    await db.query(
+      'INSERT IGNORE INTO gym_memberships (user_id, gym_id, role, status) VALUES (?, ?, ?, ?)',
+      [userId, gymId, role, 'active'],
+    );
+  }
+
+  // Fetch the inserted/existing row
+  const { rows } = await db.query<any>(
+    'SELECT * FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
+    [userId, gymId],
+  );
+
+  // Clear the gym_invite metadata so this only materializes once
+  await clerkClient.users.updateUserMetadata(userId, {
+    publicMetadata: { ...meta, gym_invite: null },
+  });
+
+  recordAudit(
+    { tenantCtx: { userId, gymId, role: 'admin' } } as any,
+    { action: 'link', entityType: 'gym_user', entityId: userId, next: { gym_id: gymId, role } },
+  );
+
+  return rows[0];
+}
+
 // POST /link — called by admin app on first sign-in; materializes gym_memberships from Clerk metadata
 gymUsersLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
   const userId = (req as any).auth?.userId;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
-    const clerkUser = await clerkClient.users.getUser(userId);
-    const meta = (clerkUser.publicMetadata as any) ?? {};
-    const gymInvite = meta.gym_invite;
-
-    if (!gymInvite) {
-      return res.status(404).json({ error: 'No pending team invitation found.' });
-    }
-
-    const { gym_id: gymId, role } = gymInvite;
-
-    // Get the user's email to match against invited row
-    const userEmail = clerkUser.emailAddresses?.[0]?.emailAddress ?? (clerkUser as any).email;
-
-    // Check if there's an invited placeholder row and update it, or insert new row
-    const { rows: existingInvited } = await db.query<any>(
-      'SELECT id FROM gym_memberships WHERE gym_id = ? AND role = ? AND status = ? AND email = ?',
-      [gymId, role, 'invited', userEmail],
-    );
-
-    if (existingInvited.length > 0) {
-      // Update the placeholder invited row to active with the real user_id
-      await db.query(
-        'UPDATE gym_memberships SET user_id = ?, status = ?, email = NULL WHERE id = ?',
-        [userId, 'active', existingInvited[0].id],
-      );
-    } else {
-      // Insert new row as active (for direct grants)
-      await db.query(
-        'INSERT IGNORE INTO gym_memberships (user_id, gym_id, role, status) VALUES (?, ?, ?, ?)',
-        [userId, gymId, role, 'active'],
-      );
-    }
-
-    // Fetch the inserted/existing row
-    const { rows } = await db.query<any>(
-      'SELECT * FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
-      [userId, gymId],
-    );
-
-    // Clear the gym_invite metadata
-    await clerkClient.users.updateUserMetadata(userId, {
-      publicMetadata: { ...meta, gym_invite: null },
-    });
-
-    recordAudit(
-      { tenantCtx: { userId, gymId, role: 'admin' } } as any,
-      { action: 'link', entityType: 'gym_user', entityId: userId, next: { gym_id: gymId, role } },
-    );
-
-    res.json(rows[0]);
+    const row = await linkGymInvite(userId);
+    if (!row) return res.status(404).json({ error: 'No pending team invitation found.' });
+    res.json(row);
   } catch (err) { next(err); }
 });
