@@ -2,7 +2,9 @@
 
 ## Overview
 
-Multi-tenant Gym Management SaaS. One Express backend, two Next.js frontends (admin + member), one MySQL 8 database (Oracle HeatWave in deployed environments; schema `fitness`). Authentication via Clerk. Tenant isolation via `gym_id` on every domain table and `x-gym-id` request header.
+Multi-tenant Gym Management SaaS. One Express backend, two Next.js frontends (admin + member), one MySQL 8 database (Oracle HeatWave in deployed environments; schema `fitness`). Authentication via Clerk. Tenant isolation via `gym_id` on every domain table and the `x-gym-id` request header.
+
+The domain now spans membership plans & billing, classes & scheduling, class packages/credits, promotions, workouts & training plans, team management, per-gym theming, and an audit log. See `docs/roadmap.md` for phase status.
 
 ---
 
@@ -12,34 +14,35 @@ Multi-tenant Gym Management SaaS. One Express backend, two Next.js frontends (ad
 gymdesk/
   api/src/                         # Express API (shared by both frontends)
     index.ts                       # App entrypoint, route registration, requireAuth()
-    api/                           # One file per domain (members.ts, classes.ts, …)
+    api/                           # One file per domain (members.ts, class-sessions.ts, …)
     domain/types.ts                # Shared TypeScript interfaces
     infra/
       db.ts                        # mysql2 pool + query/transaction helpers
-      tenantContext.ts             # Middleware: resolves gym role, enforces requireRole()
-      migrations/                  # Knex migration .js files (001_, 002_, …)
-      swagger.ts
-      seed.ts
+      tenantContext.ts             # Middleware: resolves gym role, requireRole(), requireSuperadmin
+      audit.ts                     # recordAudit() — fire-and-forget audit_logs writer
+      migrations/                  # Knex migration .js files (001_ … 034_)
+      swagger.ts                   # OpenAPI spec served at GET /docs
+      seed.ts                      # Dev seed (sets a Clerk user as platform superadmin)
   apps/
     admin/src/                     # Staff/admin Next.js app (port :8081 both locally and deployed)
       app/[locale]/                # Next.js App Router pages (one folder per domain)
-      components/
-        Sidebar.tsx                # Nav — conditionally renders links by role
-        AppShell.tsx               # Layout wrapper (hidden for unauthenticated home)
-        TopHeader.tsx
-        GymSelector.tsx
+      components/                  # DataTable, CrudModal, ConfirmDialog, StatusBadge, StatusFilter,
+                                   #   Toast, Sidebar, NavGroup, AppShell, TopHeader, GymSelector,
+                                   #   LanguagePicker, ThemeProvider, ui.tsx
+      config/navigationGroups.ts   # Sidebar structure: collapsible groups + role gating
       context/GymContext.tsx       # Active gym, role, isSuperadmin — loaded everywhere
       lib/apiClient.ts             # apiFetch() — attaches Bearer token + x-gym-id
       middleware.ts                # Clerk auth + next-intl locale routing
-      locales/base/en.json …
+      locales/base/{en,es,ca}.json
     member/src/                    # Member-facing PWA (port :8082 both locally and deployed)
-      app/[locale]/                # Public home, sign-in, bookings, subscriptions, profile
+      app/[locale]/                # Public home, sign-in, schedule, membership, training
       app/api/proxy/[...path]/     # Proxy → backend (Node runtime — edge fetch can't reach port 3000)
-      context/AppContext.tsx       # gymId + linked member profile
+      components/BottomNav.tsx      # Mobile bottom navigation
+      context/AppContext.tsx        # gymId + linked member profile
       lib/apiClient.ts
       middleware.ts                # Public routes: /, /:locale, /classes, /sign-in, /api/proxy
-      locales/base/en.json …
-  shared/                          # Placeholder for future shared services
+      locales/base/{en,es,ca}.json
+  shared/                          # Placeholder for future shared services (currently empty)
   docs/                            # This folder
 ```
 
@@ -52,62 +55,60 @@ gymdesk/
 - Decoded `userId` is attached as `req.auth.userId`.
 
 ### Tenant context (`infra/tenantContext.ts`)
-- Reads `x-gym-id` header, looks up `gym_memberships` to get the user's `role` in that gym.
+- Reads the `x-gym-id` header, looks up `gym_memberships` to get the user's `role` in that gym.
 - Attaches `req.tenantCtx = { userId, gymId, role }`.
 - Helper `getTenantContext(req)` retrieves it safely inside route handlers.
+- Superadmins (Clerk metadata) are granted a synthetic `admin` role for any gym without a membership row.
 
 ### Roles
+
+`GymRole` (the DB-backed role type) is `admin | coach | staff | member`. `superadmin` is a **platform** role stored in Clerk, not a `gym_memberships` value. `guest` is anonymous (public routes only).
 
 | Role | Scope | Who | How identified |
 |------|-------|-----|----------------|
 | `superadmin` | Platform | Cordel internal | Clerk `publicMetadata.platform_role === 'superadmin'` |
 | `admin` | Gym | Gym/studio owner | `gym_memberships.role` |
-| `coach` | Gym | Trainer | `gym_memberships.role` |
+| `coach` | Gym | Trainer | `gym_memberships.role` (+ trainer specialities) |
 | `staff` | Gym | Front desk | `gym_memberships.role` |
 | `member` | Gym | Gym member/client | `gym_memberships.role` + `members.clerk_user_id` |
 | `guest` | Public | Anonymous visitor | No auth — `/public/*` routes only |
 
-### Permission matrix
+### Permission model (verified against routers)
 
-| Endpoint | superadmin | admin | coach | staff | member | guest |
-|----------|-----------|-------|-------|-------|--------|-------|
-| GET /members | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| POST/PUT /members | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| DELETE /members | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| POST /members/:id/invite | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| GET /classes | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| POST/PUT /classes | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ |
-| DELETE /classes | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| GET /bookings | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| POST/PUT /bookings | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| DELETE /bookings | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| GET /user-memberships | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| POST/PUT /user-memberships | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| DELETE /user-memberships | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| GET /membership-plans, /benefit-types, /charge-types | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
-| POST/PUT/DELETE /membership-plans | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ |
-| GET/POST /billing-events | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ |
-| POST /me/link | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
-| GET /me/profile | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
-| GET /me/bookings | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
-| GET /me/subscriptions | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
-| GET /public/gyms/:slug | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| GET /public/gyms/:slug/classes | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| /platform/* | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+Reads (`GET`) on gym-scoped domain routes are open to any authenticated gym role (tenantContext alone). Writes are gated with `requireRole(...)`. Source of truth is each router; the table below summarizes the current guards:
+
+| Domain (router) | Read | Create / Update | Delete | Notes |
+|---|---|---|---|---|
+| Members (`members`) | any role | `admin`, `staff` | `admin` | Soft-delete + `/restore`; `/:id/invite` = `admin`,`staff`. |
+| Team (`gym-users`) | `admin` | `admin` | `admin` | Whole router is admin-only (see Team management). |
+| Rooms, Specialities, Class types, Class packages, Promotions, Plans (`membership-plans`) | any role | `admin` | `admin` | Admin-only CRUD lookups/catalogs. |
+| Trainers (`trainers`) | any role | `admin` (PUT specialities) | — | Trainers are `coach` rows; this manages their specialities. |
+| Class sessions (`class-sessions`) | any role | `admin`, `coach`, `staff` | (cancel) `admin`,`coach`,`staff` | `POST /:id/cancel` instead of hard delete. |
+| Bookings (`bookings`) | any role | `admin`, `staff` (create) | `admin`, `staff` | `POST /:id/attendance` = `admin`,`staff`,`coach`. |
+| Muscles, Exercises, Workouts, Training templates | any role | `admin`, `coach` | `admin`, `coach` | `POST /exercises/import-defaults` seeds a per-gym catalog. |
+| Member training plans (`members/:id/training-plans`) | any role | `admin`, `coach`, `staff` | `admin`, `coach`, `staff` | Assign/unassign a template to a member. |
+| User memberships (`user-memberships`) | any role | `admin`, `staff` | `admin` | Status changes write a `status_changed` billing event in the same tx. |
+| Billing ledger (`billing-events`) | `admin`, `staff` | `admin`, `staff` (POST) | — | Append-only. |
+| Audit log (`audit-logs`) | `admin` | — | — | Read-only viewer. |
+| Action types (`action-types`) | any role | — | — | Global lookup (no `gym_id`), seeded in migration. |
+| Public (`public/*`) | guest | — | — | Gym landing + class list by slug. |
+| Platform (`platform/*`, `platform/superadmins`) | `superadmin` | `superadmin` | `superadmin` | Gym creation/list; superadmin management. |
 
 Usage in routes:
 ```ts
 router.delete('/:id', requireRole('admin'), handler);
 router.post('/',      requireRole('admin', 'staff'), handler);
+router.post('/',      requireRole('admin', 'coach'), handler);   // training/workouts
 // Public routes — no middleware at all:
 app.use('/public', publicRouter);
 ```
 
 ### Platform superadmin (Clerk metadata)
 - `requireSuperadmin` middleware checks `user.publicMetadata.platform_role === 'superadmin'`.
-- Only used for `/platform/*` routes (gym creation, full gym list).
-- `tenantContext` grants superadmins synthetic `admin` role for any gym, so they can access all domain routes.
+- Used for `/platform/*` (gym creation, full gym list) and `/platform/superadmins` (grant/revoke platform role).
+- `tenantContext` grants superadmins a synthetic `admin` role for any gym, so they can access all domain routes.
 - Frontend: `GymContext` exposes `isSuperadmin` from Clerk's `useUser()`.
+- `infra/seed.ts` bootstraps the first superadmin from `SEED_USER_ID`.
 
 ---
 
@@ -119,57 +120,110 @@ Every domain table has `gym_id CHAR(36) REFERENCES gyms`. Every query filters by
 SELECT * FROM members WHERE gym_id = ? AND deleted_at IS NULL
 ```
 
-The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it from `GymContext.activeGymId`.
+The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it from `GymContext.activeGymId`. Global lookup tables (`benefit_types`, `charge_types`, `action_types`) are the deliberate exception — they have no `gym_id` and are seeded in their migrations.
 
 ---
 
 ## Database Conventions
 
-- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_`, `002_`, …). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable.
+- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `034_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
 - **Primary keys**: auto-increment `INT UNSIGNED` for domain tables, `CHAR(36)` UUID for `gyms` (tenant root, `DEFAULT (UUID())`).
 - **Timestamps**: `DATETIME`, always UTC (the mysql2 pool uses `timezone: 'Z'`; use `UTC_TIMESTAMP()` in SQL, never `NOW()`).
 - **Indexed text columns**: `VARCHAR(n)`, not `TEXT` (MySQL cannot index TEXT without a prefix length).
 - **Soft deletes**: Add `deleted_at DATETIME` and filter `WHERE deleted_at IS NULL`. Used for members; consider for other user-facing entities.
-- **Cascade**: FK `ON DELETE CASCADE` when the child has no meaning without the parent (e.g. `fares → gyms`). Use `ON DELETE SET NULL` when the reference is optional (e.g. `members.fare_id → fares`).
+- **Cascade**: FK `ON DELETE CASCADE` when the child has no meaning without the parent. Use `ON DELETE SET NULL` when the reference is optional.
 - **Duplicates**: unique-key violations surface as `err.code === 'ER_DUP_ENTRY'` (errno 1062) → return 409.
+- **Statuses**: `VARCHAR` + a **named** CHECK constraint (so the allowed set can evolve without an `ALTER TYPE` dance).
 - **No partial/filtered indexes** in MySQL: for "unique among non-deleted/active rows" use a generated column + unique index.
 - **Inserts**: no `RETURNING` in MySQL — insert, then `SELECT` by `insertId` (returned by the `db.query` helper). Upserts use `INSERT ... AS new ON DUPLICATE KEY UPDATE col = new.col`; "insert if absent" uses `INSERT IGNORE`.
+- **Transactions**: multi-statement writes use `db.transaction(async (tx) => { … })` — never `BEGIN`/`COMMIT` through `db.query` (pooled connections).
+
+### `gym_memberships` (the "users in a gym" table)
+
+Beyond `user_id`, `gym_id`, `role`, this table now carries invitation state (migrations 031–034):
+- `status` — `active | invited` (named CHECK).
+- `email` — set for invited rows before a Clerk user exists; cleared to `NULL` on link.
+- `name` — display name (editable for invited rows).
+- `invitation_id` — the Clerk invitation id, used to revoke on removal.
+
+Invited rows use a placeholder `user_id` of the form `invited_<timestamp>` until the invitee signs in and `/gym-users/link` materializes the real Clerk `user_id`.
 
 ---
 
 ## Backend Route Registration (`index.ts`)
 
 ```ts
-// Member self-service — auth required, NO tenant context (links Clerk user to member row)
-app.use('/me/link', requireAuth(), meLinkRouter);
+// Public — no auth, no tenant context (identified by gym slug)
+app.use('/public', publicRouter);
 
-// Member self-service — auth + tenant context (member role only)
-app.use('/me', requireAuth(), tenantContext, meRouter);
+// Auth but no tenant context (gymId not known yet)
+app.use('/gyms',                  requireAuth(), gymsRouter);
+app.use('/platform',              requireAuth(), platformRouter);            // superadmin only
+app.use('/platform/superadmins',  requireAuth(), superadminsRouter);         // superadmin only
 
-// No tenant context needed (gym not selected yet)
-app.use('/gyms',    requireAuth(), gymsRouter);
-app.use('/platform',requireAuth(), platformRouter);   // superadmin only
+// Link routes must run BEFORE tenantContext (no membership row exists yet on first link)
+app.use('/me/link',        requireAuth(), meLinkRouter);
+app.use('/gym-users/link', requireAuth(), gymUsersLinkRouter);
 
-// All domain routes — auth + tenant context required
-app.use('/members',          requireAuth(), tenantContext, membersRouter);
-app.use('/classes',          requireAuth(), tenantContext, classesRouter);
-app.use('/bookings',         requireAuth(), tenantContext, bookingsRouter);
-app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
-app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
-app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
-app.use('/charge-types',     requireAuth(), tenantContext, chargeTypesRouter);
-app.use('/billing-events',   requireAuth(), tenantContext, billingEventsRouter);
+// Member self-service — auth + tenant context (member role)
+app.use('/me',             requireAuth(), tenantContext, meRouter);
 
-// Legacy — kept mounted until their replacement frontend ships, then DELETE:
-app.use('/subscriptions', requireAuth(), tenantContext, subscriptionsRouter); // replaced by /user-memberships (P1.5); page replaced in P1.7
+// Team + all domain routes — auth + tenant context
+app.use('/gym-users',              requireAuth(), tenantContext, gymUsersRouter);
+app.use('/members',                requireAuth(), tenantContext, membersRouter);
+app.use('/bookings',               requireAuth(), tenantContext, bookingsRouter);
+app.use('/user-memberships',       requireAuth(), tenantContext, userMembershipsRouter);
+app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, membershipPromotionsRouter);
+app.use('/muscles',                requireAuth(), tenantContext, musclesRouter);
+app.use('/exercises',              requireAuth(), tenantContext, exercisesRouter);
+app.use('/workouts',               requireAuth(), tenantContext, workoutsRouter);
+app.use('/training-plan-templates',requireAuth(), tenantContext, trainingTemplatesRouter);
+app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, memberTrainingPlansRouter);
+app.use('/members/:memberId/workout-logs',   requireAuth(), tenantContext, memberWorkoutLogsRouter);
+app.use('/audit-logs',             requireAuth(), tenantContext, auditLogsRouter);
+app.use('/membership-plans',       requireAuth(), tenantContext, membershipPlansRouter);
+app.use('/membership-plans/:id/class-types', requireAuth(), tenantContext, planClassTypesRouter);
+app.use('/benefit-types',          requireAuth(), tenantContext, benefitTypesRouter);
+app.use('/charge-types',           requireAuth(), tenantContext, chargeTypesRouter);
+app.use('/billing-events',         requireAuth(), tenantContext, billingEventsRouter);
+app.use('/rooms',                  requireAuth(), tenantContext, roomsRouter);
+app.use('/specialities',           requireAuth(), tenantContext, specialitiesRouter);
+app.use('/trainers',               requireAuth(), tenantContext, trainersRouter);
+app.use('/class-types',            requireAuth(), tenantContext, classTypesRouter);
+app.use('/class-sessions',         requireAuth(), tenantContext, classSessionsRouter);
+app.use('/class-packages',         requireAuth(), tenantContext, classPackagesRouter);
+app.use('/action-types',           requireAuth(), tenantContext, actionTypesRouter);
+app.use('/promotions',             requireAuth(), tenantContext, promotionsRouter);
+app.use('/promotions/:id',         requireAuth(), tenantContext, promotionDetailsRouter);
+app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userClassPackagesRouter);
+
+// package-credits registers a booking-lifecycle hook as a side-effect import
+// (imported BEFORE plan-class-types so its hook queues first).
 ```
 
-### Member invite + auto-link flow
+Legacy `/fares` and `/subscriptions` routers are fully removed (migrations 004, 007, 009).
 
-1. Staff calls `POST /members/:id/invite` → Clerk sends invitation email with redirect URL `MEMBER_APP_URL/en/link?gym_id=...`
-2. Member clicks email link, signs in via Clerk in `apps/member`
-3. On first sign-in, app calls `POST /me/link` (no gym_memberships row yet) — backend matches by email + gym_id, sets `members.clerk_user_id`, inserts `gym_memberships(role='member')`
-4. Subsequent requests use `/me/*` routes with `tenantContext` resolving the member role normally
+### Member invite + auto-link flow (`members` + `me`)
+
+1. Staff calls `POST /members/:id/invite` → Clerk sends an invitation email with redirect to the member app (`CORDEL_FITNESS_MEMBERS_URL`).
+2. Member signs in via Clerk in `apps/member`.
+3. On first sign-in the app calls `POST /me/link` (no `gym_memberships` row yet) — backend matches by email + gym_id, sets `members.clerk_user_id`, inserts `gym_memberships(role='member')`.
+4. Subsequent requests use `/me/*` routes with `tenantContext` resolving the member role.
+
+### Team invite + auto-link flow (`gym-users`)
+
+Admins manage coaches/staff/admins from the **Team** page. `POST /gym-users`:
+- If Clerk already knows the email → insert/update a `gym_memberships` row directly.
+- If not → create a Clerk invitation carrying `publicMetadata.gym_invite = { gym_id, role }`, and insert an `invited` placeholder row.
+- On the invitee's first admin-app sign-in, `POST /gym-users/link` reads that metadata, materializes/activates the row, and clears the metadata.
+
+Guards: self-edit blocked (can't change your own role or remove yourself), and last-admin protection (can't demote/remove the sole remaining admin). Removing an invited user revokes the Clerk invitation. All team mutations call `recordAudit`.
+
+---
+
+## Audit Logging (`infra/audit.ts` + `audit_logs`)
+
+`recordAudit(req, { action, entityType, entityId?, previous?, next? })` is a **fire-and-forget** writer: it never fails the calling request (a rejected INSERT just logs to `console.error`). Actor, gym, IP, user-agent, and `source` (`admin`/`employee`/`customer`, derived from role) are pulled from the request automatically. High-value mutations (team changes, membership status, etc.) call it after the business write. The read side is `GET /audit-logs` (admin only), surfaced in the admin **Audit** page.
 
 ---
 
@@ -182,13 +236,13 @@ All requests go through `apiFetch()` (from `useApiClient()`), which:
 1. Gets a fresh Clerk token.
 2. Attaches `Authorization: Bearer <token>`.
 3. Attaches `x-gym-id: <activeGymId>`.
-4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`). The API has no CORS — it is reachable only through these proxies. The proxy target is `CORDEL_FITNESS_API_URL` (deployed: `https://api.vdicube.com` — public URL through Traefik, deliberate choice for flexibility; local dev: `http://localhost:3000`).
+4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`). The API has no CORS — it is reachable only through these proxies. The proxy target is `CORDEL_FITNESS_API_URL` (deployed: `https://api.vdicube.com`; local dev: `http://localhost:3000`).
 
 ### Backoffice: GymContext
 Available via `useGym()`. Key fields:
 ```ts
 activeGymId: string | null
-activeGym: { id, name, slug, role } | null
+activeGym: { id, name, slug, role, theme_key? } | null
 isSuperadmin: boolean
 loading: boolean
 ```
@@ -202,51 +256,78 @@ isLinked: boolean
 loading: boolean
 ```
 
+### Admin navigation (grouped sidebar)
+The sidebar is **config-driven** from `config/navigationGroups.ts`. Groups are collapsible; each group and item can declare a `requiredRole` (`staff | admin | superadmin`, hierarchical) and `filterNavGroups()` hides anything above the user's role. Expanded state persists in `sessionStorage`; the group containing the active route auto-expands. Current groups:
+
+| Group | requiredRole | Items |
+|-------|--------------|-------|
+| Membership | — | Dashboard, Members (→ Deleted) |
+| Organization | `admin` | Dashboard, Team, Rooms, Trainers, Specialities, Class types, Class packages |
+| Training | — | Dashboard, Exercises, Workouts |
+| Nutrition | — | Dashboard (placeholder) |
+| Financials | `admin` | Dashboard, Plans, Promotions |
+| System | `superadmin` | Audit, Customize, Gyms, Users |
+
+The per-group "Dashboard" pages (Organization, Training, Nutrition, Financials, plus the singular `/membership`) are **placeholder shells** ("coming soon") today. Some functional pages (e.g. `/memberships` — the user-membership manager with ledger + promotion-apply modals — and `/schedule`) exist and are reachable but are not yet linked from a nav group.
+
 ### AppShell (admin)
-Wraps all admin pages. Hides sidebar + header for:
-- Sign-in / sign-up pages
-- Home page (`/:locale`) when user is not authenticated
+Wraps all admin pages. Hides sidebar + header for sign-in/sign-up and the unauthenticated home page.
+
+### Theming (`ThemeProvider` + per-gym `theme_key`)
+Each gym has a `theme_key` (`indigo | emerald | crimson | amber`, migration 030, default `indigo`). `ThemeProvider` applies the active gym's theme via CSS variables (`--brand`, `--chrome`, …). Superadmins edit presets from **System → Customize**.
 
 ### Middleware (both apps)
-Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both apps require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime) as env vars (baked as Docker build args / runtime env).
-
-### Sidebar visibility (admin)
-- Regular links: visible to all authenticated gym members.
-- Admin-only links (e.g. Plans): check `activeGym?.role === 'admin' || isSuperadmin`.
-- Superadmin-only section (System > Gyms): check `isSuperadmin`.
+Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime).
 
 ### i18n
-All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by feature. Use `useTranslations()` in every page/component.
+All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by feature. Use `useTranslations()` in every page/component. The admin app has a `LanguagePicker`.
 
 ---
 
-## Existing Domain Modules
+## Domain Modules
 
 ### Admin (`apps/admin`)
 
-| Module | Backend | Frontend page | Notes |
-|--------|---------|---------------|-------|
-| Members | `api/members.ts` | `[locale]/members/` | Canonical staff-level CRUD reference. Soft-delete + restore. Has `clerk_user_id` column. |
-| Classes | `api/classes.ts` | `[locale]/classes/` | |
-| Bookings | `api/bookings.ts` | `[locale]/bookings/` | |
-| Plans | `api/membership-plans.ts` | `[locale]/plans/` | Canonical admin-only CRUD reference. Includes plan prices (validity windows) + benefits. Replaced Fares (P1.1/P1.2). |
-| Benefit types | `api/benefit-types.ts` | (used inside Plans) | Global lookup table (no `gym_id`), seeded in its migration. |
-| User memberships | `api/user-memberships.ts` | `[locale]/memberships/` | Replaced Subscriptions (P1.5/P1.7). Status changes write a `status_changed` billing event in the same transaction. Members page reads plans from `/membership-plans?status=active`. |
-| Billing ledger | `api/billing-events.ts` | Ledger drawer inside `[locale]/memberships/` | Append-only: GET (paginated, filter by member/membership/type/date) + POST only. `status_changed` rows are system-emitted, not POSTable. |
-| Charge types | `api/charge-types.ts` | (used inside the ledger drawer's Record payment modal) | Global lookup table (no `gym_id`), seeded in its migration. |
-| Gyms (platform) | `api/gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
+| Module | Backend router(s) | Frontend page | Notes |
+|--------|-------------------|---------------|-------|
+| Members | `members.ts` | `[locale]/members/` (+ `/deleted`) | Canonical staff-level CRUD reference. Soft-delete + restore; `clerk_user_id`; `/:id/invite`. |
+| Team | `gym-users.ts` | `[locale]/team/`, `[locale]/link-team/` | Admin-only. Invite/grant/change-role/remove admin/coach/staff. Clerk invitation flow, self-edit & last-admin guards, audited. |
+| Rooms | `rooms.ts` | `[locale]/rooms/` | Admin-only CRUD. |
+| Specialities | `specialities.ts` | `[locale]/specialities/` | Admin-only CRUD; linked to trainers. |
+| Trainers | `trainers.ts` | `[locale]/trainers/` | Lists `coach` members; PUT assigns specialities. |
+| Class types | `class-types.ts` | `[locale]/class-types/` | Admin-only CRUD. |
+| Class sessions | `class-sessions.ts` | `[locale]/schedule/` | Scheduled instances of a class type (room, trainer, capacity). Create/update/cancel by admin/coach/staff. |
+| Bookings | `bookings.ts` | (inside Schedule) | Waitlist, capacity, attendance (`/:id/attendance`). Credit consume/refund hooks via `package-credits`. |
+| Plans | `membership-plans.ts`, `plan-class-types.ts` | `[locale]/plans/` | Canonical admin-only CRUD reference. Plan prices (validity windows) + benefits + class-type access. |
+| Benefit types | `benefit-types.ts` | (inside Plans) | Global lookup (no `gym_id`), seeded. |
+| User memberships | `user-memberships.ts`, `membership-promotions.ts` | `[locale]/memberships/` | Status changes write a `status_changed` billing event in the same tx. Apply promotions to a membership. |
+| Billing ledger | `billing-events.ts` | Ledger drawer in `[locale]/memberships/` | Append-only (GET + POST). `status_changed` rows are system-emitted. |
+| Charge types | `charge-types.ts` | (inside ledger's Record-payment modal) | Global lookup (no `gym_id`), seeded. |
+| Class packages | `class-packages.ts`, `user-class-packages.ts`, `package-credits.ts` | `[locale]/class-packages/` | Catalog + per-member packages + credit transactions; credits consumed/refunded on booking lifecycle. |
+| Promotions | `promotions.ts`, `promotion-details.ts`, `action-types.ts` | `[locale]/promotions/` | Admin-only. Plan targeting, charge benefits, period benefits. `action_types` is a global lookup. |
+| Exercises / Muscles | `exercises.ts` | `[locale]/exercises/` | Per-gym catalog; admin/coach CRUD; `POST /exercises/import-defaults` seeds defaults. |
+| Workouts | `workouts.ts` | `[locale]/workouts/` | Workout builder (`workout_exercises`); admin/coach. |
+| Training plans | `training-plans.ts`, `member-workout-logs.ts` | `[locale]/training/` | Templates + assignment to members + workout logs. |
+| Audit | `audit-logs.ts` | `[locale]/audit/` | Admin-only read-only viewer. |
+| Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
+| Superadmins | `superadmins.ts` | `[locale]/system/users/` | Superadmin only — grant/revoke platform role. |
+| Customize | (uses `gyms` theme_key) | `[locale]/system/customize/` | Superadmin theme editor. |
+| Dashboards | — | `membership`, `organization`, `training`, `nutrition`, `financials` | Placeholder "coming soon" shells. |
 
-Shared admin components (P0.1/P0.2, in `apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`. Use these in every new page — don't hand-roll tables/modals. Member app has `BottomNav` (P0.3).
+Shared admin components (`apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`, `Sidebar`, `NavGroup`, `AppShell`, `TopHeader`, `GymSelector`, `LanguagePicker`, `ThemeProvider`, `ui.tsx`. Use these in every new page — don't hand-roll tables/modals/status chips.
 
-### Member app (`apps/member`) — in progress
+### Member app (`apps/member`)
 
-| Route | Backend | Notes |
-|-------|---------|-------|
-| Home | — | Public. Shows Sign In button if unauthenticated. |
-| `/link` | `POST /me/link` | First-login: links Clerk user to members row. |
-| `/bookings` | `GET /me/bookings` | Member only. |
-| `/subscriptions` | `GET /me/subscriptions` | Member only. |
-| `/profile` | `GET /me/profile` | Member only. |
+The member PWA is built out (no longer just a stub). Navigation is a mobile `BottomNav`. Member endpoints live under `/me/*` (`me.ts`, all `requireRole('member')`).
+
+| Route | Backend (`/me/*`) | Notes |
+|-------|-------------------|-------|
+| Home (`/:locale`) | — | Public. Sign-in CTA when unauthenticated. |
+| `/link` (first login) | `POST /me/link` | Links Clerk user to a `members` row. |
+| `/schedule` | `GET /me/schedule`, `POST /me/bookings`, `DELETE /me/bookings/:id`, `GET /me/bookings` | Browse sessions, book, cancel, view bookings. |
+| `/membership` | `GET /me/membership`, `GET /me/billing-events`, `GET /me/class-packages`, `GET /me/promotions` | Current membership, payment history, package credit balance, promotions. |
+| `/training` | `GET /me/training-plans`, `GET /me/workout-logs`, `POST /me/workout-logs` | Assigned training plans + set logging. |
+| `/profile` | `GET /me/profile` | Member profile. |
 
 ---
 
@@ -267,11 +348,11 @@ All traffic enters through **Traefik on corfront** (`10.0.2.100`), which termina
 
 Notes:
 - API runtime DB config = `CORDEL_FITNESS_DB_HOST/_USER/_PASSWORD/_NAME` (split vars, set in Oscar's unit). Knex migrations still use a single `DATABASE_URL` (deploy passes `DATABASE_URL_MIGRATIONS`).
-- Frontends reach the API via `CORDEL_FITNESS_API_URL=https://api.vdicube.com` (public URL through Traefik — Oscar's deliberate choice for flexibility; traffic stays in the Frankfurt region). API invite emails use `CORDEL_FITNESS_MEMBERS_URL=https://members.vdicube.com`.
+- Frontends reach the API via `CORDEL_FITNESS_API_URL=https://api.vdicube.com`. API invite emails use `CORDEL_FITNESS_MEMBERS_URL=https://members.vdicube.com`; team invites use `CORDEL_FITNESS_ADMIN_URL`.
 - corfront also runs Oscar's `traefik` (:80/:443) and `wordpress_eforge` (:8080) under the same `podman` user — visible in `podman ps`, don't touch.
 - Inbound ports are controlled by the **OCI VCN Security List** (cloud console); OS firewalls are disabled. If a port times out from outside but works on localhost, it's the Security List.
 - Traefik config lives on corfront at `/srv/containers/traefik/config/dynamic/backend.yml` (managed by Oscar).
-- Diagnostics: `test-ssh.yml` (workflow_dispatch) prints identity/ports/`podman ps` on both VPSs; `debug-vps.yml` does deeper corback checks.
+- Diagnostics: `test-ssh.yml` / `test_ssh_corfront.yml` (workflow_dispatch) print identity/ports/`podman ps`; `debug-vps.yml` does deeper corback checks.
 - Legacy names are fully retired: `gymdesk-*` containers/images, VPS user `github`, Vercel, `backend-dev.gymdesk.uk` — do not reference them.
 
 ---
@@ -289,7 +370,7 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | `DATABASE_URL_MYSQL` | secret | `debug-vps.yml` — connectivity probe (DML user `fitness`) |
 | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | secrets | CI + deploys (Clerk test instance in dev) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Frontend builds (baked as build arg) |
-| `CORDEL_FITNESS_MEMBERS_URL` | variable | Member-app URL for invite emails |
+| `CORDEL_FITNESS_MEMBERS_URL`, `CORDEL_FITNESS_ADMIN_URL` | variables | App URLs for invite emails |
 
 ### Repo-scoped (cross-env)
 
@@ -300,3 +381,13 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | `CORFRONT_SSH_HOST`, `CORFRONT_SSH_PRIVATE_KEY` | secret | SSH as user `podman` on corfront |
 
 CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container** (schema `fitness`, plain `DATABASE_URL`) — the real HeatWave DB is unreachable from CI runners.
+
+### Workflows
+
+| Workflow | Purpose |
+|----------|---------|
+| `ci.yml` | Lint/build + migrations against a throwaway MySQL 8.4 service |
+| `deploy.yml` | Build/push `fitness-api`, run migrations on the VPS, restart |
+| `deploy-admin.yml` | Build/push/restart `fitness-admin` |
+| `deploy-member.yml` | Build/push/restart `fitness-members` |
+| `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |

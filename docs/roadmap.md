@@ -7,16 +7,22 @@ onto the existing `members` + `gym_memberships` split — no new users table).
 Each ticket below is a GitHub issue in `cordel-app/gymdesk`. Full scope and acceptance
 criteria live in the issue bodies; this doc is the map.
 
-## Status (2026-07-12)
+## Status (2026-07-14)
 
 - **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3.
+- **Done outside the phase plan**:
+  - **Per-gym theming (#51)**: `gyms.theme_key` (migration 030, presets `indigo/emerald/crimson/amber`), `ThemeProvider`, and the superadmin **System → Customize** editor.
+  - **Team management (#53)**: gym-scoped admin/coach/staff CRUD via `gym-users.ts` + the **Organization → Team** page. Clerk-invitation flow with an `invited` placeholder row that links on first sign-in; self-edit and last-admin guards; audited. Added `gym_memberships` columns `status`, `email`, `name`, `invitation_id` (migrations 031–034).
+  - **Platform superadmin management**: `platform/superadmins` + **System → Users**.
+  - **Grouped, role-gated sidebar**: `config/navigationGroups.ts` (Membership / Organization / Training / Nutrition / Financials / System).
+- **Placeholder shells (built, content pending)**: per-group Dashboard pages (`organization`, `training`, `nutrition`, `financials`, singular `membership`). Nutrition has no backend yet.
 - **Deferred**: Phase 7 (multi-location), Phase 8 (Stripe payments).
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
 - Legacy cleanup complete: `/fares` and `/subscriptions` routers + the old
   Subscriptions page deleted, `user_memberships.plan` column dropped
-  (migrations 004, 007, 009). Only `/me/subscriptions` (member app) remains
-  under the old URL — renamed with P1.8.
+  (migrations 004, 007, 009). The member app's `/subscriptions` route was
+  renamed to `/membership` (P1.8).
 
 ## Decisions
 
