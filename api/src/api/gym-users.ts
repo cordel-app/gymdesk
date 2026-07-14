@@ -270,10 +270,10 @@ gymUsersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
       }
     }
 
-    // Update role and/or name (name only for invited users)
+    // Update role and/or name
     const updates = ['role = ?'];
     const values: any[] = [role];
-    if (name !== undefined && membership.status === 'invited') {
+    if (name !== undefined) {
       updates.push('name = ?');
       values.push(name || null);
     }
@@ -385,6 +385,25 @@ gymUsersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
       } catch (err: any) {
         console.error('Failed to revoke Clerk invitation:', { invitationId: membership.invitation_id, error: err.message });
         // Continue with deletion even if revoke fails
+      }
+    }
+
+    // If this is their last gym membership anywhere, delete the Clerk account too.
+    // Clerk delete must succeed before we touch our own data — if it fails, abort
+    // and leave the membership row in place rather than orphaning the Clerk user.
+    if (membership.status !== 'invited' && !String(membership.user_id).startsWith('invited_')) {
+      const { rows: otherMemberships } = await db.query<any>(
+        'SELECT COUNT(*) as cnt FROM gym_memberships WHERE user_id = ? AND gym_id != ?',
+        [membership.user_id, gymId],
+      );
+      if (otherMemberships[0].cnt === 0) {
+        try {
+          await clerkClient.users.deleteUser(membership.user_id);
+          console.log('Deleted Clerk user:', membership.user_id);
+        } catch (err: any) {
+          console.error('Failed to delete Clerk user:', { userId: membership.user_id, error: err.message });
+          return res.status(502).json({ error: 'Failed to delete user from Clerk. Team member was not removed.' });
+        }
       }
     }
 

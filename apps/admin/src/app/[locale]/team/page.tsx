@@ -83,6 +83,7 @@ export default function TeamPage() {
   function openEdit(member: TeamMember) {
     setEditing(member);
     setEmail(member.email ?? '');
+    setName(member.name ?? '');
     setRole(member.role);
     setError(null);
     setModalOpen(true);
@@ -99,14 +100,11 @@ export default function TeamPage() {
 
   async function handleSave() {
     if (editing) {
-      // Editing role and/or name (for invited users)
+      // Editing role and/or name
       setSaving(true);
       setError(null);
       try {
-        const body: any = { role };
-        if (editing.status === 'invited') {
-          body.name = name.trim() || null;
-        }
+        const body: any = { role, name: name.trim() || null };
         await apiFetch(`/gym-users/${editing.id}`, {
           method: 'PATCH',
           body: JSON.stringify(body),
@@ -327,7 +325,7 @@ export default function TeamPage() {
             />
           </>
         )}
-        {editing && editing.status === 'invited' && (
+        {editing && (
           <>
             <FormLabel>{t('label_name')}</FormLabel>
             <FormInput
