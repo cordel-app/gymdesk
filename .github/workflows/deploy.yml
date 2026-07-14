@@ -46,10 +46,27 @@ jobs:
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
+        # Runtime env is the SINGLE SOURCE OF TRUTH in GitHub: these secrets/vars
+        # are written to an EnvironmentFile on the VPS on every deploy (see script).
+        # To change a value, edit it in GitHub → Settings → Environments → dev.
+        # Never hand-edit env on the VPS.
+        env:
+          APP_NODE_ENV: production
+          APP_PORT: "3000"
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+          CLERK_WEBHOOK_SIGNING_SECRET: ${{ secrets.CLERK_WEBHOOK_SIGNING_SECRET }}
+          CORDEL_FITNESS_DB_HOST: ${{ secrets.CORDEL_FITNESS_DB_HOST }}
+          CORDEL_FITNESS_DB_USER: ${{ secrets.CORDEL_FITNESS_DB_USER }}
+          CORDEL_FITNESS_DB_PASSWORD: ${{ secrets.CORDEL_FITNESS_DB_PASSWORD }}
+          CORDEL_FITNESS_DB_NAME: ${{ secrets.CORDEL_FITNESS_DB_NAME }}
+          CORDEL_FITNESS_ADMIN_URL: ${{ vars.CORDEL_FITNESS_ADMIN_URL }}
+          CORDEL_FITNESS_MEMBERS_URL: ${{ vars.CORDEL_FITNESS_MEMBERS_URL }}
         with:
           host: ${{ secrets.CORBACK_SSH_HOST }}
           username: podman
           key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          envs: APP_NODE_ENV,APP_PORT,CLERK_SECRET_KEY,CLERK_PUBLISHABLE_KEY,CLERK_WEBHOOK_SIGNING_SECRET,CORDEL_FITNESS_DB_HOST,CORDEL_FITNESS_DB_USER,CORDEL_FITNESS_DB_PASSWORD,CORDEL_FITNESS_DB_NAME,CORDEL_FITNESS_ADMIN_URL,CORDEL_FITNESS_MEMBERS_URL
           script: |
             set -euo pipefail
 
@@ -71,8 +88,44 @@ jobs:
               ghcr.io/${{ env.IMAGE_NAME }}:latest \
               npx knex migrate:latest --knexfile knexfile.cjs
 
-            # Oscar owns the systemd unit (ports, env vars, restart policy);
-            # we just refresh the image and restart it.
+            # --- Runtime env: sync from GitHub (source of truth) ---------------
+            # Required vars must be present; fail loudly rather than deploy a
+            # half-configured API.
+            for v in CLERK_SECRET_KEY CLERK_WEBHOOK_SIGNING_SECRET \
+                     CORDEL_FITNESS_DB_HOST CORDEL_FITNESS_DB_USER \
+                     CORDEL_FITNESS_DB_PASSWORD CORDEL_FITNESS_DB_NAME \
+                     CORDEL_FITNESS_ADMIN_URL CORDEL_FITNESS_MEMBERS_URL; do
+              if [ -z "${!v:-}" ]; then echo "ERROR: $v is empty in GitHub env 'dev'"; exit 1; fi
+            done
+
+            ENV_FILE="$HOME/fitness-api.env"
+            umask 077
+            cat > "$ENV_FILE" <<ENVEOF
+            NODE_ENV=${APP_NODE_ENV}
+            PORT=${APP_PORT}
+            CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+            CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
+            CLERK_WEBHOOK_SIGNING_SECRET=${CLERK_WEBHOOK_SIGNING_SECRET}
+            CORDEL_FITNESS_DB_HOST=${CORDEL_FITNESS_DB_HOST}
+            CORDEL_FITNESS_DB_USER=${CORDEL_FITNESS_DB_USER}
+            CORDEL_FITNESS_DB_PASSWORD=${CORDEL_FITNESS_DB_PASSWORD}
+            CORDEL_FITNESS_DB_NAME=${CORDEL_FITNESS_DB_NAME}
+            CORDEL_FITNESS_ADMIN_URL=${CORDEL_FITNESS_ADMIN_URL}
+            CORDEL_FITNESS_MEMBERS_URL=${CORDEL_FITNESS_MEMBERS_URL}
+            ENVEOF
+
+            # Point the quadlet at the env file and drop any inline Environment=
+            # lines so the GitHub-sourced env file is authoritative (podman --env
+            # would otherwise override --env-file).
+            CF="$HOME/.config/containers/systemd/fitness-api.container"
+            if [ ! -f "$CF" ]; then echo "ERROR: quadlet $CF not found"; exit 1; fi
+            cp "$CF" "$CF.bak.$(date +%s)"
+            sed -i '/^Environment=/d' "$CF"
+            if ! grep -q "^EnvironmentFile=${ENV_FILE}$" "$CF"; then
+              sed -i "\|^\[Container\]|a EnvironmentFile=${ENV_FILE}" "$CF"
+            fi
+            systemctl --user daemon-reload
+
             if ! systemctl --user restart fitness-api.service; then
               echo "ERROR: systemctl restart failed"
               systemctl --user status fitness-api.service --no-pager --lines=40 || true
@@ -85,3 +138,8 @@ jobs:
             curl -sf --max-time 5 http://localhost:3000/health || \
               { echo "ERROR: /health not responding"; systemctl --user status fitness-api.service --no-pager || true; podman logs fitness-api 2>/dev/null || true; exit 1; }
             echo "Health check OK"
+
+            # Confirm the runtime env keys reached the container (values hidden).
+            echo "=== container env keys (redacted) ==="
+            podman inspect fitness-api --format '{{range .Config.Env}}{{println .}}{{end}}' \
+              | sed -E 's/=.*/=<set>/' | sort -u
