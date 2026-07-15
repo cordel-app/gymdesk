@@ -6,26 +6,32 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 
-interface WorkoutExercise {
-  id: number; position: number;
-  exercise_id: number; name: string;
-  video_url: string | null; image_url: string | null;
-  reps: string | null; rest_seconds: number | null;
+interface BlockExercise {
+  id: number; position: number; exercise_id: number; exercise_name: string;
+  min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null;
+}
+
+interface Block {
+  id: number; position: number; name: string | null; type: string; result_type: string;
+  rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
+  is_optional: boolean; notes: string | null;
+  exercises: BlockExercise[] | null;
+}
+
+interface Workout {
+  id: number; position: number; name: string; description: string | null; scheduled_weekday: number | null;
+  blocks: Block[] | null;
 }
 
 interface TrainingPlan {
   id: number; name: string; description: string | null;
-  weekday: number | null; workout_name: string;
-  exercises: WorkoutExercise[] | null;
+  workouts: Workout[] | null;
 }
 
-interface WorkoutLog {
-  id: number; logged_date: string; series: number;
-  weight: string | null; reps: number;
-  exercise_id: number; exercise_name: string;
-}
+type SetRow = { set_number: number; weight: string; reps: string; rpe: string };
 
 const todayWeekday = () => (new Date().getDay() + 6) % 7; // JS Sun=0 → Mon=0
+const todayDate = () => new Date().toISOString().slice(0, 10);
 
 export default function TrainingPage() {
   const t = useTranslations();
@@ -38,10 +44,10 @@ export default function TrainingPage() {
   const [loading, setLoading] = useState(true);
   const [selectedWeekday, setSelectedWeekday] = useState<number>(todayWeekday());
   const [expandedExercise, setExpandedExercise] = useState<number | null>(null);
-  const [history, setHistory] = useState<WorkoutLog[]>([]);
-  const [logForm, setLogForm] = useState({ workout_exercise_id: 0, series: '1', weight: '', reps: '' });
+  const [setRows, setSetRows] = useState<SetRow[]>([{ set_number: 1, weight: '', reps: '', rpe: '' }]);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [resultInputs, setResultInputs] = useState<Record<number, string>>({});
 
   async function loadPlans() {
     setLoading(true);
@@ -57,40 +63,65 @@ export default function TrainingPage() {
     loadPlans();
   }, [appLoading, isLinked, locale]);
 
-  async function openHistory(we: WorkoutExercise) {
-    if (expandedExercise === we.exercise_id) { setExpandedExercise(null); return; }
-    setExpandedExercise(we.exercise_id);
-    setLogForm({ workout_exercise_id: we.id, series: '1', weight: '', reps: we.reps?.split('x').pop() ?? '' });
-    try {
-      setHistory(await apiFetch<WorkoutLog[]>(`/me/workout-logs?exercise=${we.exercise_id}`));
-    } catch (err: any) { setMessage(err.message ?? t('common.error')); }
+  function openExercise(we: BlockExercise) {
+    if (expandedExercise === we.id) { setExpandedExercise(null); return; }
+    setExpandedExercise(we.id);
+    setSetRows([{ set_number: 1, weight: '', reps: '', rpe: '' }]);
   }
 
-  async function logSet(planId: number) {
-    if (!logForm.workout_exercise_id || !logForm.reps) return;
+  function addSetRow() {
+    setSetRows((rows) => [...rows, { set_number: rows.length + 1, weight: '', reps: '', rpe: '' }]);
+  }
+
+  async function saveExerciseLog(we: BlockExercise) {
     setPending(true);
     try {
-      await apiFetch('/me/workout-logs', { method: 'POST', body: JSON.stringify({
-        training_plan_id: planId,
-        workout_exercise_id: logForm.workout_exercise_id,
-        series: parseInt(logForm.series, 10),
-        weight: logForm.weight ? parseFloat(logForm.weight) : null,
-        reps: parseInt(logForm.reps, 10),
-      })});
-      // Refresh history for the currently-expanded exercise
-      if (expandedExercise) {
-        setHistory(await apiFetch<WorkoutLog[]>(`/me/workout-logs?exercise=${expandedExercise}`));
-      }
-      setLogForm({ ...logForm, series: String(parseInt(logForm.series, 10) + 1) });
+      await apiFetch('/me/exercise-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          workout_exercise_id: we.id,
+          logged_date: todayDate(),
+          sets: setRows
+            .filter((r) => r.reps || r.weight)
+            .map((r) => ({
+              set_number: r.set_number,
+              weight: r.weight ? parseFloat(r.weight) : null,
+              reps: r.reps ? parseInt(r.reps, 10) : null,
+              rpe: r.rpe ? parseFloat(r.rpe) : null,
+            })),
+        }),
+      });
       setMessage(t('training.logged'));
+      setExpandedExercise(null);
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setPending(false); }
   }
 
-  const plansForWeekday = useMemo(() => {
-    const scheduled = plans.filter((p) => p.weekday === selectedWeekday);
-    const unscheduled = plans.filter((p) => p.weekday === null);
-    return { scheduled, unscheduled };
+  async function markBlockDone(block: Block) {
+    setPending(true);
+    try {
+      await apiFetch('/me/workout-block-logs', {
+        method: 'POST',
+        body: JSON.stringify({
+          workout_block_id: block.id,
+          logged_date: todayDate(),
+          result_value: block.result_type !== 'None' ? (resultInputs[block.id] ?? null) : null,
+        }),
+      });
+      setMessage(t('training.block_logged'));
+    } catch (err: any) { setMessage(err.message ?? t('common.error')); }
+    finally { setPending(false); }
+  }
+
+  // Flatten (plan, workout) pairs across all active plans, grouped by weekday like the old page.
+  const workoutsForWeekday = useMemo(() => {
+    const entries: { plan: TrainingPlan; workout: Workout }[] = [];
+    for (const plan of plans) {
+      for (const workout of plan.workouts ?? []) entries.push({ plan, workout });
+    }
+    const scheduled = entries.filter((e) => e.workout.scheduled_weekday === selectedWeekday);
+    const unscheduled = entries.filter((e) => e.workout.scheduled_weekday === null);
+    return [...scheduled, ...unscheduled];
   }, [plans, selectedWeekday]);
 
   if (loading) {
@@ -114,74 +145,92 @@ export default function TrainingPage() {
 
       {plans.length === 0 ? (
         <p style={styles.hint}>{t('training.empty')}</p>
-      ) : plansForWeekday.scheduled.length === 0 && plansForWeekday.unscheduled.length === 0 ? (
+      ) : workoutsForWeekday.length === 0 ? (
         <p style={styles.hint}>{t('training.no_plan_today')}</p>
       ) : (
-        [...plansForWeekday.scheduled, ...plansForWeekday.unscheduled].map((plan) => (
-          <section key={plan.id} style={styles.planCard}>
-            <h2 style={styles.planName}>{plan.name}</h2>
-            {plan.description && <p style={styles.planDesc}>{plan.description}</p>}
+        workoutsForWeekday.map(({ plan, workout }) => (
+          <section key={workout.id} style={styles.planCard}>
+            <h2 style={styles.planName}>{workout.name}</h2>
+            <p style={styles.planDesc}>{plan.name}{workout.description ? ` · ${workout.description}` : ''}</p>
 
-            {(plan.exercises ?? []).map((we) => (
-              <div key={we.id} style={styles.exerciseCard}>
-                <div style={styles.exerciseHead}>
+            {(workout.blocks ?? []).map((block) => (
+              <div key={block.id} style={styles.blockCard}>
+                <div style={styles.blockHead}>
                   <div style={{ flex: 1 }}>
-                    <div style={styles.exerciseName}>{we.name}</div>
-                    <div style={styles.exerciseMeta}>
-                      {we.reps ?? '—'} · {we.rest_seconds ?? '—'}s
+                    <div style={styles.blockName}>
+                      {block.name ?? t(`training.block_type_${block.type.toLowerCase()}`)}
+                      <span style={styles.blockTypeBadge}>{t(`training.block_type_${block.type.toLowerCase()}`)}</span>
                     </div>
+                    {block.result_type !== 'None' && (
+                      <div style={styles.exerciseMeta}>{t(`training.result_type_${block.result_type.toLowerCase()}`)}</div>
+                    )}
                   </div>
-                  {we.video_url && (
-                    <a href={we.video_url} target="_blank" rel="noopener noreferrer" style={styles.videoLink}>▶</a>
-                  )}
-                  <button onClick={() => openHistory(we)} style={styles.expandBtn}>
-                    {expandedExercise === we.exercise_id ? '−' : '+'}
-                  </button>
                 </div>
 
-                {expandedExercise === we.exercise_id && (
-                  <div style={styles.expandBody}>
-                    <div style={styles.logForm}>
-                      <label style={styles.miniLabel}>
-                        {t('training.series')}
-                        <input type="number" min="1" value={logForm.series}
-                               onChange={(e) => setLogForm({ ...logForm, series: e.target.value })}
-                               style={styles.miniInput} />
-                      </label>
-                      <label style={styles.miniLabel}>
-                        {t('training.weight')}
-                        <input type="number" min="0" step="0.5" value={logForm.weight}
-                               onChange={(e) => setLogForm({ ...logForm, weight: e.target.value })}
-                               style={styles.miniInput} />
-                      </label>
-                      <label style={styles.miniLabel}>
-                        {t('training.reps')}
-                        <input type="number" min="1" value={logForm.reps}
-                               onChange={(e) => setLogForm({ ...logForm, reps: e.target.value })}
-                               style={styles.miniInput} />
-                      </label>
-                      <button onClick={() => logSet(plan.id)} disabled={pending}
-                              style={styles.logBtn}>
-                        {pending ? '…' : t('training.log')}
+                {(block.exercises ?? []).map((we) => (
+                  <div key={we.id} style={styles.exerciseCard}>
+                    <div style={styles.exerciseHead}>
+                      <div style={{ flex: 1 }}>
+                        <div style={styles.exerciseName}>{we.exercise_name}</div>
+                        <div style={styles.exerciseMeta}>
+                          {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
+                          {we.sets ? ` × ${we.sets} sets` : ''} · {we.rest_seconds ?? '—'}s
+                        </div>
+                      </div>
+                      <button onClick={() => openExercise(we)} style={styles.expandBtn}>
+                        {expandedExercise === we.id ? '−' : '+'}
                       </button>
                     </div>
 
-                    {history.length > 0 && (
-                      <div style={styles.history}>
-                        <h4 style={styles.historyHead}>{t('training.history')}</h4>
-                        <ul style={styles.historyList}>
-                          {history.slice(0, 20).map((h) => (
-                            <li key={h.id} style={styles.historyRow}>
-                              <span>{h.logged_date.slice(0, 10)}</span>
-                              <span>#{h.series}</span>
-                              <span>{h.weight ? `${parseFloat(h.weight)} kg` : '—'} · {h.reps} reps</span>
-                            </li>
-                          ))}
-                        </ul>
+                    {expandedExercise === we.id && (
+                      <div style={styles.expandBody}>
+                        {setRows.map((row, i) => (
+                          <div key={i} style={styles.logForm}>
+                            <span style={styles.setLabel}>#{row.set_number}</span>
+                            <label style={styles.miniLabel}>
+                              {t('training.weight')}
+                              <input type="number" min="0" step="0.5" value={row.weight}
+                                     onChange={(e) => setSetRows(setRows.map((r, j) => j === i ? { ...r, weight: e.target.value } : r))}
+                                     style={styles.miniInput} />
+                            </label>
+                            <label style={styles.miniLabel}>
+                              {t('training.reps')}
+                              <input type="number" min="0" value={row.reps}
+                                     onChange={(e) => setSetRows(setRows.map((r, j) => j === i ? { ...r, reps: e.target.value } : r))}
+                                     style={styles.miniInput} />
+                            </label>
+                            <label style={styles.miniLabel}>
+                              {t('training.rpe')}
+                              <input type="number" min="1" max="10" step="0.5" value={row.rpe}
+                                     onChange={(e) => setSetRows(setRows.map((r, j) => j === i ? { ...r, rpe: e.target.value } : r))}
+                                     style={styles.miniInput} />
+                            </label>
+                          </div>
+                        ))}
+                        <div style={styles.logActions}>
+                          <button onClick={addSetRow} style={styles.addSetBtn}>{t('training.add_set')}</button>
+                          <button onClick={() => saveExerciseLog(we)} disabled={pending} style={styles.logBtn}>
+                            {pending ? '…' : t('training.save_log')}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
+                ))}
+
+                <div style={styles.blockDoneRow}>
+                  {block.result_type !== 'None' && (
+                    <input
+                      placeholder={t(`training.result_type_${block.result_type.toLowerCase()}`)}
+                      value={resultInputs[block.id] ?? ''}
+                      onChange={(e) => setResultInputs({ ...resultInputs, [block.id]: e.target.value })}
+                      style={styles.miniInput}
+                    />
+                  )}
+                  <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
+                    {t('training.mark_done')}
+                  </button>
+                </div>
               </div>
             ))}
           </section>
@@ -201,20 +250,24 @@ const styles: Record<string, React.CSSProperties> = {
   planCard: { background: '#fff', borderRadius: 12, padding: 16, marginBottom: 16 },
   planName: { margin: 0, fontSize: 17, fontWeight: 700 },
   planDesc: { margin: '4px 0 12px', fontSize: 13, color: '#71717a' },
-  exerciseCard: { borderTop: '1px solid #eee', paddingTop: 10, marginTop: 10 },
+  blockCard: { borderTop: '1px solid #eee', paddingTop: 10, marginTop: 10 },
+  blockHead: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },
+  blockName: { fontSize: 14, fontWeight: 700, color: '#18181b', display: 'flex', alignItems: 'center', gap: 8 },
+  blockTypeBadge: { fontSize: 11, fontWeight: 600, color: '#6c63ff', background: '#eeecff', borderRadius: 999, padding: '2px 8px' },
+  exerciseCard: { marginTop: 8, marginLeft: 8 },
   exerciseHead: { display: 'flex', gap: 8, alignItems: 'center' },
   exerciseName: { fontSize: 15, fontWeight: 600, color: '#18181b' },
   exerciseMeta: { fontSize: 12, color: '#71717a' },
-  videoLink: { textDecoration: 'none', color: '#6c63ff', fontSize: 18, padding: '4px 8px' },
   expandBtn: { width: 30, height: 30, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', cursor: 'pointer', fontSize: 16 },
   expandBody: { marginTop: 10, padding: 10, background: '#fafafa', borderRadius: 8 },
-  logForm: { display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap' },
+  logForm: { display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 6 },
+  setLabel: { fontSize: 12, color: '#71717a', width: 24 },
   miniLabel: { fontSize: 11, color: '#71717a', display: 'flex', flexDirection: 'column', gap: 2 },
   miniInput: { width: 70, padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 },
+  logActions: { display: 'flex', gap: 8, marginTop: 4 },
+  addSetBtn: { padding: '8px 14px', background: '#fff', color: '#18181b', border: '1px solid #ccc', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
   logBtn: { padding: '8px 14px', background: '#18181b', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
-  history: { marginTop: 12 },
-  historyHead: { margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  historyList: { listStyle: 'none', padding: 0, margin: 0 },
-  historyRow: { display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', fontSize: 12, color: '#555' },
+  blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
+  blockDoneBtn: { padding: '8px 14px', background: '#1e7e40', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
   hint: { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

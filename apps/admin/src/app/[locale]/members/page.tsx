@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
+import { MemberTrainingPlansModal } from './MemberTrainingPlansModal';
 
 interface Plan {
   id: number;
@@ -27,7 +28,7 @@ const emptyForm = { name: '', email: '', phone: '', fare_id: '' };
 export default function MembersPage() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
-  const { activeGymId, loading: gymLoading } = useGym();
+  const { activeGymId, activeGym, isSuperadmin, loading: gymLoading } = useGym();
   const { toast } = useToast();
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -37,6 +38,9 @@ export default function MembersPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [trainingPlansFor, setTrainingPlansFor] = useState<Member | null>(null);
+
+  const canManageTraining = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
 
   async function load() {
     if (!activeGymId) {
@@ -145,6 +149,9 @@ export default function MembersPage() {
                 <td style={td}>{m.phone ?? '—'}</td>
                 <td style={td}>{m.fare_name ? `${m.fare_name} (${parseFloat(m.fare_price!).toFixed(2)})` : '—'}</td>
                 <td style={{ ...td, display: 'flex', gap: 8 }}>
+                  {canManageTraining && (
+                    <button onClick={() => setTrainingPlansFor(m)} style={btnSmall('#6c63ff')}>{t('members.training_plans')}</button>
+                  )}
                   <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('members.edit')}</button>
                   <button onClick={() => handleDelete(m.id)} style={btnSmall('#c0392b')}>{t('members.delete')}</button>
                 </td>
@@ -190,6 +197,10 @@ export default function MembersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {trainingPlansFor && (
+        <MemberTrainingPlansModal memberId={trainingPlansFor.id} memberName={trainingPlansFor.name} onClose={() => setTrainingPlansFor(null)} />
       )}
     </div>
   );

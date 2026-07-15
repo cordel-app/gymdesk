@@ -3,6 +3,7 @@ import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { bookMemberOnSession, cancelBooking } from './bookings';
+import { PLAN_TREE_SELECT } from './training-plans';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -239,7 +240,11 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
   }
 });
 
-/** P5.5: caller's active training plans with full exercise detail. */
+/**
+ * #55: caller's active training plans (plural — a member can have several
+ * active plans at once), each with its full clone tree (workouts -> blocks
+ * -> exercises).
+ */
 meRouter.get('/training-plans', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);
   try {
@@ -250,84 +255,226 @@ meRouter.get('/training-plans', requireRole('member'), async (req: Request, res:
     if (memberRows.length === 0) return res.json([]);
     const memberId = memberRows[0].id;
     const { rows } = await db.query(
-      `SELECT tp.id, tp.name, tp.description, tp.reps, tp.rest_seconds, tp.weekday, tp.activated_at,
-              w.name AS workout_name,
-              (
-                SELECT JSON_ARRAYAGG(JSON_OBJECT(
-                  'id', we.id, 'position', we.position,
-                  'exercise_id', e.id, 'name', e.name,
-                  'video_url', e.video_url, 'image_url', e.image_url,
-                  'reps', COALESCE(we.reps, tp.reps, e.default_reps),
-                  'rest_seconds', COALESCE(we.rest_seconds, tp.rest_seconds, e.default_rest_seconds)
-                ))
-                FROM (SELECT * FROM workout_exercises WHERE workout_id = tp.workout_id ORDER BY position ASC) we
-                JOIN exercises e ON e.id = we.exercise_id
-              ) AS exercises
-       FROM training_plans tp
-       JOIN workouts w ON w.id = tp.workout_id
-       WHERE tp.gym_id = ? AND tp.member_id = ? AND tp.deactivated_at IS NULL
-       ORDER BY tp.weekday, tp.activated_at DESC`,
+      `${PLAN_TREE_SELECT}
+       JOIN member_training_plans mtp ON mtp.training_plan_id = tp.id
+       WHERE tp.gym_id = ? AND tp.member_id = ? AND mtp.status = 'active' AND tp.status != 'deleted'
+       ORDER BY mtp.created_at DESC`,
       [gymId, memberId],
     );
     res.json(rows);
   } catch (err) { next(err); }
 });
 
-/** P5.5: log a set. Member can only log against their own active plan. */
-meRouter.post('/workout-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+/** Resolves the caller's members.id, or throws a 404-shaped error if unlinked. */
+async function requireMemberId(gymId: string, userId: string): Promise<number> {
+  const { rows } = await db.query(
+    'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
+    [gymId, userId],
+  );
+  if (rows.length === 0) throw Object.assign(new Error('Member profile not found'), { status: 404 });
+  return rows[0].id;
+}
+
+/**
+ * #55: log a performed exercise + its sets. Member can only log against a
+ * WorkoutExercise that belongs to one of their own (non-deleted) TrainingPlans.
+ */
+meRouter.post('/exercise-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);
-  const { training_plan_id, workout_exercise_id, logged_date, series, weight, reps } = req.body;
-  if (!training_plan_id || !workout_exercise_id || !series || !reps) {
-    return res.status(400).json({ error: 'training_plan_id, workout_exercise_id, series and reps are required' });
+  const { workout_exercise_id, logged_date, notes, duration_seconds, skipped, sets } = req.body;
+  if (!workout_exercise_id || !logged_date) {
+    return res.status(400).json({ error: 'workout_exercise_id and logged_date are required' });
   }
+  if (sets != null && !Array.isArray(sets)) return res.status(400).json({ error: 'sets must be an array' });
   try {
-    // Ownership + active check (403 rather than 404 to distinguish access vs missing).
-    const { rows: planRows } = await db.query(
-      `SELECT tp.id FROM training_plans tp
-       JOIN members m ON m.id = tp.member_id
-       WHERE tp.id = ? AND tp.gym_id = ? AND m.clerk_user_id = ? AND tp.deactivated_at IS NULL`,
-      [training_plan_id, gymId, userId],
+    const memberId = await requireMemberId(gymId, userId);
+    const { rows: weRows } = await db.query(
+      `SELECT we.exercise_id FROM workout_exercises we
+       JOIN workout_blocks wb ON wb.id = we.workout_block_id
+       JOIN workouts w ON w.id = wb.workout_id
+       JOIN training_plans tp ON tp.id = w.training_plan_id
+       WHERE we.id = ? AND we.gym_id = ? AND tp.member_id = ? AND we.deleted_at IS NULL`,
+      [workout_exercise_id, gymId, memberId],
     );
-    if (planRows.length === 0) return res.status(403).json({ error: 'You can only log against your own active plan.' });
+    if (weRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
+    const exerciseId = weRows[0].exercise_id;
 
-    const { rows: memberRows } = await db.query(
-      'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ?',
-      [gymId, userId],
+    const logId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO exercise_logs (gym_id, member_id, workout_exercise_id, exercise_id, logged_date, notes, duration_seconds, skipped)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, memberId, workout_exercise_id, exerciseId, logged_date, notes ?? null,
+         duration_seconds ?? null, Boolean(skipped)],
+      );
+      if (Array.isArray(sets)) {
+        for (let i = 0; i < sets.length; i++) {
+          const s = sets[i];
+          await tx.query(
+            'INSERT INTO exercise_log_sets (gym_id, exercise_log_id, set_number, weight, reps, rpe) VALUES (?, ?, ?, ?, ?, ?)',
+            [gymId, insertId, s.set_number ?? i + 1, s.weight ?? null, s.reps ?? null, s.rpe ?? null],
+          );
+        }
+      }
+      return insertId;
+    });
+    const { rows } = await db.query(
+      `SELECT el.*, (SELECT JSON_ARRAYAGG(item) FROM (
+                       SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
+                       FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number
+                     ) t) AS sets
+       FROM exercise_logs el WHERE el.id = ?`,
+      [logId],
     );
-    const memberId = memberRows[0].id;
-
-    const { insertId } = await db.query(
-      `INSERT INTO workout_logs (gym_id, member_id, training_plan_id, workout_exercise_id, logged_date, series, weight, reps)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, memberId, training_plan_id, workout_exercise_id,
-       logged_date ? new Date(logged_date) : new Date(),
-       parseInt(series, 10),
-       weight != null && weight !== '' ? parseFloat(weight) : null,
-       parseInt(reps, 10)],
-    );
-    const { rows } = await db.query('SELECT * FROM workout_logs WHERE id = ?', [insertId]);
     res.status(201).json(rows[0]);
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
-/** P5.5: history for progress charts — filter by exercise id. */
-meRouter.get('/workout-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+/** #55: member edits their own log (ownership-checked). No DELETE route. */
+meRouter.put('/exercise-logs/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const { notes, duration_seconds, skipped, sets } = req.body;
+  if (sets != null && !Array.isArray(sets)) return res.status(400).json({ error: 'sets must be an array' });
+  try {
+    const memberId = await requireMemberId(gymId, userId);
+    await db.transaction(async (tx) => {
+      const { rowCount } = await tx.query(
+        `UPDATE exercise_logs SET
+          notes = IF(?, ?, notes), duration_seconds = IF(?, ?, duration_seconds), skipped = COALESCE(?, skipped),
+          modified_at = UTC_TIMESTAMP(), modified_by_member_id = ?
+         WHERE id = ? AND gym_id = ? AND member_id = ?`,
+        ['notes' in req.body ? 1 : 0, notes ?? null, 'duration_seconds' in req.body ? 1 : 0, duration_seconds ?? null,
+         skipped ?? null, memberId, req.params.id, gymId, memberId],
+      );
+      if (rowCount === 0) throw Object.assign(new Error('Log not found'), { status: 404 });
+      if (Array.isArray(sets)) {
+        await tx.query('DELETE FROM exercise_log_sets WHERE exercise_log_id = ? AND gym_id = ?', [req.params.id, gymId]);
+        for (let i = 0; i < sets.length; i++) {
+          const s = sets[i];
+          await tx.query(
+            'INSERT INTO exercise_log_sets (gym_id, exercise_log_id, set_number, weight, reps, rpe) VALUES (?, ?, ?, ?, ?, ?)',
+            [gymId, req.params.id, s.set_number ?? i + 1, s.weight ?? null, s.reps ?? null, s.rpe ?? null],
+          );
+        }
+      }
+    });
+    const { rows } = await db.query(
+      `SELECT el.*, (SELECT JSON_ARRAYAGG(item) FROM (
+                       SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
+                       FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number
+                     ) t) AS sets
+       FROM exercise_logs el WHERE el.id = ?`,
+      [req.params.id],
+    );
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #55: history for progress charts — filter by exercise id. */
+meRouter.get('/exercise-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);
   const exerciseId = req.query.exercise as string | undefined;
   try {
-    const params: any[] = [gymId, userId];
-    let sql = `SELECT wl.id, wl.logged_date, wl.series, wl.weight, wl.reps, wl.workout_exercise_id,
-                      e.id AS exercise_id, e.name AS exercise_name
-               FROM workout_logs wl
-               JOIN workout_exercises we ON we.id = wl.workout_exercise_id
-               JOIN exercises e ON e.id = we.exercise_id
-               JOIN members m ON m.id = wl.member_id
-               WHERE wl.gym_id = ? AND m.clerk_user_id = ?`;
-    if (exerciseId) { sql += ' AND e.id = ?'; params.push(exerciseId); }
-    sql += ' ORDER BY wl.logged_date DESC, wl.series ASC';
+    const memberId = await requireMemberId(gymId, userId);
+    const params: any[] = [gymId, memberId];
+    let sql = `SELECT el.*, e.name AS exercise_name,
+                      (SELECT JSON_ARRAYAGG(item) FROM (
+                         SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
+                         FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number
+                       ) t) AS sets
+               FROM exercise_logs el JOIN exercises e ON e.id = el.exercise_id
+               WHERE el.gym_id = ? AND el.member_id = ?`;
+    if (exerciseId) { sql += ' AND el.exercise_id = ?'; params.push(exerciseId); }
+    sql += ' ORDER BY el.logged_date DESC, el.id DESC';
     const { rows } = await db.query(sql, params);
     res.json(rows);
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * #55: log completion of a workout block. result_type is read server-side
+ * from the block's own configuration — never trusted from the client.
+ */
+meRouter.post('/workout-block-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const { workout_block_id, logged_date, started_at, finished_at, result_value, notes } = req.body;
+  if (!workout_block_id || !logged_date) {
+    return res.status(400).json({ error: 'workout_block_id and logged_date are required' });
+  }
+  try {
+    const memberId = await requireMemberId(gymId, userId);
+    const { rows: blockRows } = await db.query(
+      `SELECT wb.result_type FROM workout_blocks wb
+       JOIN workouts w ON w.id = wb.workout_id
+       JOIN training_plans tp ON tp.id = w.training_plan_id
+       WHERE wb.id = ? AND wb.gym_id = ? AND tp.member_id = ? AND wb.deleted_at IS NULL`,
+      [workout_block_id, gymId, memberId],
+    );
+    if (blockRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
+
+    const { insertId } = await db.query(
+      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_type, result_value, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, memberId, workout_block_id, logged_date, started_at ?? null, finished_at ?? null,
+       blockRows[0].result_type, result_value ?? null, notes ?? null],
+    );
+    const { rows } = await db.query('SELECT * FROM workout_block_logs WHERE id = ?', [insertId]);
+    res.status(201).json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #55: member edits their own block log (ownership-checked). No DELETE route. */
+meRouter.put('/workout-block-logs/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const { started_at, finished_at, result_value, notes } = req.body;
+  try {
+    const memberId = await requireMemberId(gymId, userId);
+    const { rowCount } = await db.query(
+      `UPDATE workout_block_logs SET
+        started_at = IF(?, ?, started_at), finished_at = IF(?, ?, finished_at),
+        result_value = IF(?, ?, result_value), notes = IF(?, ?, notes),
+        modified_at = UTC_TIMESTAMP(), modified_by_member_id = ?
+       WHERE id = ? AND gym_id = ? AND member_id = ?`,
+      ['started_at' in req.body ? 1 : 0, started_at ?? null,
+       'finished_at' in req.body ? 1 : 0, finished_at ?? null,
+       'result_value' in req.body ? 1 : 0, result_value ?? null,
+       'notes' in req.body ? 1 : 0, notes ?? null,
+       memberId, req.params.id, gymId, memberId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Log not found' });
+    const { rows } = await db.query('SELECT * FROM workout_block_logs WHERE id = ?', [req.params.id]);
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #55: history list. */
+meRouter.get('/workout-block-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, userId);
+    const { rows } = await db.query(
+      'SELECT * FROM workout_block_logs WHERE gym_id = ? AND member_id = ? ORDER BY logged_date DESC, id DESC',
+      [gymId, memberId],
+    );
+    res.json(rows);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 /** P4.5: names of promotions applied to the caller's current membership, if any. */

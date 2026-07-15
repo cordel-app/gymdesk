@@ -89,8 +89,12 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.exercises',
       },
       {
-        href: '/{{locale}}/workouts',
-        labelKey: 'nav.workouts',
+        href: '/{{locale}}/workout-templates',
+        labelKey: 'nav.workout_templates',
+      },
+      {
+        href: '/{{locale}}/training-plan-templates',
+        labelKey: 'nav.training_plan_templates',
       },
     ],
   },

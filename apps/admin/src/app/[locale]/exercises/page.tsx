@@ -16,12 +16,17 @@ interface Muscle { id: number; name: string }
 interface Exercise {
   id: number; name: string; description: string | null;
   video_url: string | null; image_url: string | null;
-  default_reps: string | null; default_rest_seconds: number | null;
+  min_reps_default: number | null; max_reps_default: number | null;
+  sets_default: number | null; rest_default_seconds: number | null; notes_default: string | null;
   status: 'active' | 'inactive';
   muscles: { id: number; name: string; role: 'principal' | 'secondary' }[] | null;
 }
 
-const emptyForm = { name: '', description: '', video_url: '', image_url: '', default_reps: '', default_rest_seconds: '', status: 'active' };
+const emptyForm = {
+  name: '', description: '', video_url: '', image_url: '',
+  min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '', notes_default: '',
+  status: 'active',
+};
 
 export default function ExercisesPage() {
   const t = useTranslations();
@@ -78,8 +83,11 @@ export default function ExercisesPage() {
     setForm({
       name: e.name, description: e.description ?? '',
       video_url: e.video_url ?? '', image_url: e.image_url ?? '',
-      default_reps: e.default_reps ?? '',
-      default_rest_seconds: e.default_rest_seconds ? String(e.default_rest_seconds) : '',
+      min_reps_default: e.min_reps_default != null ? String(e.min_reps_default) : '',
+      max_reps_default: e.max_reps_default != null ? String(e.max_reps_default) : '',
+      sets_default: e.sets_default != null ? String(e.sets_default) : '',
+      rest_default_seconds: e.rest_default_seconds != null ? String(e.rest_default_seconds) : '',
+      notes_default: e.notes_default ?? '',
       status: e.status,
     });
     const map = new Map<number, 'principal' | 'secondary'>();
@@ -96,8 +104,11 @@ export default function ExercisesPage() {
       description: form.description.trim() || null,
       video_url: form.video_url.trim() || null,
       image_url: form.image_url.trim() || null,
-      default_reps: form.default_reps.trim() || null,
-      default_rest_seconds: form.default_rest_seconds ? parseInt(form.default_rest_seconds, 10) : null,
+      min_reps_default: form.min_reps_default ? parseInt(form.min_reps_default, 10) : null,
+      max_reps_default: form.max_reps_default ? parseInt(form.max_reps_default, 10) : null,
+      sets_default: form.sets_default ? parseInt(form.sets_default, 10) : null,
+      rest_default_seconds: form.rest_default_seconds ? parseInt(form.rest_default_seconds, 10) : null,
+      notes_default: form.notes_default.trim() || null,
       status: form.status,
       muscle_ids: Array.from(selectedMuscles.entries()).map(([id, role]) => ({ id, role })),
     };
@@ -120,7 +131,10 @@ export default function ExercisesPage() {
   const columns: Column<Exercise>[] = [
     { header: t('exercises.col_name'), render: (e) => e.name },
     { header: t('exercises.col_muscles'), render: (e) => (e.muscles ?? []).map((m) => `${m.name}${m.role === 'secondary' ? ' (2°)' : ''}`).join(', ') || '—' },
-    { header: t('exercises.col_defaults'), width: 140, render: (e) => `${e.default_reps ?? '—'} · ${e.default_rest_seconds ?? '—'}s` },
+    {
+      header: t('exercises.col_defaults'), width: 160,
+      render: (e) => `${e.min_reps_default ?? '—'}-${e.max_reps_default ?? '—'} × ${e.sets_default ?? '—'} · ${e.rest_default_seconds ?? '—'}s`,
+    },
     { header: t('exercises.col_status'), width: 110, render: (e) => <StatusBadge status={e.status} label={t(`status.${e.status}`)} /> },
     {
       header: t('exercises.col_actions'), width: 180,
@@ -163,10 +177,16 @@ export default function ExercisesPage() {
         <FormInput type="url" value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} />
         <FormLabel>{t('exercises.label_image_url')}</FormLabel>
         <FormInput type="url" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} />
-        <FormLabel>{t('exercises.label_default_reps')}</FormLabel>
-        <FormInput value={form.default_reps} onChange={(e) => setForm({ ...form, default_reps: e.target.value })} placeholder="e.g. 4x8" />
-        <FormLabel>{t('exercises.label_default_rest')}</FormLabel>
-        <FormInput type="number" min="0" value={form.default_rest_seconds} onChange={(e) => setForm({ ...form, default_rest_seconds: e.target.value })} />
+        <FormLabel>{t('exercises.label_min_reps_default')}</FormLabel>
+        <FormInput type="number" min="0" value={form.min_reps_default} onChange={(e) => setForm({ ...form, min_reps_default: e.target.value })} />
+        <FormLabel>{t('exercises.label_max_reps_default')}</FormLabel>
+        <FormInput type="number" min="0" value={form.max_reps_default} onChange={(e) => setForm({ ...form, max_reps_default: e.target.value })} />
+        <FormLabel>{t('exercises.label_sets_default')}</FormLabel>
+        <FormInput type="number" min="0" value={form.sets_default} onChange={(e) => setForm({ ...form, sets_default: e.target.value })} />
+        <FormLabel>{t('exercises.label_rest_default_seconds')}</FormLabel>
+        <FormInput type="number" min="0" value={form.rest_default_seconds} onChange={(e) => setForm({ ...form, rest_default_seconds: e.target.value })} />
+        <FormLabel>{t('exercises.label_notes_default')}</FormLabel>
+        <FormInput value={form.notes_default} onChange={(e) => setForm({ ...form, notes_default: e.target.value })} />
 
         <FormLabel>{t('exercises.label_muscles')}</FormLabel>
         {muscles.length === 0 ? (

@@ -25,9 +25,11 @@ import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
 import { musclesRouter, exercisesRouter } from './api/exercises';
-import { workoutsRouter } from './api/workouts';
-import { trainingTemplatesRouter, memberTrainingPlansRouter } from './api/training-plans';
-import { memberWorkoutLogsRouter } from './api/member-workout-logs';
+import { workoutTemplatesRouter } from './api/workout-templates';
+import { trainingPlanTemplatesRouter } from './api/training-plan-templates';
+import { trainingPlansRouter } from './api/training-plans';
+import { memberTrainingPlansRouter } from './api/member-training-plans';
+import { exerciseLogsRouter, workoutBlockLogsRouter } from './api/exercise-logs';
 import { auditLogsRouter } from './api/audit-logs';
 // Side-effect import: registers the booking access hook for package credits.
 // Must be imported BEFORE plan-class-types so its hook is queued first
@@ -117,10 +119,12 @@ app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, membershipPromotionsRouter);
 app.use('/muscles',          requireAuth(), tenantContext, musclesRouter);
 app.use('/exercises',        requireAuth(), tenantContext, exercisesRouter);
-app.use('/workouts',         requireAuth(), tenantContext, workoutsRouter);
-app.use('/training-plan-templates', requireAuth(), tenantContext, trainingTemplatesRouter);
-app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, memberTrainingPlansRouter);
-app.use('/members/:memberId/workout-logs', requireAuth(), tenantContext, memberWorkoutLogsRouter);
+app.use('/workout-templates', requireAuth(), tenantContext, workoutTemplatesRouter);
+app.use('/training-plan-templates', requireAuth(), tenantContext, trainingPlanTemplatesRouter);
+app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, trainingPlansRouter);
+app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, memberTrainingPlansRouter);
+app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, exerciseLogsRouter);
+app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, workoutBlockLogsRouter);
 app.use('/audit-logs',       requireAuth(), tenantContext, auditLogsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
 app.use('/membership-plans/:id/class-types', requireAuth(), tenantContext, planClassTypesRouter);

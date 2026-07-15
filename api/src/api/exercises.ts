@@ -1,25 +1,32 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 /**
- * P5.1: per-gym exercises + muscles + join. Coach can write; import-defaults
- * seeds a bundled JSON list (skips name duplicates so re-running is safe).
+ * P5.1 / #55: per-gym exercises + muscles + join. Coach can write;
+ * import-defaults seeds a bundled JSON list (skips name duplicates so
+ * re-running is safe). Exercise default training values (min/max reps,
+ * rest, sets, notes) replaced the old free-text default_reps in #55.
  */
 
 // Small, non-controversial default catalog. Consumers can wire in a larger
 // import from a JSON file later; keeping it inline avoids a Docker asset
 // copy step in the API image build.
 const DEFAULT_MUSCLES = ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Core'];
-const DEFAULT_EXERCISES: Array<{ name: string; principal: string[]; secondary?: string[]; default_reps: string; default_rest_seconds: number }> = [
-  { name: 'Bench Press', principal: ['Chest'], secondary: ['Triceps', 'Shoulders'], default_reps: '4x8', default_rest_seconds: 90 },
-  { name: 'Squat', principal: ['Quads', 'Glutes'], secondary: ['Hamstrings', 'Core'], default_reps: '4x8', default_rest_seconds: 120 },
-  { name: 'Deadlift', principal: ['Back', 'Hamstrings'], secondary: ['Glutes', 'Core'], default_reps: '3x5', default_rest_seconds: 150 },
-  { name: 'Overhead Press', principal: ['Shoulders'], secondary: ['Triceps', 'Core'], default_reps: '4x8', default_rest_seconds: 90 },
-  { name: 'Pull-up', principal: ['Back'], secondary: ['Biceps'], default_reps: '4x8', default_rest_seconds: 90 },
-  { name: 'Barbell Row', principal: ['Back'], secondary: ['Biceps', 'Core'], default_reps: '4x8', default_rest_seconds: 90 },
-  { name: 'Lunges', principal: ['Quads', 'Glutes'], secondary: ['Hamstrings'], default_reps: '3x12', default_rest_seconds: 60 },
-  { name: 'Plank', principal: ['Core'], default_reps: '3x60s', default_rest_seconds: 60 },
+const DEFAULT_EXERCISES: Array<{
+  name: string; principal: string[]; secondary?: string[];
+  min_reps_default: number | null; max_reps_default: number | null;
+  sets_default: number; rest_default_seconds: number; notes_default?: string;
+}> = [
+  { name: 'Bench Press', principal: ['Chest'], secondary: ['Triceps', 'Shoulders'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
+  { name: 'Squat', principal: ['Quads', 'Glutes'], secondary: ['Hamstrings', 'Core'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 120 },
+  { name: 'Deadlift', principal: ['Back', 'Hamstrings'], secondary: ['Glutes', 'Core'], min_reps_default: 5, max_reps_default: 5, sets_default: 3, rest_default_seconds: 150 },
+  { name: 'Overhead Press', principal: ['Shoulders'], secondary: ['Triceps', 'Core'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
+  { name: 'Pull-up', principal: ['Back'], secondary: ['Biceps'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
+  { name: 'Barbell Row', principal: ['Back'], secondary: ['Biceps', 'Core'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
+  { name: 'Lunges', principal: ['Quads', 'Glutes'], secondary: ['Hamstrings'], min_reps_default: 12, max_reps_default: 12, sets_default: 3, rest_default_seconds: 60 },
+  { name: 'Plank', principal: ['Core'], min_reps_default: null, max_reps_default: null, sets_default: 3, rest_default_seconds: 60, notes_default: '60s hold' },
 ];
 
 export const musclesRouter = Router();
@@ -37,6 +44,7 @@ musclesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) =>
   try {
     const { insertId } = await db.query('INSERT INTO muscles (gym_id, name) VALUES (?, ?)', [gymId, req.body.name.trim()]);
     const { rows } = await db.query('SELECT * FROM muscles WHERE id = ?', [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'muscle', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (e: any) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Muscle already exists.' });
@@ -47,6 +55,7 @@ musclesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => 
   const { gymId } = getTenantContext(req);
   const { rowCount } = await db.query('DELETE FROM muscles WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Muscle not found' });
+  recordAudit(req, { action: 'delete', entityType: 'muscle', entityId: req.params.id });
   res.status(204).send();
 });
 
@@ -79,15 +88,22 @@ exercisesRouter.get('/:id', async (req, res) => {
 
 exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, video_url, image_url, default_reps, default_rest_seconds, status, muscle_ids } = req.body;
+  const {
+    name, description, video_url, image_url,
+    min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+    status, muscle_ids,
+  } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        `INSERT INTO exercises (gym_id, name, description, video_url, image_url, default_reps, default_rest_seconds, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO exercises
+          (gym_id, name, description, video_url, image_url,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, name.trim(), description ?? null, video_url ?? null, image_url ?? null,
-         default_reps ?? null, default_rest_seconds ?? null, status ?? 'active'],
+         min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
+         sets_default ?? null, notes_default ?? null, status ?? 'active'],
       );
       if (Array.isArray(muscle_ids)) {
         for (const m of muscle_ids) {
@@ -101,6 +117,7 @@ exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) 
       return insertId;
     });
     const { rows } = await db.query(`${SELECT} WHERE e.id = ?`, [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (e: any) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Exercise with this name already exists.' });
@@ -110,26 +127,36 @@ exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) 
 
 exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, video_url, image_url, default_reps, default_rest_seconds, status, muscle_ids } = req.body;
+  const {
+    name, description, video_url, image_url,
+    min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+    status, muscle_ids,
+  } = req.body;
   try {
     await db.transaction(async (tx) => {
       const { rowCount } = await tx.query(
         `UPDATE exercises SET
-          name                 = COALESCE(?, name),
-          description          = IF(?, ?, description),
-          video_url            = IF(?, ?, video_url),
-          image_url            = IF(?, ?, image_url),
-          default_reps         = IF(?, ?, default_reps),
-          default_rest_seconds = IF(?, ?, default_rest_seconds),
-          status               = COALESCE(?, status)
+          name                  = COALESCE(?, name),
+          description           = IF(?, ?, description),
+          video_url             = IF(?, ?, video_url),
+          image_url              = IF(?, ?, image_url),
+          min_reps_default      = IF(?, ?, min_reps_default),
+          max_reps_default      = IF(?, ?, max_reps_default),
+          rest_default_seconds  = IF(?, ?, rest_default_seconds),
+          sets_default          = IF(?, ?, sets_default),
+          notes_default         = IF(?, ?, notes_default),
+          status                = COALESCE(?, status)
          WHERE id = ? AND gym_id = ?`,
         [
           name?.trim() ?? null,
           'description' in req.body ? 1 : 0, description ?? null,
           'video_url' in req.body ? 1 : 0, video_url ?? null,
           'image_url' in req.body ? 1 : 0, image_url ?? null,
-          'default_reps' in req.body ? 1 : 0, default_reps ?? null,
-          'default_rest_seconds' in req.body ? 1 : 0, default_rest_seconds ?? null,
+          'min_reps_default' in req.body ? 1 : 0, min_reps_default ?? null,
+          'max_reps_default' in req.body ? 1 : 0, max_reps_default ?? null,
+          'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
+          'sets_default' in req.body ? 1 : 0, sets_default ?? null,
+          'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           status ?? null,
           req.params.id, gymId,
         ],
@@ -148,6 +175,7 @@ exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next
       }
     });
     const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [req.params.id, gymId]);
+    recordAudit(req, { action: 'update', entityType: 'exercise', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message });
@@ -160,6 +188,7 @@ exercisesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) =
   const { gymId } = getTenantContext(req);
   const { rowCount } = await db.query('DELETE FROM exercises WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise not found' });
+  recordAudit(req, { action: 'delete', entityType: 'exercise', entityId: req.params.id });
   res.status(204).send();
 });
 
@@ -182,8 +211,10 @@ exercisesRouter.post('/import-defaults', requireRole('admin', 'coach'), async (r
         const { rows: existing } = await tx.query('SELECT id FROM exercises WHERE gym_id = ? AND name = ?', [gymId, ex.name]);
         if (existing.length > 0) continue;
         const { insertId } = await tx.query(
-          `INSERT INTO exercises (gym_id, name, default_reps, default_rest_seconds, status) VALUES (?, ?, ?, ?, 'active')`,
-          [gymId, ex.name, ex.default_reps, ex.default_rest_seconds],
+          `INSERT INTO exercises
+            (gym_id, name, min_reps_default, max_reps_default, sets_default, rest_default_seconds, notes_default, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
+          [gymId, ex.name, ex.min_reps_default, ex.max_reps_default, ex.sets_default, ex.rest_default_seconds, ex.notes_default ?? null],
         );
         for (const mn of ex.principal) {
           const mid = muscleIds.get(mn);
