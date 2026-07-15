@@ -55,8 +55,16 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.team',
       },
       {
+        href: '/{{locale}}/centers',
+        labelKey: 'nav.centers',
+      },
+      {
         href: '/{{locale}}/rooms',
         labelKey: 'nav.rooms',
+      },
+      {
+        href: '/{{locale}}/resources',
+        labelKey: 'nav.resources',
       },
       {
         href: '/{{locale}}/trainers',
@@ -73,6 +81,10 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/class-packages',
         labelKey: 'nav.class_packages',
+      },
+      {
+        href: '/{{locale}}/events',
+        labelKey: 'nav.events',
       },
     ],
   },

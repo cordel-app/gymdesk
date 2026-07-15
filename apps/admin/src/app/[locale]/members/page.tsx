@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { MemberTrainingPlansModal } from './MemberTrainingPlansModal';
 
@@ -29,6 +30,7 @@ export default function MembersPage() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, isSuperadmin, loading: gymLoading } = useGym();
+  const { centers } = useCenter();
   const { toast } = useToast();
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -39,6 +41,12 @@ export default function MembersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trainingPlansFor, setTrainingPlansFor] = useState<Member | null>(null);
+
+  // #59: only shown once a gym actually has more than one center — a
+  // single-center gym behaves exactly as before this feature existed.
+  const showCenters = centers.length > 1;
+  const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
+  const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
 
   const canManageTraining = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
 
@@ -69,14 +77,26 @@ export default function MembersPage() {
     setEditing(null);
     setForm(emptyForm);
     setError(null);
+    setAssignedCenterIds(centers.length === 1 ? new Set([centers[0].id]) : new Set());
+    setDefaultCenterId(centers.length === 1 ? centers[0].id : null);
     setModalOpen(true);
   }
 
-  function openEdit(m: Member) {
+  async function openEdit(m: Member) {
     setEditing(m);
     setForm({ name: m.name, email: m.email, phone: m.phone ?? '', fare_id: m.fare_id ? String(m.fare_id) : '' });
     setError(null);
     setModalOpen(true);
+    if (showCenters) {
+      try {
+        const rows = await apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`);
+        setAssignedCenterIds(new Set(rows.map((r) => r.center_id)));
+        setDefaultCenterId(rows.find((r) => r.is_default)?.center_id ?? null);
+      } catch {
+        setAssignedCenterIds(new Set());
+        setDefaultCenterId(null);
+      }
+    }
   }
 
   function closeModal() {
@@ -84,6 +104,16 @@ export default function MembersPage() {
     setEditing(null);
     setForm(emptyForm);
     setError(null);
+    setAssignedCenterIds(new Set());
+    setDefaultCenterId(null);
+  }
+
+  function toggleCenter(id: number, checked: boolean) {
+    const next = new Set(assignedCenterIds);
+    if (checked) next.add(id); else next.delete(id);
+    setAssignedCenterIds(next);
+    if (!checked && defaultCenterId === id) setDefaultCenterId(null);
+    if (checked && next.size === 1) setDefaultCenterId(id);
   }
 
   async function handleSave() {
@@ -91,12 +121,26 @@ export default function MembersPage() {
       setError(t('members.error_required'));
       return;
     }
+    if (showCenters) {
+      if (assignedCenterIds.size === 0) { setError(t('members.error_no_center')); return; }
+      if (defaultCenterId == null || !assignedCenterIds.has(defaultCenterId)) { setError(t('members.error_default_not_assigned')); return; }
+    }
     setSaving(true);
     setError(null);
-    const body = { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null, fare_id: form.fare_id ? parseInt(form.fare_id) : null };
+    const body: Record<string, unknown> = { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null, fare_id: form.fare_id ? parseInt(form.fare_id) : null };
+    if (showCenters) {
+      body.center_ids = Array.from(assignedCenterIds);
+      body.default_center_id = defaultCenterId;
+    }
     try {
       if (editing) {
         await apiFetch(`/members/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        if (showCenters) {
+          await apiFetch(`/members/${editing.id}/centers`, {
+            method: 'PUT',
+            body: JSON.stringify({ center_ids: Array.from(assignedCenterIds), default_center_id: defaultCenterId }),
+          });
+        }
       } else {
         await apiFetch('/members', { method: 'POST', body: JSON.stringify(body) });
       }
@@ -182,6 +226,29 @@ export default function MembersPage() {
                   <option value="">{t('members.fare_none')}</option>
                   {plans.map((p) => (
                     <option key={p.id} value={p.id}>{p.name} — {parseFloat(p.base_price).toFixed(2)}</option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {showCenters && (
+              <>
+                <label style={labelStyle}>{t('members.assigned_centers')}</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, padding: 10 }}>
+                  {centers.map((c) => (
+                    <label key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
+                      <input type="checkbox" checked={assignedCenterIds.has(c.id)}
+                             onChange={(e) => toggleCenter(c.id, e.target.checked)} />
+                      {c.name}
+                    </label>
+                  ))}
+                </div>
+
+                <label style={labelStyle}>{t('members.default_center')}</label>
+                <select style={inputStyle} value={defaultCenterId ?? ''} onChange={(e) => setDefaultCenterId(e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">{t('members.default_center_none')}</option>
+                  {centers.filter((c) => assignedCenterIds.has(c.id)).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
               </>
