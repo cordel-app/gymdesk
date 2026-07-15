@@ -101,6 +101,7 @@ workoutTemplatesRouter.get('/', async (req, res, next) => {
 
 workoutTemplatesRouter.get('/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
   try {
     // MySQL's JSON_ARRAYAGG has no ORDER BY of its own — aggregate over a
     // derived table pre-sorted by position instead.
@@ -126,7 +127,7 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
           ORDER BY b.position
         ) t1) AS blocks
        FROM workout_templates wt WHERE wt.id = ? AND wt.gym_id = ? AND wt.deleted_at IS NULL`,
-      [req.params.id, gymId],
+      [id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Workout template not found' });
     res.json(rows[0]);
@@ -154,16 +155,17 @@ workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res,
 
 workoutTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
   const { name, description } = req.body;
   try {
     const { rowCount } = await db.query(
       `UPDATE workout_templates SET name = COALESCE(?, name), description = IF(?, ?, description)
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, req.params.id, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Workout template not found' });
-    const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-    recordAudit(req, { action: 'update', entityType: 'workout_template', entityId: req.params.id, next: rows[0] });
+    const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ? AND gym_id = ?', [id, gymId]);
+    recordAudit(req, { action: 'update', entityType: 'workout_template', entityId: id, next: rows[0] });
     res.json(rows[0]);
   } catch (err) {
     next(err);
@@ -172,12 +174,13 @@ workoutTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, re
 
 workoutTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => {
   const { gymId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
   const { rowCount } = await db.query(
     'UPDATE workout_templates SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
+    [id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Workout template not found' });
-  recordAudit(req, { action: 'delete', entityType: 'workout_template', entityId: req.params.id });
+  recordAudit(req, { action: 'delete', entityType: 'workout_template', entityId: id });
   res.status(204).send();
 });
 
@@ -185,11 +188,12 @@ workoutTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req,
 
 workoutTemplatesRouter.get('/:id/blocks', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
   try {
-    if (!(await templateExists(req.params.id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
+    if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
     const { rows } = await db.query(
       'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND gym_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-      [req.params.id, gymId],
+      [id, gymId],
     );
     res.json(rows);
   } catch (err) {
@@ -199,20 +203,21 @@ workoutTemplatesRouter.get('/:id/blocks', async (req, res, next) => {
 
 workoutTemplatesRouter.post('/:id/blocks', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  if (!(await templateExists(req.params.id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
+  const { id } = req.params as { id: string };
+  if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
   const parsed = parseBlockBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
     const { rows: posRows } = await db.query(
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_template_blocks WHERE workout_template_id = ?',
-      [req.params.id],
+      [id],
     );
     const { insertId } = await db.query(
       `INSERT INTO workout_template_blocks
         (gym_id, workout_template_id, position, name, description, type, result_type,
          rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, req.params.id, posRows[0].next_position, parsed.name, parsed.description, parsed.type, parsed.result_type,
+      [gymId, id, posRows[0].next_position, parsed.name, parsed.description, parsed.type, parsed.result_type,
        parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes,
        gymMembershipId],
     );
@@ -226,14 +231,15 @@ workoutTemplatesRouter.post('/:id/blocks', requireRole('admin', 'coach'), async 
 
 workoutTemplatesRouter.put('/:id/blocks/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  if (!(await templateExists(req.params.id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
+  const { id } = req.params as { id: string };
+  if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
   const order = req.body.order;
   if (!Array.isArray(order) || order.length === 0) return res.status(400).json({ error: 'order must be a non-empty array of block ids' });
   try {
-    await db.transaction(async (tx) => reorder(tx, 'workout_template_blocks', 'workout_template_id', req.params.id, order));
+    await db.transaction(async (tx) => reorder(tx, 'workout_template_blocks', 'workout_template_id', id, order));
     const { rows } = await db.query(
       'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND gym_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-      [req.params.id, gymId],
+      [id, gymId],
     );
     res.json(rows);
   } catch (err) {
@@ -243,7 +249,8 @@ workoutTemplatesRouter.put('/:id/blocks/reorder', requireRole('admin', 'coach'),
 
 workoutTemplatesRouter.put('/:id/blocks/:blockId', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  if (!(await templateExists(req.params.id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
+  const { id, blockId } = req.params as { id: string; blockId: string };
+  if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
   const parsed = parseBlockBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
@@ -255,11 +262,11 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId', requireRole('admin', 'coach')
        WHERE id = ? AND workout_template_id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [parsed.name, parsed.description, parsed.type, parsed.result_type, parsed.rounds, parsed.duration_seconds,
        parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes, gymMembershipId,
-       req.params.blockId, req.params.id, gymId],
+       blockId, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Block not found' });
-    const { rows } = await db.query('SELECT * FROM workout_template_blocks WHERE id = ?', [req.params.blockId]);
-    recordAudit(req, { action: 'update', entityType: 'workout_template_block', entityId: req.params.blockId, next: rows[0] });
+    const { rows } = await db.query('SELECT * FROM workout_template_blocks WHERE id = ?', [blockId]);
+    recordAudit(req, { action: 'update', entityType: 'workout_template_block', entityId: blockId, next: rows[0] });
     res.json(rows[0]);
   } catch (err) {
     next(err);
@@ -268,12 +275,13 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId', requireRole('admin', 'coach')
 
 workoutTemplatesRouter.delete('/:id/blocks/:blockId', requireRole('admin', 'coach'), async (req, res) => {
   const { gymId } = getTenantContext(req);
+  const { id, blockId } = req.params as { id: string; blockId: string };
   const { rowCount } = await db.query(
     'UPDATE workout_template_blocks SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND workout_template_id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.blockId, req.params.id, gymId],
+    [blockId, id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Block not found' });
-  recordAudit(req, { action: 'delete', entityType: 'workout_template_block', entityId: req.params.blockId });
+  recordAudit(req, { action: 'delete', entityType: 'workout_template_block', entityId: blockId });
   res.status(204).send();
 });
 
@@ -281,14 +289,15 @@ workoutTemplatesRouter.delete('/:id/blocks/:blockId', requireRole('admin', 'coac
 
 workoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const { id, blockId } = req.params as { id: string; blockId: string };
   try {
-    if (!(await blockExists(req.params.blockId, req.params.id, gymId))) return res.status(404).json({ error: 'Block not found' });
+    if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
     const { rows } = await db.query(
       `SELECT wte.*, e.name AS exercise_name FROM workout_template_exercises wte
        JOIN exercises e ON e.id = wte.exercise_id
        WHERE wte.workout_template_block_id = ? AND wte.gym_id = ? AND wte.deleted_at IS NULL
        ORDER BY wte.position ASC`,
-      [req.params.blockId, gymId],
+      [blockId, gymId],
     );
     res.json(rows);
   } catch (err) {
@@ -298,7 +307,8 @@ workoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', async (req, res, ne
 
 workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  if (!(await blockExists(req.params.blockId, req.params.id, gymId))) return res.status(404).json({ error: 'Block not found' });
+  const { id, blockId } = req.params as { id: string; blockId: string };
+  if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
   const parsed = parseExerciseItemBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
@@ -306,13 +316,13 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin
     if (exRows.length === 0) return res.status(400).json({ error: 'exercise_id does not belong to this gym' });
     const { rows: posRows } = await db.query(
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_template_exercises WHERE workout_template_block_id = ?',
-      [req.params.blockId],
+      [blockId],
     );
     const { insertId } = await db.query(
       `INSERT INTO workout_template_exercises
         (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, req.params.blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
+      [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo, gymMembershipId],
     );
     const { rows } = await db.query(
@@ -328,14 +338,15 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin
 
 workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  if (!(await blockExists(req.params.blockId, req.params.id, gymId))) return res.status(404).json({ error: 'Block not found' });
+  const { id, blockId } = req.params as { id: string; blockId: string };
+  if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
   const order = req.body.order;
   if (!Array.isArray(order) || order.length === 0) return res.status(400).json({ error: 'order must be a non-empty array of exercise-item ids' });
   try {
-    await db.transaction(async (tx) => reorder(tx, 'workout_template_exercises', 'workout_template_block_id', req.params.blockId, order));
+    await db.transaction(async (tx) => reorder(tx, 'workout_template_exercises', 'workout_template_block_id', blockId, order));
     const { rows } = await db.query(
       'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND gym_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-      [req.params.blockId, gymId],
+      [blockId, gymId],
     );
     res.json(rows);
   } catch (err) {
@@ -345,7 +356,8 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/reorder', requireRole
 
 workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  if (!(await blockExists(req.params.blockId, req.params.id, gymId))) return res.status(404).json({ error: 'Block not found' });
+  const { id, blockId, exId } = req.params as { id: string; blockId: string; exId: string };
+  if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
   const parsed = parseExerciseItemBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
@@ -357,14 +369,14 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireRole('
         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND workout_template_block_id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [parsed.exercise_id, parsed.min_reps, parsed.max_reps, parsed.sets, parsed.rest_seconds, parsed.tempo, gymMembershipId,
-       req.params.exId, req.params.blockId, gymId],
+       exId, blockId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
       'SELECT wte.*, e.name AS exercise_name FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?',
-      [req.params.exId],
+      [exId],
     );
-    recordAudit(req, { action: 'update', entityType: 'workout_template_exercise', entityId: req.params.exId, next: rows[0] });
+    recordAudit(req, { action: 'update', entityType: 'workout_template_exercise', entityId: exId, next: rows[0] });
     res.json(rows[0]);
   } catch (err) {
     next(err);
@@ -373,11 +385,12 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireRole('
 
 workoutTemplatesRouter.delete('/:id/blocks/:blockId/exercises/:exId', requireRole('admin', 'coach'), async (req, res) => {
   const { gymId } = getTenantContext(req);
+  const { blockId, exId } = req.params as { id: string; blockId: string; exId: string };
   const { rowCount } = await db.query(
     'UPDATE workout_template_exercises SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND workout_template_block_id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.exId, req.params.blockId, gymId],
+    [exId, blockId, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise item not found' });
-  recordAudit(req, { action: 'delete', entityType: 'workout_template_exercise', entityId: req.params.exId });
+  recordAudit(req, { action: 'delete', entityType: 'workout_template_exercise', entityId: exId });
   res.status(204).send();
 });

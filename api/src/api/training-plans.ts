@@ -262,8 +262,8 @@ trainingPlansRouter.delete('/:planId/workouts/:workoutId', requireRole('admin', 
 
 trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { workoutId } = req.params as { workoutId: string };
-  if (!(await workoutExists(workoutId, req.params.planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
+  const { planId, workoutId } = req.params as { planId: string; workoutId: string };
+  if (!(await workoutExists(workoutId, planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
   const parsed = parseBlockBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
@@ -290,8 +290,8 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireRole('adm
 
 trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { workoutId } = req.params as { workoutId: string };
-  if (!(await workoutExists(workoutId, req.params.planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
+  const { planId, workoutId } = req.params as { planId: string; workoutId: string };
+  if (!(await workoutExists(workoutId, planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
   const order = req.body.order;
   if (!Array.isArray(order) || order.length === 0) return res.status(400).json({ error: 'order must be a non-empty array of block ids' });
   try {
@@ -308,8 +308,8 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/reorder', requireRo
 
 trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { workoutId, blockId } = req.params as { workoutId: string; blockId: string };
-  if (!(await workoutExists(workoutId, req.params.planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
+  const { planId, workoutId, blockId } = req.params as { planId: string; workoutId: string; blockId: string };
+  if (!(await workoutExists(workoutId, planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
   const parsed = parseBlockBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
@@ -379,8 +379,8 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
 
 trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { blockId } = req.params as { blockId: string };
-  if (!(await blockExists(blockId, req.params.workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
+  const { workoutId, blockId } = req.params as { workoutId: string; blockId: string };
+  if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
   const order = req.body.order;
   if (!Array.isArray(order) || order.length === 0) return res.status(400).json({ error: 'order must be a non-empty array of exercise-item ids' });
   try {
@@ -397,8 +397,8 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
 
 trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { blockId, exId } = req.params as { blockId: string; exId: string };
-  if (!(await blockExists(blockId, req.params.workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
+  const { workoutId, blockId, exId } = req.params as { workoutId: string; blockId: string; exId: string };
+  if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
   const parsed = parseExerciseItemBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
