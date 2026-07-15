@@ -162,10 +162,11 @@ export default function TeamPage() {
 
   async function handleRemove() {
     if (!removing) return;
+    const wasInvited = removing.status === 'invited';
     try {
       await apiFetch(`/gym-users/${removing.id}`, { method: 'DELETE' });
       setRemoving(null);
-      toast(t('toast_removed'), 'success');
+      toast(wasInvited ? t('toast_revoked') : t('toast_removed'), 'success');
       load();
     } catch (err: any) {
       const msg = err.message ?? t('error_generic');
@@ -235,10 +236,10 @@ export default function TeamPage() {
           )}
           <button
             onClick={() => setRemoving(r)}
-            style={btnSmall('#c0392b')}
-            title={t('action_remove_title')}
+            style={btnSmall(r.status === 'invited' ? '#e67e22' : '#c0392b')}
+            title={r.status === 'invited' ? t('action_revoke_title') : t('action_remove_title')}
           >
-            {t('action_remove')}
+            {r.status === 'invited' ? t('action_revoke') : t('action_remove')}
           </button>
         </div>
       ),
@@ -358,8 +359,12 @@ export default function TeamPage() {
 
       <ConfirmDialog
         open={removing !== null}
-        message={t('confirm_remove', { email: removing?.email ?? '' })}
-        confirmLabel={t('confirm_remove_btn')}
+        message={
+          removing?.status === 'invited'
+            ? t('confirm_revoke', { email: removing?.email ?? '' })
+            : t('confirm_remove', { email: removing?.email ?? '' })
+        }
+        confirmLabel={removing?.status === 'invited' ? t('confirm_revoke_btn') : t('confirm_remove_btn')}
         cancelLabel={t('cancel')}
         onConfirm={handleRemove}
         onCancel={() => setRemoving(null)}

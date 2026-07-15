@@ -217,7 +217,9 @@ Admins manage coaches/staff/admins from the **Team** page. `POST /gym-users`:
 - If not → create a Clerk invitation carrying `publicMetadata.gym_invite = { gym_id, role }`, and insert an `invited` placeholder row.
 - On the invitee's first admin-app sign-in, `POST /gym-users/link` reads that metadata, materializes/activates the row, and clears the metadata.
 
-Guards: self-edit blocked (can't change your own role or remove yourself), and last-admin protection (can't demote/remove the sole remaining admin). Removing an invited user revokes the Clerk invitation. All team mutations call `recordAudit`.
+Guards: self-edit blocked (can't change your own role or remove yourself), and last-admin protection (can't demote/remove the sole remaining admin). All team mutations call `recordAudit`.
+
+**Removing an invited (not-yet-accepted) user is a revoke, not a delete.** This closes a race: an admin invites someone, then removes them before they click the email link — without revocation, the `gym_memberships` row would be gone from the app but the Clerk invitation would still be live, so accepting it later would silently recreate team access. `DELETE /gym-users/:id` handles both cases through the same endpoint: if `status === 'invited'`, it calls `clerkClient.invitations.revokeInvitation(invitation_id)` before deleting the row (best-effort — a revoke failure doesn't block the row deletion); if the row belongs to an active Clerk user, it deletes the `gym_memberships` row and additionally deletes the Clerk user outright if this was their last gym membership anywhere. The admin UI (`apps/admin/.../team/page.tsx`) reflects this at the label level only — same delete flow, but the action button/confirm dialog read "Revoke" for `status === 'invited'` rows and "Remove" otherwise, so admins understand which side effect they're triggering.
 
 ---
 
@@ -291,7 +293,7 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Module | Backend router(s) | Frontend page | Notes |
 |--------|-------------------|---------------|-------|
 | Members | `members.ts` | `[locale]/members/` (+ `/deleted`) | Canonical staff-level CRUD reference. Soft-delete + restore; `clerk_user_id`; `/:id/invite`. |
-| Team | `gym-users.ts` | `[locale]/team/`, `[locale]/link-team/` | Admin-only. Invite/grant/change-role/remove admin/coach/staff. Clerk invitation flow, self-edit & last-admin guards, audited. |
+| Team | `gym-users.ts` | `[locale]/team/`, `[locale]/link-team/` | Admin-only. Invite/grant/change-role/remove admin/coach/staff. Clerk invitation flow, self-edit & last-admin guards, audited. Removing a pending invite revokes it in Clerk (UI labels this "Revoke"). |
 | Rooms | `rooms.ts` | `[locale]/rooms/` | Admin-only CRUD. |
 | Specialities | `specialities.ts` | `[locale]/specialities/` | Admin-only CRUD; linked to trainers. |
 | Trainers | `trainers.ts` | `[locale]/trainers/` | Lists `coach` members; PUT assigns specialities. |
