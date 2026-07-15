@@ -71,6 +71,26 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
   }
 });
 
+// #59: the centers this member is assigned to, so the member app can
+// resolve a default and (if there's more than one) offer a switcher.
+meRouter.get('/centers', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT c.id, c.name, mc.is_default
+       FROM member_centers mc
+       JOIN centers c ON c.id = mc.center_id
+       JOIN members m ON m.id = mc.member_id
+       WHERE m.gym_id = ? AND m.clerk_user_id = ? AND mc.deleted_at IS NULL AND c.deleted_at IS NULL
+       ORDER BY mc.is_default DESC, c.name ASC`,
+      [gymId, userId],
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId, userId } = getTenantContext(req);
   try {
@@ -218,7 +238,7 @@ meRouter.get('/class-packages', requireRole('member'), async (req: Request, res:
 
 /** Cancel own booking. Rejected once the session has already started. */
 meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, userId, gymMembershipId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
       `SELECT b.id, cs.starts_at
@@ -232,7 +252,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
     if (new Date(rows[0].starts_at) <= new Date()) {
       return res.status(400).json({ error: 'Cannot cancel a booking after the session has started.' });
     }
-    await cancelBooking(gymId, Number(req.params.id));
+    await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
     res.status(204).send();
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });

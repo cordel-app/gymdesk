@@ -31,6 +31,11 @@ import { trainingPlansRouter } from './api/training-plans';
 import { memberTrainingPlansRouter } from './api/member-training-plans';
 import { exerciseLogsRouter, workoutBlockLogsRouter } from './api/exercise-logs';
 import { auditLogsRouter } from './api/audit-logs';
+import { centersRouter } from './api/centers';
+import { memberCentersRouter } from './api/member-centers';
+import { resourcesRouter } from './api/resources';
+import { trainerAvailabilityRouter } from './api/trainer-availability';
+import { eventsRouter } from './api/events';
 // Side-effect import: registers the booking access hook for package credits.
 // Must be imported BEFORE plan-class-types so its hook is queued first
 // (plan-access checks getPackageIntent to know whether to bail on 403).
@@ -40,6 +45,7 @@ import { meRouter, meLinkRouter } from './api/me';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext } from './infra/tenantContext';
+import { centerContext } from './infra/centerContext';
 import { db } from './infra/db';
 import { swaggerSpec } from './infra/swagger';
 
@@ -90,6 +96,12 @@ app.post('/dev/seed-gym', async (req: any, res: any) => {
     `INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'admin')`,
     [user_id, gym.id]
   );
+  // #59: dev-seeded gyms need a Center too, same as platformRouter.post('/gyms').
+  await db.query(
+    `INSERT INTO centers (gym_id, name, status)
+     SELECT ?, ?, 'active' WHERE NOT EXISTS (SELECT 1 FROM centers WHERE gym_id = ? AND deleted_at IS NULL)`,
+    [gym.id, gym.name, gym.id]
+  );
   res.json({ gym, message: 'Gym created and user assigned as admin' });
 });
 
@@ -110,11 +122,12 @@ app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 // /me/link + /gym-users/link must come before tenantContext (no membership row exists yet on first link)
 app.use('/me/link', requireAuth(), meLinkRouter);
 app.use('/gym-users/link', requireAuth(), gymUsersLinkRouter);
-app.use('/me',      requireAuth(), tenantContext, meRouter);
+app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 app.use('/gym-users',     requireAuth(), tenantContext, gymUsersRouter);
 app.use('/members',       requireAuth(), tenantContext, membersRouter);
-app.use('/bookings',      requireAuth(), tenantContext, bookingsRouter);
+app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, memberCentersRouter);
+app.use('/bookings',      requireAuth(), tenantContext, centerContext, bookingsRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, membershipPromotionsRouter);
 app.use('/muscles',          requireAuth(), tenantContext, musclesRouter);
@@ -131,16 +144,20 @@ app.use('/membership-plans/:id/class-types', requireAuth(), tenantContext, planC
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
 app.use('/charge-types',     requireAuth(), tenantContext, chargeTypesRouter);
 app.use('/billing-events',   requireAuth(), tenantContext, billingEventsRouter);
-app.use('/rooms',            requireAuth(), tenantContext, roomsRouter);
+app.use('/rooms',            requireAuth(), tenantContext, centerContext, roomsRouter);
 app.use('/specialities',     requireAuth(), tenantContext, specialitiesRouter);
 app.use('/trainers',         requireAuth(), tenantContext, trainersRouter);
 app.use('/class-types',      requireAuth(), tenantContext, classTypesRouter);
-app.use('/class-sessions',   requireAuth(), tenantContext, classSessionsRouter);
+app.use('/class-sessions',   requireAuth(), tenantContext, centerContext, classSessionsRouter);
 app.use('/class-packages',   requireAuth(), tenantContext, classPackagesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, actionTypesRouter);
 app.use('/promotions',       requireAuth(), tenantContext, promotionsRouter);
 app.use('/promotions/:id',   requireAuth(), tenantContext, promotionDetailsRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userClassPackagesRouter);
+app.use('/centers',          requireAuth(), tenantContext, centerContext, centersRouter);
+app.use('/resources',        requireAuth(), tenantContext, centerContext, resourcesRouter);
+app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, trainerAvailabilityRouter);
+app.use('/events',           requireAuth(), tenantContext, centerContext, eventsRouter);
 
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
