@@ -13,6 +13,15 @@ export const trainingPlanTemplatesRouter = Router();
 
 const STATUSES = ['active', 'inactive', 'draft', 'deleted'];
 
+// GET / list sorting: map the public sort key to a safe column (never interpolate raw input).
+const SORT_COLUMNS: Record<string, string> = {
+  name: 'tpt.name',
+  created_at: 'tpt.created_at',
+  status: 'tpt.status',
+};
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+
 async function reorder(tx: Tx, table: string, parentColumn: string, parentId: string, orderedIds: number[]) {
   await tx.query(`UPDATE ${table} SET position = position + 1000000 WHERE ${parentColumn} = ?`, [parentId]);
   for (let i = 0; i < orderedIds.length; i++) {
@@ -36,12 +45,56 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
   if (status && !STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
+  const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+  const createdBy = req.query.created_by == null || req.query.created_by === ''
+    ? null : Number(req.query.created_by);
+  if (createdBy !== null && !Number.isInteger(createdBy)) {
+    return res.status(400).json({ error: 'created_by must be a membership id' });
+  }
+  const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS ? req.query.sort : 'name';
+  const dir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
+  // limit/offset are validated integers — interpolated because mysql2 prepared
+  // statements don't accept placeholders in LIMIT reliably.
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+  const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
+    const where: string[] = ['tpt.gym_id = ?', "tpt.status != 'deleted'"];
     const params: any[] = [gymId];
-    let sql = "SELECT * FROM training_plan_templates WHERE gym_id = ? AND status != 'deleted'";
-    if (status) { sql += ' AND status = ?'; params.push(status); }
-    sql += ' ORDER BY name ASC';
-    const { rows } = await db.query(sql, params);
+    if (status) { where.push('tpt.status = ?'); params.push(status); }
+    if (name) { where.push('tpt.name LIKE ?'); params.push(`%${name}%`); }
+    if (createdBy !== null) { where.push('tpt.created_by_membership_id = ?'); params.push(createdBy); }
+    const whereSql = where.join(' AND ');
+
+    const { rows: countRows } = await db.query(
+      `SELECT COUNT(*) AS total FROM training_plan_templates tpt WHERE ${whereSql}`,
+      params,
+    );
+    const { rows } = await db.query(
+      `SELECT tpt.*, gm.name AS created_by_name
+       FROM training_plan_templates tpt
+       LEFT JOIN gym_memberships gm ON gm.id = tpt.created_by_membership_id
+       WHERE ${whereSql}
+       ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
+      params,
+    );
+    res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Distinct authors of this gym's non-deleted templates — populates the Created By filter.
+trainingPlanTemplatesRouter.get('/created-by-options', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT DISTINCT gm.id AS membership_id, gm.name
+       FROM training_plan_templates tpt
+       JOIN gym_memberships gm ON gm.id = tpt.created_by_membership_id
+       WHERE tpt.gym_id = ? AND tpt.status != 'deleted' AND gm.name IS NOT NULL
+       ORDER BY gm.name ASC`,
+      [gymId],
+    );
     res.json(rows);
   } catch (err) {
     next(err);
@@ -55,11 +108,61 @@ trainingPlanTemplatesRouter.get('/:id', async (req, res, next) => {
     // MySQL's JSON_ARRAYAGG has no ORDER BY of its own — aggregate over a
     // derived table pre-sorted by position instead.
     const { rows } = await db.query(
-      `SELECT tpt.*,
+      `SELECT tpt.*, gm.name AS created_by_name,
         (SELECT JSON_ARRAYAGG(item) FROM (
           SELECT JSON_OBJECT(
               'id', j.id, 'position', j.position, 'scheduled_weekday', j.scheduled_weekday,
               'workout_template_id', j.workout_template_id, 'workout_template_name', wt.name) AS item
+          FROM training_plan_template_workouts j JOIN workout_templates wt ON wt.id = j.workout_template_id
+          WHERE j.training_plan_template_id = tpt.id
+          ORDER BY j.position
+        ) t1) AS workouts
+       FROM training_plan_templates tpt
+       LEFT JOIN gym_memberships gm ON gm.id = tpt.created_by_membership_id
+       WHERE tpt.id = ? AND tpt.gym_id = ? AND tpt.status != 'deleted'`,
+      [id, gymId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Training plan template not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Full 4-level tree (workouts -> blocks -> exercises) for one template, in a
+// single request — the client fetches this on first expand of a template row
+// and caches it. Extends the derived-table-per-level JSON_ARRAYAGG pattern used
+// by GET /:id here and by workout-templates.ts GET /:id one level deeper.
+trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  try {
+    const { rows } = await db.query(
+      `SELECT tpt.id, tpt.name, tpt.status,
+        (SELECT JSON_ARRAYAGG(item) FROM (
+          SELECT JSON_OBJECT(
+              'id', j.id, 'position', j.position, 'scheduled_weekday', j.scheduled_weekday,
+              'workout_template_id', j.workout_template_id, 'workout_template_name', wt.name,
+              'blocks', (SELECT JSON_ARRAYAGG(item) FROM (
+                SELECT JSON_OBJECT(
+                    'id', b.id, 'position', b.position, 'name', b.name, 'description', b.description,
+                    'type', b.type, 'result_type', b.result_type, 'rounds', b.rounds,
+                    'duration_seconds', b.duration_seconds, 'work_seconds', b.work_seconds, 'rest_seconds', b.rest_seconds,
+                    'is_optional', b.is_optional, 'notes', b.notes,
+                    'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
+                      SELECT JSON_OBJECT(
+                          'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
+                          'exercise_name', e.name, 'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
+                          'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo) AS item
+                      FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id
+                      WHERE wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL
+                      ORDER BY wte.position
+                    ) t3)
+                  ) AS item
+                FROM workout_template_blocks b WHERE b.workout_template_id = wt.id AND b.deleted_at IS NULL
+                ORDER BY b.position
+              ) t2)
+            ) AS item
           FROM training_plan_template_workouts j JOIN workout_templates wt ON wt.id = j.workout_template_id
           WHERE j.training_plan_template_id = tpt.id
           ORDER BY j.position

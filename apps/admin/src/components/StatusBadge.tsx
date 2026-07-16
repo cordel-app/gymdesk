@@ -8,6 +8,8 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   paused:    { bg: '#fff4e0', fg: '#b26a00' },
   cancelled: { bg: '#fdeaea', fg: '#c0392b' },
   expired:   { bg: '#f3eafd', fg: '#7d3cbd' },
+  draft:     { bg: '#eef2f7', fg: '#5a6b7b' },
+  deleted:   { bg: '#fdeaea', fg: '#c0392b' },
 };
 
 const DEFAULT = { bg: '#f0f0f0', fg: '#666666' };
