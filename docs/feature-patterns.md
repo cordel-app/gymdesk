@@ -212,6 +212,36 @@ Add a `"widgets"` namespace to each file:
 
 ---
 
+## Config-Driven Conditional Form Fields (when needed)
+
+When a form's field visibility (or requiredness) depends on another field in the same form — e.g. a "type" selector that determines which of the remaining fields are relevant — don't branch on the type inline in JSX. Define a map from each type to the fields it uses, then read it at render time. This mirrors the existing `config/navigationGroups.ts` precedent (nav structure as data, not JSX).
+
+```ts
+// blockFieldConfig.ts
+export const BLOCK_TYPE_FIELDS: Record<string, FieldKey[]> = {
+  Standard: ['result_type', 'rounds'],
+  Circuit: ['result_type', 'rounds', 'work_seconds', 'rest_seconds'],
+  EMOM: ['duration_seconds'],
+  // ...
+};
+export function isBlockFieldVisible(type: string, field: FieldKey): boolean {
+  return (BLOCK_TYPE_FIELDS[type] ?? []).includes(field);
+}
+```
+
+```tsx
+{isBlockFieldVisible(form.type, 'rounds') && (
+  <Field label={t('...')}>...</Field>
+)}
+```
+
+Rules of thumb:
+- Keep the map in its own file, imported by every form that needs the same visibility rules — don't duplicate it per component (see Workout Block editors below).
+- Don't clear a field's value in local state when it becomes hidden — a user switching the type back and forth in the same session should see their prior input return. Continue submitting the full form object on save so the backend's normal full-column-overwrite update doesn't clobber a hidden field's previously stored value.
+- Reference implementation: `blockFieldConfig.ts`, used by both `WorkoutTemplateBlocksModal.tsx` and `PlanWorkoutBlocksModal.tsx` (Workout Block "Type" governs which of Result Type/Rounds/Duration/Work/Rest are shown).
+
+---
+
 ## Soft Delete Pattern (when needed)
 
 Add `deleted_at DATETIME` to the table. Then:
