@@ -321,8 +321,9 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Class packages | `class-packages.ts`, `user-class-packages.ts`, `package-credits.ts` | `[locale]/class-packages/` | Catalog + per-member packages + credit transactions; credits consumed/refunded on booking lifecycle. |
 | Promotions | `promotions.ts`, `promotion-details.ts`, `action-types.ts` | `[locale]/promotions/` | Admin-only. Plan targeting, charge benefits, period benefits. `action_types` is a global lookup. |
 | Exercises / Muscles | `exercises.ts` | `[locale]/exercises/` | Per-gym catalog; admin/coach CRUD; `POST /exercises/import-defaults` seeds defaults. |
-| Workouts | `workouts.ts` | `[locale]/workouts/` | Workout builder (`workout_exercises`); admin/coach. |
-| Training plans | `training-plans.ts`, `member-workout-logs.ts` | `[locale]/training/` | Templates + assignment to members + workout logs. |
+| Workout templates | `workout-templates.ts` | `[locale]/workout-templates/` | Reusable, block-based workout blueprints (blocks + per-block exercises); admin/coach. Block editor's field visibility is driven by block type via `blockFieldConfig.ts` — see Feature Patterns' config-driven form pattern. `[locale]/workouts/` (old flat Workout catalog) is now just a redirect here (#55); `workouts.ts` was removed. |
+| Training plan templates | `training-plan-templates.ts` | `[locale]/training-plan-templates/` | Groups Workout Templates into an assignable plan template (`TemplateWorkoutsModal.tsx`). |
+| Training plans (assigned) | `training-plans.ts`, `member-training-plans.ts`, `exercise-logs.ts` | Inside `[locale]/members/` (plan/workout/block editors, e.g. `PlanWorkoutBlocksModal.tsx`) | Per-member cloned plan/workout/block instances; assignment + block/exercise logging (`workoutBlockLogsRouter`, `exerciseLogsRouter`). |
 | Audit | `audit-logs.ts` | `[locale]/audit/` | Admin-only read-only viewer. |
 | Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
 | Superadmins | `superadmins.ts` | `[locale]/system/users/` | Superadmin only — grant/revoke platform role. |
