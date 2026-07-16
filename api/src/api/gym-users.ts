@@ -320,11 +320,14 @@ gymUsersRouter.post('/:id/reinvite', requireRole('admin'), async (req, res, next
 
     try {
       // Create new Clerk invitation
-      await clerkClient.invitations.createInvitation({
+      const invitation = await clerkClient.invitations.createInvitation({
         emailAddress: email,
         publicMetadata: { gym_invite: { gym_id: gymId, role: membership.role } },
         ...(adminUrl ? { redirectUrl: `${adminUrl}/en/sign-up` } : {}),
       });
+      // Overwrite the stored invitation_id — the old one is superseded and no
+      // longer revocable; a later removal must revoke *this* invitation.
+      await db.query('UPDATE gym_memberships SET invitation_id = ? WHERE id = ?', [invitation.id, membershipId]);
 
       recordAudit(req, { action: 'reinvite', entityType: 'gym_user', entityId: String(membershipId), next: { email } });
       return res.json({ status: 'reinvited', email });
