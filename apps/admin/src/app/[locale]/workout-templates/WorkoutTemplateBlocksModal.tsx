@@ -7,6 +7,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
 import { BlockExercisesModal } from './BlockExercisesModal';
+import { isBlockFieldVisible } from './blockFieldConfig';
 
 export interface Block {
   id: number; position: number; name: string | null; description: string | null;
@@ -149,23 +150,33 @@ export function WorkoutTemplateBlocksModal({ workoutTemplateId, workoutTemplateN
                 {BLOCK_TYPES.map((ty) => <option key={ty} value={ty}>{t(`workout_template_blocks.type_${ty.toLowerCase()}`)}</option>)}
               </select>
             </Field>
-            <Field label={t('workout_template_blocks.col_result_type')}>
-              <select value={form.result_type} onChange={(e) => setForm({ ...form, result_type: e.target.value })} style={input}>
-                {RESULT_TYPES.map((rt) => <option key={rt} value={rt}>{t(`workout_template_blocks.result_type_${rt.toLowerCase()}`)}</option>)}
-              </select>
-            </Field>
-            <Field label={t('workout_template_blocks.col_rounds')}>
-              <input type="number" min="0" value={form.rounds} onChange={(e) => setForm({ ...form, rounds: e.target.value })} style={input} />
-            </Field>
-            <Field label={t('workout_template_blocks.col_duration')}>
-              <input type="number" min="0" value={form.duration_seconds} onChange={(e) => setForm({ ...form, duration_seconds: e.target.value })} style={input} />
-            </Field>
-            <Field label={t('workout_template_blocks.col_work_seconds')}>
-              <input type="number" min="0" value={form.work_seconds} onChange={(e) => setForm({ ...form, work_seconds: e.target.value })} style={input} />
-            </Field>
-            <Field label={t('workout_template_blocks.col_rest_seconds')}>
-              <input type="number" min="0" value={form.rest_seconds} onChange={(e) => setForm({ ...form, rest_seconds: e.target.value })} style={input} />
-            </Field>
+            {isBlockFieldVisible(form.type, 'result_type') && (
+              <Field label={t('workout_template_blocks.col_result_type')}>
+                <select value={form.result_type} onChange={(e) => setForm({ ...form, result_type: e.target.value })} style={input}>
+                  {RESULT_TYPES.map((rt) => <option key={rt} value={rt}>{t(`workout_template_blocks.result_type_${rt.toLowerCase()}`)}</option>)}
+                </select>
+              </Field>
+            )}
+            {isBlockFieldVisible(form.type, 'rounds') && (
+              <Field label={t('workout_template_blocks.col_rounds')}>
+                <input type="number" min="0" value={form.rounds} onChange={(e) => setForm({ ...form, rounds: e.target.value })} style={input} />
+              </Field>
+            )}
+            {isBlockFieldVisible(form.type, 'duration_seconds') && (
+              <Field label={t('workout_template_blocks.col_duration')}>
+                <input type="number" min="0" value={form.duration_seconds} onChange={(e) => setForm({ ...form, duration_seconds: e.target.value })} style={input} />
+              </Field>
+            )}
+            {isBlockFieldVisible(form.type, 'work_seconds') && (
+              <Field label={t('workout_template_blocks.col_work_seconds')}>
+                <input type="number" min="0" value={form.work_seconds} onChange={(e) => setForm({ ...form, work_seconds: e.target.value })} style={input} />
+              </Field>
+            )}
+            {isBlockFieldVisible(form.type, 'rest_seconds') && (
+              <Field label={t('workout_template_blocks.col_rest_seconds')}>
+                <input type="number" min="0" value={form.rest_seconds} onChange={(e) => setForm({ ...form, rest_seconds: e.target.value })} style={input} />
+              </Field>
+            )}
             <Field label={t('workout_template_blocks.col_optional')}>
               <input type="checkbox" checked={form.is_optional} onChange={(e) => setForm({ ...form, is_optional: e.target.checked })} />
             </Field>
