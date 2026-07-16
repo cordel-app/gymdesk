@@ -21,6 +21,8 @@ interface Member {
   fare_id: number | null;
   fare_name: string | null;
   fare_price: string | null;
+  clerk_user_id: string | null;
+  invitation_id: string | null;
 }
 
 const emptyForm = { name: '', email: '', phone: '', fare_id: '' };
@@ -119,6 +121,37 @@ export default function MembersPage() {
     }
   }
 
+  async function handleInvite(id: number) {
+    try {
+      await apiFetch(`/members/${id}/invite`, { method: 'POST' });
+      toast(t('members.toast_invited'), 'success');
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'), 'error');
+    }
+  }
+
+  async function handleReinvite(id: number) {
+    try {
+      await apiFetch(`/members/${id}/reinvite`, { method: 'POST' });
+      toast(t('members.toast_reinvited'), 'success');
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'), 'error');
+    }
+  }
+
+  async function handleRevokeInvite(id: number) {
+    if (!confirm(t('members.confirm_revoke'))) return;
+    try {
+      await apiFetch(`/members/${id}/revoke-invite`, { method: 'POST' });
+      toast(t('members.toast_revoked'), 'success');
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'), 'error');
+    }
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -138,25 +171,42 @@ export default function MembersPage() {
               <th style={th}>{t('members.col_email')}</th>
               <th style={th}>{t('members.col_phone')}</th>
               <th style={th}>{t('members.col_fare')}</th>
-              <th style={{ ...th, width: 120 }}>{t('members.col_actions')}</th>
+              <th style={th}>{t('members.col_portal')}</th>
+              <th style={{ ...th, width: 220 }}>{t('members.col_actions')}</th>
             </tr>
           </thead>
           <tbody>
-            {members.map((m) => (
-              <tr key={m.id} style={{ borderTop: '1px solid #eee' }}>
-                <td style={td}>{m.name}</td>
-                <td style={td}>{m.email}</td>
-                <td style={td}>{m.phone ?? '—'}</td>
-                <td style={td}>{m.fare_name ? `${m.fare_name} (${parseFloat(m.fare_price!).toFixed(2)})` : '—'}</td>
-                <td style={{ ...td, display: 'flex', gap: 8 }}>
-                  {canManageTraining && (
-                    <button onClick={() => setTrainingPlansFor(m)} style={btnSmall('#6c63ff')}>{t('members.training_plans')}</button>
-                  )}
-                  <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('members.edit')}</button>
-                  <button onClick={() => handleDelete(m.id)} style={btnSmall('#c0392b')}>{t('members.delete')}</button>
-                </td>
-              </tr>
-            ))}
+            {members.map((m) => {
+              const linked = !!m.clerk_user_id;
+              const pendingInvite = !linked && !!m.invitation_id;
+              return (
+                <tr key={m.id} style={{ borderTop: '1px solid #eee' }}>
+                  <td style={td}>{m.name}</td>
+                  <td style={td}>{m.email}</td>
+                  <td style={td}>{m.phone ?? '—'}</td>
+                  <td style={td}>{m.fare_name ? `${m.fare_name} (${parseFloat(m.fare_price!).toFixed(2)})` : '—'}</td>
+                  <td style={td}>
+                    {linked ? t('members.portal_linked') : pendingInvite ? t('members.portal_invited') : t('members.portal_none')}
+                  </td>
+                  <td style={{ ...td, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {canManageTraining && (
+                      <button onClick={() => setTrainingPlansFor(m)} style={btnSmall('#6c63ff')}>{t('members.training_plans')}</button>
+                    )}
+                    <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('members.edit')}</button>
+                    {!linked && !pendingInvite && (
+                      <button onClick={() => handleInvite(m.id)} style={btnSmall('#2980b9')}>{t('members.action_invite')}</button>
+                    )}
+                    {pendingInvite && (
+                      <>
+                        <button onClick={() => handleReinvite(m.id)} style={btnSmall('#2980b9')}>{t('members.action_reinvite')}</button>
+                        <button onClick={() => handleRevokeInvite(m.id)} style={btnSmall('#e67e22')}>{t('members.action_revoke')}</button>
+                      </>
+                    )}
+                    <button onClick={() => handleDelete(m.id)} style={btnSmall('#c0392b')}>{t('members.delete')}</button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

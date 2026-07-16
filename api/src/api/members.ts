@@ -109,14 +109,18 @@ membersRouter.post('/:id/invite', requireRole('admin', 'staff'), async (req, res
   const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
   try {
     const { rows } = await db.query(
-      'SELECT email FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT email, clerk_user_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
-    await clerkClient.invitations.createInvitation({
+    if (rows[0].clerk_user_id) return res.status(409).json({ error: 'This member already has portal access.' });
+
+    const invitation = await clerkClient.invitations.createInvitation({
       emailAddress: rows[0].email,
       redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
     });
+    await db.query('UPDATE members SET invitation_id = ? WHERE id = ?', [invitation.id, req.params.id]);
+    recordAudit(req, { action: 'invite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
     res.json({ ok: true });
   } catch (err: any) {
     // Clerk returns 422 when an invitation for this email already exists/user already exists
@@ -125,13 +129,83 @@ membersRouter.post('/:id/invite', requireRole('admin', 'staff'), async (req, res
   }
 });
 
-membersRouter.delete('/:id', requireRole('admin'), async (req, res) => {
+// POST /:id/reinvite — resend a still-pending invitation for member-portal access
+membersRouter.post('/:id/reinvite', requireRole('admin', 'staff'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { rowCount } = await db.query(
-    'UPDATE members SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
-  );
-  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Member not found' });
-  recordAudit(req, { action: 'soft_delete', entityType: 'member', entityId: req.params.id });
-  res.status(204).send();
+  const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
+  try {
+    const { rows } = await db.query(
+      'SELECT email, clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [req.params.id, gymId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+    if (rows[0].clerk_user_id) return res.status(400).json({ error: 'This member has already linked their account.' });
+    if (!rows[0].invitation_id) return res.status(400).json({ error: 'No pending invitation for this member. Use Invite instead.' });
+
+    const invitation = await clerkClient.invitations.createInvitation({
+      emailAddress: rows[0].email,
+      redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
+    });
+    await db.query('UPDATE members SET invitation_id = ? WHERE id = ?', [invitation.id, req.params.id]);
+    recordAudit(req, { action: 'reinvite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
+    res.json({ ok: true });
+  } catch (err: any) {
+    if (err.status === 422) return res.status(409).json({ error: 'An invitation is already pending for this email.' });
+    next(err);
+  }
+});
+
+// POST /:id/revoke-invite — cancel a pending portal invitation without removing the member
+membersRouter.post('/:id/revoke-invite', requireRole('admin', 'staff'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      'SELECT clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [req.params.id, gymId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+    if (rows[0].clerk_user_id) return res.status(400).json({ error: 'This member has already linked their account; nothing to revoke.' });
+    if (!rows[0].invitation_id) return res.status(400).json({ error: 'No pending invitation for this member.' });
+
+    try {
+      await clerkClient.invitations.revokeInvitation(rows[0].invitation_id);
+    } catch (err: any) {
+      console.error('Failed to revoke member invitation:', { memberId: req.params.id, error: err.message });
+      return res.status(502).json({ error: 'Failed to revoke invitation in Clerk.' });
+    }
+
+    await db.query('UPDATE members SET invitation_id = NULL WHERE id = ?', [req.params.id]);
+    recordAudit(req, { action: 'revoke_invite', entityType: 'member', entityId: req.params.id });
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
+membersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      'SELECT clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [req.params.id, gymId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+
+    // If a portal invitation is still pending (never accepted), revoke it so the
+    // invite link can't be used to resurrect access after the member is removed.
+    if (!rows[0].clerk_user_id && rows[0].invitation_id) {
+      try {
+        await clerkClient.invitations.revokeInvitation(rows[0].invitation_id);
+      } catch (err: any) {
+        console.error('Failed to revoke member invitation on delete:', { memberId: req.params.id, error: err.message });
+        // Continue with the soft-delete even if revoke fails.
+      }
+    }
+
+    const { rowCount } = await db.query(
+      'UPDATE members SET deleted_at = UTC_TIMESTAMP(), invitation_id = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [req.params.id, gymId],
+    );
+    if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Member not found' });
+    recordAudit(req, { action: 'soft_delete', entityType: 'member', entityId: req.params.id });
+    res.status(204).send();
+  } catch (err) { next(err); }
 });

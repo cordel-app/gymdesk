@@ -37,7 +37,7 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     // Link the Clerk user and create membership in a transaction
     await db.transaction(async (tx) => {
       await tx.query(
-        'UPDATE members SET clerk_user_id = ? WHERE id = ?',
+        'UPDATE members SET clerk_user_id = ?, invitation_id = NULL WHERE id = ?',
         [userId, member.id],
       );
       // INSERT IGNORE = the old ON CONFLICT DO NOTHING (row may exist from a retry)

@@ -20,7 +20,7 @@ gymdesk/
       db.ts                        # mysql2 pool + query/transaction helpers
       tenantContext.ts             # Middleware: resolves gym role, requireRole(), requireSuperadmin
       audit.ts                     # recordAudit() — fire-and-forget audit_logs writer
-      migrations/                  # Knex migration .js files (001_ … 034_)
+      migrations/                  # Knex migration .js files (001_ … 051_)
       swagger.ts                   # OpenAPI spec served at GET /docs
       seed.ts                      # Dev seed (sets a Clerk user as platform superadmin)
   apps/
@@ -53,6 +53,7 @@ gymdesk/
 ### Auth (Clerk)
 - `requireAuth()` in `index.ts` verifies the Clerk Bearer token on every protected route.
 - Decoded `userId` is attached as `req.auth.userId`.
+- **Required Clerk instance setting: Restricted mode.** Every user in this app — Members and Team roles alike — is meant to arrive via an invitation, never public self-registration. In the Clerk Dashboard, this is `Configure → Protect → Restrictions → Enable restricted mode`, and it must be **on** for every instance (dev + production). This is a dashboard-only toggle, not exposed via the Backend API (`GET`/`PATCH /instance` and `/instance/restrictions` only cover allowlist/blocklist and other flags — no sign-up-mode field), so it can't be enforced from code and isn't covered by CI. With it off, anyone can self-serve sign up with any email at `/sign-up`, independent of invitation state — see the Team invite flow note below for why that matters.
 
 ### Tenant context (`infra/tenantContext.ts`)
 - Reads the `x-gym-id` header, looks up `gym_memberships` to get the user's `role` in that gym.
@@ -79,7 +80,7 @@ Reads (`GET`) on gym-scoped domain routes are open to any authenticated gym role
 
 | Domain (router) | Read | Create / Update | Delete | Notes |
 |---|---|---|---|---|
-| Members (`members`) | any role | `admin`, `staff` | `admin` | Soft-delete + `/restore`; `/:id/invite` = `admin`,`staff`. |
+| Members (`members`) | any role | `admin`, `staff` | `admin` | Soft-delete + `/restore`; `/:id/invite`, `/:id/reinvite`, `/:id/revoke-invite` = `admin`,`staff`. |
 | Team (`gym-users`) | `admin` | `admin` | `admin` | Whole router is admin-only (see Team management). |
 | Rooms, Specialities, Class types, Class packages, Promotions, Plans (`membership-plans`) | any role | `admin` | `admin` | Admin-only CRUD lookups/catalogs. |
 | Trainers (`trainers`) | any role | `admin` (PUT specialities) | — | Trainers are `coach` rows; this manages their specialities. |
@@ -126,7 +127,7 @@ The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it 
 
 ## Database Conventions
 
-- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `034_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
+- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `051_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
 - **Primary keys**: auto-increment `INT UNSIGNED` for domain tables, `CHAR(36)` UUID for `gyms` (tenant root, `DEFAULT (UUID())`).
 - **Timestamps**: `DATETIME`, always UTC (the mysql2 pool uses `timezone: 'Z'`; use `UTC_TIMESTAMP()` in SQL, never `NOW()`).
 - **Indexed text columns**: `VARCHAR(n)`, not `TEXT` (MySQL cannot index TEXT without a prefix length).
@@ -147,6 +148,10 @@ Beyond `user_id`, `gym_id`, `role`, this table now carries invitation state (mig
 - `invitation_id` — the Clerk invitation id, used to revoke on removal.
 
 Invited rows use a placeholder `user_id` of the form `invited_<timestamp>` until the invitee signs in and `/gym-users/link` materializes the real Clerk `user_id`.
+
+### `members` (portal-invite tracking, migration 051)
+
+`members.invitation_id` (nullable, migration 051) mirrors `gym_memberships.invitation_id` — the pending Clerk invitation id, used to revoke on removal or explicit un-invite. Unlike `gym_memberships`, there's no `status` column: a member row is always "real" (it's the billing/plan record) independent of portal access, so portal state is derived as `clerk_user_id IS NULL AND invitation_id IS NOT NULL` (invited) vs `clerk_user_id` set (linked) vs neither (never invited). See "Member invite + auto-link flow" below.
 
 ---
 
@@ -205,10 +210,16 @@ Legacy `/fares` and `/subscriptions` routers are fully removed (migrations 004, 
 
 ### Member invite + auto-link flow (`members` + `me`)
 
-1. Staff calls `POST /members/:id/invite` → Clerk sends an invitation email with redirect to the member app (`CORDEL_FITNESS_MEMBERS_URL`).
-2. Member signs in via Clerk in `apps/member`.
-3. On first sign-in the app calls `POST /me/link` (no `gym_memberships` row yet) — backend matches by email + gym_id, sets `members.clerk_user_id`, inserts `gym_memberships(role='member')`.
-4. Subsequent requests use `/me/*` routes with `tenantContext` resolving the member role.
+Unlike Team, a `members` row is the record of truth (name, contact, plan, billing) whether or not the member ever gets portal access — invite is a separate, optional action layered on top, not part of creating the member. Portal state is derived from two columns, never a `status` enum: `clerk_user_id` (set once linked) and `invitation_id` (the pending Clerk invitation, if any).
+
+1. Staff calls `POST /members/:id/invite` (also `admin`,`staff`) → Clerk sends an invitation email with redirect to the member app (`CORDEL_FITNESS_MEMBERS_URL`), and the returned invitation id is stored in `members.invitation_id`. 409s if the member already has a linked `clerk_user_id`.
+2. `POST /members/:id/reinvite` resends it (only valid while `clerk_user_id IS NULL AND invitation_id IS NOT NULL`) and **overwrites** `invitation_id` with the new one — this matters because the old id is no longer revocable once superseded (see the Team reinvite note below for the bug this avoids).
+3. `POST /members/:id/revoke-invite` cancels a pending invitation without touching the member record — for when staff invited someone by mistake or changed their mind, but the member stays on the roster.
+4. Member signs in via Clerk in `apps/member`.
+5. On first sign-in the app calls `POST /me/link` (no `gym_memberships` row yet) — backend matches by email + gym_id (requiring `clerk_user_id IS NULL AND deleted_at IS NULL`), sets `members.clerk_user_id`, clears `invitation_id`, and inserts `gym_memberships(role='member')`.
+6. Subsequent requests use `/me/*` routes with `tenantContext` resolving the member role.
+
+**Removing a member with a pending, not-yet-accepted invitation revokes it.** `DELETE /members/:id` (soft-delete) checks `clerk_user_id IS NULL AND invitation_id IS NOT NULL` before setting `deleted_at`, and best-effort calls `clerkClient.invitations.revokeInvitation()` first (a revoke failure doesn't block the soft-delete) — same race this closes as the Team flow: `/me/link` already refuses to link into a soft-deleted (`deleted_at IS NOT NULL`) row, so without the revoke the only leftover risk was an orphaned, still-valid Clerk invitation email and a wasted invitation slot, not an actual access breach. Revoking it is cleanup, not a security fix, in this case — the DB-level `deleted_at` guard was already sufficient. This still depends on the Clerk instance being in **Restricted mode** (see "Auth (Clerk)" above) to stop a fresh, uninvited self-registration with the same email.
 
 ### Team invite + auto-link flow (`gym-users`)
 
@@ -217,9 +228,11 @@ Admins manage coaches/staff/admins from the **Team** page. `POST /gym-users`:
 - If not → create a Clerk invitation carrying `publicMetadata.gym_invite = { gym_id, role }`, and insert an `invited` placeholder row.
 - On the invitee's first admin-app sign-in, `POST /gym-users/link` reads that metadata, materializes/activates the row, and clears the metadata.
 
-Guards: self-edit blocked (can't change your own role or remove yourself), and last-admin protection (can't demote/remove the sole remaining admin). All team mutations call `recordAudit`.
+Guards: self-edit blocked (can't change your own role or remove yourself), and last-admin protection (can't demote/remove the sole remaining admin). All team mutations call `recordAudit`. `POST /gym-users/:id/reinvite` creates a new Clerk invitation and **overwrites** the stored `invitation_id` with it — the previous id becomes stale/unrevocable the moment a new invitation is issued, so leaving it in place would make a later removal revoke the wrong (already-superseded) invitation while the actually-live one stayed active.
 
 **Removing an invited (not-yet-accepted) user is a revoke, not a delete.** This closes a race: an admin invites someone, then removes them before they click the email link — without revocation, the `gym_memberships` row would be gone from the app but the Clerk invitation would still be live, so accepting it later would silently recreate team access. `DELETE /gym-users/:id` handles both cases through the same endpoint: if `status === 'invited'`, it calls `clerkClient.invitations.revokeInvitation(invitation_id)` before deleting the row (best-effort — a revoke failure doesn't block the row deletion); if the row belongs to an active Clerk user, it deletes the `gym_memberships` row and additionally deletes the Clerk user outright if this was their last gym membership anywhere. The admin UI (`apps/admin/.../team/page.tsx`) reflects this at the label level only — same delete flow, but the action button/confirm dialog read "Revoke" for `status === 'invited'` rows and "Remove" otherwise, so admins understand which side effect they're triggering.
+
+Revoking the invitation closes the race for the *link itself* (Clerk shows "The invitation was revoked" if they click it), but does **not** by itself stop that email from just self-registering fresh at `/sign-up` — that's a separate, instance-wide Clerk setting, not something this endpoint can control. See "Required Clerk instance setting: Restricted mode" above; with it enabled, sign-up requires a currently-valid invitation, so a revoked one is rejected outright instead of letting a brand-new, gym-less account through.
 
 ---
 
@@ -292,7 +305,7 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 
 | Module | Backend router(s) | Frontend page | Notes |
 |--------|-------------------|---------------|-------|
-| Members | `members.ts` | `[locale]/members/` (+ `/deleted`) | Canonical staff-level CRUD reference. Soft-delete + restore; `clerk_user_id`; `/:id/invite`. |
+| Members | `members.ts` | `[locale]/members/` (+ `/deleted`) | Canonical staff-level CRUD reference. Soft-delete + restore; `clerk_user_id`; `/:id/invite`, `/:id/reinvite`, `/:id/revoke-invite` for member-portal access. Removing a member with a pending invite revokes it in Clerk. |
 | Team | `gym-users.ts` | `[locale]/team/`, `[locale]/link-team/` | Admin-only. Invite/grant/change-role/remove admin/coach/staff. Clerk invitation flow, self-edit & last-admin guards, audited. Removing a pending invite revokes it in Clerk (UI labels this "Revoke"). |
 | Rooms | `rooms.ts` | `[locale]/rooms/` | Admin-only CRUD. |
 | Specialities | `specialities.ts` | `[locale]/specialities/` | Admin-only CRUD; linked to trainers. |
