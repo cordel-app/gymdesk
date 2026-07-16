@@ -14,7 +14,8 @@
     "profile": "Perfil"
   },
   "common": {
-    "error": "Algo ha ido mal."
+    "error": "Algo ha ido mal.",
+    "center_switcher_label": "Selecciona centro"
   },
   "training": {
     "title": "Entrenamiento",

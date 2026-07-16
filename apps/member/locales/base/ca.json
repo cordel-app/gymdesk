@@ -14,7 +14,8 @@
     "profile": "Perfil"
   },
   "common": {
-    "error": "Alguna cosa ha anat malament."
+    "error": "Alguna cosa ha anat malament.",
+    "center_switcher_label": "Selecciona centre"
   },
   "training": {
     "title": "Entrenament",

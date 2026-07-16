@@ -4,6 +4,37 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 
+/**
+ * #59: resolve a member's center assignment for creation. Mirrors
+ * resolveCenterId's fallback (explicit ids > the gym's sole active center),
+ * but returns the full set + default since a member needs >= 1 center.
+ */
+async function resolveMemberCenters(
+  gymId: string,
+  centerIds: unknown,
+  defaultCenterId: unknown,
+): Promise<{ ids: number[]; defaultId: number } | { error: string }> {
+  if (Array.isArray(centerIds) && centerIds.length > 0) {
+    const ids = centerIds.map((id) => Number(id));
+    const defaultId = Number(defaultCenterId);
+    if (!defaultId || !ids.includes(defaultId)) {
+      return { error: 'default_center_id must be one of center_ids' };
+    }
+    const { rows } = await db.query(
+      `SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${ids.map(() => '?').join(',')})`,
+      [gymId, ...ids],
+    );
+    if (rows.length !== new Set(ids).size) return { error: 'One or more center_ids are invalid for this gym' };
+    return { ids, defaultId };
+  }
+  const { rows } = await db.query<{ id: number }>(
+    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
+    [gymId],
+  );
+  if (rows.length === 1) return { ids: [rows[0].id], defaultId: rows[0].id };
+  return { error: 'default_center_id is required — this gym has multiple centers' };
+}
+
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
 export const membersRouter = Router();
@@ -62,14 +93,28 @@ membersRouter.get('/:id', async (req, res) => {
 });
 
 membersRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const { name, email, phone, fare_id } = req.body;
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { name, email, phone, fare_id, center_ids, default_center_id } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
+
+  const centers = await resolveMemberCenters(gymId, center_ids, default_center_id);
+  if ('error' in centers) return res.status(400).json({ error: centers.error });
+
   try {
-    const { insertId } = await db.query(
-      'INSERT INTO members (name, email, phone, membership_plan_id, gym_id) VALUES (?, ?, ?, ?, ?)',
-      [name, email, phone ?? null, fare_id ?? null, gymId],
-    );
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        'INSERT INTO members (name, email, phone, membership_plan_id, gym_id) VALUES (?, ?, ?, ?, ?)',
+        [name, email, phone ?? null, fare_id ?? null, gymId],
+      );
+      for (const centerId of centers.ids) {
+        await tx.query(
+          `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, assigned_by_membership_id)
+           VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
+          [gymId, insertId, centerId, centerId === centers.defaultId, gymMembershipId],
+        );
+      }
+      return insertId;
+    });
     const { rows } = await db.query('SELECT * FROM members WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'member', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);

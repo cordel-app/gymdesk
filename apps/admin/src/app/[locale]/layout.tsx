@@ -4,6 +4,7 @@ import { enUS, esES, caES } from '@clerk/localizations';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { GymProvider } from '@/context/GymContext';
+import { CenterProvider } from '@/context/CenterContext';
 import { AppShell } from '@/components/AppShell';
 import { ToastProvider } from '@/components/Toast';
 import { ThemeProvider } from '@/components/ThemeProvider';
@@ -32,9 +33,11 @@ export default async function LocaleLayout({
           <NextIntlClientProvider messages={messages}>
             <ToastProvider>
               <GymProvider>
-                <ThemeProvider>
-                  <AppShell>{children}</AppShell>
-                </ThemeProvider>
+                <CenterProvider>
+                  <ThemeProvider>
+                    <AppShell>{children}</AppShell>
+                  </ThemeProvider>
+                </CenterProvider>
               </GymProvider>
             </ToastProvider>
           </NextIntlClientProvider>

@@ -70,11 +70,11 @@ bookingsRouter.get('/:id', async (req, res) => {
 export async function bookMemberOnSession(gymId: string, memberId: number, sessionId: number) {
   return db.transaction(async (tx) => {
     const { rows: session } = await tx.query(
-      `SELECT cs.id, cs.class_type_id, cs.status,
+      `SELECT cs.id, cs.class_type_id, cs.status, cs.center_id,
               COALESCE(cs.max_capacity_override, ct.max_capacity) AS effective_capacity
        FROM class_sessions cs
        JOIN class_types ct ON ct.id = cs.class_type_id
-       WHERE cs.id = ? AND cs.gym_id = ? FOR UPDATE`,
+       WHERE cs.id = ? AND cs.gym_id = ? AND cs.deleted_at IS NULL FOR UPDATE`,
       [sessionId, gymId],
     );
     if (session.length === 0) throw Object.assign(new Error('Session not found'), { status: 404 });
@@ -94,9 +94,9 @@ export async function bookMemberOnSession(gymId: string, memberId: number, sessi
     const booked = Number(countRows[0].booked);
     if (booked < Number(session[0].effective_capacity)) {
       const { insertId } = await tx.query(
-        `INSERT INTO bookings (gym_id, member_id, class_session_id, status, booked_at)
-         VALUES (?, ?, ?, 'booked', UTC_TIMESTAMP())`,
-        [gymId, memberId, sessionId],
+        `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at)
+         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
+        [gymId, session[0].center_id, memberId, sessionId],
       );
       // P3.3: settle a package debit if one was claimed by the access hook.
       const pc = await packageCredits();
@@ -111,16 +111,16 @@ export async function bookMemberOnSession(gymId: string, memberId: number, sessi
     );
     const position = Number(nextRows[0].next);
     const { insertId } = await tx.query(
-      `INSERT INTO bookings (gym_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
-       VALUES (?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
-      [gymId, memberId, sessionId, position],
+      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
+       VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
+      [gymId, session[0].center_id, memberId, sessionId, position],
     );
     return { id: insertId, status: 'waitlisted', waitlist_position: position };
   });
 }
 
 /** Cancel + promote the next waitlist row inside one transaction. */
-export async function cancelBooking(gymId: string, bookingId: number) {
+export async function cancelBooking(gymId: string, bookingId: number, actorMembershipId?: number | null) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
       "SELECT id, member_id, class_session_id, status, user_class_package_id FROM bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
@@ -131,8 +131,8 @@ export async function cancelBooking(gymId: string, bookingId: number) {
     if (b.status === 'cancelled') throw Object.assign(new Error('Already cancelled'), { status: 400 });
 
     await tx.query(
-      "UPDATE bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP() WHERE id = ?",
-      [bookingId],
+      "UPDATE bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by_membership_id=? WHERE id = ?",
+      [actorMembershipId ?? null, bookingId],
     );
 
     // P3.3: refund the credit if this booking spent one. no_show is handled by
@@ -200,9 +200,9 @@ bookingsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =
 });
 
 bookingsRouter.delete('/:id', requireRole('admin', 'staff'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, gymMembershipId } = getTenantContext(req);
   try {
-    await cancelBooking(gymId, Number(req.params.id));
+    await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
     res.status(204).send();
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -212,15 +212,16 @@ bookingsRouter.delete('/:id', requireRole('admin', 'staff'), async (req, res, ne
 
 /** Mark attendance — staff-level. */
 bookingsRouter.post('/:id/attendance', requireRole('admin', 'staff', 'coach'), async (req, res) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, userId, gymMembershipId } = getTenantContext(req);
   const { status } = req.body;
   if (!['attended', 'no_show'].includes(status)) {
     return res.status(400).json({ error: "status must be 'attended' or 'no_show'" });
   }
   const { rowCount } = await db.query(
-    `UPDATE bookings SET status = ?, attendance_confirmed_at = UTC_TIMESTAMP(), attendance_confirmed_by = ?
+    `UPDATE bookings SET status = ?, attendance_confirmed_at = UTC_TIMESTAMP(), attendance_confirmed_by = ?,
+       modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
      WHERE id = ? AND gym_id = ? AND status IN ('booked','attended','no_show')`,
-    [status, userId, req.params.id, gymId],
+    [status, userId, gymMembershipId, req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Booking not found or not in a bookable state' });
   const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);

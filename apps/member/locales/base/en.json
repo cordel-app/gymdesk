@@ -14,7 +14,8 @@
     "profile": "Profile"
   },
   "common": {
-    "error": "Something went wrong."
+    "error": "Something went wrong.",
+    "center_switcher_label": "Select center"
   },
   "training": {
     "title": "Training",

@@ -16,7 +16,21 @@ criteria live in the issue bodies; this doc is the map.
   - **Platform superadmin management**: `platform/superadmins` + **System → Users**.
   - **Grouped, role-gated sidebar**: `config/navigationGroups.ts` (Membership / Organization / Training / Nutrition / Financials / System).
 - **Placeholder shells (built, content pending)**: per-group Dashboard pages (`organization`, `training`, `nutrition`, `financials`, singular `membership`). Nutrition has no backend yet.
-- **Deferred**: Phase 7 (multi-location), Phase 8 (Stripe payments).
+- **Phase 9 — Centers (#59, supersedes Phase 7)**: `Center` (migration 043) as the single
+  location concept going forward — `gym_locations` was never built. `member_centers`
+  junction (044) gives each Member one or more Centers with a default; `center_id` +
+  audit-column backfill added to `rooms`/`class_sessions`/`bookings` (045–047); every
+  existing Gym auto-got one default Center named after the gym, every existing Member
+  defaulted onto it (046), and new gyms get the same default Center at creation. New
+  `resources`/`trainer_availability`/`events` tables (048–050), each `center_id`-scoped
+  from creation. `centerContext` middleware (`x-center-id` header) mirrors `tenantContext`;
+  `resolveCenterId()` falls back to a gym's sole active Center so single-center gyms need
+  no UI changes. Admin: **Organization → Centers/Resources/Events** pages, Trainer
+  Availability inline on the Trainers page, Member-edit Assigned Centers/Default Center
+  (hidden until a gym has >1 center). Member app: `GET /me/centers` + an optional
+  center switcher, hidden for the single-center case. **Phase 7 (#39–#41) is superseded
+  and closed** — its `gym_locations`/nullable-FK design was never implemented.
+- **Deferred**: Phase 8 (Stripe payments).
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
 - Legacy cleanup complete: `/fares` and `/subscriptions` routers + the old
@@ -31,7 +45,9 @@ criteria live in the issue bodies; this doc is the map.
   **Phase M ([#45](https://github.com/cordel-app/gymdesk/issues/45)–[#49](https://github.com/cordel-app/gymdesk/issues/49))**, which **blocks Phase 1**. MySQL consequences for later tickets:
   partial unique indexes (P1.5, P2.5) become generated column + unique index; `jsonb`/`inet`
   (P6.1) become `JSON`/`VARCHAR(45)`; `RETURNING` is replaced by insert + select helpers.
-- **Multi-location** is deferred to Phase 7 (additive nullable FKs; nothing earlier blocks on it).
+- **Multi-location (updated 2026-07-15)**: shipped as **Phase 9 — Centers (#59)**, superseding
+  the deferred Phase 7 `gym_locations` design (never built). `Center` is the single location
+  concept; `Gym` remains the tenant boundary.
 - **Payments**: internal `billing_events` ledger first (staff-recorded); Stripe is Phase 8.
 - `fares` → `membership_plans` and `subscriptions` → `user_memberships` **evolve in place**
   with data-carrying migrations; old routes/pages are replaced.
@@ -126,12 +142,21 @@ template) → Sidebar → i18n (en/es/ca).
 | P6.2 Instrument high-value mutation routes | [#37](https://github.com/cordel-app/gymdesk/issues/37) | M | #36 + phases 1–4 |
 | P6.3 Backoffice audit viewer | [#38](https://github.com/cordel-app/gymdesk/issues/38) | M | #37 #2 |
 
-### Phase 7 — Multi-location (deferred)
+### Phase 7 — Multi-location (superseded by Phase 9 / #59, 2026-07-15)
+`gym_locations` was never built — closed in favor of `Center` (see Phase 9 above).
+
 | Ticket | Issue | Size | Depends on |
 |---|---|---|---|
-| P7.1 gym_locations CRUD | [#39](https://github.com/cordel-app/gymdesk/issues/39) | S | — |
-| P7.2 Locations on rooms, trainers, class types | [#40](https://github.com/cordel-app/gymdesk/issues/40) | M | #39 |
-| P7.3 Per-location plan pricing + member filter | [#41](https://github.com/cordel-app/gymdesk/issues/41) | M | #40 #7 |
+| ~~P7.1 gym_locations CRUD~~ | [#39](https://github.com/cordel-app/gymdesk/issues/39) (closed) | S | — |
+| ~~P7.2 Locations on rooms, trainers, class types~~ | [#40](https://github.com/cordel-app/gymdesk/issues/40) (closed) | M | #39 |
+| ~~P7.3 Per-location plan pricing + member filter~~ | [#41](https://github.com/cordel-app/gymdesk/issues/41) (closed) | M | #40 #7 |
+
+### Phase 9 — Centers (#59)
+| Ticket | Issue | Size | Depends on |
+|---|---|---|---|
+| Center + member_centers + center_id backfill (backend) | [#59](https://github.com/cordel-app/gymdesk/issues/59) | L | — |
+| Centers/Resources/Events admin UI + Member center assignment | [#59](https://github.com/cordel-app/gymdesk/issues/59) | L | backend |
+| Member app center plumbing | [#59](https://github.com/cordel-app/gymdesk/issues/59) | S | backend |
 
 ### Phase 8 — Stripe payments (deferred)
 | Ticket | Issue | Size | Depends on |

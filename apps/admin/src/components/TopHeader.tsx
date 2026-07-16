@@ -3,6 +3,7 @@
 import { UserButton } from '@clerk/nextjs';
 import { LanguagePicker } from './LanguagePicker';
 import { GymSelector } from './GymSelector';
+import { CenterSelector } from './CenterSelector';
 import { useGym } from '@/context/GymContext';
 
 export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
@@ -50,6 +51,7 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       <style>{`@media (max-width: 768px) { .hamburger-btn { display: flex !important; } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         {showSelector && <GymSelector />}
+        <CenterSelector />
         <LanguagePicker />
         <UserButton />
       </div>

@@ -87,6 +87,13 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
       'INSERT INTO gyms (id, name, slug, plan, theme_key) VALUES (?, ?, ?, ?, ?)',
       [id, name, slug, plan ?? 'free', (theme_key as ThemeKey) ?? 'indigo'],
     );
+    // #59: every gym needs at least one Center — mirrors migration 046's
+    // backfill for pre-existing gyms, so resolveCenterId()'s "sole active
+    // center" fallback works from day one for gyms created after this ships.
+    await db.query(
+      "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
+      [id, name],
+    );
     const { rows } = await db.query('SELECT * FROM gyms WHERE id = ?', [id]);
     recordAudit(req, { action: 'create', entityType: 'gym', entityId: id, next: rows[0] });
     res.status(201).json(rows[0]);

@@ -1,9 +1,11 @@
 import { useAuth } from '@clerk/nextjs';
 import { useGym } from '@/context/GymContext';
+import { useCenter } from '@/context/CenterContext';
 
 export function useApiClient() {
   const { getToken } = useAuth();
   const { activeGymId } = useGym();
+  const { activeCenterId } = useCenter();
 
   async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
     const token = await getToken();
@@ -13,6 +15,7 @@ export function useApiClient() {
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (activeGymId) headers['x-gym-id'] = activeGymId;
+    if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
 
     const res = await fetch(`/api/proxy${path}`, {
       ...options,
