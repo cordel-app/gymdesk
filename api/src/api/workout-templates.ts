@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { getReferences } from '../domain/references';
 
 /**
  * #55: WorkoutTemplate -> WorkoutTemplateBlock -> WorkoutTemplateExercise.
@@ -10,14 +11,17 @@ import { recordAudit } from '../infra/audit';
  * (see training-plan-templates.ts) and cloned into Workout/WorkoutBlock/
  * WorkoutExercise on assignment (see training-plans.ts).
  *
- * No Status field on these entities per the ticket — lifecycle is plain
- * deleted_at soft-delete (Members-style), filtered on every read.
+ * #62: templates carry a status (active/inactive/deleted). Soft delete sets
+ * status='deleted' together with deleted_at; deleted_at IS NULL stays the
+ * canonical read filter. Selectors pass ?status=active so inactive templates
+ * are kept out of new associations.
  */
 
 export const workoutTemplatesRouter = Router();
 
 const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'EMOM', 'AMRAP', 'Tabata'];
 const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
+const SETTABLE_STATUSES = ['active', 'inactive'];
 
 async function templateExists(id: string, gymId: string): Promise<boolean> {
   const { rows } = await db.query(
@@ -88,15 +92,28 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
 
 workoutTemplatesRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const status = req.query.status as string | undefined;
+  if (status && !SETTABLE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
+  }
   try {
-    const { rows } = await db.query(
-      'SELECT * FROM workout_templates WHERE gym_id = ? AND deleted_at IS NULL ORDER BY name ASC',
-      [gymId],
-    );
+    const params: any[] = [gymId];
+    let sql = 'SELECT * FROM workout_templates WHERE gym_id = ? AND deleted_at IS NULL';
+    if (status) { sql += ' AND status = ?'; params.push(status); }
+    sql += ' ORDER BY name ASC';
+    const { rows } = await db.query(sql, params);
     res.json(rows);
   } catch (err) {
     next(err);
   }
+});
+
+/** #62: where this template is used (non-deleted training plan templates). */
+workoutTemplatesRouter.get('/:id/references', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    res.json(await getReferences('workout_template', gymId, Number(req.params.id)));
+  } catch (err) { next(err); }
 });
 
 workoutTemplatesRouter.get('/:id', async (req, res, next) => {
@@ -138,12 +155,15 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
 
 workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description } = req.body;
+  const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
+  if (status && !SETTABLE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
+  }
   try {
     const { insertId } = await db.query(
-      'INSERT INTO workout_templates (gym_id, name, description) VALUES (?, ?, ?)',
-      [gymId, name.trim(), description ?? null],
+      'INSERT INTO workout_templates (gym_id, name, description, status) VALUES (?, ?, ?, ?)',
+      [gymId, name.trim(), description ?? null, status ?? 'active'],
     );
     const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: insertId, next: rows[0] });
@@ -156,12 +176,16 @@ workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res,
 workoutTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
-  const { name, description } = req.body;
+  const { name, description, status } = req.body;
+  if (status && !SETTABLE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
+  }
   try {
     const { rowCount } = await db.query(
-      `UPDATE workout_templates SET name = COALESCE(?, name), description = IF(?, ?, description)
+      `UPDATE workout_templates SET name = COALESCE(?, name), description = IF(?, ?, description),
+              status = COALESCE(?, status)
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, id, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Workout template not found' });
     const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ? AND gym_id = ?', [id, gymId]);
@@ -176,7 +200,7 @@ workoutTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req,
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { rowCount } = await db.query(
-    'UPDATE workout_templates SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    "UPDATE workout_templates SET deleted_at = UTC_TIMESTAMP(), status = 'deleted' WHERE id = ? AND gym_id = ? AND deleted_at IS NULL",
     [id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Workout template not found' });

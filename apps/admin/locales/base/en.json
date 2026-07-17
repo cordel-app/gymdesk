@@ -413,7 +413,7 @@
     "label_rest_default_seconds": "Default rest (seconds)",
     "label_notes_default": "Default notes",
     "label_muscles": "Muscles",
-    "no_muscles": "No muscles yet. Import defaults or add some.",
+    "label_status": "Status",
     "role_principal": "Primary",
     "role_secondary": "Secondary",
     "confirm_delete": "Remove this exercise?",
@@ -423,6 +423,28 @@
     "saving": "Saving…",
     "save_changes": "Save Changes"
   },
+  "muscles": {
+    "chest": "Chest",
+    "back": "Back",
+    "shoulders": "Shoulders",
+    "biceps": "Biceps",
+    "triceps": "Triceps",
+    "quads": "Quads",
+    "hamstrings": "Hamstrings",
+    "glutes": "Glutes",
+    "calves": "Calves",
+    "core": "Core"
+  },
+  "dependencies": {
+    "question": "Do you want to continue?",
+    "continue": "Continue",
+    "cancel": "Cancel",
+    "more": "…and {n} more",
+    "exercise_edit": "\"{name}\" is currently used by {count, plural, one {# workout template} other {# workout templates}}. Any changes you make will automatically affect all of them.",
+    "exercise_delete": "\"{name}\" is currently used by {count, plural, one {# workout template} other {# workout templates}}. Deleting it will affect all of them.",
+    "workout_template_edit": "\"{name}\" is currently used by {count, plural, one {# training plan template} other {# training plan templates}}. Any changes you make will automatically affect all of them.",
+    "workout_template_delete": "\"{name}\" is currently used by {count, plural, one {# training plan template} other {# training plan templates}}. Deleting it will affect all of them."
+  },
   "workout_templates": {
     "title": "Workout Templates",
     "add": "+ Add Workout Template",
@@ -430,6 +452,7 @@
     "empty": "No workout templates yet.",
     "col_name": "Name",
     "col_description": "Description",
+    "col_status": "Status",
     "col_actions": "Actions",
     "blocks": "Blocks",
     "edit": "Edit",
@@ -438,6 +461,7 @@
     "modal_edit": "Edit Workout Template",
     "label_name": "Name",
     "label_description": "Description",
+    "label_status": "Status",
     "confirm_delete": "Remove this workout template?",
     "error_required": "Name is required.",
     "error_generic": "Something went wrong.",

@@ -72,7 +72,7 @@ export function TrainingPlanTree({
 
   useEffect(() => {
     if (!canWrite) return;
-    apiFetch<WorkoutTemplateOption[]>('/workout-templates')
+    apiFetch<WorkoutTemplateOption[]>('/workout-templates?status=active')
       .then(setOptions)
       .catch((err: any) => toast(err.message ?? t('training_plan_templates.error_generic')));
   }, [canWrite]);

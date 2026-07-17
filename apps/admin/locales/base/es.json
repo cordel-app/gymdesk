@@ -413,7 +413,7 @@
     "label_rest_default_seconds": "Descanso por defecto (segundos)",
     "label_notes_default": "Notas por defecto",
     "label_muscles": "Músculos",
-    "no_muscles": "Aún no hay músculos. Importa los predeterminados.",
+    "label_status": "Estado",
     "role_principal": "Principal",
     "role_secondary": "Secundario",
     "confirm_delete": "¿Eliminar este ejercicio?",
@@ -423,6 +423,28 @@
     "saving": "Guardando…",
     "save_changes": "Guardar cambios"
   },
+  "muscles": {
+    "chest": "Pecho",
+    "back": "Espalda",
+    "shoulders": "Hombros",
+    "biceps": "Bíceps",
+    "triceps": "Tríceps",
+    "quads": "Cuádriceps",
+    "hamstrings": "Isquiotibiales",
+    "glutes": "Glúteos",
+    "calves": "Gemelos",
+    "core": "Core"
+  },
+  "dependencies": {
+    "question": "¿Quieres continuar?",
+    "continue": "Continuar",
+    "cancel": "Cancelar",
+    "more": "…y {n} más",
+    "exercise_edit": "\"{name}\" se usa actualmente en {count, plural, one {# plantilla de rutina} other {# plantillas de rutina}}. Cualquier cambio que hagas les afectará automáticamente a todas.",
+    "exercise_delete": "\"{name}\" se usa actualmente en {count, plural, one {# plantilla de rutina} other {# plantillas de rutina}}. Eliminarlo les afectará a todas.",
+    "workout_template_edit": "\"{name}\" se usa actualmente en {count, plural, one {# plantilla de plan de entrenamiento} other {# plantillas de plan de entrenamiento}}. Cualquier cambio que hagas les afectará automáticamente a todas.",
+    "workout_template_delete": "\"{name}\" se usa actualmente en {count, plural, one {# plantilla de plan de entrenamiento} other {# plantillas de plan de entrenamiento}}. Eliminarla les afectará a todas."
+  },
   "workout_templates": {
     "title": "Plantillas de rutina",
     "add": "+ Añadir plantilla de rutina",
@@ -430,6 +452,7 @@
     "empty": "Aún no hay plantillas de rutina.",
     "col_name": "Nombre",
     "col_description": "Descripción",
+    "col_status": "Estado",
     "col_actions": "Acciones",
     "blocks": "Bloques",
     "edit": "Editar",
@@ -438,6 +461,7 @@
     "modal_edit": "Editar plantilla de rutina",
     "label_name": "Nombre",
     "label_description": "Descripción",
+    "label_status": "Estado",
     "confirm_delete": "¿Eliminar esta plantilla de rutina?",
     "error_required": "El nombre es obligatorio.",
     "error_generic": "Algo salió mal.",

@@ -413,7 +413,7 @@
     "label_rest_default_seconds": "Descans per defecte (segons)",
     "label_notes_default": "Notes per defecte",
     "label_muscles": "Músculs",
-    "no_muscles": "Encara no hi ha músculs. Importa els predeterminats.",
+    "label_status": "Estat",
     "role_principal": "Principal",
     "role_secondary": "Secundari",
     "confirm_delete": "Vols eliminar aquest exercici?",
@@ -423,6 +423,28 @@
     "saving": "Desant…",
     "save_changes": "Desar canvis"
   },
+  "muscles": {
+    "chest": "Pit",
+    "back": "Esquena",
+    "shoulders": "Espatlles",
+    "biceps": "Bíceps",
+    "triceps": "Tríceps",
+    "quads": "Quàdriceps",
+    "hamstrings": "Isquiotibials",
+    "glutes": "Glutis",
+    "calves": "Bessons",
+    "core": "Core"
+  },
+  "dependencies": {
+    "question": "Vols continuar?",
+    "continue": "Continua",
+    "cancel": "Cancel·la",
+    "more": "…i {n} més",
+    "exercise_edit": "\"{name}\" s'utilitza actualment en {count, plural, one {# plantilla de rutina} other {# plantilles de rutina}}. Qualsevol canvi que facis les afectarà automàticament totes.",
+    "exercise_delete": "\"{name}\" s'utilitza actualment en {count, plural, one {# plantilla de rutina} other {# plantilles de rutina}}. Eliminar-lo les afectarà totes.",
+    "workout_template_edit": "\"{name}\" s'utilitza actualment en {count, plural, one {# plantilla de pla d'entrenament} other {# plantilles de pla d'entrenament}}. Qualsevol canvi que facis les afectarà automàticament totes.",
+    "workout_template_delete": "\"{name}\" s'utilitza actualment en {count, plural, one {# plantilla de pla d'entrenament} other {# plantilles de pla d'entrenament}}. Eliminar-la les afectarà totes."
+  },
   "workout_templates": {
     "title": "Plantilles de rutina",
     "add": "+ Afegeix plantilla de rutina",
@@ -430,6 +452,7 @@
     "empty": "Encara no hi ha plantilles de rutina.",
     "col_name": "Nom",
     "col_description": "Descripció",
+    "col_status": "Estat",
     "col_actions": "Accions",
     "blocks": "Blocs",
     "edit": "Edita",
@@ -438,6 +461,7 @@
     "modal_edit": "Edita plantilla de rutina",
     "label_name": "Nom",
     "label_description": "Descripció",
+    "label_status": "Estat",
     "confirm_delete": "Vols eliminar aquesta plantilla de rutina?",
     "error_required": "El nom és obligatori.",
     "error_generic": "Alguna cosa ha fallat.",
