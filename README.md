@@ -44,7 +44,7 @@ npm run dev:member
 gymdesk/
   api/                # Express + TypeScript REST API (port 3000)
     src/
-      api/            # Route handlers (members, classes, bookings, subscriptions, gyms, fares)
+      api/            # Route handlers (one router per domain module — see docs/architecture.md)
       domain/         # TypeScript types
       infra/          # Database connection, migrations, seed, tenant context
   apps/
@@ -77,14 +77,15 @@ gymdesk/
 |--------|:---:|:---:|:---:|:---:|
 | Create / manage gyms | ✓ | | | |
 | Assign gym admins | ✓ | | | |
-| Manage memberships | | ✓ | | |
+| Manage plans & billing | | ✓ | | |
 | Create / edit members | | ✓ | | ✓ |
 | Delete members | | ✓ | | |
-| Create / edit classes | | ✓ | ✓ | |
-| Delete classes | | ✓ | | |
+| Create / edit class sessions | | ✓ | ✓ | |
+| Delete class sessions | | ✓ | | |
 | Create / edit bookings | | ✓ | | ✓ |
 | Delete bookings | | ✓ | | |
-| Manage subscriptions | | ✓ | | ✓ |
+| Manage memberships | | ✓ | | ✓ |
+| Manage training catalog (exercises, workout/plan templates) | | ✓ | ✓ | |
 
 ## Superadmin setup
 
@@ -98,36 +99,23 @@ Find your Clerk user ID in the [Clerk Dashboard](https://dashboard.clerk.com) �
 
 ## API endpoints
 
-All endpoints except `GET /health` require a valid Clerk session token (`Authorization: Bearer <token>`) and, for domain routes, an `x-gym-id` header with the active gym's UUID.
+All endpoints except `GET /health` and `/public` require a valid Clerk session token (`Authorization: Bearer <token>`); domain routes additionally require an `x-gym-id` header with the active gym's UUID (center-scoped routes accept an optional `x-center-id`).
 
-> The table below covers the core early routes only. The full, current module → router → page map lives in [docs/architecture.md](docs/architecture.md).
+- **Interactive API docs (Swagger UI)**: `http://localhost:3000/docs` when the API is running.
+- **Module → router → page map**: [docs/architecture.md](docs/architecture.md).
 
-| Method | Path | Role required |
-|--------|------|---------------|
-| GET | /health | — |
-| GET | /gyms | any authenticated |
-| GET | /gyms/:id/memberships | admin |
-| POST | /gyms/:id/memberships | admin |
-| DELETE | /gyms/:id/memberships/:userId | admin |
-| GET | /platform/gyms | superadmin |
-| POST | /platform/gyms | superadmin |
-| POST | /platform/gyms/:id/admins | superadmin |
-| GET | /members | any gym member |
-| POST | /members | admin, staff |
-| PUT | /members/:id | admin, staff |
-| DELETE | /members/:id | admin |
-| GET | /classes | any gym member |
-| POST | /classes | admin, coach |
-| PUT | /classes/:id | admin, coach |
-| DELETE | /classes/:id | admin |
-| GET | /bookings | any gym member |
-| POST | /bookings | admin, staff |
-| PUT | /bookings/:id | admin, staff |
-| DELETE | /bookings/:id | admin |
-| GET | /subscriptions | any gym member |
-| POST | /subscriptions | admin, staff |
-| PUT | /subscriptions/:id | admin, staff |
-| DELETE | /subscriptions/:id | admin |
+Route prefixes by area:
+
+| Area | Route prefixes |
+|------|----------------|
+| Platform (superadmin) | `/platform`, `/platform/superadmins`, `/gyms` |
+| Team & profile | `/gym-users`, `/me`, `/me/link` |
+| Membership | `/members`, `/membership-plans`, `/user-memberships`, `/billing-events`, `/benefit-types`, `/charge-types` |
+| Classes & booking | `/class-types`, `/class-sessions`, `/bookings`, `/class-packages`, `/members/:memberId/class-packages` |
+| Training | `/muscles`, `/exercises`, `/workout-templates`, `/training-plan-templates`, `/members/:memberId/{training-plans,member-training-plans,exercise-logs,workout-block-logs}` |
+| Promotions | `/promotions`, `/action-types` |
+| Locations (Centers) | `/centers`, `/rooms`, `/resources`, `/events`, `/trainers`, `/trainer-availability`, `/specialities`, `/members/:memberId/centers` |
+| System | `/audit-logs`, `/webhooks/clerk`, `/health`, `/public` |
 
 ## Environment variables
 
@@ -137,7 +125,7 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | MySQL connection string (local: `mysql://root:gymdesk@localhost:3306/gymdesk`) |
+| `DATABASE_URL` | MySQL connection string (local: `mysql://root:fitness@localhost:3306/fitness`) |
 | `CLERK_SECRET_KEY` | Clerk backend secret key |
 | `CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
 | `PORT` | API port (default: `3000`) |
