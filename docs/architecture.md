@@ -20,7 +20,7 @@ gymdesk/
       db.ts                        # mysql2 pool + query/transaction helpers
       tenantContext.ts             # Middleware: resolves gym role, requireRole(), requireSuperadmin
       audit.ts                     # recordAudit() — fire-and-forget audit_logs writer
-      migrations/                  # Knex migration .js files (001_ … 051_)
+      migrations/                  # Knex migration .js files (001_ … 052_)
       swagger.ts                   # OpenAPI spec served at GET /docs
       seed.ts                      # Dev seed (sets a Clerk user as platform superadmin)
   apps/
@@ -86,7 +86,7 @@ Reads (`GET`) on gym-scoped domain routes are open to any authenticated gym role
 | Trainers (`trainers`) | any role | `admin` (PUT specialities) | — | Trainers are `coach` rows; this manages their specialities. |
 | Class sessions (`class-sessions`) | any role | `admin`, `coach`, `staff` | (cancel) `admin`,`coach`,`staff` | `POST /:id/cancel` instead of hard delete. |
 | Bookings (`bookings`) | any role | `admin`, `staff` (create) | `admin`, `staff` | `POST /:id/attendance` = `admin`,`staff`,`coach`. |
-| Muscles, Exercises, Workouts, Training templates | any role | `admin`, `coach` | `admin`, `coach` | `POST /exercises/import-defaults` seeds a per-gym catalog. |
+| Exercises, Workout templates, Training templates | any role | `admin`, `coach` | `admin`, `coach` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). Muscles are a static read-only catalog (`GET /muscles`, no writes — see `domain/muscles.ts`). |
 | Member training plans (`members/:id/training-plans`) | any role | `admin`, `coach`, `staff` | `admin`, `coach`, `staff` | Assign/unassign a template to a member. |
 | User memberships (`user-memberships`) | any role | `admin`, `staff` | `admin` | Status changes write a `status_changed` billing event in the same tx. |
 | Billing ledger (`billing-events`) | `admin`, `staff` | `admin`, `staff` (POST) | — | Append-only. |
@@ -127,11 +127,11 @@ The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it 
 
 ## Database Conventions
 
-- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `051_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
+- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `052_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
 - **Primary keys**: auto-increment `INT UNSIGNED` for domain tables, `CHAR(36)` UUID for `gyms` (tenant root, `DEFAULT (UUID())`).
 - **Timestamps**: `DATETIME`, always UTC (the mysql2 pool uses `timezone: 'Z'`; use `UTC_TIMESTAMP()` in SQL, never `NOW()`).
 - **Indexed text columns**: `VARCHAR(n)`, not `TEXT` (MySQL cannot index TEXT without a prefix length).
-- **Soft deletes**: Add `deleted_at DATETIME` and filter `WHERE deleted_at IS NULL`. Used for members; consider for other user-facing entities.
+- **Soft deletes**: Add `deleted_at DATETIME` and filter `WHERE deleted_at IS NULL`. Used for members, workout templates (which also set `status='deleted'`), and exercises (`status='deleted'` + `deleted_at`; the `(gym_id, name)` unique index was dropped so a deleted name can be reused — uniqueness among non-deleted rows is enforced in the router). Consider for other user-facing entities.
 - **Cascade**: FK `ON DELETE CASCADE` when the child has no meaning without the parent. Use `ON DELETE SET NULL` when the reference is optional.
 - **Duplicates**: unique-key violations surface as `err.code === 'ER_DUP_ENTRY'` (errno 1062) → return 409.
 - **Statuses**: `VARCHAR` + a **named** CHECK constraint (so the allowed set can evolve without an `ALTER TYPE` dance).
@@ -320,9 +320,9 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Charge types | `charge-types.ts` | (inside ledger's Record-payment modal) | Global lookup (no `gym_id`), seeded. |
 | Class packages | `class-packages.ts`, `user-class-packages.ts`, `package-credits.ts` | `[locale]/class-packages/` | Catalog + per-member packages + credit transactions; credits consumed/refunded on booking lifecycle. |
 | Promotions | `promotions.ts`, `promotion-details.ts`, `action-types.ts` | `[locale]/promotions/` | Admin-only. Plan targeting, charge benefits, period benefits. `action_types` is a global lookup. |
-| Exercises / Muscles | `exercises.ts` | `[locale]/exercises/` | Per-gym catalog; admin/coach CRUD; `POST /exercises/import-defaults` seeds defaults. |
-| Workout templates | `workout-templates.ts` | `[locale]/workout-templates/` | Reusable, block-based workout blueprints (blocks + per-block exercises); admin/coach. Block editor's field visibility is driven by block type via `blockFieldConfig.ts` — see Feature Patterns' config-driven form pattern. `[locale]/workouts/` (old flat Workout catalog) is now just a redirect here (#55); `workouts.ts` was removed. |
-| Training plan templates | `training-plan-templates.ts` | `[locale]/training-plan-templates/` | Groups Workout Templates into an assignable plan template (`TemplateWorkoutsModal.tsx`). |
+| Exercises / Muscles | `exercises.ts` | `[locale]/exercises/` | Per-gym exercise catalog; admin/coach CRUD; `POST /exercises/import-defaults` seeds defaults. Soft delete (`status='deleted'` + `deleted_at`). Muscles are a static in-app catalog (`domain/muscles.ts`, slug keys on `exercise_muscles.muscle`, labels via admin i18n) — no muscles table or CRUD. `GET /exercises/:id/references` powers the dependency dialog (#62). |
+| Workout templates | `workout-templates.ts` | `[locale]/workout-templates/` | Reusable, block-based workout blueprints (blocks + per-block exercises); admin/coach. Status `active/inactive/deleted` (#62): selectors only offer active templates (`?status=active`), delete is soft, and `GET /workout-templates/:id/references` powers the dependency dialog. Block editor's field visibility is driven by block type via `blockFieldConfig.ts` — see Feature Patterns' config-driven form pattern. `[locale]/workouts/` (old flat Workout catalog) is now just a redirect here (#55); `workouts.ts` was removed. |
+| Training plan templates | `training-plan-templates.ts` | `[locale]/training-plan-templates/` | Groups Workout Templates into an assignable plan template; tree-grid editor (`TrainingPlanTree.tsx`, #61) with drag-reorder and per-workout weekday. |
 | Training plans (assigned) | `training-plans.ts`, `member-training-plans.ts`, `exercise-logs.ts` | Inside `[locale]/members/` (plan/workout/block editors, e.g. `PlanWorkoutBlocksModal.tsx`) | Per-member cloned plan/workout/block instances; assignment + block/exercise logging (`workoutBlockLogsRouter`, `exerciseLogsRouter`). |
 | Audit | `audit-logs.ts` | `[locale]/audit/` | Admin-only read-only viewer. |
 | Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |

@@ -2,7 +2,7 @@
 
 Use the **Plans** module (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the canonical reference for an admin-only feature, and **Members** for a full-staff feature with soft-delete.
 
-Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast` (plus `ui.tsx` primitives) — never hand-roll tables, modals, or status chips. The sidebar is config-driven from `config/navigationGroups.ts` (grouped, role-gated), so nav changes are data, not JSX.
+Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `DependencyDialog`, `StatusBadge`, `StatusFilter`, `Toast` (plus `ui.tsx` primitives) — never hand-roll tables, modals, or status chips. The sidebar is config-driven from `config/navigationGroups.ts` (grouped, role-gated), so nav changes are data, not JSX.
 
 ---
 
@@ -258,6 +258,31 @@ Add `deleted_at DATETIME` to the table. Then:
 ```
 
 Add a `/deleted` sub-page and a `children` entry in the nav item. See Members for reference.
+
+Catalog entities that use a status enum (workout templates, exercises) set `status='deleted'` **together with** `deleted_at` and skip the unique index on `(gym_id, name)` — enforce name uniqueness among non-deleted rows in the router instead, so a deleted name can be reused (see `exercises.ts`).
+
+---
+
+## Dependency Awareness (shared catalog entities)
+
+Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:
+
+1. **Resolver** — register in `api/src/domain/references.ts`. Two queries per resolver: an exact `COUNT(DISTINCT …)` and a `LIMIT`ed name list (alphabetical, soft-deleted rows excluded). Never join-and-count in one query for large sets, and never fetch more names than the dialog shows.
+
+```ts
+registerReferenceResolver('widget', (gymId, entityId, limit) => resolveWithQueries(
+  entityId, limit,
+  'SELECT COUNT(DISTINCT r.id) AS total FROM refs r WHERE …',
+  'SELECT DISTINCT r.id, r.name FROM refs r WHERE … ORDER BY r.name ASC',
+  [entityId, gymId],
+));
+```
+
+2. **Endpoint** — `GET /<entity>/:id/references` on the entity's router, returning `{ entityId, usageCount, references: [{id, name}] }` via `getReferences('widget', gymId, id)`.
+
+3. **Page wiring** — Edit/Delete buttons call a `guardedAction` that fetches references first: `usageCount === 0` → proceed exactly as before; otherwise open `DependencyDialog` (message with count, top-20 list + "…and N more", links to the referencing entity's list page, Continue/Cancel). Message keys live in the shared `dependencies` i18n namespace. Reference implementation: `[locale]/workout-templates/page.tsx` and `[locale]/exercises/page.tsx`.
+
+Selectors that create **new** associations must only offer active entities (`?status=active`); existing links to inactive/deleted entities are never touched.
 
 ---
 
