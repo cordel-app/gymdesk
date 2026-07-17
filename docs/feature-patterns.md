@@ -238,7 +238,7 @@ export function isBlockFieldVisible(type: string, field: FieldKey): boolean {
 Rules of thumb:
 - Keep the map in its own file, imported by every form that needs the same visibility rules — don't duplicate it per component (see Workout Block editors below).
 - Don't clear a field's value in local state when it becomes hidden — a user switching the type back and forth in the same session should see their prior input return. Continue submitting the full form object on save so the backend's normal full-column-overwrite update doesn't clobber a hidden field's previously stored value.
-- Reference implementation: `blockFieldConfig.ts`, used by both `WorkoutTemplateBlocksModal.tsx` and `PlanWorkoutBlocksModal.tsx` (Workout Block "Type" governs which of Result Type/Rounds/Duration/Work/Rest are shown).
+- Reference implementation: `blockFieldConfig.ts` (also home of the shared `BLOCK_TYPES`/`RESULT_TYPES` constants), used by `workout-templates/BlockModal.tsx` and `members/PlanWorkoutBlocksModal.tsx` (Workout Block "Type" governs which of Result Type/Rounds/Duration/Work/Rest are shown).
 
 ---
 
@@ -283,6 +283,21 @@ registerReferenceResolver('widget', (gymId, entityId, limit) => resolveWithQueri
 3. **Page wiring** — Edit/Delete buttons call a `guardedAction` that fetches references first: `usageCount === 0` → proceed exactly as before; otherwise open `DependencyDialog` (message with count, top-20 list + "…and N more", links to the referencing entity's list page, Continue/Cancel). Message keys live in the shared `dependencies` i18n namespace. Reference implementation: `[locale]/workout-templates/page.tsx` and `[locale]/exercises/page.tsx`.
 
 Selectors that create **new** associations must only offer active entities (`?status=active`); existing links to inactive/deleted entities are never touched.
+
+---
+
+## Tree-Grid Editor (hierarchical catalog pages)
+
+Pages whose entity owns a hierarchy (Training Plan Template → Workouts → Blocks → Exercises, #61; Workout Template → Blocks → Exercises, #63) render it inline in the list page instead of chaining CRUD sub-pages/modals. The shared `DataTable` already supports it (`renderExpanded` / `expandedRowKeys` / `onToggleExpand`); the page supplies the rest:
+
+- **One hierarchy endpoint, one request per expand.** `GET /<entity>/:id` (or `/:id/hierarchy`) aggregates every level with nested `JSON_ARRAYAGG` over derived tables pre-sorted by `position` (MySQL's `JSON_ARRAYAGG` has no `ORDER BY` of its own). The client caches it per row id; re-expanding never refetches.
+- **Branch-only refresh.** Every child CRUD/reorder calls a `refetchBranch(id)` that re-fetches just that row's hierarchy — list state (filters, sort, pagination) and expansion state are untouched.
+- **In-place editing.** Child add/edit go through `CrudModal`-based modals rendered by the tree (`BlockModal`, `ExerciseModal`); row actions live in `ContextMenu`, and each level exposes an inline `+ <Child>` button.
+- **Compact summaries.** Each node shows a one-line execution summary instead of forcing the edit dialog open; the formatters live in `workout-templates/summaries.ts` and are shared by both trees.
+- **Drag-and-drop.** One page-level `DndContext`; sortable items registered per parent `SortableContext`. Encode ancestry in the drag id (`block:<templateId>:<blockId>`, `ex:<templateId>:<blockId>:<exId>`) so `onDragEnd` can tell same-parent reorder from cross-parent moves without extra lookups. Reorders are optimistic (patch the cached hierarchy, then `PUT …/reorder`, resync on failure).
+- **Cross-parent moves.** A dedicated `PUT /<entity>/:id/<child>/:childId/move` reparents in one transaction: park the row on a temporary high `position` first (the `(parent_id, position)` unique index would otherwise collide), then recompact positions in both parents with the standard reorder helper. Rows of *other* templates accept drops via a `useDroppable` wrapper around the Name cell (`tmpl:<id>`), so a collapsed target works — the drop appends at the end.
+
+Reference implementations: `[locale]/workout-templates/page.tsx` + `WorkoutTemplateTree.tsx` (full pattern incl. cross-parent moves) and `[locale]/training-plan-templates/page.tsx` + `TrainingPlanTree.tsx` (single-parent variant).
 
 ---
 

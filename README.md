@@ -1,6 +1,6 @@
 # Gymdesk
 
-Gym Management SaaS — admin app for managing members, classes, bookings, and subscriptions.
+Gym Management SaaS — admin app for managing members, memberships, classes, bookings, training (exercises, workout templates, training plans), promotions, and billing, plus a member-facing app.
 
 ## Requirements
 
@@ -99,6 +99,8 @@ Find your Clerk user ID in the [Clerk Dashboard](https://dashboard.clerk.com) �
 ## API endpoints
 
 All endpoints except `GET /health` require a valid Clerk session token (`Authorization: Bearer <token>`) and, for domain routes, an `x-gym-id` header with the active gym's UUID.
+
+> The table below covers the core early routes only. The full, current module → router → page map lives in [docs/architecture.md](docs/architecture.md).
 
 | Method | Path | Role required |
 |--------|------|---------------|
