@@ -467,7 +467,17 @@
     "error_generic": "Something went wrong.",
     "cancel": "Cancel",
     "saving": "Saving…",
-    "save_changes": "Save Changes"
+    "save_changes": "Save Changes",
+    "col_created_by": "Created by",
+    "col_created_at": "Created at",
+    "filter_name": "Filter by name…",
+    "filter_created_by_all": "All authors",
+    "details": "Details",
+    "tree_add_block": "+ Block",
+    "tree_add_exercise": "+ Exercise",
+    "tree_no_blocks": "No blocks yet.",
+    "tree_no_exercises": "No exercises yet.",
+    "tree_drag_handle": "Drag to reorder"
   },
   "training_plan_templates": {
     "title": "Training Plan Templates",

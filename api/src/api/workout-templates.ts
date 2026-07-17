@@ -23,6 +23,15 @@ const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'E
 const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
 const SETTABLE_STATUSES = ['active', 'inactive'];
 
+// GET / list sorting: map the public sort key to a safe column (never interpolate raw input).
+const SORT_COLUMNS: Record<string, string> = {
+  name: 'wt.name',
+  created_at: 'wt.created_at',
+  status: 'wt.status',
+};
+const DEFAULT_LIMIT = 20;
+const MAX_LIMIT = 100;
+
 async function templateExists(id: string, gymId: string): Promise<boolean> {
   const { rows } = await db.query(
     'SELECT 1 FROM workout_templates WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -90,18 +99,77 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
 
 /* ---- WorkoutTemplate ---- */
 
+/**
+ * #63: with limit/offset the response is the paginated { items, total, limit,
+ * offset } shape with name/created_by/status filters and sorting (mirrors
+ * GET /training-plan-templates). Without them it stays the legacy plain array
+ * ordered by name — the Training Plan editor's workout selector depends on it.
+ */
 workoutTemplatesRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const status = req.query.status as string | undefined;
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
+  const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
+  const createdBy = req.query.created_by == null || req.query.created_by === ''
+    ? null : Number(req.query.created_by);
+  if (createdBy !== null && !Number.isInteger(createdBy)) {
+    return res.status(400).json({ error: 'created_by must be a membership id' });
+  }
+  const paginated = req.query.limit !== undefined || req.query.offset !== undefined;
+  const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS ? req.query.sort : 'name';
+  const dir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
+  // limit/offset are validated integers — interpolated because mysql2 prepared
+  // statements don't accept placeholders in LIMIT reliably.
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+  const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
+    const where: string[] = ['wt.gym_id = ?', 'wt.deleted_at IS NULL'];
     const params: any[] = [gymId];
-    let sql = 'SELECT * FROM workout_templates WHERE gym_id = ? AND deleted_at IS NULL';
-    if (status) { sql += ' AND status = ?'; params.push(status); }
-    sql += ' ORDER BY name ASC';
-    const { rows } = await db.query(sql, params);
+    if (status) { where.push('wt.status = ?'); params.push(status); }
+    if (name) { where.push('wt.name LIKE ?'); params.push(`%${name}%`); }
+    if (createdBy !== null) { where.push('wt.created_by_membership_id = ?'); params.push(createdBy); }
+    const whereSql = where.join(' AND ');
+
+    if (!paginated) {
+      const { rows } = await db.query(
+        `SELECT wt.* FROM workout_templates wt WHERE ${whereSql} ORDER BY wt.name ASC`,
+        params,
+      );
+      return res.json(rows);
+    }
+
+    const { rows: countRows } = await db.query(
+      `SELECT COUNT(*) AS total FROM workout_templates wt WHERE ${whereSql}`,
+      params,
+    );
+    const { rows } = await db.query(
+      `SELECT wt.*, gm.name AS created_by_name
+       FROM workout_templates wt
+       LEFT JOIN gym_memberships gm ON gm.id = wt.created_by_membership_id
+       WHERE ${whereSql}
+       ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
+      params,
+    );
+    res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Distinct authors of this gym's non-deleted templates — populates the Created By filter.
+workoutTemplatesRouter.get('/created-by-options', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT DISTINCT gm.id AS membership_id, gm.name
+       FROM workout_templates wt
+       JOIN gym_memberships gm ON gm.id = wt.created_by_membership_id
+       WHERE wt.gym_id = ? AND wt.deleted_at IS NULL AND gm.name IS NOT NULL
+       ORDER BY gm.name ASC`,
+      [gymId],
+    );
     res.json(rows);
   } catch (err) {
     next(err);
@@ -154,7 +222,7 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
 });
 
 workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !SETTABLE_STATUSES.includes(status)) {
@@ -162,8 +230,8 @@ workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res,
   }
   try {
     const { insertId } = await db.query(
-      'INSERT INTO workout_templates (gym_id, name, description, status) VALUES (?, ?, ?, ?)',
-      [gymId, name.trim(), description ?? null, status ?? 'active'],
+      'INSERT INTO workout_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
+      [gymId, name.trim(), description ?? null, status ?? 'active', gymMembershipId],
     );
     const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: insertId, next: rows[0] });
@@ -266,6 +334,65 @@ workoutTemplatesRouter.put('/:id/blocks/reorder', requireRole('admin', 'coach'),
       [id, gymId],
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * #63: move a block to another workout template (tree-grid cross-template
+ * drag-and-drop). Reparents the block and recompacts positions in both
+ * templates in one transaction. position is 1-based within the target; omitted
+ * → append at the end. Designed so future cross-parent moves (e.g. exercises)
+ * can follow the same shape.
+ */
+workoutTemplatesRouter.put('/:id/blocks/:blockId/move', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id, blockId } = req.params as { id: string; blockId: string };
+  const targetId = Number(req.body.target_workout_template_id);
+  if (!Number.isInteger(targetId) || targetId <= 0) {
+    return res.status(400).json({ error: 'target_workout_template_id is required' });
+  }
+  if (String(targetId) === id) {
+    return res.status(400).json({ error: 'target must differ from the current template; use reorder instead' });
+  }
+  const position = req.body.position == null ? null : Number(req.body.position);
+  if (position !== null && (!Number.isInteger(position) || position < 1)) {
+    return res.status(400).json({ error: 'position must be a positive integer' });
+  }
+  try {
+    if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
+    if (!(await templateExists(String(targetId), gymId))) {
+      return res.status(400).json({ error: 'target_workout_template_id does not belong to this gym' });
+    }
+    await db.transaction(async (tx) => {
+      const { rows: sourceRows } = await tx.query(
+        'SELECT id FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL AND id != ? ORDER BY position',
+        [id, blockId],
+      );
+      const { rows: targetRows } = await tx.query(
+        'SELECT id FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position',
+        [targetId],
+      );
+      const targetOrder = targetRows.map((r: any) => r.id);
+      const insertAt = position === null ? targetOrder.length : Math.min(position - 1, targetOrder.length);
+      targetOrder.splice(insertAt, 0, Number(blockId));
+      // Park on a temporary high position first — (workout_template_id, position)
+      // is unique, so landing directly on an occupied slot would collide.
+      await tx.query(
+        `UPDATE workout_template_blocks SET workout_template_id = ?, position = position + 2000000,
+                modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+         WHERE id = ?`,
+        [targetId, gymMembershipId, blockId],
+      );
+      if (sourceRows.length > 0) {
+        await reorder(tx, 'workout_template_blocks', 'workout_template_id', id, sourceRows.map((r: any) => r.id));
+      }
+      await reorder(tx, 'workout_template_blocks', 'workout_template_id', String(targetId), targetOrder);
+    });
+    const { rows } = await db.query('SELECT * FROM workout_template_blocks WHERE id = ?', [blockId]);
+    recordAudit(req, { action: 'update', entityType: 'workout_template_block', entityId: blockId, next: rows[0] });
+    res.json(rows[0]);
   } catch (err) {
     next(err);
   }

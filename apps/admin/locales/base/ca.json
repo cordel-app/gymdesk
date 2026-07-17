@@ -467,7 +467,17 @@
     "error_generic": "Alguna cosa ha fallat.",
     "cancel": "Cancel·la",
     "saving": "Desant…",
-    "save_changes": "Desa els canvis"
+    "save_changes": "Desa els canvis",
+    "col_created_by": "Creat per",
+    "col_created_at": "Data de creació",
+    "filter_name": "Filtra per nom…",
+    "filter_created_by_all": "Tots els autors",
+    "details": "Detalls",
+    "tree_add_block": "+ Bloc",
+    "tree_add_exercise": "+ Exercici",
+    "tree_no_blocks": "Encara no hi ha blocs.",
+    "tree_no_exercises": "Encara no hi ha exercicis.",
+    "tree_drag_handle": "Arrossega per reordenar"
   },
   "training_plan_templates": {
     "title": "Plantilles de pla d'entrenament",

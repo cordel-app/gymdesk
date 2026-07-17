@@ -6,7 +6,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
-import { BLOCK_TYPES, RESULT_TYPES } from '../workout-templates/WorkoutTemplateBlocksModal';
+import { BLOCK_TYPES, RESULT_TYPES } from '../workout-templates/blockFieldConfig';
 import { isBlockFieldVisible } from '../workout-templates/blockFieldConfig';
 import { PlanBlockExercisesModal } from './PlanBlockExercisesModal';
 

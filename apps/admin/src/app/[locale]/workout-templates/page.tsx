@@ -1,8 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  useSensor, useSensors, DragEndEvent,
+} from '@dnd-kit/core';
+import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
@@ -11,14 +16,34 @@ import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DependencyDialog, ReferenceReport } from '@/components/DependencyDialog';
 import { StatusBadge } from '@/components/StatusBadge';
-import { btnStyle, btnSmall } from '@/components/ui';
-import { WorkoutTemplateBlocksModal } from './WorkoutTemplateBlocksModal';
+import { StatusFilter } from '@/components/StatusFilter';
+import { ContextMenu } from '@/components/ContextMenu';
+import { btnStyle } from '@/components/ui';
+import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
 
-export interface WorkoutTemplate { id: number; name: string; description: string | null; status: 'active' | 'inactive' }
+export interface WorkoutTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  status: 'active' | 'inactive';
+  created_by_name: string | null;
+  created_at: string;
+}
 
-const STATUSES = ['active', 'inactive'];
+interface ListResponse {
+  items: WorkoutTemplate[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+interface CreatedByOption { membership_id: number; name: string }
+
+type SortKey = 'name' | 'created_at' | 'status';
+
+const STATUSES = ['active', 'inactive'] as const;
+const LIMIT = 20;
 const emptyForm = { name: '', description: '', status: 'active' };
-const selectStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' };
 
 export default function WorkoutTemplatesPage() {
   const t = useTranslations();
@@ -29,30 +54,75 @@ export default function WorkoutTemplatesPage() {
   const { toast } = useToast();
 
   const [rows, setRows] = useState<WorkoutTemplate[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  const [statusFilter, setStatusFilter] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [nameQuery, setNameQuery] = useState('');
+  const [createdByFilter, setCreatedByFilter] = useState('');
+  const [createdByOptions, setCreatedByOptions] = useState<CreatedByOption[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<WorkoutTemplate | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<WorkoutTemplate | null>(null);
-  const [blocksFor, setBlocksFor] = useState<WorkoutTemplate | null>(null);
   const [depDialog, setDepDialog] = useState<{ action: 'edit' | 'delete'; entity: WorkoutTemplate; refs: ReferenceReport } | null>(null);
   const [checkingDeps, setCheckingDeps] = useState(false);
   const [depBusy, setDepBusy] = useState(false);
 
+  // Row expansion + per-template lazy-loaded, cached hierarchy.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [hierarchies, setHierarchies] = useState<Record<number, WtHierarchy>>({});
+  const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
+
   const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
-  async function load() {
+  // Debounce the name text input into the query that actually drives fetches.
+  useEffect(() => {
+    const id = setTimeout(() => setNameQuery(nameInput.trim()), 300);
+    return () => clearTimeout(id);
+  }, [nameInput]);
+
+  const load = useCallback(async () => {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      setRows(await apiFetch<WorkoutTemplate[]>('/workout-templates'));
-    } catch (err: any) { toast(err.message ?? t('workout_templates.error_generic')); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading]);
+      const params = new URLSearchParams();
+      if (statusFilter) params.set('status', statusFilter);
+      if (nameQuery) params.set('name', nameQuery);
+      if (createdByFilter) params.set('created_by', createdByFilter);
+      params.set('sort', sortKey);
+      params.set('dir', sortDir);
+      params.set('limit', String(LIMIT));
+      params.set('offset', String(offset));
+      const res = await apiFetch<ListResponse>(`/workout-templates?${params.toString()}`);
+      setRows(res.items);
+      setTotal(res.total);
+    } catch (err: any) {
+      toast(err.message ?? t('workout_templates.error_generic'));
+    } finally {
+      setLoading(false);
+    }
+  }, [activeGymId, statusFilter, nameQuery, createdByFilter, sortKey, sortDir, offset]);
+
+  useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
+
+  // Reset to first page whenever a filter or sort changes.
+  useEffect(() => { setOffset(0); }, [statusFilter, nameQuery, createdByFilter, sortKey, sortDir]);
+
+  useEffect(() => {
+    if (!activeGymId || gymLoading) return;
+    apiFetch<CreatedByOption[]>('/workout-templates/created-by-options')
+      .then(setCreatedByOptions)
+      .catch(() => { /* filter is best-effort; ignore load failure */ });
+  }, [activeGymId, gymLoading]);
 
   function openAdd() { setEditing(null); setForm(emptyForm); setError(null); setModalOpen(true); }
   function openEdit(w: WorkoutTemplate) {
@@ -108,33 +178,239 @@ export default function WorkoutTemplatesPage() {
     catch (err: any) { setDeleting(null); toast(err.message ?? t('workout_templates.error_generic')); }
   }
 
+  async function toggleExpand(row: WorkoutTemplate) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+      return next;
+    });
+    // Lazy-load the hierarchy once and cache it; re-expand does not refetch.
+    if (!hierarchies[row.id] && !hierLoading.has(row.id)) {
+      setHierLoading((prev) => new Set(prev).add(row.id));
+      try {
+        const h = await apiFetch<WtHierarchy>(`/workout-templates/${row.id}`);
+        setHierarchies((prev) => ({ ...prev, [row.id]: h }));
+      } catch (err: any) {
+        toast(err.message ?? t('workout_templates.error_generic'));
+      } finally {
+        setHierLoading((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
+      }
+    }
+  }
+
+  const refetchBranch = useCallback(async (id: number) => {
+    try {
+      const h = await apiFetch<WtHierarchy>(`/workout-templates/${id}`);
+      setHierarchies((prev) => ({ ...prev, [id]: h }));
+    } catch (err: any) {
+      toast(err.message ?? t('workout_templates.error_generic'));
+    }
+  }, [apiFetch]);
+
+  /* ---- Drag-and-drop (blocks within/between templates, exercises within a block) ---- */
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  async function moveBlock(sourceId: number, blockId: number, targetId: number, position: number | null) {
+    // Optimistic: remove from the source branch; insert into the target branch
+    // when its hierarchy is already loaded (a never-expanded target loads fresh
+    // on first expand, so nothing to patch there).
+    const src = hierarchies[sourceId];
+    const block = src?.blocks?.find((b) => b.id === blockId);
+    if (src?.blocks && block) {
+      setHierarchies((prev) => {
+        const next = { ...prev, [sourceId]: { ...src, blocks: src.blocks!.filter((b) => b.id !== blockId) } };
+        const tgt = prev[targetId];
+        if (tgt?.blocks !== undefined) {
+          const list = [...(tgt.blocks ?? [])];
+          const at = position === null ? list.length : Math.min(position - 1, list.length);
+          list.splice(at, 0, block);
+          next[targetId] = { ...tgt, blocks: list };
+        }
+        return next;
+      });
+    }
+    try {
+      await apiFetch(`/workout-templates/${sourceId}/blocks/${blockId}/move`, {
+        method: 'PUT',
+        body: JSON.stringify({ target_workout_template_id: targetId, position }),
+      });
+    } catch (err: any) {
+      toast(err.message ?? t('workout_templates.error_generic'));
+    }
+    // Refresh only the affected branches, preserving expansion/filters/paging.
+    refetchBranch(sourceId);
+    if (hierarchies[targetId]) refetchBranch(targetId);
+  }
+
+  async function onDragEnd(e: DragEndEvent) {
+    const activeId = String(e.active.id);
+    const overId = e.over ? String(e.over.id) : null;
+    if (!overId || activeId === overId) return;
+
+    if (activeId.startsWith('ex:')) {
+      // ex:<templateId>:<blockId>:<exId> — reorder within the same block only.
+      const [, tplStr, blockStr, exStr] = activeId.split(':');
+      if (!overId.startsWith(`ex:${tplStr}:${blockStr}:`)) return;
+      const templateId = Number(tplStr);
+      const blockId = Number(blockStr);
+      const exId = Number(exStr);
+      const overExId = Number(overId.split(':')[3]);
+      const h = hierarchies[templateId];
+      const block = h?.blocks?.find((b) => b.id === blockId);
+      if (!block?.exercises) return;
+      const oldIndex = block.exercises.findIndex((x) => x.id === exId);
+      const newIndex = block.exercises.findIndex((x) => x.id === overExId);
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+      const reordered = arrayMove(block.exercises, oldIndex, newIndex);
+      setHierarchies((prev) => ({
+        ...prev,
+        [templateId]: { ...h!, blocks: h!.blocks!.map((b) => (b.id === blockId ? { ...b, exercises: reordered } : b)) },
+      }));
+      try {
+        await apiFetch(`/workout-templates/${templateId}/blocks/${blockId}/exercises/reorder`, {
+          method: 'PUT', body: JSON.stringify({ order: reordered.map((x) => x.id) }),
+        });
+      } catch (err: any) {
+        toast(err.message ?? t('workout_templates.error_generic'));
+        refetchBranch(templateId); // resync from server on failure
+      }
+      return;
+    }
+
+    if (activeId.startsWith('block:')) {
+      // block:<templateId>:<blockId>
+      const [, srcStr, blockStr] = activeId.split(':');
+      const sourceId = Number(srcStr);
+      const blockId = Number(blockStr);
+      const src = hierarchies[sourceId];
+      if (!src?.blocks) return;
+
+      if (overId.startsWith('block:')) {
+        const [, overTplStr, overBlockStr] = overId.split(':');
+        const overTplId = Number(overTplStr);
+        const overBlockId = Number(overBlockStr);
+        if (overTplId === sourceId) {
+          const oldIndex = src.blocks.findIndex((b) => b.id === blockId);
+          const newIndex = src.blocks.findIndex((b) => b.id === overBlockId);
+          if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+          const reordered = arrayMove(src.blocks, oldIndex, newIndex);
+          setHierarchies((prev) => ({ ...prev, [sourceId]: { ...src, blocks: reordered } }));
+          try {
+            await apiFetch(`/workout-templates/${sourceId}/blocks/reorder`, {
+              method: 'PUT', body: JSON.stringify({ order: reordered.map((b) => b.id) }),
+            });
+          } catch (err: any) {
+            toast(err.message ?? t('workout_templates.error_generic'));
+            refetchBranch(sourceId);
+          }
+        } else {
+          // Cross-template: insert at the hovered block's slot.
+          const tgt = hierarchies[overTplId];
+          const idx = tgt?.blocks ? tgt.blocks.findIndex((b) => b.id === overBlockId) : -1;
+          await moveBlock(sourceId, blockId, overTplId, idx >= 0 ? idx + 1 : null);
+        }
+        return;
+      }
+
+      if (overId.startsWith('tmpl:')) {
+        const targetId = Number(overId.split(':')[1]);
+        if (targetId !== sourceId) await moveBlock(sourceId, blockId, targetId, null);
+      }
+    }
+  }
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+
   if (gymLoading || !canWrite) return null;
 
+  const sortArrow = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
+  const sortHeader = (key: SortKey, label: string) => (
+    <button onClick={() => toggleSort(key)} style={sortHeaderStyle}>{label}{sortArrow(key)}</button>
+  );
+
   const columns: Column<WorkoutTemplate>[] = [
-    { header: t('workout_templates.col_name'), render: (w) => w.name },
-    { header: t('workout_templates.col_description'), render: (w) => w.description ?? '—' },
-    { header: t('workout_templates.col_status'), width: 110, render: (w) => <StatusBadge status={w.status} label={t(`status.${w.status}`)} /> },
     {
-      header: t('workout_templates.col_actions'), width: 260,
+      header: sortHeader('name', t('workout_templates.col_name')),
+      render: (w) => <TemplateDropTarget templateId={w.id}>{w.name}</TemplateDropTarget>,
+    },
+    { header: t('workout_templates.col_description'), render: (w) => w.description ?? '—' },
+    { header: t('workout_templates.col_created_by'), width: 180, render: (w) => w.created_by_name ?? '—' },
+    { header: sortHeader('created_at', t('workout_templates.col_created_at')), width: 160, render: (w) => formatDate(w.created_at, locale) },
+    { header: sortHeader('status', t('workout_templates.col_status')), width: 120, render: (w) => <StatusBadge status={w.status} label={t(`status.${w.status}`)} /> },
+    {
+      header: t('workout_templates.col_actions'), width: 80,
       render: (w) => (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => setBlocksFor(w)} style={btnSmall('#6c63ff')}>{t('workout_templates.blocks')}</button>
-          <button onClick={() => guardedAction('edit', w)} style={btnSmall('#444')}>{t('workout_templates.edit')}</button>
-          <button onClick={() => guardedAction('delete', w)} style={btnSmall('#c0392b')}>{t('workout_templates.delete')}</button>
-        </div>
+        <ContextMenu
+          ariaLabel={t('workout_templates.col_actions')}
+          items={[
+            { label: t('workout_templates.details'), onClick: () => guardedAction('edit', w) },
+            { label: t('workout_templates.delete'), onClick: () => guardedAction('delete', w), danger: true },
+          ]}
+        />
       ),
     },
   ];
 
+  const pageStart = total === 0 ? 0 : offset + 1;
+  const pageEnd = Math.min(offset + LIMIT, total);
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('workout_templates.title')}</h1>
-        <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('workout_templates.add')}</button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            placeholder={t('workout_templates.filter_name')}
+            style={filterInputStyle}
+          />
+          <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterInputStyle}>
+            <option value="">{t('workout_templates.filter_created_by_all')}</option>
+            {createdByOptions.map((o) => <option key={o.membership_id} value={o.membership_id}>{o.name}</option>)}
+          </select>
+          <StatusFilter
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
+            allLabel={t('status.all')}
+          />
+          <button onClick={openAdd} style={btnStyle()}>{t('workout_templates.add')}</button>
+        </div>
       </div>
 
-      <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} loading={loading}
-                 loadingText={t('workout_templates.loading')} emptyText={t('workout_templates.empty')} />
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          loading={loading}
+          loadingText={t('workout_templates.loading')}
+          emptyText={t('workout_templates.empty')}
+          expandedRowKeys={expanded}
+          onToggleExpand={toggleExpand}
+          renderExpanded={(row) => {
+            const h = hierarchies[row.id];
+            if (!h) return <p style={{ color: '#888', fontSize: 14, padding: '12px 20px 12px 44px', margin: 0 }}>{t('workout_templates.loading')}</p>;
+            return <WorkoutTemplateTree templateId={row.id} hierarchy={h} canWrite={!!canWrite} onChanged={() => refetchBranch(row.id)} />;
+          }}
+        />
+      </DndContext>
+
+      {total > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
+          <span style={{ color: '#666', fontSize: 14 }}>{t('audit.page_info', { start: pageStart, end: pageEnd, total })}</span>
+          <button onClick={() => setOffset(Math.max(0, offset - LIMIT))} disabled={offset === 0} style={pagerStyle(offset === 0)}>‹</button>
+          <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={pagerStyle(pageEnd >= total)}>›</button>
+        </div>
+      )}
 
       <CrudModal
         open={modalOpen}
@@ -150,7 +426,11 @@ export default function WorkoutTemplatesPage() {
         <FormLabel>{t('workout_templates.label_description')}</FormLabel>
         <FormInput value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         <FormLabel>{t('workout_templates.label_status')}</FormLabel>
-        <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={selectStyle}>
+        <select
+          value={form.status}
+          onChange={(e) => setForm({ ...form, status: e.target.value })}
+          style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}
+        >
           {STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
         </select>
       </CrudModal>
@@ -173,10 +453,19 @@ export default function WorkoutTemplatesPage() {
         onCancel={() => setDepDialog(null)}
         busy={depBusy}
       />
-
-      {blocksFor && (
-        <WorkoutTemplateBlocksModal workoutTemplateId={blocksFor.id} workoutTemplateName={blocksFor.name} onClose={() => setBlocksFor(null)} />
-      )}
     </div>
   );
 }
+
+function formatDate(value: string, locale: string): string {
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+const filterInputStyle: React.CSSProperties = { padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff' };
+const sortHeaderStyle: React.CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontWeight: 600, color: 'inherit' };
+const pagerStyle = (disabled: boolean): React.CSSProperties => ({
+  background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '4px 12px',
+  cursor: disabled ? 'default' : 'pointer', color: disabled ? '#bbb' : '#333', fontSize: 16,
+});

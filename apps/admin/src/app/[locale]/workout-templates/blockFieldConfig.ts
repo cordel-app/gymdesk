@@ -1,5 +1,8 @@
 // Field visibility per Workout Block type (issue #60). Name, Type and Optional
 // are always shown; this config governs the type-specific fields only.
+export const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'EMOM', 'AMRAP', 'Tabata'];
+export const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
+
 export type BlockFieldKey = 'result_type' | 'rounds' | 'duration_seconds' | 'work_seconds' | 'rest_seconds';
 
 export const BLOCK_TYPE_FIELDS: Record<string, BlockFieldKey[]> = {

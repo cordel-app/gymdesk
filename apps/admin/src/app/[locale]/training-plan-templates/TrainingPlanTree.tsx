@@ -17,20 +17,10 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle } from '@/components/ui';
-import { isBlockFieldVisible } from '../workout-templates/blockFieldConfig';
+import { HierBlock, blockSummary, exerciseSummary } from '../workout-templates/summaries';
 
 /* Shapes returned by GET /training-plan-templates/:id/hierarchy */
-export interface HierExercise {
-  id: number; position: number; exercise_id: number; exercise_name: string;
-  min_reps: number | null; max_reps: number | null; sets: number | null;
-  rest_seconds: number | null; tempo: string | null;
-}
-export interface HierBlock {
-  id: number; position: number; name: string | null; description: string | null;
-  type: string; result_type: string; rounds: number | null; duration_seconds: number | null;
-  work_seconds: number | null; rest_seconds: number | null; is_optional: number | boolean;
-  notes: string | null; exercises: HierExercise[] | null;
-}
+export type { HierExercise, HierBlock } from '../workout-templates/summaries';
 export interface HierWorkout {
   id: number; position: number; scheduled_weekday: number | null;
   workout_template_id: number; workout_template_name: string; blocks: HierBlock[] | null;
@@ -298,48 +288,6 @@ function BlockRow({ block }: { block: HierBlock }) {
       </div>
     </div>
   );
-}
-
-type T = (key: string, values?: Record<string, any>) => string;
-
-/** Compact block execution summary; only fields relevant to the block type are shown. */
-function blockSummary(b: HierBlock, t: T): string {
-  const parts: string[] = [t(`workout_template_blocks.type_${b.type.toLowerCase()}`)];
-  if (isBlockFieldVisible(b.type, 'result_type') && b.result_type && b.result_type !== 'None') {
-    parts.push(t(`workout_template_blocks.result_type_${b.result_type.toLowerCase()}`));
-  }
-  if (isBlockFieldVisible(b.type, 'rounds') && b.rounds != null) {
-    parts.push(t('training_plan_templates.summary_rounds', { n: b.rounds }));
-  }
-  if (isBlockFieldVisible(b.type, 'duration_seconds') && b.duration_seconds != null) {
-    parts.push(t('training_plan_templates.summary_min', { n: Math.round(b.duration_seconds / 60) }));
-  }
-  if (isBlockFieldVisible(b.type, 'work_seconds') && b.work_seconds != null) {
-    parts.push(t('training_plan_templates.summary_work', { n: b.work_seconds }));
-  }
-  if (isBlockFieldVisible(b.type, 'rest_seconds') && b.rest_seconds != null) {
-    parts.push(t('training_plan_templates.summary_rest', { n: b.rest_seconds }));
-  }
-  return parts.join(' • ');
-}
-
-/** Compact exercise execution summary: sets × reps • Tempo • Rest. Nulls omitted. */
-function exerciseSummary(ex: HierExercise, t: T): string {
-  const parts: string[] = [];
-  let reps: string | null = null;
-  if (ex.min_reps != null && ex.max_reps != null) {
-    reps = ex.min_reps === ex.max_reps ? String(ex.min_reps) : `${ex.min_reps}–${ex.max_reps}`;
-  } else if (ex.min_reps != null) {
-    reps = String(ex.min_reps);
-  } else if (ex.max_reps != null) {
-    reps = String(ex.max_reps);
-  }
-  if (ex.sets != null && reps) parts.push(`${ex.sets} × ${reps}`);
-  else if (ex.sets != null) parts.push(t('training_plan_templates.summary_sets', { n: ex.sets }));
-  else if (reps) parts.push(reps);
-  if (ex.tempo) parts.push(t('training_plan_templates.summary_tempo', { tempo: ex.tempo }));
-  if (ex.rest_seconds != null) parts.push(t('training_plan_templates.summary_rest_ex', { n: ex.rest_seconds }));
-  return parts.join(' • ');
 }
 
 const selectStyle: React.CSSProperties = { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff' };
