@@ -154,6 +154,8 @@ exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) 
 
 exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  // Express 5 types params as string | string[]; helpers expect a scalar id.
+  const id = String(req.params.id);
   const {
     name, description, video_url, image_url,
     min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
@@ -165,7 +167,7 @@ exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next
   const muscles = parseMuscles(req.body.muscles);
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   try {
-    if (name?.trim() && await nameTaken(gymId, name.trim(), req.params.id)) {
+    if (name?.trim() && await nameTaken(gymId, name.trim(), id)) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
     }
     await db.transaction(async (tx) => {
@@ -193,14 +195,14 @@ exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
           'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           status ?? null,
-          req.params.id, gymId,
+          id, gymId,
         ],
       );
       if (rowCount === 0) throw Object.assign(new Error('Exercise not found'), { status: 404 });
-      if (muscles) await replaceMuscles(tx, gymId, req.params.id, muscles);
+      if (muscles) await replaceMuscles(tx, gymId, id, muscles);
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [req.params.id, gymId]);
-    recordAudit(req, { action: 'update', entityType: 'exercise', entityId: req.params.id, next: rows[0] });
+    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
+    recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: rows[0] });
     res.json(rows[0]);
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message });
