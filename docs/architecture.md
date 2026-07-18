@@ -243,7 +243,7 @@ Revoking the invitation closes the race for the *link itself* (Clerk shows "The 
 `recordAudit(req, { action, entityType, entityId?, entityName?, previous?, next? })` is a **fire-and-forget** writer: it never fails the calling request (a rejected INSERT just logs to `console.error`). Each row is a self-contained historical snapshot:
 
 - **`actor_name`** — display name captured from the Clerk user object already fetched in `tenantContext` (zero extra queries). Populated on every write; survives later Clerk user renames.
-- **`entity_name`** — resolved by `infra/audit-registry.ts` at write time. Named entities (those with a `name` column) use a registry lookup; M-N/link entities (e.g. `user_membership`) get a composed label from their FK parents. Callers may pass `entityName` directly to skip the lookup.
+- **`entity_name`** — resolved by `infra/audit-registry.ts` at write time. Named entities (those with a `name` column) use a registry lookup; M-N/link entities (e.g. `user_membership`) get a composed label from their FK parents. Callers may pass `entityName` directly to skip the lookup. The UI shows "Unknown" (translated) when the field is null.
 - **FK enrichment** — `previous_values`/`new_values` are enriched before storage: `foo_id: value` becomes `foo: { id, name }` using the FK map in `audit-registry.ts`.
 
 The registry (`AUDIT_ENTITY_REGISTRY`) and action list (`AUDIT_ACTIONS`) are served by `GET /audit-logs/meta` for frontend dropdown population. High-value mutations call `recordAudit` after the business write; `class-types.ts` and `promotions.ts` were added in #69.
