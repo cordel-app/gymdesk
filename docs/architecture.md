@@ -90,7 +90,7 @@ Reads (`GET`) on gym-scoped domain routes are open to any authenticated gym role
 | Member training plans (`members/:id/training-plans`) | any role | `admin`, `coach`, `staff` | `admin`, `coach`, `staff` | Assign/unassign a template to a member. |
 | User memberships (`user-memberships`) | any role | `admin`, `staff` | `admin` | Status changes write a `status_changed` billing event in the same tx. |
 | Billing ledger (`billing-events`) | `admin`, `staff` | `admin`, `staff` (POST) | — | Append-only. |
-| Audit log (`audit-logs`) | `admin` | — | — | Read-only viewer. |
+| Audit log (`audit-logs`) | `admin` (default gym scope) · `superadmin` (`?scope=all`) | — | — | Read-only viewer. `?scope=all` (superadmin-only via `tenantCtx.isSuperadmin`) lifts the gym filter and joins `gyms.name`; optional `?gym_id=` narrows the platform view (#66). |
 | Action types (`action-types`) | any role | — | — | Global lookup (no `gym_id`), seeded in migration. |
 | Public (`public/*`) | guest | — | — | Gym landing + class list by slug. |
 | Platform (`platform/*`, `platform/superadmins`) | `superadmin` | `superadmin` | `superadmin` | Gym creation/list; superadmin management. |
@@ -238,7 +238,7 @@ Revoking the invitation closes the race for the *link itself* (Clerk shows "The 
 
 ## Audit Logging (`infra/audit.ts` + `audit_logs`)
 
-`recordAudit(req, { action, entityType, entityId?, previous?, next? })` is a **fire-and-forget** writer: it never fails the calling request (a rejected INSERT just logs to `console.error`). Actor, gym, IP, user-agent, and `source` (`admin`/`employee`/`customer`, derived from role) are pulled from the request automatically. High-value mutations (team changes, membership status, etc.) call it after the business write. The read side is `GET /audit-logs` (admin only), surfaced in the admin **Audit** page.
+`recordAudit(req, { action, entityType, entityId?, previous?, next? })` is a **fire-and-forget** writer: it never fails the calling request (a rejected INSERT just logs to `console.error`). Actor, gym, IP, user-agent, and `source` (`admin`/`employee`/`customer`, derived from role) are pulled from the request automatically. High-value mutations (team changes, membership status, etc.) call it after the business write. Two read views share one endpoint and one React component (`AuditLogView`): **System → Audit log** (`/audit`, admin+) is scoped to the active gym; **Cordel → Audit log** (`/cordel/audit`, superadmin) sends `?scope=all` to see every gym's events with a Gym column joined in (#66).
 
 ---
 
@@ -277,11 +277,12 @@ The sidebar is **config-driven** from `config/navigationGroups.ts`. Groups are c
 | Group | requiredRole | Items |
 |-------|--------------|-------|
 | Membership | — | Dashboard, Members (→ Deleted) |
-| Organization | `admin` | Dashboard, Team, Rooms, Trainers, Specialities, Class types, Class packages |
-| Training | — | Dashboard, Exercises, Workouts |
+| Organization | `admin` | Dashboard, Team, Centers, Rooms, Resources, Trainers, Specialities, Class types, Class packages, Events |
+| Training | — | Dashboard, Exercises, Workout Templates, Training Plan Templates |
 | Nutrition | — | Dashboard (placeholder) |
 | Financials | `admin` | Dashboard, Plans, Promotions |
-| System | `superadmin` | Audit, Customize, Gyms, Users |
+| System | `admin` | Audit log (gym-scoped), Customize |
+| Cordel | `superadmin` | Gyms, Users, Audit log (platform-wide, `/cordel/audit`) |
 
 The per-group "Dashboard" pages (Organization, Training, Nutrition, Financials, plus the singular `/membership`) are **placeholder shells** ("coming soon") today. Some functional pages (e.g. `/memberships` — the user-membership manager with ledger + promotion-apply modals — and `/schedule`) exist and are reachable but are not yet linked from a nav group.
 
@@ -324,10 +325,10 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Workout templates | `workout-templates.ts` | `[locale]/workout-templates/` | Reusable, block-based workout blueprints (blocks + per-block exercises); admin/coach. Tree-grid page (#63): expandable rows lazy-load the full hierarchy (`GET /:id` aggregates blocks+exercises via JSON_ARRAYAGG), blocks/exercises are edited in place (`BlockModal`/`ExerciseModal` on `CrudModal`), and dnd-kit drag-and-drop covers block reorder, exercise reorder, and block moves **between** templates (`PUT /:id/blocks/:blockId/move`, transactional reparent + position recompaction in both parents). List endpoint returns the paginated `{items,total,limit,offset}` shape when `limit`/`offset` are passed (name/created_by/status filters + sort) and the legacy plain array otherwise — the Training Plan editor's workout selector depends on the latter. `created_by_membership_id` (migration 053) feeds the Created By column/filter. Status `active/inactive/deleted` (#62): selectors only offer active templates (`?status=active`), delete is soft, and `GET /workout-templates/:id/references` powers the dependency dialog. Block field visibility is driven by block type via `blockFieldConfig.ts` — see Feature Patterns' config-driven form pattern. `[locale]/workouts/` (old flat Workout catalog) is now just a redirect here (#55); `workouts.ts` was removed. |
 | Training plan templates | `training-plan-templates.ts` | `[locale]/training-plan-templates/` | Groups Workout Templates into an assignable plan template; tree-grid editor (`TrainingPlanTree.tsx`, #61) with drag-reorder and per-workout weekday. Block/exercise summary formatters are shared with the Workout Templates tree (`workout-templates/summaries.ts`). |
 | Training plans (assigned) | `training-plans.ts`, `member-training-plans.ts`, `exercise-logs.ts` | Inside `[locale]/members/` (plan/workout/block editors, e.g. `PlanWorkoutBlocksModal.tsx`) | Per-member cloned plan/workout/block instances; assignment + block/exercise logging (`workoutBlockLogsRouter`, `exerciseLogsRouter`). |
-| Audit | `audit-logs.ts` | `[locale]/audit/` | Admin-only read-only viewer. |
-| Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` | Superadmin only. |
-| Superadmins | `superadmins.ts` | `[locale]/system/users/` | Superadmin only — grant/revoke platform role. |
-| Customize | (uses `gyms` theme_key) | `[locale]/system/customize/` | Superadmin theme editor. |
+| Audit | `audit-logs.ts` | `[locale]/audit/` (System, gym-scoped, admin+) · `[locale]/cordel/audit/` (Cordel, platform-wide, superadmin) | Both render the shared `AuditLogView` component; platform mode passes `scope="all"` and adds a Gym column. |
+| Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` (linked from **Cordel → Gyms**) | Superadmin only. Route path kept for URL stability; grouping is Cordel (#66). |
+| Superadmins | `superadmins.ts` | `[locale]/system/users/` (linked from **Cordel → Users**) | Superadmin only — grant/revoke platform role. Route path kept for URL stability; grouping is Cordel (#66). |
+| Customize | (uses `gyms` theme_key) | `[locale]/system/customize/` | Admin-visible theme editor. |
 | Dashboards | — | `membership`, `organization`, `training`, `nutrition`, `financials` | Placeholder "coming soon" shells. |
 
 Shared admin components (`apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`, `Sidebar`, `NavGroup`, `AppShell`, `TopHeader`, `GymSelector`, `LanguagePicker`, `ThemeProvider`, `ui.tsx`. Use these in every new page — don't hand-roll tables/modals/status chips.

@@ -86,6 +86,8 @@ gymdesk/
 | Delete bookings | | ✓ | | |
 | Manage memberships | | ✓ | | ✓ |
 | Manage training catalog (exercises, workout/plan templates) | | ✓ | ✓ | |
+| View gym audit log (System → Audit log) | ✓ | ✓ | | |
+| View platform-wide audit log (Cordel → Audit log) | ✓ | | | |
 
 ## Superadmin setup
 
