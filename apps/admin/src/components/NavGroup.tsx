@@ -32,6 +32,9 @@ export function NavGroup({
 
     return (
       <div key={item.href}>
+        {item.separatorAbove && (
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', margin: '6px 16px' }} />
+        )}
         <Link
           href={item.href}
           onClick={onNavigate}

@@ -24,7 +24,8 @@ export function useApiClient() {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error ?? `Request failed: ${res.status}`);
+      // status + body let callers branch on specific responses (e.g. 409 conflicts)
+      throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), { status: res.status, body });
     }
 
     if (res.status === 204) return undefined as T;
