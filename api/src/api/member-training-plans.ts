@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { createTrainingPlanTx } from './training-plan-creation';
 
 /**
  * #55: MemberTrainingPlan — assignment history (never overwritten) + the
@@ -53,91 +54,16 @@ memberTrainingPlansRouter.post('/', requireRole('admin', 'coach'), async (req, r
   }
 
   try {
-    const result = await db.transaction(async (tx) => {
-      let planId: number;
-      let planName: string;
-      let planDescription: string | null;
-
-      if (template_id) {
-        const { rows: tplRows } = await tx.query(
-          "SELECT * FROM training_plan_templates WHERE id = ? AND gym_id = ? AND status = 'active'",
-          [template_id, gymId],
-        );
-        if (tplRows.length === 0) {
-          throw Object.assign(new Error('Template not found or not active'), { status: 400 });
-        }
-        const template = tplRows[0];
-        planName = name?.trim() || template.name;
-        planDescription = description ?? template.description;
-
-        const { insertId: newPlanId } = await tx.query(
-          `INSERT INTO training_plans (gym_id, member_id, template_id, name, description, status, assigned_by_membership_id)
-           VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-          [gymId, memberId, template_id, planName, planDescription, gymMembershipId],
-        );
-        planId = newPlanId;
-
-        const { rows: junctionRows } = await tx.query(
-          `SELECT j.*, wt.name AS workout_template_name, wt.description AS workout_template_description
-           FROM training_plan_template_workouts j JOIN workout_templates wt ON wt.id = j.workout_template_id
-           WHERE j.training_plan_template_id = ? ORDER BY j.position ASC`,
-          [template_id],
-        );
-        for (const junction of junctionRows) {
-          const { insertId: workoutId } = await tx.query(
-            'INSERT INTO workouts (gym_id, training_plan_id, name, description, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?, ?)',
-            [gymId, planId, junction.workout_template_name, junction.workout_template_description, junction.position, junction.scheduled_weekday],
-          );
-          const { rows: blockRows } = await tx.query(
-            'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-            [junction.workout_template_id],
-          );
-          for (const block of blockRows) {
-            const { insertId: blockId } = await tx.query(
-              `INSERT INTO workout_blocks
-                (gym_id, workout_id, position, name, description, type, result_type,
-                 rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [gymId, workoutId, block.position, block.name, block.description, block.type, block.result_type,
-               block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes,
-               gymMembershipId],
-            );
-            const { rows: exRows } = await tx.query(
-              'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
-              [block.id],
-            );
-            for (const ex of exRows) {
-              await tx.query(
-                `INSERT INTO workout_exercises
-                  (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, modified_by_membership_id)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [gymId, blockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo, gymMembershipId],
-              );
-            }
-          }
-        }
-      } else {
-        planName = name.trim();
-        planDescription = description ?? null;
-        const { insertId: newPlanId } = await tx.query(
-          `INSERT INTO training_plans (gym_id, member_id, template_id, name, description, status, assigned_by_membership_id)
-           VALUES (?, ?, NULL, ?, ?, 'active', ?)`,
-          [gymId, memberId, planName, planDescription, gymMembershipId],
-        );
-        planId = newPlanId;
-      }
-
-      const { insertId: mtpId } = await tx.query(
-        `INSERT INTO member_training_plans
-          (gym_id, member_id, training_plan_id, template_id, name, description, status, valid_from, valid_to, assigned_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_DATE(), ?, ?)`,
-        [gymId, memberId, planId, template_id ?? null, planName, planDescription, valid_to ?? null, gymMembershipId],
-      );
-
-      await tx.query('UPDATE members SET member_training_plan_id = ? WHERE id = ? AND gym_id = ?', [mtpId, memberId, gymId]);
-
-      return { mtpId, planId };
-    });
+    const result = await db.transaction(async (tx) =>
+      createTrainingPlanTx(tx, {
+        gymId, memberId, gymMembershipId,
+        templateId: template_id ?? null,
+        name: name?.trim() || null,
+        description,
+        startDate: null,
+        validTo: valid_to ?? null,
+      }),
+    );
 
     const { rows } = await db.query(
       `SELECT mtp.*, tp.name AS training_plan_name FROM member_training_plans mtp

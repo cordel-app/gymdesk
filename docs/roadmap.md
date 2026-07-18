@@ -17,6 +17,24 @@ criteria live in the issue bodies; this doc is the map.
   migration 053) and cross-template block drag-and-drop via `PUT …/blocks/:id/move` (#63).
   Patterns documented in `docs/feature-patterns.md` (Tree-Grid Editor, Config-Driven Fields,
   Dependency Awareness).
+- **Personalized Training Plans module (#67, done)**: gym-level **Training → Training
+  Plans** page (list, filters by member, source template, status, created by, and date
+  ranges) with a two-step "New Training Plan" dialog (From Template / From Scratch) that
+  posts to `POST /training-plans`. Existing-active-plan collisions return `409`; the UI
+  swaps to a keep-vs-expire prompt whose "Expire" branch closes prior actives
+  (`status='expired'`, `end_date` = new plan's start) and their `member_training_plans`
+  rows atomically before the new plan is created. Editor page at
+  `/training-plans/[id]` with a header form (name/desc/dates/status), drag-reorder for
+  workouts, cross-parent move + duplicate for blocks and exercises via new endpoints on
+  `training-plans.ts` (`…/blocks/:id/move`, `…/exercises/:id/move`,
+  `…/duplicate` at each level). Templates page gains an **Assign Plan to Member** action
+  on active templates that opens the same dialog with the template preselected.
+  Migration 054 adds `training_plans.start_date` (backfilled from the latest
+  `member_training_plans.valid_from`) and `end_date`, and updates the status CHECK to
+  `draft/active/expired/deleted` (existing `inactive` rows remapped to `expired`).
+  `training-plan-creation.ts` extracts the clone/write-history transaction so both
+  `POST /training-plans` and the legacy `POST /members/:id/member-training-plans` share
+  one implementation.
 - **Cordel platform menu + two-scope audit log (#66, done)**: superadmin-only **Cordel**
   sidebar group (Gyms, Users, platform Audit Log at `/cordel/audit`); **System** reduced to
   gym-scoped Audit Log + Customize and opened to gym admins (`requiredRole: 'admin'`).

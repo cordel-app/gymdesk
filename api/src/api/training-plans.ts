@@ -17,7 +17,9 @@ export const trainingPlansRouter = Router({ mergeParams: true });
 
 const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'EMOM', 'AMRAP', 'Tabata'];
 const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
-const PLAN_STATUSES = ['active', 'inactive', 'deleted'];
+// #67 lifecycle: draft/active/expired/deleted ('inactive' remapped to 'expired' in migration 054)
+const PLAN_STATUSES = ['draft', 'active', 'expired', 'deleted'];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function reorder(tx: Tx, table: string, parentColumn: string, parentId: string, orderedIds: number[]) {
   await tx.query(`UPDATE ${table} SET position = position + 1000000 WHERE ${parentColumn} = ?`, [parentId]);
@@ -147,15 +149,23 @@ trainingPlansRouter.get('/:planId', async (req, res, next) => {
 trainingPlansRouter.put('/:planId', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
-  const { name, description, status } = req.body;
+  const { name, description, status, start_date, end_date } = req.body;
   if (status && !PLAN_STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${PLAN_STATUSES.join(', ')}` });
+  if (start_date != null && !(typeof start_date === 'string' && DATE_RE.test(start_date))) {
+    return res.status(400).json({ error: 'start_date must be YYYY-MM-DD' });
+  }
+  if (end_date != null && !(typeof end_date === 'string' && DATE_RE.test(end_date))) {
+    return res.status(400).json({ error: 'end_date must be YYYY-MM-DD' });
+  }
   try {
     const { rowCount } = await db.query(
       `UPDATE training_plans SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
+        start_date = COALESCE(?, start_date), end_date = IF(?, ?, end_date),
         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, gymMembershipId,
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null,
+       start_date ?? null, 'end_date' in req.body ? 1 : 0, end_date ?? null, gymMembershipId,
        planId, memberId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan not found' });
@@ -434,4 +444,259 @@ trainingPlansRouter.delete('/:planId/workouts/:workoutId/blocks/:blockId/exercis
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise item not found' });
   recordAudit(req, { action: 'delete', entityType: 'workout_exercise', entityId: exId });
   res.status(204).send();
+});
+
+/* ---- #67: cross-parent moves + duplicates (clone-side has no structural limits) ---- */
+
+const COPY_NAME_LIMIT = 200;
+const copyName = (name: string | null) => (name ? `${name} (copy)`.slice(0, COPY_NAME_LIMIT) : null);
+
+// A block anywhere inside this plan (any workout) — validates move targets.
+async function blockInPlan(blockId: string | number, planId: string, gymId: string): Promise<boolean> {
+  const { rows } = await db.query(
+    `SELECT 1 FROM workout_blocks b JOIN workouts w ON w.id = b.workout_id
+     WHERE b.id = ? AND w.training_plan_id = ? AND b.gym_id = ?
+       AND b.deleted_at IS NULL AND w.deleted_at IS NULL`,
+    [blockId, planId, gymId],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Move a block to another workout of the same plan. Mirrors the #63
+ * cross-template block move: park the block on a temporary high position
+ * (the (workout_id, position) unique index would collide otherwise), then
+ * recompact both workouts in one transaction. position is 1-based within the
+ * target; omitted → append at the end.
+ */
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/move', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { memberId, planId, workoutId, blockId } = req.params as { memberId: string; planId: string; workoutId: string; blockId: string };
+  const targetId = Number(req.body.target_workout_id);
+  if (!Number.isInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'target_workout_id is required' });
+  if (String(targetId) === workoutId) return res.status(400).json({ error: 'target must differ from the current workout; use reorder instead' });
+  const position = req.body.position == null ? null : Number(req.body.position);
+  if (position !== null && (!Number.isInteger(position) || position < 1)) {
+    return res.status(400).json({ error: 'position must be a positive integer' });
+  }
+  try {
+    if (!(await planExists(planId, memberId, gymId))) return res.status(404).json({ error: 'Training plan not found' });
+    if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
+    if (!(await workoutExists(String(targetId), planId, gymId))) {
+      return res.status(400).json({ error: 'target_workout_id must be a workout of this plan' });
+    }
+    await db.transaction(async (tx) => {
+      const { rows: sourceRows } = await tx.query(
+        'SELECT id FROM workout_blocks WHERE workout_id = ? AND deleted_at IS NULL AND id != ? ORDER BY position',
+        [workoutId, blockId],
+      );
+      const { rows: targetRows } = await tx.query(
+        'SELECT id FROM workout_blocks WHERE workout_id = ? AND deleted_at IS NULL ORDER BY position',
+        [targetId],
+      );
+      const targetOrder = targetRows.map((r: any) => r.id);
+      const insertAt = position === null ? targetOrder.length : Math.min(position - 1, targetOrder.length);
+      targetOrder.splice(insertAt, 0, Number(blockId));
+      await tx.query(
+        `UPDATE workout_blocks SET workout_id = ?, position = position + 2000000,
+                modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+         WHERE id = ?`,
+        [targetId, gymMembershipId, blockId],
+      );
+      if (sourceRows.length > 0) {
+        await reorder(tx, 'workout_blocks', 'workout_id', workoutId, sourceRows.map((r: any) => r.id));
+      }
+      await reorder(tx, 'workout_blocks', 'workout_id', String(targetId), targetOrder);
+    });
+    const { rows } = await db.query('SELECT * FROM workout_blocks WHERE id = ?', [blockId]);
+    recordAudit(req, { action: 'update', entityType: 'workout_block', entityId: blockId, next: rows[0] });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Move an exercise item to another block of the same plan. Same park-then-recompact shape.
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId/move', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { memberId, planId, workoutId, blockId, exId } = req.params as
+    { memberId: string; planId: string; workoutId: string; blockId: string; exId: string };
+  const targetId = Number(req.body.target_block_id);
+  if (!Number.isInteger(targetId) || targetId <= 0) return res.status(400).json({ error: 'target_block_id is required' });
+  if (String(targetId) === blockId) return res.status(400).json({ error: 'target must differ from the current block; use reorder instead' });
+  const position = req.body.position == null ? null : Number(req.body.position);
+  if (position !== null && (!Number.isInteger(position) || position < 1)) {
+    return res.status(400).json({ error: 'position must be a positive integer' });
+  }
+  try {
+    if (!(await planExists(planId, memberId, gymId))) return res.status(404).json({ error: 'Training plan not found' });
+    if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
+    const { rows: exRows } = await db.query(
+      'SELECT 1 FROM workout_exercises WHERE id = ? AND workout_block_id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [exId, blockId, gymId],
+    );
+    if (exRows.length === 0) return res.status(404).json({ error: 'Exercise item not found' });
+    if (!(await blockInPlan(targetId, planId, gymId))) {
+      return res.status(400).json({ error: 'target_block_id must be a block of this plan' });
+    }
+    await db.transaction(async (tx) => {
+      const { rows: sourceRows } = await tx.query(
+        'SELECT id FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL AND id != ? ORDER BY position',
+        [blockId, exId],
+      );
+      const { rows: targetRows } = await tx.query(
+        'SELECT id FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL ORDER BY position',
+        [targetId],
+      );
+      const targetOrder = targetRows.map((r: any) => r.id);
+      const insertAt = position === null ? targetOrder.length : Math.min(position - 1, targetOrder.length);
+      targetOrder.splice(insertAt, 0, Number(exId));
+      await tx.query(
+        `UPDATE workout_exercises SET workout_block_id = ?, position = position + 2000000,
+                modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+         WHERE id = ?`,
+        [targetId, gymMembershipId, exId],
+      );
+      if (sourceRows.length > 0) {
+        await reorder(tx, 'workout_exercises', 'workout_block_id', blockId, sourceRows.map((r: any) => r.id));
+      }
+      await reorder(tx, 'workout_exercises', 'workout_block_id', String(targetId), targetOrder);
+    });
+    const { rows } = await db.query(
+      'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
+      [exId],
+    );
+    recordAudit(req, { action: 'update', entityType: 'workout_exercise', entityId: exId, next: rows[0] });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Duplicate a workout (with its blocks and exercises) at the end of the plan.
+trainingPlansRouter.post('/:planId/workouts/:workoutId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { memberId, planId, workoutId } = req.params as { memberId: string; planId: string; workoutId: string };
+  try {
+    if (!(await planExists(planId, memberId, gymId))) return res.status(404).json({ error: 'Training plan not found' });
+    const { rows: sourceRows } = await db.query(
+      'SELECT * FROM workouts WHERE id = ? AND training_plan_id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [workoutId, planId, gymId],
+    );
+    if (sourceRows.length === 0) return res.status(404).json({ error: 'Workout not found' });
+    const source = sourceRows[0];
+
+    const newWorkoutId = await db.transaction(async (tx) => {
+      const { rows: posRows } = await tx.query(
+        'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workouts WHERE training_plan_id = ?',
+        [planId],
+      );
+      const { insertId: copyId } = await tx.query(
+        'INSERT INTO workouts (gym_id, training_plan_id, name, description, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?, ?)',
+        [gymId, planId, copyName(source.name), source.description, posRows[0].next_position, source.scheduled_weekday],
+      );
+      const { rows: blockRows } = await tx.query(
+        'SELECT * FROM workout_blocks WHERE workout_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+        [workoutId],
+      );
+      for (const block of blockRows) {
+        const { insertId: newBlockId } = await tx.query(
+          `INSERT INTO workout_blocks
+            (gym_id, workout_id, position, name, description, type, result_type,
+             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, copyId, block.position, block.name, block.description, block.type, block.result_type,
+           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes,
+           gymMembershipId],
+        );
+        await tx.query(
+          `INSERT INTO workout_exercises
+            (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
+           SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, ?
+           FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL`,
+          [newBlockId, gymMembershipId, block.id],
+        );
+      }
+      return copyId;
+    });
+
+    const { rows } = await db.query('SELECT * FROM workouts WHERE id = ?', [newWorkoutId]);
+    recordAudit(req, { action: 'create', entityType: 'workout', entityId: newWorkoutId, next: rows[0] });
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Duplicate a block (with its exercises) at the end of the same workout.
+trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { planId, workoutId, blockId } = req.params as { planId: string; workoutId: string; blockId: string };
+  try {
+    if (!(await workoutExists(workoutId, planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
+    const { rows: sourceRows } = await db.query(
+      'SELECT * FROM workout_blocks WHERE id = ? AND workout_id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [blockId, workoutId, gymId],
+    );
+    if (sourceRows.length === 0) return res.status(404).json({ error: 'Block not found' });
+    const source = sourceRows[0];
+
+    const newBlockId = await db.transaction(async (tx) => {
+      const { rows: posRows } = await tx.query(
+        'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_blocks WHERE workout_id = ?',
+        [workoutId],
+      );
+      const { insertId: copyId } = await tx.query(
+        `INSERT INTO workout_blocks
+          (gym_id, workout_id, position, name, description, type, result_type,
+           rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, workoutId, posRows[0].next_position, copyName(source.name), source.description, source.type, source.result_type,
+         source.rounds, source.duration_seconds, source.work_seconds, source.rest_seconds, source.is_optional, source.notes,
+         gymMembershipId],
+      );
+      await tx.query(
+        `INSERT INTO workout_exercises
+          (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
+         SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, ?
+         FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL`,
+        [copyId, gymMembershipId, blockId],
+      );
+      return copyId;
+    });
+
+    const { rows } = await db.query('SELECT * FROM workout_blocks WHERE id = ?', [newBlockId]);
+    recordAudit(req, { action: 'create', entityType: 'workout_block', entityId: newBlockId, next: rows[0] });
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Duplicate an exercise item at the end of the same block.
+trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { workoutId, blockId, exId } = req.params as { workoutId: string; blockId: string; exId: string };
+  try {
+    if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
+    const { insertId } = await db.query(
+      `INSERT INTO workout_exercises
+        (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
+       SELECT we.gym_id, we.workout_block_id, we.exercise_id,
+              (SELECT COALESCE(MAX(position), 0) + 1 FROM workout_exercises WHERE workout_block_id = ?),
+              we.min_reps, we.max_reps, we.sets, we.rest_seconds, we.tempo, we.notes, ?
+       FROM workout_exercises we
+       WHERE we.id = ? AND we.workout_block_id = ? AND we.gym_id = ? AND we.deleted_at IS NULL`,
+      [blockId, gymMembershipId, exId, blockId, gymId],
+    );
+    if (!insertId) return res.status(404).json({ error: 'Exercise item not found' });
+    const { rows } = await db.query(
+      'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
+      [insertId],
+    );
+    recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: insertId, next: rows[0] });
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
 });

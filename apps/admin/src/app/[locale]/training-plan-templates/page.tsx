@@ -14,6 +14,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle } from '@/components/ui';
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
+import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
 
 export interface TrainingPlanTemplate {
   id: number;
@@ -66,6 +67,7 @@ export default function TrainingPlanTemplatesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<TrainingPlanTemplate | null>(null);
+  const [assigning, setAssigning] = useState<TrainingPlanTemplate | null>(null);
 
   // Row expansion + per-template lazy-loaded, cached hierarchy.
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -193,6 +195,9 @@ export default function TrainingPlanTemplatesPage() {
           ariaLabel={t('training_plan_templates.col_actions')}
           items={[
             { label: t('training_plan_templates.details'), onClick: () => openEdit(w) },
+            ...(w.status === 'active'
+              ? [{ label: t('training_plans.assign_to_member'), onClick: () => setAssigning(w) }]
+              : []),
             { label: t('training_plan_templates.delete'), onClick: () => setDeleting(w), danger: true },
           ]}
         />
@@ -278,6 +283,13 @@ export default function TrainingPlanTemplatesPage() {
       <ConfirmDialog open={deleting !== null} message={t('training_plan_templates.confirm_delete')}
                      confirmLabel={t('training_plan_templates.delete')} cancelLabel={t('training_plan_templates.cancel')}
                      onConfirm={del} onCancel={() => setDeleting(null)} />
+
+      <NewTrainingPlanDialog
+        open={assigning !== null}
+        presetTemplate={assigning ? { id: assigning.id, name: assigning.name } : null}
+        onClose={() => setAssigning(null)}
+        onCreated={(plan) => { setAssigning(null); router.push(`/${locale}/training-plans/${plan.id}`); }}
+      />
     </div>
   );
 }
