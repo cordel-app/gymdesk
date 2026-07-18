@@ -297,7 +297,15 @@ Pages whose entity owns a hierarchy (Training Plan Template → Workouts → Blo
 - **Drag-and-drop.** One page-level `DndContext`; sortable items registered per parent `SortableContext`. Encode ancestry in the drag id (`block:<templateId>:<blockId>`, `ex:<templateId>:<blockId>:<exId>`) so `onDragEnd` can tell same-parent reorder from cross-parent moves without extra lookups. Reorders are optimistic (patch the cached hierarchy, then `PUT …/reorder`, resync on failure).
 - **Cross-parent moves.** A dedicated `PUT /<entity>/:id/<child>/:childId/move` reparents in one transaction: park the row on a temporary high `position` first (the `(parent_id, position)` unique index would otherwise collide), then recompact positions in both parents with the standard reorder helper. Rows of *other* templates accept drops via a `useDroppable` wrapper around the Name cell (`tmpl:<id>`), so a collapsed target works — the drop appends at the end.
 
-Reference implementations: `[locale]/workout-templates/page.tsx` + `WorkoutTemplateTree.tsx` (full pattern incl. cross-parent moves) and `[locale]/training-plan-templates/page.tsx` + `TrainingPlanTree.tsx` (single-parent variant).
+Reference implementations: `[locale]/workout-templates/page.tsx` + `WorkoutTemplateTree.tsx` (full pattern incl. cross-parent moves) and `[locale]/training-plan-templates/page.tsx` + `TrainingPlanTree.tsx` (single-parent variant). `[locale]/training-plans/[id]/page.tsx` (#67) is the single-page dedicated-route variant: same tree/move/duplicate shape, but the plan itself is the page (header form + workout tree) instead of one row inside a list; cross-parent moves target siblings inside the same plan (block → other workout of the plan, exercise → other block of the plan) via a `MoveDialog` picker rather than drag-and-drop, since collapsed peers aren't visible.
+
+### Duplicate at every level
+
+Sibling to cross-parent moves — `POST /<entity>/:id/<child>/:childId/duplicate` deep-copies the subtree and appends it after the last position in the same parent. Two shapes worth keeping consistent:
+- **Multi-level clone (workout, block)**: read the source row + descendants inside `db.transaction`, `INSERT` the copy, then loop children with the same helpers used elsewhere; give the top-level name a `(copy)` suffix so the tree reads unambiguously.
+- **Leaf clone (exercise)**: a single `INSERT … SELECT` with a scalar subquery for `position = COALESCE(MAX(position),0)+1` on the same block avoids a round-trip. MySQL 1093 is not a concern here because the SELECT and INSERT hit the same table but the subquery reads the max — MySQL treats it as materialized.
+
+Reference: `training-plans.ts` `duplicateWorkout` / `duplicateBlock` (multi-level) and `duplicateExercise` (leaf) added in #67.
 
 ---
 
