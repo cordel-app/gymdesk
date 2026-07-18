@@ -310,6 +310,7 @@ Reference implementations: `[locale]/workout-templates/page.tsx` + `WorkoutTempl
 | Coaches manage training content | `requireRole('admin', 'coach')` (exercises, workouts, training templates) |
 | Admin only | `requireRole('admin')` on all mutations |
 | Platform level | `requireSuperadmin` middleware, route under `/platform` |
+| Platform branch inside a tenant route | check `getTenantContext(req).isSuperadmin` (e.g. `GET /audit-logs?scope=all`) |
 
 Frontend: show/hide UI elements using `activeGym?.role === 'admin'` or `isSuperadmin`. Always also enforce on the backend — never rely on frontend-only guards.
 
@@ -331,4 +332,4 @@ recordAudit(req, {
 });
 ```
 
-Actor, gym, IP, user-agent, and `source` are pulled from `req.tenantCtx` automatically. Rows are read back through `GET /audit-logs` (admin only) in the admin **Audit** page.
+Actor, gym, IP, user-agent, and `source` are pulled from `req.tenantCtx` automatically. Rows are read back through `GET /audit-logs` (admin only, scoped to the active gym) in the admin **System → Audit log** page. Platform superadmins can pass `?scope=all` to see every gym's events (with `gym_name` joined in) — surfaced as **Cordel → Audit log** (`/cordel/audit`); both pages render the shared `AuditLogView` component.

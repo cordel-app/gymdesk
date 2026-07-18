@@ -7,7 +7,7 @@ onto the existing `members` + `gym_memberships` split — no new users table).
 Each ticket below is a GitHub issue in `cordel-app/gymdesk`. Full scope and acceptance
 criteria live in the issue bodies; this doc is the map.
 
-## Status (2026-07-17)
+## Status (2026-07-18)
 
 - **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3.
 - **Training module redesign (#60–#63, done)**: dynamic Workout Block form driven by
@@ -17,11 +17,17 @@ criteria live in the issue bodies; this doc is the map.
   migration 053) and cross-template block drag-and-drop via `PUT …/blocks/:id/move` (#63).
   Patterns documented in `docs/feature-patterns.md` (Tree-Grid Editor, Config-Driven Fields,
   Dependency Awareness).
+- **Cordel platform menu + two-scope audit log (#66, done)**: superadmin-only **Cordel**
+  sidebar group (Gyms, Users, platform Audit Log at `/cordel/audit`); **System** reduced to
+  gym-scoped Audit Log + Customize and opened to gym admins (`requiredRole: 'admin'`).
+  `GET /audit-logs?scope=all` (platform superadmins only, `tenantCtx.isSuperadmin`) lifts
+  the tenant gym filter and joins `gyms.name`; shared `AuditLogView` component renders both
+  scopes, adding a Gym column in platform mode.
 - **Done outside the phase plan**:
   - **Per-gym theming (#51)**: `gyms.theme_key` (migration 030, presets `indigo/emerald/crimson/amber`), `ThemeProvider`, and the superadmin **System → Customize** editor.
   - **Team management (#53)**: gym-scoped admin/coach/staff CRUD via `gym-users.ts` + the **Organization → Team** page. Clerk-invitation flow with an `invited` placeholder row that links on first sign-in; self-edit and last-admin guards; audited. Added `gym_memberships` columns `status`, `email`, `name`, `invitation_id` (migrations 031–034).
   - **Platform superadmin management**: `platform/superadmins` + **System → Users**.
-  - **Grouped, role-gated sidebar**: `config/navigationGroups.ts` (Membership / Organization / Training / Nutrition / Financials / System).
+  - **Grouped, role-gated sidebar**: `config/navigationGroups.ts` (Membership / Organization / Training / Nutrition / Financials / System / Cordel).
 - **Placeholder shells (built, content pending)**: per-group Dashboard pages (`organization`, `training`, `nutrition`, `financials`, singular `membership`). Nutrition has no backend yet.
 - **Phase 9 — Centers (#59, supersedes Phase 7)**: `Center` (migration 043) as the single
   location concept going forward — `gym_locations` was never built. `member_centers`

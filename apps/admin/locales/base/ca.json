@@ -28,7 +28,8 @@
       "training": "Entrenament",
       "nutrition": "Nutrició",
       "financials": "Finances",
-      "system": "Sistema"
+      "system": "Sistema",
+      "cordel": "Cordel"
     },
     "centers": "Centres",
     "resources": "Recursos",
@@ -353,7 +354,9 @@
     "previous": "Anterior",
     "next": "Nou",
     "page_info": "{start}–{end} de {total}",
-    "error_generic": "Alguna cosa ha anat malament."
+    "error_generic": "Alguna cosa ha anat malament.",
+    "title_platform": "Registre d'auditoria de la plataforma",
+    "col_gym": "Gimnàs"
   },
   "workouts": {
     "title": "Rutines",

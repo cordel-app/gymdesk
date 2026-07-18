@@ -28,7 +28,8 @@
       "training": "Training",
       "nutrition": "Nutrition",
       "financials": "Financials",
-      "system": "System"
+      "system": "System",
+      "cordel": "Cordel"
     },
     "centers": "Centers",
     "resources": "Resources",
@@ -353,7 +354,9 @@
     "previous": "Previous",
     "next": "New",
     "page_info": "{start}–{end} of {total}",
-    "error_generic": "Something went wrong."
+    "error_generic": "Something went wrong.",
+    "title_platform": "Platform audit log",
+    "col_gym": "Gym"
   },
   "workouts": {
     "title": "Workouts",

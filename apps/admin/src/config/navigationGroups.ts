@@ -7,6 +7,8 @@ export interface NavItem {
   labelKey: string; // Translation key like 'nav.members'
   requiredRole?: UserRole;
   children?: NavItem[];
+  /** Draw a divider line above this item (visual grouping within a nav group). */
+  separatorAbove?: boolean;
 }
 
 export interface NavGroup {
@@ -108,6 +110,11 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/training-plan-templates',
         labelKey: 'nav.training_plan_templates',
       },
+      {
+        href: '/{{locale}}/training-plans',
+        labelKey: 'nav.training_plans',
+        separatorAbove: true,
+      },
     ],
   },
   {
@@ -142,7 +149,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'system',
     labelKey: 'nav.groups.system',
-    requiredRole: 'superadmin',
+    requiredRole: 'admin',
     items: [
       {
         href: '/{{locale}}/audit',
@@ -152,6 +159,13 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/system/customize',
         labelKey: 'nav.customize',
       },
+    ],
+  },
+  {
+    id: 'cordel',
+    labelKey: 'nav.groups.cordel',
+    requiredRole: 'superadmin',
+    items: [
       {
         href: '/{{locale}}/system/gyms',
         labelKey: 'nav.gyms',
@@ -159,6 +173,10 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/system/users',
         labelKey: 'nav.system_users',
+      },
+      {
+        href: '/{{locale}}/cordel/audit',
+        labelKey: 'nav.audit',
       },
     ],
   },

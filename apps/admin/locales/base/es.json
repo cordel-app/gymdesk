@@ -28,7 +28,8 @@
       "training": "Entrenamiento",
       "nutrition": "Nutrición",
       "financials": "Finanzas",
-      "system": "Sistema"
+      "system": "Sistema",
+      "cordel": "Cordel"
     },
     "centers": "Centros",
     "resources": "Recursos",
@@ -353,7 +354,9 @@
     "previous": "Anterior",
     "next": "Nuevo",
     "page_info": "{start}–{end} de {total}",
-    "error_generic": "Algo ha ido mal."
+    "error_generic": "Algo ha ido mal.",
+    "title_platform": "Registro de auditoría de la plataforma",
+    "col_gym": "Gimnasio"
   },
   "workouts": {
     "title": "Rutinas",
