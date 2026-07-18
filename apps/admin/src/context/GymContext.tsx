@@ -4,14 +4,21 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, Re
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useTranslations } from 'next-intl';
 import { useToast } from '@/components/Toast';
-import type { ThemeKey } from '@/lib/themes';
+export interface GymTheme {
+  id: string;
+  name: string;
+  status: string;
+  has_logo: boolean;
+  logo_updated_at: string | null;
+  tokens: Record<string, any> | null;
+}
 
 export interface GymOption {
   id: string;
   name: string;
   slug: string;
   role: 'admin' | 'coach' | 'staff';
-  theme_key?: ThemeKey;
+  theme: GymTheme | null;
 }
 
 interface GymContextValue {

@@ -38,8 +38,8 @@ export function BottomNav() {
       left: 0,
       right: 0,
       display: 'flex',
-      background: '#fff',
-      borderTop: '1px solid #e5e5e5',
+      background: 'var(--gd-sidebar-bg, #fff)',
+      borderTop: 'var(--gd-header-sep-height, 1px) solid var(--gd-header-sep-color, #e5e5e5)',
       paddingBottom: 'env(safe-area-inset-bottom)',
       zIndex: 50,
     }}>
@@ -59,7 +59,7 @@ export function BottomNav() {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              color: active ? '#18181b' : '#9a9a9a',
+              color: active ? 'var(--gd-sidebar-selected-bg, #18181b)' : 'var(--gd-sidebar-text, #9a9a9a)',
               fontWeight: active ? 700 : 500,
               fontSize: 12,
             }}

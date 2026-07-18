@@ -17,7 +17,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
   });
 
   const body = req.method !== 'GET' && req.method !== 'HEAD'
-    ? await req.text()
+    ? await req.arrayBuffer()
     : undefined;
 
   try {

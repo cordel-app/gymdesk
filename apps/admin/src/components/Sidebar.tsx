@@ -93,9 +93,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           style={{
             display: 'block',
             padding: '10px 20px',
-            color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+            color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
             textDecoration: 'none',
-            background: active && !isParentOfActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+            background: active && !isParentOfActive ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))' : 'transparent',
             borderLeft: active && !isParentOfActive ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
             fontWeight: active ? 600 : 400,
             fontSize: 15,
@@ -125,9 +125,9 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           style={{
             display: 'block',
             padding: '8px 20px 8px 36px',
-            color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+            color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
             textDecoration: 'none',
-            background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+            background: active ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))' : 'transparent',
             borderLeft: active ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
             fontWeight: active ? 600 : 400,
             fontSize: 14,
@@ -148,8 +148,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <aside style={{
       width: 220,
-      background: 'var(--chrome, #1a1a2e)',
-      color: '#fff',
+      background: 'var(--gd-sidebar-bg, var(--chrome, #1a1a2e))',
+      color: 'var(--gd-sidebar-text, #fff)',
       display: 'flex',
       flexDirection: 'column',
       flexShrink: 0,

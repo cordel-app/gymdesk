@@ -9,18 +9,21 @@ import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { btnStyle, btnSmall } from '@/components/ui';
-import { THEME_KEYS, THEMES, DEFAULT_THEME, type ThemeKey } from '@/lib/themes';
+interface GymTheme {
+  id: string;
+  name: string;
+}
 
 interface Gym {
   id: string;
   name: string;
   slug: string;
   plan: string;
-  theme_key: ThemeKey;
+  theme: GymTheme | null;
   created_at: string;
 }
 
-const emptyForm = { name: '', slug: '', plan: 'free', theme_key: DEFAULT_THEME as ThemeKey };
+const emptyForm = { name: '', slug: '', plan: 'free', theme_id: '' };
 
 export default function SystemGymsPage() {
   const t = useTranslations('system_gyms');
@@ -31,6 +34,7 @@ export default function SystemGymsPage() {
   const { toast } = useToast();
 
   const [gyms, setGyms] = useState<Gym[]>([]);
+  const [themes, setThemes] = useState<GymTheme[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Gym | null>(null);
@@ -52,8 +56,12 @@ export default function SystemGymsPage() {
   async function load() {
     setLoading(true);
     try {
-      const data = await apiFetch<Gym[]>('/platform/gyms');
-      setGyms(data);
+      const [gymsData, themesData] = await Promise.all([
+        apiFetch<Gym[]>('/platform/gyms'),
+        apiFetch<GymTheme[]>('/platform/themes?status=active').catch(() => []),
+      ]);
+      setGyms(gymsData);
+      setThemes(themesData);
     } catch (err: any) {
       setGyms([]);
       toast(err.message ?? t('error_load'));
@@ -71,7 +79,7 @@ export default function SystemGymsPage() {
 
   function openEdit(g: Gym) {
     setEditing(g);
-    setForm({ name: g.name, slug: g.slug, plan: g.plan, theme_key: g.theme_key ?? DEFAULT_THEME });
+    setForm({ name: g.name, slug: g.slug, plan: g.plan, theme_id: g.theme?.id ?? '' });
     setError(null);
     setModalOpen(true);
   }
@@ -88,7 +96,7 @@ export default function SystemGymsPage() {
         // PATCH: only send editable fields (slug/plan aren't touched here).
         await apiFetch(`/platform/gyms/${editing.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({ name: form.name.trim(), theme_key: form.theme_key }),
+          body: JSON.stringify({ name: form.name.trim(), theme_id: form.theme_id || null }),
         });
       } else {
         await apiFetch('/platform/gyms', {
@@ -97,7 +105,7 @@ export default function SystemGymsPage() {
             name: form.name.trim(),
             slug: form.slug.trim(),
             plan: form.plan,
-            theme_key: form.theme_key,
+            theme_id: form.theme_id || null,
           }),
         });
       }
@@ -126,21 +134,8 @@ export default function SystemGymsPage() {
     { header: t('col_plan'), width: 90, render: (g) => g.plan },
     {
       header: t('col_theme'),
-      width: 80,
-      render: (g) => (
-        <span
-          aria-label={t(`theme_${g.theme_key}`)}
-          title={t(`theme_${g.theme_key}`)}
-          style={{
-            display: 'inline-block',
-            width: 18,
-            height: 18,
-            borderRadius: '50%',
-            background: THEMES[g.theme_key]?.brand ?? THEMES[DEFAULT_THEME].brand,
-            border: '1px solid rgba(0,0,0,0.1)',
-          }}
-        />
-      ),
+      width: 130,
+      render: (g) => g.theme ? g.theme.name : '—',
     },
     { header: t('col_created'), width: 130, render: (g) => new Date(g.created_at).toLocaleDateString() },
     {
@@ -211,30 +206,16 @@ export default function SystemGymsPage() {
         )}
 
         <FormLabel>{t('label_theme')}</FormLabel>
-        <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
-          {THEME_KEYS.map((k) => {
-            const selected = form.theme_key === k;
-            return (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setForm({ ...form, theme_key: k })}
-                aria-label={t(`theme_${k}`)}
-                title={t(`theme_${k}`)}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  background: THEMES[k].brand,
-                  border: selected ? '3px solid #333' : '2px solid #ccc',
-                  cursor: 'pointer',
-                  padding: 0,
-                  outline: 'none',
-                }}
-              />
-            );
-          })}
-        </div>
+        <select
+          value={form.theme_id}
+          onChange={(e) => setForm({ ...form, theme_id: e.target.value })}
+          style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}
+        >
+          <option value="">{t('theme_none')}</option>
+          {themes.map((th) => (
+            <option key={th.id} value={th.id}>{th.name}</option>
+          ))}
+        </select>
       </CrudModal>
     </div>
   );

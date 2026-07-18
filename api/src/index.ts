@@ -15,9 +15,10 @@ import { billingEventsRouter } from './api/billing-events';
 import { roomsRouter } from './api/rooms';
 import { specialitiesRouter } from './api/specialities';
 import { trainersRouter } from './api/trainers';
-import { classTypesRouter } from './api/class-types';
+import { activityTypesRouter } from './api/activity-types';
 import { classSessionsRouter } from './api/class-sessions';
-import { planClassTypesRouter } from './api/plan-class-types';
+// Side-effect import: registers the booking access hook for plan allowances + center validation.
+import './api/plan-allowances';
 import { classPackagesRouter } from './api/class-packages';
 import { userClassPackagesRouter } from './api/user-class-packages';
 import { actionTypesRouter } from './api/action-types';
@@ -38,11 +39,12 @@ import { resourcesRouter } from './api/resources';
 import { trainerAvailabilityRouter } from './api/trainer-availability';
 import { eventsRouter } from './api/events';
 // Side-effect import: registers the booking access hook for package credits.
-// Must be imported BEFORE plan-class-types so its hook is queued first
+// Must be imported BEFORE plan-allowances so its hook is queued first
 // (plan-access checks getPackageIntent to know whether to bail on 403).
 import './api/package-credits';
 import { publicRouter } from './api/public';
-import { meRouter, meLinkRouter } from './api/me';
+import { meRouter, meLinkRouter, meGymRouter } from './api/me';
+import { themesRouter, themesPublicRouter } from './api/themes';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext } from './infra/tenantContext';
@@ -112,10 +114,14 @@ app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }
 // Public endpoints — no auth, no tenant context (identified by gym slug)
 app.use('/public', publicRouter);
 
+// Theme logo — no auth (img tags in both apps need this)
+app.use('/themes', themesPublicRouter);
+
 // Gym listing/membership — auth required but no tenant context (gymId not known yet)
 app.use('/gyms', requireAuth(), gymsRouter);
 
 // Platform superadmin routes
+app.use('/platform/themes', requireAuth(), themesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 
@@ -123,6 +129,8 @@ app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 // /me/link + /gym-users/link must come before tenantContext (no membership row exists yet on first link)
 app.use('/me/link', requireAuth(), meLinkRouter);
 app.use('/gym-users/link', requireAuth(), gymUsersLinkRouter);
+// /me/gym must come BEFORE /me to avoid being swallowed by tenantContext
+app.use('/me/gym', requireAuth(), meGymRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 app.use('/gym-users',     requireAuth(), tenantContext, gymUsersRouter);
@@ -142,14 +150,13 @@ app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, exerci
 app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, workoutBlockLogsRouter);
 app.use('/audit-logs',       requireAuth(), tenantContext, auditLogsRouter);
 app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
-app.use('/membership-plans/:id/class-types', requireAuth(), tenantContext, planClassTypesRouter);
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
 app.use('/charge-types',     requireAuth(), tenantContext, chargeTypesRouter);
 app.use('/billing-events',   requireAuth(), tenantContext, billingEventsRouter);
 app.use('/rooms',            requireAuth(), tenantContext, centerContext, roomsRouter);
 app.use('/specialities',     requireAuth(), tenantContext, specialitiesRouter);
 app.use('/trainers',         requireAuth(), tenantContext, trainersRouter);
-app.use('/class-types',      requireAuth(), tenantContext, classTypesRouter);
+app.use('/activity-types',   requireAuth(), tenantContext, activityTypesRouter);
 app.use('/class-sessions',   requireAuth(), tenantContext, centerContext, classSessionsRouter);
 app.use('/class-packages',   requireAuth(), tenantContext, classPackagesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, actionTypesRouter);

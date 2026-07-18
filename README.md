@@ -1,6 +1,6 @@
 # Gymdesk
 
-Gym Management SaaS — admin app for managing members, memberships, classes, bookings, training (exercises, workout templates, training plans), promotions, and billing, plus a member-facing app.
+Gym Management SaaS — admin app for managing members, memberships, classes, bookings, training (exercises, workout templates, training plans), promotions, billing, and per-gym theming, plus a member-facing app.
 
 ## Requirements
 
@@ -88,6 +88,7 @@ gymdesk/
 | Manage training catalog (exercises, workout/plan templates) | | ✓ | ✓ | |
 | View gym audit log (System → Audit log) | ✓ | ✓ | | |
 | View platform-wide audit log (Cordel → Audit log) | ✓ | | | |
+| Create / manage themes (Cordel → Themes) | ✓ | | | |
 
 ## Superadmin setup
 
@@ -110,7 +111,8 @@ Route prefixes by area:
 
 | Area | Route prefixes |
 |------|----------------|
-| Platform (superadmin) | `/platform`, `/platform/superadmins`, `/gyms` |
+| Platform (superadmin) | `/platform`, `/platform/superadmins`, `/platform/themes`, `/gyms` |
+| Themes (public logo) | `/themes/:id/logo` |
 | Team & profile | `/gym-users`, `/me`, `/me/link` |
 | Membership | `/members`, `/membership-plans`, `/user-memberships`, `/billing-events`, `/benefit-types`, `/charge-types` |
 | Classes & booking | `/class-types`, `/class-sessions`, `/bookings`, `/class-packages`, `/members/:memberId/class-packages` |

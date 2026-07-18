@@ -6,6 +6,7 @@ import { getMessages } from 'next-intl/server';
 import { AppProvider } from '@/context/AppContext';
 import { BottomNav } from '@/components/BottomNav';
 import { CenterSwitcher } from '@/components/CenterSwitcher';
+import { ThemeProvider } from '@/components/ThemeProvider';
 
 export const metadata: Metadata = {
   title: 'Gymdesk',
@@ -36,14 +37,16 @@ export default async function LocaleLayout({
           <meta name="apple-mobile-web-app-capable" content="yes" />
           <link rel="manifest" href="/manifest.json" />
         </head>
-        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f5f5f5', fontSize: 16 }}>
+        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
-            <AppProvider gymId={null}>
-              <CenterSwitcher />
-              <div style={{ paddingBottom: 72 }}>
-                {children}
-              </div>
-              <BottomNav />
+            <AppProvider>
+              <ThemeProvider>
+                <CenterSwitcher />
+                <div style={{ paddingBottom: 72 }}>
+                  {children}
+                </div>
+                <BottomNav />
+              </ThemeProvider>
             </AppProvider>
           </NextIntlClientProvider>
         </body>

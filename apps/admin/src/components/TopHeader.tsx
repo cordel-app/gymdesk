@@ -13,6 +13,11 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
   // admin/staff/coach isn't shown a pointless dropdown.
   const showSelector = !loading && (isSuperadmin || gyms.length > 1);
 
+  const theme = activeGym?.theme;
+  const logoSrc = theme?.has_logo
+    ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
+    : null;
+
   return (
     <header style={{
       position: 'fixed',
@@ -20,8 +25,8 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       left: 0,
       right: 0,
       height: 52,
-      background: 'var(--chrome, #1a1a2e)',
-      borderBottom: '1px solid rgba(255,255,255,0.1)',
+      background: 'var(--gd-header-bg, var(--chrome, #1a1a2e))',
+      borderBottom: 'var(--gd-header-sep-height, 1px) solid var(--gd-header-sep-color, rgba(255,255,255,0.1))',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -35,18 +40,23 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
           className="hamburger-btn"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: '#fff', padding: 4, display: 'none', flexDirection: 'column',
+            color: 'var(--gd-header-text, #fff)', padding: 4, display: 'none', flexDirection: 'column',
             gap: 5, alignItems: 'center', justifyContent: 'center',
           }}
           aria-label="Toggle menu"
         >
-          <span style={{ display: 'block', width: 22, height: 2, background: '#fff', borderRadius: 2 }} />
-          <span style={{ display: 'block', width: 22, height: 2, background: '#fff', borderRadius: 2 }} />
-          <span style={{ display: 'block', width: 22, height: 2, background: '#fff', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 22, height: 2, background: 'var(--gd-header-text, #fff)', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 22, height: 2, background: 'var(--gd-header-text, #fff)', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 22, height: 2, background: 'var(--gd-header-text, #fff)', borderRadius: 2 }} />
         </button>
-        <strong style={{ color: '#fff', fontSize: 18 }}>
-          {activeGym?.name ?? 'Gymdesk'}
-        </strong>
+        {logoSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logoSrc} alt={activeGym?.name ?? 'Gymdesk'} style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
+        ) : (
+          <strong style={{ color: 'var(--gd-header-text, #fff)', fontSize: 18 }}>
+            {activeGym?.name ?? 'Gymdesk'}
+          </strong>
+        )}
       </div>
       <style>{`@media (max-width: 768px) { .hamburger-btn { display: flex !important; } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>

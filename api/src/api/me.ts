@@ -13,6 +13,40 @@ export const meRouter = Router();
 // Does NOT use tenantContext — the membership row doesn't exist yet.
 export const meLinkRouter = Router();
 
+// #68: resolves the gym + theme for the caller without requiring x-gym-id.
+// Used by the member app on first load to bootstrap gymId and apply theming.
+export const meGymRouter = Router();
+
+meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  const userId = (req as any).auth?.userId;
+  try {
+    const { rows } = await db.query(
+      `SELECT g.id, g.name,
+              t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
+              t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+              t.tokens AS theme_tokens
+       FROM members m
+       JOIN gym_memberships gm ON gm.gym_id = m.gym_id AND gm.user_id = m.clerk_user_id
+       JOIN gyms g ON g.id = m.gym_id
+       LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
+       WHERE m.clerk_user_id = ? AND m.deleted_at IS NULL
+       LIMIT 1`,
+      [userId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'No gym found for this user' });
+    const row = rows[0];
+    const theme = row.theme_id_val ? {
+      id: row.theme_id_val,
+      name: row.theme_name,
+      status: row.theme_status,
+      has_logo: !!row.theme_logo_mime,
+      logo_updated_at: row.theme_logo_updated_at,
+      tokens: typeof row.theme_tokens === 'string' ? JSON.parse(row.theme_tokens) : (row.theme_tokens ?? null),
+    } : null;
+    res.json({ id: row.id, name: row.name, theme });
+  } catch (err) { next(err); }
+});
+
 meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
   const userId = (req as any).auth?.userId;
   const gymId = req.headers['x-gym-id'] as string | undefined;
