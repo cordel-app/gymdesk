@@ -114,7 +114,7 @@ Route prefixes by area:
 | Team & profile | `/gym-users`, `/me`, `/me/link` |
 | Membership | `/members`, `/membership-plans`, `/user-memberships`, `/billing-events`, `/benefit-types`, `/charge-types` |
 | Classes & booking | `/class-types`, `/class-sessions`, `/bookings`, `/class-packages`, `/members/:memberId/class-packages` |
-| Training | `/muscles`, `/exercises`, `/workout-templates`, `/training-plan-templates`, `/members/:memberId/{training-plans,member-training-plans,exercise-logs,workout-block-logs}` |
+| Training | `/muscles`, `/exercises`, `/workout-templates`, `/training-plan-templates`, `/training-plans` (gym-level list + create with keep/expire), `/members/:memberId/{training-plans,member-training-plans,exercise-logs,workout-block-logs}` |
 | Promotions | `/promotions`, `/action-types` |
 | Locations (Centers) | `/centers`, `/rooms`, `/resources`, `/events`, `/trainers`, `/trainer-availability`, `/specialities`, `/members/:memberId/centers` |
 | System | `/audit-logs`, `/webhooks/clerk`, `/health`, `/public` |
