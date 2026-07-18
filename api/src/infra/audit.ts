@@ -1,18 +1,22 @@
 import { Request } from 'express';
 import { db } from './db';
+import { resolveEntityName, enrichPayload } from './audit-registry';
 
 /**
  * P6.1: fire-and-forget audit writer. Never fails the calling request —
  * a rejected INSERT logs to console.error and the business write goes on.
  *
- * Actor / gym / IP / UA are pulled from the request automatically. Callers
- * pass action, entity_type, entity_id, and optional previous/new value
- * snapshots (any JSON-serialisable shape).
+ * Actor name is pulled from req.tenantCtx.actorName (resolved once per
+ * request in tenantContext middleware from the Clerk user object).
+ * Entity name is resolved from the registry unless the caller passes one.
+ * FK references inside previous/next payloads are enriched to { id, name }.
  */
 export interface AuditPayload {
   action: string;
   entityType: string;
-  entityId?: unknown; // stringified below — accepts numbers, req.params.id (string | string[]), etc.
+  entityId?: unknown;
+  /** Pre-resolved entity display name. If omitted, resolved from the registry. */
+  entityName?: string | null;
   previous?: unknown;
   next?: unknown;
 }
@@ -30,26 +34,43 @@ function sourceForRole(role: string | undefined): string {
 
 export function recordAudit(req: Request, payload: AuditPayload): void {
   const ctx = req.tenantCtx;
-  if (!ctx) return; // no tenant context — nothing to attribute the row to
+  if (!ctx) return;
+
   const actor = ctx.userId ?? null;
+  const actorName = ctx.actorName ?? null;
   const source = sourceForRole(ctx.role);
   const ip = firstIp(req);
   const ua = (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null;
+  const entityIdStr = payload.entityId != null ? String(payload.entityId) : null;
 
-  const prev = payload.previous != null ? JSON.stringify(payload.previous) : null;
-  const next = payload.next != null ? JSON.stringify(payload.next) : null;
+  (async () => {
+    const [entityName, prevEnriched, nextEnriched] = await Promise.all([
+      payload.entityName !== undefined
+        ? Promise.resolve(payload.entityName)
+        : resolveEntityName(payload.entityType, entityIdStr, ctx.gymId),
+      payload.previous != null && typeof payload.previous === 'object'
+        ? enrichPayload(payload.previous as Record<string, unknown>)
+        : Promise.resolve(payload.previous),
+      payload.next != null && typeof payload.next === 'object'
+        ? enrichPayload(payload.next as Record<string, unknown>)
+        : Promise.resolve(payload.next),
+    ]);
 
-  db.query(
-    `INSERT INTO audit_logs
-     (gym_id, actor_user_id, action, entity_type, entity_id, previous_values, new_values, source, ip, user_agent)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      ctx.gymId, actor, payload.action, payload.entityType,
-      payload.entityId != null ? String(payload.entityId) : null,
-      prev, next, source, ip, ua,
-    ],
-  ).catch((err) => {
-    // Never fail the caller — log and move on.
+    const prev = prevEnriched != null ? JSON.stringify(prevEnriched) : null;
+    const next = nextEnriched != null ? JSON.stringify(nextEnriched) : null;
+
+    await db.query(
+      `INSERT INTO audit_logs
+       (gym_id, actor_user_id, actor_name, action, entity_type, entity_id, entity_name,
+        previous_values, new_values, source, ip, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        ctx.gymId, actor, actorName, payload.action,
+        payload.entityType, entityIdStr, entityName ?? null,
+        prev, next, source, ip, ua,
+      ],
+    );
+  })().catch((err) => {
     console.error('audit_logs insert failed', err.message ?? err);
   });
 }
