@@ -13,6 +13,8 @@ export interface TenantContext {
   gymMembershipId: number | null;
   /** Platform superadmin (Clerk publicMetadata.platform_role), distinct from a gym-level admin. */
   isSuperadmin: boolean;
+  /** Display name captured from Clerk at request time — used for immutable audit snapshots. */
+  actorName: string | null;
 }
 
 declare global {
@@ -35,8 +37,10 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
   // Superadmins get full admin access to any gym without a membership row
   const user = await clerkClient.users.getUser(userId);
   const meta = (user.publicMetadata ?? {}) as Record<string, unknown>;
+  const actorName = user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
+
   if (meta.platform_role === 'superadmin') {
-    req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true };
+    req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true, actorName };
     return next();
   }
 
@@ -49,7 +53,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  req.tenantCtx = { userId, gymId, role: rows[0].role, gymMembershipId: rows[0].id, isSuperadmin: false };
+  req.tenantCtx = { userId, gymId, role: rows[0].role, gymMembershipId: rows[0].id, isSuperadmin: false, actorName };
   next();
 }
 

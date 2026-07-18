@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -55,6 +56,7 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       [gymId, name.trim(), description ?? null, new Date(starts_at), new Date(ends_at), stackable ? 1 : 0, status ?? 'active'],
     );
     const { rows } = await db.query('SELECT * FROM promotions WHERE id = ?', [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'promotion', entityId: insertId, entityName: rows[0].name, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (e) { next(e); }
 });
@@ -85,13 +87,16 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Promotion not found' });
     const { rows } = await db.query('SELECT * FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+    recordAudit(req, { action: 'update', entityType: 'promotion', entityId: req.params.id, entityName: rows[0].name, next: rows[0] });
     res.json(rows[0]);
   } catch (e) { next(e); }
 });
 
 promotionsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rowCount } = await db.query('DELETE FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Promotion not found' });
+  const { rows: existing } = await db.query('SELECT name FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+  if (existing.length === 0) return res.status(404).json({ error: 'Promotion not found' });
+  await db.query('DELETE FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+  recordAudit(req, { action: 'delete', entityType: 'promotion', entityId: req.params.id, entityName: existing[0].name });
   res.status(204).send();
 });

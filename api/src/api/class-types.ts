@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { recordAudit } from '../infra/audit';
 
 const STATUSES = ['active', 'inactive'] as const;
 const SELECT = `
@@ -67,6 +68,7 @@ classTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
        speciality_id ?? null, status ?? 'active'],
     );
     const { rows } = await db.query(`${SELECT} WHERE ct.id = ?`, [insertId]);
+    recordAudit(req, { action: 'create', entityType: 'class_type', entityId: insertId, entityName: rows[0].name, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (e: any) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A class type with this name already exists.' });
@@ -107,6 +109,7 @@ classTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Class type not found' });
     const { rows } = await db.query(`${SELECT} WHERE ct.id = ? AND ct.gym_id = ?`, [req.params.id, gymId]);
+    recordAudit(req, { action: 'update', entityType: 'class_type', entityId: req.params.id, entityName: rows[0].name, next: rows[0] });
     res.json(rows[0]);
   } catch (e: any) {
     if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A class type with this name already exists.' });
@@ -116,7 +119,9 @@ classTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 
 classTypesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rowCount } = await db.query('DELETE FROM class_types WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Class type not found' });
+  const { rows: existing } = await db.query('SELECT name FROM class_types WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+  if (existing.length === 0) return res.status(404).json({ error: 'Class type not found' });
+  await db.query('DELETE FROM class_types WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+  recordAudit(req, { action: 'delete', entityType: 'class_type', entityId: req.params.id, entityName: existing[0].name });
   res.status(204).send();
 });
