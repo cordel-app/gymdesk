@@ -41,8 +41,22 @@ criteria live in the issue bodies; this doc is the map.
   `GET /audit-logs?scope=all` (platform superadmins only, `tenantCtx.isSuperadmin`) lifts
   the tenant gym filter and joins `gyms.name`; shared `AuditLogView` component renders both
   scopes, adding a Gym column in platform mode.
+- **Audit Log UX Improvements (#69, done)**: each audit row is now a self-contained
+  historical snapshot. `actor_name` and `entity_name` are captured at write time and never
+  recalculated (migration 055; existing rows truncated). Actor name comes from the Clerk user
+  object already fetched in `tenantContext` (zero extra queries). Entity name is resolved by
+  `infra/audit-registry.ts`: named entities use a `name`-column lookup; M-N/link entities
+  get a composed label from their FK parents (e.g. `user_membership` → member name + plan
+  name). FK fields in `previous_values`/`new_values` are enriched at write time from plain
+  `foo_id: value` to `foo: { id, name }` objects. `GET /audit-logs/meta` returns the full
+  entity-type list + action list for dropdown population. New filter params: `entity_name`
+  (LIKE), `actor` (name LIKE or Clerk ID exact match), `action`, `source`. `AuditLogView`
+  gains dropdowns for entity type, action and source; actor now searched by stored name;
+  entity column shows `type#id` + name beneath it; Clerk uid surfaced only in the expanded
+  row. `class-types.ts` and `promotions.ts` gain `recordAudit` coverage.
 - **Done outside the phase plan**:
-  - **Per-gym theming (#51)**: `gyms.theme_key` (migration 030, presets `indigo/emerald/crimson/amber`), `ThemeProvider`, and the superadmin **System → Customize** editor.
+  - **Per-gym theming (#51, extended by #68)**: `gyms.theme_key` (migration 030, presets `indigo/emerald/crimson/amber`), `ThemeProvider`, and the superadmin **System → Customize** editor (now replaced by #68).
+  - **Theme Management (#68)**: first-class `themes` entity (migrations 056–057 — table + gym FK). `tokens` JSON carries header/sidebar/typography design tokens. Superadmin **Cordel → Themes** CRUD (draft/active/deleted lifecycle, logo upload up to 512 KB via `POST /platform/themes/:id/logo`, `GET /themes/:id/logo` public caching endpoint). Gyms assigned a theme via `theme_id` FK replacing old `theme_key`. Admin `ThemeProvider` reads `activeGym.theme.tokens` from the gym list response (LEFT JOIN) and writes `--gd-*` CSS variables live on gym switch. Member app introduces `GET /me/gym` (no tenant context needed) so `AppContext` self-resolves gymId + theme; member-side `ThemeProvider` applies the same variables. Both `TopHeader` and `Sidebar` consume `--gd-*` vars; `BottomNav` in the member app follows suit.
   - **Team management (#53)**: gym-scoped admin/coach/staff CRUD via `gym-users.ts` + the **Organization → Team** page. Clerk-invitation flow with an `invited` placeholder row that links on first sign-in; self-edit and last-admin guards; audited. Added `gym_memberships` columns `status`, `email`, `name`, `invitation_id` (migrations 031–034).
   - **Platform superadmin management**: `platform/superadmins` + **System → Users**.
   - **Grouped, role-gated sidebar**: `config/navigationGroups.ts` (Membership / Organization / Training / Nutrition / Financials / System / Cordel).
