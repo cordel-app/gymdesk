@@ -186,9 +186,9 @@ export default function AuditLogView({ scope }: { scope: 'gym' | 'all' }) {
                       <span style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>
                         {r.entity_type}#{r.entity_id ?? '—'}
                       </span>
-                      {r.entity_name && (
-                        <div style={{ fontSize: 13, marginTop: 2 }}>{r.entity_name}</div>
-                      )}
+                      <div style={{ fontSize: 13, marginTop: 2, color: r.entity_name ? undefined : '#999' }}>
+                        {r.entity_name ?? t('audit.unknown')}
+                      </div>
                     </td>
                     <td style={td}>{r.source ? t(`audit.source.${r.source}`, { fallback: r.source }) : '—'}</td>
                     <td style={td}>

@@ -386,6 +386,7 @@
     "loading": "Loading…",
     "empty": "No audit entries match the current filters.",
     "unknown_user": "Unknown User",
+    "unknown": "Unknown",
     "filter_all": "All",
     "filter_entity_type": "Entity type",
     "filter_entity_name": "Entity name",

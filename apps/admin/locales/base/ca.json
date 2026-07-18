@@ -386,6 +386,7 @@
     "loading": "Carregant…",
     "empty": "No hi ha entrades que coincideixin amb els filtres.",
     "unknown_user": "Usuari desconegut",
+    "unknown": "Desconegut",
     "filter_all": "Tots",
     "filter_entity_type": "Tipus d'entitat",
     "filter_entity_name": "Nom d'entitat",

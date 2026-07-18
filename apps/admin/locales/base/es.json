@@ -386,6 +386,7 @@
     "loading": "Cargando…",
     "empty": "No hay entradas que coincidan con los filtros.",
     "unknown_user": "Usuario desconocido",
+    "unknown": "Desconocido",
     "filter_all": "Todos",
     "filter_entity_type": "Tipo de entidad",
     "filter_entity_name": "Nombre de entidad",
