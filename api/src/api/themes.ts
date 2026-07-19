@@ -87,13 +87,13 @@ function shapeTheme(row: any) {
 
 themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const status = req.query.status as string | undefined;
-  let sql = 'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at FROM themes';
+  let sql = 'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at FROM themes WHERE gym_id IS NULL';
   const params: any[] = [];
   if (status) {
-    sql += ' WHERE status = ?';
+    sql += ' AND status = ?';
     params.push(status);
   } else {
-    sql += ' WHERE deleted_at IS NULL';
+    sql += ' AND deleted_at IS NULL';
   }
   sql += ' ORDER BY created_at ASC';
   const { rows } = await db.query(sql, params);
@@ -104,7 +104,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
 
 themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
-    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at FROM themes WHERE id = ?',
+    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at FROM themes WHERE id = ? AND gym_id IS NULL',
     [req.params.id],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Theme not found' });
@@ -241,10 +241,14 @@ themesRouter.delete('/:id', requireSuperadmin, async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
   if (existing[0].deleted_at) return res.status(409).json({ error: 'Theme is already deleted' });
 
-  // Guard: refuse if any gym still references this theme.
+  // Guard: refuse if any gym or center still references this theme.
   const { rows: gymRefs } = await db.query('SELECT id FROM gyms WHERE theme_id = ? LIMIT 1', [req.params.id]);
   if (gymRefs.length > 0) {
     return res.status(409).json({ error: 'Theme is assigned to one or more gyms. Reassign them first.' });
+  }
+  const { rows: centerRefs } = await db.query('SELECT id FROM centers WHERE theme_id = ? AND deleted_at IS NULL LIMIT 1', [req.params.id]);
+  if (centerRefs.length > 0) {
+    return res.status(409).json({ error: 'Theme is assigned to one or more centers. Reassign them first.' });
   }
 
   await db.query(

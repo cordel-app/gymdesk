@@ -299,7 +299,20 @@ The per-group "Dashboard" pages (Organization, Training, Nutrition, Financials, 
 Wraps all admin pages. Hides sidebar + header for sign-in/sign-up and the unauthenticated home page.
 
 ### Theming (`ThemeProvider` + per-gym `theme_id`)
-Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057, FK on `themes.id`). Themes are platform-managed (superadmin only, **Cordel → Themes**) and carry a versioned `tokens` JSON column covering typography (5 levels × `fontFamily` + `color`) and colors (`appBackground`, `headerBackground`, `headerText`, `headerSeparatorColor`, `headerSeparatorHeight`, `sidebarBackground`, `sidebarText`, `sidebarSelectedBackground`, `sidebarSelectedText`). `ThemeProvider` in both the admin app (`context/GymContext` → `activeGym.theme.tokens`) and the member app (`context/AppContext` → resolved via `GET /me/gym`) writes `--gd-*` CSS variables to `<html>` on gym switch; legacy `--brand`/`--chrome`/`--accent` aliases are preserved. Logos are `MEDIUMBLOB` (≤ 512 KB; allow-list: PNG, SVG, JPEG, WEBP), served public at `GET /themes/:id/logo` (`Cache-Control: immutable`). The member app resolves its gym and theme in one call via `GET /me/gym` (no `x-gym-id` header required).
+
+**Two tiers of themes (migration 065):**
+- **Base Themes** — `gym_id IS NULL`. Platform-owned, managed by superadmins via **Cordel → Base Themes**. Never duplicated into customer data.
+- **Customer Themes** — `gym_id = <gymId>`. Gym-owned, created by cloning any Base or Customer Theme. Editable and soft-deletable by gym admins via **System → Themes**.
+
+Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057, FK on `themes.id`). Themes carry a versioned `tokens` JSON column covering typography (5 levels × `fontFamily` + `color`) and colors (`appBackground`, `headerBackground`, `headerText`, `headerSeparatorColor`, `headerSeparatorHeight`, `sidebarBackground`, `sidebarText`, `sidebarSelectedBackground`, `sidebarSelectedText`). Each center may optionally override the gym's default theme via `centers.theme_id` (migration 065).
+
+`ThemeProvider` in both the admin app (`context/GymContext` → `activeGym.theme.tokens`) and the member app (`context/AppContext` → resolved via `GET /me/gym`) writes `--gd-*` CSS variables to `<html>` on gym switch; legacy `--brand`/`--chrome`/`--accent` aliases are preserved. Logos are `MEDIUMBLOB` (≤ 512 KB; allow-list: PNG, SVG, JPEG, WEBP), served public at `GET /themes/:id/logo` (`Cache-Control: immutable`). The member app resolves its gym and theme in one call via `GET /me/gym` (no `x-gym-id` header required).
+
+**API surface:**
+- `GET|POST|PUT|DELETE /platform/themes` — superadmin Base Themes CRUD (scoped to `gym_id IS NULL`).
+- `GET /system/themes` — gym admin: lists Base Themes + Customer Themes for the active gym.
+- `POST /system/themes/clone/:id` — clone any accessible theme into a new Customer Theme.
+- `PUT|DELETE /system/themes/:id` — update/soft-delete a Customer Theme (delete blocked if assigned to gym or any center: 409).
 
 ### Middleware (both apps)
 Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime).
@@ -337,7 +350,7 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Audit | `audit-logs.ts` | `[locale]/audit/` (System, gym-scoped, admin+) · `[locale]/cordel/audit/` (Cordel, platform-wide, superadmin) | Both render the shared `AuditLogView` component; platform mode passes `scope="all"` and adds a Gym column. |
 | Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` (linked from **Cordel → Gyms**) | Superadmin only. Route path kept for URL stability; grouping is Cordel (#66). |
 | Superadmins | `superadmins.ts` | `[locale]/system/users/` (linked from **Cordel → Users**) | Superadmin only — grant/revoke platform role. Route path kept for URL stability; grouping is Cordel (#66). |
-| Themes | `themes.ts` (`platformRouter` + public `themesPublicRouter`) | `[locale]/system/themes/` (linked from **Cordel → Themes**) | Superadmin only (#68). Platform-managed Theme entities: draft/active/deleted lifecycle, JSON `tokens` column (typography × 5 levels + 9 color/separator values), optional MEDIUMBLOB logo (≤ 512 KB, PNG/SVG/JPEG/WEBP). Each gym has a nullable `theme_id` FK (migration 057); gym list responses LEFT-JOIN the theme inline. Public logo served at `GET /themes/:id/logo` (`Cache-Control: immutable`). Deleted blocked when assigned to any gym (409). |
+| Themes | `themes.ts` (superadmin Base Themes) + `gym-themes.ts` (gym admin Customer Themes) | `[locale]/system/themes/` (Cordel → Base Themes, superadmin) + `[locale]/themes/` (System → Themes, gym admin) | #68 + #97. `themes.gym_id` (migration 065) distinguishes Base Themes (NULL) from Customer Themes (gym-owned). Gym admins see both via `GET /system/themes`; can clone, edit, soft-delete Customer Themes; centers can override `theme_id` per-location. |
 | Dashboards | — | `membership`, `organization`, `training`, `nutrition`, `financials` | Placeholder "coming soon" shells. |
 
 Shared admin components (`apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`, `Sidebar`, `NavGroup`, `AppShell`, `TopHeader`, `GymSelector`, `LanguagePicker`, `ThemeProvider`, `ui.tsx`. Use these in every new page — don't hand-roll tables/modals/status chips.

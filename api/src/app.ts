@@ -44,6 +44,7 @@ import './api/package-credits';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter, meGymRouter } from './api/me';
 import { themesRouter, themesPublicRouter } from './api/themes';
+import { gymThemesRouter } from './api/gym-themes';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext } from './infra/tenantContext';
@@ -113,6 +114,7 @@ app.use('/gyms', requireAuth(), gymsRouter);
 
 // Platform superadmin routes
 app.use('/platform/themes', requireAuth(), themesRouter);
+app.use('/system/themes', requireAuth(), tenantContext, gymThemesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 
