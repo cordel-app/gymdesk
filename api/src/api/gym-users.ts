@@ -482,7 +482,7 @@ export async function linkGymInvite(userId: string): Promise<any | null> {
 
 // POST /link — called by admin app on first sign-in; materializes gym_memberships from Clerk metadata
 gymUsersLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  const userId = (req as any).auth?.userId;
+  const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
   try {

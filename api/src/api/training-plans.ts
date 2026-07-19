@@ -57,46 +57,52 @@ async function blockExists(blockId: string, workoutId: string, gymId: string): P
   return rows.length > 0;
 }
 
-function parseBlockBody(body: any):
+function parseBlockBody(body: Record<string, unknown>):
   | { name: string | null; description: string | null; type: string; result_type: string;
       rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
       is_optional: boolean; notes: string | null }
   | string
 {
-  const { name, description, type, result_type, rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes } = body;
+  const name = body.name as string | null | undefined;
+  const description = body.description as string | null | undefined;
+  const type = body.type as string | undefined;
+  const result_type = body.result_type as string | undefined;
+  const notes = body.notes as string | null | undefined;
   if (!type || !BLOCK_TYPES.includes(type)) return `type must be one of: ${BLOCK_TYPES.join(', ')}`;
   const rt = result_type ?? 'None';
   if (!RESULT_TYPES.includes(rt)) return `result_type must be one of: ${RESULT_TYPES.join(', ')}`;
-  const toIntOrNull = (v: any) => (v == null || v === '' ? null : Number(v));
+  const toIntOrNull = (v: unknown) => (v == null || v === '' ? null : Number(v));
   return {
     name: name?.trim() || null,
     description: description ?? null,
     type,
     result_type: rt,
-    rounds: toIntOrNull(rounds),
-    duration_seconds: toIntOrNull(duration_seconds),
-    work_seconds: toIntOrNull(work_seconds),
-    rest_seconds: toIntOrNull(rest_seconds),
-    is_optional: Boolean(is_optional),
+    rounds: toIntOrNull(body.rounds),
+    duration_seconds: toIntOrNull(body.duration_seconds),
+    work_seconds: toIntOrNull(body.work_seconds),
+    rest_seconds: toIntOrNull(body.rest_seconds),
+    is_optional: Boolean(body.is_optional),
     notes: notes ?? null,
   };
 }
 
-function parseExerciseItemBody(body: any):
+function parseExerciseItemBody(body: Record<string, unknown>):
   | { exercise_id: number; min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null; notes: string | null }
   | string
 {
   const exerciseId = Number(body.exercise_id);
   if (!Number.isInteger(exerciseId) || exerciseId <= 0) return 'exercise_id is required';
-  const toIntOrNull = (v: any) => (v == null || v === '' ? null : Number(v));
+  const toIntOrNull = (v: unknown) => (v == null || v === '' ? null : Number(v));
+  const tempo = body.tempo as string | null | undefined;
+  const notes = body.notes as string | null | undefined;
   return {
     exercise_id: exerciseId,
     min_reps: toIntOrNull(body.min_reps),
     max_reps: toIntOrNull(body.max_reps),
     sets: toIntOrNull(body.sets),
     rest_seconds: toIntOrNull(body.rest_seconds),
-    tempo: body.tempo?.trim() || null,
-    notes: body.notes ?? null,
+    tempo: tempo?.trim() || null,
+    notes: notes ?? null,
   };
 }
 
@@ -514,7 +520,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/move', req
         'SELECT id FROM workout_blocks WHERE workout_id = ? AND deleted_at IS NULL ORDER BY position',
         [targetId],
       );
-      const targetOrder = targetRows.map((r: any) => r.id);
+      const targetOrder = targetRows.map((r: { id: number }) => r.id);
       const insertAt = position === null ? targetOrder.length : Math.min(position - 1, targetOrder.length);
       targetOrder.splice(insertAt, 0, Number(blockId));
       await tx.query(
@@ -524,7 +530,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/move', req
         [targetId, gymMembershipId, blockId],
       );
       if (sourceRows.length > 0) {
-        await reorder(tx, 'workout_blocks', 'workout_id', workoutId, sourceRows.map((r: any) => r.id));
+        await reorder(tx, 'workout_blocks', 'workout_id', workoutId, sourceRows.map((r: { id: number }) => r.id));
       }
       await reorder(tx, 'workout_blocks', 'workout_id', String(targetId), targetOrder);
     });
@@ -568,7 +574,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
         'SELECT id FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL ORDER BY position',
         [targetId],
       );
-      const targetOrder = targetRows.map((r: any) => r.id);
+      const targetOrder = targetRows.map((r: { id: number }) => r.id);
       const insertAt = position === null ? targetOrder.length : Math.min(position - 1, targetOrder.length);
       targetOrder.splice(insertAt, 0, Number(exId));
       await tx.query(
@@ -578,7 +584,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
         [targetId, gymMembershipId, exId],
       );
       if (sourceRows.length > 0) {
-        await reorder(tx, 'workout_exercises', 'workout_block_id', blockId, sourceRows.map((r: any) => r.id));
+        await reorder(tx, 'workout_exercises', 'workout_block_id', blockId, sourceRows.map((r: { id: number }) => r.id));
       }
       await reorder(tx, 'workout_exercises', 'workout_block_id', String(targetId), targetOrder);
     });

@@ -37,7 +37,7 @@ gymsRouter.get('/', async (req, res) => {
   // express middleware — so read req.auth, consistent with every other route.
   // getAuth() here throws (no clerkMiddleware registered) → 500, which broke
   // the admin-app self-heal for freshly-invited non-superadmin users.
-  const userId = (req as any).auth?.userId;
+  const userId = req.auth?.userId;
   const { rows } = await db.query(
     `SELECT g.* ${THEME_SELECT}, gm.role
      FROM gyms g
