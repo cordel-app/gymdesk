@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '../infra/db';
 import { tenantContext, requireRole, requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { insertAndFetch } from '../infra/db-helpers';
 
 export const gymsRouter = Router();
 export const platformRouter = Router();
@@ -67,12 +68,13 @@ gymsRouter.post('/:gymId/memberships', tenantContext, requireRole('admin'), asyn
     return res.status(400).json({ error: 'role must be admin, coach, or staff' });
   }
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, ?)',
       [user_id, req.params.gymId, role],
+      'SELECT * FROM gym_memberships WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM gym_memberships WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'User already a member of this gym' });
     throw err;
