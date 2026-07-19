@@ -33,7 +33,16 @@ export async function createTestMembership(
   );
 }
 
-/** Deletes all gyms created by tests (cascade removes memberships). */
+/** Deletes all gyms created by tests and their dependent rows. */
 export async function cleanupTestGyms() {
-  await db.query(`DELETE FROM gyms WHERE slug LIKE 'test-%'`);
+  const { rows } = await db.query<{ id: string }>(`SELECT id FROM gyms WHERE slug LIKE 'test-%'`);
+  if (rows.length === 0) return;
+  const ids = rows.map((r) => r.id);
+  const marks = ids.map(() => '?').join(',');
+  // Delete in FK dependency order to avoid constraint violations.
+  await db.query(`DELETE FROM bookings WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM activity_types WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, ids);
 }
