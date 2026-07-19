@@ -3,6 +3,7 @@ import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { gymFetchOne, handleDupEntry } from '../infra/db-helpers';
 
 /**
  * #59: resolve a member's center assignment for creation. Mirrors
@@ -92,12 +93,9 @@ membersRouter.post('/:id/restore', requireRole('admin', 'staff'), async (req, re
 
 membersRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    'SELECT * FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'Member not found' });
-  res.json(rows[0]);
+  const row = await gymFetchOne('members', req.params.id, gymId, { softDelete: true });
+  if (!row) return res.status(404).json({ error: 'Member not found' });
+  res.json(row);
 });
 
 membersRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
@@ -127,8 +125,7 @@ membersRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =>
     recordAudit(req, { action: 'create', entityType: 'member', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A member with this email already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A member with this email already exists.');
   }
 });
 
@@ -152,8 +149,7 @@ membersRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) 
     );
     res.json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A member with this email already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A member with this email already exists.');
   }
 });
 

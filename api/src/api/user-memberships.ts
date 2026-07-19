@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
+import { handleDupEntry } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
@@ -119,10 +120,7 @@ userMembershipsRouter.post('/', requireRole('admin', 'staff'), async (req, res, 
     recordAudit(req, { action: 'create', entityType: 'user_membership', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'This member already has an active membership.' });
-    }
-    next(err);
+    handleDupEntry(err, res, next, 'This member already has an active membership.');
   }
 });
 
@@ -186,10 +184,7 @@ userMembershipsRouter.put('/:id', requireRole('admin', 'staff'), async (req, res
     recordAudit(req, { action: 'update', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'This member already has an active membership.' });
-    }
-    next(err);
+    handleDupEntry(err, res, next, 'This member already has an active membership.');
   }
 });
 
