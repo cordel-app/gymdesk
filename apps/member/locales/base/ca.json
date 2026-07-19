@@ -69,6 +69,20 @@
     "result_type_weight": "Pes",
     "result_type_score": "Puntuació"
   },
+  "profile": {
+    "title": "El meu perfil",
+    "loading": "Carregant…",
+    "name": "Nom complet",
+    "email": "Correu electrònic",
+    "email_readonly": "Gestionat pel teu compte — contacta amb suport per canviar-lo.",
+    "phone": "Telèfon",
+    "phone_placeholder": "+34 600 000 000",
+    "not_set": "No indicat",
+    "edit": "Editar",
+    "save": "Desar",
+    "cancel": "Cancel·lar",
+    "saved": "Perfil actualitzat."
+  },
   "packages": {
     "title": "Els meus bons",
     "loading": "Carregant…",

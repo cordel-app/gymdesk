@@ -106,6 +106,30 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
   }
 });
 
+meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, userId } = getTenantContext(req);
+  const { phone } = req.body as { phone?: string };
+  try {
+    const { rowCount } = await db.query(
+      `UPDATE members SET phone = COALESCE(?, phone)
+       WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL`,
+      [phone ?? null, gymId, userId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Member not found' });
+    const { rows } = await db.query(
+      `SELECT m.*, m.membership_plan_id AS fare_id,
+              p.name AS fare_name, p.base_price AS fare_price
+       FROM members m
+       LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
+       WHERE m.gym_id = ? AND m.clerk_user_id = ? AND m.deleted_at IS NULL`,
+      [gymId, userId],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // #59: the centers this member is assigned to, so the member app can
 // resolve a default and (if there's more than one) offer a switcher.
 meRouter.get('/centers', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
