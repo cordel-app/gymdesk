@@ -4,7 +4,18 @@
     "subtitle": "El teu gimnàs, a la teva butxaca.",
     "sign_in": "Inicia sessió",
     "go_to_bookings": "Veure les meves reserves",
-    "hint": "Només per a membres. Demana una invitació al teu gimnàs."
+    "hint": "Només per a membres. Demana una invitació al teu gimnàs.",
+    "dashboard_title": "Inici",
+    "loading": "Carregant…",
+    "next_booking": "Propera reserva",
+    "no_upcoming_booking": "No tens reserves properes.",
+    "browse_schedule": "Veure horari",
+    "waitlisted": "En llista d'espera",
+    "membership_status": "Quota",
+    "no_membership": "Sense quota activa.",
+    "expires_on": "Venç el {date}",
+    "class_credits": "Crèdits de classes",
+    "credits_remaining": "sessions disponibles"
   },
   "nav": {
     "home": "Inici",

@@ -4,7 +4,18 @@
     "subtitle": "Your gym, in your pocket.",
     "sign_in": "Sign in",
     "go_to_bookings": "Go to my bookings",
-    "hint": "Members only. Ask your gym for an invitation."
+    "hint": "Members only. Ask your gym for an invitation.",
+    "dashboard_title": "Home",
+    "loading": "Loading…",
+    "next_booking": "Next booking",
+    "no_upcoming_booking": "No upcoming bookings.",
+    "browse_schedule": "Browse schedule",
+    "waitlisted": "Waitlisted",
+    "membership_status": "Membership",
+    "no_membership": "No active membership.",
+    "expires_on": "Expires {date}",
+    "class_credits": "Class credits",
+    "credits_remaining": "sessions remaining"
   },
   "nav": {
     "home": "Home",
