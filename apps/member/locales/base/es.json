@@ -21,6 +21,7 @@
     "home": "Inicio",
     "schedule": "Horario",
     "membership": "Cuota",
+    "packages": "Bonos",
     "training": "Entreno",
     "profile": "Perfil"
   },
@@ -67,6 +68,20 @@
     "result_type_calories": "Calorías",
     "result_type_weight": "Peso",
     "result_type_score": "Puntuación"
+  },
+  "packages": {
+    "title": "Mis bonos",
+    "loading": "Cargando…",
+    "empty": "Aún no tienes bonos.",
+    "empty_hint": "Pide a tu gimnasio que te asigne un bono de clases.",
+    "total_credits": "sesiones disponibles",
+    "sessions": "sesiones",
+    "expires_on": "Vence el {date}",
+    "past_heading": "Bonos anteriores",
+    "status_active": "Activo",
+    "status_consumed": "Agotado",
+    "status_expired": "Caducado",
+    "status_cancelled": "Cancelado"
   },
   "member_schedule": {
     "title": "Horario",
