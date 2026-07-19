@@ -10,6 +10,7 @@
     "rooms": "Sales",
     "specialities": "Especialitats",
     "trainers": "Entrenadors",
+    "staff": "Staff",
     "class_types": "Tipus de classe",
     "class_packages": "Bons",
     "promotions": "Promocions",
@@ -939,7 +940,7 @@
     "save_changes": "Desar canvis"
   },
   "trainers": {
-    "title": "Entrenadors",
+    "title": "Staff",
     "loading": "Carregant…",
     "empty": "Encara no hi ha entrenadors. Afegeix primer un membre amb rol coach.",
     "col_id": "Usuari",
