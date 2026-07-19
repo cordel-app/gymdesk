@@ -4,7 +4,18 @@
     "subtitle": "Tu gimnasio, en tu bolsillo.",
     "sign_in": "Iniciar sesión",
     "go_to_bookings": "Ver mis reservas",
-    "hint": "Solo para miembros. Pide una invitación a tu gimnasio."
+    "hint": "Solo para miembros. Pide una invitación a tu gimnasio.",
+    "dashboard_title": "Inicio",
+    "loading": "Cargando…",
+    "next_booking": "Próxima reserva",
+    "no_upcoming_booking": "No tienes reservas próximas.",
+    "browse_schedule": "Ver horario",
+    "waitlisted": "En lista de espera",
+    "membership_status": "Cuota",
+    "no_membership": "Sin cuota activa.",
+    "expires_on": "Vence el {date}",
+    "class_credits": "Créditos de clases",
+    "credits_remaining": "sesiones disponibles"
   },
   "nav": {
     "home": "Inicio",
