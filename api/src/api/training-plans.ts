@@ -23,8 +23,9 @@ const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {
   GiantSet: null, Circuit: null, EMOM: null, AMRAP: null, Tabata: null,
 };
 const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
-// #67 lifecycle: draft/active/expired/deleted ('inactive' remapped to 'expired' in migration 054)
-const PLAN_STATUSES = ['draft', 'active', 'expired', 'deleted'];
+// #67 lifecycle: draft/active/expired/completed/deleted ('inactive' remapped to 'expired' in migration 054)
+// #112: 'completed' added for explicit trainer-initiated plan completion
+const PLAN_STATUSES = ['draft', 'active', 'expired', 'completed', 'deleted'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 async function reorder(tx: Tx, table: string, parentColumn: string, parentId: string, orderedIds: number[]) {
@@ -40,6 +41,15 @@ async function planExists(planId: string, memberId: string, gymId: string): Prom
     [planId, memberId, gymId],
   );
   return rows.length > 0;
+}
+
+async function assertPlanWritable(planId: string, memberId: string, gymId: string): Promise<void> {
+  const { rows } = await db.query(
+    "SELECT status FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
+    [planId, memberId, gymId],
+  );
+  if (rows.length === 0) throw Object.assign(new Error('Training plan not found'), { status: 404 });
+  if (rows[0].status === 'completed') throw Object.assign(new Error('Completed training plans are read-only'), { status: 403 });
 }
 
 async function workoutExists(workoutId: string, planId: string, gymId: string): Promise<boolean> {
@@ -162,7 +172,10 @@ trainingPlansRouter.put('/:planId', requireRole('admin', 'coach'), async (req, r
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const { name, description, status, start_date, end_date } = req.body;
-  if (status && !PLAN_STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${PLAN_STATUSES.join(', ')}` });
+  const EDITABLE_STATUSES = PLAN_STATUSES.filter((s) => s !== 'deleted' && s !== 'completed');
+  if (status && !EDITABLE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${EDITABLE_STATUSES.join(', ')} (use POST /complete to complete a plan)` });
+  }
   if (start_date != null && !(typeof start_date === 'string' && DATE_RE.test(start_date))) {
     return res.status(400).json({ error: 'start_date must be YYYY-MM-DD' });
   }
@@ -170,6 +183,7 @@ trainingPlansRouter.put('/:planId', requireRole('admin', 'coach'), async (req, r
     return res.status(400).json({ error: 'end_date must be YYYY-MM-DD' });
   }
   try {
+    await assertPlanWritable(planId, memberId, gymId);
     const { rowCount } = await db.query(
       `UPDATE training_plans SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
@@ -206,7 +220,7 @@ trainingPlansRouter.delete('/:planId', requireRole('admin', 'coach'), async (req
 trainingPlansRouter.post('/:planId/workouts', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
-  if (!(await planExists(planId, memberId, gymId))) return res.status(404).json({ error: 'Training plan not found' });
+  try { await assertPlanWritable(planId, memberId, gymId); } catch (e: any) { return res.status(e.status ?? 500).json({ error: e.message }); }
   const { name, description, scheduled_weekday } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   const weekday = scheduled_weekday == null || scheduled_weekday === '' ? null : Number(scheduled_weekday);
@@ -232,7 +246,7 @@ trainingPlansRouter.post('/:planId/workouts', requireRole('admin', 'coach'), asy
 trainingPlansRouter.put('/:planId/workouts/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
-  if (!(await planExists(planId, memberId, gymId))) return res.status(404).json({ error: 'Training plan not found' });
+  try { await assertPlanWritable(planId, memberId, gymId); } catch (e: any) { return res.status(e.status ?? 500).json({ error: e.message }); }
   const order = req.body.order;
   if (!Array.isArray(order) || order.length === 0) return res.status(400).json({ error: 'order must be a non-empty array of workout ids' });
   try {
@@ -250,7 +264,7 @@ trainingPlansRouter.put('/:planId/workouts/reorder', requireRole('admin', 'coach
 trainingPlansRouter.put('/:planId/workouts/:workoutId', requireRole('admin', 'coach'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId, planId, workoutId } = req.params as { memberId: string; planId: string; workoutId: string };
-  if (!(await planExists(planId, memberId, gymId))) return res.status(404).json({ error: 'Training plan not found' });
+  try { await assertPlanWritable(planId, memberId, gymId); } catch (e: any) { return res.status(e.status ?? 500).json({ error: e.message }); }
   const { name, description, scheduled_weekday } = req.body;
   const weekday = scheduled_weekday == null || scheduled_weekday === '' ? null : Number(scheduled_weekday);
   if (weekday !== null && (weekday < 0 || weekday > 6)) return res.status(400).json({ error: 'scheduled_weekday must be between 0 and 6' });
@@ -694,6 +708,91 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate
 
     const { rows } = await db.query('SELECT * FROM workout_blocks WHERE id = ?', [newBlockId]);
     recordAudit(req, { action: 'create', entityType: 'workout_block', entityId: newBlockId, next: rows[0] });
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #112: Complete a plan — sets status=completed and stamps end_date.
+trainingPlansRouter.post('/:planId/complete', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { memberId, planId } = req.params as { memberId: string; planId: string };
+  const endDate = req.body.end_date ?? null;
+  if (endDate != null && !(typeof endDate === 'string' && DATE_RE.test(endDate))) {
+    return res.status(400).json({ error: 'end_date must be YYYY-MM-DD' });
+  }
+  try {
+    const { rows: planRows } = await db.query(
+      "SELECT status FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
+      [planId, memberId, gymId],
+    );
+    if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
+    if (planRows[0].status === 'completed') return res.status(400).json({ error: 'Training plan is already completed' });
+    const resolvedEndDate = endDate ?? new Date().toISOString().slice(0, 10);
+    await db.query(
+      `UPDATE training_plans SET status = 'completed', end_date = ?,
+              modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+       WHERE id = ? AND member_id = ? AND gym_id = ?`,
+      [resolvedEndDate, gymMembershipId, planId, memberId, gymId],
+    );
+    const { rows } = await db.query(`${PLAN_TREE_SELECT} WHERE tp.id = ?`, [planId]);
+    recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: planId,
+      previous: { status: planRows[0].status }, next: { status: 'completed', end_date: resolvedEndDate } });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #112: Duplicate a training plan (all workouts, blocks, exercises) into a new draft plan.
+trainingPlansRouter.post('/:planId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { memberId, planId } = req.params as { memberId: string; planId: string };
+  try {
+    const { rows: planRows } = await db.query(
+      `${PLAN_TREE_SELECT} WHERE tp.id = ? AND tp.member_id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
+      [planId, memberId, gymId],
+    );
+    if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
+    const src = planRows[0];
+
+    const newPlanId = await db.transaction(async (tx) => {
+      const { insertId: newId } = await tx.query(
+        `INSERT INTO training_plans (gym_id, member_id, template_id, name, description, status, start_date, assigned_by_membership_id)
+         VALUES (?, ?, ?, ?, ?, 'draft', CURRENT_DATE(), ?)`,
+        [gymId, memberId, src.template_id, `${src.name} (copy)`, src.description, gymMembershipId],
+      );
+      for (const w of src.workouts ?? []) {
+        const { insertId: wId } = await tx.query(
+          'INSERT INTO workouts (gym_id, training_plan_id, name, description, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?, ?)',
+          [gymId, newId, w.name, w.description, w.position, w.scheduled_weekday],
+        );
+        for (const b of w.blocks ?? []) {
+          const { insertId: bId } = await tx.query(
+            `INSERT INTO workout_blocks
+              (gym_id, workout_id, position, name, description, type, result_type,
+               rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, wId, b.position, b.name, b.description, b.type, b.result_type,
+             b.rounds, b.duration_seconds, b.work_seconds, b.rest_seconds, b.is_optional, b.notes, gymMembershipId],
+          );
+          for (const ex of b.exercises ?? []) {
+            await tx.query(
+              `INSERT INTO workout_exercises
+                (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [gymId, bId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets,
+               ex.rest_seconds, ex.tempo, ex.notes, gymMembershipId],
+            );
+          }
+        }
+      }
+      return newId;
+    });
+    const { rows } = await db.query(`${PLAN_TREE_SELECT} WHERE tp.id = ?`, [newPlanId]);
+    recordAudit(req, { action: 'create', entityType: 'training_plan', entityId: newPlanId,
+      next: { duplicated_from: planId, member_id: memberId } });
     res.status(201).json(rows[0]);
   } catch (err) {
     next(err);
