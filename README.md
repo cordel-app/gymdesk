@@ -126,7 +126,7 @@ Route prefixes by area:
 | Platform (superadmin) | `/platform`, `/platform/superadmins`, `/platform/themes`, `/gyms` |
 | Themes (public logo) | `/themes/:id/logo` |
 | Team & profile | `/gym-users`, `/me`, `/me/link` |
-| Membership | `/members`, `/membership-plans`, `/user-memberships`, `/billing-events`, `/benefit-types`, `/charge-types` |
+| Membership | `/members`, `/membership-plans`, `/user-memberships`, `/billing-events`, `/billing-events/member/:memberId`, `/benefit-types`, `/charge-types` |
 | Classes & booking | `/activity-types`, `/class-sessions`, `/bookings`, `/class-packages`, `/members/:memberId/class-packages` |
 | Training | `/muscles`, `/exercises`, `/workout-templates`, `/training-plan-templates`, `/training-plans` (gym-level list + create with keep/expire), `/members/:memberId/{training-plans,member-training-plans,exercise-logs,workout-block-logs}` |
 | Promotions | `/promotions`, `/action-types` |
