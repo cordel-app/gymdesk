@@ -12,6 +12,7 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { HierBlock, HierExercise, blockSummary, exerciseSummary } from './summaries';
 import { BlockModal } from './BlockModal';
 import { ExerciseModal } from './ExerciseModal';
+import { BLOCK_TYPE_MAX_EXERCISES } from './blockFieldConfig';
 
 /* Shape returned by GET /workout-templates/:id (template + aggregated blocks). */
 export interface WtHierarchy {
@@ -181,6 +182,8 @@ function BlockRow({ templateId, block, canWrite, onEdit, onDelete, onAddExercise
   };
 
   const exercises = block.exercises ?? [];
+  const maxEx = BLOCK_TYPE_MAX_EXERCISES[block.type];
+  const atLimit = maxEx !== null && exercises.length >= maxEx;
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -198,6 +201,9 @@ function BlockRow({ templateId, block, canWrite, onEdit, onDelete, onAddExercise
         <div>
           <div style={{ fontWeight: 600, fontSize: 14 }}>
             {block.name || t(`workout_template_blocks.type_${block.type.toLowerCase()}`)}
+            <span style={{ fontWeight: 400, color: '#999', fontSize: 12, marginLeft: 6 }}>
+              ({exercises.length}{maxEx !== null ? `/${maxEx}` : ''})
+            </span>
           </div>
           <div style={{ color: '#888', fontSize: 12.5 }}>{blockSummary(block, t)}</div>
         </div>
@@ -214,7 +220,7 @@ function BlockRow({ templateId, block, canWrite, onEdit, onDelete, onAddExercise
       </div>
 
       <div style={{ marginTop: 6, paddingLeft: canWrite ? 26 : 16 }}>
-        {canWrite && (
+        {canWrite && !atLimit && (
           <button onClick={onAddExercise} style={inlineAddStyle}>{t('workout_templates.tree_add_exercise')}</button>
         )}
         {exercises.length === 0 ? (

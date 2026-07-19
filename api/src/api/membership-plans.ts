@@ -3,50 +3,116 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 
-const STATUSES = ['active', 'inactive'];
-
 export const membershipPlansRouter = Router();
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+async function getCallerMembershipId(req: any): Promise<number | null> {
+  const userId = req.auth?.userId;
+  if (!userId) return null;
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    'SELECT id FROM gym_memberships WHERE gym_id = ? AND clerk_user_id = ? LIMIT 1',
+    [gymId, userId],
+  );
+  return rows.length > 0 ? rows[0].id : null;
+}
+
+async function enrichPlan(plan: any, gymId: string): Promise<any> {
+  const [prices, bpRows, allowances, centers, memberCount] = await Promise.all([
+    db.query(
+      'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
+      [plan.id, gymId],
+    ).then(r => r.rows),
+    db.query(
+      'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
+      [plan.id, gymId],
+    ).then(r => r.rows),
+    db.query(
+      `SELECT pa.*, at.name AS activity_type_name
+       FROM plan_allowances pa
+       JOIN activity_types at ON at.id = pa.activity_type_id
+       WHERE pa.membership_plan_id = ? AND pa.gym_id = ?`,
+      [plan.id, gymId],
+    ).then(r => r.rows),
+    db.query(
+      `SELECT mpc.center_id AS id, c.name
+       FROM membership_plan_centers mpc
+       JOIN centers c ON c.id = mpc.center_id
+       WHERE mpc.membership_plan_id = ? AND mpc.gym_id = ?`,
+      [plan.id, gymId],
+    ).then(r => r.rows),
+    db.query(
+      `SELECT COUNT(*) AS n FROM user_memberships
+       WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
+      [plan.id, gymId],
+    ).then(r => Number(r.rows[0].n)),
+  ]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const currentPrice = prices.find((p: any) => {
+    return p.valid_from <= today && (p.valid_to == null || p.valid_to >= today);
+  }) ?? null;
+
+  return {
+    ...plan,
+    current_price: currentPrice ? currentPrice.price : null,
+    price_history: prices,
+    billing_policy: bpRows[0] ?? null,
+    allowances,
+    centers,
+    member_count: memberCount,
+  };
+}
+
+async function planExists(planId: string | string[], gymId: string): Promise<boolean> {
+  const { rows } = await db.query(
+    'SELECT 1 FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [planId, gymId],
+  );
+  return rows.length > 0;
+}
+
+// ─── Plan CRUD ────────────────────────────────────────────────────────────────
 
 membershipPlansRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const status = req.query.status as string | undefined;
-  if (status && !STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
-  }
-  const { rows } = await db.query(
-    `SELECT * FROM membership_plans WHERE gym_id = ?${status ? ' AND status = ?' : ''} ORDER BY name ASC`,
-    status ? [gymId, status] : [gymId],
-  );
-  res.json(rows);
+  const status = req.query.lifecycle_status as string | undefined;
+  let sql = 'SELECT * FROM membership_plans WHERE gym_id = ? AND deleted_at IS NULL';
+  const params: any[] = [gymId];
+  if (status) { sql += ' AND lifecycle_status = ?'; params.push(status); }
+  sql += ' ORDER BY name ASC';
+  const { rows } = await db.query(sql, params);
+  const enriched = await Promise.all(rows.map((p: any) => enrichPlan(p, gymId)));
+  res.json(enriched);
 });
 
 membershipPlansRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ?',
+    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Plan not found' });
-  res.json(rows[0]);
+  res.json(await enrichPlan(rows[0], gymId));
 });
 
 membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, base_price, status } = req.body;
-  if (!name || base_price == null) return res.status(400).json({ error: 'name and base_price are required' });
-  const parsed = parseFloat(base_price);
-  if (isNaN(parsed) || parsed < 0) return res.status(400).json({ error: 'base_price must be a non-negative number' });
-  if (status && !STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
-  }
+  const { name, description, lifecycle_status, enrollment_status } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
+  const callerMemberId = await getCallerMembershipId(req);
   try {
     const { insertId } = await db.query(
-      'INSERT INTO membership_plans (name, description, base_price, status, gym_id) VALUES (?, ?, ?, ?, ?)',
-      [name.trim(), description ?? null, parsed, status ?? 'active', gymId],
+      `INSERT INTO membership_plans
+       (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [gymId, name.trim(), description ?? null,
+       lifecycle_status ?? 'draft', enrollment_status ?? 'closed', callerMemberId],
     );
     const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'membership_plan', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    res.status(201).json(await enrichPlan(rows[0], gymId));
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A plan with this name already exists.' });
     next(err);
@@ -55,32 +121,36 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
 
 membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, base_price, status } = req.body;
-  const parsed = base_price != null ? parseFloat(base_price) : null;
-  if (parsed !== null && (isNaN(parsed) || parsed < 0)) {
-    return res.status(400).json({ error: 'base_price must be a non-negative number' });
+  const { name, description, lifecycle_status, enrollment_status } = req.body;
+
+  if (enrollment_status === 'open' && lifecycle_status && lifecycle_status !== 'active') {
+    return res.status(400).json({ error: 'enrollment can only be opened when lifecycle_status is active' });
   }
-  if (status && !STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
-  }
+
+  const callerMemberId = await getCallerMembershipId(req);
   try {
     const { rowCount } = await db.query(
       `UPDATE membership_plans SET
-        name        = COALESCE(?, name),
-        description = IF(?, ?, description),
-        base_price  = COALESCE(?, base_price),
-        status      = COALESCE(?, status)
-       WHERE id = ? AND gym_id = ?`,
+        name              = COALESCE(?, name),
+        description       = IF(?, ?, description),
+        lifecycle_status  = COALESCE(?, lifecycle_status),
+        enrollment_status = COALESCE(?, enrollment_status),
+        modified_at       = NOW(),
+        modified_by       = ?
+       WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         name?.trim() ?? null,
         'description' in req.body ? 1 : 0, description ?? null,
-        parsed, status ?? null,
+        lifecycle_status ?? null,
+        enrollment_status ?? null,
+        callerMemberId,
         req.params.id, gymId,
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Plan not found' });
-    const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-    res.json(rows[0]);
+    const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id]);
+    recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: req.params.id, next: rows[0] });
+    res.json(await enrichPlan(rows[0], gymId));
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A plan with this name already exists.' });
     next(err);
@@ -89,25 +159,346 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
 
 membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rowCount } = await db.query(
-    'DELETE FROM membership_plans WHERE id = ? AND gym_id = ?',
+  const { rows: active } = await db.query(
+    `SELECT COUNT(*) AS n FROM user_memberships
+     WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
     [req.params.id, gymId],
   );
+  if (Number(active[0].n) > 0) {
+    return res.status(400).json({ error: 'Cannot delete a plan with active memberships.' });
+  }
+  const callerMemberId = await getCallerMembershipId(req);
+  const { rowCount } = await db.query(
+    `UPDATE membership_plans SET deleted_at = NOW(), deleted_by = ?, enrollment_status = 'closed'
+     WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+    [callerMemberId, req.params.id, gymId],
+  );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Plan not found' });
+  recordAudit(req, { action: 'delete', entityType: 'membership_plan', entityId: req.params.id });
   res.status(204).send();
 });
 
-// ─── Nested: time-boxed prices (P1.3 #7) ─────────────────────────────────────
+// ─── Duplicate ────────────────────────────────────────────────────────────────
 
-// Confirms the plan exists in this gym before touching its prices.
-async function planExists(planId: string | string[], gymId: string): Promise<boolean> {
-  const { rows } = await db.query('SELECT 1 FROM membership_plans WHERE id = ? AND gym_id = ?', [planId, gymId]);
-  return rows.length > 0;
-}
+membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { rows: origRows } = await db.query(
+    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (origRows.length === 0) return res.status(404).json({ error: 'Plan not found' });
+  const orig = origRows[0];
+  const callerMemberId = await getCallerMembershipId(req);
+
+  try {
+    const conn = await (db as any).getConnection?.() ?? db;
+    await db.query('START TRANSACTION', []);
+
+    const { insertId: newPlanId } = await db.query(
+      `INSERT INTO membership_plans
+       (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
+       VALUES (?, ?, ?, 'draft', 'closed', ?)`,
+      [gymId, `${orig.name} (Copy)`, orig.description ?? null, callerMemberId],
+    );
+
+    // Copy billing policy
+    const { rows: bp } = await db.query(
+      'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    if (bp.length > 0) {
+      const b = bp[0];
+      await db.query(
+        `INSERT INTO billing_policies
+         (gym_id, membership_plan_id, initial_billing_interval, initial_billing_unit,
+          recurring_billing_interval, recurring_billing_unit,
+          initial_service_interval, initial_service_unit,
+          recurring_service_interval, recurring_service_unit, auto_renew)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, newPlanId, b.initial_billing_interval, b.initial_billing_unit,
+         b.recurring_billing_interval, b.recurring_billing_unit,
+         b.initial_service_interval, b.initial_service_unit,
+         b.recurring_service_interval, b.recurring_service_unit, b.auto_renew],
+      );
+    }
+
+    // Copy prices
+    const { rows: prices } = await db.query(
+      'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    for (const p of prices) {
+      await db.query(
+        'INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, valid_to) VALUES (?, ?, ?, ?, ?)',
+        [gymId, newPlanId, p.price, p.valid_from, p.valid_to],
+      );
+    }
+
+    // Copy allowances
+    const { rows: allowances } = await db.query(
+      'SELECT * FROM plan_allowances WHERE membership_plan_id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    for (const a of allowances) {
+      await db.query(
+        `INSERT INTO plan_allowances
+         (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, newPlanId, a.activity_type_id, a.allowance_type, a.session_count, a.recurrence_interval, a.recurrence_unit],
+      );
+    }
+
+    // Copy centers
+    const { rows: centers } = await db.query(
+      'SELECT * FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    for (const c of centers) {
+      await db.query(
+        'INSERT INTO membership_plan_centers (gym_id, membership_plan_id, center_id) VALUES (?, ?, ?)',
+        [gymId, newPlanId, c.center_id],
+      );
+    }
+
+    await db.query('COMMIT', []);
+
+    const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [newPlanId]);
+    res.status(201).json(await enrichPlan(rows[0], gymId));
+  } catch (err) {
+    await db.query('ROLLBACK', []).catch(() => {});
+    next(err);
+  }
+});
+
+// ─── Archive ──────────────────────────────────────────────────────────────────
+
+membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rows: active } = await db.query(
+    `SELECT COUNT(*) AS n FROM user_memberships
+     WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
+    [req.params.id, gymId],
+  );
+  if (Number(active[0].n) > 0) {
+    return res.status(400).json({ error: 'Cannot archive a plan with active memberships.' });
+  }
+  const callerMemberId = await getCallerMembershipId(req);
+  const { rowCount } = await db.query(
+    `UPDATE membership_plans
+     SET lifecycle_status = 'archived', enrollment_status = 'closed', modified_at = NOW(), modified_by = ?
+     WHERE id = ? AND gym_id = ? AND lifecycle_status = 'active' AND deleted_at IS NULL`,
+    [callerMemberId, req.params.id, gymId],
+  );
+  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Plan not found or not active' });
+  const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id]);
+  res.json(await enrichPlan(rows[0], gymId));
+});
+
+// ─── Enrollment toggle ────────────────────────────────────────────────────────
+
+membershipPlansRouter.put('/:id/enrollment', requireRole('admin'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { enrollment_status } = req.body;
+  if (!['open', 'closed'].includes(enrollment_status)) {
+    return res.status(400).json({ error: 'enrollment_status must be open or closed' });
+  }
+  const { rows: plan } = await db.query(
+    'SELECT lifecycle_status FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (plan.length === 0) return res.status(404).json({ error: 'Plan not found' });
+  if (enrollment_status === 'open' && plan[0].lifecycle_status !== 'active') {
+    return res.status(400).json({ error: 'Cannot open enrollment on a non-active plan' });
+  }
+  const callerMemberId = await getCallerMembershipId(req);
+  await db.query(
+    'UPDATE membership_plans SET enrollment_status = ?, modified_at = NOW(), modified_by = ? WHERE id = ? AND gym_id = ?',
+    [enrollment_status, callerMemberId, req.params.id, gymId],
+  );
+  const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id]);
+  res.json(await enrichPlan(rows[0], gymId));
+});
+
+// ─── Billing policy ───────────────────────────────────────────────────────────
+
+membershipPlansRouter.get('/:id/billing-policy', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { rows } = await db.query(
+    'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
+    [req.params.id, gymId],
+  );
+  res.json(rows[0] ?? null);
+});
+
+membershipPlansRouter.put('/:id/billing-policy', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const {
+    initial_billing_interval, initial_billing_unit,
+    recurring_billing_interval, recurring_billing_unit,
+    initial_service_interval, initial_service_unit,
+    recurring_service_interval, recurring_service_unit,
+    auto_renew,
+  } = req.body;
+  try {
+    await db.query(
+      `INSERT INTO billing_policies
+       (gym_id, membership_plan_id, initial_billing_interval, initial_billing_unit,
+        recurring_billing_interval, recurring_billing_unit,
+        initial_service_interval, initial_service_unit,
+        recurring_service_interval, recurring_service_unit, auto_renew)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+        initial_billing_interval    = VALUES(initial_billing_interval),
+        initial_billing_unit        = VALUES(initial_billing_unit),
+        recurring_billing_interval  = VALUES(recurring_billing_interval),
+        recurring_billing_unit      = VALUES(recurring_billing_unit),
+        initial_service_interval    = VALUES(initial_service_interval),
+        initial_service_unit        = VALUES(initial_service_unit),
+        recurring_service_interval  = VALUES(recurring_service_interval),
+        recurring_service_unit      = VALUES(recurring_service_unit),
+        auto_renew                  = VALUES(auto_renew)`,
+      [gymId, req.params.id,
+       initial_billing_interval, initial_billing_unit,
+       recurring_billing_interval, recurring_billing_unit,
+       initial_service_interval, initial_service_unit,
+       recurring_service_interval, recurring_service_unit,
+       auto_renew ?? true],
+    );
+    const { rows } = await db.query(
+      'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Allowances ───────────────────────────────────────────────────────────────
+
+membershipPlansRouter.get('/:id/allowances', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { rows } = await db.query(
+    `SELECT pa.*, at.name AS activity_type_name
+     FROM plan_allowances pa
+     JOIN activity_types at ON at.id = pa.activity_type_id
+     WHERE pa.membership_plan_id = ? AND pa.gym_id = ?`,
+    [req.params.id, gymId],
+  );
+  res.json(rows);
+});
+
+membershipPlansRouter.post('/:id/allowances', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit } = req.body;
+  if (!activity_type_id || !allowance_type) {
+    return res.status(400).json({ error: 'activity_type_id and allowance_type are required' });
+  }
+  try {
+    const { insertId } = await db.query(
+      `INSERT INTO plan_allowances
+       (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, req.params.id, activity_type_id, allowance_type, session_count ?? null, recurrence_interval ?? null, recurrence_unit ?? null],
+    );
+    const { rows } = await db.query(
+      `SELECT pa.*, at.name AS activity_type_name FROM plan_allowances pa
+       JOIN activity_types at ON at.id = pa.activity_type_id WHERE pa.id = ?`,
+      [insertId],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err: any) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'An allowance for this activity type already exists.' });
+    next(err);
+  }
+});
+
+membershipPlansRouter.put('/:id/allowances/:allowanceId', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { allowance_type, session_count, recurrence_interval, recurrence_unit } = req.body;
+  try {
+    const { rowCount } = await db.query(
+      `UPDATE plan_allowances SET
+        allowance_type = COALESCE(?, allowance_type),
+        session_count = ?,
+        recurrence_interval = ?,
+        recurrence_unit = ?
+       WHERE id = ? AND membership_plan_id = ? AND gym_id = ?`,
+      [allowance_type ?? null, session_count ?? null, recurrence_interval ?? null, recurrence_unit ?? null,
+       req.params.allowanceId, req.params.id, gymId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Allowance not found' });
+    const { rows } = await db.query(
+      `SELECT pa.*, at.name AS activity_type_name FROM plan_allowances pa
+       JOIN activity_types at ON at.id = pa.activity_type_id WHERE pa.id = ?`,
+      [req.params.allowanceId],
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+membershipPlansRouter.delete('/:id/allowances/:allowanceId', requireRole('admin'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rowCount } = await db.query(
+    'DELETE FROM plan_allowances WHERE id = ? AND membership_plan_id = ? AND gym_id = ?',
+    [req.params.allowanceId, req.params.id, gymId],
+  );
+  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Allowance not found' });
+  res.status(204).send();
+});
+
+// ─── Centers ──────────────────────────────────────────────────────────────────
+
+membershipPlansRouter.get('/:id/centers', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { rows } = await db.query(
+    `SELECT mpc.center_id AS id, c.name
+     FROM membership_plan_centers mpc
+     JOIN centers c ON c.id = mpc.center_id
+     WHERE mpc.membership_plan_id = ? AND mpc.gym_id = ?`,
+    [req.params.id, gymId],
+  );
+  res.json(rows);
+});
+
+membershipPlansRouter.put('/:id/centers', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { center_ids } = req.body;
+  if (!Array.isArray(center_ids)) return res.status(400).json({ error: 'center_ids must be an array' });
+  try {
+    await db.query('DELETE FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?', [req.params.id, gymId]);
+    for (const cid of center_ids) {
+      await db.query(
+        'INSERT INTO membership_plan_centers (gym_id, membership_plan_id, center_id) VALUES (?, ?, ?)',
+        [gymId, req.params.id, cid],
+      );
+    }
+    const { rows } = await db.query(
+      `SELECT mpc.center_id AS id, c.name
+       FROM membership_plan_centers mpc
+       JOIN centers c ON c.id = mpc.center_id
+       WHERE mpc.membership_plan_id = ? AND mpc.gym_id = ?`,
+      [req.params.id, gymId],
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Prices (kept from original) ──────────────────────────────────────────────
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Validates window fields; returns { from, to } (to may be null) or an error string.
 function parsePriceBody(body: any): { price: number; from: string; to: string | null } | string {
   const { price, valid_from, valid_to } = body;
   const parsed = parseFloat(price);
@@ -119,19 +510,12 @@ function parsePriceBody(body: any): { price: number; from: string; to: string | 
   return { price: parsed, from: valid_from, to };
 }
 
-// Any existing row whose window overlaps [from, to] (NULL to = open-ended).
-// Two ranges overlap when each starts on/before the other ends.
 async function overlaps(planId: string | string[], from: string, to: string | null, excludeId?: string | string[]): Promise<boolean> {
   const params: any[] = [planId, from];
   let sql = `SELECT 1 FROM membership_plan_prices
              WHERE membership_plan_id = ?
-               AND (valid_to IS NULL OR valid_to >= ?)`;   // existing ends on/after new starts
-  if (to === null) {
-    // new window is open-ended → overlaps anything ending at/after `from` (already covered)
-  } else {
-    sql += ' AND valid_from <= ?';                          // existing starts on/before new ends
-    params.push(to);
-  }
+               AND (valid_to IS NULL OR valid_to >= ?)`;
+  if (to !== null) { sql += ' AND valid_from <= ?'; params.push(to); }
   if (excludeId) { sql += ' AND id <> ?'; params.push(excludeId); }
   sql += ' LIMIT 1';
   const { rows } = await db.query(sql, params);
@@ -197,113 +581,5 @@ membershipPlansRouter.delete('/:id/prices/:priceId', requireRole('admin'), async
     [req.params.priceId, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Price not found' });
-  res.status(204).send();
-});
-
-// ─── Nested: benefits (P1.4 #8) ──────────────────────────────────────────────
-
-const RECURRENCES = [null, 'monthly', 'yearly'];
-
-function parseBenefitBody(body: any):
-  | { benefit_type_id: number; quantity: number | null; duration_days: number | null; recurrence: string | null; valid_from: string | null; valid_to: string | null }
-  | string
-{
-  const btId = Number(body.benefit_type_id);
-  if (!Number.isInteger(btId) || btId <= 0) return 'benefit_type_id is required';
-  const qty = body.quantity == null || body.quantity === '' ? null : Number(body.quantity);
-  if (qty !== null && (!Number.isInteger(qty) || qty <= 0)) return 'quantity must be a positive integer';
-  const dur = body.duration_days == null || body.duration_days === '' ? null : Number(body.duration_days);
-  if (dur !== null && (!Number.isInteger(dur) || dur <= 0)) return 'duration_days must be a positive integer';
-  const rec = body.recurrence == null || body.recurrence === '' ? null : body.recurrence;
-  if (!RECURRENCES.includes(rec)) return 'recurrence must be monthly, yearly, or empty';
-  const from = body.valid_from == null || body.valid_from === '' ? null : body.valid_from;
-  const to   = body.valid_to   == null || body.valid_to   === '' ? null : body.valid_to;
-  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-  if (from !== null && !dateRe.test(from)) return 'valid_from must be YYYY-MM-DD';
-  if (to !== null && !dateRe.test(to))     return 'valid_to must be YYYY-MM-DD';
-  if (from !== null && to !== null && to < from) return 'valid_to must be on or after valid_from';
-  return { benefit_type_id: btId, quantity: qty, duration_days: dur, recurrence: rec, valid_from: from, valid_to: to };
-}
-
-async function benefitTypeIsActive(id: number): Promise<boolean> {
-  const { rows } = await db.query('SELECT active FROM benefit_types WHERE id = ?', [id]);
-  return rows.length > 0 && rows[0].active === 1;
-}
-
-membershipPlansRouter.get('/:id/benefits', async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const { rows } = await db.query(
-    `SELECT mpb.*, bt.code AS benefit_code
-     FROM membership_plan_benefits mpb
-     JOIN benefit_types bt ON bt.id = mpb.benefit_type_id
-     WHERE mpb.membership_plan_id = ? AND mpb.gym_id = ?
-     ORDER BY mpb.id ASC`,
-    [req.params.id, gymId],
-  );
-  res.json(rows);
-});
-
-membershipPlansRouter.post('/:id/benefits', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const parsed = parseBenefitBody(req.body);
-  if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
-  if (!(await benefitTypeIsActive(parsed.benefit_type_id))) {
-    return res.status(400).json({ error: 'This benefit type is not available yet.' });
-  }
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO membership_plan_benefits
-       (membership_plan_id, gym_id, benefit_type_id, quantity, duration_days, recurrence, valid_from, valid_to)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [req.params.id, gymId, parsed.benefit_type_id, parsed.quantity, parsed.duration_days, parsed.recurrence, parsed.valid_from, parsed.valid_to],
-    );
-    const { rows } = await db.query(
-      `SELECT mpb.*, bt.code AS benefit_code FROM membership_plan_benefits mpb
-       JOIN benefit_types bt ON bt.id = mpb.benefit_type_id WHERE mpb.id = ?`,
-      [insertId],
-    );
-    res.status(201).json(rows[0]);
-  } catch (err) {
-    next(err);
-  }
-});
-
-membershipPlansRouter.put('/:id/benefits/:benefitId', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const parsed = parseBenefitBody(req.body);
-  if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
-  if (!(await benefitTypeIsActive(parsed.benefit_type_id))) {
-    return res.status(400).json({ error: 'This benefit type is not available yet.' });
-  }
-  try {
-    const { rowCount } = await db.query(
-      `UPDATE membership_plan_benefits
-       SET benefit_type_id = ?, quantity = ?, duration_days = ?, recurrence = ?, valid_from = ?, valid_to = ?
-       WHERE id = ? AND membership_plan_id = ? AND gym_id = ?`,
-      [parsed.benefit_type_id, parsed.quantity, parsed.duration_days, parsed.recurrence, parsed.valid_from, parsed.valid_to,
-       req.params.benefitId, req.params.id, gymId],
-    );
-    if (rowCount === 0) return res.status(404).json({ error: 'Benefit not found' });
-    const { rows } = await db.query(
-      `SELECT mpb.*, bt.code AS benefit_code FROM membership_plan_benefits mpb
-       JOIN benefit_types bt ON bt.id = mpb.benefit_type_id WHERE mpb.id = ?`,
-      [req.params.benefitId],
-    );
-    res.json(rows[0]);
-  } catch (err) {
-    next(err);
-  }
-});
-
-membershipPlansRouter.delete('/:id/benefits/:benefitId', requireRole('admin'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const { rowCount } = await db.query(
-    'DELETE FROM membership_plan_benefits WHERE id = ? AND membership_plan_id = ? AND gym_id = ?',
-    [req.params.benefitId, req.params.id, gymId],
-  );
-  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Benefit not found' });
   res.status(204).send();
 });

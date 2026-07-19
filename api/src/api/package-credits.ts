@@ -55,22 +55,22 @@ export function getPackageIntent(tx: any) {
 // Package hook runs BEFORE plan-access via the ordering below (it just needs
 // to be first-registered). This module is imported at index.ts before
 // plan-class-types, ensuring package hook fires first.
-registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
-  // Only intervene if the class type is plan-restricted; otherwise no cost.
+registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId) => {
+  // Only intervene if the activity type is plan-restricted; otherwise no cost.
   const { rows: restrictedRows } = await tx.query(
-    'SELECT COUNT(*) AS n FROM class_type_user_memberships WHERE class_type_id = ? AND gym_id = ?',
-    [classTypeId, gymId],
+    'SELECT COUNT(*) AS n FROM plan_allowances WHERE activity_type_id = ? AND gym_id = ?',
+    [activityTypeId, gymId],
   );
   if (Number(restrictedRows[0].n) === 0) return;
 
   // Does the member already qualify via a plan? If so, no need to debit a package.
   const { rows: planMatch } = await tx.query(
     `SELECT um.id FROM user_memberships um
-     JOIN class_type_user_memberships ctum
-       ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
+     JOIN plan_allowances pa
+       ON pa.membership_plan_id = um.membership_plan_id AND pa.gym_id = um.gym_id
      WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'
-       AND ctum.class_type_id = ? LIMIT 1`,
-    [gymId, memberId, classTypeId],
+       AND pa.activity_type_id = ? LIMIT 1`,
+    [gymId, memberId, activityTypeId],
   );
   if (planMatch.length > 0) return; // plan-access hook will pass too
 

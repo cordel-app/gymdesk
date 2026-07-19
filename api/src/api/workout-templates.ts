@@ -20,6 +20,11 @@ import { getReferences } from '../domain/references';
 export const workoutTemplatesRouter = Router();
 
 const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'EMOM', 'AMRAP', 'Tabata'];
+// null = unlimited
+const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {
+  Standard: 1, Superset: 2, Triset: 3,
+  GiantSet: null, Circuit: null, EMOM: null, AMRAP: null, Tabata: null,
+};
 const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
 const SETTABLE_STATUSES = ['active', 'inactive'];
 
@@ -405,6 +410,19 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId', requireRole('admin', 'coach')
   const parsed = parseBlockBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
+    const maxEx = BLOCK_TYPE_MAX_EXERCISES[parsed.type];
+    if (maxEx !== null) {
+      const { rows: countRows } = await db.query(
+        'SELECT COUNT(*) AS ex_count FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL',
+        [blockId],
+      );
+      if (countRows[0].ex_count > maxEx) {
+        return res.status(422).json({
+          error: 'MaximumExercisesExceeded',
+          message: `Block type '${parsed.type}' allows a maximum of ${maxEx} exercises. Remove exercises first.`,
+        });
+      }
+    }
     const { rowCount } = await db.query(
       `UPDATE workout_template_blocks SET
         name = ?, description = ?, type = ?, result_type = ?, rounds = ?, duration_seconds = ?,
@@ -463,6 +481,21 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin
   const parsed = parseExerciseItemBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
+    const { rows: blockRows } = await db.query(
+      `SELECT b.type, COUNT(wte.id) AS ex_count
+       FROM workout_template_blocks b
+       LEFT JOIN workout_template_exercises wte ON wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL
+       WHERE b.id = ?
+       GROUP BY b.id`,
+      [blockId],
+    );
+    const maxEx = BLOCK_TYPE_MAX_EXERCISES[blockRows[0].type];
+    if (maxEx !== null && blockRows[0].ex_count >= maxEx) {
+      return res.status(422).json({
+        error: 'MaximumExercisesExceeded',
+        message: `Block type '${blockRows[0].type}' allows a maximum of ${maxEx} exercises.`,
+      });
+    }
     const { rows: exRows } = await db.query('SELECT 1 FROM exercises WHERE id = ? AND gym_id = ?', [parsed.exercise_id, gymId]);
     if (exRows.length === 0) return res.status(400).json({ error: 'exercise_id does not belong to this gym' });
     const { rows: posRows } = await db.query(

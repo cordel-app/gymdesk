@@ -7,6 +7,10 @@ onto the existing `members` + `gym_memberships` split — no new users table).
 Each ticket below is a GitHub issue in `cordel-app/gymdesk`. Full scope and acceptance
 criteria live in the issue bodies; this doc is the map.
 
+Engineering quality backlog (tests, typing, helpers, member-app gap analysis) lives in
+`docs/tech-debt.md` as a **map** of GitHub issues (#81–#86) — same model as this roadmap.
+Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub issue body.
+
 ## Status (2026-07-18)
 
 - **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3.
@@ -56,6 +60,7 @@ criteria live in the issue bodies; this doc is the map.
   row. `class-types.ts` and `promotions.ts` gain `recordAudit` coverage.
 - **Done outside the phase plan**:
   - **Per-gym theming (#51, extended by #68)**: `gyms.theme_key` (migration 030, presets `indigo/emerald/crimson/amber`), `ThemeProvider`, and the superadmin **System → Customize** editor (now replaced by #68).
+  - **Membership Plans Redesign (#70)**: `membership_plans` gains `lifecycle_status` ENUM(`draft`/`active`/`archived`) + `enrollment_status` ENUM(`open`/`closed`) + soft-delete + audit fields (migrations 058–062). `class_types` renamed to `activity_types` (migration 059, all FK references migrated). New tables: `billing_policies` (1-per-plan billing/service cycle config), `plan_allowances` (replaces `class_type_user_memberships` + `membership_plan_benefits`; supports `unlimited` and `session_count` with recurrence), `membership_plan_centers` (optional per-plan center restriction). API: enriched `GET /membership-plans` (nested `billing_policy`, `allowances`, `centers`, `price_history`, `current_price`, `member_count`); new actions `duplicate`, `archive`, `PUT enrollment`. Booking enforcement (`plan-allowances.ts` side-effect hook) checks center restriction then allowance type/quota. Admin UI replaces DataTable with a per-plan accordion showing all five sections inline; context menu with Edit / Duplicate / Open‑Close Enrollment / Archive / Delete.
   - **Theme Management (#68)**: first-class `themes` entity (migrations 056–057 — table + gym FK). `tokens` JSON carries header/sidebar/typography design tokens. Superadmin **Cordel → Themes** CRUD (draft/active/deleted lifecycle, logo upload up to 512 KB via `POST /platform/themes/:id/logo`, `GET /themes/:id/logo` public caching endpoint). Gyms assigned a theme via `theme_id` FK replacing old `theme_key`. Admin `ThemeProvider` reads `activeGym.theme.tokens` from the gym list response (LEFT JOIN) and writes `--gd-*` CSS variables live on gym switch. Member app introduces `GET /me/gym` (no tenant context needed) so `AppContext` self-resolves gymId + theme; member-side `ThemeProvider` applies the same variables. Both `TopHeader` and `Sidebar` consume `--gd-*` vars; `BottomNav` in the member app follows suit.
   - **Team management (#53)**: gym-scoped admin/coach/staff CRUD via `gym-users.ts` + the **Organization → Team** page. Clerk-invitation flow with an `invited` placeholder row that links on first sign-in; self-edit and last-admin guards; audited. Added `gym_memberships` columns `status`, `email`, `name`, `invitation_id` (migrations 031–034).
   - **Platform superadmin management**: `platform/superadmins` + **System → Users**.
