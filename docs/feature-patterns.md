@@ -29,19 +29,37 @@ All API errors must return JSON in this shape — never HTML, never a raw string
 - MySQL has no `RETURNING`: insert first, then `SELECT` the row via the `insertId` that `db.query` returns.
 - A global error handler in `index.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500.
 
+Use the shared helpers in `api/src/infra/db-helpers.ts`:
+
 ```ts
-// Pattern for a write route:
+import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
+
+// GET /:id — gym-scoped fetch (pass softDelete: true if the table has deleted_at)
+router.get('/:id', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const row = await gymFetchOne('things', req.params.id, gymId, { softDelete: true });
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  res.json(row);
+});
+
+// POST — insert then SELECT (MySQL has no RETURNING)
 router.post('/', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
   try {
-    const { insertId } = await db.query('INSERT INTO ... VALUES (?, ?)', [...]);
-    const { rows } = await db.query('SELECT * FROM ... WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    const row = await insertAndFetch(
+      'INSERT INTO things (gym_id, name) VALUES (?, ?)',
+      [gymId, name.trim()],
+      'SELECT * FROM things WHERE id = ?',
+      (id) => [id],
+    );
+    res.status(201).json(row);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Already exists.' });
-    next(err); // falls through to global handler → 500
+    handleDupEntry(err, res, next, 'Already exists.');
   }
 });
 ```
+
+For tables with a JOIN in the SELECT (e.g. `activity_types`), pass the join query directly to `db.query` rather than using `insertAndFetch`, and still call `handleDupEntry` in the catch block.
 
 **Frontend rules:**
 - `apiFetch` in `lib/apiClient.ts` reads `body.error` from non-2xx responses and throws it as an `Error`.

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 export const membershipPlansRouter = Router();
 
@@ -89,12 +90,9 @@ membershipPlansRouter.get('/', async (req, res) => {
 
 membershipPlansRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'Plan not found' });
-  res.json(await enrichPlan(rows[0], gymId));
+  const row = await gymFetchOne('membership_plans', req.params.id, gymId, { softDelete: true });
+  if (!row) return res.status(404).json({ error: 'Plan not found' });
+  res.json(await enrichPlan(row, gymId));
 });
 
 membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => {
@@ -103,19 +101,19 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   const callerMemberId = await getCallerMembershipId(req);
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO membership_plans
        (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null,
        lifecycle_status ?? 'draft', enrollment_status ?? 'closed', callerMemberId],
+      'SELECT * FROM membership_plans WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'membership_plan', entityId: insertId, next: rows[0] });
-    res.status(201).json(await enrichPlan(rows[0], gymId));
+    recordAudit(req, { action: 'create', entityType: 'membership_plan', entityId: row.id, next: row });
+    res.status(201).json(await enrichPlan(row, gymId));
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A plan with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A plan with this name already exists.');
   }
 });
 
@@ -152,8 +150,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
     recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: req.params.id, next: rows[0] });
     res.json(await enrichPlan(rows[0], gymId));
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A plan with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A plan with this name already exists.');
   }
 });
 
