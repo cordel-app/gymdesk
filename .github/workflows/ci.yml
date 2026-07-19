@@ -9,7 +9,7 @@ on:
 jobs:
   api:
     name: API
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: dev
     services:
       mysql:
@@ -61,7 +61,7 @@ jobs:
 
   admin:
     name: Admin
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: dev
     env:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
