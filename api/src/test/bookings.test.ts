@@ -14,10 +14,16 @@ afterAll(async () => {
 });
 
 async function createActivityType(gymId: string, maxCapacity: number): Promise<number> {
+  // Insert into activity_types. On older DB schemas class_types still exists and
+  // class_sessions.class_type_id FKs into it, so mirror the row there too.
   const { insertId } = await db.query(
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Test Class', ?, 'active')`,
     [gymId, maxCapacity],
   );
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, 'Test Class', ?, 'active')`,
+    [insertId, gymId, maxCapacity],
+  ).catch(() => { /* class_types may not exist on fully-migrated DBs */ });
   return insertId;
 }
 
