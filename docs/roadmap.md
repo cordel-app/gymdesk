@@ -65,6 +65,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   - **Team management (#53)**: gym-scoped admin/coach/staff CRUD via `gym-users.ts` + the **Organization → Team** page. Clerk-invitation flow with an `invited` placeholder row that links on first sign-in; self-edit and last-admin guards; audited. Added `gym_memberships` columns `status`, `email`, `name`, `invitation_id` (migrations 031–034).
   - **Platform superadmin management**: `platform/superadmins` + **System → Users**.
   - **Grouped, role-gated sidebar**: `config/navigationGroups.ts` (Membership / Organization / Training / Nutrition / Financials / System / Cordel).
+  - **Staff nav rename (#77)**: Navigation-only refactor. **Team** entry renamed to **Staff** and now points to the existing Trainers page (`/trainers`). The standalone **Trainers** nav entry removed. `trainers.title` i18n key updated to "Staff" across `en`/`es`/`ca` locales. No API, DB, or business logic changes.
 - **Placeholder shells (built, content pending)**: per-group Dashboard pages (`organization`, `training`, `nutrition`, `financials`, singular `membership`). Nutrition has no backend yet.
 - **Phase 9 — Centers (#59, supersedes Phase 7)**: `Center` (migration 043) as the single
   location concept going forward — `gym_locations` was never built. `member_centers`
