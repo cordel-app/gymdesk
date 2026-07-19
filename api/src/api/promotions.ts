@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { gymFetchOne, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -29,9 +30,9 @@ promotionsRouter.get('/', async (req, res) => {
 
 promotionsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query('SELECT * FROM promotions WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-  if (rows.length === 0) return res.status(404).json({ error: 'Promotion not found' });
-  res.json(rows[0]);
+  const promo = await gymFetchOne('promotions', req.params.id, gymId);
+  if (!promo) return res.status(404).json({ error: 'Promotion not found' });
+  res.json(promo);
 });
 
 function validateBody(body: any) {
@@ -50,14 +51,15 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   }
   const err = validateBody(req.body); if (err) return res.status(400).json({ error: err });
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO promotions (gym_id, name, description, starts_at, ends_at, stackable, status)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null, new Date(starts_at), new Date(ends_at), stackable ? 1 : 0, status ?? 'active'],
+      'SELECT * FROM promotions WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM promotions WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'promotion', entityId: insertId, entityName: rows[0].name, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'promotion', entityId: row.id, entityName: row.name, next: row });
+    res.status(201).json(row);
   } catch (e) { next(e); }
 });
 
