@@ -34,3 +34,7 @@ npm run dev:member     # Next.js member app on :8082
 ```
 
 Copy `.env.example` to `.env` in each app directory before starting.
+
+## Finishing a task
+
+Always end by creating a pull request against `main`. Commit on a branch named `feat/<slug>-<issue-number>`, then open the PR with `gh pr create --base main`. Include the issue number in the PR title and body (`Closes #N`).
