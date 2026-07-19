@@ -234,6 +234,38 @@ themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
   res.json(shapeTheme(rows[0]));
 });
 
+// ─── Clone a base theme into a new base theme ────────────────────────────────
+
+themesRouter.post('/clone/:sourceId', requireSuperadmin, async (req, res) => {
+  const { rows: source } = await db.query(
+    'SELECT id, name, tokens FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
+    [req.params.sourceId],
+  );
+  if (source.length === 0) return res.status(404).json({ error: 'Theme not found' });
+
+  const src = source[0];
+  const baseName = req.body?.name?.trim() || `${src.name} (copy)`;
+
+  const { rows: nameConflict } = await db.query(
+    'SELECT id FROM themes WHERE gym_id IS NULL AND name = ? AND deleted_at IS NULL',
+    [baseName],
+  );
+  if (nameConflict.length > 0) return res.status(409).json({ error: 'A theme with this name already exists' });
+
+  const id = randomUUID();
+  const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
+  await db.query(
+    "INSERT INTO themes (id, gym_id, name, status, tokens, created_at) VALUES (?, NULL, ?, 'draft', ?, UTC_TIMESTAMP())",
+    [id, baseName, tokens],
+  );
+  const { rows } = await db.query(
+    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    [id],
+  );
+  recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });
+  res.status(201).json(shapeTheme(rows[0]));
+});
+
 // ─── Soft delete ──────────────────────────────────────────────────────────────
 
 themesRouter.delete('/:id', requireSuperadmin, async (req, res) => {

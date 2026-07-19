@@ -174,7 +174,16 @@
     "error_generic": "Alguna cosa ha anat malament.",
     "cancel": "Cancel·lar",
     "saving": "Desant…",
-    "save_changes": "Desar canvis"
+    "save_changes": "Desar canvis",
+    "clone": "Clonar",
+    "clone_title": "Clonar tema",
+    "clone_name_label": "Nom per al nou tema",
+    "clone_save": "Clonar",
+    "details": "Detalls",
+    "details_title": "Detalls del tema",
+    "details_close": "Tancar",
+    "details_created_at": "Creat el",
+    "details_modified_at": "Darrera modificació"
   },
   "system_users": {
     "title": "Superadministradors",
