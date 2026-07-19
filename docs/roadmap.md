@@ -13,7 +13,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
 
 ## Status (2026-07-19)
 
-- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3.
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114.
 - **Training module redesign (#60–#63, done)**: dynamic Workout Block form driven by
   `blockFieldConfig.ts` (#60); tree-grid Training Plan Template editor (#61); dependency
   awareness for shared catalog entities (#62); tree-grid Workout Template editor with
@@ -49,6 +49,10 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `completed` to the status CHECK constraint. The old `/training-plans/[id]` route now
   redirects to the list. All write endpoints on `training-plans.ts` reject completed plans
   with 403.
+- **Billing ledger member history endpoint (#114, done)**: `GET /billing-events/member/:memberId`
+  convenience alias added to `billing-events.ts` (paginated, tenant-isolated, 404 on unknown
+  member). First test suite for the billing ledger (`billing-events.test.ts`): 14 tests
+  covering auth, happy paths, new endpoint, and cross-gym tenant isolation.
 - **Cordel platform menu + two-scope audit log (#66, done)**: superadmin-only **Cordel**
   sidebar group (Gyms, Users, platform Audit Log at `/cordel/audit`); **System** reduced to
   gym-scoped Audit Log + Customize and opened to gym admins (`requiredRole: 'admin'`).

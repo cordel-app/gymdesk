@@ -155,4 +155,27 @@ billingEventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, ne
   }
 });
 
+// GET /billing-events/member/:memberId — convenience alias for the member history view.
+billingEventsRouter.get('/member/:memberId', requireRole('admin', 'staff'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = parseInt(String(req.params.memberId), 10);
+  if (!memberId) return res.status(400).json({ error: 'Invalid memberId' });
+
+  const { rows: memberRows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
+  if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+  const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
+
+  const { rows: countRows } = await db.query(
+    'SELECT COUNT(*) AS total FROM billing_events be WHERE be.gym_id = ? AND be.member_id = ?',
+    [gymId, memberId],
+  );
+  const { rows } = await db.query(
+    `${LIST_SELECT} WHERE be.gym_id = ? AND be.member_id = ? ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
+    [gymId, memberId],
+  );
+  res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+});
+
 // Append-only: no PUT/DELETE routes, by design (P1.6 #10).
