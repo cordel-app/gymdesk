@@ -40,16 +40,28 @@ centersRouter.get('/', async (req, res) => {
   if (status && !STATUSES.includes(status as any)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
-  const where: string[] = ['gym_id = ?', 'deleted_at IS NULL'];
+  const where: string[] = ['c.gym_id = ?', 'c.deleted_at IS NULL'];
   const params: any[] = [gymId];
-  if (status) { where.push('status = ?'); params.push(status); }
+  if (status) { where.push('c.status = ?'); params.push(status); }
   if (allowedCenterIds) {
     if (allowedCenterIds.length === 0) return res.json([]);
-    where.push(`id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+    where.push(`c.id IN (${allowedCenterIds.map(() => '?').join(',')})`);
     params.push(...allowedCenterIds);
   }
   const { rows } = await db.query(
-    `SELECT * FROM centers WHERE ${where.join(' AND ')} ORDER BY name ASC`,
+    `SELECT c.*,
+            cbm.name AS created_by_name,
+            mbm.name AS modified_by_name,
+            (SELECT COUNT(*)
+               FROM member_centers mc
+               JOIN members mem ON mem.id = mc.member_id AND mem.deleted_at IS NULL
+              WHERE mc.center_id = c.id AND mc.gym_id = c.gym_id AND mc.deleted_at IS NULL
+            ) AS active_member_count
+       FROM centers c
+       LEFT JOIN gym_memberships cbm ON cbm.id = c.created_by_membership_id
+       LEFT JOIN gym_memberships mbm ON mbm.id = c.modified_by_membership_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY c.name ASC`,
     params,
   );
   res.json(rows);
@@ -62,7 +74,20 @@ centersRouter.get('/:id', async (req, res) => {
     return res.status(404).json({ error: 'Center not found' });
   }
   const { rows } = await db.query(
-    'SELECT * FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    `SELECT c.*,
+            cbm.name AS created_by_name,
+            mbm.name AS modified_by_name,
+            dbm.name AS deleted_by_name,
+            (SELECT COUNT(*)
+               FROM member_centers mc
+               JOIN members mem ON mem.id = mc.member_id AND mem.deleted_at IS NULL
+              WHERE mc.center_id = c.id AND mc.gym_id = c.gym_id AND mc.deleted_at IS NULL
+            ) AS active_member_count
+       FROM centers c
+       LEFT JOIN gym_memberships cbm ON cbm.id = c.created_by_membership_id
+       LEFT JOIN gym_memberships mbm ON mbm.id = c.modified_by_membership_id
+       LEFT JOIN gym_memberships dbm ON dbm.id = c.deleted_by_membership_id
+      WHERE c.id = ? AND c.gym_id = ? AND c.deleted_at IS NULL`,
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Center not found' });
@@ -76,9 +101,9 @@ centersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
     const { insertId } = await db.query(
-      `INSERT INTO centers (name, code, address, phone, email, status, gym_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name.trim(), code ?? null, address ?? null, phone ?? null, email ?? null, status ?? 'active', gymId, gymMembershipId],
+      `INSERT INTO centers (name, code, address, phone, email, status, gym_id, created_by_membership_id, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name.trim(), code ?? null, address ?? null, phone ?? null, email ?? null, status ?? 'active', gymId, gymMembershipId, gymMembershipId],
     );
     const { rows } = await db.query('SELECT * FROM centers WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'center', entityId: insertId, next: rows[0] });
@@ -134,9 +159,9 @@ centersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
       return res.status(409).json({ error: `Cannot delete center: it still has ${dependent.replace(/_/g, ' ')}.` });
     }
     const { rowCount } = await db.query(
-      `UPDATE centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+      `UPDATE centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?, deleted_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId],
+      [gymMembershipId, gymMembershipId, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Center not found' });
     recordAudit(req, { action: 'soft_delete', entityType: 'center', entityId: req.params.id });
