@@ -8,7 +8,9 @@
     "start": "node dist/index.js",
     "db:migrate": "knex migrate:latest --knexfile knexfile.cjs",
     "db:migrate:down": "knex migrate:rollback --knexfile knexfile.cjs",
-    "db:seed": "node -r tsx/cjs src/infra/seed.ts"
+    "db:seed": "node -r tsx/cjs src/infra/seed.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@clerk/backend": "3.8.4",
@@ -23,9 +25,12 @@
   "devDependencies": {
     "@types/express": "4.17.25",
     "@types/node": "20.19.43",
+    "@types/supertest": "6.0.2",
     "@types/swagger-jsdoc": "6.0.4",
     "@types/swagger-ui-express": "4.1.8",
+    "supertest": "7.1.0",
     "tsx": "4.22.4",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
   }
 }

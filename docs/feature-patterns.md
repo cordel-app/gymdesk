@@ -210,6 +210,92 @@ Add a `"widgets"` namespace to each file:
 }
 ```
 
+### 7. Tests (`api/src/test/widgets.test.ts`)
+
+Every new router needs at least three smoke tests: auth guard, role guard, and happy path. Use the helpers in `api/src/test/helpers.ts` — no live Clerk calls, no manual DB setup beyond what the helpers provide.
+
+```ts
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { db } from '../infra/db';
+import {
+  TEST_AUTH_HEADER,
+  cleanupTestGyms,
+  createTestGym,
+  createTestMembership,
+  request,
+} from './helpers';
+
+let gymId: string;
+
+beforeAll(async () => {
+  gymId = await createTestGym();
+  await createTestMembership(gymId, 'admin');
+});
+
+afterAll(async () => {
+  await cleanupTestGyms();
+  await db.end();
+});
+
+describe('GET /widgets', () => {
+  it('returns 401 without auth', async () => {
+    const res = await request.get('/widgets');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when user has no membership', async () => {
+    const otherId = await createTestGym('Other');
+    const res = await request.get('/widgets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', otherId);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 200 for an admin', async () => {
+    const res = await request.get('/widgets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe('POST /widgets', () => {
+  it('returns 403 for a staff user', async () => {
+    await createTestMembership(gymId, 'staff', 'staff-user-id');
+    // Override the mock's verifyToken for this request via a separate token convention,
+    // or simply test that the requireRole guard rejects a membership with role='staff'
+    // by inserting the staff row and calling with a dedicated userId stub.
+  });
+
+  it('creates a widget as admin', async () => {
+    const res = await request.post('/widgets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Test Widget' });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('Test Widget');
+  });
+});
+```
+
+**Rules:**
+- One test file per router, in `api/src/test/<router-name>.test.ts`.
+- Always call `cleanupTestGyms()` in `afterAll` — it cascade-deletes all rows created by `createTestGym`.
+- Call `db.end()` in the last `afterAll` of the file so the pool drains cleanly.
+- `createTestMembership(gymId, role)` defaults to `TEST_USER_ID` (the fixed `sub` the mocked `verifyToken` returns). For multi-role tests, pass a different `userId` and adjust the `verifyToken` mock per-test with `vi.mocked(verifyToken).mockResolvedValueOnce({ sub: 'other-user' })`.
+- Run locally: `npm --workspace @gymdesk/api test` (requires `npm run db:up && npm run db:migrate` first).
+
+**When to skip / when to go deeper:**
+
+| Situation | What to add |
+|-----------|-------------|
+| Pure UI / nav / i18n change — no new or modified routes | Skip step 7 entirely |
+| New router (standard CRUD) | Three smoke tests: 401, 403, happy-path GET |
+| New router with role complexity (multiple roles, soft-delete, restore) | Smoke tests + one test per role boundary and per status transition |
+| Business-critical invariant (billing event, capacity/waitlist, training plan active-count, tenant isolation) | Full happy path + each failure branch in the same PR |
+| Bug fix on an existing route | Add a regression test that would have caught the bug |
+
 ---
 
 ## Config-Driven Conditional Form Fields (when needed)
