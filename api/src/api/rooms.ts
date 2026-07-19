@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
+import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -27,12 +28,9 @@ roomsRouter.get('/', async (req, res) => {
 
 roomsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    'SELECT * FROM rooms WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'Room not found' });
-  res.json(rows[0]);
+  const row = await gymFetchOne('rooms', req.params.id, gymId, { softDelete: true });
+  if (!row) return res.status(404).json({ error: 'Room not found' });
+  res.json(row);
 });
 
 roomsRouter.post('/', requireRole('admin'), async (req, res, next) => {
@@ -44,16 +42,16 @@ roomsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
     const resolvedCenterId = await resolveCenterId(gymId, req, center_id);
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO rooms (name, description, capacity, status, gym_id, center_id, modified_by_membership_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [name.trim(), description ?? null, cap, status ?? 'active', gymId, resolvedCenterId, gymMembershipId],
+      'SELECT * FROM rooms WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM rooms WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A room with this name already exists.' });
     if (err.status) return res.status(err.status).json({ error: err.message });
-    next(err);
+    handleDupEntry(err, res, next, 'A room with this name already exists.');
   }
 });
 
@@ -85,8 +83,7 @@ roomsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     const { rows } = await db.query('SELECT * FROM rooms WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A room with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A room with this name already exists.');
   }
 });
 
