@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
+import { insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
 
@@ -95,16 +96,17 @@ classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req
     const err = await validateRefs(gymId, req.body, resolvedCenterId);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
 
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO class_sessions
        (gym_id, center_id, activity_type_id, trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override, created_by, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, resolvedCenterId, activity_type_id, trainer_membership_id ?? null, room_id ?? null,
        new Date(starts_at), new Date(ends_at), cap, userId, gymMembershipId],
+      `${SELECT} WHERE cs.id = ?`,
+      (id) => [id],
     );
-    const { rows } = await db.query(`${SELECT} WHERE cs.id = ?`, [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'class_session', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'class_session', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message });
     next(e);
