@@ -3,6 +3,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { getReferences } from '../domain/references';
+import { insertAndFetch } from '../infra/db-helpers';
 
 /**
  * #55: WorkoutTemplate -> WorkoutTemplateBlock -> WorkoutTemplateExercise.
@@ -239,13 +240,14 @@ workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res,
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO workout_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
       [gymId, name.trim(), description ?? null, status ?? 'active', gymMembershipId],
+      'SELECT * FROM workout_templates WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err: any) {
     next(err);
   }
@@ -314,7 +316,7 @@ workoutTemplatesRouter.post('/:id/blocks', requireRole('admin', 'coach'), async 
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_template_blocks WHERE workout_template_id = ?',
       [id],
     );
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO workout_template_blocks
         (gym_id, workout_template_id, position, name, description, type, result_type,
          rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
@@ -322,10 +324,11 @@ workoutTemplatesRouter.post('/:id/blocks', requireRole('admin', 'coach'), async 
       [gymId, id, posRows[0].next_position, parsed.name, parsed.description, parsed.type, parsed.result_type,
        parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes,
        gymMembershipId],
+      'SELECT * FROM workout_template_blocks WHERE id = ?',
+      (blockId) => [blockId],
     );
-    const { rows } = await db.query('SELECT * FROM workout_template_blocks WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'workout_template_block', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'workout_template_block', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }
@@ -507,19 +510,17 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_template_exercises WHERE workout_template_block_id = ?',
       [blockId],
     );
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO workout_template_exercises
         (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo, gymMembershipId],
-    );
-    const { rows } = await db.query(
       'SELECT wte.*, e.name AS exercise_name FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?',
-      [insertId],
+      (exId) => [exId],
     );
-    recordAudit(req, { action: 'create', entityType: 'workout_template_exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'workout_template_exercise', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }

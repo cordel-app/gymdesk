@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { handleDupEntry } from '../infra/db-helpers';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
 let packageCreditsModule: typeof import('./package-credits') | null = null;
 async function packageCredits() {
@@ -193,9 +194,8 @@ bookingsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =
     const { rows } = await db.query(`${SELECT} WHERE b.id = ?`, [result.id]);
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'This member already has an active booking for this session.' });
     if (err.status) return res.status(err.status).json({ error: err.message });
-    next(err);
+    handleDupEntry(err, res, next, 'This member already has an active booking for this session.');
   }
 });
 

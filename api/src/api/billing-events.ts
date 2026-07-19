@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, GymRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { insertAndFetch } from '../infra/db-helpers';
 
 /**
  * P1.6 (#10): append-only billing ledger. GET + POST only — rows are never
@@ -135,7 +136,7 @@ billingEventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, ne
   }
 
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO billing_events
        (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -144,10 +145,11 @@ billingEventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, ne
         source ?? sourceForRole(role), userId, parsedAmount,
         notes && String(notes).trim() ? String(notes).trim() : null,
       ],
+      `${LIST_SELECT} WHERE be.id = ?`,
+      (id) => [id],
     );
-    const { rows } = await db.query(`${LIST_SELECT} WHERE be.id = ?`, [insertId]);
-    recordAudit(req, { action: 'append', entityType: 'billing_event', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'append', entityType: 'billing_event', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err: any) {
     next(err);
   }

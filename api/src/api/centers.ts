@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
+import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -99,17 +100,17 @@ centersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (!name) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO centers (name, code, address, phone, email, status, gym_id, created_by_membership_id, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name.trim(), code ?? null, address ?? null, phone ?? null, email ?? null, status ?? 'active', gymId, gymMembershipId, gymMembershipId],
+      'SELECT * FROM centers WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM centers WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'center', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'center', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A center with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A center with this name already exists.');
   }
 });
 
@@ -156,8 +157,7 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     recordAudit(req, { action: 'update', entityType: 'center', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A center with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A center with this name already exists.');
   }
 });
 

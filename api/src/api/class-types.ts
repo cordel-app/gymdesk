@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'inactive'] as const;
 const SELECT = `
@@ -57,7 +58,7 @@ classTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Speciality not found' });
   }
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO class_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, speciality_id, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -66,13 +67,13 @@ classTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
        parseInt(max_capacity, 10),
        speciality_id ?? null, status ?? 'active'],
+      `${SELECT} WHERE ct.id = ?`,
+      (id) => [id],
     );
-    const { rows } = await db.query(`${SELECT} WHERE ct.id = ?`, [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'class_type', entityId: insertId, entityName: rows[0].name, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'class_type', entityId: row.id, entityName: row.name, next: row });
+    res.status(201).json(row);
   } catch (e: any) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A class type with this name already exists.' });
-    next(e);
+    handleDupEntry(e, res, next, 'A class type with this name already exists.');
   }
 });
 
@@ -112,8 +113,7 @@ classTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     recordAudit(req, { action: 'update', entityType: 'class_type', entityId: req.params.id, entityName: rows[0].name, next: rows[0] });
     res.json(rows[0]);
   } catch (e: any) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A class type with this name already exists.' });
-    next(e);
+    handleDupEntry(e, res, next, 'A class type with this name already exists.');
   }
 });
 

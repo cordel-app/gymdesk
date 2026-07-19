@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
+import { gymFetchOne, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -46,12 +47,9 @@ trainerAvailabilityRouter.get('/', async (req, res) => {
 
 trainerAvailabilityRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    'SELECT * FROM trainer_availability WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'Availability window not found' });
-  res.json(rows[0]);
+  const row = await gymFetchOne('trainer_availability', req.params.id, gymId, { softDelete: true });
+  if (!row) return res.status(404).json({ error: 'Availability window not found' });
+  res.json(row);
 });
 
 trainerAvailabilityRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
@@ -82,16 +80,17 @@ trainerAvailabilityRouter.post('/', requireRole('admin', 'coach'), async (req, r
   const isRecurring = is_recurring !== false && is_recurring !== 0;
   try {
     const resolvedCenterId = await resolveCenterId(gymId, req, center_id);
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO trainer_availability
        (gym_id, center_id, trainer_membership_id, is_recurring, weekday, specific_date, starts_time, ends_time, notes, status, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, resolvedCenterId, trainerId, isRecurring, isRecurring ? weekday : null, isRecurring ? null : specific_date,
        starts_time, ends_time, notes ?? null, status ?? 'active', gymMembershipId],
+      'SELECT * FROM trainer_availability WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM trainer_availability WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'trainer_availability', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'trainer_availability', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);

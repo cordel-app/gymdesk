@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 export const specialitiesRouter = Router();
 
@@ -13,20 +14,27 @@ specialitiesRouter.get('/', async (req, res) => {
   res.json(rows);
 });
 
+specialitiesRouter.get('/:id', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const row = await gymFetchOne('specialities', req.params.id, gymId);
+  if (!row) return res.status(404).json({ error: 'Speciality not found' });
+  res.json(row);
+});
+
 specialitiesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { name, description } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO specialities (gym_id, name, description) VALUES (?, ?, ?)',
       [gymId, name.trim(), description ?? null],
+      'SELECT * FROM specialities WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM specialities WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A speciality with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A speciality with this name already exists.');
   }
 });
 
@@ -45,8 +53,7 @@ specialitiesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     const { rows } = await db.query('SELECT * FROM specialities WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A speciality with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A speciality with this name already exists.');
   }
 });
 

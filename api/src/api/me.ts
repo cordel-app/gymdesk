@@ -4,6 +4,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { bookMemberOnSession, cancelBooking } from './bookings';
 import { PLAN_TREE_SELECT } from './training-plans';
+import { insertAndFetch } from '../infra/db-helpers';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -499,14 +500,15 @@ meRouter.post('/workout-block-logs', requireRole('member'), async (req: Request,
     );
     if (blockRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
 
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_type, result_value, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, memberId, workout_block_id, logged_date, started_at ?? null, finished_at ?? null,
        blockRows[0].result_type, result_value ?? null, notes ?? null],
+      'SELECT * FROM workout_block_logs WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM workout_block_logs WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);

@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
+import { gymFetchOne, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
 
@@ -26,12 +27,9 @@ eventsRouter.get('/', async (req, res) => {
 
 eventsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    'SELECT * FROM events WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'Event not found' });
-  res.json(rows[0]);
+  const row = await gymFetchOne('events', req.params.id, gymId, { softDelete: true });
+  if (!row) return res.status(404).json({ error: 'Event not found' });
+  res.json(row);
 });
 
 eventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
@@ -55,14 +53,15 @@ eventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => 
       );
       if (roomRows.length === 0) return res.status(400).json({ error: 'Room does not belong to this center' });
     }
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO events (name, description, room_id, starts_at, ends_at, capacity, gym_id, center_id, created_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name.trim(), description ?? null, room_id ?? null, new Date(starts_at), new Date(ends_at), cap, gymId, resolvedCenterId, gymMembershipId],
+      'SELECT * FROM events WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM events WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'event', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'event', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);

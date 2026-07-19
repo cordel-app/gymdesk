@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { insertAndFetch } from '../infra/db-helpers';
 
 export const promotionDetailsRouter = Router({ mergeParams: true });
 
@@ -92,13 +93,14 @@ promotionDetailsRouter.post('/charge-benefits', requireRole('admin'), async (req
   if (parsedValue !== null && parsedValue < 0) return res.status(400).json({ error: 'Value must be non-negative' });
 
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO promotion_charge_benefits (gym_id, promotion_id, charge_type_id, action_type_id, value)
        VALUES (?, ?, ?, ?, ?)`,
       [gymId, promotionId, charge_type_id, action_type_id, parsedValue],
+      'SELECT * FROM promotion_charge_benefits WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM promotion_charge_benefits WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (err) { next(err); }
 });
 
@@ -136,12 +138,13 @@ promotionDetailsRouter.post('/period-benefits', requireRole('admin'), async (req
   }
   if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO promotion_period_benefits (gym_id, promotion_id, required_paid_months, granted_free_periods) VALUES (?, ?, ?, ?)',
       [gymId, promotionId, paid, free],
+      'SELECT * FROM promotion_period_benefits WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM promotion_period_benefits WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (err) { next(err); }
 });
 
