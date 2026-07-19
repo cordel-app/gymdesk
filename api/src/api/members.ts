@@ -42,8 +42,7 @@ export const membersRouter = Router();
 membersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id,
-            p.name AS fare_name, p.base_price AS fare_price
+    `SELECT m.*, m.membership_plan_id AS fare_id, p.name AS fare_name
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      WHERE m.deleted_at IS NULL AND m.gym_id = ?

@@ -21,7 +21,6 @@ interface Member {
   phone: string | null;
   fare_id: number | null;
   fare_name: string | null;
-  fare_price: string | null;
   clerk_user_id: string | null;
   invitation_id: string | null;
 }
@@ -228,7 +227,7 @@ export default function MembersPage() {
                   <td style={td}>{m.name}</td>
                   <td style={td}>{m.email}</td>
                   <td style={td}>{m.phone ?? '—'}</td>
-                  <td style={td}>{m.fare_name ? `${m.fare_name} (${parseFloat(m.fare_price!).toFixed(2)})` : '—'}</td>
+                  <td style={td}>{m.fare_name ?? '—'}</td>
                   <td style={td}>
                     {linked ? t('members.portal_linked') : pendingInvite ? t('members.portal_invited') : t('members.portal_none')}
                   </td>
