@@ -91,6 +91,17 @@ gymdesk/
 | View platform-wide audit log (Cordel → Audit log) | ✓ | | | |
 | Create / manage themes (Cordel → Themes) | ✓ | | | |
 
+## Running API tests
+
+Tests use [Vitest](https://vitest.dev/) + [supertest](https://github.com/ladjs/supertest) against a real MySQL database. Clerk is mocked — no live Clerk instance is needed.
+
+**Prerequisites:** MySQL must be running with migrations applied (`npm run db:up && npm run db:migrate`). The test runner picks up `api/.env` automatically.
+
+```bash
+npm --workspace api test          # run once
+npm --workspace api run test:watch  # watch mode
+```
+
 ## Superadmin setup
 
 The first superadmin must be seeded manually once after the database is created:
