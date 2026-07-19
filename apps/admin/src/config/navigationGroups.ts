@@ -77,8 +77,8 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.specialities',
       },
       {
-        href: '/{{locale}}/class-types',
-        labelKey: 'nav.class_types',
+        href: '/{{locale}}/activity-types',
+        labelKey: 'nav.activity_types',
       },
       {
         href: '/{{locale}}/class-packages',

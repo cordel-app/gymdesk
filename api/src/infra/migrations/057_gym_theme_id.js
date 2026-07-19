@@ -11,7 +11,7 @@ exports.up = async (knex) => {
   // Add theme_id FK if not already present.
   if (!(await knex.schema.hasColumn('gyms', 'theme_id'))) {
     await knex.schema.alterTable('gyms', (t) => {
-      t.specificType('theme_id', 'char(36)').nullable().references('id').inTable('themes').onDelete('SET NULL');
+      t.specificType('theme_id', "char(36) collate utf8mb4_unicode_ci").nullable().references('id').inTable('themes').onDelete('SET NULL');
     });
   }
 

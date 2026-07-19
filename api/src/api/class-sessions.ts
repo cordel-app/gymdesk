@@ -12,13 +12,13 @@ const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
  */
 const SELECT = `
   SELECT cs.*,
-         ct.name AS class_type_name,
-         ct.max_capacity AS class_type_capacity,
-         ct.duration_minutes AS class_type_duration,
-         COALESCE(cs.max_capacity_override, ct.max_capacity) AS effective_capacity,
+         at.name AS class_type_name,
+         at.max_capacity AS class_type_capacity,
+         at.duration_minutes AS class_type_duration,
+         COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
          r.name AS room_name
   FROM class_sessions cs
-  JOIN class_types ct ON ct.id = cs.class_type_id
+  JOIN activity_types at ON at.id = cs.activity_type_id
   LEFT JOIN rooms r ON r.id = cs.room_id
 `;
 
@@ -48,13 +48,13 @@ classSessionsRouter.get('/:id', async (req, res) => {
 });
 
 async function validateRefs(gymId: string, body: any, centerId: number) {
-  if (body.class_type_id) {
+  if (body.activity_type_id) {
     const { rows } = await db.query(
-      "SELECT id, status FROM class_types WHERE id = ? AND gym_id = ?",
-      [body.class_type_id, gymId],
+      "SELECT id, status FROM activity_types WHERE id = ? AND gym_id = ?",
+      [body.activity_type_id, gymId],
     );
-    if (rows.length === 0) return 'Class type not found';
-    if (rows[0].status !== 'active') return 'Class type is inactive';
+    if (rows.length === 0) return 'Activity type not found';
+    if (rows[0].status !== 'active') return 'Activity type is inactive';
   }
   if (body.trainer_membership_id) {
     const { rows } = await db.query(
@@ -77,9 +77,9 @@ async function validateRefs(gymId: string, body: any, centerId: number) {
 
 classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req, res, next) => {
   const { gymId, userId, gymMembershipId } = getTenantContext(req);
-  const { class_type_id, trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
-  if (!class_type_id || !starts_at || !ends_at) {
-    return res.status(400).json({ error: 'class_type_id, starts_at and ends_at are required' });
+  const { activity_type_id, trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
+  if (!activity_type_id || !starts_at || !ends_at) {
+    return res.status(400).json({ error: 'activity_type_id, starts_at and ends_at are required' });
   }
   if (new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
@@ -97,9 +97,9 @@ classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req
 
     const { insertId } = await db.query(
       `INSERT INTO class_sessions
-       (gym_id, center_id, class_type_id, trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override, created_by, modified_by_membership_id)
+       (gym_id, center_id, activity_type_id, trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override, created_by, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, resolvedCenterId, class_type_id, trainer_membership_id ?? null, room_id ?? null,
+      [gymId, resolvedCenterId, activity_type_id, trainer_membership_id ?? null, room_id ?? null,
        new Date(starts_at), new Date(ends_at), cap, userId, gymMembershipId],
     );
     const { rows } = await db.query(`${SELECT} WHERE cs.id = ?`, [insertId]);

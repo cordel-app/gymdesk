@@ -22,19 +22,19 @@ const SELECT = `
   SELECT b.*, m.name AS member_name, m.email AS member_email,
          cs.starts_at AS session_starts_at, cs.ends_at AS session_ends_at,
          cs.status AS session_status,
-         ct.name AS class_type_name,
-         COALESCE(cs.max_capacity_override, ct.max_capacity) AS effective_capacity
+         at.name AS class_type_name,
+         COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity
   FROM bookings b
   JOIN members m ON m.id = b.member_id
   JOIN class_sessions cs ON cs.id = b.class_session_id
-  JOIN class_types ct ON ct.id = cs.class_type_id
+  JOIN activity_types at ON at.id = cs.activity_type_id
 `;
 
 // Hook point for P2.7 (plan-access) and P3.3 (packages). Called inside the
 // booking transaction with the tx handle; must throw an Error with a message
 // the router can surface as a translated string.
 export interface AccessHook {
-  (tx: any, gymId: string, memberId: number, classTypeId: number): Promise<void>;
+  (tx: any, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null): Promise<void>;
 }
 const accessHooks: AccessHook[] = [];
 export function registerBookingAccessHook(fn: AccessHook) { accessHooks.push(fn); }
@@ -70,10 +70,10 @@ bookingsRouter.get('/:id', async (req, res) => {
 export async function bookMemberOnSession(gymId: string, memberId: number, sessionId: number) {
   return db.transaction(async (tx) => {
     const { rows: session } = await tx.query(
-      `SELECT cs.id, cs.class_type_id, cs.status, cs.center_id,
-              COALESCE(cs.max_capacity_override, ct.max_capacity) AS effective_capacity
+      `SELECT cs.id, cs.activity_type_id, cs.status, cs.center_id,
+              COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity
        FROM class_sessions cs
-       JOIN class_types ct ON ct.id = cs.class_type_id
+       JOIN activity_types at ON at.id = cs.activity_type_id
        WHERE cs.id = ? AND cs.gym_id = ? AND cs.deleted_at IS NULL FOR UPDATE`,
       [sessionId, gymId],
     );
@@ -82,7 +82,7 @@ export async function bookMemberOnSession(gymId: string, memberId: number, sessi
 
     // Run access hooks (plan-access, packages) — they can throw with .status/.message.
     for (const hook of accessHooks) {
-      await hook(tx, gymId, memberId, session[0].class_type_id);
+      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id);
     }
 
     const { rows: countRows } = await tx.query(
@@ -162,11 +162,11 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     // hooks against the promoted member to establish intent, then debit.
     const promotedMemberId = waitRows[0].member_id;
     const { rows: sessionRow } = await tx.query(
-      'SELECT class_type_id FROM class_sessions WHERE id = ?',
+      'SELECT activity_type_id, center_id FROM class_sessions WHERE id = ?',
       [b.class_session_id],
     );
     for (const hook of accessHooks) {
-      try { await hook(tx, gymId, promotedMemberId, sessionRow[0].class_type_id); }
+      try { await hook(tx, gymId, promotedMemberId, sessionRow[0].activity_type_id, sessionRow[0].center_id); }
       catch { /* promotion never fails; if hook throws, the promoted member just doesn't get a package debit */ }
     }
     const pc = await packageCredits();

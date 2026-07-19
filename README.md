@@ -1,6 +1,6 @@
 # Gymdesk
 
-Gym Management SaaS — admin app for managing members, memberships, classes, bookings, training (exercises, workout templates, training plans), promotions, billing, and per-gym theming, plus a member-facing app.
+Gym Management SaaS — admin app for managing members, memberships, classes, bookings, training (exercises, workout templates, training plans), promotions, billing, per-gym theming, and membership plan configuration (billing policies, service allowances, center restrictions), plus a member-facing app.
 
 ## Requirements
 
@@ -59,7 +59,8 @@ gymdesk/
     business/         # Business domain guidelines
     technical/        # Technical conventions
     procedures/       # Operational runbooks
-  docs/               # architecture.md + feature-patterns.md (read before building features)
+  docs/               # architecture, feature-patterns, roadmap, tech-debt, agent-prompts
+                      # (read before building features; agents: start at CLAUDE.md)
   .github/
     workflows/        # ci.yml, deploy.yml (api), deploy-admin.yml, deploy-member.yml, migrate-data.yml, debug-vps.yml
 ```
@@ -115,7 +116,7 @@ Route prefixes by area:
 | Themes (public logo) | `/themes/:id/logo` |
 | Team & profile | `/gym-users`, `/me`, `/me/link` |
 | Membership | `/members`, `/membership-plans`, `/user-memberships`, `/billing-events`, `/benefit-types`, `/charge-types` |
-| Classes & booking | `/class-types`, `/class-sessions`, `/bookings`, `/class-packages`, `/members/:memberId/class-packages` |
+| Classes & booking | `/activity-types`, `/class-sessions`, `/bookings`, `/class-packages`, `/members/:memberId/class-packages` |
 | Training | `/muscles`, `/exercises`, `/workout-templates`, `/training-plan-templates`, `/training-plans` (gym-level list + create with keep/expire), `/members/:memberId/{training-plans,member-training-plans,exercise-logs,workout-block-logs}` |
 | Promotions | `/promotions`, `/action-types` |
 | Locations (Centers) | `/centers`, `/rooms`, `/resources`, `/events`, `/trainers`, `/trainer-availability`, `/specialities`, `/members/:memberId/centers` |
