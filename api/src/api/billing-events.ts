@@ -158,7 +158,7 @@ billingEventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, ne
 // GET /billing-events/member/:memberId — convenience alias for the member history view.
 billingEventsRouter.get('/member/:memberId', requireRole('admin', 'staff'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const memberId = parseInt(req.params.memberId, 10);
+  const memberId = parseInt(String(req.params.memberId), 10);
   if (!memberId) return res.status(400).json({ error: 'Invalid memberId' });
 
   const { rows: memberRows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
