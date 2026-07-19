@@ -115,9 +115,18 @@ centersRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
 centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { name, code, address, phone, email, status } = req.body;
+  const { name, code, address, phone, email, status, theme_id } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
+    // Validate theme_id if provided (null clears it; a UUID must reference an accessible theme).
+    if (theme_id !== undefined && theme_id !== null) {
+      const { rows: themeRows } = await db.query(
+        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
+        [theme_id, gymId],
+      );
+      if (themeRows.length === 0) return res.status(400).json({ error: 'theme_id must reference an active theme accessible to this gym' });
+    }
+
     const { rowCount } = await db.query(
       `UPDATE centers SET
         name       = COALESCE(?, name),
@@ -126,6 +135,7 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         phone      = IF(?, ?, phone),
         email      = IF(?, ?, email),
         status     = COALESCE(?, status),
+        theme_id   = IF(?, ?, theme_id),
         modified_at = UTC_TIMESTAMP(),
         modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -136,6 +146,7 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         'phone' in req.body ? 1 : 0, phone ?? null,
         'email' in req.body ? 1 : 0, email ?? null,
         status ?? null,
+        'theme_id' in req.body ? 1 : 0, theme_id ?? null,
         gymMembershipId,
         req.params.id, gymId,
       ],

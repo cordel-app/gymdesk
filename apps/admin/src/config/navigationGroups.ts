@@ -147,6 +147,10 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/audit',
         labelKey: 'nav.audit',
       },
+      {
+        href: '/{{locale}}/themes',
+        labelKey: 'nav.themes',
+      },
     ],
   },
   {
@@ -160,7 +164,7 @@ export const navigationGroups: NavGroup[] = [
       },
       {
         href: '/{{locale}}/system/themes',
-        labelKey: 'nav.themes',
+        labelKey: 'nav.base_themes',
       },
       {
         href: '/{{locale}}/system/users',
