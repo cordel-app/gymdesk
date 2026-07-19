@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -22,9 +23,9 @@ classPackagesRouter.get('/', async (req, res) => {
 
 classPackagesRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query('SELECT * FROM class_packages WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-  if (rows.length === 0) return res.status(404).json({ error: 'Class package not found' });
-  res.json(rows[0]);
+  const row = await gymFetchOne('class_packages', req.params.id, gymId);
+  if (!row) return res.status(404).json({ error: 'Class package not found' });
+  res.json(row);
 });
 
 function validate(body: any) {
@@ -46,15 +47,15 @@ classPackagesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   }
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO class_packages (gym_id, name, number_of_sessions, price, validity_days, status) VALUES (?, ?, ?, ?, ?, ?)',
       [gymId, name.trim(), parseInt(number_of_sessions, 10), parseFloat(price), parseInt(validity_days, 10), status ?? 'active'],
+      'SELECT * FROM class_packages WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM class_packages WHERE id = ?', [insertId]);
-    res.status(201).json(rows[0]);
+    res.status(201).json(row);
   } catch (e: any) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A class package with this name already exists.' });
-    next(e);
+    handleDupEntry(e, res, next, 'A class package with this name already exists.');
   }
 });
 
@@ -84,8 +85,7 @@ classPackagesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     const { rows } = await db.query('SELECT * FROM class_packages WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (e: any) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A class package with this name already exists.' });
-    next(e);
+    handleDupEntry(e, res, next, 'A class package with this name already exists.');
   }
 });
 
