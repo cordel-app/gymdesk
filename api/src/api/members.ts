@@ -41,14 +41,23 @@ export const membersRouter = Router();
 
 membersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
+  const centerId = req.query.centerId ? Number(req.query.centerId) : null;
+  const joins: string[] = [];
+  const where: string[] = ['m.deleted_at IS NULL', 'm.gym_id = ?'];
+  const params: any[] = [gymId];
+  if (centerId) {
+    joins.push('JOIN member_centers mc ON mc.member_id = m.id AND mc.center_id = ? AND mc.deleted_at IS NULL');
+    params.unshift(centerId);
+  }
   const { rows } = await db.query(
     `SELECT m.*, m.membership_plan_id AS fare_id,
             p.name AS fare_name, p.base_price AS fare_price
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
-     WHERE m.deleted_at IS NULL AND m.gym_id = ?
+     ${joins.join(' ')}
+     WHERE ${where.join(' AND ')}
      ORDER BY m.created_at DESC`,
-    [gymId],
+    params,
   );
   res.json(rows);
 });

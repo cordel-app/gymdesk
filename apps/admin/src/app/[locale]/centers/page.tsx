@@ -13,7 +13,8 @@ import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import { btnStyle } from '@/components/ui';
 
 interface Center {
   id: number;
@@ -23,10 +24,22 @@ interface Center {
   phone: string | null;
   email: string | null;
   status: 'active' | 'inactive';
+  active_member_count: number;
+  created_at: string;
+  created_by_name: string | null;
+  modified_at: string | null;
+  modified_by_name: string | null;
+  deleted_at: string | null;
+  deleted_by_name: string | null;
 }
 
 const STATUSES = ['active', 'inactive'] as const;
 const emptyForm = { name: '', code: '', address: '', phone: '', email: '', status: 'active' };
+
+function formatDate(locale: string, iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+}
 
 export default function CentersPage() {
   const t = useTranslations();
@@ -40,12 +53,17 @@ export default function CentersPage() {
   const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Center | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   const [deleting, setDeleting] = useState<Center | null>(null);
+
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsCenter, setDetailsCenter] = useState<Center | null>(null);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
@@ -75,6 +93,13 @@ export default function CentersPage() {
     setError(null); setModalOpen(true);
   }
   function closeModal() { setModalOpen(false); setEditing(null); setForm(emptyForm); setError(null); }
+
+  function openDetails(c: Center) { setDetailsCenter(c); setDetailsOpen(true); }
+  function closeDetails() { setDetailsOpen(false); setDetailsCenter(null); }
+
+  function viewMembers(c: Center) {
+    router.push(`/${locale}/members?centerId=${c.id}&status=active`);
+  }
 
   async function handleSave() {
     if (!form.name.trim()) { setError(t('centers.error_required')); return; }
@@ -108,17 +133,31 @@ export default function CentersPage() {
 
   const columns: Column<Center>[] = [
     { header: t('centers.col_name'), render: (c) => c.name },
-    { header: t('centers.col_code'), width: 100, render: (c) => c.code ?? '—' },
-    { header: t('centers.col_address'), render: (c) => c.address ?? '—' },
+    { header: t('centers.col_email'), render: (c) => c.email ?? '—' },
+    {
+      header: t('centers.col_address'),
+      render: (c) => (
+        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>
+          {c.address ?? '—'}
+        </span>
+      ),
+    },
     { header: t('centers.col_status'), width: 110, render: (c) => <StatusBadge status={c.status} label={t(`status.${c.status}`)} /> },
     {
-      header: t('centers.col_actions'), width: 180,
-      render: (c) => (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => openEdit(c)} style={btnSmall('#444')}>{t('centers.edit')}</button>
-          <button onClick={() => setDeleting(c)} style={btnSmall('#c0392b')}>{t('centers.delete')}</button>
-        </div>
-      ),
+      header: t('centers.col_members'), width: 130,
+      render: (c) => `${c.active_member_count} ${c.active_member_count === 1 ? t('centers.member_singular') : t('centers.member_plural')}`,
+    },
+    {
+      header: '', width: 50,
+      render: (c) => {
+        const items: ContextMenuItem[] = [
+          { label: t('centers.edit'), onClick: () => openEdit(c) },
+          { label: t('centers.details'), onClick: () => openDetails(c) },
+          { label: t('centers.view_members'), onClick: () => viewMembers(c) },
+          { label: t('centers.delete'), onClick: () => setDeleting(c), danger: true },
+        ];
+        return <ContextMenu items={items} ariaLabel={`Actions for ${c.name}`} />;
+      },
     },
   ];
 
@@ -146,6 +185,7 @@ export default function CentersPage() {
         emptyText={t('centers.empty')}
       />
 
+      {/* Edit modal */}
       <CrudModal
         open={modalOpen}
         title={editing ? t('centers.modal_edit') : t('centers.modal_add')}
@@ -173,6 +213,48 @@ export default function CentersPage() {
         </select>
       </CrudModal>
 
+      {/* Details dialog */}
+      {detailsOpen && detailsCenter && (
+        <CrudModal
+          open={detailsOpen}
+          title={t('centers.details_title')}
+          cancelLabel={t('centers.cancel')}
+          saveLabel=""
+          hideSave
+          onCancel={closeDetails}
+          onSave={closeDetails}
+        >
+          <SectionHeading>{t('centers.details_general')}</SectionHeading>
+          <DetailRow label={t('centers.col_name')} value={detailsCenter.name} />
+          <DetailRow label={t('centers.label_code')} value={detailsCenter.code} />
+          <DetailRow label={t('centers.label_address')} value={detailsCenter.address} />
+          <DetailRow label={t('centers.label_phone')} value={detailsCenter.phone} />
+          <DetailRow label={t('centers.col_email')} value={detailsCenter.email} />
+          <div style={{ marginTop: 12 }}>
+            <span style={detailLabelStyle}>{t('centers.col_status')}</span>
+            <StatusBadge status={detailsCenter.status} label={t(`status.${detailsCenter.status}`)} />
+          </div>
+
+          <SectionHeading>{t('centers.details_statistics')}</SectionHeading>
+          <DetailRow
+            label={t('centers.col_members')}
+            value={`${detailsCenter.active_member_count} ${detailsCenter.active_member_count === 1 ? t('centers.member_singular') : t('centers.member_plural')}`}
+          />
+
+          <SectionHeading>{t('centers.details_audit')}</SectionHeading>
+          <DetailRow label={t('centers.created_at')} value={formatDate(locale, detailsCenter.created_at)} />
+          <DetailRow label={t('centers.created_by')} value={detailsCenter.created_by_name} />
+          <DetailRow label={t('centers.modified_at')} value={formatDate(locale, detailsCenter.modified_at)} />
+          <DetailRow label={t('centers.modified_by')} value={detailsCenter.modified_by_name} />
+          {detailsCenter.deleted_at && (
+            <>
+              <DetailRow label={t('centers.deleted_at')} value={formatDate(locale, detailsCenter.deleted_at)} />
+              <DetailRow label={t('centers.deleted_by')} value={detailsCenter.deleted_by_name} />
+            </>
+          )}
+        </CrudModal>
+      )}
+
       <ConfirmDialog
         open={deleting !== null}
         message={t('centers.confirm_delete')}
@@ -184,3 +266,22 @@ export default function CentersPage() {
     </div>
   );
 }
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 style={{ margin: '20px 0 8px', fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#888' }}>
+      {children}
+    </h3>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, marginBottom: 6, fontSize: 14 }}>
+      <span style={detailLabelStyle}>{label}</span>
+      <span style={{ color: '#333' }}>{value ?? '—'}</span>
+    </div>
+  );
+}
+
+const detailLabelStyle: React.CSSProperties = { minWidth: 120, color: '#888', fontWeight: 500, flexShrink: 0 };

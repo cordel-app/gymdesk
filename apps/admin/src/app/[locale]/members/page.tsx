@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
@@ -30,12 +31,14 @@ const emptyForm = { name: '', email: '', phone: '', fare_id: '' };
 
 export default function MembersPage() {
   const t = useTranslations();
+  const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, isSuperadmin, loading: gymLoading } = useGym();
   const { centers } = useCenter();
   const { toast } = useToast();
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [centerFilter, setCenterFilter] = useState<string>(searchParams.get('centerId') ?? '');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
@@ -60,7 +63,7 @@ export default function MembersPage() {
     setLoading(true);
     try {
       const [membersData, plansData] = await Promise.all([
-        apiFetch<Member[]>('/members'),
+        apiFetch<Member[]>(`/members${centerFilter ? `?centerId=${centerFilter}` : ''}`),
         apiFetch<Plan[]>('/membership-plans?status=active').catch(() => []),
       ]);
       setMembers(membersData);
@@ -73,7 +76,7 @@ export default function MembersPage() {
     }
   }
 
-  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading]);
+  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading, centerFilter]);
 
   function openAdd() {
     setEditing(null);
@@ -200,7 +203,21 @@ export default function MembersPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('members.title')}</h1>
-        <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('members.add')}</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {showCenters && (
+            <select
+              value={centerFilter}
+              onChange={(e) => setCenterFilter(e.target.value)}
+              style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff' }}
+            >
+              <option value="">{t('members.all_centers')}</option>
+              {centers.map((c) => (
+                <option key={c.id} value={String(c.id)}>{c.name}</option>
+              ))}
+            </select>
+          )}
+          <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('members.add')}</button>
+        </div>
       </div>
 
       {loading ? (

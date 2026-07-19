@@ -88,7 +88,9 @@
     "default_center": "Default Center",
     "default_center_none": "Select a default center",
     "error_no_center": "A member must belong to at least one center.",
-    "error_default_not_assigned": "Default center must be one of the assigned centers."
+    "error_default_not_assigned": "Default center must be one of the assigned centers.",
+    "filter_center": "Center",
+    "all_centers": "All centers"
   },
   "deleted_members": {
     "title": "Deleted Members",
@@ -1152,7 +1154,23 @@
     "cancel": "Cancel",
     "saving": "Saving…",
     "save_changes": "Save Changes",
-    "all_centers": "All centers"
+    "all_centers": "All centers",
+    "col_email": "Email",
+    "col_members": "Members",
+    "details": "Details",
+    "details_title": "Center Details",
+    "details_general": "General Information",
+    "details_statistics": "Statistics",
+    "details_audit": "Audit",
+    "created_at": "Created At",
+    "created_by": "Created By",
+    "modified_at": "Modified At",
+    "modified_by": "Modified By",
+    "deleted_at": "Deleted At",
+    "deleted_by": "Deleted By",
+    "view_members": "View Members",
+    "member_singular": "Member",
+    "member_plural": "Members"
   },
   "resources": {
     "title": "Resources",

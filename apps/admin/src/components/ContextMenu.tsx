@@ -9,18 +9,24 @@ export interface ContextMenuItem {
 }
 
 /**
- * Small self-contained 3-dot (⋮) menu. No dropdown primitive exists in the repo,
- * so this is hand-built: a trigger button plus an absolutely-positioned option
- * list that closes on outside click or Escape.
+ * Small self-contained 3-dot (⋮) menu. Uses position:fixed for the dropdown so
+ * it escapes any overflow:hidden ancestors (e.g. table with border-radius).
  */
 export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ariaLabel?: string }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false);
@@ -33,10 +39,22 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
     };
   }, [open]);
 
+  function handleTrigger() {
+    if (!open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    }
+    setOpen((v) => !v);
+  }
+
   return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+    <>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={triggerRef}
+        onClick={handleTrigger}
         aria-label={ariaLabel ?? 'Actions'}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -45,7 +63,11 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
         ⋮
       </button>
       {open && (
-        <div role="menu" style={menuStyle}>
+        <div
+          ref={menuRef}
+          role="menu"
+          style={{ ...menuStyle, position: 'fixed', top: pos.top, right: pos.right }}
+        >
           {items.map((item, i) => (
             <button
               key={i}
@@ -60,7 +82,7 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
           ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -69,9 +91,9 @@ const triggerStyle: React.CSSProperties = {
   color: '#666', padding: '2px 8px', borderRadius: 4,
 };
 const menuStyle: React.CSSProperties = {
-  position: 'absolute', top: '100%', right: 0, marginTop: 4, minWidth: 200,
+  minWidth: 200,
   background: '#fff', border: '1px solid #e2e2e6', borderRadius: 8,
-  boxShadow: '0 6px 20px rgba(0,0,0,0.14)', padding: 4, zIndex: 50,
+  boxShadow: '0 6px 20px rgba(0,0,0,0.14)', padding: 4, zIndex: 1000,
 };
 const itemStyle: React.CSSProperties = {
   display: 'block', width: '100%', textAlign: 'left', background: 'transparent',

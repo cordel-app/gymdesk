@@ -88,7 +88,9 @@
     "default_center": "Centro Predeterminado",
     "default_center_none": "Selecciona un centro predeterminado",
     "error_no_center": "Un miembro debe pertenecer al menos a un centro.",
-    "error_default_not_assigned": "El centro predeterminado debe ser uno de los centros asignados."
+    "error_default_not_assigned": "El centro predeterminado debe ser uno de los centros asignados.",
+    "filter_center": "Centro",
+    "all_centers": "Todos los centros"
   },
   "deleted_members": {
     "title": "Socios eliminados",
@@ -1169,7 +1171,23 @@
     "cancel": "Cancelar",
     "saving": "Guardando…",
     "save_changes": "Guardar Cambios",
-    "all_centers": "Todos los centros"
+    "all_centers": "Todos los centros",
+    "col_email": "Correo",
+    "col_members": "Miembros",
+    "details": "Detalles",
+    "details_title": "Detalles del Centro",
+    "details_general": "Información General",
+    "details_statistics": "Estadísticas",
+    "details_audit": "Auditoría",
+    "created_at": "Creado el",
+    "created_by": "Creado por",
+    "modified_at": "Modificado el",
+    "modified_by": "Modificado por",
+    "deleted_at": "Eliminado el",
+    "deleted_by": "Eliminado por",
+    "view_members": "Ver Miembros",
+    "member_singular": "Miembro",
+    "member_plural": "Miembros"
   },
   "resources": {
     "title": "Recursos",

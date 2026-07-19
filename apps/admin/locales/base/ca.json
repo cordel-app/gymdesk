@@ -88,7 +88,9 @@
     "default_center": "Centre Predeterminat",
     "default_center_none": "Selecciona un centre predeterminat",
     "error_no_center": "Un membre ha de pertànyer almenys a un centre.",
-    "error_default_not_assigned": "El centre predeterminat ha de ser un dels centres assignats."
+    "error_default_not_assigned": "El centre predeterminat ha de ser un dels centres assignats.",
+    "filter_center": "Centre",
+    "all_centers": "Tots els centres"
   },
   "deleted_members": {
     "title": "Socis eliminats",
@@ -1169,7 +1171,23 @@
     "cancel": "Cancel·la",
     "saving": "Desant…",
     "save_changes": "Desa els Canvis",
-    "all_centers": "Tots els centres"
+    "all_centers": "Tots els centres",
+    "col_email": "Correu",
+    "col_members": "Membres",
+    "details": "Detalls",
+    "details_title": "Detalls del Centre",
+    "details_general": "Informació General",
+    "details_statistics": "Estadístiques",
+    "details_audit": "Auditoria",
+    "created_at": "Creat el",
+    "created_by": "Creat per",
+    "modified_at": "Modificat el",
+    "modified_by": "Modificat per",
+    "deleted_at": "Eliminat el",
+    "deleted_by": "Eliminat per",
+    "view_members": "Veure Membres",
+    "member_singular": "Membre",
+    "member_plural": "Membres"
   },
   "resources": {
     "title": "Recursos",
