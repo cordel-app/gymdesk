@@ -21,6 +21,7 @@
     "home": "Home",
     "schedule": "Schedule",
     "membership": "Membership",
+    "packages": "Packages",
     "training": "Training",
     "profile": "Profile"
   },
@@ -67,6 +68,20 @@
     "result_type_calories": "Calories",
     "result_type_weight": "Weight",
     "result_type_score": "Score"
+  },
+  "packages": {
+    "title": "My packages",
+    "loading": "Loading…",
+    "empty": "No packages yet.",
+    "empty_hint": "Ask your gym to assign a class package to your account.",
+    "total_credits": "sessions remaining",
+    "sessions": "sessions",
+    "expires_on": "Expires {date}",
+    "past_heading": "Past packages",
+    "status_active": "Active",
+    "status_consumed": "Used up",
+    "status_expired": "Expired",
+    "status_cancelled": "Cancelled"
   },
   "member_schedule": {
     "title": "Schedule",

@@ -21,6 +21,7 @@
     "home": "Inici",
     "schedule": "Horari",
     "membership": "Quota",
+    "packages": "Bons",
     "training": "Entreno",
     "profile": "Perfil"
   },
@@ -67,6 +68,20 @@
     "result_type_calories": "Calories",
     "result_type_weight": "Pes",
     "result_type_score": "Puntuació"
+  },
+  "packages": {
+    "title": "Els meus bons",
+    "loading": "Carregant…",
+    "empty": "Encara no tens cap bo.",
+    "empty_hint": "Demana al teu gimnàs que t'assigni un bo de classes.",
+    "total_credits": "sessions disponibles",
+    "sessions": "sessions",
+    "expires_on": "Venç el {date}",
+    "past_heading": "Bons anteriors",
+    "status_active": "Actiu",
+    "status_consumed": "Esgotat",
+    "status_expired": "Caducat",
+    "status_cancelled": "Cancel·lat"
   },
   "member_schedule": {
     "title": "Horari",
