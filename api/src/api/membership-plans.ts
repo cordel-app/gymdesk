@@ -1,14 +1,52 @@
-import { Router } from 'express';
+import { Router, Request } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
+interface PlanRow {
+  id: number;
+  gym_id: string;
+  name: string;
+  description: string | null;
+  lifecycle_status: string;
+  enrollment_status: string;
+  created_by: number | null;
+  modified_at: string | null;
+  modified_by: number | null;
+  deleted_at: string | null;
+  created_at: string;
+}
+
+interface PriceRow {
+  id: number;
+  membership_plan_id: number;
+  gym_id: string;
+  price: string;
+  valid_from: string;
+  valid_to: string | null;
+}
+
+interface BillingPolicyRow {
+  id: number;
+  gym_id: string;
+  membership_plan_id: number;
+  initial_billing_interval: number | null;
+  initial_billing_unit: string | null;
+  recurring_billing_interval: number | null;
+  recurring_billing_unit: string | null;
+  initial_service_interval: number | null;
+  initial_service_unit: string | null;
+  recurring_service_interval: number | null;
+  recurring_service_unit: string | null;
+  auto_renew: boolean;
+}
+
 export const membershipPlansRouter = Router();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function getCallerMembershipId(req: any): Promise<number | null> {
+async function getCallerMembershipId(req: Request): Promise<number | null> {
   const userId = req.auth?.userId;
   if (!userId) return null;
   const { gymId } = getTenantContext(req);
@@ -19,13 +57,13 @@ async function getCallerMembershipId(req: any): Promise<number | null> {
   return rows.length > 0 ? rows[0].id : null;
 }
 
-async function enrichPlan(plan: any, gymId: string): Promise<any> {
+async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   const [prices, bpRows, allowances, centers, memberCount] = await Promise.all([
-    db.query(
+    db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
       [plan.id, gymId],
     ).then(r => r.rows),
-    db.query(
+    db.query<BillingPolicyRow>(
       'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
       [plan.id, gymId],
     ).then(r => r.rows),
@@ -51,7 +89,7 @@ async function enrichPlan(plan: any, gymId: string): Promise<any> {
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
-  const currentPrice = prices.find((p: any) => {
+  const currentPrice = prices.find(p => {
     return p.valid_from <= today && (p.valid_to == null || p.valid_to >= today);
   }) ?? null;
 
@@ -80,11 +118,11 @@ membershipPlansRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const status = req.query.lifecycle_status as string | undefined;
   let sql = 'SELECT * FROM membership_plans WHERE gym_id = ? AND deleted_at IS NULL';
-  const params: any[] = [gymId];
+  const params: (string | number)[] = [gymId];
   if (status) { sql += ' AND lifecycle_status = ?'; params.push(status); }
   sql += ' ORDER BY name ASC';
-  const { rows } = await db.query(sql, params);
-  const enriched = await Promise.all(rows.map((p: any) => enrichPlan(p, gymId)));
+  const { rows } = await db.query<PlanRow>(sql, params);
+  const enriched = await Promise.all(rows.map(p => enrichPlan(p, gymId)));
   res.json(enriched);
 });
 
@@ -188,7 +226,6 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
   const callerMemberId = await getCallerMembershipId(req);
 
   try {
-    const conn = await (db as any).getConnection?.() ?? db;
     await db.query('START TRANSACTION', []);
 
     const { insertId: newPlanId } = await db.query(
@@ -496,9 +533,11 @@ membershipPlansRouter.put('/:id/centers', requireRole('admin'), async (req, res,
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function parsePriceBody(body: any): { price: number; from: string; to: string | null } | string {
-  const { price, valid_from, valid_to } = body;
-  const parsed = parseFloat(price);
+function parsePriceBody(body: Record<string, unknown>): { price: number; from: string; to: string | null } | string {
+  const price = body.price as string | number | null | undefined;
+  const valid_from = body.valid_from as string | null | undefined;
+  const valid_to = body.valid_to as string | null | undefined;
+  const parsed = parseFloat(price as string);
   if (price == null || isNaN(parsed) || parsed < 0) return 'price must be a non-negative number';
   if (!valid_from || !DATE_RE.test(valid_from)) return 'valid_from is required (YYYY-MM-DD)';
   const to = valid_to == null || valid_to === '' ? null : valid_to;
@@ -508,7 +547,7 @@ function parsePriceBody(body: any): { price: number; from: string; to: string | 
 }
 
 async function overlaps(planId: string | string[], from: string, to: string | null, excludeId?: string | string[]): Promise<boolean> {
-  const params: any[] = [planId, from];
+  const params: (string | string[])[] = [planId, from];
   let sql = `SELECT 1 FROM membership_plan_prices
              WHERE membership_plan_id = ?
                AND (valid_to IS NULL OR valid_to >= ?)`;

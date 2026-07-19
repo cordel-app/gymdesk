@@ -18,7 +18,7 @@ export const meLinkRouter = Router();
 export const meGymRouter = Router();
 
 meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  const userId = (req as any).auth?.userId;
+  const userId = req.auth?.userId;
   try {
     const { rows } = await db.query(
       `SELECT g.id, g.name,
@@ -48,8 +48,9 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
 });
 
 meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  const userId = (req as any).auth?.userId;
+  const userId = req.auth?.userId;
   const gymId = req.headers['x-gym-id'] as string | undefined;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   if (!gymId) return res.status(400).json({ error: 'x-gym-id header is required' });
 
   try {

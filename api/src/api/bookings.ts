@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../infra/db';
+import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
 let packageCreditsModule: typeof import('./package-credits') | null = null;
@@ -34,7 +34,7 @@ const SELECT = `
 // booking transaction with the tx handle; must throw an Error with a message
 // the router can surface as a translated string.
 export interface AccessHook {
-  (tx: any, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null): Promise<void>;
+  (tx: Tx, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null): Promise<void>;
 }
 const accessHooks: AccessHook[] = [];
 export function registerBookingAccessHook(fn: AccessHook) { accessHooks.push(fn); }
@@ -45,7 +45,7 @@ bookingsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { session_id, status } = req.query as Record<string, string | undefined>;
   const where: string[] = ['b.gym_id = ?'];
-  const params: any[] = [gymId];
+  const params: (string | number)[] = [gymId];
   if (session_id) { where.push('b.class_session_id = ?'); params.push(session_id); }
   if (status)     { where.push('b.status = ?'); params.push(status); }
   const { rows } = await db.query(

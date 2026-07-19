@@ -22,12 +22,14 @@ declare global {
   namespace Express {
     interface Request {
       tenantCtx?: TenantContext;
+      /** Set by requireAuth() in app.ts after verifying the JWT. */
+      auth?: { userId: string };
     }
   }
 }
 
 export async function tenantContext(req: Request, res: Response, next: NextFunction) {
-  const userId = (req as any).auth?.userId;
+  const userId = req.auth?.userId;
   const gymId = req.headers['x-gym-id'] as string | undefined;
 
   if (!userId || !gymId) {
@@ -72,7 +74,7 @@ export function requireRole(...roles: GymRole[]) {
 }
 
 export async function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
-  const userId = (req as any).auth?.userId;
+  const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   const user = await clerkClient.users.getUser(userId);
   const meta = (user.publicMetadata ?? {}) as Record<string, unknown>;
