@@ -35,7 +35,6 @@
       "cordel": "Cordel"
     },
     "centers": "Centers",
-    "resources": "Resources",
     "events": "Events"
   },
   "dashboard": {
@@ -1171,33 +1170,6 @@
     "view_members": "View Members",
     "member_singular": "Member",
     "member_plural": "Members"
-  },
-  "resources": {
-    "title": "Resources",
-    "add": "+ Add Resource",
-    "loading": "Loading…",
-    "empty": "No resources yet.",
-    "col_name": "Name",
-    "col_description": "Description",
-    "col_quantity": "Quantity",
-    "col_status": "Status",
-    "col_actions": "Actions",
-    "edit": "Edit",
-    "delete": "Delete",
-    "modal_add": "Add Resource",
-    "modal_edit": "Edit Resource",
-    "label_name": "Name *",
-    "label_description": "Description",
-    "label_quantity": "Quantity *",
-    "label_status": "Status",
-    "placeholder_name": "e.g. Kettlebell set",
-    "confirm_delete": "Remove this resource?",
-    "error_required": "Name and quantity are required.",
-    "error_quantity": "Quantity must be a positive integer.",
-    "error_generic": "Something went wrong.",
-    "cancel": "Cancel",
-    "saving": "Saving…",
-    "save_changes": "Save Changes"
   },
   "events": {
     "title": "Events",

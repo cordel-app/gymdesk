@@ -34,7 +34,6 @@
       "cordel": "Cordel"
     },
     "centers": "Centros",
-    "resources": "Recursos",
     "events": "Eventos",
     "activity_types": "Activity types"
   },
@@ -1188,33 +1187,6 @@
     "view_members": "Ver Miembros",
     "member_singular": "Miembro",
     "member_plural": "Miembros"
-  },
-  "resources": {
-    "title": "Recursos",
-    "add": "+ Añadir Recurso",
-    "loading": "Cargando…",
-    "empty": "Aún no hay recursos.",
-    "col_name": "Nombre",
-    "col_description": "Descripción",
-    "col_quantity": "Cantidad",
-    "col_status": "Estado",
-    "col_actions": "Acciones",
-    "edit": "Editar",
-    "delete": "Eliminar",
-    "modal_add": "Añadir Recurso",
-    "modal_edit": "Editar Recurso",
-    "label_name": "Nombre *",
-    "label_description": "Descripción",
-    "label_quantity": "Cantidad *",
-    "label_status": "Estado",
-    "placeholder_name": "p. ej. Set de pesas rusas",
-    "confirm_delete": "¿Eliminar este recurso?",
-    "error_required": "El nombre y la cantidad son obligatorios.",
-    "error_quantity": "La cantidad debe ser un entero positivo.",
-    "error_generic": "Algo salió mal.",
-    "cancel": "Cancelar",
-    "saving": "Guardando…",
-    "save_changes": "Guardar Cambios"
   },
   "events": {
     "title": "Eventos",

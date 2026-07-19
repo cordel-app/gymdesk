@@ -43,7 +43,6 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   promotion:                      { kind: 'simple',   label: 'Promotions',               table: 'promotions',              nameColumn: 'name' },
   event:                          { kind: 'simple',   label: 'Events',                   table: 'events',                  nameColumn: 'name' },
   center:                         { kind: 'simple',   label: 'Centers',                  table: 'centers',                 nameColumn: 'name' },
-  resource:                       { kind: 'simple',   label: 'Resources',                table: 'resources',               nameColumn: 'name' },
   room:                           { kind: 'simple',   label: 'Rooms',                    table: 'rooms',                   nameColumn: 'name' },
 
   user_membership: {

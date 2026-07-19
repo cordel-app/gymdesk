@@ -16,7 +16,6 @@ const DEPENDENT_TABLES: Array<[string, string, boolean]> = [
   ['rooms', 'center_id', true],
   ['class_sessions', 'center_id', true],
   ['bookings', 'center_id', false],
-  ['resources', 'center_id', true],
   ['trainer_availability', 'center_id', true],
   ['events', 'center_id', true],
 ];

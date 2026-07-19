@@ -34,7 +34,6 @@
       "cordel": "Cordel"
     },
     "centers": "Centres",
-    "resources": "Recursos",
     "events": "Esdeveniments",
     "activity_types": "Activity types"
   },
@@ -1188,33 +1187,6 @@
     "view_members": "Veure Membres",
     "member_singular": "Membre",
     "member_plural": "Membres"
-  },
-  "resources": {
-    "title": "Recursos",
-    "add": "+ Afegir Recurs",
-    "loading": "Carregant…",
-    "empty": "Encara no hi ha recursos.",
-    "col_name": "Nom",
-    "col_description": "Descripció",
-    "col_quantity": "Quantitat",
-    "col_status": "Estat",
-    "col_actions": "Accions",
-    "edit": "Edita",
-    "delete": "Elimina",
-    "modal_add": "Afegir Recurs",
-    "modal_edit": "Edita Recurs",
-    "label_name": "Nom *",
-    "label_description": "Descripció",
-    "label_quantity": "Quantitat *",
-    "label_status": "Estat",
-    "placeholder_name": "p. ex. Joc de kettlebells",
-    "confirm_delete": "Vols eliminar aquest recurs?",
-    "error_required": "El nom i la quantitat són obligatoris.",
-    "error_quantity": "La quantitat ha de ser un enter positiu.",
-    "error_generic": "Alguna cosa ha fallat.",
-    "cancel": "Cancel·la",
-    "saving": "Desant…",
-    "save_changes": "Desa els Canvis"
   },
   "events": {
     "title": "Esdeveniments",
