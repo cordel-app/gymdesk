@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { insertAndFetch } from '../infra/db-helpers';
 
 /**
  * #55: the clone/assigned-plan hierarchy — TrainingPlan -> Workout ->
@@ -215,13 +216,14 @@ trainingPlansRouter.post('/:planId/workouts', requireRole('admin', 'coach'), asy
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workouts WHERE training_plan_id = ?',
       [planId],
     );
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO workouts (gym_id, training_plan_id, name, description, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?, ?)',
       [gymId, planId, name.trim(), description ?? null, posRows[0].next_position, weekday],
+      'SELECT * FROM workouts WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM workouts WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'workout', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'workout', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }
@@ -292,7 +294,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireRole('adm
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_blocks WHERE workout_id = ?',
       [workoutId],
     );
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO workout_blocks
         (gym_id, workout_id, position, name, description, type, result_type,
          rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
@@ -300,10 +302,11 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireRole('adm
       [gymId, workoutId, posRows[0].next_position, parsed.name, parsed.description, parsed.type, parsed.result_type,
        parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes,
        gymMembershipId],
+      'SELECT * FROM workout_blocks WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM workout_blocks WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'workout_block', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'workout_block', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }
@@ -395,19 +398,17 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_exercises WHERE workout_block_id = ?',
       [blockId],
     );
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO workout_exercises
         (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes, gymMembershipId],
-    );
-    const { rows } = await db.query(
       'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
-      [insertId],
+      (id) => [id],
     );
-    recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }

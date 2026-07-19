@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 /**
  * #55: TrainingPlanTemplate (reusable multi-day program) + the ordered
@@ -189,16 +190,16 @@ trainingPlanTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req,
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
       [gymId, name.trim(), description ?? null, status ?? 'active', gymMembershipId],
+      'SELECT * FROM training_plan_templates WHERE id = ?',
+      (id) => [id],
     );
-    const { rows } = await db.query('SELECT * FROM training_plan_templates WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A template with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A template with this name already exists.');
   }
 });
 
@@ -220,8 +221,7 @@ trainingPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (re
     recordAudit(req, { action: 'update', entityType: 'training_plan_template', entityId: id, next: rows[0] });
     res.json(rows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A template with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A template with this name already exists.');
   }
 });
 
@@ -290,8 +290,7 @@ trainingPlanTemplatesRouter.post('/:id/duplicate', requireRole('admin', 'coach')
     recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: newId, next: newRows[0] });
     res.status(201).json(newRows[0]);
   } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A template with this name already exists.' });
-    next(err);
+    handleDupEntry(err, res, next, 'A template with this name already exists.');
   }
 });
 
@@ -338,18 +337,16 @@ trainingPlanTemplatesRouter.post('/:id/workouts', requireRole('admin', 'coach'),
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM training_plan_template_workouts WHERE training_plan_template_id = ?',
       [id],
     );
-    const { insertId } = await db.query(
+    const row = await insertAndFetch(
       `INSERT INTO training_plan_template_workouts (gym_id, training_plan_template_id, workout_template_id, position, scheduled_weekday)
        VALUES (?, ?, ?, ?, ?)`,
       [gymId, id, workoutTemplateId, posRows[0].next_position, scheduledWeekday],
-    );
-    const { rows } = await db.query(
       `SELECT j.*, wt.name AS workout_template_name FROM training_plan_template_workouts j
        JOIN workout_templates wt ON wt.id = j.workout_template_id WHERE j.id = ?`,
-      [insertId],
+      (linkId) => [linkId],
     );
-    recordAudit(req, { action: 'create', entityType: 'training_plan_template_workout', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'training_plan_template_workout', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }

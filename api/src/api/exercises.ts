@@ -4,6 +4,7 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
 import { getReferences } from '../domain/references';
+import { handleDupEntry } from '../infra/db-helpers';
 
 /**
  * P5.1 / #55: per-gym exercises. #62: muscles are a static in-app catalog
@@ -147,8 +148,7 @@ exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) 
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (e: any) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Exercise with this name already exists.' });
-    next(e);
+    handleDupEntry(e, res, next, 'Exercise with this name already exists.');
   }
 });
 
@@ -206,8 +206,7 @@ exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next
     res.json(rows[0]);
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message });
-    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Exercise with this name already exists.' });
-    next(e);
+    handleDupEntry(e, res, next, 'Exercise with this name already exists.');
   }
 });
 
