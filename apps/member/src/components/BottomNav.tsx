@@ -11,9 +11,10 @@ const TABS = [
   { key: 'membership', path: '/membership', icon: '✦' },
   { key: 'packages', path: '/packages', icon: '◈' },
   { key: 'training', path: '/training', icon: '⚑' },
+  { key: 'profile', path: '/profile', icon: '◉' },
 ] as const;
 
-const ENABLED_TABS: ReadonlyArray<(typeof TABS)[number]['key']> = ['home', 'schedule', 'membership', 'packages', 'training'];
+const ENABLED_TABS: ReadonlyArray<(typeof TABS)[number]['key']> = ['home', 'schedule', 'membership', 'packages', 'training', 'profile'];
 
 export function BottomNav() {
   const pathname = usePathname();

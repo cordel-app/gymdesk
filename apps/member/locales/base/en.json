@@ -69,6 +69,20 @@
     "result_type_weight": "Weight",
     "result_type_score": "Score"
   },
+  "profile": {
+    "title": "My profile",
+    "loading": "Loading…",
+    "name": "Full name",
+    "email": "Email",
+    "email_readonly": "Managed by your account — contact support to change.",
+    "phone": "Phone",
+    "phone_placeholder": "+1 555 000 0000",
+    "not_set": "Not set",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Profile updated."
+  },
   "packages": {
     "title": "My packages",
     "loading": "Loading…",

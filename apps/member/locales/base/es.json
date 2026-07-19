@@ -69,6 +69,20 @@
     "result_type_weight": "Peso",
     "result_type_score": "Puntuación"
   },
+  "profile": {
+    "title": "Mi perfil",
+    "loading": "Cargando…",
+    "name": "Nombre completo",
+    "email": "Email",
+    "email_readonly": "Gestionado por tu cuenta — contacta con soporte para cambiarlo.",
+    "phone": "Teléfono",
+    "phone_placeholder": "+34 600 000 000",
+    "not_set": "No indicado",
+    "edit": "Editar",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "saved": "Perfil actualizado."
+  },
   "packages": {
     "title": "Mis bonos",
     "loading": "Cargando…",
