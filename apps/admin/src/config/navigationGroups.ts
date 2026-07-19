@@ -53,8 +53,8 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.dashboard',
       },
       {
-        href: '/{{locale}}/team',
-        labelKey: 'nav.team',
+        href: '/{{locale}}/trainers',
+        labelKey: 'nav.staff',
       },
       {
         href: '/{{locale}}/centers',
@@ -63,14 +63,6 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/rooms',
         labelKey: 'nav.rooms',
-      },
-      {
-        href: '/{{locale}}/resources',
-        labelKey: 'nav.resources',
-      },
-      {
-        href: '/{{locale}}/trainers',
-        labelKey: 'nav.trainers',
       },
       {
         href: '/{{locale}}/specialities',

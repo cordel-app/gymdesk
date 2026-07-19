@@ -10,6 +10,7 @@
     "rooms": "Salas",
     "specialities": "Especialidades",
     "trainers": "Entrenadores",
+    "staff": "Staff",
     "class_types": "Tipos de clase",
     "class_packages": "Bonos",
     "promotions": "Promociones",
@@ -956,7 +957,7 @@
     "save_changes": "Guardar cambios"
   },
   "trainers": {
-    "title": "Entrenadores",
+    "title": "Staff",
     "loading": "Cargando…",
     "empty": "Aún no hay entrenadores. Añade primero un miembro con rol coach.",
     "col_id": "Usuario",

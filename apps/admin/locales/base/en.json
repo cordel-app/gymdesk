@@ -10,6 +10,7 @@
     "rooms": "Rooms",
     "specialities": "Specialities",
     "trainers": "Trainers",
+    "staff": "Staff",
     "class_types": "Class types",
     "activity_types": "Activity Types",
     "class_packages": "Class packages",
@@ -939,7 +940,7 @@
     "save_changes": "Save Changes"
   },
   "trainers": {
-    "title": "Trainers",
+    "title": "Staff",
     "loading": "Loading…",
     "empty": "No trainers yet. Add a coach-role member first.",
     "col_id": "User",
