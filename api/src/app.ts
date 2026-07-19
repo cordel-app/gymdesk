@@ -35,7 +35,6 @@ import { exerciseLogsRouter, workoutBlockLogsRouter } from './api/exercise-logs'
 import { auditLogsRouter } from './api/audit-logs';
 import { centersRouter } from './api/centers';
 import { memberCentersRouter } from './api/member-centers';
-import { resourcesRouter } from './api/resources';
 import { trainerAvailabilityRouter } from './api/trainer-availability';
 import { eventsRouter } from './api/events';
 // Side-effect import: registers the booking access hook for package credits.
@@ -156,7 +155,6 @@ app.use('/promotions',       requireAuth(), tenantContext, promotionsRouter);
 app.use('/promotions/:id',   requireAuth(), tenantContext, promotionDetailsRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userClassPackagesRouter);
 app.use('/centers',          requireAuth(), tenantContext, centerContext, centersRouter);
-app.use('/resources',        requireAuth(), tenantContext, centerContext, resourcesRouter);
 app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, trainerAvailabilityRouter);
 app.use('/events',           requireAuth(), tenantContext, centerContext, eventsRouter);
 
