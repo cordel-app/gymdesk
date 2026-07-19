@@ -60,4 +60,13 @@ When adding a new domain that has FKs pointing to `members` or `gyms`, extend `c
 
 ## Finishing a task
 
-Always end by creating a pull request against `main`. Commit on a branch named `feat/<slug>-<issue-number>`, then open the PR with `gh pr create --base main`. Include the issue number in the PR title and body (`Closes #N`).
+Before opening the PR, check whether the changes warrant updating any `.md` files:
+
+- `docs/roadmap.md` — mark the ticket done and update the Status section if the feature is complete.
+- `docs/architecture.md` — update if new tables, routers, middleware, or patterns were introduced.
+- `docs/feature-patterns.md` — update if a new pattern or template emerged that future tickets should follow.
+- `CLAUDE.md` — update if a new hard constraint, convention, or cleanup rule was established.
+
+Only update a file if the ticket genuinely changes what it documents. Navigation-only or i18n-only changes rarely need doc updates; new API surface, DB schema, or architectural patterns almost always do.
+
+Then commit any doc changes together with the feature and open the PR with `gh pr create --base main` on a branch named `feat/<slug>-<issue-number>`. Include the issue number in the PR title and body (`Closes #N`).
