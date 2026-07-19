@@ -6,7 +6,7 @@ exports.up = async (knex) => {
   if (!(await knex.schema.hasTable('plan_allowances'))) {
     await knex.schema.createTable('plan_allowances', (t) => {
       t.increments('id').unsigned().primary();
-      t.specificType('gym_id', 'char(36) collate utf8mb4_unicode_ci').notNullable().references('id').inTable('gyms').onDelete('CASCADE');
+      t.specificType('gym_id', 'char(36)').notNullable().references('id').inTable('gyms').onDelete('CASCADE');
       t.integer('membership_plan_id').unsigned().notNullable().references('id').inTable('membership_plans').onDelete('CASCADE');
       t.integer('activity_type_id').unsigned().notNullable().references('id').inTable('activity_types').onDelete('CASCADE');
       t.enum('allowance_type', ['unlimited', 'session_count']).notNullable().defaultTo('unlimited');

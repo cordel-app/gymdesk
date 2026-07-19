@@ -5,7 +5,7 @@ exports.up = async (knex) => {
   if (!(await knex.schema.hasTable('billing_policies'))) {
     await knex.schema.createTable('billing_policies', (t) => {
       t.increments('id').unsigned().primary();
-      t.specificType('gym_id', 'char(36) collate utf8mb4_unicode_ci').notNullable().references('id').inTable('gyms').onDelete('CASCADE');
+      t.specificType('gym_id', 'char(36)').notNullable().references('id').inTable('gyms').onDelete('CASCADE');
       t.integer('membership_plan_id').unsigned().notNullable().references('id').inTable('membership_plans').onDelete('CASCADE');
       t.integer('initial_billing_interval').unsigned().notNullable().defaultTo(1);
       t.enum('initial_billing_unit', ['day', 'week', 'month', 'year']).notNullable().defaultTo('month');
