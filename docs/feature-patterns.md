@@ -286,6 +286,16 @@ describe('POST /widgets', () => {
 - `createTestMembership(gymId, role)` defaults to `TEST_USER_ID` (the fixed `sub` the mocked `verifyToken` returns). For multi-role tests, pass a different `userId` and adjust the `verifyToken` mock per-test with `vi.mocked(verifyToken).mockResolvedValueOnce({ sub: 'other-user' })`.
 - Run locally: `npm --workspace @gymdesk/api test` (requires `npm run db:up && npm run db:migrate` first).
 
+**When to skip / when to go deeper:**
+
+| Situation | What to add |
+|-----------|-------------|
+| Pure UI / nav / i18n change — no new or modified routes | Skip step 7 entirely |
+| New router (standard CRUD) | Three smoke tests: 401, 403, happy-path GET |
+| New router with role complexity (multiple roles, soft-delete, restore) | Smoke tests + one test per role boundary and per status transition |
+| Business-critical invariant (billing event, capacity/waitlist, training plan active-count, tenant isolation) | Full happy path + each failure branch in the same PR |
+| Bug fix on an existing route | Add a regression test that would have caught the bug |
+
 ---
 
 ## Config-Driven Conditional Form Fields (when needed)
