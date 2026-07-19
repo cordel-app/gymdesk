@@ -217,6 +217,18 @@ template) → Sidebar → i18n (en/es/ca).
 | P8.2 Sync members/plans to Stripe | [#43](https://github.com/cordel-app/gymdesk/issues/43) | L | #42 |
 | P8.3 Process Stripe webhooks into the ledger | [#44](https://github.com/cordel-app/gymdesk/issues/44) | L | #43 #10 |
 
+## Member app follow-ups (spike #85, 2026-07-19)
+
+**Already shipped** (member app parity with roadmap items): P2.8 schedule/booking (#20 closed), P1.8 membership + billing history (#12 closed), P5.6 training tab + set logging (#35 closed), P3.4 my packages (#24 closed).
+
+**Gaps identified and new issues created** (prioritised by member value vs. backend readiness):
+
+| Ticket | Issue | Size | Depends on |
+|---|---|---|---|
+| Member home dashboard (upcoming booking + membership snapshot) | [#105](https://github.com/cordel-app/gymdesk/issues/105) | S | — |
+| Member app: my class packages & credit balance | [#106](https://github.com/cordel-app/gymdesk/issues/106) | M | — |
+| Member app: profile page (view & edit personal data) | [#107](https://github.com/cordel-app/gymdesk/issues/107) | M | — |
+
 ## Critical path
 
 - **Billing**: P1.1 → P1.5 → P1.6 — the ledger unblocks packages (Phase 3), promotions (Phase 4), and Stripe (Phase 8).
