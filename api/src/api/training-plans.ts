@@ -16,6 +16,11 @@ import { recordAudit } from '../infra/audit';
 export const trainingPlansRouter = Router({ mergeParams: true });
 
 const BLOCK_TYPES = ['Standard', 'Superset', 'Triset', 'GiantSet', 'Circuit', 'EMOM', 'AMRAP', 'Tabata'];
+// null = unlimited
+const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {
+  Standard: 1, Superset: 2, Triset: 3,
+  GiantSet: null, Circuit: null, EMOM: null, AMRAP: null, Tabata: null,
+};
 const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
 // #67 lifecycle: draft/active/expired/deleted ('inactive' remapped to 'expired' in migration 054)
 const PLAN_STATUSES = ['draft', 'active', 'expired', 'deleted'];
@@ -363,6 +368,21 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
   const parsed = parseExerciseItemBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {
+    const { rows: blockRows } = await db.query(
+      `SELECT b.type, COUNT(we.id) AS ex_count
+       FROM workout_blocks b
+       LEFT JOIN workout_exercises we ON we.workout_block_id = b.id AND we.deleted_at IS NULL
+       WHERE b.id = ?
+       GROUP BY b.id`,
+      [blockId],
+    );
+    const maxEx = BLOCK_TYPE_MAX_EXERCISES[blockRows[0].type];
+    if (maxEx !== null && blockRows[0].ex_count >= maxEx) {
+      return res.status(422).json({
+        error: 'MaximumExercisesExceeded',
+        message: `Block type '${blockRows[0].type}' allows a maximum of ${maxEx} exercises.`,
+      });
+    }
     const { rows: exRows } = await db.query('SELECT 1 FROM exercises WHERE id = ? AND gym_id = ?', [parsed.exercise_id, gymId]);
     if (exRows.length === 0) return res.status(400).json({ error: 'exercise_id does not belong to this gym' });
     const { rows: posRows } = await db.query(

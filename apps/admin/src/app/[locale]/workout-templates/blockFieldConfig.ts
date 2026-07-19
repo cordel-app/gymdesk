@@ -19,3 +19,15 @@ export const BLOCK_TYPE_FIELDS: Record<string, BlockFieldKey[]> = {
 export function isBlockFieldVisible(type: string, field: BlockFieldKey): boolean {
   return (BLOCK_TYPE_FIELDS[type] ?? []).includes(field);
 }
+
+// null = unlimited
+export const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {
+  Standard: 1,
+  Superset: 2,
+  Triset: 3,
+  GiantSet: null,
+  Circuit: null,
+  EMOM: null,
+  AMRAP: null,
+  Tabata: null,
+};

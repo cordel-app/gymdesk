@@ -238,7 +238,8 @@ export function isBlockFieldVisible(type: string, field: FieldKey): boolean {
 Rules of thumb:
 - Keep the map in its own file, imported by every form that needs the same visibility rules — don't duplicate it per component (see Workout Block editors below).
 - Don't clear a field's value in local state when it becomes hidden — a user switching the type back and forth in the same session should see their prior input return. Continue submitting the full form object on save so the backend's normal full-column-overwrite update doesn't clobber a hidden field's previously stored value.
-- Reference implementation: `blockFieldConfig.ts` (also home of the shared `BLOCK_TYPES`/`RESULT_TYPES` constants), used by `workout-templates/BlockModal.tsx` and `members/PlanWorkoutBlocksModal.tsx` (Workout Block "Type" governs which of Result Type/Rounds/Duration/Work/Rest are shown).
+- Reference implementation: `blockFieldConfig.ts` (also home of the shared `BLOCK_TYPES`/`RESULT_TYPES` constants and `BLOCK_TYPE_MAX_EXERCISES`), used by `workout-templates/BlockModal.tsx` and `members/PlanWorkoutBlocksModal.tsx` (Workout Block "Type" governs which of Result Type/Rounds/Duration/Work/Rest are shown).
+- `BLOCK_TYPE_MAX_EXERCISES` in `blockFieldConfig.ts` maps each block type to its max exercise count (`null` = unlimited). The same map is duplicated in `workout-templates.ts` and `training-plans.ts` for API-layer enforcement. UI uses it to hide the "+ Exercise" button at the limit and show a `(n/max)` count badge; the API returns 422 `MaximumExercisesExceeded` when the limit is exceeded on add-exercise or type-change. The `CrudModal` component accepts an optional `saveDisabled` prop to block submission on type-change validation errors (#71).
 
 ---
 

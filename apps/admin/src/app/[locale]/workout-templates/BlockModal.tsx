@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { CrudModal } from '@/components/CrudModal';
-import { BLOCK_TYPES, RESULT_TYPES, isBlockFieldVisible } from './blockFieldConfig';
+import { BLOCK_TYPES, RESULT_TYPES, isBlockFieldVisible, BLOCK_TYPE_MAX_EXERCISES } from './blockFieldConfig';
 import type { HierBlock } from './summaries';
 
 /* #63: Dynamic Workout Block Form (issue #60 field config) hosted in a
@@ -33,6 +33,12 @@ export function BlockModal({ workoutTemplateId, block, onCancel, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const currentExCount = block?.exercises?.length ?? 0;
+  const newMaxEx = BLOCK_TYPE_MAX_EXERCISES[form.type];
+  const typeError = newMaxEx !== null && currentExCount > newMaxEx
+    ? t('workout_templates.block_type_limit_exceeded', { type: t(`workout_template_blocks.type_${form.type.toLowerCase()}`), max: newMaxEx })
+    : null;
+
   async function save() {
     setSaving(true); setError(null);
     const body = {
@@ -59,6 +65,7 @@ export function BlockModal({ workoutTemplateId, block, onCancel, onSaved }: {
       error={error} saving={saving}
       cancelLabel={t('workout_template_blocks.cancel')}
       saveLabel={saving ? t('workout_template_blocks.saving') : block ? t('workout_template_blocks.save_changes') : t('workout_template_blocks.add')}
+      saveDisabled={!!typeError}
       onCancel={onCancel}
       onSave={save}
     >
@@ -70,6 +77,7 @@ export function BlockModal({ workoutTemplateId, block, onCancel, onSaved }: {
           <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={input}>
             {BLOCK_TYPES.map((ty) => <option key={ty} value={ty}>{t(`workout_template_blocks.type_${ty.toLowerCase()}`)}</option>)}
           </select>
+          {typeError && <span style={{ color: '#c0392b', fontSize: 12, marginTop: 2 }}>{typeError}</span>}
         </Field>
         {isBlockFieldVisible(form.type, 'result_type') && (
           <Field label={t('workout_template_blocks.col_result_type')}>

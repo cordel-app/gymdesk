@@ -556,7 +556,8 @@
     "tree_add_exercise": "+ Exercise",
     "tree_no_blocks": "No blocks yet.",
     "tree_no_exercises": "No exercises yet.",
-    "tree_drag_handle": "Drag to reorder"
+    "tree_drag_handle": "Drag to reorder",
+    "block_type_limit_exceeded": "{type} blocks allow a maximum of {max} exercises. Remove exercises before changing the type."
   },
   "training_plan_templates": {
     "title": "Training Plan Templates",
