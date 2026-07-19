@@ -651,7 +651,21 @@
     "summary_rest": "{n}s descans",
     "summary_sets": "{n} sèries",
     "summary_tempo": "Tempo {tempo}",
-    "summary_rest_ex": "Descans {n}s"
+    "summary_rest_ex": "Descans {n}s",
+    "duplicate": "Duplica",
+    "duplicated": "Plantilla duplicada.",
+    "details_dialog_title": "Detalls de la plantilla",
+    "col_workout_count": "Rutines",
+    "label_created_at": "Creat el",
+    "label_created_by": "Creat per",
+    "label_modified_at": "Última modificació",
+    "label_modified_by": "Modificat per",
+    "label_deleted_at": "Eliminat el",
+    "label_deleted_by": "Eliminat per",
+    "unsaved_changes": "Tens canvis sense desar. Vols desar-los abans de sortir?",
+    "unsaved_save": "Desa",
+    "unsaved_discard": "Descarta",
+    "n_workouts": "{count, plural, one {# rutina} other {# rutines}}"
   },
   "training_plans": {
     "title": "Plans d'entrenament",
@@ -780,7 +794,10 @@
     "result_type_distance": "Distància",
     "result_type_calories": "Calories",
     "result_type_weight": "Pes",
-    "result_type_score": "Puntuació"
+    "result_type_score": "Puntuació",
+    "unsaved_changes": "Teniu canvis sense desar.",
+    "unsaved_discard": "Descartar",
+    "unsaved_save": "Desar"
   },
   "block_exercises": {
     "title": "Exercicis",

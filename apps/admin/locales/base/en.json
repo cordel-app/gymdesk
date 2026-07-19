@@ -634,7 +634,21 @@
     "summary_rest": "{n}s rest",
     "summary_sets": "{n} sets",
     "summary_tempo": "Tempo {tempo}",
-    "summary_rest_ex": "Rest {n}s"
+    "summary_rest_ex": "Rest {n}s",
+    "duplicate": "Duplicate",
+    "duplicated": "Template duplicated.",
+    "details_dialog_title": "Template Details",
+    "col_workout_count": "Workouts",
+    "label_created_at": "Created At",
+    "label_created_by": "Created By",
+    "label_modified_at": "Last Modified",
+    "label_modified_by": "Modified By",
+    "label_deleted_at": "Deleted At",
+    "label_deleted_by": "Deleted By",
+    "unsaved_changes": "You have unsaved changes. Do you want to save them before leaving?",
+    "unsaved_save": "Save",
+    "unsaved_discard": "Discard",
+    "n_workouts": "{count, plural, one {# workout} other {# workouts}}"
   },
   "training_plans": {
     "title": "Training Plans",
@@ -763,7 +777,10 @@
     "result_type_distance": "Distance",
     "result_type_calories": "Calories",
     "result_type_weight": "Weight",
-    "result_type_score": "Score"
+    "result_type_score": "Score",
+    "unsaved_changes": "You have unsaved changes.",
+    "unsaved_discard": "Discard",
+    "unsaved_save": "Save"
   },
   "block_exercises": {
     "title": "Exercises",

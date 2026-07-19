@@ -70,9 +70,15 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
       params,
     );
     const { rows } = await db.query(
-      `SELECT tpt.*, gm.name AS created_by_name
+      `SELECT tpt.*,
+              gm_c.name AS created_by_name,
+              gm_m.name AS modified_by_name,
+              gm_d.name AS deleted_by_name,
+              (SELECT COUNT(*) FROM training_plan_template_workouts WHERE training_plan_template_id = tpt.id) AS workout_count
        FROM training_plan_templates tpt
-       LEFT JOIN gym_memberships gm ON gm.id = tpt.created_by_membership_id
+       LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
+       LEFT JOIN gym_memberships gm_m ON gm_m.id = tpt.modified_by_membership_id
+       LEFT JOIN gym_memberships gm_d ON gm_d.id = tpt.deleted_by_membership_id
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
       params,
@@ -197,7 +203,7 @@ trainingPlanTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req,
 });
 
 trainingPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
@@ -205,9 +211,9 @@ trainingPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (re
     const { rowCount } = await db.query(
       `UPDATE training_plan_templates SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
-        modified_at = UTC_TIMESTAMP()
+        modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, id, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, gymMembershipId, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan template not found' });
     const { rows } = await db.query('SELECT * FROM training_plan_templates WHERE id = ? AND gym_id = ?', [id, gymId]);
@@ -220,15 +226,73 @@ trainingPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (re
 });
 
 trainingPlanTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { rowCount } = await db.query(
-    "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ? AND status != 'deleted'",
-    [id, gymId],
+    "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+    [gymMembershipId, id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Training plan template not found' });
   recordAudit(req, { action: 'delete', entityType: 'training_plan_template', entityId: id });
   res.status(204).send();
+});
+
+trainingPlanTemplatesRouter.post('/:id/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: srcRows } = await db.query(
+      "SELECT * FROM training_plan_templates WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+      [id, gymId],
+    );
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Training plan template not found' });
+    const src = srcRows[0];
+
+    let copyName = `${src.name} (Copy)`;
+    // Avoid unique-name conflicts by appending a suffix when needed.
+    const { rows: existing } = await db.query(
+      'SELECT name FROM training_plan_templates WHERE gym_id = ? AND name LIKE ?',
+      [gymId, `${src.name} (Copy%`],
+    );
+    if (existing.length > 0) {
+      copyName = `${src.name} (Copy ${existing.length + 1})`;
+    }
+
+    const { insertId: newId } = await db.query(
+      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
+      [gymId, copyName, src.description ?? null, 'draft', gymMembershipId],
+    );
+
+    const { rows: workouts } = await db.query(
+      'SELECT * FROM training_plan_template_workouts WHERE training_plan_template_id = ? ORDER BY position ASC',
+      [id],
+    );
+    for (const w of workouts) {
+      await db.query(
+        'INSERT INTO training_plan_template_workouts (gym_id, training_plan_template_id, workout_template_id, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?)',
+        [gymId, newId, w.workout_template_id, w.position, w.scheduled_weekday],
+      );
+    }
+
+    const { rows: newRows } = await db.query(
+      `SELECT tpt.*,
+              gm_c.name AS created_by_name,
+              gm_m.name AS modified_by_name,
+              gm_d.name AS deleted_by_name,
+              (SELECT COUNT(*) FROM training_plan_template_workouts WHERE training_plan_template_id = tpt.id) AS workout_count
+       FROM training_plan_templates tpt
+       LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
+       LEFT JOIN gym_memberships gm_m ON gm_m.id = tpt.modified_by_membership_id
+       LEFT JOIN gym_memberships gm_d ON gm_d.id = tpt.deleted_by_membership_id
+       WHERE tpt.id = ?`,
+      [newId],
+    );
+    recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: newId, next: newRows[0] });
+    res.status(201).json(newRows[0]);
+  } catch (err: any) {
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A template with this name already exists.' });
+    next(err);
+  }
 });
 
 /* ---- TrainingPlanTemplateWorkout (junction) ---- */

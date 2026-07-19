@@ -9,6 +9,7 @@ interface CrudModalProps {
   error?: string | null;
   saving?: boolean;
   saveDisabled?: boolean;
+  hideSave?: boolean;
   cancelLabel: string;
   saveLabel: string;
   onCancel: () => void;
@@ -16,7 +17,7 @@ interface CrudModalProps {
   children: ReactNode;
 }
 
-export function CrudModal({ open, title, error, saving, saveDisabled, cancelLabel, saveLabel, onCancel, onSave, children }: CrudModalProps) {
+export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, cancelLabel, saveLabel, onCancel, onSave, children }: CrudModalProps) {
   if (!open) return null;
 
   return (
@@ -30,7 +31,7 @@ export function CrudModal({ open, title, error, saving, saveDisabled, cancelLabe
 
         <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} style={btnStyle('#aaa')} disabled={saving}>{cancelLabel}</button>
-          <button onClick={onSave} style={btnStyle('#6c63ff')} disabled={saving || saveDisabled}>{saveLabel}</button>
+          {!hideSave && <button onClick={onSave} style={btnStyle('#6c63ff')} disabled={saving || saveDisabled}>{saveLabel}</button>}
         </div>
       </div>
     </div>
