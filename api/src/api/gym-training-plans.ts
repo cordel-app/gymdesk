@@ -21,7 +21,7 @@ import { PLAN_TREE_SELECT } from './training-plans';
 
 export const gymTrainingPlansRouter = Router();
 
-const LIST_STATUSES = ['draft', 'active', 'expired'];
+const LIST_STATUSES = ['draft', 'active', 'expired', 'completed'];
 
 const SORT_COLUMNS: Record<string, string> = {
   name: 'tp.name',
@@ -93,7 +93,8 @@ gymTrainingPlansRouter.get('/', async (req, res, next) => {
       FROM training_plans tp
       JOIN members m ON m.id = tp.member_id
       LEFT JOIN training_plan_templates tpt ON tpt.id = tp.template_id
-      LEFT JOIN gym_memberships gm ON gm.id = tp.assigned_by_membership_id`;
+      LEFT JOIN gym_memberships gm ON gm.id = tp.assigned_by_membership_id
+      LEFT JOIN gym_memberships gm2 ON gm2.id = tp.modified_by_membership_id`;
 
     const { rows: countRows } = await db.query(`SELECT COUNT(*) AS total ${fromSql} WHERE ${whereSql}`, params);
     const { rows } = await db.query(
@@ -101,7 +102,7 @@ gymTrainingPlansRouter.get('/', async (req, res, next) => {
               tp.member_id, m.name AS member_name,
               tp.template_id, tpt.name AS template_name,
               tp.assigned_by_membership_id, gm.name AS created_by_name,
-              tp.created_at, tp.modified_at
+              tp.created_at, tp.modified_at, gm2.name AS modified_by_name
        ${fromSql}
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,

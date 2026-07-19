@@ -39,6 +39,16 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `training-plan-creation.ts` extracts the clone/write-history transaction so both
   `POST /training-plans` and the legacy `POST /members/:id/member-training-plans` share
   one implementation.
+- **Training Plans UX Redesign — Inline Editing (#112, done)**: replaced the
+  `/training-plans/[id]` editor page with an inline expandable card list matching the
+  Training Plan Templates UX. Each card expands to show workouts/blocks/exercises with
+  the existing drag-reorder and block/exercise CRUD modals. New context menu actions:
+  **Edit** (inline metadata), **Details** (read-only modal with full audit info),
+  **Duplicate** (clones the full plan tree to a draft), and **Complete** (transitions
+  status to `completed`, stamps `end_date`, makes plan read-only). Migration 066 adds
+  `completed` to the status CHECK constraint. The old `/training-plans/[id]` route now
+  redirects to the list. All write endpoints on `training-plans.ts` reject completed plans
+  with 403.
 - **Cordel platform menu + two-scope audit log (#66, done)**: superadmin-only **Cordel**
   sidebar group (Gyms, Users, platform Audit Log at `/cordel/audit`); **System** reduced to
   gym-scoped Audit Log + Customize and opened to gym admins (`requiredRole: 'admin'`).
