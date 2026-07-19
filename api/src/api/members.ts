@@ -50,8 +50,7 @@ membersRouter.get('/', async (req, res) => {
     params.unshift(centerId);
   }
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id,
-            p.name AS fare_name, p.base_price AS fare_price
+    `SELECT m.*, m.membership_plan_id AS fare_id, p.name AS fare_name
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}

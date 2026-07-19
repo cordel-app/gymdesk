@@ -9,7 +9,6 @@ export interface MemberProfile {
   email: string;
   phone: string | null;
   fare_name: string | null;
-  fare_price: string | null;
   clerk_user_id: string;
 }
 
