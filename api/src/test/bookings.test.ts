@@ -30,12 +30,24 @@ async function createCenter(gymId: string): Promise<number> {
 }
 
 async function createSession(gymId: string, activityTypeId: number, centerId: number, maxCapacityOverride: number | null = null): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status, max_capacity_override)
-     VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-    [gymId, activityTypeId, centerId, maxCapacityOverride],
-  );
-  return insertId;
+  // class_type_id is a legacy NOT NULL column present in older DB states (pre-059 drop).
+  // Try with it first; if the column no longer exists, fall back without it.
+  try {
+    const { insertId } = await db.query(
+      `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status, max_capacity_override)
+       VALUES (?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+      [gymId, activityTypeId, activityTypeId, centerId, maxCapacityOverride],
+    );
+    return insertId;
+  } catch (err: any) {
+    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+    const { insertId } = await db.query(
+      `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status, max_capacity_override)
+       VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+      [gymId, activityTypeId, centerId, maxCapacityOverride],
+    );
+    return insertId;
+  }
 }
 
 async function createMember(gymId: string, centerId: number, email: string): Promise<number> {
