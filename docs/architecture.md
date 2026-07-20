@@ -128,7 +128,7 @@ The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it 
 
 ## Database Conventions
 
-- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `067_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
+- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `068_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
 - **Primary keys**: auto-increment `INT UNSIGNED` for domain tables, `CHAR(36)` UUID for `gyms` (tenant root, `DEFAULT (UUID())`).
 - **Timestamps**: `DATETIME`, always UTC (the mysql2 pool uses `timezone: 'Z'`; use `UTC_TIMESTAMP()` in SQL, never `NOW()`).
 - **Indexed text columns**: `VARCHAR(n)`, not `TEXT` (MySQL cannot index TEXT without a prefix length).
@@ -315,7 +315,7 @@ Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057
 3. First theme alphabetically
 
 **API surface:**
-- `GET|POST|PUT|DELETE /platform/themes` — superadmin Base Themes CRUD (scoped to `gym_id IS NULL`).
+- `GET|POST|PUT|DELETE /platform/themes` — superadmin Themes CRUD. `GET /` returns all themes (system + custom) with `description`, `type`, `usage_count`, `is_default`, `gym_name`. `GET /:id` additionally includes `created_by_name` / `modified_by_name` from `audit_logs`. `POST` and `PUT` accept `description` (added in migration 068).
 - `POST /platform/themes/clone/:id` — clone a Base Theme into a new Base Theme (superadmin only).
 - `GET /system/themes` — gym admin: lists Base Themes + Customer Themes for the active gym.
 - `POST /system/themes/clone/:id` — clone any accessible theme into a new Customer Theme.
