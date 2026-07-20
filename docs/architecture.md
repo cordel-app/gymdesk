@@ -84,6 +84,7 @@ Reads (`GET`) on gym-scoped domain routes are open to any authenticated gym role
 | Team (`gym-users`) | `admin` | `admin` | `admin` | Whole router is admin-only (see Team management). |
 | Rooms, Specialities, Class types, Class packages, Promotions, Plans (`membership-plans`) | any role | `admin` | `admin` | Admin-only CRUD lookups/catalogs. |
 | Trainers (`trainers`) | any role | `admin` (PUT specialities) | — | Trainers are `coach` rows; this manages their specialities. |
+| Staff (`staff`) | any role | `admin` | `admin` | HR/employment records. Soft-delete. `PATCH /:id/deactivate` sets `employment_status='inactive'`. `POST /:id/duplicate` clones without `employee_number`/`profile_photo_url`. |
 | Class sessions (`class-sessions`) | any role | `admin`, `coach`, `staff` | (cancel) `admin`,`coach`,`staff` | `POST /:id/cancel` instead of hard delete. |
 | Bookings (`bookings`) | any role | `admin`, `staff` (create) | `admin`, `staff` | `POST /:id/attendance` = `admin`,`staff`,`coach`. |
 | Exercises, Workout templates, Training templates | any role | `admin`, `coach` | `admin`, `coach` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). Muscles are a static read-only catalog (`GET /muscles`, no writes — see `domain/muscles.ts`). |
