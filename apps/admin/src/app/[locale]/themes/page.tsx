@@ -18,13 +18,31 @@ import { DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens
 
 interface Theme {
   id: string;
+  gym_id: string | null;
   name: string;
   status: 'draft' | 'active' | 'deleted';
+  is_base: boolean;
   has_logo: boolean;
   logo_updated_at: string | null;
   tokens: ThemeTokens;
   created_at: string;
   modified_at: string | null;
+}
+
+interface AssignmentCenter {
+  id: string;
+  name: string;
+  is_inherited: boolean;
+}
+
+interface Assignments {
+  is_org_default: boolean;
+  centers: AssignmentCenter[];
+}
+
+interface UnassignedCenter {
+  id: string;
+  name: string;
 }
 
 const STATUSES = ['draft', 'active', 'deleted'] as const;
@@ -40,18 +58,20 @@ const COLOR_FIELDS: { key: keyof ThemeTokens['colors']; labelKey: string }[] = [
   { key: 'sidebarSelectedText',       labelKey: 'label_sidebar_sel_text' },
 ];
 
-type TabKey = 'branding' | 'typography' | 'colors';
+type TabKey = 'branding' | 'typography' | 'colors' | 'assignments';
 
 const emptyForm = { name: '', tokens: DEFAULT_TOKENS };
+const CENTERS_INITIAL_LIMIT = 10;
 
-export default function ThemesPage() {
-  const t = useTranslations('themes');
+export default function GymThemesPage() {
+  const t = useTranslations('gym_themes');
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
   const { getToken } = useAuth();
   const { apiFetch } = useApiClient();
-  const { isSuperadmin, loading: gymLoading } = useGym();
+  const { activeGym, isSuperadmin, loading: gymLoading } = useGym();
+  const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { toast } = useToast();
 
   const [themes, setThemes] = useState<Theme[]>([]);
@@ -68,11 +88,23 @@ export default function ThemesPage() {
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Create modal state
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createForm, setCreateForm] = useState(emptyForm);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [createSaving, setCreateSaving] = useState(false);
+  // Assignments state
+  const [assignments, setAssignments] = useState<Assignments | null>(null);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [centersSearch, setCentersSearch] = useState('');
+  const [showAllCenters, setShowAllCenters] = useState(false);
+  const [settingDefault, setSettingDefault] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+
+  // Assign centers picker state
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerThemeId, setPickerThemeId] = useState<string | null>(null);
+  const [unassigned, setUnassigned] = useState<UnassignedCenter[]>([]);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set());
+  const [pickerSaving, setPickerSaving] = useState(false);
+
+  // (no direct create — gym admins create themes by cloning an existing one)
 
   // Clone modal state
   const [cloning, setCloning] = useState<Theme | null>(null);
@@ -88,16 +120,16 @@ export default function ThemesPage() {
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isSuperadmin) { router.replace(`/${locale}`); return; }
+    if (!isAdmin) { router.replace(`/${locale}`); return; }
     load();
-  }, [gymLoading, isSuperadmin]);
+  }, [gymLoading, isAdmin]);
 
-  useEffect(() => { if (!gymLoading && isSuperadmin) load(); }, [statusFilter]);
+  useEffect(() => { if (!gymLoading && isAdmin) load(); }, [statusFilter]);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await apiFetch<Theme[]>(`/platform/themes${statusFilter ? `?status=${statusFilter}` : ''}`);
+      const data = await apiFetch<Theme[]>(`/system/themes${statusFilter ? `?status=${statusFilter}` : ''}`);
       setThemes(data);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -114,10 +146,85 @@ export default function ThemesPage() {
     if (expandedId === theme.id) { setExpandedId(null); return; }
     setExpandedId(theme.id);
     setEditForm({ name: theme.name, tokens: theme.tokens ?? DEFAULT_TOKENS });
-    setEditTab('branding');
+    setEditTab(theme.is_base ? 'assignments' : 'branding');
     setEditError(null);
     setEditLogoFile(null);
     setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
+    setAssignments(null);
+    setCentersSearch('');
+    setShowAllCenters(false);
+  }
+
+  async function loadAssignments(themeId: string) {
+    setAssignmentsLoading(true);
+    try {
+      const data = await apiFetch<Assignments>(`/system/themes/${themeId}/assignments`);
+      setAssignments(data);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (expandedId && editTab === 'assignments') {
+      loadAssignments(expandedId);
+    }
+  }, [editTab, expandedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleSetDefault(themeId: string) {
+    setSettingDefault(true);
+    try {
+      await apiFetch(`/system/themes/${themeId}/set-default`, { method: 'PUT' });
+      await loadAssignments(themeId);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setSettingDefault(false);
+    }
+  }
+
+  async function handleRestoreInheritance(themeId: string, centerId: string) {
+    setRestoringId(centerId);
+    try {
+      await apiFetch(`/system/themes/${themeId}/centers/${centerId}`, { method: 'DELETE' });
+      await loadAssignments(themeId);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setRestoringId(null);
+    }
+  }
+
+  async function openPicker(themeId: string) {
+    setPickerThemeId(themeId);
+    setPickerSearch('');
+    setPickerSelected(new Set());
+    try {
+      const data = await apiFetch<UnassignedCenter[]>(`/system/themes/${themeId}/unassigned-centers`);
+      setUnassigned(data);
+      setPickerOpen(true);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
+  async function handlePickerAssign() {
+    if (!pickerThemeId || pickerSelected.size === 0) return;
+    setPickerSaving(true);
+    try {
+      await apiFetch(`/system/themes/${pickerThemeId}/assign-centers`, {
+        method: 'POST',
+        body: JSON.stringify({ center_ids: Array.from(pickerSelected) }),
+      });
+      setPickerOpen(false);
+      await loadAssignments(pickerThemeId);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setPickerSaving(false);
+    }
   }
 
   async function handleSave(theme: Theme) {
@@ -125,13 +232,13 @@ export default function ThemesPage() {
     setSaving(true);
     setEditError(null);
     try {
-      await apiFetch(`/platform/themes/${theme.id}`, {
+      await apiFetch(`/system/themes/${theme.id}`, {
         method: 'PUT',
         body: JSON.stringify({ name: editForm.name.trim(), tokens: editForm.tokens }),
       });
       if (editLogoFile) {
         const token = await getToken();
-        const res = await fetch(`/api/proxy/platform/themes/${theme.id}/logo`, {
+        const res = await fetch(`/api/proxy/system/themes/${theme.id}/logo`, {
           method: 'POST',
           headers: { 'Content-Type': editLogoFile.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: editLogoFile,
@@ -152,7 +259,7 @@ export default function ThemesPage() {
 
   async function handleLogoRemove(theme: Theme) {
     try {
-      await apiFetch(`/platform/themes/${theme.id}/logo`, { method: 'DELETE' });
+      await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
       setEditLogoPreview(null);
       load();
     } catch (err: any) {
@@ -169,25 +276,6 @@ export default function ThemesPage() {
     reader.readAsDataURL(file);
   }
 
-  async function handleCreate() {
-    if (!createForm.name.trim()) { setCreateError(t('error_required')); return; }
-    setCreateSaving(true);
-    setCreateError(null);
-    try {
-      await apiFetch('/platform/themes', {
-        method: 'POST',
-        body: JSON.stringify({ name: createForm.name.trim(), tokens: createForm.tokens }),
-      });
-      setCreateOpen(false);
-      setCreateForm(emptyForm);
-      load();
-    } catch (err: any) {
-      setCreateError(err.message ?? t('error_generic'));
-    } finally {
-      setCreateSaving(false);
-    }
-  }
-
   function openClone(theme: Theme) {
     setCloning(theme);
     setCloneName(`${theme.name} (copy)`);
@@ -200,7 +288,7 @@ export default function ThemesPage() {
     setCloneSaving(true);
     setCloneError(null);
     try {
-      await apiFetch(`/platform/themes/clone/${cloning.id}`, {
+      await apiFetch(`/system/themes/clone/${cloning.id}`, {
         method: 'POST',
         body: JSON.stringify({ name: cloneName.trim() }),
       });
@@ -216,17 +304,16 @@ export default function ThemesPage() {
   async function handleDelete() {
     if (!deleting) return;
     try {
-      await apiFetch(`/platform/themes/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`/system/themes/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
       load();
     } catch (err: any) {
       setDeleting(null);
-      if (err.message?.includes('assigned')) toast(t('error_conflict'));
-      else toast(err.message ?? t('error_generic'));
+      toast(err.message ?? t('error_generic'));
     }
   }
 
-  if (gymLoading || !isSuperadmin) return null;
+  if (gymLoading || !isAdmin) return null;
 
   const selectStyle: React.CSSProperties = {
     width: '100%', padding: '10px 12px', borderRadius: 6,
@@ -241,23 +328,114 @@ export default function ThemesPage() {
     fontSize: 14,
   });
 
+  function renderAssignmentsTab(theme: Theme) {
+    if (assignmentsLoading || !assignments) {
+      return <p style={{ color: '#888', fontSize: 14 }}>{t('loading')}</p>;
+    }
+
+    const filteredCenters = assignments.centers.filter((c) =>
+      c.name.toLowerCase().includes(centersSearch.toLowerCase()),
+    );
+    const visibleCenters = showAllCenters ? filteredCenters : filteredCenters.slice(0, CENTERS_INITIAL_LIMIT);
+
+    return (
+      <div>
+        {/* Org default checkbox */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid #eee', marginBottom: 16 }}>
+          <input
+            type="checkbox"
+            id={`org-default-${theme.id}`}
+            checked={assignments.is_org_default}
+            disabled={assignments.is_org_default || settingDefault}
+            onChange={() => !assignments.is_org_default && handleSetDefault(theme.id)}
+            style={{ width: 16, height: 16, cursor: assignments.is_org_default ? 'default' : 'pointer' }}
+          />
+          <label htmlFor={`org-default-${theme.id}`} style={{ fontSize: 14, fontWeight: 500, cursor: assignments.is_org_default ? 'default' : 'pointer' }}>
+            {t('assign_org_default')}
+          </label>
+        </div>
+
+        {/* Centers section */}
+        <div style={{ marginBottom: 8 }}>
+          <p style={{ margin: '0 0 10px', fontWeight: 600, fontSize: 14 }}>{t('assign_centers_title')} ({assignments.centers.length})</p>
+          <input
+            type="text"
+            value={centersSearch}
+            onChange={(e) => { setCentersSearch(e.target.value); setShowAllCenters(false); }}
+            placeholder={t('assign_centers_search')}
+            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ddd', fontSize: 14, marginBottom: 8, boxSizing: 'border-box' }}
+          />
+
+          {filteredCenters.length === 0 ? (
+            <p style={{ color: '#888', fontSize: 13 }}>{t('assign_no_centers')}</p>
+          ) : (
+            <>
+              {visibleCenters.map((center) => (
+                <div key={center.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                  <span style={{ fontSize: 14 }}>{center.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{
+                      fontSize: 12, padding: '2px 8px', borderRadius: 12,
+                      background: center.is_inherited ? '#f0f0f0' : '#e8f0fe',
+                      color: center.is_inherited ? '#666' : '#1a56db',
+                    }}>
+                      {center.is_inherited ? t('assign_inherited') : t('assign_assigned')}
+                    </span>
+                    {!center.is_inherited && (
+                      <button
+                        onClick={() => handleRestoreInheritance(theme.id, center.id)}
+                        disabled={restoringId === center.id}
+                        style={btnSmall('#888')}
+                      >
+                        {t('assign_restore')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {!showAllCenters && filteredCenters.length > CENTERS_INITIAL_LIMIT && (
+                <button
+                  onClick={() => setShowAllCenters(true)}
+                  style={{ marginTop: 8, background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer', fontSize: 13, padding: 0 }}
+                >
+                  {t('assign_centers_show_all').replace('{count}', String(filteredCenters.length))}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <button onClick={() => openPicker(theme.id)} style={btnSmall('#6c63ff')}>{t('assign_centers_btn')}</button>
+        </div>
+      </div>
+    );
+  }
+
   function renderInlineEditor(theme: Theme) {
     if (expandedId !== theme.id) return null;
+    const isBase = theme.is_base;
+
+    const tabs: TabKey[] = isBase ? ['assignments'] : ['branding', 'typography', 'colors', 'assignments'];
+
     return (
       <div style={{ padding: '20px 24px', borderTop: '1px solid #eee', background: '#fafafa' }}>
+        {isBase && (
+          <p style={{ margin: '0 0 14px', fontSize: 12, color: '#888', fontStyle: 'italic' }}>{t('read_only_hint')}</p>
+        )}
         {editError && (
           <p style={{ margin: '0 0 12px', fontSize: 13, color: '#c0392b' }}>{editError}</p>
         )}
 
         <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #eee', paddingBottom: 8 }}>
-          {(['branding', 'typography', 'colors'] as TabKey[]).map((tab) => (
-            <button key={tab} type="button" onClick={() => setEditTab(tab)} style={tabStyle(editTab === tab)}>
+          {tabs.map((tab) => (
+            <button key={tab} type="button" onClick={() => setEditTab(tab)} style={tabStyle(isBase ? tab === 'assignments' : editTab === tab)}>
               {t(`tab_${tab}` as any)}
             </button>
           ))}
         </div>
 
-        {editTab === 'branding' && (
+        {!isBase && editTab === 'branding' && (
           <div>
             <FormLabel>{t('label_name')}</FormLabel>
             <FormInput
@@ -287,7 +465,7 @@ export default function ThemesPage() {
           </div>
         )}
 
-        {editTab === 'typography' && (
+        {!isBase && editTab === 'typography' && (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_level')}</span>
@@ -326,7 +504,7 @@ export default function ThemesPage() {
           </div>
         )}
 
-        {editTab === 'colors' && (
+        {!isBase && editTab === 'colors' && (
           <div>
             {COLOR_FIELDS.map(({ key, labelKey }) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -359,12 +537,22 @@ export default function ThemesPage() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-          <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={() => handleSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>
-            {saving ? t('saving') : t('save_changes')}
-          </button>
-        </div>
+        {(editTab === 'assignments' || isBase) && renderAssignmentsTab(theme)}
+
+        {!isBase && editTab !== 'assignments' && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+            <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
+            <button onClick={() => handleSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>
+              {saving ? t('saving') : t('save_changes')}
+            </button>
+          </div>
+        )}
+
+        {(editTab === 'assignments' || isBase) && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+            <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
+          </div>
+        )}
       </div>
     );
   }
@@ -377,7 +565,7 @@ export default function ThemesPage() {
       { label: t('clone'), onClick: () => openClone(theme) },
       { label: t('details'), onClick: () => setDetails(theme) },
     ];
-    if (!isDeleted) {
+    if (!isDeleted && !theme.is_base) {
       menuItems.push({ label: t('delete'), onClick: () => setDeleting(theme), danger: true });
     }
 
@@ -397,9 +585,14 @@ export default function ThemesPage() {
             )}
           </div>
 
-          {/* Name */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Name + badge */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 600, fontSize: 15 }}>{theme.name}</span>
+            {theme.is_base && (
+              <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 10, background: '#f0f0f0', color: '#666', fontWeight: 500 }}>
+                {t('badge_system')}
+              </span>
+            )}
           </div>
 
           {/* Color swatches */}
@@ -409,7 +602,7 @@ export default function ThemesPage() {
           </div>
 
           {/* Status */}
-          <StatusBadge status={theme.status} label={tStatus(theme.status)} />
+          {!theme.is_base && <StatusBadge status={theme.status} label={tStatus(theme.status)} />}
 
           {/* Expand chevron */}
           {!isDeleted && (
@@ -427,50 +620,40 @@ export default function ThemesPage() {
     );
   }
 
+  const basethemes = themes.filter((t) => t.is_base);
+  const myThemes = themes.filter((t) => !t.is_base);
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <StatusFilter
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
-            allLabel={tStatus('all')}
-          />
-          <button onClick={() => { setCreateForm(emptyForm); setCreateError(null); setCreateOpen(true); }} style={btnStyle('#6c63ff')}>
-            {t('add')}
-          </button>
-        </div>
+        <StatusFilter
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
+          allLabel={tStatus('all')}
+        />
       </div>
 
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
-      ) : themes.length === 0 ? (
-        <p style={{ color: '#888' }}>{t('empty')}</p>
       ) : (
-        themes.map(renderThemeRow)
+        <>
+          {basethemes.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('section_system')}</p>
+              {basethemes.map(renderThemeRow)}
+            </div>
+          )}
+          {myThemes.length > 0 && (
+            <div>
+              <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('section_mine')}</p>
+              {myThemes.map(renderThemeRow)}
+            </div>
+          )}
+          {themes.length === 0 && <p style={{ color: '#888' }}>{t('empty')}</p>}
+        </>
       )}
-
-      {/* Create modal */}
-      <CrudModal
-        open={createOpen}
-        title={t('modal_add')}
-        error={createError}
-        saving={createSaving}
-        cancelLabel={t('cancel')}
-        saveLabel={createSaving ? t('saving') : t('save_changes')}
-        onCancel={() => setCreateOpen(false)}
-        onSave={handleCreate}
-      >
-        <FormLabel>{t('label_name')}</FormLabel>
-        <FormInput
-          value={createForm.name}
-          onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-          placeholder="My Brand"
-          autoFocus
-        />
-      </CrudModal>
 
       {/* Clone modal */}
       <CrudModal
@@ -521,6 +704,48 @@ export default function ThemesPage() {
             )}
           </div>
         )}
+      </CrudModal>
+
+      {/* Assign centers picker */}
+      <CrudModal
+        open={pickerOpen}
+        title={t('picker_title')}
+        error={null}
+        saving={pickerSaving}
+        cancelLabel={t('picker_cancel')}
+        saveLabel={pickerSaving ? t('picker_saving') : t('picker_save')}
+        onCancel={() => setPickerOpen(false)}
+        onSave={handlePickerAssign}
+      >
+        <FormInput
+          value={pickerSearch}
+          onChange={(e) => setPickerSearch(e.target.value)}
+          placeholder={t('picker_search')}
+          autoFocus
+        />
+        <div style={{ marginTop: 12, maxHeight: 300, overflowY: 'auto' }}>
+          {unassigned.filter((c) => c.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 ? (
+            <p style={{ color: '#888', fontSize: 13 }}>{t('picker_empty')}</p>
+          ) : (
+            unassigned
+              .filter((c) => c.name.toLowerCase().includes(pickerSearch.toLowerCase()))
+              .map((c) => (
+                <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}>
+                  <input
+                    type="checkbox"
+                    checked={pickerSelected.has(c.id)}
+                    onChange={(e) => {
+                      const next = new Set(pickerSelected);
+                      if (e.target.checked) next.add(c.id); else next.delete(c.id);
+                      setPickerSelected(next);
+                    }}
+                    style={{ width: 16, height: 16 }}
+                  />
+                  <span style={{ fontSize: 14 }}>{c.name}</span>
+                </label>
+              ))
+          )}
+        </div>
       </CrudModal>
 
       <ConfirmDialog

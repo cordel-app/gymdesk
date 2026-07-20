@@ -308,12 +308,22 @@ Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057
 
 `ThemeProvider` in both the admin app (`context/GymContext` → `activeGym.theme.tokens`) and the member app (`context/AppContext` → resolved via `GET /me/gym`) writes `--gd-*` CSS variables to `<html>` on gym switch; legacy `--brand`/`--chrome`/`--accent` aliases are preserved. Logos are `MEDIUMBLOB` (≤ 512 KB; allow-list: PNG, SVG, JPEG, WEBP), served public at `GET /themes/:id/logo` (`Cache-Control: immutable`). The member app resolves its gym and theme in one call via `GET /me/gym` (no `x-gym-id` header required).
 
+**Theme resolution order (per center):**
+1. `centers.theme_id` (explicit center assignment)
+2. `gyms.theme_id` (org default)
+3. First theme alphabetically
+
 **API surface:**
 - `GET|POST|PUT|DELETE /platform/themes` — superadmin Base Themes CRUD (scoped to `gym_id IS NULL`).
 - `POST /platform/themes/clone/:id` — clone a Base Theme into a new Base Theme (superadmin only).
 - `GET /system/themes` — gym admin: lists Base Themes + Customer Themes for the active gym.
 - `POST /system/themes/clone/:id` — clone any accessible theme into a new Customer Theme.
-- `PUT|DELETE /system/themes/:id` — update/soft-delete a Customer Theme (delete blocked if assigned to gym or any center: 409).
+- `PUT|DELETE /system/themes/:id` — update/soft-delete a Customer Theme (delete blocked if theme is org default or assigned to any center: 409 with "This theme is currently in use. Remove all assignments before deleting it.").
+- `GET /system/themes/:id/assignments` — returns `{ is_org_default, centers: [{id, name, is_inherited}] }` — only centers using this theme (inherited = org default, assigned = explicit `centers.theme_id`).
+- `PUT /system/themes/:id/set-default` — sets `gyms.theme_id` for the active gym (replaces previous default atomically).
+- `GET /system/themes/:id/unassigned-centers` — centers not currently using this theme (for the assign picker).
+- `POST /system/themes/:id/assign-centers` — body `{ center_ids }`: sets `centers.theme_id` for each center.
+- `DELETE /system/themes/:id/centers/:centerId` — restores inheritance: sets `centers.theme_id = NULL`.
 
 ### Middleware (both apps)
 Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime).
@@ -351,7 +361,7 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Audit | `audit-logs.ts` | `[locale]/audit/` (System, gym-scoped, admin+) · `[locale]/cordel/audit/` (Cordel, platform-wide, superadmin) | Both render the shared `AuditLogView` component; platform mode passes `scope="all"` and adds a Gym column. |
 | Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` (linked from **Cordel → Gyms**) | Superadmin only. Route path kept for URL stability; grouping is Cordel (#66). |
 | Superadmins | `superadmins.ts` | `[locale]/system/users/` (linked from **Cordel → Users**) | Superadmin only — grant/revoke platform role. Route path kept for URL stability; grouping is Cordel (#66). |
-| Themes | `themes.ts` (superadmin Base Themes) + `gym-themes.ts` (gym admin Customer Themes) | `[locale]/system/themes/` (Cordel → Base Themes, superadmin) + `[locale]/themes/` (System → Themes, gym admin) | #68 + #97 + #117. `themes.gym_id` (migration 065) distinguishes Base Themes (NULL) from Customer Themes (gym-owned). Cordel → Base Themes uses inline expandable rows with a ContextMenu (Clone / Details / Delete) and the same branding/typography/colors inline editor as System → Themes. `POST /platform/themes/clone/:id` clones a Base Theme into a new Base Theme. Details modal shows audit timestamps. Gym admins see both via `GET /system/themes`; can clone, edit, soft-delete Customer Themes; centers can override `theme_id` per-location. |
+| Themes | `themes.ts` (superadmin Base Themes) + `gym-themes.ts` (gym admin Customer Themes + assignments) | `[locale]/system/themes/` (Cordel → Base Themes, superadmin) + `[locale]/themes/` (System → Themes, gym admin) | #68 + #97 + #117 + #120. `themes.gym_id` (migration 065) distinguishes Base Themes (NULL) from Customer Themes (gym-owned). Gym admins see both via `GET /system/themes`; can clone and edit Customer Themes; can assign any theme (base or customer) as org default or to individual centers. Inline expandable editor has tabs: Branding / Typography / Colors (custom themes only) + Assignments (all themes). Assignments section: org-default checkbox, center list with Inherited/Assigned badges, Restore Inheritance, "+ Assign Centers…" multi-select picker, search filter, show-all pagination. Delete blocked when theme is in use (409). Theme resolution per center: explicit `centers.theme_id` → `gyms.theme_id` → first alphabetically. |
 | Dashboards | — | `membership`, `organization`, `training`, `nutrition`, `financials` | Placeholder "coming soon" shells. |
 
 Shared admin components (`apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`, `Sidebar`, `NavGroup`, `AppShell`, `TopHeader`, `GymSelector`, `LanguagePicker`, `ThemeProvider`, `ui.tsx`. Use these in every new page — don't hand-roll tables/modals/status chips.

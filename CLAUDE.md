@@ -4,6 +4,8 @@ Multi-tenant Gym Management SaaS. Express backend + Next.js frontend + MySQL 8 (
 
 ## Before implementing any feature
 
+For any issue that involves new API surface, DB schema changes, or significant UI work, write a plan first and get approval before coding. A plan should cover: migrations, API endpoints, frontend sections, tests, and doc updates. Keep it concise — bullet points per layer, not prose.
+
 Read these two files first — they contain the full architecture map and step-by-step patterns:
 
 - `docs/architecture.md` — codebase structure, auth, roles, DB conventions
