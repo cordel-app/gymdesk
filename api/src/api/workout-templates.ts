@@ -288,6 +288,69 @@ workoutTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req,
   res.status(204).send();
 });
 
+workoutTemplatesRouter.post('/:id/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: srcRows } = await db.query(
+      'SELECT * FROM workout_templates WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [id, gymId],
+    );
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Workout template not found' });
+    const src = srcRows[0];
+
+    let copyName = `${src.name} (Copy)`;
+    const { rows: existing } = await db.query(
+      'SELECT name FROM workout_templates WHERE gym_id = ? AND name LIKE ? AND deleted_at IS NULL',
+      [gymId, `${src.name} (Copy%`],
+    );
+    if (existing.length > 0) {
+      copyName = `${src.name} (Copy ${existing.length + 1})`;
+    }
+
+    await db.transaction(async (tx) => {
+      const { insertId: newId } = await tx.query(
+        'INSERT INTO workout_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
+        [gymId, copyName, src.description ?? null, src.status, gymMembershipId],
+      );
+
+      const { rows: blocks } = await tx.query(
+        'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+        [id],
+      );
+      for (const block of blocks) {
+        const { insertId: newBlockId } = await tx.query(
+          `INSERT INTO workout_template_blocks
+            (gym_id, workout_template_id, position, name, description, type, result_type,
+             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, newId, block.position, block.name, block.description, block.type, block.result_type,
+           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes],
+        );
+
+        const { rows: exercises } = await tx.query(
+          'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+          [block.id],
+        );
+        for (const ex of exercises) {
+          await tx.query(
+            `INSERT INTO workout_template_exercises
+              (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, newBlockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo],
+          );
+        }
+      }
+
+      const { rows: newRows } = await tx.query('SELECT * FROM workout_templates WHERE id = ?', [newId]);
+      recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: newId, next: newRows[0] });
+      res.status(201).json(newRows[0]);
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /* ---- WorkoutTemplateBlock ---- */
 
 workoutTemplatesRouter.get('/:id/blocks', async (req, res, next) => {

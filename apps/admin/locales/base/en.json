@@ -623,6 +623,8 @@
     "filter_name": "Filter by name…",
     "filter_created_by_all": "All authors",
     "details": "Details",
+    "duplicate": "Duplicate",
+    "duplicated": "Workout template duplicated.",
     "tree_add_block": "+ Block",
     "tree_add_exercise": "+ Exercise",
     "tree_no_blocks": "No blocks yet.",

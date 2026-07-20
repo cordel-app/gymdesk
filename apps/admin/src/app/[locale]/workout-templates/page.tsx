@@ -178,6 +178,22 @@ export default function WorkoutTemplatesPage() {
     catch (err: any) { setDeleting(null); toast(err.message ?? t('workout_templates.error_generic')); }
   }
 
+  async function handleDuplicate(w: WorkoutTemplate) {
+    try {
+      const created = await apiFetch<WorkoutTemplate>(`/workout-templates/${w.id}/duplicate`, { method: 'POST' });
+      toast(t('workout_templates.duplicated'));
+      await load();
+      setExpanded((prev) => new Set(prev).add(created.id));
+      await refetchBranch(created.id);
+      setEditing(created);
+      setForm({ name: created.name, description: created.description ?? '', status: created.status });
+      setError(null);
+      setModalOpen(true);
+    } catch (err: any) {
+      toast(err.message ?? t('workout_templates.error_generic'));
+    }
+  }
+
   async function toggleExpand(row: WorkoutTemplate) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -351,6 +367,7 @@ export default function WorkoutTemplatesPage() {
           ariaLabel={t('workout_templates.col_actions')}
           items={[
             { label: t('workout_templates.details'), onClick: () => guardedAction('edit', w) },
+            { label: t('workout_templates.duplicate'), onClick: () => handleDuplicate(w) },
             { label: t('workout_templates.delete'), onClick: () => guardedAction('delete', w), danger: true },
           ]}
         />
