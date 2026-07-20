@@ -615,6 +615,8 @@
     "filter_name": "Filtrar por nombre…",
     "filter_created_by_all": "Todos los autores",
     "details": "Detalles",
+    "duplicate": "Duplicar",
+    "duplicated": "Plantilla de rutina duplicada.",
     "tree_add_block": "+ Bloque",
     "tree_add_exercise": "+ Ejercicio",
     "tree_no_blocks": "Aún no hay bloques.",
