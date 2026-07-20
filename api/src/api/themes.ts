@@ -78,6 +78,7 @@ function shapeTheme(row: any) {
   const { logo_bytes: _lb, ...rest } = row;
   return {
     ...rest,
+    type: row.gym_id === null ? 'system' : 'custom',
     has_logo: !!row.logo_mime,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
   };
@@ -87,34 +88,100 @@ function shapeTheme(row: any) {
 
 themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const status = req.query.status as string | undefined;
-  let sql = 'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at FROM themes WHERE gym_id IS NULL';
   const params: any[] = [];
+
+  let whereClause = '1=1';
   if (status) {
-    sql += ' AND status = ?';
+    whereClause += ' AND t.status = ?';
     params.push(status);
   } else {
-    sql += ' AND deleted_at IS NULL';
+    whereClause += ' AND t.deleted_at IS NULL';
   }
-  sql += ' ORDER BY created_at ASC';
+
+  // usage_count: for system themes = distinct orgs using it; for custom = centers using it (direct or inherited)
+  const sql = `
+    SELECT
+      t.id, t.gym_id, t.name, t.description, t.status,
+      t.logo_mime, t.logo_updated_at, t.created_at, t.modified_at, t.deleted_at,
+      g.name AS gym_name,
+      CASE
+        WHEN t.gym_id IS NULL THEN (
+          SELECT COUNT(DISTINCT gg.id)
+          FROM gyms gg
+          LEFT JOIN centers cc ON cc.gym_id = gg.id AND cc.deleted_at IS NULL
+          WHERE gg.theme_id = t.id OR cc.theme_id = t.id
+        )
+        ELSE (
+          SELECT CASE
+            WHEN EXISTS (SELECT 1 FROM gyms gg2 WHERE gg2.id = t.gym_id AND gg2.theme_id = t.id)
+            THEN (SELECT COUNT(*) FROM centers cc2 WHERE cc2.gym_id = t.gym_id AND cc2.deleted_at IS NULL)
+            ELSE (SELECT COUNT(*) FROM centers cc3 WHERE cc3.theme_id = t.id AND cc3.deleted_at IS NULL)
+          END
+        )
+      END AS usage_count,
+      EXISTS (SELECT 1 FROM gyms gd WHERE gd.theme_id = t.id) AS is_default
+    FROM themes t
+    LEFT JOIN gyms g ON g.id = t.gym_id
+    WHERE ${whereClause}
+    ORDER BY t.gym_id IS NULL DESC, t.created_at ASC
+  `;
   const { rows } = await db.query(sql, params);
-  res.json(rows.map(shapeTheme));
+  res.json(rows.map((r: any) => ({ ...shapeTheme(r), gym_name: r.gym_name ?? null, usage_count: Number(r.usage_count), is_default: !!r.is_default })));
 });
 
 // ─── Get single ───────────────────────────────────────────────────────────────
 
 themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
-    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at FROM themes WHERE id = ? AND gym_id IS NULL',
+    `SELECT t.id, t.gym_id, t.name, t.description, t.status, t.logo_mime, t.logo_updated_at,
+            t.tokens, t.created_at, t.modified_at, t.deleted_at, g.name AS gym_name,
+            EXISTS (SELECT 1 FROM gyms gd WHERE gd.theme_id = t.id) AS is_default,
+            CASE
+              WHEN t.gym_id IS NULL THEN (
+                SELECT COUNT(DISTINCT gg.id) FROM gyms gg
+                LEFT JOIN centers cc ON cc.gym_id = gg.id AND cc.deleted_at IS NULL
+                WHERE gg.theme_id = t.id OR cc.theme_id = t.id
+              )
+              ELSE (
+                SELECT CASE
+                  WHEN EXISTS (SELECT 1 FROM gyms gg2 WHERE gg2.id = t.gym_id AND gg2.theme_id = t.id)
+                  THEN (SELECT COUNT(*) FROM centers cc2 WHERE cc2.gym_id = t.gym_id AND cc2.deleted_at IS NULL)
+                  ELSE (SELECT COUNT(*) FROM centers cc3 WHERE cc3.theme_id = t.id AND cc3.deleted_at IS NULL)
+                END
+              )
+            END AS usage_count
+     FROM themes t LEFT JOIN gyms g ON g.id = t.gym_id
+     WHERE t.id = ?`,
     [req.params.id],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Theme not found' });
-  res.json(shapeTheme(rows[0]));
+
+  const [{ rows: auditRows }] = await Promise.all([
+    db.query(
+      `SELECT action, actor_name, created_at FROM audit_logs
+       WHERE entity_type = 'theme' AND entity_id = ?
+       ORDER BY created_at ASC`,
+      [req.params.id],
+    ),
+  ]);
+  const createEntry = auditRows.find((r: any) => r.action === 'create');
+  const updateEntry = [...auditRows].reverse().find((r: any) => r.action === 'update');
+
+  const row = rows[0];
+  res.json({
+    ...shapeTheme(row),
+    gym_name: row.gym_name ?? null,
+    usage_count: Number(row.usage_count),
+    is_default: !!row.is_default,
+    created_by_name: createEntry?.actor_name ?? null,
+    modified_by_name: updateEntry?.actor_name ?? null,
+  });
 });
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 themesRouter.post('/', requireSuperadmin, async (req, res) => {
-  const { name, tokens } = req.body;
+  const { name, description, tokens } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
 
   // Enforce name uniqueness among non-deleted rows.
@@ -130,11 +197,11 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
 
   const id = randomUUID();
   await db.query(
-    "INSERT INTO themes (id, name, status, tokens, created_at) VALUES (?, ?, 'draft', ?, UTC_TIMESTAMP())",
-    [id, name.trim(), JSON.stringify(mergedTokens)],
+    "INSERT INTO themes (id, name, description, status, tokens, created_at) VALUES (?, ?, ?, 'draft', ?, UTC_TIMESTAMP())",
+    [id, name.trim(), description?.trim() ?? null, JSON.stringify(mergedTokens)],
   );
   const { rows } = await db.query(
-    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [id],
   );
   recordAudit(req, { action: 'create', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });
@@ -144,7 +211,7 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
 // ─── Update name / tokens / status ───────────────────────────────────────────
 
 themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
-  const { name, tokens, status } = req.body;
+  const { name, description, tokens, status } = req.body;
   const ALLOWED_STATUSES = ['draft', 'active'];
   if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
@@ -175,14 +242,15 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
 
   await db.query(
     `UPDATE themes SET
-       name       = COALESCE(?, name),
-       status     = COALESCE(?, status),
-       tokens     = ?
+       name        = COALESCE(?, name),
+       description = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
+       status      = COALESCE(?, status),
+       tokens      = ?
      WHERE id = ?`,
-    [name?.trim() ?? null, status ?? null, JSON.stringify(tokensMerged), req.params.id],
+    [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, JSON.stringify(tokensMerged), req.params.id],
   );
   const { rows } = await db.query(
-    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current), next: shapeTheme(rows[0]) });
@@ -214,7 +282,7 @@ themesRouter.post(
       [body, mime, req.params.id],
     );
     const { rows } = await db.query(
-      'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+      'SELECT id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
       [req.params.id],
     );
     res.json(shapeTheme(rows[0]));
@@ -228,7 +296,7 @@ themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
   await db.query('UPDATE themes SET logo_bytes = NULL, logo_mime = NULL, logo_updated_at = NULL WHERE id = ?', [req.params.id]);
   const { rows } = await db.query(
-    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [req.params.id],
   );
   res.json(shapeTheme(rows[0]));
@@ -259,7 +327,7 @@ themesRouter.post('/clone/:sourceId', requireSuperadmin, async (req, res) => {
     [id, baseName, tokens],
   );
   const { rows } = await db.query(
-    'SELECT id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [id],
   );
   recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });
