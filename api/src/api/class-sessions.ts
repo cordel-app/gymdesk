@@ -17,10 +17,10 @@ const SELECT = `
          at.max_capacity AS class_type_capacity,
          at.duration_minutes AS class_type_duration,
          COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
-         r.name AS room_name
+         sp.name AS space_name
   FROM class_sessions cs
   JOIN activity_types at ON at.id = cs.activity_type_id
-  LEFT JOIN rooms r ON r.id = cs.room_id
+  LEFT JOIN spaces sp ON sp.id = cs.space_id
 `;
 
 export const classSessionsRouter = Router();
@@ -64,21 +64,21 @@ async function validateRefs(gymId: string, body: any, centerId: number) {
     );
     if (rows.length === 0) return 'Trainer not found';
   }
-  if (body.room_id) {
+  if (body.space_id) {
     const { rows } = await db.query(
-      "SELECT id, status, center_id FROM rooms WHERE id = ? AND gym_id = ? AND deleted_at IS NULL",
-      [body.room_id, gymId],
+      "SELECT id, status, center_id FROM spaces WHERE id = ? AND gym_id = ? AND deleted_at IS NULL",
+      [body.space_id, gymId],
     );
-    if (rows.length === 0) return 'Room not found';
-    if (rows[0].status !== 'active') return 'Room is inactive';
-    if (rows[0].center_id !== centerId) return 'Room does not belong to this session\'s center';
+    if (rows.length === 0) return 'Space not found';
+    if (rows[0].status !== 'active') return 'Space is inactive';
+    if (rows[0].center_id !== centerId) return 'Space does not belong to this session\'s center';
   }
   return null;
 }
 
 classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req, res, next) => {
   const { gymId, userId, gymMembershipId } = getTenantContext(req);
-  const { activity_type_id, trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
+  const { activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
   if (!activity_type_id || !starts_at || !ends_at) {
     return res.status(400).json({ error: 'activity_type_id, starts_at and ends_at are required' });
   }
@@ -98,9 +98,9 @@ classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req
 
     const row = await insertAndFetch(
       `INSERT INTO class_sessions
-       (gym_id, center_id, activity_type_id, trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override, created_by, modified_by_membership_id)
+       (gym_id, center_id, activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, created_by, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, resolvedCenterId, activity_type_id, trainer_membership_id ?? null, room_id ?? null,
+      [gymId, resolvedCenterId, activity_type_id, trainer_membership_id ?? null, space_id ?? null,
        new Date(starts_at), new Date(ends_at), cap, userId, gymMembershipId],
       `${SELECT} WHERE cs.id = ?`,
       (id) => [id],
@@ -115,7 +115,7 @@ classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req
 
 classSessionsRouter.put('/:id', requireRole('admin', 'coach', 'staff'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { trainer_membership_id, room_id, starts_at, ends_at, max_capacity_override } = req.body;
+  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
   }
@@ -133,7 +133,7 @@ classSessionsRouter.put('/:id', requireRole('admin', 'coach', 'staff'), async (r
     const { rowCount } = await db.query(
       `UPDATE class_sessions SET
         trainer_membership_id = IF(?, ?, trainer_membership_id),
-        room_id               = IF(?, ?, room_id),
+        space_id              = IF(?, ?, space_id),
         starts_at             = COALESCE(?, starts_at),
         ends_at                = COALESCE(?, ends_at),
         max_capacity_override = IF(?, ?, max_capacity_override),
@@ -141,7 +141,7 @@ classSessionsRouter.put('/:id', requireRole('admin', 'coach', 'staff'), async (r
        WHERE id = ? AND gym_id = ?`,
       [
         'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
-        'room_id' in req.body ? 1 : 0, room_id ?? null,
+        'space_id' in req.body ? 1 : 0, space_id ?? null,
         starts_at ? new Date(starts_at) : null,
         ends_at ? new Date(ends_at) : null,
         'max_capacity_override' in req.body ? 1 : 0,

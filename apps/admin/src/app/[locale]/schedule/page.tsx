@@ -19,8 +19,8 @@ interface Session {
   class_type_capacity: number;
   effective_capacity: number;
   trainer_membership_id: number | null;
-  room_id: number | null;
-  room_name: string | null;
+  space_id: number | null;
+  space_name: string | null;
   starts_at: string;
   ends_at: string;
   max_capacity_override: number | null;
@@ -29,12 +29,12 @@ interface Session {
 }
 interface ClassType { id: number; name: string; duration_minutes: number; max_capacity: number; status: string }
 interface Trainer { gym_membership_id: number; user_id: string; specialities: { name: string }[] }
-interface Room { id: number; name: string; status: string }
+interface Space { id: number; name: string; status: string }
 
 const emptyForm = {
   class_type_id: '',
   trainer_membership_id: '',
-  room_id: '',
+  space_id: '',
   starts_at: '',
   duration_minutes: '',
   max_capacity_override: '',
@@ -70,7 +70,7 @@ export default function SchedulePage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [classTypes, setClassTypes] = useState<ClassType[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -93,9 +93,9 @@ export default function SchedulePage() {
         apiFetch<Session[]>(`/class-sessions?from=${rangeStart}&to=${rangeEnd} 23:59:59`),
         apiFetch<ClassType[]>('/class-types?status=active'),
         apiFetch<Trainer[]>('/trainers'),
-        apiFetch<Room[]>('/rooms?status=active'),
+        apiFetch<Space[]>('/spaces?status=active'),
       ]);
-      setSessions(ss); setClassTypes(ct); setTrainers(tr); setRooms(rm);
+      setSessions(ss); setClassTypes(ct); setTrainers(tr); setSpaces(rm);
     } catch (err: any) { toast(err.message ?? t('schedule.error_generic')); }
     finally { setLoading(false); }
   }
@@ -112,7 +112,7 @@ export default function SchedulePage() {
     setForm({
       class_type_id: String(s.class_type_id),
       trainer_membership_id: s.trainer_membership_id ? String(s.trainer_membership_id) : '',
-      room_id: s.room_id ? String(s.room_id) : '',
+      space_id: s.space_id ? String(s.space_id) : '',
       starts_at: s.starts_at.slice(0, 16),
       duration_minutes: String(s.class_type_duration),
       max_capacity_override: s.max_capacity_override != null ? String(s.max_capacity_override) : '',
@@ -141,7 +141,7 @@ export default function SchedulePage() {
     const body: any = {
       class_type_id: parseInt(form.class_type_id, 10),
       trainer_membership_id: form.trainer_membership_id ? parseInt(form.trainer_membership_id, 10) : null,
-      room_id: form.room_id ? parseInt(form.room_id, 10) : null,
+      space_id: form.space_id ? parseInt(form.space_id, 10) : null,
       starts_at: startsAt, ends_at: endsAt,
       max_capacity_override: form.max_capacity_override ? parseInt(form.max_capacity_override, 10) : null,
     };
@@ -207,7 +207,7 @@ export default function SchedulePage() {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 600 }}>{s.class_type_name}</div>
                     <div style={{ fontSize: 13, color: '#666' }}>
-                      {s.room_name ?? '—'}
+                      {s.space_name ?? '—'}
                       {s.trainer_membership_id ? ` · ${t('schedule.trainer')}: ${trainers.find(t => t.gym_membership_id === s.trainer_membership_id)?.user_id.slice(0, 10) ?? '—'}` : ''}
                     </div>
                   </div>
@@ -252,10 +252,10 @@ export default function SchedulePage() {
           <option value="">—</option>
           {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.user_id.slice(0, 10)}…{tr.specialities.length ? ` (${tr.specialities.map((s) => s.name).join(', ')})` : ''}</option>)}
         </select>
-        <FormLabel>{t('schedule.label_room')}</FormLabel>
-        <select value={form.room_id} onChange={(e) => setForm({ ...form, room_id: e.target.value })} style={selectStyle}>
+        <FormLabel>{t('schedule.label_space')}</FormLabel>
+        <select value={form.space_id} onChange={(e) => setForm({ ...form, space_id: e.target.value })} style={selectStyle}>
           <option value="">—</option>
-          {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          {spaces.map((sp) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
         </select>
         <FormLabel>{t('schedule.label_capacity_override')}</FormLabel>
         <FormInput type="number" min="1" step="1" value={form.max_capacity_override}

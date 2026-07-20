@@ -12,7 +12,7 @@ import { membershipPlansRouter } from './api/membership-plans';
 import { benefitTypesRouter } from './api/benefit-types';
 import { chargeTypesRouter } from './api/charge-types';
 import { billingEventsRouter } from './api/billing-events';
-import { roomsRouter } from './api/rooms';
+import { spacesRouter } from './api/spaces';
 import { specialitiesRouter } from './api/specialities';
 import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
@@ -147,7 +147,7 @@ app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter
 app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
 app.use('/charge-types',     requireAuth(), tenantContext, chargeTypesRouter);
 app.use('/billing-events',   requireAuth(), tenantContext, billingEventsRouter);
-app.use('/rooms',            requireAuth(), tenantContext, centerContext, roomsRouter);
+app.use('/spaces',           requireAuth(), tenantContext, centerContext, spacesRouter);
 app.use('/specialities',     requireAuth(), tenantContext, specialitiesRouter);
 app.use('/trainers',         requireAuth(), tenantContext, trainersRouter);
 app.use('/staff',            requireAuth(), tenantContext, staffRouter);
