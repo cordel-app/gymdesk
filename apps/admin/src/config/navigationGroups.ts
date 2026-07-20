@@ -53,7 +53,7 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.dashboard',
       },
       {
-        href: '/{{locale}}/trainers',
+        href: '/{{locale}}/staff',
         labelKey: 'nav.staff',
       },
       {
