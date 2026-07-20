@@ -227,16 +227,13 @@ gymThemesRouter.delete('/:id', async (req, res, next) => {
       if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
       if (existing[0].deleted_at) return res.status(409).json({ error: 'Theme is already deleted' });
 
-      const { rows: gymRefs } = await db.query('SELECT id FROM gyms WHERE theme_id = ? LIMIT 1', [req.params.id]);
-      if (gymRefs.length > 0) {
-        return res.status(409).json({ error: 'Theme is assigned as the gym default. Reassign it first.' });
-      }
+      const { rows: gymRefs } = await db.query('SELECT id FROM gyms WHERE theme_id = ? AND id = ? LIMIT 1', [req.params.id, gymId]);
       const { rows: centerRefs } = await db.query(
-        'SELECT id FROM centers WHERE theme_id = ? AND deleted_at IS NULL LIMIT 1',
-        [req.params.id],
+        'SELECT id FROM centers WHERE theme_id = ? AND gym_id = ? AND deleted_at IS NULL LIMIT 1',
+        [req.params.id, gymId],
       );
-      if (centerRefs.length > 0) {
-        return res.status(409).json({ error: 'Theme is assigned to one or more centers. Reassign them first.' });
+      if (gymRefs.length > 0 || centerRefs.length > 0) {
+        return res.status(409).json({ error: 'This theme is currently in use. Remove all assignments before deleting it.' });
       }
 
       await db.query(
@@ -245,6 +242,140 @@ gymThemesRouter.delete('/:id', async (req, res, next) => {
       );
       recordAudit(req, { action: 'delete', entityType: 'theme', entityId: req.params.id });
       res.status(204).send();
+    });
+  } catch (err) { next(err); }
+});
+
+// ─── Assignments: get org-default status + centers using this theme ────────────
+
+gymThemesRouter.get('/:id/assignments', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, async () => {
+      // Verify the theme is accessible to this gym (base or customer)
+      const { rows: themeRows } = await db.query(
+        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
+        [req.params.id, gymId],
+      );
+      if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+
+      const { rows: gymRows } = await db.query('SELECT theme_id FROM gyms WHERE id = ?', [gymId]);
+      const is_org_default = gymRows[0]?.theme_id === req.params.id;
+
+      const { rows: centers } = await db.query(
+        `SELECT c.id, c.name, (c.theme_id IS NULL) AS is_inherited
+         FROM centers c
+         JOIN gyms g ON g.id = c.gym_id
+         WHERE c.gym_id = ? AND c.deleted_at IS NULL
+           AND (c.theme_id = ? OR (c.theme_id IS NULL AND g.theme_id = ?))
+         ORDER BY c.name ASC`,
+        [gymId, req.params.id, req.params.id],
+      );
+
+      res.json({ is_org_default, centers: centers.map((c: any) => ({ ...c, is_inherited: !!c.is_inherited })) });
+    });
+  } catch (err) { next(err); }
+});
+
+// ─── Assignments: set as org default ─────────────────────────────────────────
+
+gymThemesRouter.put('/:id/set-default', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, async () => {
+      const { rows: themeRows } = await db.query(
+        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
+        [req.params.id, gymId],
+      );
+      if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+
+      await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [req.params.id, gymId]);
+      recordAudit(req, { action: 'update', entityType: 'gym', entityId: gymId, next: { default_theme_id: req.params.id } });
+      res.json({ ok: true });
+    });
+  } catch (err) { next(err); }
+});
+
+// ─── Assignments: list unassigned centers (for the picker) ────────────────────
+
+gymThemesRouter.get('/:id/unassigned-centers', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, async () => {
+      const { rows: themeRows } = await db.query(
+        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
+        [req.params.id, gymId],
+      );
+      if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+
+      const { rows: centers } = await db.query(
+        `SELECT c.id, c.name
+         FROM centers c
+         JOIN gyms g ON g.id = c.gym_id
+         WHERE c.gym_id = ? AND c.deleted_at IS NULL
+           AND NOT (c.theme_id = ? OR (c.theme_id IS NULL AND g.theme_id = ?))
+         ORDER BY c.name ASC`,
+        [gymId, req.params.id, req.params.id],
+      );
+
+      res.json(centers);
+    });
+  } catch (err) { next(err); }
+});
+
+// ─── Assignments: assign centers to this theme ────────────────────────────────
+
+gymThemesRouter.post('/:id/assign-centers', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, async () => {
+      const { rows: themeRows } = await db.query(
+        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
+        [req.params.id, gymId],
+      );
+      if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+
+      const { center_ids } = req.body;
+      if (!Array.isArray(center_ids) || center_ids.length === 0) {
+        return res.status(400).json({ error: 'center_ids must be a non-empty array' });
+      }
+
+      // Verify all centers belong to this gym
+      const placeholders = center_ids.map(() => '?').join(', ');
+      const { rows: validCenters } = await db.query(
+        `SELECT id FROM centers WHERE id IN (${placeholders}) AND gym_id = ? AND deleted_at IS NULL`,
+        [...center_ids, gymId],
+      );
+      if (validCenters.length !== center_ids.length) {
+        return res.status(400).json({ error: 'One or more centers not found' });
+      }
+
+      await db.query(
+        `UPDATE centers SET theme_id = ? WHERE id IN (${placeholders}) AND gym_id = ?`,
+        [req.params.id, ...center_ids, gymId],
+      );
+      res.json({ ok: true });
+    });
+  } catch (err) { next(err); }
+});
+
+// ─── Assignments: restore inheritance for a center ────────────────────────────
+
+gymThemesRouter.delete('/:id/centers/:centerId', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, async () => {
+      const { rows: centerRows } = await db.query(
+        'SELECT id, theme_id FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+        [req.params.centerId, gymId],
+      );
+      if (centerRows.length === 0) return res.status(404).json({ error: 'Center not found' });
+      if (centerRows[0].theme_id !== req.params.id) {
+        return res.status(409).json({ error: 'Center is not explicitly assigned to this theme' });
+      }
+
+      await db.query('UPDATE centers SET theme_id = NULL WHERE id = ? AND gym_id = ?', [req.params.centerId, gymId]);
+      res.json({ ok: true });
     });
   } catch (err) { next(err); }
 });
