@@ -310,6 +310,7 @@ Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057
 
 **API surface:**
 - `GET|POST|PUT|DELETE /platform/themes` — superadmin Base Themes CRUD (scoped to `gym_id IS NULL`).
+- `POST /platform/themes/clone/:id` — clone a Base Theme into a new Base Theme (superadmin only).
 - `GET /system/themes` — gym admin: lists Base Themes + Customer Themes for the active gym.
 - `POST /system/themes/clone/:id` — clone any accessible theme into a new Customer Theme.
 - `PUT|DELETE /system/themes/:id` — update/soft-delete a Customer Theme (delete blocked if assigned to gym or any center: 409).
@@ -350,7 +351,7 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Audit | `audit-logs.ts` | `[locale]/audit/` (System, gym-scoped, admin+) · `[locale]/cordel/audit/` (Cordel, platform-wide, superadmin) | Both render the shared `AuditLogView` component; platform mode passes `scope="all"` and adds a Gym column. |
 | Gyms (platform) | `gyms.ts` (platformRouter) | `[locale]/system/gyms/` (linked from **Cordel → Gyms**) | Superadmin only. Route path kept for URL stability; grouping is Cordel (#66). |
 | Superadmins | `superadmins.ts` | `[locale]/system/users/` (linked from **Cordel → Users**) | Superadmin only — grant/revoke platform role. Route path kept for URL stability; grouping is Cordel (#66). |
-| Themes | `themes.ts` (superadmin Base Themes) + `gym-themes.ts` (gym admin Customer Themes) | `[locale]/system/themes/` (Cordel → Base Themes, superadmin) + `[locale]/themes/` (System → Themes, gym admin) | #68 + #97. `themes.gym_id` (migration 065) distinguishes Base Themes (NULL) from Customer Themes (gym-owned). Gym admins see both via `GET /system/themes`; can clone, edit, soft-delete Customer Themes; centers can override `theme_id` per-location. |
+| Themes | `themes.ts` (superadmin Base Themes) + `gym-themes.ts` (gym admin Customer Themes) | `[locale]/system/themes/` (Cordel → Base Themes, superadmin) + `[locale]/themes/` (System → Themes, gym admin) | #68 + #97 + #117. `themes.gym_id` (migration 065) distinguishes Base Themes (NULL) from Customer Themes (gym-owned). Cordel → Base Themes uses inline expandable rows with a ContextMenu (Clone / Details / Delete) and the same branding/typography/colors inline editor as System → Themes. `POST /platform/themes/clone/:id` clones a Base Theme into a new Base Theme. Details modal shows audit timestamps. Gym admins see both via `GET /system/themes`; can clone, edit, soft-delete Customer Themes; centers can override `theme_id` per-location. |
 | Dashboards | — | `membership`, `organization`, `training`, `nutrition`, `financials` | Placeholder "coming soon" shells. |
 
 Shared admin components (`apps/admin/src/components/`): `DataTable`, `CrudModal`, `ConfirmDialog`, `StatusBadge`, `StatusFilter`, `Toast`, `Sidebar`, `NavGroup`, `AppShell`, `TopHeader`, `GymSelector`, `LanguagePicker`, `ThemeProvider`, `ui.tsx`. Use these in every new page — don't hand-roll tables/modals/status chips.

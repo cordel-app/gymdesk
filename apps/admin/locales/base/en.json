@@ -174,7 +174,16 @@
     "error_generic": "Something went wrong.",
     "cancel": "Cancel",
     "saving": "Saving…",
-    "save_changes": "Save Changes"
+    "save_changes": "Save Changes",
+    "clone": "Clone",
+    "clone_title": "Clone Theme",
+    "clone_name_label": "Name for the new theme",
+    "clone_save": "Clone",
+    "details": "Details",
+    "details_title": "Theme Details",
+    "details_close": "Close",
+    "details_created_at": "Created At",
+    "details_modified_at": "Last Modified At"
   },
   "system_users": {
     "title": "Superadmins",

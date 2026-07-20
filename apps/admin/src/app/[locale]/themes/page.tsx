@@ -12,21 +12,22 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
+import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
 
 interface Theme {
   id: string;
-  gym_id: string | null;
   name: string;
   status: 'draft' | 'active' | 'deleted';
-  is_base: boolean;
   has_logo: boolean;
   logo_updated_at: string | null;
   tokens: ThemeTokens;
   created_at: string;
+  modified_at: string | null;
 }
 
+const STATUSES = ['draft', 'active', 'deleted'] as const;
 const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
 const COLOR_FIELDS: { key: keyof ThemeTokens['colors']; labelKey: string }[] = [
   { key: 'appBackground',             labelKey: 'label_app_bg' },
@@ -43,19 +44,19 @@ type TabKey = 'branding' | 'typography' | 'colors';
 
 const emptyForm = { name: '', tokens: DEFAULT_TOKENS };
 
-export default function GymThemesPage() {
-  const t = useTranslations('gym_themes');
+export default function ThemesPage() {
+  const t = useTranslations('themes');
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
   const { getToken } = useAuth();
   const { apiFetch } = useApiClient();
-  const { activeGym, isSuperadmin, loading: gymLoading } = useGym();
-  const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const { isSuperadmin, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
 
   // Inline editor state
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -67,28 +68,36 @@ export default function GymThemesPage() {
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Create modal state
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState(emptyForm);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [createSaving, setCreateSaving] = useState(false);
+
   // Clone modal state
   const [cloning, setCloning] = useState<Theme | null>(null);
   const [cloneName, setCloneName] = useState('');
   const [cloneError, setCloneError] = useState<string | null>(null);
   const [cloneSaving, setCloneSaving] = useState(false);
 
+  // Details modal state
+  const [details, setDetails] = useState<Theme | null>(null);
+
   // Delete confirm state
   const [deleting, setDeleting] = useState<Theme | null>(null);
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isAdmin) {
-      router.replace(`/${locale}`);
-      return;
-    }
+    if (!isSuperadmin) { router.replace(`/${locale}`); return; }
     load();
-  }, [gymLoading, isAdmin]);
+  }, [gymLoading, isSuperadmin]);
+
+  useEffect(() => { if (!gymLoading && isSuperadmin) load(); }, [statusFilter]);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await apiFetch<Theme[]>('/system/themes');
+      const data = await apiFetch<Theme[]>(`/platform/themes${statusFilter ? `?status=${statusFilter}` : ''}`);
       setThemes(data);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -102,10 +111,7 @@ export default function GymThemesPage() {
   }
 
   function openExpand(theme: Theme) {
-    if (expandedId === theme.id) {
-      setExpandedId(null);
-      return;
-    }
+    if (expandedId === theme.id) { setExpandedId(null); return; }
     setExpandedId(theme.id);
     setEditForm({ name: theme.name, tokens: theme.tokens ?? DEFAULT_TOKENS });
     setEditTab('branding');
@@ -119,13 +125,13 @@ export default function GymThemesPage() {
     setSaving(true);
     setEditError(null);
     try {
-      await apiFetch(`/system/themes/${theme.id}`, {
+      await apiFetch(`/platform/themes/${theme.id}`, {
         method: 'PUT',
         body: JSON.stringify({ name: editForm.name.trim(), tokens: editForm.tokens }),
       });
       if (editLogoFile) {
         const token = await getToken();
-        const res = await fetch(`/api/proxy/system/themes/${theme.id}/logo`, {
+        const res = await fetch(`/api/proxy/platform/themes/${theme.id}/logo`, {
           method: 'POST',
           headers: { 'Content-Type': editLogoFile.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: editLogoFile,
@@ -144,25 +150,41 @@ export default function GymThemesPage() {
     }
   }
 
-  async function handleActivate(theme: Theme) {
+  async function handleLogoRemove(theme: Theme) {
     try {
-      await apiFetch(`/system/themes/${theme.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ status: theme.status === 'active' ? 'draft' : 'active' }),
-      });
+      await apiFetch(`/platform/themes/${theme.id}/logo`, { method: 'DELETE' });
+      setEditLogoPreview(null);
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     }
   }
 
-  async function handleLogoRemove(theme: Theme) {
+  function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditLogoFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setEditLogoPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleCreate() {
+    if (!createForm.name.trim()) { setCreateError(t('error_required')); return; }
+    setCreateSaving(true);
+    setCreateError(null);
     try {
-      await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
-      setEditLogoPreview(null);
+      await apiFetch('/platform/themes', {
+        method: 'POST',
+        body: JSON.stringify({ name: createForm.name.trim(), tokens: createForm.tokens }),
+      });
+      setCreateOpen(false);
+      setCreateForm(emptyForm);
       load();
     } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
+      setCreateError(err.message ?? t('error_generic'));
+    } finally {
+      setCreateSaving(false);
     }
   }
 
@@ -178,7 +200,7 @@ export default function GymThemesPage() {
     setCloneSaving(true);
     setCloneError(null);
     try {
-      await apiFetch(`/system/themes/clone/${cloning.id}`, {
+      await apiFetch(`/platform/themes/clone/${cloning.id}`, {
         method: 'POST',
         body: JSON.stringify({ name: cloneName.trim() }),
       });
@@ -194,7 +216,7 @@ export default function GymThemesPage() {
   async function handleDelete() {
     if (!deleting) return;
     try {
-      await apiFetch(`/system/themes/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`/platform/themes/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
       load();
     } catch (err: any) {
@@ -204,19 +226,7 @@ export default function GymThemesPage() {
     }
   }
 
-  function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setEditLogoFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setEditLogoPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
-  }
-
-  if (gymLoading) return null;
-
-  const systemThemes = themes.filter((th) => th.is_base);
-  const myThemes = themes.filter((th) => !th.is_base);
+  if (gymLoading || !isSuperadmin) return null;
 
   const selectStyle: React.CSSProperties = {
     width: '100%', padding: '10px 12px', borderRadius: 6,
@@ -231,18 +241,14 @@ export default function GymThemesPage() {
     fontSize: 14,
   });
 
-  function renderInlineEditor(theme: Theme, readOnly: boolean) {
+  function renderInlineEditor(theme: Theme) {
     if (expandedId !== theme.id) return null;
     return (
       <div style={{ padding: '20px 24px', borderTop: '1px solid #eee', background: '#fafafa' }}>
-        {readOnly && (
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#888', fontStyle: 'italic' }}>{t('read_only_hint')}</p>
-        )}
-        {!readOnly && editError && (
+        {editError && (
           <p style={{ margin: '0 0 12px', fontSize: 13, color: '#c0392b' }}>{editError}</p>
         )}
 
-        {/* Tab bar */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #eee', paddingBottom: 8 }}>
           {(['branding', 'typography', 'colors'] as TabKey[]).map((tab) => (
             <button key={tab} type="button" onClick={() => setEditTab(tab)} style={tabStyle(editTab === tab)}>
@@ -251,17 +257,14 @@ export default function GymThemesPage() {
           ))}
         </div>
 
-        {/* Branding */}
         {editTab === 'branding' && (
           <div>
             <FormLabel>{t('label_name')}</FormLabel>
             <FormInput
               value={editForm.name}
-              onChange={(e) => !readOnly && setEditForm({ ...editForm, name: e.target.value })}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
               placeholder="My Brand"
-              disabled={readOnly}
             />
-
             <FormLabel>{t('label_logo')}</FormLabel>
             <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_hint')}</p>
             {editLogoPreview && (
@@ -270,23 +273,20 @@ export default function GymThemesPage() {
                 <img src={editLogoPreview} alt="logo preview" style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }} />
               </div>
             )}
-            {!readOnly && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => editFileInputRef.current?.click()} style={btnSmall('#444')}>
-                  {t('logo_upload')}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => editFileInputRef.current?.click()} style={btnSmall('#444')}>
+                {t('logo_upload')}
+              </button>
+              {editLogoPreview && (
+                <button type="button" onClick={() => { setEditLogoFile(null); setEditLogoPreview(null); if (theme.has_logo) handleLogoRemove(theme); }} style={btnSmall('#c0392b')}>
+                  {t('logo_clear')}
                 </button>
-                {editLogoPreview && (
-                  <button type="button" onClick={() => { setEditLogoFile(null); setEditLogoPreview(null); if (theme.has_logo) handleLogoRemove(theme); }} style={btnSmall('#c0392b')}>
-                    {t('logo_clear')}
-                  </button>
-                )}
-              </div>
-            )}
+              )}
+            </div>
             <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
           </div>
         )}
 
-        {/* Typography */}
         {editTab === 'typography' && (
           <div>
             <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
@@ -301,7 +301,6 @@ export default function GymThemesPage() {
                     <select
                       key={`${lv}-font`}
                       value={typo.fontFamily}
-                      disabled={readOnly}
                       onChange={(e) => setEditForm({
                         ...editForm,
                         tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } },
@@ -314,12 +313,11 @@ export default function GymThemesPage() {
                       key={`${lv}-color`}
                       type="color"
                       value={typo.color}
-                      disabled={readOnly}
                       onChange={(e) => setEditForm({
                         ...editForm,
                         tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, color: e.target.value } } },
                       })}
-                      style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: readOnly ? 'default' : 'pointer', padding: 2 }}
+                      style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
                     />
                   </>
                 );
@@ -328,7 +326,6 @@ export default function GymThemesPage() {
           </div>
         )}
 
-        {/* Colors */}
         {editTab === 'colors' && (
           <div>
             {COLOR_FIELDS.map(({ key, labelKey }) => (
@@ -337,12 +334,11 @@ export default function GymThemesPage() {
                 <input
                   type="color"
                   value={editForm.tokens.colors[key] as string}
-                  disabled={readOnly}
                   onChange={(e) => setEditForm({
                     ...editForm,
                     tokens: { ...editForm.tokens, colors: { ...editForm.tokens.colors, [key]: e.target.value } },
                   })}
-                  style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: readOnly ? 'default' : 'pointer', padding: 2 }}
+                  style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
                 />
               </div>
             ))}
@@ -352,7 +348,6 @@ export default function GymThemesPage() {
                 type="number"
                 min={0}
                 max={20}
-                disabled={readOnly}
                 value={editForm.tokens.colors.headerSeparatorHeight}
                 onChange={(e) => setEditForm({
                   ...editForm,
@@ -364,56 +359,35 @@ export default function GymThemesPage() {
           </div>
         )}
 
-        {!readOnly && (
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-            <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={() => handleSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>
-              {saving ? t('saving') : t('save_changes')}
-            </button>
-          </div>
-        )}
-        {readOnly && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-            <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+          <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={() => handleSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>
+            {saving ? t('saving') : t('save_changes')}
+          </button>
+        </div>
       </div>
     );
   }
 
   function renderThemeRow(theme: Theme) {
     const isExpanded = expandedId === theme.id;
-    const isBase = theme.is_base;
+    const isDeleted = theme.status === 'deleted';
 
     const menuItems: ContextMenuItem[] = [
-      {
-        label: t('clone'),
-        onClick: () => openClone(theme),
-      },
+      { label: t('clone'), onClick: () => openClone(theme) },
+      { label: t('details'), onClick: () => setDetails(theme) },
     ];
-    if (!isBase) {
-      menuItems.push({
-        label: theme.status === 'active' ? t('deactivate') : t('activate'),
-        onClick: () => handleActivate(theme),
-      });
-      menuItems.push({
-        label: t('edit'),
-        onClick: () => openExpand(theme),
-      });
-      menuItems.push({
-        label: t('delete'),
-        onClick: () => setDeleting(theme),
-        danger: true,
-      });
+    if (!isDeleted) {
+      menuItems.push({ label: t('delete'), onClick: () => setDeleting(theme), danger: true });
     }
 
     return (
       <div key={theme.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
         <div
-          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
-          onClick={() => openExpand(theme)}
+          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isDeleted ? 'default' : 'pointer' }}
+          onClick={() => !isDeleted && openExpand(theme)}
         >
-          {/* Logo */}
+          {/* Logo / color swatch */}
           <div style={{ width: 40, flexShrink: 0 }}>
             {theme.has_logo ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -423,25 +397,24 @@ export default function GymThemesPage() {
             )}
           </div>
 
-          {/* Name + badge */}
+          {/* Name */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <span style={{ fontWeight: 600, fontSize: 15 }}>{theme.name}</span>
-            <span style={{
-              marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 10,
-              background: isBase ? '#e0f2fe' : '#f0fdf4',
-              color: isBase ? '#0369a1' : '#166534',
-            }}>
-              {isBase ? t('badge_system') : t('badge_mine')}
-            </span>
+          </div>
+
+          {/* Color swatches */}
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <div title={t('label_app_bg')} style={{ width: 20, height: 20, borderRadius: 4, background: theme.tokens?.colors?.appBackground ?? '#f5f5f5', border: '1px solid #ddd' }} />
+            <div title={t('label_header_bg')} style={{ width: 20, height: 20, borderRadius: 4, background: theme.tokens?.colors?.headerBackground ?? '#1a1a2e', border: '1px solid #ddd' }} />
           </div>
 
           {/* Status */}
-          {!isBase && (
-            <StatusBadge status={theme.status} label={tStatus(theme.status)} />
-          )}
+          <StatusBadge status={theme.status} label={tStatus(theme.status)} />
 
           {/* Expand chevron */}
-          <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          {!isDeleted && (
+            <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          )}
 
           {/* Context menu */}
           <div onClick={(e) => e.stopPropagation()}>
@@ -449,7 +422,7 @@ export default function GymThemesPage() {
           </div>
         </div>
 
-        {isExpanded && renderInlineEditor(theme, isBase)}
+        {isExpanded && renderInlineEditor(theme)}
       </div>
     );
   }
@@ -458,6 +431,17 @@ export default function GymThemesPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <StatusFilter
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
+            allLabel={tStatus('all')}
+          />
+          <button onClick={() => { setCreateForm(emptyForm); setCreateError(null); setCreateOpen(true); }} style={btnStyle('#6c63ff')}>
+            {t('add')}
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -465,26 +449,28 @@ export default function GymThemesPage() {
       ) : themes.length === 0 ? (
         <p style={{ color: '#888' }}>{t('empty')}</p>
       ) : (
-        <>
-          {systemThemes.length > 0 && (
-            <section style={{ marginBottom: 32 }}>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#555', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {t('section_system')}
-              </h2>
-              {systemThemes.map(renderThemeRow)}
-            </section>
-          )}
-
-          {myThemes.length > 0 && (
-            <section>
-              <h2 style={{ fontSize: 15, fontWeight: 600, color: '#555', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                {t('section_mine')}
-              </h2>
-              {myThemes.map(renderThemeRow)}
-            </section>
-          )}
-        </>
+        themes.map(renderThemeRow)
       )}
+
+      {/* Create modal */}
+      <CrudModal
+        open={createOpen}
+        title={t('modal_add')}
+        error={createError}
+        saving={createSaving}
+        cancelLabel={t('cancel')}
+        saveLabel={createSaving ? t('saving') : t('save_changes')}
+        onCancel={() => setCreateOpen(false)}
+        onSave={handleCreate}
+      >
+        <FormLabel>{t('label_name')}</FormLabel>
+        <FormInput
+          value={createForm.name}
+          onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+          placeholder="My Brand"
+          autoFocus
+        />
+      </CrudModal>
 
       {/* Clone modal */}
       <CrudModal
@@ -503,6 +489,38 @@ export default function GymThemesPage() {
           onChange={(e) => setCloneName(e.target.value)}
           autoFocus
         />
+      </CrudModal>
+
+      {/* Details modal */}
+      <CrudModal
+        open={details !== null}
+        title={t('details_title')}
+        error={null}
+        saving={false}
+        hideSave
+        cancelLabel={t('details_close')}
+        saveLabel=""
+        onCancel={() => setDetails(null)}
+        onSave={() => setDetails(null)}
+      >
+        {details && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>{t('label_name')}</span>
+              <p style={{ margin: '4px 0 0', fontSize: 15 }}>{details.name}</p>
+            </div>
+            <div>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>{t('details_created_at')}</span>
+              <p style={{ margin: '4px 0 0', fontSize: 15 }}>{new Date(details.created_at).toLocaleString()}</p>
+            </div>
+            {details.modified_at && (
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>{t('details_modified_at')}</span>
+                <p style={{ margin: '4px 0 0', fontSize: 15 }}>{new Date(details.modified_at).toLocaleString()}</p>
+              </div>
+            )}
+          </div>
+        )}
       </CrudModal>
 
       <ConfirmDialog

@@ -174,7 +174,16 @@
     "error_generic": "Algo salió mal.",
     "cancel": "Cancelar",
     "saving": "Guardando…",
-    "save_changes": "Guardar cambios"
+    "save_changes": "Guardar cambios",
+    "clone": "Clonar",
+    "clone_title": "Clonar tema",
+    "clone_name_label": "Nombre para el nuevo tema",
+    "clone_save": "Clonar",
+    "details": "Detalles",
+    "details_title": "Detalles del tema",
+    "details_close": "Cerrar",
+    "details_created_at": "Creado el",
+    "details_modified_at": "Última modificación"
   },
   "system_users": {
     "title": "Superadministradores",
