@@ -26,6 +26,8 @@ exports.up = async (knex) => {
         .references('id').inTable('centers').onDelete('SET NULL');
     });
   }
+  // Ensure center_id is nullable (early runs may have created it NOT NULL).
+  await knex.raw('ALTER TABLE spaces MODIFY center_id INT UNSIGNED NULL').catch(() => {});
   if (!(await knex.schema.hasColumn('spaces', 'notes'))) {
     await knex.schema.alterTable('spaces', (t) => {
       t.text('notes');
