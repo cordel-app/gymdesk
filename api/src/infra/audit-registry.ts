@@ -43,7 +43,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   promotion:                      { kind: 'simple',   label: 'Promotions',               table: 'promotions',              nameColumn: 'name' },
   event:                          { kind: 'simple',   label: 'Events',                   table: 'events',                  nameColumn: 'name' },
   center:                         { kind: 'simple',   label: 'Centers',                  table: 'centers',                 nameColumn: 'name' },
-  room:                           { kind: 'simple',   label: 'Rooms',                    table: 'rooms',                   nameColumn: 'name' },
+  space:                          { kind: 'simple',   label: 'Spaces',                   table: 'spaces',                  nameColumn: 'name' },
 
   user_membership: {
     kind: 'composed', label: 'Memberships',
@@ -205,7 +205,7 @@ const FK_MAP: Record<string, { table: string; nameColumn: string }> = {
   class_type_id:              { table: 'class_types',             nameColumn: 'name' },
   exercise_id:                { table: 'exercises',               nameColumn: 'name' },
   center_id:                  { table: 'centers',                 nameColumn: 'name' },
-  room_id:                    { table: 'rooms',                   nameColumn: 'name' },
+  space_id:                   { table: 'spaces',                  nameColumn: 'name' },
   promotion_id:               { table: 'promotions',              nameColumn: 'name' },
 };
 

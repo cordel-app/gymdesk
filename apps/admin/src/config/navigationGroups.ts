@@ -61,8 +61,8 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.centers',
       },
       {
-        href: '/{{locale}}/rooms',
-        labelKey: 'nav.rooms',
+        href: '/{{locale}}/spaces',
+        labelKey: 'nav.spaces',
       },
       {
         href: '/{{locale}}/specialities',

@@ -3,10 +3,11 @@
   "configurations": [
     {
       "name": "admin",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:admin"],
-      "port": 8081,
-      "autoPort": false
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev"],
+      "cwd": "apps/admin",
+      "port": 8083,
+      "autoPort": true
     },
     {
       "name": "api",

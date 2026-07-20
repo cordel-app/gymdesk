@@ -193,7 +193,7 @@ app.use('/membership-plans',       requireAuth(), tenantContext, membershipPlans
 app.use('/benefit-types',          requireAuth(), tenantContext, benefitTypesRouter);
 app.use('/charge-types',           requireAuth(), tenantContext, chargeTypesRouter);
 app.use('/billing-events',         requireAuth(), tenantContext, billingEventsRouter);
-app.use('/rooms',                  requireAuth(), tenantContext, roomsRouter);
+app.use('/spaces',                 requireAuth(), tenantContext, spacesRouter);
 app.use('/specialities',           requireAuth(), tenantContext, specialitiesRouter);
 app.use('/trainers',               requireAuth(), tenantContext, trainersRouter);
 app.use('/activity-types',         requireAuth(), tenantContext, activityTypesRouter);
@@ -342,11 +342,11 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 |--------|-------------------|---------------|-------|
 | Members | `members.ts` | `[locale]/members/` (+ `/deleted`) | Canonical staff-level CRUD reference. Soft-delete + restore; `clerk_user_id`; `/:id/invite`, `/:id/reinvite`, `/:id/revoke-invite` for member-portal access. Removing a member with a pending invite revokes it in Clerk. |
 | Team | `gym-users.ts` | `[locale]/team/`, `[locale]/link-team/` | Admin-only. Invite/grant/change-role/remove admin/coach/staff. Clerk invitation flow, self-edit & last-admin guards, audited. Removing a pending invite revokes it in Clerk (UI labels this "Revoke"). |
-| Rooms | `rooms.ts` | `[locale]/rooms/` | Admin-only CRUD. |
+| Spaces | `spaces.ts` | `[locale]/spaces/` | Admin-only CRUD with inline expandable editor. Supports duplicate, soft-delete, activity-type assignments, availability hours, and notes. `space_activity_types` join table links spaces to activity types. |
 | Specialities | `specialities.ts` | `[locale]/specialities/` | Admin-only CRUD; linked to trainers. |
 | Trainers | `trainers.ts` | `[locale]/trainers/` | Lists `coach` members; PUT assigns specialities. |
 | Activity types | `activity-types.ts` | `[locale]/activity-types/` | Admin-only CRUD (renamed from `class-types` in #70). |
-| Class sessions | `class-sessions.ts` | `[locale]/schedule/` | Scheduled instances of an activity type (room, trainer, capacity). Create/update/cancel by admin/coach/staff. |
+| Class sessions | `class-sessions.ts` | `[locale]/schedule/` | Scheduled instances of an activity type (space, trainer, capacity). Create/update/cancel by admin/coach/staff. |
 | Bookings | `bookings.ts` | (inside Schedule) | Waitlist, capacity, attendance (`/:id/attendance`). Credit consume/refund hooks via `package-credits` and `plan-allowances`. |
 | Plans | `membership-plans.ts`, `plan-allowances.ts` | `[locale]/plans/` | Admin-only CRUD (#70). `lifecycle_status` (draft/active/archived) + `enrollment_status` (open/closed) + soft delete. Nested: prices (validity windows), `billing_policies` (4 billing/service cycle pairs + auto_renew), `plan_allowances` (unlimited or session_count per activity type with recurrence), `membership_plan_centers` (optional center restriction). Accordion UI. Booking enforcement in `plan-allowances.ts` (side-effect hook). |
 | Benefit types | `benefit-types.ts` | (inside Plans) | Global lookup (no `gym_id`), seeded. |
