@@ -108,6 +108,8 @@ Reads (`GET`) on gym-scoped domain routes are open to any authenticated gym role
 | Class sessions (`class-sessions`) | any role | `admin`, `coach`, `staff` | (cancel) `admin`,`coach`,`staff` | `POST /:id/cancel` instead of hard delete. |
 | Bookings (`bookings`) | any role | `admin`, `staff` (create) | `admin`, `staff` | `POST /:id/attendance` = `admin`,`staff`,`coach`. |
 | Exercises, Workout templates, Training templates | any role | `admin`, `coach` | `admin`, `coach` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). Muscles are a static read-only catalog (`GET /muscles`, no writes — see `domain/muscles.ts`). |
+| Dishes, Sides, Sauces (`meals-catalog`) | any role | `admin`, `coach` | `admin`, `coach` | Shared gym-scoped catalogs for nutrition. `DELETE /dishes/:id` returns 409 if the dish is used in any nutrition plan template (app-level guard + FK RESTRICT). |
+| Nutrition plan templates (`nutrition-plan-templates`) | any role | `admin`, `coach` | `admin`, `coach` | Full hierarchy: template → days (weekday 0–6) → meals → meal_dishes (dish + optional side + sauce). `POST /:id/duplicate` deep-clones entire tree. `PUT …/days/reorder`, `PUT …/meals/reorder`, `PUT …/meal-dishes/reorder` update positions. `GET /:id/hierarchy` returns nested JSON (JSON_ARRAYAGG derived tables). |
 | Training plans (gym-level `training-plans` + `members/:id/training-plans`) | any role | `admin`, `coach` | `admin`, `coach` | Personalized plans (#67, #112). `POST /training-plans` creates from a template or from scratch; 409 + `{ active_count }` if the member already has Active plans without a decision; `on_existing_active: 'expire'` closes those atomically. `POST /members/:id/training-plans/:planId/complete` transitions to `completed` (read-only, 403 on all content mutations). `POST /members/:id/training-plans/:planId/duplicate` deep-clones the full tree. Nested content mutations on `/members/:id/training-plans/…` (workouts/blocks/exercises, cross-parent moves + duplicate at every level). |
 | User memberships (`user-memberships`) | any role | `admin`, `staff` | `admin` | Status changes write a `status_changed` billing event in the same tx. |
 | Billing ledger (`billing-events`) | `admin`, `staff` | `admin`, `staff` (POST) | — | Append-only. `GET /billing-events/member/:memberId` is a convenience alias for per-member history (paginated, tenant-isolated). |
@@ -149,7 +151,7 @@ The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it 
 
 ## Database Conventions
 
-- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `068_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
+- **Migrations**: Knex JS files in `infra/migrations/`. Numbered sequentially (`001_` … `071_`). Run with `npm run db:migrate`. ⚠️ MySQL DDL is **non-transactional** — a failed migration leaves partial state, so keep migrations small and re-runnable (guard `ALTER`s with `hasColumn`/information_schema checks — see `030_gym_theme.js`).
 - **Primary keys**: auto-increment `INT UNSIGNED` for domain tables, `CHAR(36)` UUID for `gyms` (tenant root, `DEFAULT (UUID())`).
 - **Timestamps**: `DATETIME`, always UTC (the mysql2 pool uses `timezone: 'Z'`; use `UTC_TIMESTAMP()` in SQL, never `NOW()`).
 - **Indexed text columns**: `VARCHAR(n)`, not `TEXT` (MySQL cannot index TEXT without a prefix length).
@@ -224,6 +226,10 @@ app.use('/action-types',           requireAuth(), tenantContext, actionTypesRout
 app.use('/promotions',             requireAuth(), tenantContext, promotionsRouter);
 app.use('/promotions/:id',         requireAuth(), tenantContext, promotionDetailsRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userClassPackagesRouter);
+app.use('/nutrition-plan-templates', requireAuth(), tenantContext, nutritionPlanTemplatesRouter);
+app.use('/dishes',  requireAuth(), tenantContext, dishesRouter);
+app.use('/sides',   requireAuth(), tenantContext, sidesRouter);
+app.use('/sauces',  requireAuth(), tenantContext, saucesRouter);
 
 // package-credits and plan-allowances register booking-lifecycle hooks as side-effect imports
 // (package-credits imported BEFORE plan-allowances so its hook queues first).

@@ -117,6 +117,14 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/nutrition',
         labelKey: 'nav.dashboard',
       },
+      {
+        href: '/{{locale}}/nutrition/meals',
+        labelKey: 'nav.meals_catalog',
+      },
+      {
+        href: '/{{locale}}/nutrition/nutrition-plan-templates',
+        labelKey: 'nav.nutrition_plan_templates',
+      },
     ],
   },
   {
