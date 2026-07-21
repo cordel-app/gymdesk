@@ -1196,7 +1196,9 @@
     "linking": "Configurant el teu accés a l'equip…",
     "error_no_invitation": "No s'ha trobat cap invitació a l'equip pendent.",
     "cancel": "Cancelar",
-    "saving": "Guardant…"
+    "saving": "Guardant…",
+    "action_impersonate": "Suplantar",
+    "action_impersonate_title": "Suplantar aquest usuari"
   },
   "centers": {
     "title": "Centres",
@@ -1465,5 +1467,11 @@
     "tree_label_side": "Guarnició",
     "tree_label_sauce": "Salsa",
     "tree_none": "Cap"
+  },
+  "impersonation": {
+    "impersonating_label": "Esteu suplantant:",
+    "signed_in_as": "Connectat com:",
+    "stop_button": "Atura la suplantació",
+    "stopped": "Suplantació finalitzada."
   }
 }

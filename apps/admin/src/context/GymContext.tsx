@@ -112,7 +112,22 @@ export function GymProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('activeGymId', id);
   }
 
-  const activeGym = gyms.find((g) => g.id === activeGymId) ?? null;
+  const rawActiveGym = gyms.find((g) => g.id === activeGymId) ?? null;
+
+  // When a superadmin is impersonating, expose the effective user's role so
+  // nav gating and UI permission checks reflect the impersonated user's access.
+  const activeGym = rawActiveGym && typeof window !== 'undefined' ? (() => {
+    try {
+      const stored = sessionStorage.getItem('impersonation_session');
+      if (stored) {
+        const session = JSON.parse(stored);
+        if (session?.gymId === rawActiveGym.id && session?.effectiveRole) {
+          return { ...rawActiveGym, role: session.effectiveRole as GymOption['role'] };
+        }
+      }
+    } catch {}
+    return rawActiveGym;
+  })() : rawActiveGym;
 
   return (
     <GymContext.Provider value={{ gyms, activeGymId, activeGym, setActiveGymId, loading, isSuperadmin, refreshGyms: loadGyms }}>

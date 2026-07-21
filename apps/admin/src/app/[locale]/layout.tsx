@@ -5,6 +5,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { GymProvider } from '@/context/GymContext';
 import { CenterProvider } from '@/context/CenterContext';
+import { ImpersonationProvider } from '@/context/ImpersonationContext';
 import { AppShell } from '@/components/AppShell';
 import { ToastProvider } from '@/components/Toast';
 import { ThemeProvider } from '@/components/ThemeProvider';
@@ -32,13 +33,15 @@ export default async function LocaleLayout({
         <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f5f5f5', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
             <ToastProvider>
-              <GymProvider>
-                <CenterProvider>
-                  <ThemeProvider>
-                    <AppShell>{children}</AppShell>
-                  </ThemeProvider>
-                </CenterProvider>
-              </GymProvider>
+              <ImpersonationProvider>
+                <GymProvider>
+                  <CenterProvider>
+                    <ThemeProvider>
+                      <AppShell>{children}</AppShell>
+                    </ThemeProvider>
+                  </CenterProvider>
+                </GymProvider>
+              </ImpersonationProvider>
             </ToastProvider>
           </NextIntlClientProvider>
         </body>

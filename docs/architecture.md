@@ -135,6 +135,28 @@ app.use('/public', publicRouter);
 - Frontend: `GymContext` exposes `isSuperadmin` from Clerk's `useUser()`.
 - `infra/seed.ts` bootstraps the first superadmin from `SEED_USER_ID`.
 
+### User Impersonation (#135)
+Superadmins can impersonate any active gym user for support and debugging without a password change.
+
+**How it works (separation of authentication and authorization):**
+- The authenticated identity never changes. Only the *effective* identity used for authorization changes.
+- The frontend stores an impersonation session in `sessionStorage` (survives refresh, cleared on tab close).
+- `apiFetch()` appends `x-impersonate-as: <userId>` to every request while impersonating.
+- `tenantContext` detects this header and, after confirming the caller is a superadmin, looks up the target's `gym_memberships` row and sets `req.tenantCtx.role` to the effective user's role. `requireRole()` guards then automatically see the impersonated role.
+- `recordAudit` encodes both identities in `actor_name` (e.g. `"Alice Johnson (impersonating John Smith)"`) so every business audit row remains traceable.
+
+**API surface** (`api/src/api/impersonation.ts`, mounted at `/platform/impersonation`):
+- `POST /platform/impersonation/:userId` — validate target (active, not soft-deleted, not another superadmin), record `impersonation_started` audit event, return effective user's `{ id, name, role, gym_id }`.
+- `POST /platform/impersonation/stop` — record `impersonation_ended` with optional `duration_seconds`.
+
+**Frontend** (`apps/admin/src/context/ImpersonationContext.tsx`):
+- `ImpersonationProvider` wraps the app and rehydrates from `sessionStorage` on mount.
+- `ImpersonationBanner` is rendered at the top of every page via `AppShell` while impersonating.
+- `GymContext.activeGym.role` is overridden from the impersonation session so nav gating reflects the effective user's access.
+- "Impersonate" action appears in the Team page (`/team`) for active, non-superadmin members when the viewer is a superadmin.
+
+**Restrictions**: cannot impersonate disabled/soft-deleted users, other superadmins, or yourself. No new DB tables.
+
 ---
 
 ## Multi-tenancy Pattern

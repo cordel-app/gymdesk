@@ -6,6 +6,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
+import { useImpersonation } from '@/context/ImpersonationContext';
+import { useUser } from '@clerk/nextjs';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -33,7 +35,7 @@ export default function TeamPage() {
   const router = useRouter();
   const locale = useLocale();
   const { apiFetch } = useApiClient();
-  const { isSuperadmin, activeGym, loading: gymLoading } = useGym();
+  const { isSuperadmin, activeGym, activeGymId, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const [rows, setRows] = useState<TeamMember[]>([]);
@@ -49,7 +51,35 @@ export default function TeamPage() {
   const [reinviting, setReinviting] = useState<TeamMember | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'invited'>('all');
 
+  const { user } = useUser();
+  const { startImpersonation } = useImpersonation();
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+
+  async function handleImpersonate(member: TeamMember) {
+    if (!activeGymId || !member.user_id) return;
+    try {
+      const res = await apiFetch<{ id: string; name: string; role: string; gym_id: string }>(
+        `/platform/impersonation/${member.user_id}`,
+        { method: 'POST' },
+      );
+      const authenticatorName =
+        user?.fullName ||
+        [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+        user?.primaryEmailAddress?.emailAddress ||
+        'Super Admin';
+      startImpersonation({
+        effectiveUserId: res.id,
+        effectiveName: res.name,
+        effectiveRole: res.role,
+        gymId: res.gym_id,
+        authenticatorName,
+        startedAt: Date.now(),
+      });
+      router.push(`/${locale}`);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'), 'error');
+    }
+  }
 
   useEffect(() => {
     if (!gymLoading && !isAdmin) {
@@ -241,6 +271,15 @@ export default function TeamPage() {
           >
             {r.status === 'invited' ? t('action_revoke') : t('action_remove')}
           </button>
+          {isSuperadmin && r.status !== 'invited' && (
+            <button
+              onClick={() => handleImpersonate(r)}
+              style={btnSmall('#7c3aed')}
+              title={t('action_impersonate_title')}
+            >
+              {t('action_impersonate')}
+            </button>
+          )}
         </div>
       ),
     },
