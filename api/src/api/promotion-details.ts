@@ -10,7 +10,7 @@ async function verifyPromotion(gymId: string, promotionId: number) {
   return rows.length > 0;
 }
 
-/* ---------- plan targeting (P4.2) ---------- */
+/* ---------- plan targeting ---------- */
 
 promotionDetailsRouter.get('/plans', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -57,7 +57,7 @@ promotionDetailsRouter.put('/plans', requireRole('admin'), async (req, res, next
   } catch (err) { next(err); }
 });
 
-/* ---------- charge benefits (P4.2) ---------- */
+/* ---------- charge benefits ---------- */
 
 promotionDetailsRouter.get('/charge-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -69,6 +69,17 @@ promotionDetailsRouter.get('/charge-benefits', async (req, res) => {
   res.json(rows);
 });
 
+function validateChargeBenefit(actionCode: string, value: any) {
+  const parsed = value != null && value !== '' ? parseFloat(value) : null;
+  if (actionCode === 'waive' && parsed !== null) return 'Waive actions must not carry a value';
+  if (actionCode !== 'waive' && parsed === null) return 'This action requires a value';
+  if (actionCode === 'percentage_discount' && parsed !== null && (parsed < 0 || parsed > 100)) {
+    return 'Percentage must be between 0 and 100';
+  }
+  if (parsed !== null && parsed < 0) return 'Value must be non-negative';
+  return null;
+}
+
 promotionDetailsRouter.post('/charge-benefits', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const promotionId = parseInt((req.params as any).id, 10);
@@ -79,19 +90,10 @@ promotionDetailsRouter.post('/charge-benefits', requireRole('admin'), async (req
   const { rows: actionRows } = await db.query('SELECT code FROM action_types WHERE id = ?', [action_type_id]);
   if (actionRows.length === 0) return res.status(404).json({ error: 'Action type not found' });
   const actionCode = actionRows[0].code;
+  const err = validateChargeBenefit(actionCode, value);
+  if (err) return res.status(400).json({ error: err });
 
   const parsedValue = value != null && value !== '' ? parseFloat(value) : null;
-  if (actionCode === 'waive' && parsedValue !== null) {
-    return res.status(400).json({ error: 'Waive actions must not carry a value' });
-  }
-  if (actionCode !== 'waive' && parsedValue === null) {
-    return res.status(400).json({ error: 'This action requires a value' });
-  }
-  if (actionCode === 'percentage_discount' && parsedValue !== null && (parsedValue < 0 || parsedValue > 100)) {
-    return res.status(400).json({ error: 'Percentage must be between 0 and 100' });
-  }
-  if (parsedValue !== null && parsedValue < 0) return res.status(400).json({ error: 'Value must be non-negative' });
-
   try {
     const row = await insertAndFetch(
       `INSERT INTO promotion_charge_benefits (gym_id, promotion_id, charge_type_id, action_type_id, value)
@@ -101,6 +103,30 @@ promotionDetailsRouter.post('/charge-benefits', requireRole('admin'), async (req
       (id) => [id],
     );
     res.status(201).json(row);
+  } catch (err) { next(err); }
+});
+
+promotionDetailsRouter.put('/charge-benefits/:cbId', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const promotionId = (req.params as any).id;
+  const { cbId } = req.params;
+  const { charge_type_id, action_type_id, value } = req.body;
+  if (!charge_type_id || !action_type_id) return res.status(400).json({ error: 'charge_type_id and action_type_id are required' });
+
+  const { rows: actionRows } = await db.query('SELECT code FROM action_types WHERE id = ?', [action_type_id]);
+  if (actionRows.length === 0) return res.status(404).json({ error: 'Action type not found' });
+  const err = validateChargeBenefit(actionRows[0].code, value);
+  if (err) return res.status(400).json({ error: err });
+
+  const parsedValue = value != null && value !== '' ? parseFloat(value) : null;
+  try {
+    const { rowCount } = await db.query(
+      'UPDATE promotion_charge_benefits SET charge_type_id = ?, action_type_id = ?, value = ? WHERE id = ? AND promotion_id = ? AND gym_id = ?',
+      [charge_type_id, action_type_id, parsedValue, cbId, promotionId, gymId],
+    );
+    if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Charge benefit not found' });
+    const { rows } = await db.query('SELECT * FROM promotion_charge_benefits WHERE id = ?', [cbId]);
+    res.json(rows[0]);
   } catch (err) { next(err); }
 });
 
@@ -115,36 +141,90 @@ promotionDetailsRouter.delete('/charge-benefits/:cbId', requireRole('admin'), as
   res.status(204).send();
 });
 
-/* ---------- period benefits (P4.3) ---------- */
+/* ---------- period benefits ---------- */
 
 promotionDetailsRouter.get('/period-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const promotionId = (req.params as any).id;
   const { rows } = await db.query(
-    'SELECT * FROM promotion_period_benefits WHERE promotion_id = ? AND gym_id = ? ORDER BY required_paid_months ASC',
+    `SELECT ppb.*, mp.name AS membership_plan_name, at.code AS action_code
+     FROM promotion_period_benefits ppb
+     JOIN membership_plans mp ON mp.id = ppb.membership_plan_id
+     JOIN action_types at ON at.id = ppb.action_type_id
+     WHERE ppb.promotion_id = ? AND ppb.gym_id = ?
+     ORDER BY ppb.id ASC`,
     [promotionId, gymId],
   );
   res.json(rows);
 });
 
+function validatePeriodBenefit(actionCode: string, value: any, duration_months: any) {
+  const dur = parseInt(duration_months, 10);
+  if (isNaN(dur) || dur <= 0) return 'duration_months must be a positive integer';
+  const parsed = value != null && value !== '' ? parseFloat(value) : null;
+  if (actionCode === 'waive' && parsed !== null) return 'Waive actions must not carry a value';
+  if (actionCode !== 'waive' && parsed === null) return 'This action requires a value';
+  if (actionCode === 'percentage_discount' && parsed !== null && (parsed < 0 || parsed > 100)) {
+    return 'Percentage must be between 0 and 100';
+  }
+  if (parsed !== null && parsed < 0) return 'Value must be non-negative';
+  return null;
+}
+
 promotionDetailsRouter.post('/period-benefits', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const promotionId = parseInt((req.params as any).id, 10);
-  const { required_paid_months, granted_free_periods } = req.body;
-  const paid = parseInt(required_paid_months, 10);
-  const free = parseInt(granted_free_periods, 10);
-  if (isNaN(paid) || paid <= 0 || isNaN(free) || free <= 0) {
-    return res.status(400).json({ error: 'Both required_paid_months and granted_free_periods must be positive integers' });
+  const { membership_plan_id, action_type_id, value, duration_months } = req.body;
+  if (!membership_plan_id || !action_type_id) {
+    return res.status(400).json({ error: 'membership_plan_id and action_type_id are required' });
   }
   if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
+
+  const { rows: actionRows } = await db.query('SELECT code FROM action_types WHERE id = ?', [action_type_id]);
+  if (actionRows.length === 0) return res.status(404).json({ error: 'Action type not found' });
+  const err = validatePeriodBenefit(actionRows[0].code, value, duration_months);
+  if (err) return res.status(400).json({ error: err });
+
+  const parsedValue = value != null && value !== '' ? parseFloat(value) : null;
+  const dur = parseInt(duration_months, 10);
   try {
     const row = await insertAndFetch(
-      'INSERT INTO promotion_period_benefits (gym_id, promotion_id, required_paid_months, granted_free_periods) VALUES (?, ?, ?, ?)',
-      [gymId, promotionId, paid, free],
-      'SELECT * FROM promotion_period_benefits WHERE id = ?',
+      'INSERT INTO promotion_period_benefits (gym_id, promotion_id, membership_plan_id, action_type_id, value, duration_months) VALUES (?, ?, ?, ?, ?, ?)',
+      [gymId, promotionId, membership_plan_id, action_type_id, parsedValue, dur],
+      'SELECT ppb.*, mp.name AS membership_plan_name, at.code AS action_code FROM promotion_period_benefits ppb JOIN membership_plans mp ON mp.id = ppb.membership_plan_id JOIN action_types at ON at.id = ppb.action_type_id WHERE ppb.id = ?',
       (id) => [id],
     );
     res.status(201).json(row);
+  } catch (err) { next(err); }
+});
+
+promotionDetailsRouter.put('/period-benefits/:pbId', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const promotionId = (req.params as any).id;
+  const { pbId } = req.params;
+  const { membership_plan_id, action_type_id, value, duration_months } = req.body;
+  if (!membership_plan_id || !action_type_id) {
+    return res.status(400).json({ error: 'membership_plan_id and action_type_id are required' });
+  }
+
+  const { rows: actionRows } = await db.query('SELECT code FROM action_types WHERE id = ?', [action_type_id]);
+  if (actionRows.length === 0) return res.status(404).json({ error: 'Action type not found' });
+  const err = validatePeriodBenefit(actionRows[0].code, value, duration_months);
+  if (err) return res.status(400).json({ error: err });
+
+  const parsedValue = value != null && value !== '' ? parseFloat(value) : null;
+  const dur = parseInt(duration_months, 10);
+  try {
+    const { rowCount } = await db.query(
+      'UPDATE promotion_period_benefits SET membership_plan_id = ?, action_type_id = ?, value = ?, duration_months = ? WHERE id = ? AND promotion_id = ? AND gym_id = ?',
+      [membership_plan_id, action_type_id, parsedValue, dur, pbId, promotionId, gymId],
+    );
+    if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Period benefit not found' });
+    const { rows } = await db.query(
+      'SELECT ppb.*, mp.name AS membership_plan_name, at.code AS action_code FROM promotion_period_benefits ppb JOIN membership_plans mp ON mp.id = ppb.membership_plan_id JOIN action_types at ON at.id = ppb.action_type_id WHERE ppb.id = ?',
+      [pbId],
+    );
+    res.json(rows[0]);
   } catch (err) { next(err); }
 });
 
