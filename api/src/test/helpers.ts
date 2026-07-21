@@ -10,6 +10,9 @@ export const TEST_USER_ID = 'test-user-id';
 // Any non-empty string is accepted by the mocked verifyToken
 export const TEST_AUTH_HEADER = 'Bearer test-token';
 
+// Track gym IDs per worker so concurrent test files don't cross-contaminate cleanup.
+const _createdGymIds: string[] = [];
+
 /** Creates a gym and returns its UUID. */
 export async function createTestGym(name = 'Test Gym'): Promise<string> {
   const slug = `test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -18,6 +21,7 @@ export async function createTestGym(name = 'Test Gym'): Promise<string> {
     [name, slug],
   );
   const { rows } = await db.query<{ id: string }>('SELECT id FROM gyms WHERE slug = ?', [slug]);
+  _createdGymIds.push(rows[0].id);
   return rows[0].id;
 }
 
@@ -33,11 +37,10 @@ export async function createTestMembership(
   );
 }
 
-/** Deletes all gyms created by tests and their dependent rows. */
+/** Deletes gyms created by this worker and their dependent rows. */
 export async function cleanupTestGyms() {
-  const { rows } = await db.query<{ id: string }>(`SELECT id FROM gyms WHERE slug LIKE 'test-%'`);
-  if (rows.length === 0) return;
-  const ids = rows.map((r) => r.id);
+  const ids = _createdGymIds.splice(0);
+  if (ids.length === 0) return;
   const marks = ids.map(() => '?').join(',');
   // Delete in FK dependency order to avoid constraint violations.
   await db.query(`DELETE FROM bookings WHERE gym_id IN (${marks})`, ids);
