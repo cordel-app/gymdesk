@@ -53,6 +53,78 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   return { price: Math.round(price * 100) / 100, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };
 }
 
+export async function applyPromotionToMembership(
+  gymId: string,
+  userId: string,
+  source: string,
+  umId: number,
+  promotionId: number,
+): Promise<{ user_membership_id: number; promotion_id: number; final_price: number }> {
+  return db.transaction(async (tx) => {
+    const { rows: umRows } = await tx.query(
+      'SELECT id, member_id, membership_plan_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+      [umId, gymId],
+    );
+    if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
+    const um = umRows[0];
+
+    const { rows: promoRows } = await tx.query(
+      'SELECT id, stackable, status, starts_at, ends_at FROM promotions WHERE id = ? AND gym_id = ?',
+      [promotionId, gymId],
+    );
+    if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
+    const promo = promoRows[0];
+    if (promo.status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
+    const now = new Date();
+    if (new Date(promo.starts_at) > now || new Date(promo.ends_at) < now) {
+      throw Object.assign(new Error('Promotion is outside its active window'), { status: 400 });
+    }
+
+    const { rows: matchRows } = await tx.query(
+      'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
+      [promotionId, um.membership_plan_id, gymId],
+    );
+    if (matchRows.length === 0) {
+      throw Object.assign(new Error("Promotion doesn't target this membership's plan"), { status: 400 });
+    }
+
+    if (!promo.stackable) {
+      const { rows: existing } = await tx.query(
+        "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'",
+        [umId],
+      );
+      if (existing.length > 0) throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
+    }
+
+    try {
+      await tx.query(
+        "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status) VALUES (?, ?, ?, ?, 'applied')",
+        [gymId, umId, promotionId, userId],
+      );
+    } catch (e: any) {
+      if (e.code === 'ER_DUP_ENTRY') throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
+      throw e;
+    }
+
+    const calc = await computeFinalPrice(tx, gymId, umId);
+    if (!calc) throw Object.assign(new Error('Recompute failed'), { status: 500 });
+    const prevFinal = calc.previousFinal;
+    await tx.query('UPDATE user_memberships SET final_price = ? WHERE id = ? AND gym_id = ?', [calc.price, umId, gymId]);
+
+    if (prevFinal !== null && Math.abs(prevFinal - calc.price) > 0.001) {
+      const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
+      const chargeTypeId = ctRows[0]?.id ?? null;
+      await tx.query(
+        `INSERT INTO billing_events
+         (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+         VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, 'Promotion applied')`,
+        [gymId, umId, calc.member_id, chargeTypeId, source, userId, calc.price - prevFinal],
+      );
+    }
+    return { user_membership_id: umId, promotion_id: promotionId, final_price: calc.price };
+  });
+}
+
 membershipPromotionsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const umId = (req.params as any).id;

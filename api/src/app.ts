@@ -47,6 +47,7 @@ import { themesRouter, themesPublicRouter } from './api/themes';
 import { gymThemesRouter } from './api/gym-themes';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { staffRouter } from './api/staff';
+import { paymentsRouter } from './api/payments';
 import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
@@ -161,6 +162,7 @@ app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userC
 app.use('/centers',          requireAuth(), tenantContext, centerContext, centersRouter);
 app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, trainerAvailabilityRouter);
 app.use('/events',           requireAuth(), tenantContext, centerContext, eventsRouter);
+app.use('/payments',         requireAuth(), tenantContext, paymentsRouter);
 
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
