@@ -20,6 +20,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle } from '@/components/ui';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
+// BlockModal and ExerciseModal removed in #130 — editing is now fully inline inside WorkoutTemplateTree.
 
 export interface WorkoutTemplate {
   id: number;
