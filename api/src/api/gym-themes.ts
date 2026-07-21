@@ -56,7 +56,7 @@ function shapeTheme(row: any) {
   };
 }
 
-const SELECT_COLS = 'id, gym_id, name, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at';
+const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at';
 
 // ─── List: base themes + customer themes for this gym ─────────────────────────
 
@@ -126,7 +126,7 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
       if (existingRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
       const current = existingRows[0];
 
-      const { name, tokens, status } = req.body;
+      const { name, description, tokens, status } = req.body;
       const ALLOWED_STATUSES = ['draft', 'active'];
       if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
         return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
@@ -149,11 +149,12 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
 
       await db.query(
         `UPDATE themes SET
-           name    = COALESCE(?, name),
-           status  = COALESCE(?, status),
-           tokens  = ?
+           name        = COALESCE(?, name),
+           description = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
+           status      = COALESCE(?, status),
+           tokens      = ?
          WHERE id = ? AND gym_id = ?`,
-        [name?.trim() ?? null, status ?? null, JSON.stringify(tokensMerged), req.params.id, gymId],
+        [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, JSON.stringify(tokensMerged), req.params.id, gymId],
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
       recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current), next: shapeTheme(rows[0]) });
