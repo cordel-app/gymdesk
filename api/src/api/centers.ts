@@ -52,6 +52,8 @@ centersRouter.get('/', async (req, res) => {
     `SELECT c.*,
             cbm.name AS created_by_name,
             mbm.name AS modified_by_name,
+            ct.name  AS theme_name,
+            gt.name  AS gym_theme_name,
             (SELECT COUNT(*)
                FROM member_centers mc
                JOIN members mem ON mem.id = mc.member_id AND mem.deleted_at IS NULL
@@ -60,6 +62,9 @@ centersRouter.get('/', async (req, res) => {
        FROM centers c
        LEFT JOIN gym_memberships cbm ON cbm.id = c.created_by_membership_id
        LEFT JOIN gym_memberships mbm ON mbm.id = c.modified_by_membership_id
+       LEFT JOIN themes ct ON ct.id = c.theme_id
+       LEFT JOIN gyms g ON g.id = c.gym_id
+       LEFT JOIN themes gt ON gt.id = g.theme_id
       WHERE ${where.join(' AND ')}
       ORDER BY c.name ASC`,
     params,
@@ -78,6 +83,8 @@ centersRouter.get('/:id', async (req, res) => {
             cbm.name AS created_by_name,
             mbm.name AS modified_by_name,
             dbm.name AS deleted_by_name,
+            ct.name  AS theme_name,
+            gt.name  AS gym_theme_name,
             (SELECT COUNT(*)
                FROM member_centers mc
                JOIN members mem ON mem.id = mc.member_id AND mem.deleted_at IS NULL
@@ -87,6 +94,9 @@ centersRouter.get('/:id', async (req, res) => {
        LEFT JOIN gym_memberships cbm ON cbm.id = c.created_by_membership_id
        LEFT JOIN gym_memberships mbm ON mbm.id = c.modified_by_membership_id
        LEFT JOIN gym_memberships dbm ON dbm.id = c.deleted_by_membership_id
+       LEFT JOIN themes ct ON ct.id = c.theme_id
+       LEFT JOIN gyms g ON g.id = c.gym_id
+       LEFT JOIN themes gt ON gt.id = g.theme_id
       WHERE c.id = ? AND c.gym_id = ? AND c.deleted_at IS NULL`,
     [req.params.id, gymId],
   );
