@@ -84,13 +84,17 @@ function parseBlockBody(body: Record<string, unknown>):
 }
 
 function parseExerciseItemBody(body: Record<string, unknown>):
-  | { exercise_id: number; min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null }
+  | { exercise_id: number; min_reps: number | null; max_reps: number | null; sets: number | null;
+      rest_seconds: number | null; tempo: string | null;
+      duration_seconds: number | null; distance_value: number | null; distance_unit: string | null }
   | string
 {
   const exerciseId = Number(body.exercise_id);
   if (!Number.isInteger(exerciseId) || exerciseId <= 0) return 'exercise_id is required';
   const toIntOrNull = (v: unknown) => (v == null || v === '' ? null : Number(v));
+  const toFloatOrNull = (v: unknown) => (v == null || v === '' ? null : parseFloat(String(v)));
   const tempo = body.tempo as string | null | undefined;
+  const distance_unit = body.distance_unit as string | null | undefined;
   return {
     exercise_id: exerciseId,
     min_reps: toIntOrNull(body.min_reps),
@@ -98,6 +102,9 @@ function parseExerciseItemBody(body: Record<string, unknown>):
     sets: toIntOrNull(body.sets),
     rest_seconds: toIntOrNull(body.rest_seconds),
     tempo: tempo?.trim() || null,
+    duration_seconds: toIntOrNull(body.duration_seconds),
+    distance_value: toFloatOrNull(body.distance_value),
+    distance_unit: distance_unit?.trim() || null,
   };
 }
 
@@ -212,8 +219,11 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
               'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                 SELECT JSON_OBJECT(
                     'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
-                    'exercise_name', e.name, 'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
-                    'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo) AS item
+                    'exercise_name', e.name, 'exercise_type', e.exercise_type,
+                    'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
+                    'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo,
+                    'duration_seconds', wte.duration_seconds,
+                    'distance_value', wte.distance_value, 'distance_unit', wte.distance_unit) AS item
                 FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id
                 WHERE wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL
                 ORDER BY wte.position
@@ -335,9 +345,11 @@ workoutTemplatesRouter.post('/:id/duplicate', requireRole('admin', 'coach'), asy
         for (const ex of exercises) {
           await tx.query(
             `INSERT INTO workout_template_exercises
-              (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, newBlockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo],
+              (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+               duration_seconds, distance_value, distance_unit)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, newBlockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+             ex.duration_seconds ?? null, ex.distance_value ?? null, ex.distance_unit ?? null],
           );
         }
       }
@@ -513,6 +525,52 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId', requireRole('admin', 'coach')
   }
 });
 
+workoutTemplatesRouter.post('/:id/blocks/:blockId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id, blockId } = req.params as { id: string; blockId: string };
+  if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
+  try {
+    const { rows: srcRows } = await db.query(
+      'SELECT * FROM workout_template_blocks WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [blockId, gymId],
+    );
+    const src = srcRows[0];
+    const { rows: posRows } = await db.query(
+      'SELECT COALESCE(MAX(position), 0) + 1 AS next_pos FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL',
+      [id],
+    );
+    await db.transaction(async (tx) => {
+      const { insertId: newBlockId } = await tx.query(
+        `INSERT INTO workout_template_blocks
+          (gym_id, workout_template_id, position, name, description, type, result_type,
+           rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, id, posRows[0].next_pos, src.name, src.description, src.type, src.result_type,
+         src.rounds, src.duration_seconds, src.work_seconds, src.rest_seconds, src.is_optional, src.notes],
+      );
+      const { rows: exercises } = await tx.query(
+        'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+        [blockId],
+      );
+      for (const ex of exercises) {
+        await tx.query(
+          `INSERT INTO workout_template_exercises
+            (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+             duration_seconds, distance_value, distance_unit, modified_by_membership_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, newBlockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+           ex.duration_seconds ?? null, ex.distance_value ?? null, ex.distance_unit ?? null, gymMembershipId],
+        );
+      }
+      const { rows: newRows } = await tx.query('SELECT * FROM workout_template_blocks WHERE id = ?', [newBlockId]);
+      recordAudit(req, { action: 'create', entityType: 'workout_template_block', entityId: newBlockId, next: newRows[0] });
+      res.status(201).json(newRows[0]);
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 workoutTemplatesRouter.delete('/:id/blocks/:blockId', requireRole('admin', 'coach'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { id, blockId } = req.params as { id: string; blockId: string };
@@ -575,11 +633,13 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin
     );
     const row = await insertAndFetch(
       `INSERT INTO workout_template_exercises
-        (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+         duration_seconds, distance_value, distance_unit, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
-       parsed.sets, parsed.rest_seconds, parsed.tempo, gymMembershipId],
-      'SELECT wte.*, e.name AS exercise_name FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?',
+       parsed.sets, parsed.rest_seconds, parsed.tempo,
+       parsed.duration_seconds, parsed.distance_value, parsed.distance_unit, gymMembershipId],
+      'SELECT wte.*, e.name AS exercise_name, e.exercise_type FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?',
       (exId) => [exId],
     );
     recordAudit(req, { action: 'create', entityType: 'workout_template_exercise', entityId: row.id, next: row });
@@ -619,18 +679,69 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireRole('
     const { rowCount } = await db.query(
       `UPDATE workout_template_exercises SET
         exercise_id = ?, min_reps = ?, max_reps = ?, sets = ?, rest_seconds = ?, tempo = ?,
+        duration_seconds = ?, distance_value = ?, distance_unit = ?,
         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND workout_template_block_id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [parsed.exercise_id, parsed.min_reps, parsed.max_reps, parsed.sets, parsed.rest_seconds, parsed.tempo, gymMembershipId,
+      [parsed.exercise_id, parsed.min_reps, parsed.max_reps, parsed.sets, parsed.rest_seconds, parsed.tempo,
+       parsed.duration_seconds, parsed.distance_value, parsed.distance_unit, gymMembershipId,
        exId, blockId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
-      'SELECT wte.*, e.name AS exercise_name FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?',
+      'SELECT wte.*, e.name AS exercise_name, e.exercise_type FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?',
       [exId],
     );
     recordAudit(req, { action: 'update', entityType: 'workout_template_exercise', entityId: exId, next: rows[0] });
     res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises/:exId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id, blockId, exId } = req.params as { id: string; blockId: string; exId: string };
+  if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
+  try {
+    const { rows: srcRows } = await db.query(
+      'SELECT * FROM workout_template_exercises WHERE id = ? AND workout_template_block_id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [exId, blockId, gymId],
+    );
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Exercise item not found' });
+    const src = srcRows[0];
+
+    const { rows: blockRows } = await db.query(
+      `SELECT b.type, COUNT(wte.id) AS ex_count
+       FROM workout_template_blocks b
+       LEFT JOIN workout_template_exercises wte ON wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL
+       WHERE b.id = ?
+       GROUP BY b.id`,
+      [blockId],
+    );
+    const maxEx = BLOCK_TYPE_MAX_EXERCISES[blockRows[0].type];
+    if (maxEx !== null && blockRows[0].ex_count >= maxEx) {
+      return res.status(422).json({
+        error: 'MaximumExercisesExceeded',
+        message: `Block type '${blockRows[0].type}' allows a maximum of ${maxEx} exercises.`,
+      });
+    }
+
+    const { rows: posRows } = await db.query(
+      'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL',
+      [blockId],
+    );
+    const row = await insertAndFetch(
+      `INSERT INTO workout_template_exercises
+        (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+         duration_seconds, distance_value, distance_unit, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, blockId, src.exercise_id, posRows[0].next_position, src.min_reps, src.max_reps, src.sets, src.rest_seconds, src.tempo,
+       src.duration_seconds ?? null, src.distance_value ?? null, src.distance_unit ?? null, gymMembershipId],
+      'SELECT wte.*, e.name AS exercise_name, e.exercise_type FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?',
+      (newId) => [newId],
+    );
+    recordAudit(req, { action: 'create', entityType: 'workout_template_exercise', entityId: row.id, next: row });
+    res.status(201).json(row);
   } catch (err) {
     next(err);
   }
