@@ -249,7 +249,7 @@ export default function GymThemesPage() {
         }
       }
       setExpandedId(null);
-      load();
+      await Promise.all([load(), refreshGyms()]);
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
     } finally {

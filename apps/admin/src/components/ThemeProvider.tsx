@@ -15,7 +15,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Cast: tokens shape is validated server-side; falls back to DEFAULT_TOKENS when null.
     applyTokens((activeGym?.theme?.tokens as any) ?? DEFAULT_TOKENS);
-  }, [activeGym?.theme?.id, activeGym?.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGym?.theme?.id, activeGym?.id, activeGym?.theme?.tokens]);
 
   return <>{children}</>;
 }
