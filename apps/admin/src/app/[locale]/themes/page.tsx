@@ -70,7 +70,7 @@ export default function GymThemesPage() {
   const router = useRouter();
   const { getToken } = useAuth();
   const { apiFetch } = useApiClient();
-  const { activeGym, isSuperadmin, loading: gymLoading } = useGym();
+  const { activeGym, isSuperadmin, loading: gymLoading, refreshGyms } = useGym();
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { toast } = useToast();
 
@@ -177,7 +177,7 @@ export default function GymThemesPage() {
     setSettingDefault(true);
     try {
       await apiFetch(`/system/themes/${themeId}/set-default`, { method: 'PUT' });
-      await loadAssignments(themeId);
+      await Promise.all([loadAssignments(themeId), refreshGyms()]);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
