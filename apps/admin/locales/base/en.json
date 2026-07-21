@@ -216,7 +216,9 @@
     "details_owner": "Owner",
     "details_org_default": "Organization Default",
     "details_created_by": "Created By",
-    "details_modified_by": "Modified By"
+    "details_modified_by": "Modified By",
+    "action_set_system_default": "Set as System Default",
+    "toast_system_default_set": "System default updated"
   },
   "system_users": {
     "title": "Superadmins",

@@ -188,7 +188,9 @@
     "details_title": "Detalls del tema",
     "details_close": "Tancar",
     "details_created_at": "Creat el",
-    "details_modified_at": "Darrera modificació"
+    "details_modified_at": "Darrera modificació",
+    "action_set_system_default": "Establir com a predeterminat del sistema",
+    "toast_system_default_set": "Predeterminat del sistema actualitzat"
   },
   "system_users": {
     "title": "Superadministradors",
