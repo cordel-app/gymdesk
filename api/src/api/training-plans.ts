@@ -22,7 +22,6 @@ const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {
   Standard: 1, Superset: 2, Triset: 3,
   GiantSet: null, Circuit: null, EMOM: null, AMRAP: null, Tabata: null,
 };
-const RESULT_TYPES = ['None', 'Time', 'Rounds', 'Repetitions', 'Distance', 'Calories', 'Weight', 'Score'];
 // #67 lifecycle: draft/active/expired/completed/deleted ('inactive' remapped to 'expired' in migration 054)
 // #112: 'completed' added for explicit trainer-initiated plan completion
 const PLAN_STATUSES = ['draft', 'active', 'expired', 'completed', 'deleted'];
@@ -69,7 +68,7 @@ async function blockExists(blockId: string, workoutId: string, gymId: string): P
 }
 
 function parseBlockBody(body: Record<string, unknown>):
-  | { name: string | null; description: string | null; type: string; result_type: string;
+  | { name: string | null; description: string | null; type: string;
       rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
       is_optional: boolean; notes: string | null }
   | string
@@ -77,17 +76,13 @@ function parseBlockBody(body: Record<string, unknown>):
   const name = body.name as string | null | undefined;
   const description = body.description as string | null | undefined;
   const type = body.type as string | undefined;
-  const result_type = body.result_type as string | undefined;
   const notes = body.notes as string | null | undefined;
   if (!type || !BLOCK_TYPES.includes(type)) return `type must be one of: ${BLOCK_TYPES.join(', ')}`;
-  const rt = result_type ?? 'None';
-  if (!RESULT_TYPES.includes(rt)) return `result_type must be one of: ${RESULT_TYPES.join(', ')}`;
   const toIntOrNull = (v: unknown) => (v == null || v === '' ? null : Number(v));
   return {
     name: name?.trim() || null,
     description: description ?? null,
     type,
-    result_type: rt,
     rounds: toIntOrNull(body.rounds),
     duration_seconds: toIntOrNull(body.duration_seconds),
     work_seconds: toIntOrNull(body.work_seconds),
@@ -98,14 +93,19 @@ function parseBlockBody(body: Record<string, unknown>):
 }
 
 function parseExerciseItemBody(body: Record<string, unknown>):
-  | { exercise_id: number; min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null; notes: string | null }
+  | { exercise_id: number; min_reps: number | null; max_reps: number | null; sets: number | null;
+      rest_seconds: number | null; tempo: string | null; notes: string | null;
+      result_type_id: number | null; target_value: number | null; min_value: number | null;
+      max_value: number | null; unit: string | null }
   | string
 {
   const exerciseId = Number(body.exercise_id);
   if (!Number.isInteger(exerciseId) || exerciseId <= 0) return 'exercise_id is required';
   const toIntOrNull = (v: unknown) => (v == null || v === '' ? null : Number(v));
+  const toFloatOrNull = (v: unknown) => (v == null || v === '' ? null : parseFloat(String(v)));
   const tempo = body.tempo as string | null | undefined;
   const notes = body.notes as string | null | undefined;
+  const unit = body.unit as string | null | undefined;
   return {
     exercise_id: exerciseId,
     min_reps: toIntOrNull(body.min_reps),
@@ -114,6 +114,11 @@ function parseExerciseItemBody(body: Record<string, unknown>):
     rest_seconds: toIntOrNull(body.rest_seconds),
     tempo: tempo?.trim() || null,
     notes: notes ?? null,
+    result_type_id: toIntOrNull(body.result_type_id),
+    target_value: toFloatOrNull(body.target_value),
+    min_value: toFloatOrNull(body.min_value),
+    max_value: toFloatOrNull(body.max_value),
+    unit: unit?.trim() || null,
   };
 }
 
@@ -128,15 +133,20 @@ export const PLAN_TREE_SELECT = `
           'blocks', (SELECT JSON_ARRAYAGG(item) FROM (
             SELECT JSON_OBJECT(
                 'id', b.id, 'position', b.position, 'name', b.name, 'description', b.description,
-                'type', b.type, 'result_type', b.result_type, 'rounds', b.rounds,
+                'type', b.type, 'rounds', b.rounds,
                 'duration_seconds', b.duration_seconds, 'work_seconds', b.work_seconds, 'rest_seconds', b.rest_seconds,
                 'is_optional', b.is_optional, 'notes', b.notes,
                 'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                   SELECT JSON_OBJECT(
                       'id', we.id, 'position', we.position, 'exercise_id', we.exercise_id, 'exercise_name', e.name,
                       'min_reps', we.min_reps, 'max_reps', we.max_reps, 'sets', we.sets,
-                      'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes) AS item
-                  FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id
+                      'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes,
+                      'result_type_id', we.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,
+                      'target_value', we.target_value, 'min_value', we.min_value, 'max_value', we.max_value,
+                      'unit', we.unit) AS item
+                  FROM workout_exercises we
+                  JOIN exercises e ON e.id = we.exercise_id
+                  LEFT JOIN result_types rt ON rt.id = we.result_type_id
                   WHERE we.workout_block_id = b.id AND we.deleted_at IS NULL
                   ORDER BY we.position
                 ) t3)
@@ -310,10 +320,10 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireRole('adm
     );
     const row = await insertAndFetch(
       `INSERT INTO workout_blocks
-        (gym_id, workout_id, position, name, description, type, result_type,
+        (gym_id, workout_id, position, name, description, type,
          rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, workoutId, posRows[0].next_position, parsed.name, parsed.description, parsed.type, parsed.result_type,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, workoutId, posRows[0].next_position, parsed.name, parsed.description, parsed.type,
        parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes,
        gymMembershipId],
       'SELECT * FROM workout_blocks WHERE id = ?',
@@ -353,11 +363,11 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId', requireR
   try {
     const { rowCount } = await db.query(
       `UPDATE workout_blocks SET
-        name = ?, description = ?, type = ?, result_type = ?, rounds = ?, duration_seconds = ?,
+        name = ?, description = ?, type = ?, rounds = ?, duration_seconds = ?,
         work_seconds = ?, rest_seconds = ?, is_optional = ?, notes = ?,
         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND workout_id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [parsed.name, parsed.description, parsed.type, parsed.result_type, parsed.rounds, parsed.duration_seconds,
+      [parsed.name, parsed.description, parsed.type, parsed.rounds, parsed.duration_seconds,
        parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes, gymMembershipId,
        blockId, workoutId, gymId],
     );
@@ -414,10 +424,12 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     );
     const row = await insertAndFetch(
       `INSERT INTO workout_exercises
-        (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+         result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
-       parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes, gymMembershipId],
+       parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes,
+       parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
       'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
       (id) => [id],
     );
@@ -458,9 +470,11 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     const { rowCount } = await db.query(
       `UPDATE workout_exercises SET
         exercise_id = ?, min_reps = ?, max_reps = ?, sets = ?, rest_seconds = ?, tempo = ?, notes = ?,
+        result_type_id = ?, target_value = ?, min_value = ?, max_value = ?, unit = ?,
         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND workout_block_id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [parsed.exercise_id, parsed.min_reps, parsed.max_reps, parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes,
+       parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit,
        gymMembershipId, exId, blockId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
@@ -643,17 +657,19 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/duplicate', requireRole('
       for (const block of blockRows) {
         const { insertId: newBlockId } = await tx.query(
           `INSERT INTO workout_blocks
-            (gym_id, workout_id, position, name, description, type, result_type,
+            (gym_id, workout_id, position, name, description, type,
              rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, copyId, block.position, block.name, block.description, block.type, block.result_type,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, copyId, block.position, block.name, block.description, block.type,
            block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes,
            gymMembershipId],
         );
         await tx.query(
           `INSERT INTO workout_exercises
-            (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
-           SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, ?
+            (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+             result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
+           SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+             result_type_id, target_value, min_value, max_value, unit, ?
            FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL`,
           [newBlockId, gymMembershipId, block.id],
         );
@@ -689,17 +705,19 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate
       );
       const { insertId: copyId } = await tx.query(
         `INSERT INTO workout_blocks
-          (gym_id, workout_id, position, name, description, type, result_type,
+          (gym_id, workout_id, position, name, description, type,
            rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, workoutId, posRows[0].next_position, copyName(source.name), source.description, source.type, source.result_type,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, workoutId, posRows[0].next_position, copyName(source.name), source.description, source.type,
          source.rounds, source.duration_seconds, source.work_seconds, source.rest_seconds, source.is_optional, source.notes,
          gymMembershipId],
       );
       await tx.query(
         `INSERT INTO workout_exercises
-          (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
-         SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, ?
+          (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+           result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
+         SELECT gym_id, ?, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+           result_type_id, target_value, min_value, max_value, unit, ?
          FROM workout_exercises WHERE workout_block_id = ? AND deleted_at IS NULL`,
         [copyId, gymMembershipId, blockId],
       );
@@ -771,19 +789,22 @@ trainingPlansRouter.post('/:planId/duplicate', requireRole('admin', 'coach'), as
         for (const b of w.blocks ?? []) {
           const { insertId: bId } = await tx.query(
             `INSERT INTO workout_blocks
-              (gym_id, workout_id, position, name, description, type, result_type,
+              (gym_id, workout_id, position, name, description, type,
                rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, wId, b.position, b.name, b.description, b.type, b.result_type,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, wId, b.position, b.name, b.description, b.type,
              b.rounds, b.duration_seconds, b.work_seconds, b.rest_seconds, b.is_optional, b.notes, gymMembershipId],
           );
           for (const ex of b.exercises ?? []) {
             await tx.query(
               `INSERT INTO workout_exercises
-                (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes, modified_by_membership_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, notes,
+                 result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [gymId, bId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets,
-               ex.rest_seconds, ex.tempo, ex.notes, gymMembershipId],
+               ex.rest_seconds, ex.tempo, ex.notes,
+               ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null,
+               gymMembershipId],
             );
           }
         }

@@ -27,6 +27,7 @@ import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
 import { musclesRouter, exercisesRouter } from './api/exercises';
+import { resultTypesRouter } from './api/result-types';
 import { workoutTemplatesRouter } from './api/workout-templates';
 import { trainingPlanTemplatesRouter } from './api/training-plan-templates';
 import { trainingPlansRouter } from './api/training-plans';
@@ -140,6 +141,7 @@ app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, membershipPromotionsRouter);
 app.use('/muscles',          requireAuth(), tenantContext, musclesRouter);
 app.use('/exercises',        requireAuth(), tenantContext, exercisesRouter);
+app.use('/result-types',     requireAuth(), tenantContext, resultTypesRouter);
 app.use('/workout-templates', requireAuth(), tenantContext, workoutTemplatesRouter);
 app.use('/training-plan-templates', requireAuth(), tenantContext, trainingPlanTemplatesRouter);
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, nutritionPlanTemplatesRouter);

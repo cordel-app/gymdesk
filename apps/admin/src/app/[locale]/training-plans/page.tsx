@@ -34,7 +34,7 @@ interface Exercise {
 }
 interface Block {
   id: number; position: number; name: string | null; type: string;
-  result_type: string; rounds: number | null; exercises: Exercise[] | null;
+  rounds: number | null; exercises: Exercise[] | null;
 }
 interface Workout {
   id: number; position: number; name: string; description: string | null;

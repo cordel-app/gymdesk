@@ -639,6 +639,7 @@
     "label_sets_default": "Series por defecto",
     "label_rest_default_seconds": "Descanso por defecto (segundos)",
     "label_notes_default": "Notas por defecto",
+    "label_result_types": "Tipos de resultado permitidos",
     "label_muscles": "Músculos",
     "label_status": "Estado",
     "role_principal": "Principal",
@@ -661,6 +662,17 @@
     "glutes": "Glúteos",
     "calves": "Gemelos",
     "core": "Core"
+  },
+  "result_types": {
+    "repetitions": "Repeticiones",
+    "weight": "Peso",
+    "distance": "Distancia",
+    "duration": "Duración",
+    "pace": "Ritmo",
+    "speed": "Velocidad",
+    "calories": "Calorías",
+    "rpe": "RPE",
+    "rest_time": "Tiempo de descanso"
   },
   "dependencies": {
     "question": "¿Quieres continuar?",
@@ -931,6 +943,8 @@
     "col_max_reps": "Reps máx.",
     "col_reps": "Reps",
     "col_sets": "Series",
+    "col_target": "Objetivo",
+    "col_unit": "Unidad",
     "col_rest_seconds": "Descanso (s)",
     "col_rest_min": "Descanso (min)",
     "col_duration": "Duración (seg)",
