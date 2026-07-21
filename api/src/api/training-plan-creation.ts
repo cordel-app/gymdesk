@@ -68,10 +68,10 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
       for (const block of blockRows) {
         const { insertId: blockId } = await tx.query(
           `INSERT INTO workout_blocks
-            (gym_id, workout_id, position, name, description, type, result_type,
+            (gym_id, workout_id, position, name, description, type,
              rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, workoutId, block.position, block.name, block.description, block.type, block.result_type,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, workoutId, block.position, block.name, block.description, block.type,
            block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes,
            gymMembershipId],
         );
@@ -82,9 +82,12 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
         for (const ex of exRows) {
           await tx.query(
             `INSERT INTO workout_exercises
-              (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo, modified_by_membership_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, blockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo, gymMembershipId],
+              (gym_id, workout_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+               result_type_id, target_value, min_value, max_value, unit, modified_by_membership_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, blockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+             ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null,
+             gymMembershipId],
           );
         }
       }

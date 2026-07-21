@@ -43,7 +43,11 @@ musclesRouter.get('/', (_req, res) => {
 const SELECT = `
   SELECT e.*,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
-     FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles
+     FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
+    (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
+     FROM exercise_allowed_result_types eart
+     JOIN result_types rt ON rt.id = eart.result_type_id
+     WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
   FROM exercises e
 `;
 
@@ -61,6 +65,16 @@ function parseMuscles(input: unknown): { key: string; role: 'principal' | 'secon
     parsed.push({ key, role: m.role === 'secondary' ? 'secondary' : 'principal' });
   }
   return parsed;
+}
+
+async function replaceAllowedResultTypes(tx: Tx, exerciseId: number | string, ids: number[]) {
+  await tx.query('DELETE FROM exercise_allowed_result_types WHERE exercise_id = ?', [exerciseId]);
+  for (const rtId of ids) {
+    await tx.query(
+      'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
+      [exerciseId, rtId],
+    );
+  }
 }
 
 async function replaceMuscles(tx: Tx, gymId: string, exerciseId: number | string, muscles: { key: string; role: string }[]) {
@@ -127,6 +141,8 @@ exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) 
   }
   const muscles = parseMuscles(req.body.muscles);
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
+  const allowedResultTypeIds: number[] | undefined =
+    Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
   try {
     if (await nameTaken(gymId, name.trim())) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
@@ -142,6 +158,7 @@ exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) 
          sets_default ?? null, notes_default ?? null, status ?? 'active'],
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
+      if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, insertId, allowedResultTypeIds);
       return insertId;
     });
     const { rows } = await db.query(`${SELECT} WHERE e.id = ?`, [insertId]);
@@ -166,6 +183,8 @@ exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next
   }
   const muscles = parseMuscles(req.body.muscles);
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
+  const allowedResultTypeIds: number[] | undefined =
+    Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
   try {
     if (name?.trim() && await nameTaken(gymId, name.trim(), id)) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
@@ -200,6 +219,7 @@ exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next
       );
       if (rowCount === 0) throw Object.assign(new Error('Exercise not found'), { status: 404 });
       if (muscles) await replaceMuscles(tx, gymId, id, muscles);
+      if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, id, allowedResultTypeIds);
     });
     const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
     recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: rows[0] });

@@ -10,7 +10,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { HierBlock, HierExercise } from './summaries';
-import { BLOCK_TYPES, RESULT_TYPES, isBlockFieldVisible, BLOCK_TYPE_MAX_EXERCISES } from './blockFieldConfig';
+import { BLOCK_TYPES, isBlockFieldVisible, BLOCK_TYPE_MAX_EXERCISES } from './blockFieldConfig';
 
 /* Shape returned by GET /workout-templates/:id */
 export interface WtHierarchy {
@@ -44,7 +44,7 @@ export function TemplateDropTarget({ templateId, children }: { templateId: numbe
 
 /* ---- Exercise option (for the combobox) ---- */
 interface ExerciseOption {
-  id: number; name: string; exercise_type: 'reps' | 'time' | 'distance';
+  id: number; name: string;
   min_reps_default: number | null; max_reps_default: number | null;
   sets_default: number | null; rest_default_seconds: number | null;
 }
@@ -259,7 +259,7 @@ export function WorkoutTemplateTree({ templateId, hierarchy, canWrite, onChanged
     try {
       await apiFetch(`/workout-templates/${templateId}/blocks`, {
         method: 'POST',
-        body: JSON.stringify({ type: 'Standard', result_type: 'None' }),
+        body: JSON.stringify({ type: 'Standard' }),
       });
       await onChanged();
     } catch (err: any) {
@@ -392,7 +392,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
         method: 'PUT',
         body: JSON.stringify({
           name: block.name, description: block.description,
-          type: block.type, result_type: block.result_type,
+          type: block.type,
           rounds: block.rounds, duration_seconds: block.duration_seconds,
           work_seconds: block.work_seconds, rest_seconds: block.rest_seconds,
           is_optional: block.is_optional, notes: block.notes,
@@ -590,7 +590,8 @@ function ExerciseTable({ templateId, block, canWrite, exercises, atLimit, onDele
             {canWrite && <th style={thStyle} />}
             <th style={{ ...thStyle, minWidth: 180 }}>{t('block_exercises.col_exercise')}</th>
             <th style={{ ...thStyle, width: 64 }}>{t('block_exercises.col_sets')}</th>
-            <th style={{ ...thStyle, width: 90 }}>{t('block_exercises.col_reps')}</th>
+            <th style={{ ...thStyle, width: 90 }}>{t('block_exercises.col_target')}</th>
+            <th style={{ ...thStyle, width: 56 }}>{t('block_exercises.col_unit')}</th>
             <th style={{ ...thStyle, width: 80 }}>{t('block_exercises.col_rest_min')}</th>
             {canWrite && <th style={thStyle} />}
           </tr>
@@ -646,7 +647,7 @@ function PendingExerciseRow({ exercises, placeholder, onCommit, onCancel }: {
           onChange={onCommit}
         />
       </td>
-      <td style={tdStyle} colSpan={3}>
+      <td style={tdStyle} colSpan={4}>
         <button onClick={onCancel} style={cancelBtnStyle}>✕</button>
       </td>
     </tr>
@@ -671,25 +672,22 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
     id: exerciseDragId(templateId, block.id, exercise.id),
   });
 
-  const exType = exercise.exercise_type ?? 'reps';
+  const slug = exercise.result_type_slug;
   const [exerciseId, setExerciseId] = useState(exercise.exercise_id);
   const [sets, setSets] = useState(exercise.sets != null ? String(exercise.sets) : '');
   const [minReps, setMinReps] = useState(exercise.min_reps != null ? String(exercise.min_reps) : '');
   const [maxReps, setMaxReps] = useState(exercise.max_reps != null ? String(exercise.max_reps) : '');
   const [restMin, setRestMin] = useState(exercise.rest_seconds != null ? String(exercise.rest_seconds / 60) : '');
-  const [durationSec, setDurationSec] = useState(exercise.duration_seconds != null ? String(exercise.duration_seconds) : '');
-  const [distanceValue, setDistanceValue] = useState(exercise.distance_value != null ? String(exercise.distance_value) : '');
-  const [distanceUnit, setDistanceUnit] = useState(exercise.distance_unit ?? 'km');
+  const [targetValue, setTargetValue] = useState(exercise.target_value != null ? String(exercise.target_value) : '');
+  const [unit, setUnit] = useState(exercise.unit ?? '');
 
-  // Sync from parent on external refresh
   useEffect(() => { setExerciseId(exercise.exercise_id); }, [exercise.exercise_id]);
   useEffect(() => { setSets(exercise.sets != null ? String(exercise.sets) : ''); }, [exercise.sets]);
   useEffect(() => { setMinReps(exercise.min_reps != null ? String(exercise.min_reps) : ''); }, [exercise.min_reps]);
   useEffect(() => { setMaxReps(exercise.max_reps != null ? String(exercise.max_reps) : ''); }, [exercise.max_reps]);
   useEffect(() => { setRestMin(exercise.rest_seconds != null ? String(exercise.rest_seconds / 60) : ''); }, [exercise.rest_seconds]);
-  useEffect(() => { setDurationSec(exercise.duration_seconds != null ? String(exercise.duration_seconds) : ''); }, [exercise.duration_seconds]);
-  useEffect(() => { setDistanceValue(exercise.distance_value != null ? String(exercise.distance_value) : ''); }, [exercise.distance_value]);
-  useEffect(() => { setDistanceUnit(exercise.distance_unit ?? 'km'); }, [exercise.distance_unit]);
+  useEffect(() => { setTargetValue(exercise.target_value != null ? String(exercise.target_value) : ''); }, [exercise.target_value]);
+  useEffect(() => { setUnit(exercise.unit ?? ''); }, [exercise.unit]);
 
   const buildBody = useCallback((overrides: Record<string, unknown> = {}) => ({
     exercise_id: exerciseId,
@@ -697,12 +695,12 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
     min_reps: minReps ? parseInt(minReps, 10) : null,
     max_reps: maxReps ? parseInt(maxReps, 10) : null,
     rest_seconds: restMin ? Math.round(parseFloat(restMin) * 60) : null,
-    duration_seconds: durationSec ? parseInt(durationSec, 10) : null,
-    distance_value: distanceValue ? parseFloat(distanceValue) : null,
-    distance_unit: distanceUnit || null,
+    result_type_id: exercise.result_type_id ?? null,
+    target_value: targetValue ? parseFloat(targetValue) : null,
+    unit: unit || null,
     tempo: exercise.tempo,
     ...overrides,
-  }), [exerciseId, sets, minReps, maxReps, restMin, durationSec, distanceValue, distanceUnit, exercise.tempo]);
+  }), [exerciseId, sets, minReps, maxReps, restMin, exercise.result_type_id, targetValue, unit, exercise.tempo]);
 
   async function persist(body: Record<string, unknown>) {
     try {
@@ -720,9 +718,8 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
   function handleBlurMinReps() { persist(buildBody({ min_reps: minReps ? parseInt(minReps, 10) : null })); }
   function handleBlurMaxReps() { persist(buildBody({ max_reps: maxReps ? parseInt(maxReps, 10) : null })); }
   function handleBlurRest() { persist(buildBody({ rest_seconds: restMin ? Math.round(parseFloat(restMin) * 60) : null })); }
-  function handleBlurDuration() { persist(buildBody({ duration_seconds: durationSec ? parseInt(durationSec, 10) : null })); }
-  function handleBlurDistance() { persist(buildBody({ distance_value: distanceValue ? parseFloat(distanceValue) : null })); }
-  function handleBlurUnit() { persist(buildBody({ distance_unit: distanceUnit || null })); }
+  function handleBlurTarget() { persist(buildBody({ target_value: targetValue ? parseFloat(targetValue) : null })); }
+  function handleBlurUnit() { persist(buildBody({ unit: unit || null })); }
 
   function handleSelectExercise(opt: ExerciseOption) {
     setExerciseId(opt.id);
@@ -740,9 +737,9 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
       min_reps: newMin ? parseInt(newMin, 10) : null,
       max_reps: newMax ? parseInt(newMax, 10) : null,
       rest_seconds: newRest ? Math.round(parseFloat(newRest) * 60) : null,
-      duration_seconds: durationSec ? parseInt(durationSec, 10) : null,
-      distance_value: distanceValue ? parseFloat(distanceValue) : null,
-      distance_unit: distanceUnit || null,
+      result_type_id: exercise.result_type_id ?? null,
+      target_value: targetValue ? parseFloat(targetValue) : null,
+      unit: unit || null,
       tempo: exercise.tempo,
     });
   }
@@ -795,39 +792,35 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
         )}
       </td>
 
-      {/* Type-adaptive parameter columns */}
-      {exType === 'time' ? (
-        <>
-          <td style={tdStyle}>{numInput(sets, setSets, handleBlurSets)}</td>
-          <td style={tdStyle}>{numInput(durationSec, setDurationSec, handleBlurDuration, 72)}</td>
-        </>
-      ) : exType === 'distance' ? (
-        <>
-          <td style={tdStyle}>{numInput(distanceValue, setDistanceValue, handleBlurDistance, 72)}</td>
-          <td style={tdStyle}>
-            {canWrite ? (
-              <input
-                value={distanceUnit}
-                onChange={(e) => setDistanceUnit(e.target.value)}
-                onBlur={handleBlurUnit}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                style={{ ...cellInput, width: 48 }}
-              />
-            ) : <span style={{ fontSize: 13 }}>{exercise.distance_unit}</span>}
-          </td>
-        </>
+      {/* Sets */}
+      <td style={tdStyle}>{numInput(sets, setSets, handleBlurSets)}</td>
+
+      {/* Target value: reps range for rep-based types, numeric value otherwise */}
+      {slug === 'repetitions' || slug === 'weight' || slug == null ? (
+        <td style={tdStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            {numInput(minReps, setMinReps, handleBlurMinReps, 44)}
+            <span style={{ color: '#aaa', fontSize: 12 }}>–</span>
+            {numInput(maxReps, setMaxReps, handleBlurMaxReps, 44)}
+          </div>
+        </td>
       ) : (
-        <>
-          <td style={tdStyle}>{numInput(sets, setSets, handleBlurSets)}</td>
-          <td style={tdStyle}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-              {numInput(minReps, setMinReps, handleBlurMinReps, 44)}
-              <span style={{ color: '#aaa', fontSize: 12 }}>–</span>
-              {numInput(maxReps, setMaxReps, handleBlurMaxReps, 44)}
-            </div>
-          </td>
-        </>
+        <td style={tdStyle}>{numInput(targetValue, setTargetValue, handleBlurTarget, 72)}</td>
       )}
+
+      {/* Unit */}
+      <td style={tdStyle}>
+        {canWrite ? (
+          <input
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            onBlur={handleBlurUnit}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            style={{ ...cellInput, width: 48 }}
+            placeholder="—"
+          />
+        ) : <span style={{ fontSize: 13 }}>{exercise.unit ?? '—'}</span>}
+      </td>
 
       {/* Rest (minutes) */}
       <td style={tdStyle}>

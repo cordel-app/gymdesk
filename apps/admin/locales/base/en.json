@@ -646,6 +646,7 @@
     "label_sets_default": "Default sets",
     "label_rest_default_seconds": "Default rest (seconds)",
     "label_notes_default": "Default notes",
+    "label_result_types": "Allowed Result Types",
     "label_muscles": "Muscles",
     "label_status": "Status",
     "role_principal": "Primary",
@@ -668,6 +669,17 @@
     "glutes": "Glutes",
     "calves": "Calves",
     "core": "Core"
+  },
+  "result_types": {
+    "repetitions": "Repetitions",
+    "weight": "Weight",
+    "distance": "Distance",
+    "duration": "Duration",
+    "pace": "Pace",
+    "speed": "Speed",
+    "calories": "Calories",
+    "rpe": "RPE",
+    "rest_time": "Rest Time"
   },
   "dependencies": {
     "question": "Do you want to continue?",
@@ -938,6 +950,8 @@
     "col_max_reps": "Max reps",
     "col_reps": "Reps",
     "col_sets": "Sets",
+    "col_target": "Target",
+    "col_unit": "Unit",
     "col_rest_seconds": "Rest (s)",
     "col_rest_min": "Rest (min)",
     "col_duration": "Duration (sec)",

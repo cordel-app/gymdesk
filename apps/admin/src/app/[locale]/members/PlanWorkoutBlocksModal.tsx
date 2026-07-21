@@ -6,18 +6,18 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
-import { BLOCK_TYPES, RESULT_TYPES } from '../workout-templates/blockFieldConfig';
+import { BLOCK_TYPES } from '../workout-templates/blockFieldConfig';
 import { isBlockFieldVisible } from '../workout-templates/blockFieldConfig';
 import { PlanBlockExercisesModal } from './PlanBlockExercisesModal';
 
 interface Block {
-  id: number; position: number; name: string | null; type: string; result_type: string;
+  id: number; position: number; name: string | null; type: string;
   rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
   is_optional: boolean; notes: string | null;
 }
 
 const emptyForm = {
-  name: '', description: '', type: 'Standard', result_type: 'None',
+  name: '', description: '', type: 'Standard',
   rounds: '', duration_seconds: '', work_seconds: '', rest_seconds: '', is_optional: false, notes: '',
 };
 
@@ -54,7 +54,7 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
   function startEdit(b: Block) {
     setEditingId(b.id);
     setForm({
-      name: b.name ?? '', description: '', type: b.type, result_type: b.result_type,
+      name: b.name ?? '', description: '', type: b.type,
       rounds: b.rounds != null ? String(b.rounds) : '', duration_seconds: b.duration_seconds != null ? String(b.duration_seconds) : '',
       work_seconds: b.work_seconds != null ? String(b.work_seconds) : '', rest_seconds: b.rest_seconds != null ? String(b.rest_seconds) : '',
       is_optional: b.is_optional, notes: b.notes ?? '',
@@ -66,7 +66,7 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
     setSaving(true); setError(null);
     const body = {
       name: form.name.trim() || null, description: form.description.trim() || null,
-      type: form.type, result_type: form.result_type,
+      type: form.type,
       rounds: form.rounds ? parseInt(form.rounds, 10) : null,
       duration_seconds: form.duration_seconds ? parseInt(form.duration_seconds, 10) : null,
       work_seconds: form.work_seconds ? parseInt(form.work_seconds, 10) : null,
@@ -112,7 +112,6 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
               <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee' }}>
                 <th style={th}>{t('workout_template_blocks.col_position')}</th>
                 <th style={th}>{t('workout_template_blocks.col_type')}</th>
-                <th style={th}>{t('workout_template_blocks.col_result_type')}</th>
                 <th style={{ ...th, width: 260 }} />
               </tr>
             </thead>
@@ -121,7 +120,6 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
                 <tr key={b.id} style={{ borderBottom: '1px solid #f4f4f4' }}>
                   <td style={td}>{b.position}</td>
                   <td style={td}>{b.name ? `${b.name} (${t(`workout_template_blocks.type_${b.type.toLowerCase()}`)})` : t(`workout_template_blocks.type_${b.type.toLowerCase()}`)}</td>
-                  <td style={td}>{t(`workout_template_blocks.result_type_${b.result_type.toLowerCase()}`)}</td>
                   <td style={{ ...td, display: 'flex', gap: 6 }}>
                     <button onClick={() => setExercisesFor(b)} style={btnSmall('#1e7e40')}>{t('workout_template_blocks.exercises')}</button>
                     <button onClick={() => move(i, -1)} style={btnSmall('#888')} disabled={i === 0}>↑</button>
@@ -148,13 +146,6 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
                 {BLOCK_TYPES.map((ty) => <option key={ty} value={ty}>{t(`workout_template_blocks.type_${ty.toLowerCase()}`)}</option>)}
               </select>
             </Field>
-            {isBlockFieldVisible(form.type, 'result_type') && (
-              <Field label={t('workout_template_blocks.col_result_type')}>
-                <select value={form.result_type} onChange={(e) => setForm({ ...form, result_type: e.target.value })} style={input}>
-                  {RESULT_TYPES.map((rt) => <option key={rt} value={rt}>{t(`workout_template_blocks.result_type_${rt.toLowerCase()}`)}</option>)}
-                </select>
-              </Field>
-            )}
             {isBlockFieldVisible(form.type, 'rounds') && (
               <Field label={t('workout_template_blocks.col_rounds')}>
                 <input type="number" min="0" value={form.rounds} onChange={(e) => setForm({ ...form, rounds: e.target.value })} style={input} />

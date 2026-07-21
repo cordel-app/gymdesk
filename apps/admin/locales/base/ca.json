@@ -639,6 +639,7 @@
     "label_sets_default": "Sèries per defecte",
     "label_rest_default_seconds": "Descans per defecte (segons)",
     "label_notes_default": "Notes per defecte",
+    "label_result_types": "Tipus de resultat permesos",
     "label_muscles": "Músculs",
     "label_status": "Estat",
     "role_principal": "Principal",
@@ -661,6 +662,17 @@
     "glutes": "Glutis",
     "calves": "Bessons",
     "core": "Core"
+  },
+  "result_types": {
+    "repetitions": "Repeticions",
+    "weight": "Pes",
+    "distance": "Distància",
+    "duration": "Durada",
+    "pace": "Ritme",
+    "speed": "Velocitat",
+    "calories": "Calories",
+    "rpe": "RPE",
+    "rest_time": "Temps de descans"
   },
   "dependencies": {
     "question": "Vols continuar?",
@@ -931,6 +943,8 @@
     "col_max_reps": "Reps màx.",
     "col_reps": "Reps",
     "col_sets": "Sèries",
+    "col_target": "Objectiu",
+    "col_unit": "Unitat",
     "col_rest_seconds": "Descans (s)",
     "col_rest_min": "Descans (min)",
     "col_duration": "Durada (seg)",

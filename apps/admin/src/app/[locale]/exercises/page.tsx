@@ -15,6 +15,7 @@ import { btnStyle, btnSmall } from '@/components/ui';
 
 type MuscleRole = 'principal' | 'secondary';
 interface ExerciseMuscle { key: string; role: MuscleRole }
+interface ResultType { id: number; name: string; slug: string }
 interface Exercise {
   id: number; name: string; description: string | null;
   video_url: string | null; image_url: string | null;
@@ -22,6 +23,7 @@ interface Exercise {
   sets_default: number | null; rest_default_seconds: number | null; notes_default: string | null;
   status: 'active' | 'inactive';
   muscles: ExerciseMuscle[] | null;
+  allowed_result_types: ResultType[] | null;
 }
 
 const STATUSES = ['active', 'inactive'];
@@ -42,6 +44,8 @@ export default function ExercisesPage() {
 
   const [rows, setRows] = useState<Exercise[]>([]);
   const [muscleKeys, setMuscleKeys] = useState<string[]>([]);
+  const [resultTypes, setResultTypes] = useState<ResultType[]>([]);
+  const [selectedResultTypeIds, setSelectedResultTypeIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Exercise | null>(null);
@@ -69,11 +73,12 @@ export default function ExercisesPage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [ex, mu] = await Promise.all([
+      const [ex, mu, rt] = await Promise.all([
         apiFetch<Exercise[]>('/exercises'),
         apiFetch<{ key: string }[]>('/muscles'),
+        apiFetch<ResultType[]>('/result-types'),
       ]);
-      setRows(ex); setMuscleKeys(mu.map((m) => m.key));
+      setRows(ex); setMuscleKeys(mu.map((m) => m.key)); setResultTypes(rt);
     } catch (err: any) { toast(err.message ?? t('exercises.error_generic')); }
     finally { setLoading(false); }
   }
@@ -90,7 +95,7 @@ export default function ExercisesPage() {
   }
 
   function openAdd() {
-    setEditing(null); setForm(emptyForm); setSelectedMuscles(new Map()); setError(null); setModalOpen(true);
+    setEditing(null); setForm(emptyForm); setSelectedMuscles(new Map()); setSelectedResultTypeIds(new Set()); setError(null); setModalOpen(true);
   }
   function openEdit(e: Exercise) {
     setEditing(e);
@@ -107,6 +112,7 @@ export default function ExercisesPage() {
     const map = new Map<string, MuscleRole>();
     for (const m of (e.muscles ?? [])) map.set(m.key, m.role);
     setSelectedMuscles(map);
+    setSelectedResultTypeIds(new Set((e.allowed_result_types ?? []).map((rt) => rt.id)));
     setError(null); setModalOpen(true);
   }
 
@@ -154,6 +160,7 @@ export default function ExercisesPage() {
       notes_default: form.notes_default.trim() || null,
       status: form.status,
       muscles: Array.from(selectedMuscles.entries()).map(([key, role]) => ({ key, role })),
+      allowed_result_type_ids: Array.from(selectedResultTypeIds),
     };
     try {
       if (editing) await apiFetch(`/exercises/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -238,6 +245,21 @@ export default function ExercisesPage() {
         <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={selectStyle}>
           {STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
         </select>
+
+        <FormLabel>{t('exercises.label_result_types')}</FormLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+          {resultTypes.map((rt) => (
+            <label key={rt.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 14, cursor: 'pointer' }}>
+              <input type="checkbox" checked={selectedResultTypeIds.has(rt.id)}
+                     onChange={(e) => {
+                       const next = new Set(selectedResultTypeIds);
+                       if (e.target.checked) next.add(rt.id); else next.delete(rt.id);
+                       setSelectedResultTypeIds(next);
+                     }} />
+              {t(`result_types.${rt.slug}`)}
+            </label>
+          ))}
+        </div>
 
         <FormLabel>{t('exercises.label_muscles')}</FormLabel>
         <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
