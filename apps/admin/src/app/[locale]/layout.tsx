@@ -30,7 +30,7 @@ export default async function LocaleLayout({
   return (
     <ClerkProvider localization={localization}>
       <html lang={params.locale}>
-        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: '#f5f5f5', fontSize: 16 }}>
+        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
             <ToastProvider>
               <ImpersonationProvider>
