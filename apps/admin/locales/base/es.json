@@ -29,12 +29,15 @@
       "organization": "Organización",
       "training": "Entrenamiento",
       "nutrition": "Nutrición",
+      "payments": "Pagos",
       "financials": "Finanzas",
       "system": "Sistema",
       "cordel": "Cordel"
     },
     "centers": "Centros",
     "events": "Eventos",
+    "transactions": "Transacciones",
+    "payment_providers": "Proveedores de Pago",
     "activity_types": "Tipos de actividad",
     "spaces": "Espacios"
   },

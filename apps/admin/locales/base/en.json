@@ -30,12 +30,15 @@
       "organization": "Organization",
       "training": "Training",
       "nutrition": "Nutrition",
+      "payments": "Payments",
       "financials": "Financials",
       "system": "System",
       "cordel": "Cordel"
     },
     "centers": "Centers",
     "events": "Events",
+    "transactions": "Transactions",
+    "payment_providers": "Payment Providers",
     "spaces": "Spaces"
   },
   "dashboard": {

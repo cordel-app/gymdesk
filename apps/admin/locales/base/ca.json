@@ -30,12 +30,15 @@
       "organization": "Organització",
       "training": "Entrenament",
       "nutrition": "Nutrició",
+      "payments": "Pagaments",
       "financials": "Finances",
       "system": "Sistema",
       "cordel": "Cordel"
     },
     "centers": "Centres",
     "events": "Esdeveniments",
+    "transactions": "Transaccions",
+    "payment_providers": "Proveïdors de Pagament",
     "activity_types": "Tipus d'activitat"
   },
   "dashboard": {

@@ -120,6 +120,24 @@ export const navigationGroups: NavGroup[] = [
     ],
   },
   {
+    id: 'payments',
+    labelKey: 'nav.groups.payments',
+    items: [
+      {
+        href: '/{{locale}}/payments/transactions',
+        labelKey: 'nav.transactions',
+      },
+      {
+        href: '/{{locale}}/payments/promotions',
+        labelKey: 'nav.promotions',
+      },
+      {
+        href: '/{{locale}}/payments/payment-providers',
+        labelKey: 'nav.payment_providers',
+      },
+    ],
+  },
+  {
     id: 'financials',
     labelKey: 'nav.groups.financials',
     requiredRole: 'admin',
