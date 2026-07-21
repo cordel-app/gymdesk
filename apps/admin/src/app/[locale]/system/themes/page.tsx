@@ -14,6 +14,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
+import { ThemeAdvancedSection } from '@/components/ThemeAdvancedSection';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
 
@@ -38,7 +39,6 @@ interface ThemeDetail extends Theme {
   modified_by_name: string | null;
 }
 
-
 const STATUSES = ['draft', 'active', 'deleted'] as const;
 const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
 const COLOR_FIELDS: { key: keyof ThemeTokens['colors']; labelKey: string }[] = [
@@ -52,13 +52,10 @@ const COLOR_FIELDS: { key: keyof ThemeTokens['colors']; labelKey: string }[] = [
   { key: 'sidebarSelectedText',       labelKey: 'label_sidebar_sel_text' },
 ];
 
-const emptyForm = {
-  name: '',
-  description: '',
-  tokens: DEFAULT_TOKENS,
-};
+type SectionKey = 'branding' | 'typography' | 'colors' | 'advanced';
+const ALL_SECTIONS: SectionKey[] = ['branding', 'typography', 'colors', 'advanced'];
 
-type TabKey = 'branding' | 'typography' | 'colors';
+const emptyForm = { name: '', description: '', tokens: DEFAULT_TOKENS };
 
 function formatDate(value: string | null, locale: string): string {
   if (!value) return '—';
@@ -76,6 +73,10 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
+function badgeStyle(color: string): React.CSSProperties {
+  return { display: 'inline-block', padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600, background: color + '18', color, border: `1px solid ${color}40` };
+}
+
 export default function ThemesPage() {
   const t = useTranslations('themes');
   const tStatus = useTranslations('status');
@@ -89,16 +90,30 @@ export default function ThemesPage() {
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Theme | null>(null);
-  const [form, setForm] = useState(emptyForm);
+
+  // Inline expandable editor
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['branding']));
+  const [editForm, setEditForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
+  const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Inline status saving
+  const [statusSaving, setStatusSaving] = useState<string | null>(null);
+
+  // Add modal
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState(emptyForm);
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const addFileInputRef = useRef<HTMLInputElement>(null);
+  const [addLogoFile, setAddLogoFile] = useState<File | null>(null);
+  const [addLogoPreview, setAddLogoPreview] = useState<string | null>(null);
+
   const [deleting, setDeleting] = useState<Theme | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>('branding');
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [detailsTheme, setDetailsTheme] = useState<ThemeDetail | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
@@ -123,68 +138,69 @@ export default function ThemesPage() {
 
   useEffect(() => { if (!gymLoading && isSuperadmin) load(); }, [statusFilter]);
 
-  function openAdd() {
-    setEditing(null);
-    setForm(emptyForm);
-    setLogoFile(null);
-    setLogoPreview(null);
-    setError(null);
-    setActiveTab('branding');
-    setModalOpen(true);
-  }
-
-  function openEdit(theme: Theme) {
-    setEditing(theme);
-    setForm({ name: theme.name, description: theme.description ?? '', tokens: theme.tokens ?? DEFAULT_TOKENS });
-    setLogoFile(null);
-    setLogoPreview(theme.has_logo ? logoUrl(theme) : null);
-    setError(null);
-    setActiveTab('branding');
-    setModalOpen(true);
-  }
-
-  function closeModal() {
-    setModalOpen(false);
-    setEditing(null);
-    setForm(emptyForm);
-    setLogoFile(null);
-    setLogoPreview(null);
-    setError(null);
-  }
-
-  async function openDetails(theme: Theme) {
-    setDetailsLoading(true);
-    setDetailsTheme(null);
-    try {
-      const detail = await apiFetch<ThemeDetail>(`/platform/themes/${theme.id}`);
-      setDetailsTheme(detail);
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    } finally {
-      setDetailsLoading(false);
-    }
-  }
-
   function logoUrl(theme: Theme) {
     return `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`;
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLogoFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setLogoPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+  function openExpand(theme: Theme) {
+    if (expandedId === theme.id) { setExpandedId(null); return; }
+    setExpandedId(theme.id);
+    setOpenSections(new Set<SectionKey>(['branding']));
+    setEditForm({ name: theme.name, description: theme.description ?? '', tokens: theme.tokens ?? DEFAULT_TOKENS });
+    setEditError(null);
+    setEditLogoFile(null);
+    setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
+  }
+
+  function toggleSection(section: SectionKey) {
+    setOpenSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section); else next.add(section);
+      return next;
+    });
+  }
+
+  async function handleStatusChange(theme: Theme, newStatus: string) {
+    setStatusSaving(theme.id);
+    try {
+      await apiFetch(`/platform/themes/${theme.id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setStatusSaving(null);
+    }
+  }
+
+  async function handleSave() {
+    if (!expandedId) return;
+    const theme = themes.find((th) => th.id === expandedId);
+    if (!theme) return;
+    if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
+    setSaving(true);
+    setEditError(null);
+    try {
+      await apiFetch(`/platform/themes/${expandedId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null, tokens: editForm.tokens }),
+      });
+      if (editLogoFile) await uploadLogo(expandedId);
+      setExpandedId(null);
+      load();
+    } catch (err: any) {
+      setEditError(err.message ?? t('error_generic'));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function uploadLogo(themeId: string) {
-    if (!logoFile) return;
+    if (!editLogoFile) return;
     const token = await getToken();
     const res = await fetch(`/api/proxy/platform/themes/${themeId}/logo`, {
       method: 'POST',
-      headers: { 'Content-Type': logoFile.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: logoFile,
+      headers: { 'Content-Type': editLogoFile.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: editLogoFile,
     });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
@@ -192,44 +208,52 @@ export default function ThemesPage() {
     }
   }
 
-  async function handleSave() {
-    if (!form.name.trim()) { setError(t('error_required')); return; }
-    setSaving(true);
-    setError(null);
+  async function handleLogoRemove(themeId: string) {
     try {
-      let savedId: string;
-      if (editing) {
-        await apiFetch(`/platform/themes/${editing.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ name: form.name.trim(), description: form.description.trim() || null, tokens: form.tokens }),
-        });
-        savedId = editing.id;
-      } else {
-        const created = await apiFetch<Theme>('/platform/themes', {
-          method: 'POST',
-          body: JSON.stringify({ name: form.name.trim(), description: form.description.trim() || null, tokens: form.tokens }),
-        });
-        savedId = created.id;
-      }
-      if (logoFile) await uploadLogo(savedId);
-      closeModal();
-      load();
-    } catch (err: any) {
-      setError(err.message ?? t('error_generic'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleActivate(theme: Theme) {
-    try {
-      await apiFetch(`/platform/themes/${theme.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ status: theme.status === 'active' ? 'draft' : 'active' }),
-      });
+      await apiFetch(`/platform/themes/${themeId}/logo`, { method: 'DELETE' });
+      setEditLogoPreview(null);
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
+    }
+  }
+
+  function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditLogoFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setEditLogoPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function handleAdd() {
+    if (!addForm.name.trim()) { setAddError(t('error_required')); return; }
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      const created = await apiFetch<Theme>('/platform/themes', {
+        method: 'POST',
+        body: JSON.stringify({ name: addForm.name.trim(), description: addForm.description.trim() || null, tokens: addForm.tokens }),
+      });
+      if (addLogoFile) {
+        const token = await getToken();
+        const res = await fetch(`/api/proxy/platform/themes/${created.id}/logo`, {
+          method: 'POST',
+          headers: { 'Content-Type': addLogoFile.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: addLogoFile,
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error ?? 'Logo upload failed');
+        }
+      }
+      setAddOpen(false);
+      load();
+    } catch (err: any) {
+      setAddError(err.message ?? t('error_generic'));
+    } finally {
+      setAddSaving(false);
     }
   }
 
@@ -256,14 +280,16 @@ export default function ThemesPage() {
     }
   }
 
-  async function handleLogoRemove() {
-    if (!editing) return;
+  async function openDetails(theme: Theme) {
+    setDetailsLoading(true);
+    setDetailsTheme(null);
     try {
-      await apiFetch(`/platform/themes/${editing.id}/logo`, { method: 'DELETE' });
-      setLogoPreview(null);
-      load();
+      const detail = await apiFetch<ThemeDetail>(`/platform/themes/${theme.id}`);
+      setDetailsTheme(detail);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
+    } finally {
+      setDetailsLoading(false);
     }
   }
 
@@ -275,6 +301,112 @@ export default function ThemesPage() {
 
   if (gymLoading || !isSuperadmin) return null;
 
+  const selectStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', borderRadius: 6,
+    border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff',
+  };
+
+  function renderSection(title: string, key: SectionKey, content: React.ReactNode) {
+    const open = openSections.has(key);
+    return (
+      <div key={key} style={{ borderTop: '1px solid #eee' }}>
+        <button
+          type="button"
+          onClick={() => toggleSection(key)}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#333', textAlign: 'left' }}
+        >
+          {title}
+          <span style={{ fontSize: 12, color: '#aaa', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+        </button>
+        {open && <div style={{ paddingBottom: 16 }}>{content}</div>}
+      </div>
+    );
+  }
+
+  function renderInlineEditor(theme: Theme) {
+    if (expandedId !== theme.id) return null;
+    const advanced = editForm.tokens.advanced ?? {};
+
+    return (
+      <div style={{ padding: '0 24px 20px', borderTop: '1px solid #eee', background: '#fafafa' }}>
+        {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
+        <div style={{ marginTop: 12 }}>
+          {renderSection(t('section_branding'), 'branding', (
+            <div>
+              <FormLabel>{t('label_name')}</FormLabel>
+              <FormInput value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="My Brand" />
+              <FormLabel>{t('label_description')}</FormLabel>
+              <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }} />
+              <FormLabel>{t('label_logo')}</FormLabel>
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_hint')}</p>
+              {editLogoPreview && (
+                <div style={{ marginBottom: 8 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={editLogoPreview} alt="logo preview" style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }} />
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => editFileInputRef.current?.click()} style={btnSmall('#444')}>{t('logo_upload')}</button>
+                {editLogoPreview && (
+                  <button type="button" onClick={() => { setEditLogoFile(null); setEditLogoPreview(null); if (theme.has_logo) handleLogoRemove(theme.id); }} style={btnSmall('#c0392b')}>{t('logo_clear')}</button>
+                )}
+              </div>
+              <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
+            </div>
+          ))}
+
+          {renderSection(t('section_typography'), 'typography', (
+            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('tab_typography')}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
+              {TYPO_LEVELS.map((lv) => {
+                const typo = editForm.tokens.typography[lv];
+                return (
+                  <>
+                    <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
+                    <select key={`${lv}-font`} value={typo.fontFamily} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } } })} style={selectStyle}>
+                      {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                    <input key={`${lv}-color`} type="color" value={typo.color} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, color: e.target.value } } } })} style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }} />
+                  </>
+                );
+              })}
+            </div>
+          ))}
+
+          {renderSection(t('section_colors'), 'colors', (
+            <div>
+              {COLOR_FIELDS.map(({ key, labelKey }) => (
+                <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
+                  <input type="color" value={editForm.tokens.colors[key] as string} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, colors: { ...editForm.tokens.colors, [key]: e.target.value } } })} style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }} />
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
+                <input type="number" min={0} max={20} value={editForm.tokens.colors.headerSeparatorHeight} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } } })} style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }} />
+              </div>
+            </div>
+          ))}
+
+          {renderSection(t('section_advanced'), 'advanced', (
+            <ThemeAdvancedSection
+              advanced={advanced}
+              onChange={(next) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, advanced: next } })}
+              namespace="themes"
+            />
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+          <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={handleSave} disabled={saving} style={btnSmall('#6c63ff')}>{saving ? t('saving') : t('save_changes')}</button>
+        </div>
+      </div>
+    );
+  }
+
   const columns: Column<Theme>[] = [
     {
       header: t('col_logo'),
@@ -284,18 +416,20 @@ export default function ThemesPage() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={logoUrl(th)} alt={th.name} style={{ height: 32, width: 32, borderRadius: 4, objectFit: 'contain' }} />
         ) : (
-          <div style={{ height: 32, width: 32, borderRadius: 4, background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: '#bbb', fontSize: 10 }}>—</span>
-          </div>
+          <div style={{ height: 32, width: 32, borderRadius: 4, background: th.tokens?.colors?.headerBackground ?? '#1a1a2e', display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
         ),
     },
-    { header: t('col_name'), render: (th) => <span style={{ fontWeight: 600 }}>{th.name}</span> },
     {
-      header: t('col_description'),
+      header: t('col_name'),
       render: (th) => (
-        <span style={{ color: '#555', fontSize: 13.5, display: 'block', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {th.description ?? '—'}
-        </span>
+        <div>
+          <span style={{ fontWeight: 600 }}>{th.name}</span>
+          {th.description && (
+            <div style={{ fontSize: 12, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>
+              {th.description}
+            </div>
+          )}
+        </div>
       ),
     },
     {
@@ -304,9 +438,18 @@ export default function ThemesPage() {
       render: (th) => (
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <span style={badgeStyle('#4b45c6')}>{t('badge_system')}</span>
-          {th.is_system_default && (
-            <span style={badgeStyle('#059669')}>{t('badge_default')}</span>
-          )}
+          {th.is_system_default && <span style={badgeStyle('#059669')}>{t('badge_default')}</span>}
+        </div>
+      ),
+    },
+    {
+      header: '',
+      width: 72,
+      render: (th) => (
+        <div style={{ display: 'flex', gap: 3 }}>
+          {([th.tokens?.colors?.sidebarSelectedBackground, th.tokens?.colors?.headerBackground, th.tokens?.colors?.appBackground] as (string | undefined)[]).map((c, i) => (
+            <div key={i} title={['Primary', 'Secondary', 'Background'][i]} style={{ width: 18, height: 18, borderRadius: 3, background: c ?? '#ccc', border: '1px solid #ddd' }} />
+          ))}
         </div>
       ),
     },
@@ -317,8 +460,24 @@ export default function ThemesPage() {
     },
     {
       header: t('col_status'),
-      width: 100,
-      render: (th) => <StatusBadge status={th.status} label={tStatus(th.status)} />,
+      width: 130,
+      render: (th) => (
+        th.status !== 'deleted' ? (
+          <select
+            value={th.status}
+            disabled={statusSaving === th.id}
+            onChange={(e) => handleStatusChange(th, e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ddd', fontSize: 12, cursor: 'pointer', background: '#fff' }}
+          >
+            {(['draft', 'active'] as const).map((s) => (
+              <option key={s} value={s}>{tStatus(s)}</option>
+            ))}
+          </select>
+        ) : (
+          <StatusBadge status={th.status} label={tStatus(th.status)} />
+        )
+      ),
     },
     {
       header: t('col_actions'),
@@ -326,8 +485,7 @@ export default function ThemesPage() {
       render: (th) => {
         const items = [];
         if (th.status !== 'deleted') {
-          items.push({ label: th.status === 'active' ? t('deactivate') : t('activate'), onClick: () => handleActivate(th) });
-          items.push({ label: t('edit'), onClick: () => openEdit(th) });
+          items.push({ label: t('edit'), onClick: () => openExpand(th) });
           if (!th.is_system_default) {
             items.push({ label: t('action_set_system_default'), onClick: () => handleSetSystemDefault(th) });
           }
@@ -341,31 +499,13 @@ export default function ThemesPage() {
     },
   ];
 
-  const selectStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 12px', borderRadius: 6,
-    border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff',
-  };
-
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    padding: '6px 14px', border: 'none', cursor: 'pointer', borderRadius: 4,
-    background: active ? '#6c63ff' : 'transparent',
-    color: active ? '#fff' : '#555',
-    fontWeight: active ? 600 : 400,
-    fontSize: 14,
-  });
-
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 10 }}>
-          <StatusFilter
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
-            allLabel={tStatus('all')}
-          />
-          <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('add')}</button>
+          <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
+          <button onClick={() => { setAddForm(emptyForm); setAddError(null); setAddLogoFile(null); setAddLogoPreview(null); setAddOpen(true); }} style={btnStyle('#6c63ff')}>{t('add')}</button>
         </div>
       </div>
 
@@ -376,152 +516,29 @@ export default function ThemesPage() {
         loading={loading}
         loadingText={t('loading')}
         emptyText={t('empty')}
+        expandedRowKeys={expandedId ? new Set([expandedId]) : new Set()}
+        renderExpanded={(th) => renderInlineEditor(th)}
+        onToggleExpand={(th) => th.status !== 'deleted' && openExpand(th)}
       />
 
-      {/* Edit / Create modal */}
-      <CrudModal
-        open={modalOpen}
-        title={editing ? t('modal_edit') : t('modal_add')}
-        error={error}
-        saving={saving}
-        cancelLabel={t('cancel')}
-        saveLabel={saving ? t('saving') : t('save_changes')}
-        onCancel={closeModal}
-        onSave={handleSave}
-      >
-        {/* Tab bar */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #eee', paddingBottom: 8 }}>
-          {(['branding', 'typography', 'colors'] as TabKey[]).map((tab) => (
-            <button key={tab} type="button" onClick={() => setActiveTab(tab)} style={tabStyle(activeTab === tab)}>
-              {t(`tab_${tab}` as any)}
-            </button>
-          ))}
+      {/* Add modal */}
+      <CrudModal open={addOpen} title={t('modal_add')} error={addError} saving={addSaving} cancelLabel={t('cancel')} saveLabel={addSaving ? t('saving') : t('save_changes')} onCancel={() => setAddOpen(false)} onSave={handleAdd}>
+        <FormLabel>{t('label_name')}</FormLabel>
+        <FormInput value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} placeholder="My Brand" autoFocus />
+        <FormLabel>{t('label_description')}</FormLabel>
+        <textarea value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} rows={2} style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }} />
+        <FormLabel>{t('label_logo')}</FormLabel>
+        {addLogoPreview && (
+          <div style={{ marginBottom: 8 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={addLogoPreview} alt="logo preview" style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }} />
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" onClick={() => addFileInputRef.current?.click()} style={btnSmall('#444')}>{t('logo_upload')}</button>
+          {addLogoPreview && <button type="button" onClick={() => { setAddLogoFile(null); setAddLogoPreview(null); }} style={btnSmall('#c0392b')}>{t('logo_clear')}</button>}
         </div>
-
-        {/* Branding tab */}
-        {activeTab === 'branding' && (
-          <div>
-            <FormLabel>{t('label_name')}</FormLabel>
-            <FormInput
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="My Brand"
-              autoFocus
-            />
-
-            <FormLabel>{t('label_description')}</FormLabel>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              rows={3}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
-            />
-
-            <FormLabel>{t('label_logo')}</FormLabel>
-            <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_hint')}</p>
-            {logoPreview && (
-              <div style={{ marginBottom: 8 }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={logoPreview} alt="logo preview" style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }} />
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={() => fileInputRef.current?.click()} style={btnSmall('#444')}>
-                {t('logo_upload')}
-              </button>
-              {(logoPreview || (editing?.has_logo)) && (
-                <button
-                  type="button"
-                  onClick={() => { setLogoFile(null); setLogoPreview(null); if (editing?.has_logo) handleLogoRemove(); }}
-                  style={btnSmall('#c0392b')}
-                >
-                  {t('logo_clear')}
-                </button>
-              )}
-            </div>
-            <input ref={fileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleFileChange} />
-          </div>
-        )}
-
-        {/* Typography tab */}
-        {activeTab === 'typography' && (
-          <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_level')}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
-              {TYPO_LEVELS.map((lv) => {
-                const typo = form.tokens.typography[lv];
-                return (
-                  <>
-                    <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
-                    <select
-                      key={`${lv}-font`}
-                      value={typo.fontFamily}
-                      onChange={(e) => setForm({
-                        ...form,
-                        tokens: {
-                          ...form.tokens,
-                          typography: { ...form.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } },
-                        },
-                      })}
-                      style={selectStyle}
-                    >
-                      {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                    <input
-                      key={`${lv}-color`}
-                      type="color"
-                      value={typo.color}
-                      onChange={(e) => setForm({
-                        ...form,
-                        tokens: {
-                          ...form.tokens,
-                          typography: { ...form.tokens.typography, [lv]: { ...typo, color: e.target.value } },
-                        },
-                      })}
-                      style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                    />
-                  </>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Colors tab */}
-        {activeTab === 'colors' && (
-          <div>
-            {COLOR_FIELDS.map(({ key, labelKey }) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
-                <input
-                  type="color"
-                  value={form.tokens.colors[key] as string}
-                  onChange={(e) => setForm({
-                    ...form,
-                    tokens: { ...form.tokens, colors: { ...form.tokens.colors, [key]: e.target.value } },
-                  })}
-                  style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                />
-              </div>
-            ))}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-              <input
-                type="number"
-                min={0}
-                max={20}
-                value={form.tokens.colors.headerSeparatorHeight}
-                onChange={(e) => setForm({
-                  ...form,
-                  tokens: { ...form.tokens, colors: { ...form.tokens.colors, headerSeparatorHeight: Number(e.target.value) } },
-                })}
-                style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-              />
-            </div>
-          </div>
-        )}
+        <input ref={addFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; setAddLogoFile(f); const r = new FileReader(); r.onload = (ev) => setAddLogoPreview(ev.target?.result as string); r.readAsDataURL(f); }} />
       </CrudModal>
 
       {/* Details modal */}
@@ -574,17 +591,4 @@ export default function ThemesPage() {
       />
     </div>
   );
-}
-
-function badgeStyle(color: string): React.CSSProperties {
-  return {
-    display: 'inline-block',
-    padding: '2px 8px',
-    borderRadius: 12,
-    fontSize: 11,
-    fontWeight: 600,
-    background: color + '18',
-    color,
-    border: `1px solid ${color}40`,
-  };
 }
