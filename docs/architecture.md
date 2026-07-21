@@ -351,7 +351,7 @@ Wraps all admin pages. Hides sidebar + header for sign-in/sign-up and the unauth
 ### Theming (`ThemeProvider` + per-gym `theme_id`)
 
 **Two tiers of themes (migration 065):**
-- **Base Themes** — `gym_id IS NULL`. Platform-owned, managed by superadmins via **Cordel → Base Themes**. Never duplicated into customer data.
+- **Base Themes** — `gym_id IS NULL`. Platform-owned, managed by superadmins via **Cordel → Base Themes**. Never duplicated into customer data. Exactly one Base Theme carries `is_system_default = 1` (migration 072) — the factory default assigned when a new organization is created.
 - **Customer Themes** — `gym_id = <gymId>`. Gym-owned, created by cloning any Base or Customer Theme. Editable and soft-deletable by gym admins via **System → Themes**.
 
 Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057, FK on `themes.id`). Themes carry a versioned `tokens` JSON column covering typography (5 levels × `fontFamily` + `color`) and colors (`appBackground`, `headerBackground`, `headerText`, `headerSeparatorColor`, `headerSeparatorHeight`, `sidebarBackground`, `sidebarText`, `sidebarSelectedBackground`, `sidebarSelectedText`). Each center may optionally override the gym's default theme via `centers.theme_id` (migration 065).
@@ -364,7 +364,8 @@ Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057
 3. First theme alphabetically
 
 **API surface:**
-- `GET|POST|PUT|DELETE /platform/themes` — superadmin Themes CRUD. `GET /` returns all themes (system + custom) with `description`, `type`, `usage_count`, `is_default`, `gym_name`. `GET /:id` additionally includes `created_by_name` / `modified_by_name` from `audit_logs`. `POST` and `PUT` accept `description` (added in migration 068).
+- `GET|POST|PUT|DELETE /platform/themes` — superadmin Base Themes CRUD only (`gym_id IS NULL`). `GET /` returns base themes with `description`, `type`, `is_system_default`, `usage_count`. `GET /:id` additionally includes `created_by_name` / `modified_by_name` from `audit_logs`. `POST` and `PUT` accept `description` (added in migration 068).
+- `PUT /platform/themes/:id/set-system-default` — atomically marks one Base Theme as `is_system_default = 1` and clears all others (superadmin only). Does not affect existing org `gyms.theme_id` assignments.
 - `POST /platform/themes/clone/:id` — clone a Base Theme into a new Base Theme (superadmin only).
 - `GET /system/themes` — gym admin: lists Base Themes + Customer Themes for the active gym.
 - `POST /system/themes/clone/:id` — clone any accessible theme into a new Customer Theme.

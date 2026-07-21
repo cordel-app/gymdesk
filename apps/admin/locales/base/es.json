@@ -188,7 +188,9 @@
     "details_title": "Detalles del tema",
     "details_close": "Cerrar",
     "details_created_at": "Creado el",
-    "details_modified_at": "Última modificación"
+    "details_modified_at": "Última modificación",
+    "action_set_system_default": "Establecer como predeterminado del sistema",
+    "toast_system_default_set": "Predeterminado del sistema actualizado"
   },
   "system_users": {
     "title": "Superadministradores",

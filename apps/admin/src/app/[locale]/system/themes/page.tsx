@@ -30,14 +30,14 @@ interface Theme {
   created_at: string;
   modified_at: string | null;
   usage_count: number;
-  is_default: boolean;
-  gym_name: string | null;
+  is_system_default: boolean;
 }
 
 interface ThemeDetail extends Theme {
   created_by_name: string | null;
   modified_by_name: string | null;
 }
+
 
 const STATUSES = ['draft', 'active', 'deleted'] as const;
 const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
@@ -246,6 +246,16 @@ export default function ThemesPage() {
     }
   }
 
+  async function handleSetSystemDefault(theme: Theme) {
+    try {
+      await apiFetch(`/platform/themes/${theme.id}/set-system-default`, { method: 'PUT' });
+      toast(t('toast_system_default_set'));
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
   async function handleLogoRemove() {
     if (!editing) return;
     try {
@@ -260,10 +270,7 @@ export default function ThemesPage() {
   function usageLabel(theme: Theme): string {
     const n = theme.usage_count;
     if (n === 0) return t('usage_unused');
-    if (theme.type === 'system') {
-      return n === 1 ? t('usage_org_singular') : t('usage_org_plural').replace('{count}', String(n));
-    }
-    return n === 1 ? t('usage_center_singular') : t('usage_center_plural').replace('{count}', String(n));
+    return n === 1 ? t('usage_org_singular') : t('usage_org_plural').replace('{count}', String(n));
   }
 
   if (gymLoading || !isSuperadmin) return null;
@@ -296,10 +303,8 @@ export default function ThemesPage() {
       width: 140,
       render: (th) => (
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          <span style={badgeStyle(th.type === 'system' ? '#4b45c6' : '#0891b2')}>
-            {th.type === 'system' ? t('badge_system') : t('badge_custom')}
-          </span>
-          {th.is_default && (
+          <span style={badgeStyle('#4b45c6')}>{t('badge_system')}</span>
+          {th.is_system_default && (
             <span style={badgeStyle('#059669')}>{t('badge_default')}</span>
           )}
         </div>
@@ -323,6 +328,9 @@ export default function ThemesPage() {
         if (th.status !== 'deleted') {
           items.push({ label: th.status === 'active' ? t('deactivate') : t('activate'), onClick: () => handleActivate(th) });
           items.push({ label: t('edit'), onClick: () => openEdit(th) });
+          if (!th.is_system_default) {
+            items.push({ label: t('action_set_system_default'), onClick: () => handleSetSystemDefault(th) });
+          }
         }
         items.push({ label: t('action_details'), onClick: () => openDetails(th) });
         if (th.status !== 'deleted') {
@@ -537,25 +545,14 @@ export default function ThemesPage() {
               label={t('details_type')}
               value={
                 <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                  <span style={badgeStyle(detailsTheme.type === 'system' ? '#4b45c6' : '#0891b2')}>
-                    {detailsTheme.type === 'system' ? t('badge_system') : t('badge_custom')}
-                  </span>
-                  {detailsTheme.is_default && <span style={badgeStyle('#059669')}>{t('badge_default')}</span>}
+                  <span style={badgeStyle('#4b45c6')}>{t('badge_system')}</span>
+                  {detailsTheme.is_system_default && <span style={badgeStyle('#059669')}>{t('badge_default')}</span>}
                 </div>
               }
             />
             <DetailRow label={t('details_status')} value={<StatusBadge status={detailsTheme.status} label={tStatus(detailsTheme.status)} />} />
             <DetailRow label={t('details_usage')} value={usageLabel(detailsTheme)} />
-            <DetailRow
-              label={t('details_owner')}
-              value={detailsTheme.type === 'system' ? t('owner_cordel') : (detailsTheme.gym_name ?? '—')}
-            />
-            {detailsTheme.type === 'custom' && (
-              <DetailRow
-                label={t('details_org_default')}
-                value={detailsTheme.is_default ? t('org_default_yes') : t('org_default_no')}
-              />
-            )}
+            <DetailRow label={t('details_owner')} value={t('owner_cordel')} />
             <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
             <DetailRow label={t('details_created_by')} value={detailsTheme.created_by_name ?? '—'} />
             <DetailRow label={t('details_created_at')} value={formatDate(detailsTheme.created_at, locale)} />
