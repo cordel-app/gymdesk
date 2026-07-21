@@ -81,6 +81,7 @@ export default function WorkoutTemplatesPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [hierarchies, setHierarchies] = useState<Record<number, WtHierarchy>>({});
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
+  const [inlineEditId, setInlineEditId] = useState<number | null>(null);
 
   const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
@@ -213,6 +214,32 @@ export default function WorkoutTemplatesPage() {
         setHierLoading((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
       }
     }
+  }
+
+  async function openInlineEdit(w: WorkoutTemplate) {
+    setExpanded((prev) => { const next = new Set(prev); next.add(w.id); return next; });
+    if (!hierarchies[w.id] && !hierLoading.has(w.id)) {
+      setHierLoading((prev) => new Set(prev).add(w.id));
+      try {
+        const h = await apiFetch<WtHierarchy>(`/workout-templates/${w.id}`);
+        setHierarchies((prev) => ({ ...prev, [w.id]: h }));
+      } catch (err: any) {
+        toast(err.message ?? t('workout_templates.error_generic'));
+        return;
+      } finally {
+        setHierLoading((prev) => { const next = new Set(prev); next.delete(w.id); return next; });
+      }
+    }
+    setInlineEditId(w.id);
+  }
+
+  async function saveInlineEdit(id: number, data: { name: string; description: string | null; status: string }) {
+    await apiFetch(`/workout-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    setInlineEditId(null);
+    // Refresh the row in the list and the cached hierarchy
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, name: data.name, description: data.description, status: data.status as WorkoutTemplate['status'] } : r));
+    const h = await apiFetch<WtHierarchy>(`/workout-templates/${id}`);
+    setHierarchies((prev) => ({ ...prev, [id]: h }));
   }
 
   const refetchBranch = useCallback(async (id: number) => {
@@ -368,6 +395,7 @@ export default function WorkoutTemplatesPage() {
           ariaLabel={t('workout_templates.col_actions')}
           items={[
             { label: t('workout_templates.details'), onClick: () => guardedAction('edit', w) },
+            { label: t('workout_templates.edit'), onClick: () => openInlineEdit(w) },
             { label: t('workout_templates.duplicate'), onClick: () => handleDuplicate(w) },
             { label: t('workout_templates.delete'), onClick: () => guardedAction('delete', w), danger: true },
           ]}
@@ -417,7 +445,17 @@ export default function WorkoutTemplatesPage() {
           renderExpanded={(row) => {
             const h = hierarchies[row.id];
             if (!h) return <p style={{ color: '#888', fontSize: 14, padding: '12px 20px 12px 44px', margin: 0 }}>{t('workout_templates.loading')}</p>;
-            return <WorkoutTemplateTree templateId={row.id} hierarchy={h} canWrite={!!canWrite} onChanged={() => refetchBranch(row.id)} />;
+            return (
+              <WorkoutTemplateTree
+                templateId={row.id}
+                hierarchy={h}
+                canWrite={!!canWrite}
+                onChanged={() => refetchBranch(row.id)}
+                editMode={inlineEditId === row.id}
+                onEditSave={(data) => saveInlineEdit(row.id, data)}
+                onEditCancel={() => setInlineEditId(null)}
+              />
+            );
           }}
         />
       </DndContext>
