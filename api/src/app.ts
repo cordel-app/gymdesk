@@ -173,7 +173,13 @@ app.use('/events',           requireAuth(), tenantContext, centerContext, events
 app.use('/payments',         requireAuth(), tenantContext, paymentsRouter);
 
 // Global error handler — must be last, after all routes
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(err);
+app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+  console.error('[ERROR]', req.method, req.path, {
+    message: err.message,
+    code: err.code,
+    sqlMessage: err.sqlMessage,
+    sql: err.sql,
+    stack: err.stack,
+  });
   res.status(500).json({ error: 'Internal server error' });
 });
