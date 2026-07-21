@@ -6,15 +6,17 @@ Multi-tenant Gym Management SaaS. Express backend + Next.js frontend + MySQL 8 (
 
 For any issue that involves new API surface, DB schema changes, or significant UI work, write a plan first and get approval before coding. A plan should cover: migrations, API endpoints, frontend sections, tests, and doc updates. Keep it concise — bullet points per layer, not prose.
 
-Read these two files first — they contain the full architecture map and step-by-step patterns:
+Read these files first — they contain the full context needed to implement correctly:
 
-- `docs/architecture.md` — codebase structure, auth, roles, DB conventions
-- `docs/feature-patterns.md` — checklist and code templates for new features
+- `docs/architecture.md` — starts with a TL;DR; full codebase structure, auth, roles, DB conventions below it
+- `docs/feature-patterns.md` — step-by-step checklist and code templates for new features
+- `docs/roadmap.md` — ticket order, current status, and phase decisions
+- `docs/decisions.md` — settled architectural choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate these
 
 Use **Members** as the reference implementation for staff-level CRUD with soft-delete.
 Use **Plans** (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the reference implementation for admin-only CRUD.
 
-Ticket order and current status live in `docs/roadmap.md`; full scope is in the GitHub issues.
+Use `/plan` to generate a structured implementation plan before coding. Use the `db-reviewer` agent to check migration files. Use the `test-writer` agent to generate test files.
 
 ## Hard constraints
 
@@ -62,13 +64,18 @@ When adding a new domain that has FKs pointing to `members` or `gyms`, extend `c
 
 ## Finishing a task
 
-Before opening the PR, check whether the changes warrant updating any `.md` files:
+Before opening the PR, run these checks in order:
 
-- `docs/roadmap.md` — mark the ticket done and update the Status section if the feature is complete.
-- `docs/architecture.md` — update if new tables, routers, middleware, or patterns were introduced.
-- `docs/feature-patterns.md` — update if a new pattern or template emerged that future tickets should follow.
-- `CLAUDE.md` — update if a new hard constraint, convention, or cleanup rule was established.
+1. **Migration review** — if any migration file was added or changed, run the `db-reviewer` agent on it. Fix all BLOCKERs before continuing.
 
-Only update a file if the ticket genuinely changes what it documents. Navigation-only or i18n-only changes rarely need doc updates; new API surface, DB schema, or architectural patterns almost always do.
+2. **Test file** — if a new router was added, run the `test-writer` agent to generate `api/src/test/<router>.test.ts`. Run `npm test` inside `api/` to confirm it passes.
 
-Then commit any doc changes together with the feature and open the PR with `gh pr create --base main` on a branch named `feat/<slug>-<issue-number>`. Include the issue number in the PR title and body (`Closes #N`).
+3. **Doc updates** — check whether the changes warrant updating any `.md` files:
+   - `docs/roadmap.md` — mark the ticket done and update the Status section if the feature is complete.
+   - `docs/architecture.md` — update if new tables, routers, middleware, or patterns were introduced.
+   - `docs/feature-patterns.md` — update if a new pattern or template emerged that future tickets should follow.
+   - `CLAUDE.md` — update if a new hard constraint, convention, or cleanup rule was established.
+
+   Only update a file if the ticket genuinely changes what it documents. Navigation-only or i18n-only changes rarely need doc updates; new API surface, DB schema, or architectural patterns almost always do.
+
+4. **Open the PR** — commit doc changes together with the feature and run `gh pr create --base main` on a branch named `feat/<slug>-<issue-number>`. Include the issue number in the PR title and body (`Closes #N`).

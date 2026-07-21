@@ -14,7 +14,8 @@ import { BLOCK_TYPES, RESULT_TYPES, isBlockFieldVisible, BLOCK_TYPE_MAX_EXERCISE
 
 /* Shape returned by GET /workout-templates/:id */
 export interface WtHierarchy {
-  id: number; name: string; status: string;
+  id: number; name: string; description: string | null; status: string;
+  created_by_name: string | null; created_at: string;
   blocks: HierBlock[] | null;
 }
 
@@ -131,12 +132,112 @@ function ExerciseCombobox({ value, options, placeholder, onChange }: {
   );
 }
 
+/* ---- Template metadata header (display + inline edit) ---- */
+function TemplateHeader({ hierarchy, editMode, onEditSave, onEditCancel }: {
+  hierarchy: WtHierarchy;
+  editMode: boolean;
+  onEditSave: (data: { name: string; description: string | null; status: string }) => Promise<void>;
+  onEditCancel: () => void;
+}) {
+  const t = useTranslations();
+  const [name, setName] = useState(hierarchy.name);
+  const [description, setDescription] = useState(hierarchy.description ?? '');
+  const [status, setStatus] = useState(hierarchy.status);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Reset form when entering edit mode from fresh hierarchy values
+  useEffect(() => {
+    if (editMode) {
+      setName(hierarchy.name);
+      setDescription(hierarchy.description ?? '');
+      setStatus(hierarchy.status);
+      setError(null);
+    }
+  }, [editMode, hierarchy.name, hierarchy.description, hierarchy.status]);
+
+  async function handleSave() {
+    if (!name.trim()) { setError(t('workout_templates.error_required')); return; }
+    setSaving(true); setError(null);
+    try {
+      await onEditSave({ name: name.trim(), description: description.trim() || null, status });
+    } catch (err: any) {
+      setError(err.message ?? t('workout_templates.error_generic'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editMode) {
+    return (
+      <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #eee' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 8, rowGap: 4, fontSize: 14 }}>
+          <span style={metaLabel}>{t('workout_templates.label_description')}:</span>
+          <span style={{ color: hierarchy.description ? '#333' : '#aaa' }}>{hierarchy.description ?? '—'}</span>
+          <span style={metaLabel}>{t('workout_templates.col_created_by')}:</span>
+          <span style={{ color: hierarchy.created_by_name ? '#333' : '#aaa' }}>{hierarchy.created_by_name ?? '—'}</span>
+          <span style={metaLabel}>{t('workout_templates.col_created_at')}:</span>
+          <span>{hierarchy.created_at ? new Date(hierarchy.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 12, paddingBottom: 12, borderBottom: '1px solid #eee' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 480 }}>
+        <div>
+          <label style={editFieldLabel}>{t('workout_templates.label_name')} *</label>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+            style={editFieldInput}
+          />
+        </div>
+        <div>
+          <label style={editFieldLabel}>{t('workout_templates.label_description')}</label>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            style={editFieldInput}
+          />
+        </div>
+        <div>
+          <label style={editFieldLabel}>{t('workout_templates.label_status')}</label>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} style={editFieldSelect}>
+            <option value="active">{t('status.active')}</option>
+            <option value="inactive">{t('status.inactive')}</option>
+          </select>
+        </div>
+        {error && <p style={{ margin: 0, color: '#c0392b', fontSize: 13 }}>{error}</p>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onEditCancel} disabled={saving} style={headerCancelBtnStyle}>{t('workout_templates.cancel')}</button>
+          <button onClick={handleSave} disabled={saving} style={headerSaveBtnStyle}>
+            {saving ? t('workout_templates.saving') : t('workout_templates.save_changes')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const metaLabel: React.CSSProperties = { color: '#888', fontWeight: 500, whiteSpace: 'nowrap' };
+const editFieldLabel: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 600, color: '#555', marginBottom: 4 };
+const editFieldInput: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box' };
+const editFieldSelect: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
+const headerCancelBtnStyle: React.CSSProperties = { padding: '7px 16px', borderRadius: 6, border: '1px solid #ccc', background: '#fff', cursor: 'pointer', fontSize: 14 };
+const headerSaveBtnStyle: React.CSSProperties = { padding: '7px 16px', borderRadius: 6, border: 'none', background: '#6c63ff', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 };
+
 /* ---- Main tree ---- */
-export function WorkoutTemplateTree({ templateId, hierarchy, canWrite, onChanged }: {
+export function WorkoutTemplateTree({ templateId, hierarchy, canWrite, onChanged, editMode, onEditSave, onEditCancel }: {
   templateId: number;
   hierarchy: WtHierarchy;
   canWrite: boolean;
   onChanged: () => Promise<void> | void;
+  editMode?: boolean;
+  onEditSave?: (data: { name: string; description: string | null; status: string }) => Promise<void>;
+  onEditCancel?: () => void;
 }) {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
@@ -204,6 +305,12 @@ export function WorkoutTemplateTree({ templateId, hierarchy, canWrite, onChanged
 
   return (
     <div style={{ padding: '12px 20px 18px 44px' }}>
+      <TemplateHeader
+        hierarchy={hierarchy}
+        editMode={!!editMode}
+        onEditSave={onEditSave ?? (() => Promise.resolve())}
+        onEditCancel={onEditCancel ?? (() => {})}
+      />
       {canWrite && (
         <button onClick={addBlock} style={inlineAddStyle}>
           {t('workout_templates.tree_add_block')}
