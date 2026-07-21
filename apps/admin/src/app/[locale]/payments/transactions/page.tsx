@@ -49,7 +49,8 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiFetch, activeGymId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGymId]);
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
