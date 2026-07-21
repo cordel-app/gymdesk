@@ -631,6 +631,8 @@
     "filter_name": "Filtra per nom…",
     "filter_created_by_all": "Tots els autors",
     "details": "Detalls",
+    "duplicate": "Duplica",
+    "duplicated": "Plantilla de rutina duplicada.",
     "tree_add_block": "+ Bloc",
     "tree_add_exercise": "+ Exercici",
     "tree_no_blocks": "Encara no hi ha blocs.",
