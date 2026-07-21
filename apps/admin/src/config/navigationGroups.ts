@@ -136,10 +136,6 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.transactions',
       },
       {
-        href: '/{{locale}}/payments/promotions',
-        labelKey: 'nav.promotions',
-      },
-      {
         href: '/{{locale}}/payments/payment-providers',
         labelKey: 'nav.payment_providers',
       },
