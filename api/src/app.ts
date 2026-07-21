@@ -8,6 +8,7 @@ import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { superadminsRouter } from './api/superadmins';
+import { impersonationRouter } from './api/impersonation';
 import { membershipPlansRouter } from './api/membership-plans';
 import { benefitTypesRouter } from './api/benefit-types';
 import { chargeTypesRouter } from './api/charge-types';
@@ -121,6 +122,7 @@ app.use('/platform/themes', requireAuth(), themesRouter);
 app.use('/system/themes', requireAuth(), tenantContext, gymThemesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
+app.use('/platform/impersonation', requireAuth(), impersonationRouter);
 
 // Domain routes — require auth + tenant context (gym_id from x-gym-id header)
 // /me/link + /gym-users/link must come before tenantContext (no membership row exists yet on first link)

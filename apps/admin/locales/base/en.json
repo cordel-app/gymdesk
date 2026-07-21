@@ -1179,7 +1179,9 @@
     "linking": "Setting up your team access…",
     "error_no_invitation": "No pending team invitation found.",
     "cancel": "Cancel",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "action_impersonate": "Impersonate",
+    "action_impersonate_title": "Impersonate this user"
   },
   "centers": {
     "title": "Centers",
@@ -1580,5 +1582,11 @@
     "tree_label_side": "Side",
     "tree_label_sauce": "Sauce",
     "tree_none": "None"
+  },
+  "impersonation": {
+    "impersonating_label": "You are impersonating:",
+    "signed_in_as": "Signed in as:",
+    "stop_button": "Stop Impersonating",
+    "stopped": "Impersonation ended."
   }
 }

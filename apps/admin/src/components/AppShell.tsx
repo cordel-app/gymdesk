@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
+import { ImpersonationBanner } from './ImpersonationBanner';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -19,6 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <ImpersonationBanner />
       <TopHeader onMenuToggle={() => setSidebarOpen((v) => !v)} />
 
       {/* Mobile overlay */}

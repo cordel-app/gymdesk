@@ -5,6 +5,7 @@ export const AUDIT_ACTIONS: string[] = [
   'apply_promotion', 'revoke_promotion', 'assign', 'cancel',
   'change_role', 'grant', 'invite', 'reinvite', 'remove',
   'revoke', 'revoke_invite', 'link', 'status_change',
+  'impersonation_started', 'impersonation_ended',
 ];
 
 interface SimpleEntity {

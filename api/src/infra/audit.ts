@@ -37,7 +37,9 @@ export function recordAudit(req: Request, payload: AuditPayload): void {
   if (!ctx) return;
 
   const actor = ctx.userId ?? null;
-  const actorName = ctx.actorName ?? null;
+  const actorName = ctx.impersonatedUserId
+    ? `${ctx.actorName ?? ctx.userId} (impersonating ${ctx.impersonatedActorName ?? ctx.impersonatedUserId})`
+    : (ctx.actorName ?? null);
   const source = sourceForRole(ctx.role);
   const ip = firstIp(req);
   const ua = (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null;

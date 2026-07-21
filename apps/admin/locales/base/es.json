@@ -1172,7 +1172,9 @@
     "linking": "Configurando tu acceso al equipo…",
     "error_no_invitation": "No se encontró invitación al equipo pendiente.",
     "cancel": "Cancelar",
-    "saving": "Guardando…"
+    "saving": "Guardando…",
+    "action_impersonate": "Suplantar",
+    "action_impersonate_title": "Suplantar a este usuario"
   },
   "centers": {
     "title": "Centros",
@@ -1573,5 +1575,11 @@
     "tree_label_side": "Acomp.",
     "tree_label_sauce": "Salsa",
     "tree_none": "Ninguno"
+  },
+  "impersonation": {
+    "impersonating_label": "Estás suplantando a:",
+    "signed_in_as": "Conectado como:",
+    "stop_button": "Detener suplantación",
+    "stopped": "Suplantación finalizada."
   }
 }

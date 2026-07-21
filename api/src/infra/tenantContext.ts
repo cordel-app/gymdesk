@@ -15,6 +15,9 @@ export interface TenantContext {
   isSuperadmin: boolean;
   /** Display name captured from Clerk at request time — used for immutable audit snapshots. */
   actorName: string | null;
+  /** Set when a superadmin is impersonating another user. */
+  impersonatedUserId?: string;
+  impersonatedActorName?: string | null;
 }
 
 declare global {
@@ -42,6 +45,49 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
   const actorName = user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
 
   if (meta.platform_role === 'superadmin') {
+    const impersonateAs = req.headers['x-impersonate-as'] as string | undefined;
+
+    if (impersonateAs && impersonateAs !== userId) {
+      // Validate the target user has an active membership in this gym
+      const { rows: targetRows } = await db.query<{ id: number; role: GymRole }>(
+        `SELECT gm.id, gm.role FROM gym_memberships gm
+         JOIN gyms g ON g.id = gm.gym_id
+         WHERE gm.user_id = ? AND gm.gym_id = ?
+           AND (g.deleted_at IS NULL OR g.deleted_at > UTC_TIMESTAMP())`,
+        [impersonateAs, gymId],
+      );
+
+      if (!targetRows[0]) {
+        return res.status(400).json({ error: 'Impersonation target has no active membership in this gym' });
+      }
+
+      let impersonatedActorName: string | null = null;
+      try {
+        const targetClerkUser = await clerkClient.users.getUser(impersonateAs);
+        // Prevent impersonating another superadmin
+        if ((targetClerkUser.publicMetadata as any)?.platform_role === 'superadmin') {
+          return res.status(400).json({ error: 'Cannot impersonate another superadmin' });
+        }
+        impersonatedActorName = targetClerkUser.fullName
+          || [targetClerkUser.firstName, targetClerkUser.lastName].filter(Boolean).join(' ')
+          || null;
+      } catch {
+        return res.status(400).json({ error: 'Impersonation target not found' });
+      }
+
+      req.tenantCtx = {
+        userId,
+        gymId,
+        role: targetRows[0].role,
+        gymMembershipId: targetRows[0].id,
+        isSuperadmin: true,
+        actorName,
+        impersonatedUserId: impersonateAs,
+        impersonatedActorName,
+      };
+      return next();
+    }
+
     req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true, actorName };
     return next();
   }
