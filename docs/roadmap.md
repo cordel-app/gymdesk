@@ -13,7 +13,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
 
 ## Status (2026-07-19)
 
-- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154.
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154, #177 (pino structured logging).
 - **Training module redesign (#60–#63, done)**: dynamic Workout Block form driven by
   `blockFieldConfig.ts` (#60); tree-grid Training Plan Template editor (#61); dependency
   awareness for shared catalog entities (#62); tree-grid Workout Template editor with
@@ -159,6 +159,16 @@ template) → Sidebar → i18n (en/es/ca).
 | P0.1 Extract shared DataTable, CrudModal, ConfirmDialog | [#2](https://github.com/cordel-app/gymdesk/issues/2) | M | — |
 | P0.2 StatusBadge + status-filter convention | [#3](https://github.com/cordel-app/gymdesk/issues/3) | S | #2 |
 | P0.3 Member app navigation shell | [#4](https://github.com/cordel-app/gymdesk/issues/4) | M | — |
+
+### Phase 0a — Structured logging (pino) ✅
+| Ticket | Issue | Size | Depends on |
+|---|---|---|---|
+| Install pino structured logging in the API | [#177](https://github.com/cordel-app/gymdesk/issues/177) | S | — |
+
+### Phase 0b — Log shipping (promtail → Grafana Cloud Loki)
+| Ticket | Issue | Size | Depends on |
+|---|---|---|---|
+| Set up promtail on VPS → Grafana Cloud Loki | [#178](https://github.com/cordel-app/gymdesk/issues/178) | M | #177 |
 
 ### Phase 1 — Membership plans & billing core (replaces fares, subscriptions)
 | Ticket | Issue | Size | Depends on |
