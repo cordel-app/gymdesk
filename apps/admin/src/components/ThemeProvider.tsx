@@ -15,7 +15,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { centers, activeCenterId } = useCenter();
 
   useEffect(() => {
-    const activeCenter = activeCenterId ? centers.find((c) => c.id === activeCenterId) : null;
+    // Use the explicitly selected center, or the sole center if there's only one.
+    const activeCenter = centers.find((c) => c.id === (activeCenterId ?? (centers.length === 1 ? centers[0].id : null)));
     const tokens = (activeCenter?.theme_tokens ?? activeGym?.theme?.tokens ?? DEFAULT_TOKENS) as any;
     applyTokens(tokens);
   // eslint-disable-next-line react-hooks/exhaustive-deps
