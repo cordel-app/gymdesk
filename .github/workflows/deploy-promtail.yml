@@ -1,0 +1,95 @@
+name: Deploy Promtail
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/promtail/**'
+      - '.github/workflows/deploy-promtail.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy promtail to ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    environment: dev
+    strategy:
+      matrix:
+        include:
+          - name: corback
+            ssh_host: CORBACK_SSH_HOST
+            ssh_key: CORBACK_SSH_PRIVATE_KEY
+            config_file: infra/promtail/config-corback.yml
+          - name: corfront
+            ssh_host: CORFRONT_SSH_HOST
+            ssh_key: CORFRONT_SSH_PRIVATE_KEY
+            config_file: infra/promtail/config-corfront.yml
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Encode config files
+        id: files
+        run: |
+          echo "config=$(base64 -w0 ${{ matrix.config_file }})" >> $GITHUB_OUTPUT
+          echo "service=$(base64 -w0 infra/promtail/promtail.service)" >> $GITHUB_OUTPUT
+
+      - name: Deploy to ${{ matrix.name }}
+        uses: appleboy/ssh-action@v1
+        env:
+          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+          CONFIG_B64: ${{ steps.files.outputs.config }}
+          SERVICE_B64: ${{ steps.files.outputs.service }}
+        with:
+          host: ${{ secrets[matrix.ssh_host] }}
+          username: podman
+          key: ${{ secrets[matrix.ssh_key] }}
+          envs: GRAFANA_CLOUD_API_KEY,CONFIG_B64,SERVICE_B64
+          script: |
+            set -euo pipefail
+            PROMTAIL_VERSION="3.4.2"
+            ARCH="arm64"
+            BIN="$HOME/bin/promtail"
+            CONFIG_DIR="$HOME/.config/promtail"
+            UNIT_DIR="$HOME/.config/systemd/user"
+
+            mkdir -p "$HOME/bin" "$CONFIG_DIR" "$UNIT_DIR"
+
+            # Install binary only when version differs
+            INSTALLED=$("$BIN" --version 2>/dev/null | grep -oP '[\d.]+' | head -1 || echo "none")
+            if [ "$INSTALLED" != "$PROMTAIL_VERSION" ]; then
+              echo "==> Downloading promtail $PROMTAIL_VERSION (arm64)"
+              TMP=$(mktemp -d)
+              curl -fsSL \
+                "https://github.com/grafana/loki/releases/download/v${PROMTAIL_VERSION}/promtail-linux-${ARCH}.zip" \
+                -o "$TMP/promtail.zip"
+              unzip -q "$TMP/promtail.zip" -d "$TMP"
+              install -m 755 "$TMP/promtail-linux-${ARCH}" "$BIN"
+              rm -rf "$TMP"
+            else
+              echo "==> promtail $PROMTAIL_VERSION already installed"
+            fi
+
+            # Write config (decoded from base64 — not secret)
+            echo "$CONFIG_B64" | base64 -d > "$CONFIG_DIR/config.yml"
+
+            # Write unit file
+            echo "$SERVICE_B64" | base64 -d > "$UNIT_DIR/promtail.service"
+
+            # Write secrets (600, never echoed)
+            umask 077
+            printf 'GRAFANA_CLOUD_API_KEY=%s\n' "${GRAFANA_CLOUD_API_KEY}" > "$CONFIG_DIR/secrets"
+            chmod 600 "$CONFIG_DIR/secrets"
+
+            # Enable and restart
+            systemctl --user daemon-reload
+            systemctl --user enable promtail
+            systemctl --user restart promtail
+
+            sleep 3
+            systemctl --user is-active promtail || {
+              echo "ERROR: promtail failed to start"
+              journalctl --user -u promtail --no-pager -n 40 || true
+              exit 1
+            }
+            echo "==> promtail running on ${{ matrix.name }}"

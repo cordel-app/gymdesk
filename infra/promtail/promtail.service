@@ -1,15 +1,14 @@
+# User-mode systemd unit — install to ~/.config/systemd/user/promtail.service
+# Manages as: systemctl --user enable|start|restart|status promtail
 [Unit]
 Description=Promtail log shipper → Grafana Cloud Loki
 After=network-online.target
-Wants=network-online.target
 
 [Service]
-EnvironmentFile=/etc/promtail/secrets
-ExecStart=/usr/local/bin/promtail -config.file=/etc/promtail/config.yml -config.expand-env=true
+EnvironmentFile=%h/.config/promtail/secrets
+ExecStart=%h/bin/promtail -config.file=%h/.config/promtail/config.yml -config.expand-env=true
 Restart=on-failure
 RestartSec=5s
-User=promtail
-Group=promtail
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

@@ -3,7 +3,7 @@ server:
   grpc_listen_port: 0
 
 positions:
-  filename: /tmp/promtail-positions.yaml
+  filename: /tmp/promtail-positions-corback.yaml
 
 clients:
   - url: https://logs-prod-012.grafana.net/loki/api/v1/push
