@@ -70,7 +70,10 @@ centersRouter.get('/', async (req, res) => {
       ORDER BY c.name ASC`,
     params,
   );
-  res.json(rows);
+  res.json(rows.map((r: any) => ({
+    ...r,
+    theme_tokens: typeof r.theme_tokens === 'string' ? JSON.parse(r.theme_tokens) : (r.theme_tokens ?? null),
+  })));
 });
 
 centersRouter.get('/:id', async (req, res) => {
