@@ -56,8 +56,11 @@ import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
 import { swaggerSpec } from './infra/swagger';
+import { requestLogger } from './middleware/requestLogger';
 
 export const app = express();
+
+app.use(requestLogger);
 
 // Clerk webhooks must be mounted BEFORE express.json(): signature verification
 // needs the exact raw request bytes, so this route parses its own raw body.

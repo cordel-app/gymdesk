@@ -35,6 +35,10 @@ gymdesk/
   api/src/                         # Express API (shared by both frontends)
     index.ts                       # App entrypoint, route registration, requireAuth()
     api/                           # One file per domain (members.ts, class-sessions.ts, …)
+    lib/
+      logger.ts                    # pino singleton (LOG_LEVEL env var; pino-pretty in dev)
+    middleware/
+      requestLogger.ts             # pino-http middleware — stamps requestId on req.log
     domain/types.ts                # Shared TypeScript interfaces
     infra/
       db.ts                        # mysql2 pool + query/transaction helpers
@@ -495,3 +499,25 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
+
+---
+
+## Observability
+
+### Structured logging (pino)
+
+The API uses `pino` for structured JSON logging to stdout.
+
+- **`api/src/lib/logger.ts`** — singleton logger. Set `LOG_LEVEL` env var (`debug` / `info` / `warn` / `error`; default `info`). In dev (`NODE_ENV !== 'production'`) output is formatted by `pino-pretty`; in production it emits raw JSON picked up by journald.
+- **`api/src/middleware/requestLogger.ts`** — `pino-http` middleware mounted first in `app.ts`. Auto-logs every request/response with method, url, status, response time, and a unique `requestId`. All handlers can call `req.log.info(...)` to emit correlated log lines.
+- **Never log**: card numbers, CVV, full payment token values, or member emails at DEBUG level. Only log IDs and status codes.
+
+Payment-flow log convention:
+```ts
+req.log.info({ orderId, memberId, amount, provider }, 'Payment request created')
+req.log.error({ orderId, err: e.message }, 'Provider API call failed')
+```
+
+### Log shipping (Phase 0b — pending)
+
+promtail will be installed on both VPS (corback, corfront) to ship journald entries to Grafana Cloud Loki. See GitHub issue #178.
