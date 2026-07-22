@@ -63,7 +63,13 @@ jobs:
               curl -fsSL \
                 "https://github.com/grafana/loki/releases/download/v${PROMTAIL_VERSION}/promtail-linux-${ARCH}.zip" \
                 -o "$TMP/promtail.zip"
-              unzip -q "$TMP/promtail.zip" -d "$TMP"
+              # unzip may not be available; try it then fall back to python3
+              if command -v unzip &>/dev/null; then
+                unzip -q "$TMP/promtail.zip" -d "$TMP"
+              else
+                python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" \
+                  "$TMP/promtail.zip" "$TMP"
+              fi
               install -m 755 "$TMP/promtail-linux-${ARCH}" "$BIN"
               rm -rf "$TMP"
             else
