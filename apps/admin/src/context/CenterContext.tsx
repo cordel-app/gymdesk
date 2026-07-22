@@ -8,6 +8,7 @@ export interface CenterOption {
   id: number;
   name: string;
   status: 'active' | 'inactive';
+  theme_tokens: Record<string, any> | null;
 }
 
 interface CenterContextValue {

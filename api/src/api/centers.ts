@@ -52,7 +52,8 @@ centersRouter.get('/', async (req, res) => {
     `SELECT c.*,
             cbm.name AS created_by_name,
             mbm.name AS modified_by_name,
-            ct.name  AS theme_name,
+            ct.name   AS theme_name,
+            ct.tokens AS theme_tokens,
             gt.name  AS gym_theme_name,
             (SELECT COUNT(*)
                FROM member_centers mc
@@ -80,11 +81,12 @@ centersRouter.get('/:id', async (req, res) => {
   }
   const { rows } = await db.query(
     `SELECT c.*,
-            cbm.name AS created_by_name,
-            mbm.name AS modified_by_name,
-            dbm.name AS deleted_by_name,
-            ct.name  AS theme_name,
-            gt.name  AS gym_theme_name,
+            cbm.name  AS created_by_name,
+            mbm.name  AS modified_by_name,
+            dbm.name  AS deleted_by_name,
+            ct.name   AS theme_name,
+            ct.tokens AS theme_tokens,
+            gt.name   AS gym_theme_name,
             (SELECT COUNT(*)
                FROM member_centers mc
                JOIN members mem ON mem.id = mc.member_id AND mem.deleted_at IS NULL
