@@ -11,9 +11,9 @@ Engineering quality backlog (tests, typing, helpers, member-app gap analysis) li
 `docs/tech-debt.md` as a **map** of GitHub issues (#81–#86) — same model as this roadmap.
 Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub issue body.
 
-## Status (2026-07-19)
+## Status (2026-07-22)
 
-- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154, #177 (pino structured logging).
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154, #177 (pino structured logging), #178 (promtail config files — deploy to VPS to activate).
 - **Training module redesign (#60–#63, done)**: dynamic Workout Block form driven by
   `blockFieldConfig.ts` (#60); tree-grid Training Plan Template editor (#61); dependency
   awareness for shared catalog entities (#62); tree-grid Workout Template editor with
@@ -165,10 +165,14 @@ template) → Sidebar → i18n (en/es/ca).
 |---|---|---|---|
 | Install pino structured logging in the API | [#177](https://github.com/cordel-app/gymdesk/issues/177) | S | — |
 
-### Phase 0b — Log shipping (promtail → Grafana Cloud Loki)
+### Phase 0b — Log shipping (promtail → Grafana Cloud Loki) ✅
 | Ticket | Issue | Size | Depends on |
 |---|---|---|---|
 | Set up promtail on VPS → Grafana Cloud Loki | [#178](https://github.com/cordel-app/gymdesk/issues/178) | M | #177 |
+
+Config files: `infra/promtail/config-corback.yml`, `infra/promtail/config-corfront.yml`, `infra/promtail/promtail.service`, `infra/promtail/setup.sh`.
+Deploy: run `sudo bash infra/promtail/setup.sh` on each VPS after writing `/etc/promtail/secrets` with `GRAFANA_CLOUD_API_KEY=<token>`.
+Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https://logs-prod-012.grafana.net/loki/api/v1/push`.
 
 ### Phase 1 — Membership plans & billing core (replaces fares, subscriptions)
 | Ticket | Issue | Size | Depends on |

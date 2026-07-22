@@ -1,0 +1,29 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/promtail-positions.yaml
+
+clients:
+  - url: https://logs-prod-012.grafana.net/loki/api/v1/push
+    basic_auth:
+      username: "969010"
+      password: ${GRAFANA_CLOUD_API_KEY}
+
+scrape_configs:
+  - job_name: journal
+    journal:
+      max_age: 12h
+      labels:
+        job: journal
+        host: corback
+    relabel_configs:
+      - source_labels: [__journal__systemd_unit]
+        target_label: unit
+      - source_labels: [__journal_container_name]
+        target_label: container
+      - source_labels: [__journal_priority_keyword]
+        target_label: level
+      - source_labels: [__journal_syslog_identifier]
+        target_label: syslog_identifier
