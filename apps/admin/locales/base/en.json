@@ -891,7 +891,11 @@
     "completed_read_only": "This plan is completed and read-only.",
     "unsaved_changes": "You have unsaved changes. Discard them?",
     "unsaved_discard": "Discard changes",
-    "error_required": "Name is required."
+    "error_required": "Name is required.",
+    "conclude": "Conclude Plan",
+    "confirm_conclude": "Mark this training plan as concluded? The status will change to Completed. If no end date is set, today will be used. This cannot be undone.",
+    "conclude_confirm_btn": "Conclude Plan",
+    "error_end_date_required_expired": "End Date is required when status is Expired."
   },
   "template_workouts": {
     "title": "Workouts",

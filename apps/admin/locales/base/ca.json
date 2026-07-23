@@ -883,7 +883,11 @@
     "completed_read_only": "Aquest pla està completat i és de sol lectura.",
     "unsaved_changes": "Tens canvis sense desar. Descartar-los?",
     "unsaved_discard": "Descartar canvis",
-    "error_required": "El nom és obligatori."
+    "error_required": "El nom és obligatori.",
+    "conclude": "Concloure el pla",
+    "confirm_conclude": "Voleu marcar aquest pla d'entrenament com a conclòs? L'estat canviarà a Completat. Si no hi ha data de fi, s'usarà la d'avui. No es pot desfer.",
+    "conclude_confirm_btn": "Concloure el pla",
+    "error_end_date_required_expired": "La data de fi és obligatòria quan l'estat és Caducat."
   },
   "template_workouts": {
     "title": "Rutines",

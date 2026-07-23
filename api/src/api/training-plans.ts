@@ -193,7 +193,20 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
     return res.status(400).json({ error: 'end_date must be YYYY-MM-DD' });
   }
   try {
-    await assertPlanWritable(planId, memberId, gymId);
+    const { rows: planRows } = await db.query(
+      "SELECT status, end_date FROM training_plans WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
+      [planId, memberId, gymId],
+    );
+    if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
+    if (planRows[0].status === 'completed') return res.status(403).json({ error: 'Completed training plans are read-only' });
+
+    if (status === 'expired') {
+      const effectiveEndDate = ('end_date' in req.body) ? end_date : planRows[0].end_date;
+      if (!effectiveEndDate) {
+        return res.status(400).json({ error: 'End Date is required when status is Expired.' });
+      }
+    }
+
     const { rowCount } = await db.query(
       `UPDATE training_plans SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),

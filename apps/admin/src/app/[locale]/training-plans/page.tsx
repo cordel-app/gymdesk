@@ -101,9 +101,8 @@ export default function TrainingPlansPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [deleting, setDeleting] = useState<TrainingPlanRow | null>(null);
   const [detailsPlan, setDetailsPlan] = useState<TrainingPlanRow | null>(null);
-  const [completingPlan, setCompletingPlan] = useState<TrainingPlanRow | null>(null);
-  const [completeEndDate, setCompleteEndDate] = useState('');
-  const [completeSaving, setCompleteSaving] = useState(false);
+  const [concludingPlan, setConcludingPlan] = useState<TrainingPlanRow | null>(null);
+  const [concludeSaving, setConcludeSaving] = useState(false);
 
   // Expand/hierarchy state
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -239,6 +238,9 @@ export default function TrainingPlansPage() {
 
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('training_plans.error_required')); return; }
+    if (editForm.status === 'expired' && !editForm.end_date) {
+      setEditError(t('training_plans.error_end_date_required_expired')); return;
+    }
     setEditSaving(true); setEditError(null);
     const row = rows.find((r) => r.id === editingId)!;
     try {
@@ -272,20 +274,19 @@ export default function TrainingPlansPage() {
     }
   }
 
-  async function handleComplete() {
-    if (!completingPlan) return;
-    setCompleteSaving(true);
+  async function handleConclude() {
+    if (!concludingPlan) return;
+    setConcludeSaving(true);
     try {
-      await apiFetch(`/members/${completingPlan.member_id}/training-plans/${completingPlan.id}/complete`, {
+      await apiFetch(`/members/${concludingPlan.member_id}/training-plans/${concludingPlan.id}/complete`, {
         method: 'POST',
-        body: JSON.stringify({ end_date: completeEndDate || null }),
       });
-      setCompletingPlan(null);
+      setConcludingPlan(null);
       load();
     } catch (err: any) {
       toast(err.message ?? t('training_plans.error_generic'));
     } finally {
-      setCompleteSaving(false);
+      setConcludeSaving(false);
     }
   }
 
@@ -344,10 +345,11 @@ export default function TrainingPlansPage() {
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 12, fontSize: 13, color: '#666' }}>
         {([
           ['name', t('training_plans.col_name')],
+          ['member', t('training_plans.col_member')],
           ['status', t('training_plans.col_status')],
           ['start_date', t('training_plans.col_start_date')],
           ['created_at', t('training_plans.col_created_at')],
-          ['modified_at', t('training_plans.col_modified_at')],
+          ['created_by', t('training_plans.col_created_by')],
         ] as [SortKey, string][]).map(([key, label]) => <React.Fragment key={key}>{sortBtn(key, label)}</React.Fragment>)}
       </div>
 
@@ -375,7 +377,7 @@ export default function TrainingPlansPage() {
               onEdit={() => guardUnsaved(() => startEdit(row))}
               onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
               onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
-              onComplete={() => guardUnsaved(() => { setCompletingPlan(row); setCompleteEndDate(new Date().toISOString().slice(0, 10)); })}
+              onConclude={() => guardUnsaved(() => setConcludingPlan(row))}
               onDelete={() => guardUnsaved(() => setDeleting(row))}
               onEditFormChange={setEditForm}
               onSave={saveEdit}
@@ -417,30 +419,15 @@ export default function TrainingPlansPage() {
         onCancel={() => setPendingAction(null)}
       />
 
-      {/* Complete dialog */}
-      {completingPlan && (
-        <CrudModal
-          open
-          title={t('training_plans.complete_dialog_title')}
-          error={null}
-          saving={completeSaving}
-          cancelLabel={t('training_plans.cancel')}
-          saveLabel={completeSaving ? t('training_plans.saving') : t('training_plans.complete_confirm_btn')}
-          onCancel={() => setCompletingPlan(null)}
-          onSave={handleComplete}
-        >
-          <p style={{ margin: '0 0 16px', fontSize: 14, lineHeight: 1.5, color: '#555' }}>
-            {t('training_plans.confirm_complete')}
-          </p>
-          <FormLabel>{t('training_plans.complete_end_date_label')}</FormLabel>
-          <input
-            type="date"
-            value={completeEndDate}
-            onChange={(e) => setCompleteEndDate(e.target.value)}
-            style={modalInputStyle}
-          />
-        </CrudModal>
-      )}
+      {/* Conclude Plan dialog */}
+      <ConfirmDialog
+        open={concludingPlan !== null}
+        message={t('training_plans.confirm_conclude')}
+        confirmLabel={concludeSaving ? t('training_plans.saving') : t('training_plans.conclude_confirm_btn')}
+        cancelLabel={t('training_plans.cancel')}
+        onConfirm={handleConclude}
+        onCancel={() => setConcludingPlan(null)}
+      />
 
       {/* Details dialog */}
       {detailsPlan && (
@@ -474,7 +461,7 @@ type EditForm = { name: string; description: string; status: string; start_date:
 function PlanCard({
   row, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onComplete, onDelete,
+  onToggleExpand, onEdit, onDetails, onDuplicate, onConclude, onDelete,
   onEditFormChange, onSave, onCancel,
   onManageBlocks, onManageExercises,
   apiFetch, toast, onChanged,
@@ -494,7 +481,7 @@ function PlanCard({
   onEdit: () => void;
   onDetails: () => void;
   onDuplicate: () => void;
-  onComplete: () => void;
+  onConclude: () => void;
   onDelete: () => void;
   onEditFormChange: (f: EditForm) => void;
   onSave: () => void;
@@ -508,10 +495,10 @@ function PlanCard({
   const isCompleted = row.status === 'completed';
 
   const menuItems = [
-    ...(canWrite && !isCompleted ? [{ label: t('training_plan_templates.edit'), onClick: onEdit }] : []),
     { label: t('training_plans.details'), onClick: onDetails },
+    ...(canWrite && !isCompleted ? [{ label: t('training_plan_templates.edit'), onClick: onEdit }] : []),
+    ...(canWrite && row.status === 'active' ? [{ label: t('training_plans.conclude'), onClick: onConclude }] : []),
     ...(canWrite ? [{ label: t('training_plans.duplicate'), onClick: onDuplicate }] : []),
-    ...(canWrite && row.status === 'active' ? [{ label: t('training_plans.complete'), onClick: onComplete }] : []),
     ...(canWrite ? [{ label: t('training_plans.delete'), onClick: onDelete, danger: true }] : []),
   ];
 
@@ -534,8 +521,15 @@ function PlanCard({
             </div>
             <div>
               <label style={inlineLabelStyle}>{t('training_plans.label_status')}</label>
-              <select value={editForm.status} onChange={(e) => onEditFormChange({ ...editForm, status: e.target.value })}
-                style={{ ...inlineInputStyle, width: 'auto' }}>
+              <select value={editForm.status} onChange={(e) => {
+                const newStatus = e.target.value;
+                const today = new Date().toISOString().slice(0, 10);
+                onEditFormChange({
+                  ...editForm,
+                  status: newStatus,
+                  end_date: newStatus === 'expired' && !editForm.end_date ? today : editForm.end_date,
+                });
+              }} style={{ ...inlineInputStyle, width: 'auto' }}>
                 {EDITABLE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
               </select>
             </div>
@@ -559,9 +553,11 @@ function PlanCard({
           <span style={nameCellStyle}>{row.name}</span>
           <span style={memberCellStyle}>{row.member_name}</span>
           <span style={descCellStyle}>{row.description ?? '—'}</span>
-          <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
           <span style={dateCellStyle}>{formatDate(row.start_date, locale)}</span>
           <span style={dateCellStyle}>{row.end_date ? formatDate(row.end_date, locale) : '—'}</span>
+          <span style={dateCellStyle}>{formatDate(row.created_at, locale)}</span>
+          <span style={createdByCellStyle}>{row.created_by_name ?? '—'}</span>
+          <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
           <span onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('training_plans.col_actions')} items={menuItems} />
           </span>
@@ -863,16 +859,12 @@ function DetailsDialog({ plan, locale, t, onClose }: {
         <DetailRow label={t('training_plans.col_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('training_plans.label_start_date')} value={formatDate(plan.start_date, locale)} />
-        {plan.end_date && <DetailRow label={t('training_plans.label_end_date')} value={formatDate(plan.end_date, locale)} />}
+        <DetailRow label={t('training_plans.label_end_date')} value={plan.end_date ? formatDate(plan.end_date, locale) : '—'} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('training_plans.label_created_by')} value={plan.created_by_name ?? '—'} />
         <DetailRow label={t('training_plans.label_created_at')} value={formatDate(plan.created_at, locale)} />
-        {plan.modified_at && (
-          <>
-            <DetailRow label={t('training_plans.label_modified_by')} value={plan.modified_by_name ?? '—'} />
-            <DetailRow label={t('training_plans.label_modified_at')} value={formatDate(plan.modified_at, locale)} />
-          </>
-        )}
+        <DetailRow label={t('training_plans.label_modified_by')} value={plan.modified_by_name ?? '—'} />
+        <DetailRow label={t('training_plans.label_modified_at')} value={plan.modified_at ? formatDate(plan.modified_at, locale) : '—'} />
       </div>
     </CrudModal>
   );
@@ -927,6 +919,10 @@ const descCellStyle: React.CSSProperties = {
 };
 const dateCellStyle: React.CSSProperties = {
   fontSize: 13, color: '#666', whiteSpace: 'nowrap', flexShrink: 0,
+};
+const createdByCellStyle: React.CSSProperties = {
+  fontSize: 13, color: '#666', flexShrink: 0, maxWidth: 130,
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
 const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
