@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 
@@ -178,7 +178,7 @@ trainingPlansRouter.get('/:planId', async (req, res, next) => {
   }
 });
 
-trainingPlansRouter.put('/:planId', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const { name, description, status, start_date, end_date } = req.body;
@@ -213,7 +213,7 @@ trainingPlansRouter.put('/:planId', requireRole('admin', 'coach'), async (req, r
   }
 });
 
-trainingPlansRouter.delete('/:planId', requireRole('admin', 'coach'), async (req, res) => {
+trainingPlansRouter.delete('/:planId', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const { rowCount } = await db.query(
@@ -227,7 +227,7 @@ trainingPlansRouter.delete('/:planId', requireRole('admin', 'coach'), async (req
 
 /* ---- Workout (clone-side) ---- */
 
-trainingPlansRouter.post('/:planId/workouts', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/workouts', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   try { await assertPlanWritable(planId, memberId, gymId); } catch (e: any) { return res.status(e.status ?? 500).json({ error: e.message }); }
@@ -253,7 +253,7 @@ trainingPlansRouter.post('/:planId/workouts', requireRole('admin', 'coach'), asy
   }
 });
 
-trainingPlansRouter.put('/:planId/workouts/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/reorder', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   try { await assertPlanWritable(planId, memberId, gymId); } catch (e: any) { return res.status(e.status ?? 500).json({ error: e.message }); }
@@ -271,7 +271,7 @@ trainingPlansRouter.put('/:planId/workouts/reorder', requireRole('admin', 'coach
   }
 });
 
-trainingPlansRouter.put('/:planId/workouts/:workoutId', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/:workoutId', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId, planId, workoutId } = req.params as { memberId: string; planId: string; workoutId: string };
   try { await assertPlanWritable(planId, memberId, gymId); } catch (e: any) { return res.status(e.status ?? 500).json({ error: e.message }); }
@@ -293,7 +293,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId', requireRole('admin', 'co
   }
 });
 
-trainingPlansRouter.delete('/:planId/workouts/:workoutId', requireRole('admin', 'coach'), async (req, res) => {
+trainingPlansRouter.delete('/:planId/workouts/:workoutId', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { planId, workoutId } = req.params as { planId: string; workoutId: string };
   const { rowCount } = await db.query(
@@ -307,7 +307,7 @@ trainingPlansRouter.delete('/:planId/workouts/:workoutId', requireRole('admin', 
 
 /* ---- WorkoutBlock (clone-side) ---- */
 
-trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { planId, workoutId } = req.params as { planId: string; workoutId: string };
   if (!(await workoutExists(workoutId, planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
@@ -336,7 +336,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks', requireRole('adm
   }
 });
 
-trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/reorder', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { planId, workoutId } = req.params as { planId: string; workoutId: string };
   if (!(await workoutExists(workoutId, planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
@@ -354,7 +354,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/reorder', requireRo
   }
 });
 
-trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { planId, workoutId, blockId } = req.params as { planId: string; workoutId: string; blockId: string };
   if (!(await workoutExists(workoutId, planId, gymId))) return res.status(404).json({ error: 'Workout not found' });
@@ -380,7 +380,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId', requireR
   }
 });
 
-trainingPlansRouter.delete('/:planId/workouts/:workoutId/blocks/:blockId', requireRole('admin', 'coach'), async (req, res) => {
+trainingPlansRouter.delete('/:planId/workouts/:workoutId/blocks/:blockId', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { workoutId, blockId } = req.params as { workoutId: string; blockId: string };
   const { rowCount } = await db.query(
@@ -394,7 +394,7 @@ trainingPlansRouter.delete('/:planId/workouts/:workoutId/blocks/:blockId', requi
 
 /* ---- WorkoutExercise (clone-side) ---- */
 
-trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { workoutId, blockId } = req.params as { workoutId: string; blockId: string };
   if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -440,7 +440,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
   }
 });
 
-trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/reorder', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { workoutId, blockId } = req.params as { workoutId: string; blockId: string };
   if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -458,7 +458,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
   }
 });
 
-trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { workoutId, blockId, exId } = req.params as { workoutId: string; blockId: string; exId: string };
   if (!(await blockExists(blockId, workoutId, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -489,7 +489,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
   }
 });
 
-trainingPlansRouter.delete('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId', requireRole('admin', 'coach'), async (req, res) => {
+trainingPlansRouter.delete('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { blockId, exId } = req.params as { blockId: string; exId: string };
   const { rowCount } = await db.query(
@@ -524,7 +524,7 @@ async function blockInPlan(blockId: string | number, planId: string, gymId: stri
  * recompact both workouts in one transaction. position is 1-based within the
  * target; omitted → append at the end.
  */
-trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/move', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/move', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId, workoutId, blockId } = req.params as { memberId: string; planId: string; workoutId: string; blockId: string };
   const targetId = Number(req.body.target_workout_id);
@@ -572,7 +572,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/move', req
 });
 
 // Move an exercise item to another block of the same plan. Same park-then-recompact shape.
-trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId/move', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId/move', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId, workoutId, blockId, exId } = req.params as
     { memberId: string; planId: string; workoutId: string; blockId: string; exId: string };
@@ -629,7 +629,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
 });
 
 // Duplicate a workout (with its blocks and exercises) at the end of the plan.
-trainingPlansRouter.post('/:planId/workouts/:workoutId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/workouts/:workoutId/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId, workoutId } = req.params as { memberId: string; planId: string; workoutId: string };
   try {
@@ -686,7 +686,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/duplicate', requireRole('
 });
 
 // Duplicate a block (with its exercises) at the end of the same workout.
-trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { planId, workoutId, blockId } = req.params as { planId: string; workoutId: string; blockId: string };
   try {
@@ -733,7 +733,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate
 });
 
 // #112: Complete a plan — sets status=completed and stamps end_date.
-trainingPlansRouter.post('/:planId/complete', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/complete', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const endDate = req.body.end_date ?? null;
@@ -764,7 +764,7 @@ trainingPlansRouter.post('/:planId/complete', requireRole('admin', 'coach'), asy
 });
 
 // #112: Duplicate a training plan (all workouts, blocks, exercises) into a new draft plan.
-trainingPlansRouter.post('/:planId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   try {
@@ -821,7 +821,7 @@ trainingPlansRouter.post('/:planId/duplicate', requireRole('admin', 'coach'), as
 });
 
 // Duplicate an exercise item at the end of the same block.
-trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises/:exId/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { workoutId, blockId, exId } = req.params as { workoutId: string; blockId: string; exId: string };
   try {

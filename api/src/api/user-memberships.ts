@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
@@ -67,7 +67,7 @@ async function effectivePrice(planId: number, gymId: string, date: string):
   return { price: base_price, plan_price_id: null, base_price };
 }
 
-userMembershipsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { member_id, membership_plan_id, starts_at, ends_at, final_price, discount_reason, discount_expires_at } = req.body;
   if (!member_id || !membership_plan_id || !starts_at) {
@@ -126,7 +126,7 @@ userMembershipsRouter.post('/', requireRole('admin', 'staff'), async (req, res, 
 
 // Update lifecycle fields (dates, status, discount). Staff can pause/reactivate;
 // only admin can cancel (see DELETE) but staff can flip status through 'active' or 'paused'.
-userMembershipsRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) => {
+userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { starts_at, ends_at, status, final_price, discount_reason, discount_expires_at } = req.body;
   if (status && !STATUSES.includes(status)) {

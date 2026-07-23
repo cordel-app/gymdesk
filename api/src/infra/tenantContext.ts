@@ -2,8 +2,10 @@ import { createClerkClient } from '@clerk/backend';
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
+import { AppRole, AppModule, canAccess, canWrite } from './permissions';
 
-export type GymRole = 'admin' | 'coach' | 'staff' | 'member';
+/** Gym-scoped role stored in gym_memberships.role. */
+export type GymRole = AppRole;
 
 export interface TenantContext {
   userId: string;
@@ -110,9 +112,34 @@ export function getTenantContext(req: Request): TenantContext {
   return req.tenantCtx;
 }
 
+/**
+ * Legacy role-allowlist guard — kept for guards that need explicit role checks
+ * (e.g. last-admin protection that checks for 'admin' specifically).
+ * Prefer requireModuleAccess / requireModuleWrite for new route guards.
+ */
 export function requireRole(...roles: GymRole[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.tenantCtx || !roles.includes(req.tenantCtx.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
+  };
+}
+
+/** Gate a route to roles that have any non-NONE, non-R_OWN access to the module. */
+export function requireModuleAccess(module: AppModule) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.tenantCtx || !canAccess(req.tenantCtx.role, module)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
+  };
+}
+
+/** Gate a route to roles that have RW or RW_ASSIGNED on the module. */
+export function requireModuleWrite(module: AppModule) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.tenantCtx || !canWrite(req.tenantCtx.role, module)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     next();

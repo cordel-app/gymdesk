@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole, GymRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite, GymRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 
@@ -53,8 +53,8 @@ const LIST_SELECT = `
   LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
 `;
 
-// Financial data — staff-level read, no coach/member access.
-billingEventsRouter.get('/', requireRole('admin', 'staff'), async (req, res) => {
+// Module-level read gate (requireModuleAccess('PAYMENTS')) is applied in app.ts.
+billingEventsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { member_id, user_membership_id, event_type, from, to } = req.query as Record<string, string | undefined>;
 
@@ -82,7 +82,7 @@ billingEventsRouter.get('/', requireRole('admin', 'staff'), async (req, res) => 
   res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
 });
 
-billingEventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+billingEventsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const { event_type, member_id, user_membership_id, charge_type_id, amount, notes, source } = req.body;
 
@@ -156,7 +156,7 @@ billingEventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, ne
 });
 
 // GET /billing-events/member/:memberId — convenience alias for the member history view.
-billingEventsRouter.get('/member/:memberId', requireRole('admin', 'staff'), async (req, res) => {
+billingEventsRouter.get('/member/:memberId', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const memberId = parseInt(String(req.params.memberId), 10);
   if (!memberId) return res.status(400).json({ error: 'Invalid memberId' });

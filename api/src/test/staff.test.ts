@@ -74,7 +74,7 @@ describe('staff', () => {
     });
 
     it('returns 403 for non-admin role', async () => {
-      await createTestMembership(gymId, 'coach', 'coach-user');
+      await createTestMembership(gymId, 'trainer_performance', 'trainer-user');
       const res = await request
         .post('/staff')
         .set('Authorization', 'Bearer coach-token')
@@ -82,7 +82,7 @@ describe('staff', () => {
         .send(BASE);
       // coach-user won't resolve to admin; mock verifyToken returns TEST_USER_ID for any token.
       // Use a dedicated staff-role user to test 403.
-      await createTestMembership(gymId, 'staff', 'staff-only-user');
+      await createTestMembership(gymId, 'front_desk', 'front-desk-user');
       const res2 = await request
         .post('/staff')
         .set('Authorization', 'Bearer staff-only-token')

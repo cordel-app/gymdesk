@@ -1,11 +1,9 @@
-// Navigation group and item configuration for the admin sidebar
-
-export type UserRole = 'staff' | 'admin' | 'superadmin';
+import { AppRole, AppModule, canAccessModule } from './permissions';
 
 export interface NavItem {
   href: string;
-  labelKey: string; // Translation key like 'nav.members'
-  requiredRole?: UserRole;
+  labelKey: string;
+  requiredRole?: 'superadmin';
   children?: NavItem[];
   /** Draw a divider line above this item (visual grouping within a nav group). */
   separatorAbove?: boolean;
@@ -13,19 +11,19 @@ export interface NavItem {
 
 export interface NavGroup {
   id: string;
-  labelKey: string; // Translation key like 'nav.groups.membership'
-  requiredRole?: UserRole;
+  labelKey: string;
+  /** Module-based access gate: show when the user's role canAccessModule(module). */
+  module?: AppModule;
+  /** Explicit role gate — only used for superadmin-only groups. */
+  requiredRole?: 'superadmin';
   items: NavItem[];
 }
 
-/**
- * Navigation groups configuration for the admin app
- * Groups are displayed as collapsible sections in the sidebar
- */
 export const navigationGroups: NavGroup[] = [
   {
     id: 'membership',
     labelKey: 'nav.groups.membership',
+    module: 'MEMBERS',
     items: [
       {
         href: '/{{locale}}',
@@ -46,7 +44,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'organization',
     labelKey: 'nav.groups.organization',
-    requiredRole: 'admin',
+    module: 'ORGANIZATION',
     items: [
       {
         href: '/{{locale}}/organization',
@@ -85,6 +83,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'training',
     labelKey: 'nav.groups.training',
+    module: 'TRAINING',
     items: [
       {
         href: '/{{locale}}/training',
@@ -112,6 +111,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'nutrition',
     labelKey: 'nav.groups.nutrition',
+    module: 'NUTRITION',
     items: [
       {
         href: '/{{locale}}/nutrition',
@@ -130,21 +130,18 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'payments',
     labelKey: 'nav.groups.payments',
+    module: 'PAYMENTS',
     items: [
       {
         href: '/{{locale}}/payments/transactions',
         labelKey: 'nav.transactions',
-      },
-      {
-        href: '/{{locale}}/payments/payment-providers',
-        labelKey: 'nav.payment_providers',
       },
     ],
   },
   {
     id: 'financials',
     labelKey: 'nav.groups.financials',
-    requiredRole: 'admin',
+    module: 'FINANCIALS',
     items: [
       {
         href: '/{{locale}}/financials',
@@ -158,12 +155,16 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/promotions',
         labelKey: 'nav.promotions',
       },
+      {
+        href: '/{{locale}}/financials/payment-providers',
+        labelKey: 'nav.payment_providers',
+      },
     ],
   },
   {
     id: 'system',
     labelKey: 'nav.groups.system',
-    requiredRole: 'admin',
+    module: 'SYSTEM',
     items: [
       {
         href: '/{{locale}}/audit',
@@ -200,30 +201,22 @@ export const navigationGroups: NavGroup[] = [
   },
 ];
 
-/**
- * Check if a user role has access to an item
- */
-export function hasAccessToItem(itemRole: UserRole | undefined, userRole: UserRole): boolean {
-  if (!itemRole) return true;
-
-  const roleHierarchy: Record<UserRole, number> = {
-    staff: 0,
-    admin: 1,
-    superadmin: 2,
-  };
-
-  return roleHierarchy[userRole] >= roleHierarchy[itemRole];
-}
-
-/**
- * Filter groups and items based on user role
- */
-export function filterNavGroups(groups: NavGroup[], userRole: UserRole): NavGroup[] {
+export function filterNavGroups(groups: NavGroup[], userRole: AppRole | 'superadmin'): NavGroup[] {
   return groups
-    .filter((group) => hasAccessToItem(group.requiredRole, userRole))
+    .filter((group) => {
+      if (group.requiredRole === 'superadmin') return userRole === 'superadmin';
+      if (group.module) {
+        if (userRole === 'superadmin') return true;
+        return canAccessModule(userRole, group.module);
+      }
+      return true;
+    })
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => hasAccessToItem(item.requiredRole, userRole)),
+      items: group.items.filter((item) => {
+        if (item.requiredRole === 'superadmin') return userRole === 'superadmin';
+        return true;
+      }),
     }))
     .filter((group) => group.items.length > 0);
 }

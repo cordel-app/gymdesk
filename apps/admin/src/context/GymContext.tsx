@@ -4,6 +4,8 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, Re
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useTranslations } from 'next-intl';
 import { useToast } from '@/components/Toast';
+import { AppRole } from '@/config/permissions';
+
 export interface GymTheme {
   id: string;
   name: string;
@@ -17,7 +19,7 @@ export interface GymOption {
   id: string;
   name: string;
   slug: string;
-  role: 'admin' | 'coach' | 'staff';
+  role: AppRole;
   theme: GymTheme | null;
 }
 

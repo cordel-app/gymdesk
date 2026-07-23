@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, handleDupEntry } from '../infra/db-helpers';
 
@@ -80,7 +80,7 @@ membersRouter.get('/deleted', async (req, res) => {
   res.json(rows);
 });
 
-membersRouter.post('/:id/restore', requireRole('admin', 'staff'), async (req, res) => {
+membersRouter.post('/:id/restore', requireModuleWrite('MEMBERS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rowCount } = await db.query(
     'UPDATE members SET deleted_at = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL',
@@ -98,7 +98,7 @@ membersRouter.get('/:id', async (req, res) => {
   res.json(row);
 });
 
-membersRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, email, phone, fare_id, center_ids, default_center_id } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
@@ -129,7 +129,7 @@ membersRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =>
   }
 });
 
-membersRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) => {
+membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { name, email, phone, fare_id } = req.body;
   try {
@@ -153,7 +153,7 @@ membersRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) 
   }
 });
 
-membersRouter.post('/:id/invite', requireRole('admin', 'staff'), async (req, res, next) => {
+membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
   try {
@@ -179,7 +179,7 @@ membersRouter.post('/:id/invite', requireRole('admin', 'staff'), async (req, res
 });
 
 // POST /:id/reinvite — resend a still-pending invitation for member-portal access
-membersRouter.post('/:id/reinvite', requireRole('admin', 'staff'), async (req, res, next) => {
+membersRouter.post('/:id/reinvite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const memberAppUrl = process.env.CORDEL_FITNESS_MEMBERS_URL ?? '';
   try {
@@ -205,7 +205,7 @@ membersRouter.post('/:id/reinvite', requireRole('admin', 'staff'), async (req, r
 });
 
 // POST /:id/revoke-invite — cancel a pending portal invitation without removing the member
-membersRouter.post('/:id/revoke-invite', requireRole('admin', 'staff'), async (req, res, next) => {
+membersRouter.post('/:id/revoke-invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(

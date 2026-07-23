@@ -6,9 +6,9 @@
 
 **Tenant isolation**: every domain table has `gym_id`. Every query filters by it. The `x-gym-id` request header carries the active gym; `tenantContext` middleware resolves it and attaches `req.tenantCtx`.
 
-**Auth**: `requireAuth()` verifies the Clerk Bearer token → `userId` on `req.auth`. `tenantContext` then resolves the gym role from `gym_memberships`. Use `requireRole('admin')` / `requireRole('admin', 'staff')` / `requireRole('admin', 'coach')` to gate mutations. Never use `getAuth()` — use `req.auth`.
+**Auth**: `requireAuth()` verifies the Clerk Bearer token → `userId` on `req.auth`. `tenantContext` then resolves the gym role from `gym_memberships`. Use `requireModuleAccess(module)` / `requireModuleWrite(module)` to gate at the router-mount and write-route level respectively. Use `requireRole('admin')` only for explicit last-admin guards or superadmin operations. Never use `getAuth()` — use `req.auth`.
 
-**Roles** (low → high): `guest` (public) · `member` · `staff` · `coach` · `admin` (gym-scoped) · `superadmin` (platform, Clerk metadata).
+**Roles**: `guest` (public) · `member` · `nutritionist` · `accountant` · `front_desk` · `trainer_performance` · `trainer_perf_nutrition` · `admin` (gym-scoped) · `superadmin` (platform, Clerk metadata).
 
 **DB conventions**: auto-increment `INT UNSIGNED` PKs, `CHAR(36)` UUID for `gyms`, `UTC_TIMESTAMP()` not `NOW()`, `VARCHAR` not `TEXT` for indexed columns, soft-delete via `deleted_at DATETIME`, named CHECK constraints for statuses, no `RETURNING` (insert then SELECT by `insertId`), `db.transaction()` for multi-statement writes.
 
@@ -87,50 +87,72 @@ gymdesk/
 
 ### Roles
 
-`GymRole` (the DB-backed role type) is `admin | coach | staff | member`. `superadmin` is a **platform** role stored in Clerk, not a `gym_memberships` value. `guest` is anonymous (public routes only).
+`AppRole` (the DB-backed role type, from `api/src/infra/permissions.ts`) is `admin | trainer_performance | trainer_perf_nutrition | front_desk | accountant | nutritionist | member`. `superadmin` is a **platform** role stored in Clerk, not a `gym_memberships` value. `guest` is anonymous (public routes only). Migration 075 renamed `coach → trainer_performance` and `staff → front_desk` and added 3 new roles.
 
 | Role | Scope | Who | How identified |
 |------|-------|-----|----------------|
 | `superadmin` | Platform | Cordel internal | Clerk `publicMetadata.platform_role === 'superadmin'` |
 | `admin` | Gym | Gym/studio owner | `gym_memberships.role` |
-| `coach` | Gym | Trainer | `gym_memberships.role` (+ trainer specialities) |
-| `staff` | Gym | Front desk | `gym_memberships.role` |
+| `trainer_performance` | Gym | Performance trainer | `gym_memberships.role` (+ trainer specialities) |
+| `trainer_perf_nutrition` | Gym | Trainer + nutrition | `gym_memberships.role` (+ trainer specialities) |
+| `front_desk` | Gym | Receptionist | `gym_memberships.role` |
+| `accountant` | Gym | Accountant | `gym_memberships.role` |
+| `nutritionist` | Gym | Nutritionist | `gym_memberships.role` |
 | `member` | Gym | Gym member/client | `gym_memberships.role` + `members.clerk_user_id` |
 | `guest` | Public | Anonymous visitor | No auth — `/public/*` routes only |
 
-### Permission model (verified against routers)
+### Permission model (#156)
 
-Reads (`GET`) on gym-scoped domain routes are open to any authenticated gym role (tenantContext alone). Writes are gated with `requireRole(...)`. Source of truth is each router; the table below summarizes the current guards:
+Access is governed by a static `PERMISSION_MATRIX` in `api/src/infra/permissions.ts` (mirrored to `apps/admin/src/config/permissions.ts` for the frontend). Each cell maps `AppModule × AppRole → PermissionLevel` (`RW | R | R_ASSIGNED | RW_ASSIGNED | R_OWN | NONE`). R_ASSIGNED/RW_ASSIGNED are treated as R/RW at the router layer until a `staff_member_assignments` table is added.
 
-| Domain (router) | Read | Create / Update | Delete | Notes |
-|---|---|---|---|---|
-| Members (`members`) | any role | `admin`, `staff` | `admin` | Soft-delete + `/restore`; `/:id/invite`, `/:id/reinvite`, `/:id/revoke-invite` = `admin`,`staff`. |
-| Team (`gym-users`) | `admin` | `admin` | `admin` | Whole router is admin-only (see Team management). |
-| Rooms, Specialities, Class types, Class packages, Promotions, Plans (`membership-plans`) | any role | `admin` | `admin` | Admin-only CRUD lookups/catalogs. |
-| Trainers (`trainers`) | any role | `admin` (PUT specialities) | — | Trainers are `coach` rows; this manages their specialities. |
-| Staff (`staff`) | any role | `admin` | `admin` | HR/employment records. Soft-delete. `PATCH /:id/deactivate` sets `employment_status='inactive'`. `POST /:id/duplicate` clones without `employee_number`/`profile_photo_url`. |
-| Class sessions (`class-sessions`) | any role | `admin`, `coach`, `staff` | (cancel) `admin`,`coach`,`staff` | `POST /:id/cancel` instead of hard delete. |
-| Bookings (`bookings`) | any role | `admin`, `staff` (create) | `admin`, `staff` | `POST /:id/attendance` = `admin`,`staff`,`coach`. |
-| Exercises, Workout templates, Training templates | any role | `admin`, `coach` | `admin`, `coach` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). Muscles are a static read-only catalog (`GET /muscles`, no writes — see `domain/muscles.ts`). |
-| Dishes, Sides, Sauces (`meals-catalog`) | any role | `admin`, `coach` | `admin`, `coach` | Shared gym-scoped catalogs for nutrition. `DELETE /dishes/:id` returns 409 if the dish is used in any nutrition plan template (app-level guard + FK RESTRICT). |
-| Nutrition plan templates (`nutrition-plan-templates`) | any role | `admin`, `coach` | `admin`, `coach` | Full hierarchy: template → days (weekday 0–6) → meals → meal_dishes (dish + optional side + sauce). `POST /:id/duplicate` deep-clones entire tree. `PUT …/days/reorder`, `PUT …/meals/reorder`, `PUT …/meal-dishes/reorder` update positions. `GET /:id/hierarchy` returns nested JSON (JSON_ARRAYAGG derived tables). |
-| Training plans (gym-level `training-plans` + `members/:id/training-plans`) | any role | `admin`, `coach` | `admin`, `coach` | Personalized plans (#67, #112). `POST /training-plans` creates from a template or from scratch; 409 + `{ active_count }` if the member already has Active plans without a decision; `on_existing_active: 'expire'` closes those atomically. `POST /members/:id/training-plans/:planId/complete` transitions to `completed` (read-only, 403 on all content mutations). `POST /members/:id/training-plans/:planId/duplicate` deep-clones the full tree. Nested content mutations on `/members/:id/training-plans/…` (workouts/blocks/exercises, cross-parent moves + duplicate at every level). |
-| User memberships (`user-memberships`) | any role | `admin`, `staff` | `admin` | Status changes write a `status_changed` billing event in the same tx. |
-| Billing ledger (`billing-events`) | `admin`, `staff` | `admin`, `staff` (POST) | — | Append-only. `GET /billing-events/member/:memberId` is a convenience alias for per-member history (paginated, tenant-isolated). |
-| Payments (`payments`) | `admin`, `staff` | `admin`, `staff` | — | Operational view of `billing_events`. Excludes `status_changed` system events. Exposes `POST /payments/apply-promotion` (delegates to `applyPromotionToMembership` exported from `membership-promotions.ts`). |
-| Audit log (`audit-logs`) | `admin` (default gym scope) · `superadmin` (`?scope=all`) | — | — | Read-only viewer. `?scope=all` (superadmin-only via `tenantCtx.isSuperadmin`) lifts the gym filter and joins `gyms.name`; optional `?gym_id=` narrows the platform view (#66). |
-| Action types (`action-types`) | any role | — | — | Global lookup (no `gym_id`), seeded in migration. |
-| Public (`public/*`) | guest | — | — | Gym landing + class list by slug. |
-| Platform (`platform/*`, `platform/superadmins`) | `superadmin` | `superadmin` | `superadmin` | Gym creation/list; superadmin management. |
+| Module | admin | trainer_performance | trainer_perf_nutrition | front_desk | accountant | nutritionist | member |
+|---|---|---|---|---|---|---|---|
+| MEMBERS | RW | R_ASSIGNED | R_ASSIGNED | RW | R | R_ASSIGNED | R_OWN |
+| ORGANIZATION | RW | NONE | NONE | R | NONE | NONE | NONE |
+| TRAINING | RW | RW_ASSIGNED | RW_ASSIGNED | R | NONE | NONE | R_OWN |
+| NUTRITION | RW | R | RW_ASSIGNED | R | NONE | RW_ASSIGNED | R_OWN |
+| FINANCIALS | RW | NONE | NONE | NONE | RW | NONE | NONE |
+| PAYMENTS | RW | NONE | NONE | RW | RW | NONE | NONE |
+| SYSTEM | RW | NONE | NONE | NONE | NONE | NONE | NONE |
+| CORDEL | NONE | NONE | NONE | NONE | NONE | NONE | NONE |
+
+Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate); write routes inside them add `requireModuleWrite(module)` (RW or RW_ASSIGNED). Use `requireRole('admin')` only for explicit last-admin guards or admin-only operations within a module.
+
+| Domain (router) | Module gate | Write guard | Notes |
+|---|---|---|---|
+| Members (`members`) | MEMBERS | `requireModuleWrite('MEMBERS')` | Soft-delete + `/restore`; DELETE = `requireRole('admin')`. |
+| Team (`gym-users`) | ORGANIZATION | `requireRole('admin')` | Entire CUD is admin-only. |
+| Spaces, Specialities, Activity types, Class packages, Events, Trainers | ORGANIZATION | `requireRole('admin')` or `requireModuleWrite('ORGANIZATION')` | Admin-only writes. |
+| Class sessions (`class-sessions`) | TRAINING | `requireModuleWrite('TRAINING')` | `POST /:id/cancel` also write-gated. |
+| Bookings (`bookings`) | MEMBERS | `requireModuleWrite('MEMBERS')` | `POST /:id/attendance` = `requireRole('admin','front_desk','trainer_performance','trainer_perf_nutrition')`. |
+| Exercises, Workout templates, Training plan templates | TRAINING | `requireModuleWrite('TRAINING')` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). |
+| Training plans (`training-plans` + `members/:id/…`) | TRAINING | `requireModuleWrite('TRAINING')` | See personalized plans notes (migration 054, 066). |
+| Dishes, Sides, Sauces (`meals-catalog`) | NUTRITION | `requireModuleWrite('NUTRITION')` | `DELETE /dishes/:id` returns 409 if used in any nutrition plan. |
+| Nutrition plan templates | NUTRITION | `requireModuleWrite('NUTRITION')` | Full hierarchy with deep clone + reorder. |
+| User memberships (`user-memberships`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | DELETE = `requireRole('admin')`. Status changes emit billing events. |
+| Billing ledger (`billing-events`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Append-only. |
+| Payments (`payments`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Operational view; excludes `status_changed`. |
+| Membership plans, Benefit types, Charge types, Promotions | FINANCIALS | `requireRole('admin')` | Admin-only within FINANCIALS module. |
+| Audit log (`audit-logs`) | SYSTEM | — | Read-only; `?scope=all` for superadmin. |
+| Themes (`/system/themes`) | SYSTEM | — | R/W within SYSTEM module. |
+| Action types (`action-types`) | any role | — | Global lookup (no `gym_id`), seeded in migration. |
+| Public (`public/*`) | guest | — | Gym landing + class list by slug. |
+| Platform (`platform/*`) | `superadmin` | `superadmin` | Gym creation/list; superadmin management. |
 
 Usage in routes:
 ```ts
-router.delete('/:id', requireRole('admin'), handler);
-router.post('/',      requireRole('admin', 'staff'), handler);
-router.post('/',      requireRole('admin', 'coach'), handler);   // training/workouts
+// In app.ts — module-level read gate at mount:
+app.use('/members', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), membersRouter);
+
+// In a router — write gate on individual mutations:
+router.post('/', requireModuleWrite('TRAINING'), handler);
+router.delete('/:id', requireRole('admin'), handler);  // explicit last-admin guard
+
 // Public routes — no middleware at all:
 app.use('/public', publicRouter);
 ```
+
+Trainers are `trainer_performance` or `trainer_perf_nutrition` rows in `gym_memberships`; trainer data (specialities) is surfaced via the `trainers` router.
 
 ### Platform superadmin (Clerk metadata)
 - `requireSuperadmin` middleware checks `user.publicMetadata.platform_role === 'superadmin'`.

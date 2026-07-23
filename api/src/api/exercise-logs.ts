@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 
 /**
  * #55: staff-side read visibility into a member's ExerciseLog/WorkoutBlockLog
@@ -11,7 +11,7 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 export const exerciseLogsRouter = Router({ mergeParams: true });
 export const workoutBlockLogsRouter = Router({ mergeParams: true });
 
-exerciseLogsRouter.get('/', requireRole('admin', 'coach'), async (req, res, next) => {
+exerciseLogsRouter.get('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
   const exercise = req.query.exercise as string | undefined;
@@ -36,7 +36,7 @@ exerciseLogsRouter.get('/', requireRole('admin', 'coach'), async (req, res, next
   }
 });
 
-workoutBlockLogsRouter.get('/', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutBlockLogsRouter.get('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
   try {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, insertAndFetch } from '../infra/db-helpers';
@@ -32,7 +32,7 @@ eventsRouter.get('/:id', async (req, res) => {
   res.json(row);
 });
 
-eventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+eventsRouter.post('/', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, room_id, starts_at, ends_at, capacity, center_id } = req.body;
   if (!name || !starts_at || !ends_at) {
@@ -68,7 +68,7 @@ eventsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => 
   }
 });
 
-eventsRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) => {
+eventsRouter.put('/:id', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, room_id, starts_at, ends_at, capacity, status } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
@@ -109,7 +109,7 @@ eventsRouter.put('/:id', requireRole('admin', 'staff'), async (req, res, next) =
   } catch (err) { next(err); }
 });
 
-eventsRouter.delete('/:id', requireRole('admin', 'staff'), async (req, res) => {
+eventsRouter.delete('/:id', requireModuleWrite('ORGANIZATION'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { rowCount } = await db.query(
     `UPDATE events SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?

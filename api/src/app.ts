@@ -53,7 +53,7 @@ import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { dishesRouter, sidesRouter, saucesRouter } from './api/meals-catalog';
 import { clerkWebhookRouter } from './api/webhooks';
-import { tenantContext } from './infra/tenantContext';
+import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
@@ -123,7 +123,6 @@ app.use('/gyms', requireAuth(), gymsRouter);
 
 // Platform superadmin routes
 app.use('/platform/themes', requireAuth(), themesRouter);
-app.use('/system/themes', requireAuth(), tenantContext, gymThemesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 app.use('/platform/impersonation', requireAuth(), impersonationRouter);
@@ -136,46 +135,60 @@ app.use('/gym-users/link', requireAuth(), gymUsersLinkRouter);
 app.use('/me/gym', requireAuth(), meGymRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
-app.use('/gym-users',     requireAuth(), tenantContext, gymUsersRouter);
-app.use('/members',       requireAuth(), tenantContext, membersRouter);
-app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, memberCentersRouter);
-app.use('/bookings',      requireAuth(), tenantContext, centerContext, bookingsRouter);
-app.use('/user-memberships', requireAuth(), tenantContext, userMembershipsRouter);
-app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, membershipPromotionsRouter);
-app.use('/muscles',          requireAuth(), tenantContext, musclesRouter);
-app.use('/exercises',        requireAuth(), tenantContext, exercisesRouter);
-app.use('/result-types',     requireAuth(), tenantContext, resultTypesRouter);
-app.use('/workout-templates', requireAuth(), tenantContext, workoutTemplatesRouter);
-app.use('/training-plan-templates', requireAuth(), tenantContext, trainingPlanTemplatesRouter);
-app.use('/nutrition-plan-templates', requireAuth(), tenantContext, nutritionPlanTemplatesRouter);
-app.use('/dishes',  requireAuth(), tenantContext, dishesRouter);
-app.use('/sides',   requireAuth(), tenantContext, sidesRouter);
-app.use('/sauces',  requireAuth(), tenantContext, saucesRouter);
-app.use('/training-plans', requireAuth(), tenantContext, gymTrainingPlansRouter);
-app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, trainingPlansRouter);
-app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, memberTrainingPlansRouter);
-app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, exerciseLogsRouter);
-app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, workoutBlockLogsRouter);
-app.use('/audit-logs',       requireAuth(), tenantContext, auditLogsRouter);
-app.use('/membership-plans', requireAuth(), tenantContext, membershipPlansRouter);
-app.use('/benefit-types',    requireAuth(), tenantContext, benefitTypesRouter);
-app.use('/charge-types',     requireAuth(), tenantContext, chargeTypesRouter);
-app.use('/billing-events',   requireAuth(), tenantContext, billingEventsRouter);
-app.use('/spaces',           requireAuth(), tenantContext, centerContext, spacesRouter);
-app.use('/specialities',     requireAuth(), tenantContext, specialitiesRouter);
-app.use('/trainers',         requireAuth(), tenantContext, trainersRouter);
-app.use('/staff',            requireAuth(), tenantContext, staffRouter);
-app.use('/activity-types',   requireAuth(), tenantContext, activityTypesRouter);
-app.use('/class-sessions',   requireAuth(), tenantContext, centerContext, classSessionsRouter);
-app.use('/class-packages',   requireAuth(), tenantContext, classPackagesRouter);
-app.use('/action-types',     requireAuth(), tenantContext, actionTypesRouter);
-app.use('/promotions',       requireAuth(), tenantContext, promotionsRouter);
-app.use('/promotions/:id',   requireAuth(), tenantContext, promotionDetailsRouter);
-app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userClassPackagesRouter);
-app.use('/centers',          requireAuth(), tenantContext, centerContext, centersRouter);
-app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, trainerAvailabilityRouter);
-app.use('/events',           requireAuth(), tenantContext, centerContext, eventsRouter);
-app.use('/payments',         requireAuth(), tenantContext, paymentsRouter);
+// ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE
+app.use('/gym-users',     requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), gymUsersRouter);
+app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), spacesRouter);
+app.use('/specialities',  requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), specialitiesRouter);
+app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), trainersRouter);
+app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), staffRouter);
+app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), activityTypesRouter);
+app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), classPackagesRouter);
+app.use('/centers',       requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), centersRouter);
+app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), trainerAvailabilityRouter);
+app.use('/events',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), eventsRouter);
+
+// MEMBERS module — admin/front_desk=RW, trainer*/nutritionist=R_ASSIGNED, accountant/member=NONE
+app.use('/members',       requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), membersRouter);
+app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), memberCentersRouter);
+app.use('/bookings',      requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), bookingsRouter);
+
+// TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE
+app.use('/muscles',          requireAuth(), tenantContext, requireModuleAccess('TRAINING'), musclesRouter);
+app.use('/exercises',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), exercisesRouter);
+app.use('/result-types',     requireAuth(), tenantContext, requireModuleAccess('TRAINING'), resultTypesRouter);
+app.use('/workout-templates', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), workoutTemplatesRouter);
+app.use('/training-plan-templates', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), trainingPlanTemplatesRouter);
+app.use('/training-plans',   requireAuth(), tenantContext, requireModuleAccess('TRAINING'), gymTrainingPlansRouter);
+app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), trainingPlansRouter);
+app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), memberTrainingPlansRouter);
+app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), exerciseLogsRouter);
+app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), workoutBlockLogsRouter);
+app.use('/class-sessions',   requireAuth(), tenantContext, centerContext, requireModuleAccess('TRAINING'), classSessionsRouter);
+
+// NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
+app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionPlanTemplatesRouter);
+app.use('/dishes',  requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), dishesRouter);
+app.use('/sides',   requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), sidesRouter);
+app.use('/sauces',  requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), saucesRouter);
+
+// FINANCIALS module — admin=RW, front_desk/accountant=R, trainer*/nutritionist/member=NONE
+app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), membershipPlansRouter);
+app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), benefitTypesRouter);
+app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), chargeTypesRouter);
+app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), actionTypesRouter);
+app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), promotionsRouter);
+app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), promotionDetailsRouter);
+
+// PAYMENTS module — admin/front_desk=RW, accountant=R, member=R_OWN (via /me/*), trainer*/nutritionist=NONE
+app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), billingEventsRouter);
+app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), userMembershipsRouter);
+app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), membershipPromotionsRouter);
+app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), userClassPackagesRouter);
+app.use('/payments',         requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), paymentsRouter);
+
+// SYSTEM module — admin=RW, all others=NONE
+app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), auditLogsRouter);
+app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), gymThemesRouter);
 
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

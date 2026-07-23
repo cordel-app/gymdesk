@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
@@ -59,7 +60,7 @@ export default function ExercisesPage() {
   const [checkingDeps, setCheckingDeps] = useState(false);
   const [depBusy, setDepBusy] = useState(false);
 
-  const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   /** Static catalog keys have i18n labels; legacy keys migrated from the old

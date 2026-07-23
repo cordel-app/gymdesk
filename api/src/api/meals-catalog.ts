@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { recordAudit } from '../infra/audit';
 
@@ -36,7 +36,7 @@ function makeCatalogRouter(table: CatalogTable, entityType: string): Router {
     } catch (err) { next(err); }
   });
 
-  r.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+  r.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
     const { gymId } = getTenantContext(req);
     const { name, description, calories, protein, carbohydrates, fat } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -54,7 +54,7 @@ function makeCatalogRouter(table: CatalogTable, entityType: string): Router {
     }
   });
 
-  r.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+  r.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
     const { gymId } = getTenantContext(req);
     const { name, description, calories, protein, carbohydrates, fat } = req.body;
     if (name !== undefined && !name?.trim()) return res.status(400).json({ error: 'name cannot be empty' });
@@ -83,7 +83,7 @@ function makeCatalogRouter(table: CatalogTable, entityType: string): Router {
     }
   });
 
-  r.delete('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+  r.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
     const { gymId } = getTenantContext(req);
     try {
       // Guard against use in nutrition plan templates (FK may not be enforced in all envs)

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 
 /**
@@ -135,7 +135,7 @@ membershipPromotionsRouter.get('/', async (req, res) => {
   res.json(rows);
 });
 
-membershipPromotionsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const umId = parseInt((req.params as any).id, 10);
   const { promotion_id } = req.body;
@@ -223,7 +223,7 @@ membershipPromotionsRouter.post('/', requireRole('admin', 'staff'), async (req, 
   }
 });
 
-membershipPromotionsRouter.delete('/:promotionId', requireRole('admin', 'staff'), async (req, res, next) => {
+membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const umId = parseInt((req.params as any).id, 10);
   const promotionId = parseInt(String(req.params.promotionId), 10);

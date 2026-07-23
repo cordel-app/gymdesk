@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -83,7 +84,7 @@ export default function SchedulePage() {
   const [cancelReason, setCancelReason] = useState('');
   const [rosterFor, setRosterFor] = useState<Session | null>(null);
 
-  const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach' || activeGym?.role === 'staff';
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }

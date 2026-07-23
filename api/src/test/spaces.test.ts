@@ -74,7 +74,7 @@ describe('POST /spaces', () => {
   it('returns 403 for non-admin', async () => {
     // Create a second gym where TEST_USER_ID is only staff
     const staffGymId = await createTestGym('Staff Only Gym Spaces');
-    await createTestMembership(staffGymId, 'staff');
+    await createTestMembership(staffGymId, 'front_desk');
     const res = await request
       .post('/spaces')
       .set('Authorization', TEST_AUTH_HEADER)

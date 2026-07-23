@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { createTrainingPlanTx } from './training-plan-creation';
 import { PLAN_TREE_SELECT } from './training-plans';
@@ -160,7 +160,7 @@ gymTrainingPlansRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-gymTrainingPlansRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { member_id, template_id, name, description, start_date, on_existing_active } = req.body;
 

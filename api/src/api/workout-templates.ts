@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { getReferences } from '../domain/references';
 import { insertAndFetch } from '../infra/db-helpers';
@@ -243,7 +243,7 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -264,7 +264,7 @@ workoutTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res,
   }
 });
 
-workoutTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
@@ -287,7 +287,7 @@ workoutTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, re
   }
 });
 
-workoutTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => {
+workoutTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { rowCount } = await db.query(
@@ -299,7 +299,7 @@ workoutTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req,
   res.status(204).send();
 });
 
-workoutTemplatesRouter.post('/:id/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   try {
@@ -381,7 +381,7 @@ workoutTemplatesRouter.get('/:id/blocks', async (req, res, next) => {
   }
 });
 
-workoutTemplatesRouter.post('/:id/blocks', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.post('/:id/blocks', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
@@ -410,7 +410,7 @@ workoutTemplatesRouter.post('/:id/blocks', requireRole('admin', 'coach'), async 
   }
 });
 
-workoutTemplatesRouter.put('/:id/blocks/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.put('/:id/blocks/reorder', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
@@ -435,7 +435,7 @@ workoutTemplatesRouter.put('/:id/blocks/reorder', requireRole('admin', 'coach'),
  * → append at the end. Designed so future cross-parent moves (e.g. exercises)
  * can follow the same shape.
  */
-workoutTemplatesRouter.put('/:id/blocks/:blockId/move', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.put('/:id/blocks/:blockId/move', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id, blockId } = req.params as { id: string; blockId: string };
   const targetId = Number(req.body.target_workout_template_id);
@@ -487,7 +487,7 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/move', requireRole('admin', 'co
   }
 });
 
-workoutTemplatesRouter.put('/:id/blocks/:blockId', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.put('/:id/blocks/:blockId', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id, blockId } = req.params as { id: string; blockId: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
@@ -526,7 +526,7 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId', requireRole('admin', 'coach')
   }
 });
 
-workoutTemplatesRouter.post('/:id/blocks/:blockId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.post('/:id/blocks/:blockId/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id, blockId } = req.params as { id: string; blockId: string };
   if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -572,7 +572,7 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/duplicate', requireRole('admin
   }
 });
 
-workoutTemplatesRouter.delete('/:id/blocks/:blockId', requireRole('admin', 'coach'), async (req, res) => {
+workoutTemplatesRouter.delete('/:id/blocks/:blockId', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { id, blockId } = req.params as { id: string; blockId: string };
   const { rowCount } = await db.query(
@@ -604,7 +604,7 @@ workoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', async (req, res, ne
   }
 });
 
-workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id, blockId } = req.params as { id: string; blockId: string };
   if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -650,7 +650,7 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireRole('admin
   }
 });
 
-workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/reorder', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, blockId } = req.params as { id: string; blockId: string };
   if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -668,7 +668,7 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/reorder', requireRole
   }
 });
 
-workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id, blockId, exId } = req.params as { id: string; blockId: string; exId: string };
   if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -699,7 +699,7 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requireRole('
   }
 });
 
-workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises/:exId/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises/:exId/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id, blockId, exId } = req.params as { id: string; blockId: string; exId: string };
   if (!(await blockExists(blockId, id, gymId))) return res.status(404).json({ error: 'Block not found' });
@@ -748,7 +748,7 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/exercises/:exId/duplicate', re
   }
 });
 
-workoutTemplatesRouter.delete('/:id/blocks/:blockId/exercises/:exId', requireRole('admin', 'coach'), async (req, res) => {
+workoutTemplatesRouter.delete('/:id/blocks/:blockId/exercises/:exId', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { blockId, exId } = req.params as { id: string; blockId: string; exId: string };
   const { rowCount } = await db.query(

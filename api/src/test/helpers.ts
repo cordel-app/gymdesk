@@ -28,7 +28,7 @@ export async function createTestGym(name = 'Test Gym'): Promise<string> {
 /** Inserts a gym_memberships row so tenantContext can resolve the user's role. */
 export async function createTestMembership(
   gymId: string,
-  role: 'admin' | 'coach' | 'staff' | 'member' = 'admin',
+  role: 'admin' | 'trainer_performance' | 'trainer_perf_nutrition' | 'front_desk' | 'accountant' | 'nutritionist' | 'member' = 'admin',
   userId = TEST_USER_ID,
 ) {
   await db.query(

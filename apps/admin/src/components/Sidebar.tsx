@@ -16,7 +16,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Determine user role for filtering
-  const userRole = isSuperadmin ? 'superadmin' : activeGym?.role === 'admin' ? 'admin' : 'staff';
+  const userRole = isSuperadmin ? 'superadmin' : (activeGym?.role ?? 'member');
 
   // Load expanded state from sessionStorage on mount
   useEffect(() => {
