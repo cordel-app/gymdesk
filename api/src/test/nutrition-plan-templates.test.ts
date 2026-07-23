@@ -127,7 +127,7 @@ describe('dishes catalog', () => {
     expect(parseFloat(res.body.calories)).toBe(300); // MySQL DECIMAL returns as string
   });
 
-  it('returns 409 when deleting a dish that is used in a template', async () => {
+  it('soft-deletes a dish (204) even when it is referenced by a template', async () => {
     // Create dish
     const dishRes = await request
       .post('/dishes')
@@ -172,12 +172,12 @@ describe('dishes catalog', () => {
       .send({ dish_id: dishId });
     expect(addDishRes.status).toBe(201);
 
-    // Attempt to delete the dish — should be blocked by FK
+    // Soft-delete the dish — succeeds even when referenced (data is kept, just marked deleted)
     const deleteRes = await request
       .delete(`/dishes/${dishId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(deleteRes.status).toBe(409);
+    expect(deleteRes.status).toBe(204);
   });
 
   it('lists dishes', async () => {
