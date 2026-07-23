@@ -344,7 +344,8 @@ The sidebar is **config-driven** from `config/navigationGroups.ts`. Groups are c
 | Organization | `admin` | Dashboard, Team, Centers, Rooms, Resources, Trainers, Specialities, Class types, Class packages, Events |
 | Training | — | Dashboard, Exercises, Workout Templates, Training Plan Templates, ‹divider›, Training Plans (#67) |
 | Nutrition | — | Dashboard (placeholder) |
-| Financials | `admin` | Dashboard, Plans, Promotions |
+| Payments | — | Transactions |
+| Financials | `admin` | Dashboard, Plans, Promotions, Payment Providers (placeholder) |
 | System | `admin` | Audit log (gym-scoped) |
 | Cordel | `superadmin` | Gyms, Users, Audit log (platform-wide, `/cordel/audit`), Themes |
 
@@ -407,7 +408,8 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Benefit types | `benefit-types.ts` | (inside Plans) | Global lookup (no `gym_id`), seeded. |
 | User memberships | `user-memberships.ts`, `membership-promotions.ts` | `[locale]/memberships/` | Status changes write a `status_changed` billing event in the same tx. Apply promotions to a membership. |
 | Billing ledger | `billing-events.ts` | Ledger drawer in `[locale]/memberships/` | Append-only (GET + POST). `status_changed` rows are system-emitted. |
-| Payments | `payments.ts` | `[locale]/payments/` (Transactions, Promotions placeholder, Payment Providers placeholder) | Staff-accessible (#129). Operational view of `billing_events` excluding `status_changed`. Exposes `POST /payments/apply-promotion` which delegates to the exported `applyPromotionToMembership` from `membership-promotions.ts`. Navigation group has no `requiredRole`. |
+| Payments | `payments.ts` | `[locale]/payments/` (Transactions) | PAYMENTS module (#129). Operational view of `billing_events` excluding `status_changed`. Exposes `POST /payments/apply-promotion` which delegates to the exported `applyPromotionToMembership` from `membership-promotions.ts`. |
+| Payment Providers | — | `[locale]/financials/payment-providers/` (placeholder) | FINANCIALS module (#159). Configuration of payment infrastructure (Stripe, Monei, Cash, etc.). Moved from Payments to Financials; Front Desk and other operational roles have no access. |
 | Charge types | `charge-types.ts` | (inside ledger's Record-payment modal) | Global lookup (no `gym_id`), seeded. |
 | Class packages | `class-packages.ts`, `user-class-packages.ts`, `package-credits.ts` | `[locale]/class-packages/` | Catalog + per-member packages + credit transactions; credits consumed/refunded on booking lifecycle. |
 | Promotions | `promotions.ts`, `promotion-details.ts`, `action-types.ts` | `[locale]/promotions/` | Admin-only. Plan targeting, charge benefits, period benefits. `action_types` is a global lookup. |
