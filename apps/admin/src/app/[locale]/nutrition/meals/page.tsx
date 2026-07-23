@@ -1,14 +1,16 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { ContextMenu } from '@/components/ContextMenu';
+import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { StatusBadge } from '@/components/StatusBadge';
+import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle } from '@/components/ui';
 
 type CatalogType = 'dishes' | 'sides' | 'sauces';
@@ -22,12 +24,77 @@ interface CatalogItem {
   protein: number | null;
   carbohydrates: number | null;
   fat: number | null;
+  status: string;
   created_at: string;
   modified_at: string | null;
+  deleted_at: string | null;
+  created_by_name: string | null;
+  modified_by_name: string | null;
+  deleted_by_name: string | null;
 }
 
-const emptyForm = { name: '', description: '', calories: '', protein: '', carbohydrates: '', fat: '' };
+const emptyForm = { name: '', description: '', calories: '', protein: '', carbohydrates: '', fat: '', status: 'active' };
 type ItemForm = typeof emptyForm;
+
+function formatDate(value: string | null, locale: string): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function itemToForm(item: CatalogItem): ItemForm {
+  return {
+    name: item.name,
+    description: item.description ?? '',
+    calories: item.calories != null ? String(item.calories) : '',
+    protein: item.protein != null ? String(item.protein) : '',
+    carbohydrates: item.carbohydrates != null ? String(item.carbohydrates) : '',
+    fat: item.fat != null ? String(item.fat) : '',
+    status: item.status,
+  };
+}
+
+function formToBody(form: ItemForm) {
+  return {
+    name: form.name.trim(),
+    description: form.description.trim() || null,
+    calories: form.calories !== '' ? parseFloat(form.calories) : null,
+    protein: form.protein !== '' ? parseFloat(form.protein) : null,
+    carbohydrates: form.carbohydrates !== '' ? parseFloat(form.carbohydrates) : null,
+    fat: form.fat !== '' ? parseFloat(form.fat) : null,
+    status: form.status,
+  };
+}
+
+function NutritionFields({ item, t }: { item: CatalogItem; t: ReturnType<typeof useTranslations> }) {
+  const fields: Array<[keyof CatalogItem, string]> = [
+    ['calories', t('meals_catalog.label_calories')],
+    ['protein', t('meals_catalog.label_protein')],
+    ['carbohydrates', t('meals_catalog.label_carbohydrates')],
+    ['fat', t('meals_catalog.label_fat')],
+  ];
+  const present = fields.filter(([k]) => item[k] != null);
+  if (present.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+      {present.map(([k, label]) => (
+        <span key={k} style={{ fontSize: 13, color: '#555' }}>
+          <strong>{label}:</strong> {String(item[k])}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 14 }}>
+      <span style={{ width: 160, flexShrink: 0, color: '#666' }}>{label}</span>
+      <span style={{ color: '#111', flex: 1 }}>{value || '—'}</span>
+    </div>
+  );
+}
 
 interface CatalogSectionProps {
   type: CatalogType;
@@ -35,24 +102,15 @@ interface CatalogSectionProps {
   canWrite: boolean;
 }
 
-function NutritionField({ label, value }: { label: string; value: string | null | undefined }) {
-  if (value == null || value === '') return null;
-  return (
-    <span style={{ fontSize: 12.5, color: '#888', marginLeft: 8 }}>
-      {label}: {value}
-    </span>
-  );
-}
-
 function CatalogSection({ type, label, canWrite }: CatalogSectionProps) {
   const t = useTranslations();
+  const locale = useLocale();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [nameInput, setNameInput] = useState('');
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   // Add modal
   const [addOpen, setAddOpen] = useState(false);
@@ -60,13 +118,16 @@ function CatalogSection({ type, label, canWrite }: CatalogSectionProps) {
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  // Inline editing
-  const [editingId, setEditingId] = useState<number | null>(null);
+  // Edit modal
+  const [editItem, setEditItem] = useState<CatalogItem | null>(null);
   const [editForm, setEditForm] = useState<ItemForm>(emptyForm);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Delete
+  // Details modal
+  const [detailsItem, setDetailsItem] = useState<CatalogItem | null>(null);
+
+  // Delete confirm
   const [deleting, setDeleting] = useState<CatalogItem | null>(null);
 
   const load = useCallback(async () => {
@@ -88,28 +149,6 @@ function CatalogSection({ type, label, canWrite }: CatalogSectionProps) {
     return () => clearTimeout(id);
   }, [load]);
 
-  function itemToForm(item: CatalogItem): ItemForm {
-    return {
-      name: item.name,
-      description: item.description ?? '',
-      calories: item.calories != null ? String(item.calories) : '',
-      protein: item.protein != null ? String(item.protein) : '',
-      carbohydrates: item.carbohydrates != null ? String(item.carbohydrates) : '',
-      fat: item.fat != null ? String(item.fat) : '',
-    };
-  }
-
-  function formToBody(form: ItemForm) {
-    return {
-      name: form.name.trim(),
-      description: form.description.trim() || null,
-      calories: form.calories !== '' ? parseFloat(form.calories) : null,
-      protein: form.protein !== '' ? parseFloat(form.protein) : null,
-      carbohydrates: form.carbohydrates !== '' ? parseFloat(form.carbohydrates) : null,
-      fat: form.fat !== '' ? parseFloat(form.fat) : null,
-    };
-  }
-
   async function saveAdd() {
     if (!addForm.name.trim()) { setAddError(t('meals_catalog.error_name_required')); return; }
     setAddSaving(true); setAddError(null);
@@ -121,25 +160,28 @@ function CatalogSection({ type, label, canWrite }: CatalogSectionProps) {
     } finally { setAddSaving(false); }
   }
 
-  function startEdit(item: CatalogItem) {
-    setEditingId(item.id);
-    setEditForm(itemToForm(item));
-    setEditError(null);
-    setExpandedIds((prev) => { const next = new Set(prev); next.add(item.id); return next; });
-  }
-
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('meals_catalog.error_name_required')); return; }
     setEditSaving(true); setEditError(null);
     try {
-      await apiFetch(`/${type}/${editingId}`, { method: 'PUT', body: JSON.stringify(formToBody(editForm)) });
-      setEditingId(null); setEditForm(emptyForm); load();
+      await apiFetch(`/${type}/${editItem!.id}`, { method: 'PUT', body: JSON.stringify(formToBody(editForm)) });
+      setEditItem(null); load();
     } catch (err: any) {
       setEditError(err.message ?? t('meals_catalog.error_generic'));
     } finally { setEditSaving(false); }
   }
 
-  async function del() {
+  async function doDuplicate(item: CatalogItem) {
+    try {
+      await apiFetch(`/${type}/${item.id}/duplicate`, { method: 'POST' });
+      toast(t('meals_catalog.duplicated'));
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('meals_catalog.error_generic'));
+    }
+  }
+
+  async function doDelete() {
     if (!deleting) return;
     try {
       await apiFetch(`/${type}/${deleting.id}`, { method: 'DELETE' });
@@ -150,19 +192,61 @@ function CatalogSection({ type, label, canWrite }: CatalogSectionProps) {
     }
   }
 
-  function toggleExpand(id: number) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
+  const columns: Column<CatalogItem>[] = [
+    {
+      header: t('meals_catalog.col_name'),
+      width: '22%',
+      render: (item) => <span style={{ fontWeight: 600 }}>{item.name}</span>,
+    },
+    {
+      header: t('meals_catalog.col_description'),
+      render: (item) => (
+        <span style={{ color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', maxWidth: 300 }}>
+          {item.description ?? '—'}
+        </span>
+      ),
+    },
+    {
+      header: t('meals_catalog.col_created_at'),
+      width: 140,
+      render: (item) => <span style={{ color: '#555', fontSize: 14 }}>{formatDate(item.created_at, locale)}</span>,
+    },
+    {
+      header: t('meals_catalog.col_created_by'),
+      width: 140,
+      render: (item) => <span style={{ color: '#555', fontSize: 14 }}>{item.created_by_name ?? '—'}</span>,
+    },
+    {
+      header: t('meals_catalog.col_status'),
+      width: 110,
+      render: (item) => <StatusBadge status={item.status} label={t(`status.${item.status}`)} />,
+    },
+    {
+      header: t('meals_catalog.col_actions'),
+      width: 60,
+      render: (item) => (
+        <ContextMenu
+          ariaLabel={t('meals_catalog.col_actions')}
+          items={[
+            { label: t('meals_catalog.details'), onClick: () => setDetailsItem(item) },
+            ...(canWrite ? [
+              { label: t('meals_catalog.edit'), onClick: () => { setEditItem(item); setEditForm(itemToForm(item)); setEditError(null); } },
+              { label: t('meals_catalog.duplicate'), onClick: () => doDuplicate(item) },
+              { label: t('meals_catalog.delete'), onClick: () => setDeleting(item), danger: true },
+            ] : []),
+          ]}
+        />
+      ),
+    },
+  ];
+
+  const SINGULAR: Record<CatalogType, 'dish' | 'side' | 'sauce'> = { dishes: 'dish', sides: 'side', sauces: 'sauce' };
+  const singularKey = SINGULAR[type];
 
   return (
-    <div style={{ marginBottom: 40 }}>
-      {/* Section header */}
+    <div style={{ marginBottom: 48 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>{label}</h2>
+        <h2 style={{ margin: 0, fontSize: 20 }}>{label}</h2>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
             value={nameInput}
@@ -172,151 +256,88 @@ function CatalogSection({ type, label, canWrite }: CatalogSectionProps) {
           />
           {canWrite && (
             <button onClick={() => { setAddForm(emptyForm); setAddError(null); setAddOpen(true); }} style={btnStyle()}>
-              {t(`meals_catalog.add_${type.slice(0, -1)}`)}
+              {t(`meals_catalog.add_${singularKey}`)}
             </button>
           )}
         </div>
       </div>
 
-      {/* Items */}
-      {loading ? (
-        <p style={{ color: '#888', fontSize: 14 }}>{t('meals_catalog.loading')}</p>
-      ) : items.length === 0 ? (
-        <p style={{ color: '#888', fontSize: 14 }}>{t(`meals_catalog.empty_${type}`)}</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {items.map((item) => {
-            const isExpanded = expandedIds.has(item.id);
-            const isEditing = editingId === item.id;
-            return (
-              <div key={item.id} style={cardStyle(isEditing)}>
-                {isEditing ? (
-                  <div style={{ padding: '14px 16px 0' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('meals_catalog.label_name')} *</label>
-                        <input
-                          value={editForm.name}
-                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          autoFocus
-                          style={inlineInputStyle}
-                        />
-                        {editError && <p style={{ color: '#c00', fontSize: 13, margin: '4px 0 0' }}>{editError}</p>}
-                      </div>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('meals_catalog.label_description')}</label>
-                        <textarea
-                          value={editForm.description}
-                          onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                          rows={2}
-                          style={{ ...inlineInputStyle, resize: 'vertical' }}
-                        />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
-                        {(['calories', 'protein', 'carbohydrates', 'fat'] as const).map((field) => (
-                          <div key={field}>
-                            <label style={inlineLabelStyle}>{t(`meals_catalog.label_${field}`)}</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={editForm[field]}
-                              onChange={(e) => setEditForm({ ...editForm, [field]: e.target.value })}
-                              style={inlineInputStyle}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 14px', marginTop: 10, borderTop: '1px solid #ececf0' }}>
-                      <button onClick={() => { setEditingId(null); setEditForm(emptyForm); }} style={cancelBtnStyle}>
-                        {t('meals_catalog.cancel')}
-                      </button>
-                      <button onClick={saveEdit} disabled={editSaving} style={btnStyle()}>
-                        {editSaving ? t('meals_catalog.saving') : t('meals_catalog.save_changes')}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div
-                      onClick={() => toggleExpand(item.id)}
-                      style={headerRowStyle}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleExpand(item.id); }}
-                    >
-                      <span style={{ fontSize: 12, color: '#aaa', userSelect: 'none', flexShrink: 0 }}>{isExpanded ? '▼' : '▶'}</span>
-                      <span style={nameCellStyle}>{item.name}</span>
-                      <span style={descCellStyle}>{item.description ?? '—'}</span>
-                      <NutritionField label="kcal" value={item.calories != null ? String(item.calories) : null} />
-                      <span style={{ flex: 1 }} />
-                      {canWrite && (
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <ContextMenu
-                            ariaLabel={t('meals_catalog.col_actions')}
-                            items={[
-                              { label: t('meals_catalog.edit'), onClick: () => startEdit(item) },
-                              { label: t('meals_catalog.delete'), onClick: () => setDeleting(item), danger: true },
-                            ]}
-                          />
-                        </span>
-                      )}
-                    </div>
-                    {isExpanded && (
-                      <div style={{ padding: '10px 20px 14px 36px', borderTop: '1px solid #ececf0' }}>
-                        {item.description && <p style={{ margin: '0 0 8px', fontSize: 14, color: '#444' }}>{item.description}</p>}
-                        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                          {([['calories', 'kcal'], ['protein', 'g'], ['carbohydrates', 'g'], ['fat', 'g']] as const).map(([field, unit]) =>
-                            item[field] != null ? (
-                              <span key={field} style={{ fontSize: 13.5, color: '#555' }}>
-                                <strong>{t(`meals_catalog.label_${field}`)}</strong>: {item[field]}{unit}
-                              </span>
-                            ) : null,
-                          )}
-                        </div>
-                        {!item.calories && !item.protein && !item.carbohydrates && !item.fat && !item.description && (
-                          <p style={{ margin: 0, fontSize: 13.5, color: '#aaa' }}>{t('meals_catalog.no_nutrition_info')}</p>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        rows={items}
+        rowKey={(item) => item.id}
+        loading={loading}
+        loadingText={t('meals_catalog.loading')}
+        emptyText={t(`meals_catalog.empty_${type}`)}
+      />
 
       {/* Add modal */}
       <CrudModal
         open={addOpen}
-        title={t(`meals_catalog.add_${type.slice(0, -1)}`)}
+        title={t(`meals_catalog.add_${singularKey}`)}
         error={addError}
         saving={addSaving}
         cancelLabel={t('meals_catalog.cancel')}
-        saveLabel={addSaving ? t('meals_catalog.saving') : t(`meals_catalog.add_${type.slice(0, -1)}`)}
+        saveLabel={addSaving ? t('meals_catalog.saving') : t(`meals_catalog.add_${singularKey}`)}
         onCancel={() => { setAddOpen(false); setAddForm(emptyForm); setAddError(null); }}
         onSave={saveAdd}
       >
-        <FormLabel>{t('meals_catalog.label_name')} *</FormLabel>
-        <FormInput value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} autoFocus />
-        <FormLabel>{t('meals_catalog.label_description')}</FormLabel>
-        <FormInput value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 4 }}>
-          {(['calories', 'protein', 'carbohydrates', 'fat'] as const).map((field) => (
-            <div key={field}>
-              <FormLabel>{t(`meals_catalog.label_${field}`)}</FormLabel>
-              <FormInput
-                type="number"
-                min="0"
-                step="0.1"
-                value={addForm[field]}
-                onChange={(e) => setAddForm({ ...addForm, [field]: e.target.value })}
-              />
-            </div>
-          ))}
-        </div>
+        <ItemFormFields form={addForm} onChange={(f) => setAddForm(f)} t={t} showStatus={false} />
+      </CrudModal>
+
+      {/* Edit modal */}
+      <CrudModal
+        open={editItem !== null}
+        title={t('meals_catalog.modal_edit')}
+        error={editError}
+        saving={editSaving}
+        cancelLabel={t('meals_catalog.cancel')}
+        saveLabel={editSaving ? t('meals_catalog.saving') : t('meals_catalog.save_changes')}
+        onCancel={() => { setEditItem(null); setEditError(null); }}
+        onSave={saveEdit}
+      >
+        <ItemFormFields form={editForm} onChange={(f) => setEditForm(f)} t={t} showStatus />
+      </CrudModal>
+
+      {/* Details modal */}
+      <CrudModal
+        open={detailsItem !== null}
+        title={t('meals_catalog.details_dialog_title')}
+        error={null}
+        saving={false}
+        cancelLabel={t('meals_catalog.close')}
+        saveLabel=""
+        hideSave
+        onCancel={() => setDetailsItem(null)}
+        onSave={() => setDetailsItem(null)}
+      >
+        {detailsItem && (
+          <div>
+            <DetailRow label={t('meals_catalog.label_name')} value={detailsItem.name} />
+            {detailsItem.description && (
+              <DetailRow label={t('meals_catalog.label_description')} value={detailsItem.description} />
+            )}
+            <DetailRow label={t('meals_catalog.label_status')} value={t(`status.${detailsItem.status}`)} />
+            <NutritionFields item={detailsItem} t={t} />
+            <div style={{ borderTop: '1px solid #eee', margin: '12px 0 8px' }} />
+            <DetailRow label={t('meals_catalog.label_created_at')} value={formatDate(detailsItem.created_at, locale)} />
+            {detailsItem.created_by_name && (
+              <DetailRow label={t('meals_catalog.label_created_by')} value={detailsItem.created_by_name} />
+            )}
+            {detailsItem.modified_at && (
+              <DetailRow label={t('meals_catalog.label_modified_at')} value={formatDate(detailsItem.modified_at, locale)} />
+            )}
+            {detailsItem.modified_by_name && (
+              <DetailRow label={t('meals_catalog.label_modified_by')} value={detailsItem.modified_by_name} />
+            )}
+            {detailsItem.deleted_at && (
+              <DetailRow label={t('meals_catalog.label_deleted_at')} value={formatDate(detailsItem.deleted_at, locale)} />
+            )}
+            {detailsItem.deleted_by_name && (
+              <DetailRow label={t('meals_catalog.label_deleted_by')} value={detailsItem.deleted_by_name} />
+            )}
+          </div>
+        )}
       </CrudModal>
 
       {/* Delete confirm */}
@@ -325,50 +346,83 @@ function CatalogSection({ type, label, canWrite }: CatalogSectionProps) {
         message={t('meals_catalog.confirm_delete', { name: deleting?.name ?? '' })}
         confirmLabel={t('meals_catalog.delete')}
         cancelLabel={t('meals_catalog.cancel')}
-        onConfirm={del}
+        onConfirm={doDelete}
         onCancel={() => setDeleting(null)}
       />
     </div>
   );
 }
 
-export default function MealsCatalogPage() {
-  const t = useTranslations();
-  const { activeGym, loading: gymLoading, isSuperadmin } = useGym();
-
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
-
-  if (gymLoading) return null;
-
+function ItemFormFields({
+  form,
+  onChange,
+  t,
+  showStatus,
+}: {
+  form: ItemForm;
+  onChange: (f: ItemForm) => void;
+  t: ReturnType<typeof useTranslations>;
+  showStatus: boolean;
+}) {
   return (
-    <div>
-      <h1 style={{ margin: '0 0 24px' }}>{t('meals_catalog.title')}</h1>
-      <CatalogSection type="dishes" label={t('meals_catalog.section_dishes')} canWrite={!!canWrite} />
-      <CatalogSection type="sides" label={t('meals_catalog.section_sides')} canWrite={!!canWrite} />
-      <CatalogSection type="sauces" label={t('meals_catalog.section_sauces')} canWrite={!!canWrite} />
-    </div>
+    <>
+      <FormLabel>{t('meals_catalog.label_name')} *</FormLabel>
+      <FormInput value={form.name} onChange={(e) => onChange({ ...form, name: e.target.value })} autoFocus />
+      <FormLabel>{t('meals_catalog.label_description')}</FormLabel>
+      <FormInput value={form.description} onChange={(e) => onChange({ ...form, description: e.target.value })} />
+      {showStatus && (
+        <>
+          <FormLabel>{t('meals_catalog.label_status')}</FormLabel>
+          <select
+            value={form.status}
+            onChange={(e) => onChange({ ...form, status: e.target.value })}
+            style={selectStyle}
+          >
+            <option value="active">{t('status.active')}</option>
+          </select>
+        </>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 4 }}>
+        {(['calories', 'protein', 'carbohydrates', 'fat'] as const).map((field) => (
+          <div key={field}>
+            <FormLabel>{t(`meals_catalog.label_${field}`)}</FormLabel>
+            <FormInput
+              type="number"
+              min="0"
+              step="0.1"
+              value={form[field]}
+              onChange={(e) => onChange({ ...form, [field]: e.target.value })}
+            />
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
-const filterInputStyle: React.CSSProperties = { padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff' };
-const cardStyle = (editing: boolean): React.CSSProperties => ({
-  border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
-  borderRadius: 10,
-  background: '#fff',
-  overflow: 'hidden',
-});
-const headerRowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-  cursor: 'pointer', userSelect: 'none',
+const filterInputStyle: React.CSSProperties = {
+  padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff',
 };
-const nameCellStyle: React.CSSProperties = {
-  fontWeight: 600, fontSize: 15, flexShrink: 0, maxWidth: 220,
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+
+const selectStyle: React.CSSProperties = {
+  width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc',
+  fontSize: 15, boxSizing: 'border-box', background: '#fff', marginBottom: 8,
 };
-const descCellStyle: React.CSSProperties = {
-  color: '#888', fontSize: 13.5, flex: 1,
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-};
-const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
-const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
-const cancelBtnStyle: React.CSSProperties = { background: '#f4f4f6', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
+
+export default function MealsPage() {
+  const t = useTranslations();
+  const { activeGym, loading: gymLoading, isSuperadmin } = useGym();
+
+  if (gymLoading) return null;
+
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
+
+  return (
+    <div>
+      <h1 style={{ marginBottom: 32 }}>{t('meals_catalog.title')}</h1>
+      <CatalogSection type="dishes" label={t('meals_catalog.section_dishes')} canWrite={canWrite} />
+      <CatalogSection type="sides" label={t('meals_catalog.section_sides')} canWrite={canWrite} />
+      <CatalogSection type="sauces" label={t('meals_catalog.section_sauces')} canWrite={canWrite} />
+    </div>
+  );
+}
