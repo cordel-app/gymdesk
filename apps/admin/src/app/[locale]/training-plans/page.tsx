@@ -5,7 +5,6 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -13,9 +12,10 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { btnStyle } from '@/components/ui';
+import { canWriteModule } from '@/config/permissions';
 import { NewTrainingPlanDialog } from './NewTrainingPlanDialog';
-import { PlanWorkoutBlocksModal } from '../members/PlanWorkoutBlocksModal';
-import { PlanBlockExercisesModal } from '../members/PlanBlockExercisesModal';
+import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
+import { HierBlock } from '../workout-templates/summaries';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
   useSensor, useSensors, DragEndEvent,
@@ -28,18 +28,9 @@ import { CSS } from '@dnd-kit/utilities';
 
 /* ---- Types ---- */
 
-interface Exercise {
-  id: number; position: number; exercise_id: number; exercise_name: string;
-  min_reps: number | null; max_reps: number | null; sets: number | null;
-  rest_seconds: number | null; tempo: string | null; notes: string | null;
-}
-interface Block {
-  id: number; position: number; name: string | null; type: string;
-  rounds: number | null; exercises: Exercise[] | null;
-}
 interface Workout {
   id: number; position: number; name: string; description: string | null;
-  scheduled_weekday: number | null; blocks: Block[] | null;
+  scheduled_weekday: number | null; blocks: HierBlock[] | null;
 }
 interface TrainingPlanRow {
   id: number;
@@ -101,8 +92,9 @@ export default function TrainingPlansPage() {
   const [newOpen, setNewOpen] = useState(false);
   const [deleting, setDeleting] = useState<TrainingPlanRow | null>(null);
   const [detailsPlan, setDetailsPlan] = useState<TrainingPlanRow | null>(null);
-  const [concludingPlan, setConcludingPlan] = useState<TrainingPlanRow | null>(null);
-  const [concludeSaving, setConcludeSaving] = useState(false);
+  const [completingPlan, setCompletingPlan] = useState<TrainingPlanRow | null>(null);
+  const [completeEndDate, setCompleteEndDate] = useState('');
+  const [completeSaving, setCompleteSaving] = useState(false);
 
   // Expand/hierarchy state
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -115,10 +107,6 @@ export default function TrainingPlansPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
-
-  // Workout modals
-  const [blocksFor, setBlocksFor] = useState<{ plan: TrainingPlanRow; workout: Workout } | null>(null);
-  const [exercisesFor, setExercisesFor] = useState<{ plan: TrainingPlanRow; workout: Workout; block: Block } | null>(null);
 
   const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
@@ -238,9 +226,6 @@ export default function TrainingPlansPage() {
 
   async function saveEdit() {
     if (!editForm.name.trim()) { setEditError(t('training_plans.error_required')); return; }
-    if (editForm.status === 'expired' && !editForm.end_date) {
-      setEditError(t('training_plans.error_end_date_required_expired')); return;
-    }
     setEditSaving(true); setEditError(null);
     const row = rows.find((r) => r.id === editingId)!;
     try {
@@ -274,19 +259,20 @@ export default function TrainingPlansPage() {
     }
   }
 
-  async function handleConclude() {
-    if (!concludingPlan) return;
-    setConcludeSaving(true);
+  async function handleComplete() {
+    if (!completingPlan) return;
+    setCompleteSaving(true);
     try {
-      await apiFetch(`/members/${concludingPlan.member_id}/training-plans/${concludingPlan.id}/complete`, {
+      await apiFetch(`/members/${completingPlan.member_id}/training-plans/${completingPlan.id}/complete`, {
         method: 'POST',
+        body: JSON.stringify({ end_date: completeEndDate || null }),
       });
-      setConcludingPlan(null);
+      setCompletingPlan(null);
       load();
     } catch (err: any) {
       toast(err.message ?? t('training_plans.error_generic'));
     } finally {
-      setConcludeSaving(false);
+      setCompleteSaving(false);
     }
   }
 
@@ -345,11 +331,10 @@ export default function TrainingPlansPage() {
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 12, fontSize: 13, color: '#666' }}>
         {([
           ['name', t('training_plans.col_name')],
-          ['member', t('training_plans.col_member')],
           ['status', t('training_plans.col_status')],
           ['start_date', t('training_plans.col_start_date')],
           ['created_at', t('training_plans.col_created_at')],
-          ['created_by', t('training_plans.col_created_by')],
+          ['modified_at', t('training_plans.col_modified_at')],
         ] as [SortKey, string][]).map(([key, label]) => <React.Fragment key={key}>{sortBtn(key, label)}</React.Fragment>)}
       </div>
 
@@ -377,13 +362,11 @@ export default function TrainingPlansPage() {
               onEdit={() => guardUnsaved(() => startEdit(row))}
               onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
               onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
-              onConclude={() => guardUnsaved(() => setConcludingPlan(row))}
+              onComplete={() => guardUnsaved(() => { setCompletingPlan(row); setCompleteEndDate(new Date().toISOString().slice(0, 10)); })}
               onDelete={() => guardUnsaved(() => setDeleting(row))}
               onEditFormChange={setEditForm}
               onSave={saveEdit}
               onCancel={cancelEdit}
-              onManageBlocks={(workout) => setBlocksFor({ plan: row, workout })}
-              onManageExercises={(workout, block) => setExercisesFor({ plan: row, workout, block })}
               apiFetch={apiFetch}
               toast={toast}
               onChanged={() => refetchHierarchy(row.id)}
@@ -419,36 +402,34 @@ export default function TrainingPlansPage() {
         onCancel={() => setPendingAction(null)}
       />
 
-      {/* Conclude Plan dialog */}
-      <ConfirmDialog
-        open={concludingPlan !== null}
-        message={t('training_plans.confirm_conclude')}
-        confirmLabel={concludeSaving ? t('training_plans.saving') : t('training_plans.conclude_confirm_btn')}
-        cancelLabel={t('training_plans.cancel')}
-        onConfirm={handleConclude}
-        onCancel={() => setConcludingPlan(null)}
-      />
+      {/* Complete dialog */}
+      {completingPlan && (
+        <CrudModal
+          open
+          title={t('training_plans.complete_dialog_title')}
+          error={null}
+          saving={completeSaving}
+          cancelLabel={t('training_plans.cancel')}
+          saveLabel={completeSaving ? t('training_plans.saving') : t('training_plans.complete_confirm_btn')}
+          onCancel={() => setCompletingPlan(null)}
+          onSave={handleComplete}
+        >
+          <p style={{ margin: '0 0 16px', fontSize: 14, lineHeight: 1.5, color: '#555' }}>
+            {t('training_plans.confirm_complete')}
+          </p>
+          <FormLabel>{t('training_plans.complete_end_date_label')}</FormLabel>
+          <input
+            type="date"
+            value={completeEndDate}
+            onChange={(e) => setCompleteEndDate(e.target.value)}
+            style={modalInputStyle}
+          />
+        </CrudModal>
+      )}
 
       {/* Details dialog */}
       {detailsPlan && (
         <DetailsDialog plan={detailsPlan} locale={locale} t={t} onClose={() => setDetailsPlan(null)} />
-      )}
-
-      {/* Block/exercise modals */}
-      {blocksFor && (
-        <PlanWorkoutBlocksModal
-          memberId={blocksFor.plan.member_id} planId={blocksFor.plan.id}
-          workoutId={blocksFor.workout.id} workoutName={blocksFor.workout.name}
-          onClose={() => { setBlocksFor(null); refetchHierarchy(blocksFor.plan.id); }}
-        />
-      )}
-      {exercisesFor && (
-        <PlanBlockExercisesModal
-          memberId={exercisesFor.plan.member_id} planId={exercisesFor.plan.id}
-          workoutId={exercisesFor.workout.id} blockId={exercisesFor.block.id}
-          blockLabel={exercisesFor.block.name ?? exercisesFor.block.type}
-          onClose={() => { setExercisesFor(null); refetchHierarchy(exercisesFor.plan.id); }}
-        />
       )}
     </div>
   );
@@ -461,9 +442,8 @@ type EditForm = { name: string; description: string; status: string; start_date:
 function PlanCard({
   row, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onConclude, onDelete,
+  onToggleExpand, onEdit, onDetails, onDuplicate, onComplete, onDelete,
   onEditFormChange, onSave, onCancel,
-  onManageBlocks, onManageExercises,
   apiFetch, toast, onChanged,
 }: {
   row: TrainingPlanRow;
@@ -481,13 +461,11 @@ function PlanCard({
   onEdit: () => void;
   onDetails: () => void;
   onDuplicate: () => void;
-  onConclude: () => void;
+  onComplete: () => void;
   onDelete: () => void;
   onEditFormChange: (f: EditForm) => void;
   onSave: () => void;
   onCancel: () => void;
-  onManageBlocks: (w: Workout) => void;
-  onManageExercises: (w: Workout, b: Block) => void;
   apiFetch: ReturnType<typeof useApiClient>['apiFetch'];
   toast: (msg: string) => void;
   onChanged: () => void;
@@ -495,10 +473,10 @@ function PlanCard({
   const isCompleted = row.status === 'completed';
 
   const menuItems = [
-    { label: t('training_plans.details'), onClick: onDetails },
     ...(canWrite && !isCompleted ? [{ label: t('training_plan_templates.edit'), onClick: onEdit }] : []),
-    ...(canWrite && row.status === 'active' ? [{ label: t('training_plans.conclude'), onClick: onConclude }] : []),
+    { label: t('training_plans.details'), onClick: onDetails },
     ...(canWrite ? [{ label: t('training_plans.duplicate'), onClick: onDuplicate }] : []),
+    ...(canWrite && row.status === 'active' ? [{ label: t('training_plans.complete'), onClick: onComplete }] : []),
     ...(canWrite ? [{ label: t('training_plans.delete'), onClick: onDelete, danger: true }] : []),
   ];
 
@@ -521,15 +499,8 @@ function PlanCard({
             </div>
             <div>
               <label style={inlineLabelStyle}>{t('training_plans.label_status')}</label>
-              <select value={editForm.status} onChange={(e) => {
-                const newStatus = e.target.value;
-                const today = new Date().toISOString().slice(0, 10);
-                onEditFormChange({
-                  ...editForm,
-                  status: newStatus,
-                  end_date: newStatus === 'expired' && !editForm.end_date ? today : editForm.end_date,
-                });
-              }} style={{ ...inlineInputStyle, width: 'auto' }}>
+              <select value={editForm.status} onChange={(e) => onEditFormChange({ ...editForm, status: e.target.value })}
+                style={{ ...inlineInputStyle, width: 'auto' }}>
                 {EDITABLE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
               </select>
             </div>
@@ -553,11 +524,9 @@ function PlanCard({
           <span style={nameCellStyle}>{row.name}</span>
           <span style={memberCellStyle}>{row.member_name}</span>
           <span style={descCellStyle}>{row.description ?? '—'}</span>
+          <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
           <span style={dateCellStyle}>{formatDate(row.start_date, locale)}</span>
           <span style={dateCellStyle}>{row.end_date ? formatDate(row.end_date, locale) : '—'}</span>
-          <span style={dateCellStyle}>{formatDate(row.created_at, locale)}</span>
-          <span style={createdByCellStyle}>{row.created_by_name ?? '—'}</span>
-          <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
           <span onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('training_plans.col_actions')} items={menuItems} />
           </span>
@@ -584,8 +553,6 @@ function PlanCard({
               apiFetch={apiFetch}
               toast={toast}
               onChanged={onChanged}
-              onManageBlocks={onManageBlocks}
-              onManageExercises={onManageExercises}
             />
           )}
         </>
@@ -607,15 +574,13 @@ function PlanCard({
 /* ---- PlanWorkoutTree ---- */
 
 function PlanWorkoutTree({
-  plan, canWrite, apiFetch, toast, onChanged, onManageBlocks, onManageExercises,
+  plan, canWrite, apiFetch, toast, onChanged,
 }: {
   plan: TrainingPlanRow;
   canWrite: boolean;
   apiFetch: ReturnType<typeof useApiClient>['apiFetch'];
   toast: (msg: string) => void;
   onChanged: () => void;
-  onManageBlocks: (w: Workout) => void;
-  onManageExercises: (w: Workout, b: Block) => void;
 }) {
   const t = useTranslations();
   const base = `/members/${plan.member_id}/training-plans/${plan.id}/workouts`;
@@ -623,7 +588,9 @@ function PlanWorkoutTree({
   const [workouts, setWorkouts] = useState<Workout[]>(plan.workouts ?? []);
   useEffect(() => { setWorkouts(plan.workouts ?? []); }, [plan]);
 
-  const [addingWorkout, setAddingWorkout] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [addSaving, setAddSaving] = useState(false);
   const [removingWorkout, setRemovingWorkout] = useState<Workout | null>(null);
 
   const sensors = useSensors(
@@ -646,23 +613,19 @@ function PlanWorkoutTree({
   }
 
   async function addWorkout() {
-    const name = window.prompt(t('training_plans.editor_add_workout'));
-    if (!name?.trim()) return;
-    setAddingWorkout(true);
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    setAddSaving(true);
     try {
-      await apiFetch(base, { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
+      await apiFetch(base, { method: 'POST', body: JSON.stringify({ name: trimmed }) });
+      setShowAddForm(false);
+      setNewName('');
       onChanged();
-    } catch (err: any) { toast(err.message ?? t('training_plans.error_generic')); }
-    finally { setAddingWorkout(false); }
-  }
-
-  async function renameWorkout(w: Workout) {
-    const name = window.prompt(t('training_plans.editor_rename'), w.name);
-    if (!name?.trim() || name.trim() === w.name) return;
-    try {
-      await apiFetch(`${base}/${w.id}`, { method: 'PUT', body: JSON.stringify({ name: name.trim() }) });
-      onChanged();
-    } catch (err: any) { toast(err.message ?? t('training_plans.error_generic')); }
+    } catch (err: any) {
+      toast(err.message ?? t('training_plans.error_generic'));
+    } finally {
+      setAddSaving(false);
+    }
   }
 
   async function changeWeekday(w: Workout, value: string) {
@@ -686,26 +649,34 @@ function PlanWorkoutTree({
     catch (err: any) { setRemovingWorkout(null); toast(err.message ?? t('training_plans.error_generic')); }
   }
 
-  async function duplicateBlock(w: Workout, b: Block) {
-    try {
-      await apiFetch(`/members/${plan.member_id}/training-plans/${plan.id}/workouts/${w.id}/blocks/${b.id}/duplicate`, { method: 'POST' });
-      onChanged();
-    } catch (err: any) { toast(err.message ?? t('training_plans.error_generic')); }
-  }
-
-  async function removeBlock(w: Workout, b: Block) {
-    try {
-      await apiFetch(`/members/${plan.member_id}/training-plans/${plan.id}/workouts/${w.id}/blocks/${b.id}`, { method: 'DELETE' });
-      onChanged();
-    } catch (err: any) { toast(err.message ?? t('training_plans.error_generic')); }
-  }
-
   return (
     <div style={{ padding: '12px 20px 18px 44px' }}>
       {canWrite && (
-        <button onClick={addWorkout} disabled={addingWorkout} style={{ ...btnStyle(), marginBottom: 14 }}>
-          {t('training_plans.editor_add_workout')}
-        </button>
+        showAddForm ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addWorkout();
+                if (e.key === 'Escape') { setShowAddForm(false); setNewName(''); }
+              }}
+              placeholder={t('training_plans.editor_add_workout')}
+              style={addWorkoutInput}
+            />
+            <button onClick={addWorkout} disabled={addSaving || !newName.trim()} style={btnStyle()}>
+              {addSaving ? t('training_plans.saving') : t('training_plans.save_changes')}
+            </button>
+            <button onClick={() => { setShowAddForm(false); setNewName(''); }} style={cancelBtnStyle}>
+              {t('training_plans.cancel')}
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setShowAddForm(true)} style={{ ...btnStyle(), marginBottom: 14 }}>
+            {t('training_plans.editor_add_workout')}
+          </button>
+        )
       )}
 
       {workouts.length === 0 ? (
@@ -717,15 +688,15 @@ function PlanWorkoutTree({
               <WorkoutCard
                 key={w.id}
                 workout={w}
+                memberId={plan.member_id}
+                planId={plan.id}
                 canWrite={canWrite}
+                apiFetch={apiFetch}
+                toast={toast}
                 onChangeWeekday={(v) => changeWeekday(w, v)}
-                onRename={() => renameWorkout(w)}
                 onDuplicate={() => duplicateWorkout(w)}
                 onRemove={() => setRemovingWorkout(w)}
-                onManageBlocks={() => onManageBlocks(w)}
-                onDuplicateBlock={(b) => duplicateBlock(w, b)}
-                onRemoveBlock={(b) => removeBlock(w, b)}
-                onManageExercises={(b) => onManageExercises(w, b)}
+                onChanged={onChanged}
               />
             ))}
           </SortableContext>
@@ -742,32 +713,59 @@ function PlanWorkoutTree({
 /* ---- WorkoutCard ---- */
 
 function WorkoutCard({
-  workout: w, canWrite,
-  onChangeWeekday, onRename, onDuplicate, onRemove,
-  onManageBlocks, onDuplicateBlock, onRemoveBlock, onManageExercises,
+  workout: w, memberId, planId, canWrite, apiFetch, toast,
+  onChangeWeekday, onDuplicate, onRemove, onChanged,
 }: {
   workout: Workout;
+  memberId: number;
+  planId: number;
   canWrite: boolean;
+  apiFetch: ReturnType<typeof useApiClient>['apiFetch'];
+  toast: (msg: string) => void;
   onChangeWeekday: (v: string) => void;
-  onRename: () => void; onDuplicate: () => void; onRemove: () => void;
-  onManageBlocks: () => void;
-  onDuplicateBlock: (b: Block) => void;
-  onRemoveBlock: (b: Block) => void;
-  onManageExercises: (b: Block) => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+  onChanged: () => void;
 }) {
   const t = useTranslations();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: w.id });
+  const [name, setName] = useState(w.name);
+
+  useEffect(() => { setName(w.name); }, [w.name]);
+
+  const blocksUrl = `/members/${memberId}/training-plans/${planId}/workouts/${w.id}/blocks`;
+
+  async function saveName() {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === w.name) { setName(w.name); return; }
+    try {
+      await apiFetch(`/members/${memberId}/training-plans/${planId}/workouts/${w.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ name: trimmed }),
+      });
+      onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('training_plans.error_generic'));
+      setName(w.name);
+    }
+  }
+
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1,
     background: '#fff', border: '1px solid #ececf0', borderRadius: 8, padding: '10px 14px', marginBottom: 10,
   };
-  const blocks = w.blocks ?? [];
 
   return (
     <div ref={setNodeRef} style={style}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         {canWrite && (
-          <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', fontSize: 16, userSelect: 'none' }}>⠿</span>
+          <span
+            {...attributes}
+            {...listeners}
+            style={{ cursor: 'grab', color: '#bbb', fontSize: 16, userSelect: 'none', touchAction: 'none' }}
+          >
+            ⠿
+          </span>
         )}
         <select
           value={w.scheduled_weekday != null ? String(w.scheduled_weekday) : ''}
@@ -778,54 +776,34 @@ function WorkoutCard({
           <option value="">{t('training_plan_templates.tree_no_weekday')}</option>
           {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`workouts.weekday_${d}`)}</option>)}
         </select>
-        <span style={{ fontWeight: 600, fontSize: 15 }}>{w.name}</span>
+        {canWrite ? (
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={saveName}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            style={workoutNameInput}
+          />
+        ) : (
+          <span style={{ fontWeight: 600, fontSize: 15 }}>{w.name}</span>
+        )}
         <span style={{ flex: 1 }} />
         {canWrite && (
-          <button onClick={onManageBlocks} style={{ ...btnStyle('#1e7e40'), padding: '4px 10px', fontSize: 13 }}>
-            {t('training_plans.editor_manage_blocks')}
-          </button>
-        )}
-        {canWrite && (
           <ContextMenu ariaLabel={t('training_plans.col_actions')} items={[
-            { label: t('training_plans.editor_rename'), onClick: onRename },
             { label: t('training_plans.editor_duplicate'), onClick: onDuplicate },
             { label: t('training_plans.editor_remove'), onClick: onRemove, danger: true },
           ]} />
         )}
       </div>
 
-      <div style={{ marginTop: blocks.length ? 10 : 0, paddingLeft: canWrite ? 26 : 0 }}>
-        {blocks.length === 0 ? (
-          <p style={{ color: '#aaa', fontSize: 13, margin: '2px 0' }}>{t('training_plan_templates.tree_no_blocks')}</p>
-        ) : (
-          blocks.map((b) => (
-            <div key={b.id} style={{ borderTop: '1px dashed #eee', paddingTop: 8, marginTop: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>
-                    {b.name || t(`workout_template_blocks.type_${b.type.toLowerCase()}`)}
-                  </div>
-                </div>
-                {canWrite && (
-                  <ContextMenu ariaLabel={t('training_plans.col_actions')} items={[
-                    { label: t('training_plans.editor_manage_exercises'), onClick: () => onManageExercises(b) },
-                    { label: t('training_plans.editor_duplicate'), onClick: () => onDuplicateBlock(b) },
-                    { label: t('training_plans.editor_remove'), onClick: () => onRemoveBlock(b), danger: true },
-                  ]} />
-                )}
-              </div>
-              <div style={{ marginTop: 4, paddingLeft: 16 }}>
-                {(b.exercises ?? []).length === 0 ? (
-                  <p style={{ color: '#bbb', fontSize: 12.5, margin: '2px 0' }}>{t('training_plan_templates.tree_no_exercises')}</p>
-                ) : (
-                  (b.exercises ?? []).map((ex) => (
-                    <div key={ex.id} style={{ padding: '2px 0', fontSize: 13.5 }}>{ex.exercise_name}</div>
-                  ))
-                )}
-              </div>
-            </div>
-          ))
-        )}
+      <div style={{ marginTop: 12, paddingLeft: canWrite ? 26 : 0 }}>
+        <WorkoutBlockBuilder
+          workoutKey={w.id}
+          blocksUrl={blocksUrl}
+          blocks={w.blocks ?? []}
+          canWrite={canWrite}
+          onChanged={onChanged}
+        />
       </div>
     </div>
   );
@@ -859,12 +837,16 @@ function DetailsDialog({ plan, locale, t, onClose }: {
         <DetailRow label={t('training_plans.col_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('training_plans.label_start_date')} value={formatDate(plan.start_date, locale)} />
-        <DetailRow label={t('training_plans.label_end_date')} value={plan.end_date ? formatDate(plan.end_date, locale) : '—'} />
+        {plan.end_date && <DetailRow label={t('training_plans.label_end_date')} value={formatDate(plan.end_date, locale)} />}
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('training_plans.label_created_by')} value={plan.created_by_name ?? '—'} />
         <DetailRow label={t('training_plans.label_created_at')} value={formatDate(plan.created_at, locale)} />
-        <DetailRow label={t('training_plans.label_modified_by')} value={plan.modified_by_name ?? '—'} />
-        <DetailRow label={t('training_plans.label_modified_at')} value={plan.modified_at ? formatDate(plan.modified_at, locale) : '—'} />
+        {plan.modified_at && (
+          <>
+            <DetailRow label={t('training_plans.label_modified_by')} value={plan.modified_by_name ?? '—'} />
+            <DetailRow label={t('training_plans.label_modified_at')} value={formatDate(plan.modified_at, locale)} />
+          </>
+        )}
       </div>
     </CrudModal>
   );
@@ -920,10 +902,8 @@ const descCellStyle: React.CSSProperties = {
 const dateCellStyle: React.CSSProperties = {
   fontSize: 13, color: '#666', whiteSpace: 'nowrap', flexShrink: 0,
 };
-const createdByCellStyle: React.CSSProperties = {
-  fontSize: 13, color: '#666', flexShrink: 0, maxWidth: 130,
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-};
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
 const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
 const cancelBtnStyle: React.CSSProperties = { background: '#f4f4f6', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
+const workoutNameInput: React.CSSProperties = { fontWeight: 600, fontSize: 15, padding: '3px 6px', borderRadius: 5, border: '1px solid #ddd', background: '#fafafa', minWidth: 120 };
+const addWorkoutInput: React.CSSProperties = { padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 200, background: '#fff' };
