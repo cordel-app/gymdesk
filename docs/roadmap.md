@@ -13,7 +13,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
 
 ## Status (2026-07-23)
 
-- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154, #156 (RBAC permission matrix — 7 granular roles + module gates), #157 (Membership Plans inline editing, Details modal, Duplicate action, Created By/At columns, paused enrollment status), #159 (move Payment Providers to Financials), #160 (Training Plans UX: Conclude Plan action, list columns, expired validation, Details dialog fixes), #177 (pino structured logging), #178 (promtail config files — deploy to VPS to activate).
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154, #156 (RBAC permission matrix — 7 granular roles + module gates), #157 (Membership Plans inline editing, Details modal, Duplicate action, Created By/At columns, paused enrollment status), #159 (move Payment Providers to Financials), #160 (Training Plans UX: Conclude Plan action, list columns, expired validation, Details dialog fixes), #161 (Specialities UX alignment), #177 (pino structured logging), #178 (promtail config files — deploy to VPS to activate).
 - **Training module redesign (#60–#63, done)**: dynamic Workout Block form driven by
   `blockFieldConfig.ts` (#60); tree-grid Training Plan Template editor (#61); dependency
   awareness for shared catalog entities (#62); tree-grid Workout Template editor with
