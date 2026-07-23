@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 
 /**
@@ -56,7 +56,7 @@ userClassPackagesRouter.get('/:id/transactions', async (req, res) => {
  *  3. Post a billing_events row (charge_type=class_package, amount=package.price)
  *     so the ledger reflects the purchase — no separate payment step yet.
  */
-userClassPackagesRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const memberId = parseInt((req.params as any).memberId, 10);
   const { class_package_id } = req.body;

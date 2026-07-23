@@ -10,6 +10,7 @@ import {
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
@@ -83,7 +84,7 @@ export default function WorkoutTemplatesPage() {
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
   const [inlineEditId, setInlineEditId] = useState<number | null>(null);
 
-  const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   // Debounce the name text input into the query that actually drives fetches.

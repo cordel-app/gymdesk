@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, insertAndFetch } from '../infra/db-helpers';
@@ -34,9 +34,6 @@ trainerAvailabilityRouter.get('/', async (req, res) => {
   if (trainer_membership_id) {
     where.push('trainer_membership_id = ?');
     params.push(trainer_membership_id);
-  } else if (role === 'coach') {
-    where.push('trainer_membership_id = ?');
-    params.push(gymMembershipId);
   }
   const { rows } = await db.query(
     `SELECT * FROM trainer_availability WHERE ${where.join(' AND ')} ORDER BY is_recurring DESC, weekday ASC, specific_date ASC, starts_time ASC`,
@@ -52,27 +49,19 @@ trainerAvailabilityRouter.get('/:id', async (req, res) => {
   res.json(row);
 });
 
-trainerAvailabilityRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+trainerAvailabilityRouter.post('/', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
   const { gymId, role, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id, is_recurring, weekday, specific_date, starts_time, ends_time, notes, status, center_id } = req.body;
 
-  let trainerId: number;
-  if (role === 'coach') {
-    if (trainer_membership_id != null && Number(trainer_membership_id) !== gymMembershipId) {
-      return res.status(403).json({ error: 'Coaches can only manage their own availability' });
-    }
-    trainerId = gymMembershipId!;
-  } else {
-    if (!trainer_membership_id) return res.status(400).json({ error: 'trainer_membership_id is required' });
-    trainerId = Number(trainer_membership_id);
-  }
+  if (!trainer_membership_id) return res.status(400).json({ error: 'trainer_membership_id is required' });
+  const trainerId = Number(trainer_membership_id);
 
   const shapeError = validateShape(req.body);
   if (shapeError) return res.status(400).json({ error: shapeError });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
 
   const { rows: trainerRows } = await db.query(
-    "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role = 'coach'",
+    "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role IN ('trainer_performance','trainer_perf_nutrition')",
     [trainerId, gymId],
   );
   if (trainerRows.length === 0) return res.status(404).json({ error: 'Trainer not found' });
@@ -97,7 +86,7 @@ trainerAvailabilityRouter.post('/', requireRole('admin', 'coach'), async (req, r
   }
 });
 
-trainerAvailabilityRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+trainerAvailabilityRouter.put('/:id', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
   const { gymId, role, gymMembershipId } = getTenantContext(req);
   const { rows: existingRows } = await db.query(
     'SELECT * FROM trainer_availability WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -105,10 +94,6 @@ trainerAvailabilityRouter.put('/:id', requireRole('admin', 'coach'), async (req,
   );
   if (existingRows.length === 0) return res.status(404).json({ error: 'Availability window not found' });
   const existing = existingRows[0];
-  if (role === 'coach' && existing.trainer_membership_id !== gymMembershipId) {
-    return res.status(403).json({ error: 'Coaches can only manage their own availability' });
-  }
-
   const merged = { ...existing, ...req.body };
   const shapeError = validateShape(merged);
   if (shapeError) return res.status(400).json({ error: shapeError });
@@ -142,18 +127,8 @@ trainerAvailabilityRouter.put('/:id', requireRole('admin', 'coach'), async (req,
   res.json(rows[0]);
 });
 
-trainerAvailabilityRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => {
-  const { gymId, role, gymMembershipId } = getTenantContext(req);
-  if (role === 'coach') {
-    const { rows } = await db.query(
-      'SELECT trainer_membership_id FROM trainer_availability WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-      [req.params.id, gymId],
-    );
-    if (rows.length === 0) return res.status(404).json({ error: 'Availability window not found' });
-    if (rows[0].trainer_membership_id !== gymMembershipId) {
-      return res.status(403).json({ error: 'Coaches can only manage their own availability' });
-    }
-  }
+trainerAvailabilityRouter.delete('/:id', requireModuleWrite('ORGANIZATION'), async (req, res) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
   const { rowCount } = await db.query(
     `UPDATE trainer_availability SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,

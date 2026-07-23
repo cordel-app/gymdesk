@@ -73,6 +73,6 @@ export interface GymMembership {
   id: number;
   user_id: string;
   gym_id: string;
-  role: 'admin' | 'coach' | 'staff' | 'member';
+  role: 'admin' | 'trainer_performance' | 'trainer_perf_nutrition' | 'front_desk' | 'accountant' | 'nutritionist' | 'member';
   created_at: string;
 }

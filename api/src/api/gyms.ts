@@ -4,6 +4,7 @@ import { db } from '../infra/db';
 import { tenantContext, requireRole, requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
+import { ASSIGNABLE_ROLES, AppRole } from '../infra/permissions';
 
 export const gymsRouter = Router();
 export const platformRouter = Router();
@@ -64,8 +65,8 @@ gymsRouter.get('/:gymId/memberships', tenantContext, requireRole('admin'), async
 gymsRouter.post('/:gymId/memberships', tenantContext, requireRole('admin'), async (req, res) => {
   const { user_id, role } = req.body;
   if (!user_id || !role) return res.status(400).json({ error: 'user_id and role are required' });
-  if (!['admin', 'coach', 'staff'].includes(role)) {
-    return res.status(400).json({ error: 'role must be admin, coach, or staff' });
+  if (!ASSIGNABLE_ROLES.includes(role as AppRole)) {
+    return res.status(400).json({ error: `role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` });
   }
   try {
     const row = await insertAndFetch(

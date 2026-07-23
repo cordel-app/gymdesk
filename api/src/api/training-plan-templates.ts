@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
@@ -184,7 +184,7 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
   }
 });
 
-trainingPlanTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlanTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -203,7 +203,7 @@ trainingPlanTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req,
   }
 });
 
-trainingPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlanTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
@@ -225,7 +225,7 @@ trainingPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (re
   }
 });
 
-trainingPlanTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => {
+trainingPlanTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { rowCount } = await db.query(
@@ -237,7 +237,7 @@ trainingPlanTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async 
   res.status(204).send();
 });
 
-trainingPlanTemplatesRouter.post('/:id/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   try {
@@ -313,7 +313,7 @@ trainingPlanTemplatesRouter.get('/:id/workouts', async (req, res, next) => {
   }
 });
 
-trainingPlanTemplatesRouter.post('/:id/workouts', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlanTemplatesRouter.post('/:id/workouts', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Training plan template not found' });
@@ -352,7 +352,7 @@ trainingPlanTemplatesRouter.post('/:id/workouts', requireRole('admin', 'coach'),
   }
 });
 
-trainingPlanTemplatesRouter.put('/:id/workouts/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlanTemplatesRouter.put('/:id/workouts/reorder', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Training plan template not found' });
@@ -372,7 +372,7 @@ trainingPlanTemplatesRouter.put('/:id/workouts/reorder', requireRole('admin', 'c
   }
 });
 
-trainingPlanTemplatesRouter.put('/:id/workouts/:linkId', requireRole('admin', 'coach'), async (req, res, next) => {
+trainingPlanTemplatesRouter.put('/:id/workouts/:linkId', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, linkId } = req.params as { id: string; linkId: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Training plan template not found' });
@@ -400,7 +400,7 @@ trainingPlanTemplatesRouter.put('/:id/workouts/:linkId', requireRole('admin', 'c
   }
 });
 
-trainingPlanTemplatesRouter.delete('/:id/workouts/:linkId', requireRole('admin', 'coach'), async (req, res) => {
+trainingPlanTemplatesRouter.delete('/:id/workouts/:linkId', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { id, linkId } = req.params as { id: string; linkId: string };
   const { rowCount } = await db.query(

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { createTrainingPlanTx } from './training-plan-creation';
 
@@ -26,7 +26,7 @@ async function memberExists(memberId: string, gymId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-memberTrainingPlansRouter.get('/', requireRole('admin', 'coach'), async (req, res, next) => {
+memberTrainingPlansRouter.get('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
   try {
@@ -42,7 +42,7 @@ memberTrainingPlansRouter.get('/', requireRole('admin', 'coach'), async (req, re
   }
 });
 
-memberTrainingPlansRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+memberTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
   const { template_id, name, description, valid_to } = req.body;
@@ -81,7 +81,7 @@ memberTrainingPlansRouter.post('/', requireRole('admin', 'coach'), async (req, r
   }
 });
 
-memberTrainingPlansRouter.patch('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+memberTrainingPlansRouter.patch('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { memberId, id } = req.params as { memberId: string; id: string };
   const { status } = req.body;

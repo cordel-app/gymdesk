@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
@@ -31,7 +31,7 @@ const LIST_SELECT = `
 
 export const paymentsRouter = Router();
 
-paymentsRouter.get('/', requireRole('admin', 'staff'), async (req, res) => {
+paymentsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { member_id, from, to, source } = req.query as Record<string, string | undefined>;
 
@@ -56,7 +56,7 @@ paymentsRouter.get('/', requireRole('admin', 'staff'), async (req, res) => {
   res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
 });
 
-paymentsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const { event_type, member_id, user_membership_id, charge_type_id, amount, notes, source } = req.body;
 
@@ -127,7 +127,7 @@ paymentsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =
   }
 });
 
-paymentsRouter.get('/member/:memberId', requireRole('admin', 'staff'), async (req, res) => {
+paymentsRouter.get('/member/:memberId', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const memberId = parseInt(String(req.params.memberId), 10);
   if (!memberId) return res.status(400).json({ error: 'Invalid memberId' });
@@ -149,7 +149,7 @@ paymentsRouter.get('/member/:memberId', requireRole('admin', 'staff'), async (re
   res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
 });
 
-paymentsRouter.post('/apply-promotion', requireRole('admin', 'staff'), async (req, res, next) => {
+paymentsRouter.post('/apply-promotion', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const { user_membership_id, promotion_id } = req.body;
   if (!user_membership_id) return res.status(400).json({ error: 'user_membership_id is required' });

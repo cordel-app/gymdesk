@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
 import { getReferences } from '../domain/references';
@@ -128,7 +128,7 @@ exercisesRouter.get('/:id/references', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const {
     name, description, video_url, image_url,
@@ -169,7 +169,7 @@ exercisesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) 
   }
 });
 
-exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   // Express 5 types params as string | string[]; helpers expect a scalar id.
   const id = String(req.params.id);
@@ -230,7 +230,7 @@ exercisesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next
   }
 });
 
-exercisesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => {
+exercisesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rowCount } = await db.query(
     `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP()
@@ -243,7 +243,7 @@ exercisesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) =
 });
 
 /** Idempotent seed of the default exercise catalog. */
-exercisesRouter.post('/import-defaults', requireRole('admin', 'coach'), async (req, res, next) => {
+exercisesRouter.post('/import-defaults', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const inserted = await db.transaction(async (tx) => {

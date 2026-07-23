@@ -23,12 +23,14 @@ export const gymUsersLinkRouter = Router();
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
+import { ASSIGNABLE_ROLES, AppRole } from '../infra/permissions';
+
 interface GymUser {
   id: number;
   user_id: string;
   email: string | null;
   name: string | null;
-  role: 'admin' | 'coach' | 'staff';
+  role: AppRole;
   status: 'invited' | 'active';
   created_at: string;
 }
@@ -65,8 +67,8 @@ gymUsersRouter.get('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query<any>(
-      'SELECT id, user_id, role, status, email, name, created_at FROM gym_memberships WHERE gym_id = ? AND role IN ("admin","coach","staff") ORDER BY created_at DESC',
-      [gymId],
+      `SELECT id, user_id, role, status, email, name, created_at FROM gym_memberships WHERE gym_id = ? AND role IN (${ASSIGNABLE_ROLES.map(() => '?').join(',')}) ORDER BY created_at DESC`,
+      [gymId, ...ASSIGNABLE_ROLES],
     );
 
     // Separate invited users from active users
@@ -100,8 +102,8 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const name = String(req.body?.name ?? '').trim() || null;
 
   if (!email) return res.status(400).json({ error: 'email is required' });
-  if (!['admin', 'coach', 'staff'].includes(role)) {
-    return res.status(400).json({ error: 'role must be one of: admin, coach, staff' });
+  if (!ASSIGNABLE_ROLES.includes(role as AppRole)) {
+    return res.status(400).json({ error: `role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` });
   }
 
   try {
@@ -240,8 +242,8 @@ gymUsersRouter.patch('/:id', requireRole('admin'), async (req, res, next) => {
   const role = String(req.body?.role ?? '').trim();
   const name = req.body?.name ? String(req.body.name).trim() : undefined;
 
-  if (!['admin', 'coach', 'staff'].includes(role)) {
-    return res.status(400).json({ error: 'role must be one of: admin, coach, staff' });
+  if (!ASSIGNABLE_ROLES.includes(role as AppRole)) {
+    return res.status(400).json({ error: `role must be one of: ${ASSIGNABLE_ROLES.join(', ')}` });
   }
 
   try {

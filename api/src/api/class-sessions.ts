@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
@@ -59,7 +59,7 @@ async function validateRefs(gymId: string, body: any, centerId: number) {
   }
   if (body.trainer_membership_id) {
     const { rows } = await db.query(
-      "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role = 'coach'",
+      "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role IN ('trainer_performance','trainer_perf_nutrition')",
       [body.trainer_membership_id, gymId],
     );
     if (rows.length === 0) return 'Trainer not found';
@@ -76,7 +76,7 @@ async function validateRefs(gymId: string, body: any, centerId: number) {
   return null;
 }
 
-classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req, res, next) => {
+classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, userId, gymMembershipId } = getTenantContext(req);
   const { activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
   if (!activity_type_id || !starts_at || !ends_at) {
@@ -113,7 +113,7 @@ classSessionsRouter.post('/', requireRole('admin', 'coach', 'staff'), async (req
   }
 });
 
-classSessionsRouter.put('/:id', requireRole('admin', 'coach', 'staff'), async (req, res, next) => {
+classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
@@ -159,7 +159,7 @@ classSessionsRouter.put('/:id', requireRole('admin', 'coach', 'staff'), async (r
 // P2.4: cancel is a status flip with a required reason — never a hard delete,
 // so the session stays queryable for history and its bookings can cascade
 // cancel (wired in P2.5).
-classSessionsRouter.post('/:id/cancel', requireRole('admin', 'coach', 'staff'), async (req, res) => {
+classSessionsRouter.post('/:id/cancel', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const reason = String(req.body?.cancellation_reason ?? '').trim();
   if (!reason) return res.status(400).json({ error: 'cancellation_reason is required' });

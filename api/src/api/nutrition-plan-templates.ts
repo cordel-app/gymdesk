@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
@@ -173,7 +173,7 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -192,7 +192,7 @@ nutritionPlanTemplatesRouter.post('/', requireRole('admin', 'coach'), async (req
   }
 });
 
-nutritionPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
@@ -221,7 +221,7 @@ nutritionPlanTemplatesRouter.put('/:id', requireRole('admin', 'coach'), async (r
   }
 });
 
-nutritionPlanTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async (req, res) => {
+nutritionPlanTemplatesRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { rowCount } = await db.query(
@@ -233,7 +233,7 @@ nutritionPlanTemplatesRouter.delete('/:id', requireRole('admin', 'coach'), async
   res.status(204).send();
 });
 
-nutritionPlanTemplatesRouter.post('/:id/duplicate', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   try {
@@ -325,7 +325,7 @@ nutritionPlanTemplatesRouter.get('/:id/days', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.post('/:id/days', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.post('/:id/days', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Nutrition plan template not found' });
@@ -353,7 +353,7 @@ nutritionPlanTemplatesRouter.post('/:id/days', requireRole('admin', 'coach'), as
   }
 });
 
-nutritionPlanTemplatesRouter.put('/:id/days/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.put('/:id/days/reorder', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Nutrition plan template not found' });
@@ -369,7 +369,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/reorder', requireRole('admin', 'coac
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.delete('/:id/days/:dayId', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.delete('/:id/days/:dayId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId } = req.params as { id: string; dayId: string };
   try {
@@ -397,7 +397,7 @@ nutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals', async (req, res, next
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId } = req.params as { id: string; dayId: string };
   if (!(await dayExists(id, dayId, gymId))) return res.status(404).json({ error: 'Day not found' });
@@ -418,7 +418,7 @@ nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals', requireRole('admin',
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId } = req.params as { id: string; dayId: string };
   if (!(await dayExists(id, dayId, gymId))) return res.status(404).json({ error: 'Day not found' });
@@ -434,7 +434,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requireRole('
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
@@ -450,7 +450,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireRole('
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
   try {
@@ -487,7 +487,7 @@ nutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals/:mealId/dishes', async 
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/dishes', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/dishes', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
@@ -529,7 +529,7 @@ nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/dishes', requi
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/dishes/reorder', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/dishes/reorder', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
@@ -551,7 +551,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/dishes/reorder'
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/dishes/:mealDishId', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/dishes/:mealDishId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { dayId, mealId, mealDishId } = req.params as { id: string; dayId: string; mealId: string; mealDishId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
@@ -594,7 +594,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/dishes/:mealDis
   } catch (err) { next(err); }
 });
 
-nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId/dishes/:mealDishId', requireRole('admin', 'coach'), async (req, res, next) => {
+nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId/dishes/:mealDishId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { mealId, mealDishId } = req.params as { id: string; dayId: string; mealId: string; mealDishId: string };
   try {

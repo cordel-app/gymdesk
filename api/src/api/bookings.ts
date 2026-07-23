@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { handleDupEntry } from '../infra/db-helpers';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
 let packageCreditsModule: typeof import('./package-credits') | null = null;
@@ -177,7 +177,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
   });
 }
 
-bookingsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) => {
+bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { member_id, class_session_id } = req.body;
   if (!member_id || !class_session_id) {
@@ -199,7 +199,7 @@ bookingsRouter.post('/', requireRole('admin', 'staff'), async (req, res, next) =
   }
 });
 
-bookingsRouter.delete('/:id', requireRole('admin', 'staff'), async (req, res, next) => {
+bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
     await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
@@ -211,7 +211,7 @@ bookingsRouter.delete('/:id', requireRole('admin', 'staff'), async (req, res, ne
 });
 
 /** Mark attendance — staff-level. */
-bookingsRouter.post('/:id/attendance', requireRole('admin', 'staff', 'coach'), async (req, res) => {
+bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res) => {
   const { gymId, userId, gymMembershipId } = getTenantContext(req);
   const { status } = req.body;
   if (!['attended', 'no_show'].includes(status)) {

@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -120,7 +121,7 @@ export default function TrainingPlansPage() {
   const [blocksFor, setBlocksFor] = useState<{ plan: TrainingPlanRow; workout: Workout } | null>(null);
   const [exercisesFor, setExercisesFor] = useState<{ plan: TrainingPlanRow; workout: Workout; block: Block } | null>(null);
 
-  const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   useEffect(() => {

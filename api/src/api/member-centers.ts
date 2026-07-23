@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 
 /** Mounted at /members/:memberId/centers (mergeParams: true), like training-plans.ts. */
@@ -20,7 +20,7 @@ memberCentersRouter.get('/', async (req, res) => {
   res.json(rows);
 });
 
-memberCentersRouter.put('/', requireRole('admin', 'staff'), async (req, res, next) => {
+memberCentersRouter.put('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
   const { center_ids, default_center_id } = req.body as { center_ids: unknown; default_center_id: unknown };

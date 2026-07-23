@@ -18,7 +18,7 @@ describe('requireRole', () => {
 
   beforeAll(async () => {
     gymId = await createTestGym('Role Test Gym');
-    await createTestMembership(gymId, 'staff');
+    await createTestMembership(gymId, 'front_desk');
   });
 
   it('returns 401 when no Authorization header is sent', async () => {
@@ -43,7 +43,7 @@ describe('requireRole', () => {
       .post('/gym-users')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ email: 'new@example.com', role: 'staff' });
+      .send({ email: 'new@example.com', role: 'front_desk' });
 
     expect(res.status).toBe(403);
   });

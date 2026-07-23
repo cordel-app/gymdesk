@@ -12,13 +12,14 @@ import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnStyle, btnSmall } from '@/components/ui';
+import { ASSIGNABLE_ROLES, AppRole } from '@/config/permissions';
 
 interface TeamMember {
   id: number;
   user_id: string;
   email: string | null;
   name: string | null;
-  role: 'admin' | 'coach' | 'staff';
+  role: AppRole;
   status?: 'invited' | 'active';
   created_at: string;
 }
@@ -43,7 +44,7 @@ export default function TeamPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'admin' | 'coach' | 'staff'>('coach');
+  const [role, setRole] = useState<AppRole>('trainer_performance');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<TeamMember | null>(null);
@@ -105,7 +106,7 @@ export default function TeamPage() {
     setEditing(null);
     setEmail('');
     setName('');
-    setRole('coach');
+    setRole('trainer_performance');
     setError(null);
     setModalOpen(true);
   }
@@ -124,7 +125,7 @@ export default function TeamPage() {
     setEditing(null);
     setEmail('');
     setName('');
-    setRole('coach');
+    setRole('trainer_performance');
     setError(null);
   }
 
@@ -390,9 +391,9 @@ export default function TeamPage() {
             marginBottom: '16px',
           }}
         >
-          <option value="admin">{t('role_admin')}</option>
-          <option value="coach">{t('role_coach')}</option>
-          <option value="staff">{t('role_staff')}</option>
+          {ASSIGNABLE_ROLES.map((r) => (
+            <option key={r} value={r}>{t(`role_${r}` as any)}</option>
+          ))}
         </select>
       </CrudModal>
 

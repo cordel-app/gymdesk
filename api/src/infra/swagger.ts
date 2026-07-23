@@ -51,7 +51,7 @@ export const swaggerSpec = swaggerJsdoc({
             id:         { type: 'integer' },
             user_id:    { type: 'string' },
             gym_id:     { type: 'string', format: 'uuid' },
-            role:       { type: 'string', enum: ['admin', 'coach', 'staff'] },
+            role:       { type: 'string', enum: ['admin', 'trainer_performance', 'trainer_perf_nutrition', 'front_desk', 'accountant', 'nutritionist'] },
             created_at: { type: 'string', format: 'date-time' },
           },
         },
@@ -159,7 +159,7 @@ export const swaggerSpec = swaggerJsdoc({
           tags: ['Gyms'],
           summary: 'Add a member to a gym (admin)',
           parameters: [{ $ref: '#/components/parameters/gymId' }, { in: 'path', name: 'gymId', required: true, schema: { type: 'string', format: 'uuid' } }],
-          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['user_id', 'role'], properties: { user_id: { type: 'string' }, role: { type: 'string', enum: ['admin', 'coach', 'staff'] } } } } } },
+          requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['user_id', 'role'], properties: { user_id: { type: 'string' }, role: { type: 'string', enum: ['admin', 'trainer_performance', 'trainer_perf_nutrition', 'front_desk', 'accountant', 'nutritionist'] } } } } } },
           responses: {
             '201': { description: 'Membership created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Membership' } } } },
             '409': { description: 'User already a member', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },

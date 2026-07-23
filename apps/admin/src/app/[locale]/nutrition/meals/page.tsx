@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -335,7 +336,7 @@ export default function MealsCatalogPage() {
   const t = useTranslations();
   const { activeGym, loading: gymLoading, isSuperadmin } = useGym();
 
-  const canWrite = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
 
   if (gymLoading) return null;
 

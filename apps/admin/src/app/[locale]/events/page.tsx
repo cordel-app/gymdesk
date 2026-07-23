@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
@@ -51,7 +52,7 @@ export default function EventsPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Event | null>(null);
 
-  const isAdmin = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'staff';
+  const isAdmin = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'ORGANIZATION'));
 
   useEffect(() => {
     if (!gymLoading && !isAdmin) router.replace(`/${locale}`);

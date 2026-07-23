@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { canWriteModule } from '@/config/permissions';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { MemberTrainingPlansModal } from './MemberTrainingPlansModal';
@@ -52,7 +53,7 @@ export default function MembersPage() {
   const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
 
-  const canManageTraining = isSuperadmin || activeGym?.role === 'admin' || activeGym?.role === 'coach';
+  const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
 
   async function load() {
     if (!activeGymId) {

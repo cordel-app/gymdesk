@@ -14,7 +14,7 @@ trainersRouter.get('/', async (req, res) => {
   const { rows: trainers } = await db.query(
     `SELECT gm.id AS gym_membership_id, gm.user_id, gm.role, gm.created_at
      FROM gym_memberships gm
-     WHERE gm.gym_id = ? AND gm.role = 'coach'
+     WHERE gm.gym_id = ? AND gm.role IN ('trainer_performance','trainer_perf_nutrition')
      ORDER BY gm.created_at ASC`,
     [gymId],
   );
@@ -45,7 +45,7 @@ trainersRouter.put('/:membershipId/specialities', requireRole('admin'), async (r
   try {
     // Confirm the membership is a coach in THIS gym; guard against ID spoofing.
     const { rows: memberRows } = await db.query(
-      "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role = 'coach'",
+      "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role IN ('trainer_performance','trainer_perf_nutrition')",
       [membershipId, gymId],
     );
     if (memberRows.length === 0) return res.status(404).json({ error: 'Trainer not found' });
