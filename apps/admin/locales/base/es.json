@@ -883,7 +883,11 @@
     "completed_read_only": "Este plan está completado y es de solo lectura.",
     "unsaved_changes": "Tienes cambios sin guardar. ¿Descartarlos?",
     "unsaved_discard": "Descartar cambios",
-    "error_required": "El nombre es obligatorio."
+    "error_required": "El nombre es obligatorio.",
+    "conclude": "Concluir plan",
+    "confirm_conclude": "¿Marcar este plan de entrenamiento como concluido? El estado cambiará a Completado. Si no hay fecha de fin, se usará la de hoy. No se puede deshacer.",
+    "conclude_confirm_btn": "Concluir plan",
+    "error_end_date_required_expired": "La fecha de fin es obligatoria cuando el estado es Expirado."
   },
   "template_workouts": {
     "title": "Rutinas",
