@@ -11,7 +11,7 @@ import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle } from '@/components/ui';
+import { btnStyle, btnSmall } from '@/components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,29 +40,33 @@ interface Allowance {
 
 interface Center { id: number; name: string; }
 interface PriceRow { id: number; price: string; valid_from: string; valid_to: string | null; }
+interface ActivityType { id: number; name: string; }
 
 interface Plan {
   id: number;
   name: string;
   description: string | null;
   lifecycle_status: 'draft' | 'active' | 'archived';
-  enrollment_status: 'open' | 'closed';
+  enrollment_status: 'open' | 'closed' | 'paused';
   current_price: string | null;
   member_count: number;
   billing_policy: BillingPolicy | null;
   allowances: Allowance[];
   centers: Center[];
   price_history: PriceRow[];
+  created_at: string;
+  created_by_name: string | null;
+  modified_at: string | null;
+  modified_by_name: string | null;
+  deleted_at: string | null;
 }
 
-interface ActivityType { id: number; name: string; }
-
 const LIFECYCLE_STATUSES = ['draft', 'active', 'archived'] as const;
-const ENROLLMENT_STATUSES = ['open', 'closed'] as const;
+const ENROLLMENT_STATUSES = ['open', 'closed', 'paused'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 
-const emptyForm = {
+const emptyAddForm = {
   name: '',
   description: '',
   lifecycle_status: 'draft' as Plan['lifecycle_status'],
@@ -81,6 +85,13 @@ const emptyBillingPolicy = {
   auto_renew: true,
 };
 
+const emptyEditForm = {
+  name: '',
+  description: '',
+  lifecycle_status: 'draft' as Plan['lifecycle_status'],
+  enrollment_status: 'closed' as Plan['enrollment_status'],
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtPrice(price: string | null) {
@@ -91,6 +102,10 @@ function fmtPrice(price: string | null) {
 function fmtBillingInterval(interval: number, unit: string) {
   if (interval === 1) return unit;
   return `${interval} ${unit}s`;
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -105,19 +120,28 @@ export default function PlansPage() {
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Accordion expand (view mode)
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  // Modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<Plan | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [billingForm, setBillingForm] = useState(emptyBillingPolicy);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Inline edit
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState(emptyEditForm);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
-  // Confirm dialogs
+  // Details modal
+  const [detailsPlan, setDetailsPlan] = useState<Plan | null>(null);
+
+  // Add Plan modal
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addForm, setAddForm] = useState(emptyAddForm);
+  const [billingForm, setBillingForm] = useState(emptyBillingPolicy);
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  // Confirm delete
   const [deleting, setDeleting] = useState<Plan | null>(null);
-  const [archiving, setArchiving] = useState<Plan | null>(null);
 
   // Price sub-form
   const [priceForm, setPriceForm] = useState({ price: '', valid_from: '', valid_to: '' });
@@ -162,7 +186,10 @@ export default function PlansPage() {
 
   useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading]);
 
+  // ─── Accordion toggle ───────────────────────────────────────────────────────
+
   function toggleExpand(id: number) {
+    if (editingId === id) return; // don't collapse while editing
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -170,67 +197,76 @@ export default function PlansPage() {
     });
   }
 
-  // ─── Plan CRUD ─────────────────────────────────────────────────────────────
+  // ─── Inline edit ────────────────────────────────────────────────────────────
+
+  function openInlineEdit(plan: Plan) {
+    setEditingId(plan.id);
+    setEditForm({
+      name: plan.name,
+      description: plan.description ?? '',
+      lifecycle_status: plan.lifecycle_status,
+      enrollment_status: plan.enrollment_status,
+    });
+    setEditError(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditError(null);
+  }
+
+  async function handleInlineSave(plan: Plan) {
+    if (!editForm.name.trim()) { setEditError(t('plans.error_required')); return; }
+    setEditSaving(true); setEditError(null);
+    try {
+      await apiFetch(`/membership-plans/${plan.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          description: editForm.description.trim() || null,
+          lifecycle_status: editForm.lifecycle_status,
+          enrollment_status: editForm.enrollment_status,
+        }),
+      });
+      setEditingId(null);
+      load();
+    } catch (err: any) {
+      setEditError(err.message ?? t('plans.error_generic'));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  // ─── Add Plan modal ─────────────────────────────────────────────────────────
 
   function openAdd() {
-    setEditing(null);
-    setForm(emptyForm);
+    setAddForm(emptyAddForm);
     setBillingForm(emptyBillingPolicy);
-    setFormError(null);
-    setModalOpen(true);
+    setAddError(null);
+    setAddModalOpen(true);
   }
 
-  function openEdit(p: Plan) {
-    setEditing(p);
-    setForm({
-      name: p.name,
-      description: p.description ?? '',
-      lifecycle_status: p.lifecycle_status,
-      enrollment_status: p.enrollment_status,
-    });
-    setBillingForm(p.billing_policy ? {
-      initial_billing_interval: p.billing_policy.initial_billing_interval,
-      initial_billing_unit: p.billing_policy.initial_billing_unit,
-      recurring_billing_interval: p.billing_policy.recurring_billing_interval,
-      recurring_billing_unit: p.billing_policy.recurring_billing_unit,
-      initial_service_interval: p.billing_policy.initial_service_interval,
-      initial_service_unit: p.billing_policy.initial_service_unit,
-      recurring_service_interval: p.billing_policy.recurring_service_interval,
-      recurring_service_unit: p.billing_policy.recurring_service_unit,
-      auto_renew: !!p.billing_policy.auto_renew,
-    } : emptyBillingPolicy);
-    setFormError(null);
-    setModalOpen(true);
-  }
-
-  function closeModal() {
-    setModalOpen(false);
-    setEditing(null);
-    setForm(emptyForm);
+  function closeAdd() {
+    setAddModalOpen(false);
+    setAddForm(emptyAddForm);
     setBillingForm(emptyBillingPolicy);
-    setFormError(null);
+    setAddError(null);
   }
 
-  async function handleSave() {
-    if (!form.name.trim()) { setFormError(t('plans.error_required')); return; }
-    setSaving(true); setFormError(null);
+  async function handleAdd() {
+    if (!addForm.name.trim()) { setAddError(t('plans.error_required')); return; }
+    setAddSaving(true); setAddError(null);
     try {
-      const planBody = {
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        lifecycle_status: form.lifecycle_status,
-        enrollment_status: form.enrollment_status,
-      };
-      let planId: number;
-      if (editing) {
-        const updated = await apiFetch<Plan>(`/membership-plans/${editing.id}`, { method: 'PUT', body: JSON.stringify(planBody) });
-        planId = updated.id;
-      } else {
-        const created = await apiFetch<Plan>('/membership-plans', { method: 'POST', body: JSON.stringify(planBody) });
-        planId = created.id;
-      }
-      // Upsert billing policy
-      await apiFetch(`/membership-plans/${planId}/billing-policy`, {
+      const created = await apiFetch<Plan>('/membership-plans', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: addForm.name.trim(),
+          description: addForm.description.trim() || null,
+          lifecycle_status: addForm.lifecycle_status,
+          enrollment_status: addForm.enrollment_status,
+        }),
+      });
+      await apiFetch(`/membership-plans/${created.id}/billing-policy`, {
         method: 'PUT',
         body: JSON.stringify({
           ...billingForm,
@@ -240,14 +276,16 @@ export default function PlansPage() {
           recurring_service_interval: Number(billingForm.recurring_service_interval),
         }),
       });
-      closeModal();
+      closeAdd();
       load();
     } catch (err: any) {
-      setFormError(err.message ?? t('plans.error_generic'));
+      setAddError(err.message ?? t('plans.error_generic'));
     } finally {
-      setSaving(false);
+      setAddSaving(false);
     }
   }
+
+  // ─── Delete ─────────────────────────────────────────────────────────────────
 
   async function handleDelete() {
     if (!deleting) return;
@@ -261,17 +299,7 @@ export default function PlansPage() {
     }
   }
 
-  async function handleArchive() {
-    if (!archiving) return;
-    try {
-      await apiFetch(`/membership-plans/${archiving.id}/archive`, { method: 'POST' });
-      setArchiving(null);
-      load();
-    } catch (err: any) {
-      setArchiving(null);
-      toast(err.message ?? t('plans.error_generic'));
-    }
-  }
+  // ─── Duplicate ──────────────────────────────────────────────────────────────
 
   async function handleDuplicate(plan: Plan) {
     try {
@@ -282,20 +310,7 @@ export default function PlansPage() {
     }
   }
 
-  async function handleToggleEnrollment(plan: Plan) {
-    const newStatus = plan.enrollment_status === 'open' ? 'closed' : 'open';
-    try {
-      await apiFetch(`/membership-plans/${plan.id}/enrollment`, {
-        method: 'PUT',
-        body: JSON.stringify({ enrollment_status: newStatus }),
-      });
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('plans.error_generic'));
-    }
-  }
-
-  // ─── Price sub-form ────────────────────────────────────────────────────────
+  // ─── Price sub-form ─────────────────────────────────────────────────────────
 
   function openAddPrice(planId: number) {
     setPriceForPlanId(planId);
@@ -340,7 +355,7 @@ export default function PlansPage() {
     }
   }
 
-  // ─── Allowance sub-form ────────────────────────────────────────────────────
+  // ─── Allowance sub-form ─────────────────────────────────────────────────────
 
   async function openAddAllowance(planId: number) {
     if (activityTypes.length === 0) {
@@ -380,7 +395,7 @@ export default function PlansPage() {
     }
   }
 
-  // ─── Centers sub-form ─────────────────────────────────────────────────────
+  // ─── Centers sub-form ───────────────────────────────────────────────────────
 
   async function openCenters(plan: Plan) {
     if (allCenters.length === 0) {
@@ -405,7 +420,7 @@ export default function PlansPage() {
     }
   }
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+  // ─── Render ─────────────────────────────────────────────────────────────────
 
   if (gymLoading || !isAdmin) return null;
 
@@ -417,6 +432,19 @@ export default function PlansPage() {
         <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('plans.modal_add')}</button>
       </div>
 
+      {/* Column headers */}
+      {!loading && plans.length > 0 && (
+        <div style={colHeaderStyle}>
+          <div style={{ flex: 2 }}>{t('plans.col_name')}</div>
+          <div style={{ flex: 3 }}>{t('plans.col_description')}</div>
+          <div style={{ flex: 2 }}>{t('plans.col_created_by')}</div>
+          <div style={{ minWidth: 100 }}>{t('plans.col_created_at')}</div>
+          <div style={{ minWidth: 90 }}>{t('plans.col_status')}</div>
+          <div style={{ minWidth: 90 }}>{t('plans.col_enrollment')}</div>
+          <div style={{ minWidth: 68 }} />
+        </div>
+      )}
+
       {/* Plan list */}
       {loading ? (
         <p style={{ color: '#888' }}>{t('plans.loading')}</p>
@@ -424,66 +452,292 @@ export default function PlansPage() {
         <p style={{ color: '#888' }}>{t('plans.empty')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {plans.map((plan) => (
-            <PlanAccordionRow
-              key={plan.id}
-              plan={plan}
-              expanded={expanded.has(plan.id)}
-              onToggle={() => toggleExpand(plan.id)}
-              onEdit={() => openEdit(plan)}
-              onDuplicate={() => handleDuplicate(plan)}
-              onToggleEnrollment={() => handleToggleEnrollment(plan)}
-              onArchive={() => setArchiving(plan)}
-              onDelete={() => setDeleting(plan)}
-              onAddPrice={() => openAddPrice(plan.id)}
-              onEditPrice={(row) => openEditPrice(plan.id, row)}
-              onDeletePrice={(priceId) => handleDeletePrice(plan.id, priceId)}
-              onAddAllowance={() => openAddAllowance(plan.id)}
-              onDeleteAllowance={(id) => handleDeleteAllowance(plan.id, id)}
-              onEditCenters={() => openCenters(plan)}
-              t={t}
-            />
-          ))}
+          {plans.map((plan) => {
+            const isEditing = editingId === plan.id;
+            const isExpanded = isEditing || expanded.has(plan.id);
+            const descText = plan.description
+              ? plan.description.length > 60 ? plan.description.slice(0, 60) + '…' : plan.description
+              : '—';
+
+            const menuItems: ContextMenuItem[] = [
+              { label: t('plans.details'), onClick: () => setDetailsPlan(plan) },
+              { label: t('plans.edit'), onClick: () => openInlineEdit(plan) },
+              { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan) },
+              { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true },
+            ];
+
+            return (
+              <div key={plan.id} style={cardStyle}>
+                {/* Row header */}
+                <div style={rowStyle} onClick={() => toggleExpand(plan.id)}>
+                  <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {plan.name}
+                  </div>
+                  <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {descText}
+                  </div>
+                  <div style={{ flex: 2, fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {plan.created_by_name ?? '—'}
+                  </div>
+                  <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
+                    {fmtDate(plan.created_at)}
+                  </div>
+                  <div style={{ minWidth: 90, flexShrink: 0 }}>
+                    <StatusBadge status={plan.lifecycle_status} label={t(`status.${plan.lifecycle_status}`)} />
+                  </div>
+                  <div style={{ minWidth: 90, flexShrink: 0 }}>
+                    <StatusBadge
+                      status={plan.enrollment_status === 'open' ? 'active' : plan.enrollment_status === 'paused' ? 'paused' : 'inactive'}
+                      label={t(`status.${plan.enrollment_status}`)}
+                    />
+                  </div>
+                  <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+                  <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                    <ContextMenu items={menuItems} ariaLabel={`Actions for ${plan.name}`} />
+                  </div>
+                </div>
+
+                {/* Inline edit form */}
+                {isEditing && (
+                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                      <div>
+                        <label style={inlineLabelStyle}>{t('plans.label_name')} *</label>
+                        <input
+                          value={editForm.name}
+                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                          autoFocus
+                          style={inlineInputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={inlineLabelStyle}>{t('plans.label_description')}</label>
+                        <input
+                          value={editForm.description}
+                          onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                          style={inlineInputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={inlineLabelStyle}>{t('plans.label_lifecycle_status')}</label>
+                        <select
+                          value={editForm.lifecycle_status}
+                          onChange={(e) => setEditForm({ ...editForm, lifecycle_status: e.target.value as Plan['lifecycle_status'] })}
+                          style={inlineSelectStyle}
+                        >
+                          {LIFECYCLE_STATUSES.map((s) => (
+                            <option key={s} value={s}>{t(`status.${s}`)}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={inlineLabelStyle}>{t('plans.label_enrollment_status')}</label>
+                        <select
+                          value={editForm.enrollment_status}
+                          onChange={(e) => setEditForm({ ...editForm, enrollment_status: e.target.value as Plan['enrollment_status'] })}
+                          style={inlineSelectStyle}
+                        >
+                          {ENROLLMENT_STATUSES.map((s) => (
+                            <option key={s} value={s}>{t(`status.${s}`)}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                      <button onClick={cancelEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                      <button onClick={() => handleInlineSave(plan)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+                        {editSaving ? t('plans.saving') : t('plans.save_changes')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Accordion detail sections (view mode only) */}
+                {isExpanded && !isEditing && (
+                  <div style={{ padding: '0 16px 16px', borderTop: '1px solid #eee' }}>
+                    <SectionHeader title={t('plans.section_status')} />
+                    <DetailRow label={t('plans.label_lifecycle_status')} value={t(`status.${plan.lifecycle_status}`)} />
+                    <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
+                    <DetailRow label="Members" value={String(plan.member_count)} />
+
+                    <SectionHeader title={t('plans.section_billing')} />
+                    {plan.billing_policy ? (
+                      <>
+                        <DetailRow label={t('plans.billing_initial')} value={fmtBillingInterval(plan.billing_policy.initial_billing_interval, plan.billing_policy.initial_billing_unit)} />
+                        <DetailRow label={t('plans.billing_recurring')} value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`} />
+                        <DetailRow label={t('plans.service_initial')} value={fmtBillingInterval(plan.billing_policy.initial_service_interval, plan.billing_policy.initial_service_unit)} />
+                        <DetailRow label={t('plans.service_recurring')} value={fmtBillingInterval(plan.billing_policy.recurring_service_interval, plan.billing_policy.recurring_service_unit)} />
+                        <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} />
+                      </>
+                    ) : (
+                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_billing')}</p>
+                    )}
+
+                    <SectionHeader title={t('plans.section_centers')} action={<button onClick={() => openCenters(plan)} style={linkBtn}>Edit</button>} />
+                    {(plan.centers ?? []).length === 0 ? (
+                      <DetailRow label="" value={t('plans.all_centers')} />
+                    ) : (
+                      (plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)
+                    )}
+
+                    <SectionHeader title={t('plans.section_services')} action={<button onClick={() => openAddAllowance(plan.id)} style={linkBtn}>+ Add</button>} />
+                    {(plan.allowances ?? []).length === 0 ? (
+                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_allowances')}</p>
+                    ) : (
+                      (plan.allowances ?? []).map((a) => (
+                        <div key={a.id} style={{ ...detailRowStyle, alignItems: 'center' }}>
+                          <span style={labelStyle}>{a.activity_type_name}</span>
+                          <span style={valueStyle}>
+                            {a.allowance_type === 'unlimited'
+                              ? t('plans.unlimited')
+                              : `${a.session_count} sessions / ${fmtBillingInterval(a.recurrence_interval ?? 1, a.recurrence_unit ?? 'month')}`}
+                          </span>
+                          <button onClick={() => handleDeleteAllowance(plan.id, a.id)} style={dangerLinkBtn}>✕</button>
+                        </div>
+                      ))
+                    )}
+
+                    <SectionHeader title={t('plans.section_prices')} action={<button onClick={() => openAddPrice(plan.id)} style={linkBtn}>+ Add</button>} />
+                    {(plan.price_history ?? []).length === 0 ? (
+                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_prices')}</p>
+                    ) : (
+                      (plan.price_history ?? []).map((row) => (
+                        <div key={row.id} style={{ ...detailRowStyle, alignItems: 'center' }}>
+                          <span style={labelStyle}>{String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}</span>
+                          <span style={valueStyle}>€{parseFloat(row.price).toFixed(2)}</span>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button onClick={() => openEditPrice(plan.id, row)} style={linkBtn}>Edit</button>
+                            <button onClick={() => handleDeletePrice(plan.id, row.id)} style={dangerLinkBtn}>✕</button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Add/Edit Plan Modal */}
+      {/* Details modal */}
       <CrudModal
-        open={modalOpen}
-        title={editing ? t('plans.modal_edit') : t('plans.modal_add')}
-        error={formError}
-        saving={saving}
+        open={detailsPlan !== null}
+        title={t('plans.details_title')}
+        error={null}
+        saving={false}
+        hideSave
+        cancelLabel={t('plans.details_close')}
+        saveLabel=""
+        onCancel={() => setDetailsPlan(null)}
+        onSave={() => setDetailsPlan(null)}
+      >
+        {detailsPlan && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
+              {t('plans.details_section_general')}
+            </div>
+            <div>
+              <span style={detailLabelStyle}>{t('plans.details_name')}</span>
+              <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 500 }}>{detailsPlan.name}</p>
+            </div>
+            {detailsPlan.description && (
+              <div>
+                <span style={detailLabelStyle}>{t('plans.details_description')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>{detailsPlan.description}</p>
+              </div>
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <span style={detailLabelStyle}>{t('plans.details_status')}</span>
+                <div style={{ marginTop: 4 }}>
+                  <StatusBadge status={detailsPlan.lifecycle_status} label={t(`status.${detailsPlan.lifecycle_status}`)} />
+                </div>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('plans.details_enrollment_status')}</span>
+                <div style={{ marginTop: 4 }}>
+                  <StatusBadge
+                    status={detailsPlan.enrollment_status === 'open' ? 'active' : detailsPlan.enrollment_status === 'paused' ? 'paused' : 'inactive'}
+                    label={t(`status.${detailsPlan.enrollment_status}`)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
+              {t('plans.details_section_audit')}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <span style={detailLabelStyle}>{t('plans.details_created_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(detailsPlan.created_at).toLocaleString()}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('plans.details_created_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.created_by_name ?? '—'}</p>
+              </div>
+              {detailsPlan.modified_at && (
+                <div>
+                  <span style={detailLabelStyle}>{t('plans.details_modified_at')}</span>
+                  <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(detailsPlan.modified_at).toLocaleString()}</p>
+                </div>
+              )}
+              {detailsPlan.modified_by_name && (
+                <div>
+                  <span style={detailLabelStyle}>{t('plans.details_modified_by')}</span>
+                  <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.modified_by_name}</p>
+                </div>
+              )}
+              {detailsPlan.deleted_at && (
+                <div>
+                  <span style={detailLabelStyle}>{t('plans.details_deleted_at')}</span>
+                  <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(detailsPlan.deleted_at).toLocaleString()}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </CrudModal>
+
+      {/* Add Plan modal */}
+      <CrudModal
+        open={addModalOpen}
+        title={t('plans.modal_add')}
+        error={addError}
+        saving={addSaving}
         cancelLabel={t('plans.cancel')}
-        saveLabel={saving ? t('plans.saving') : editing ? t('plans.save_changes') : t('plans.modal_add')}
-        onCancel={closeModal}
-        onSave={handleSave}
+        saveLabel={addSaving ? t('plans.saving') : t('plans.modal_add')}
+        onCancel={closeAdd}
+        onSave={handleAdd}
       >
         <FormLabel>{t('plans.label_name')}</FormLabel>
         <FormInput
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          value={addForm.name}
+          onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
           placeholder={t('plans.placeholder_name')}
           autoFocus
         />
 
         <FormLabel>{t('plans.label_description')}</FormLabel>
         <FormInput
-          value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          value={addForm.description}
+          onChange={(e) => setAddForm({ ...addForm, description: e.target.value })}
           placeholder={t('plans.placeholder_description')}
         />
 
         <FormLabel>{t('plans.label_lifecycle_status')}</FormLabel>
-        <select value={form.lifecycle_status} onChange={(e) => setForm({ ...form, lifecycle_status: e.target.value as any })} style={selectStyle}>
+        <select value={addForm.lifecycle_status} onChange={(e) => setAddForm({ ...addForm, lifecycle_status: e.target.value as any })} style={selectStyle}>
           {LIFECYCLE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
         </select>
 
         <FormLabel>{t('plans.label_enrollment_status')}</FormLabel>
-        <select value={form.enrollment_status} onChange={(e) => setForm({ ...form, enrollment_status: e.target.value as any })} style={selectStyle}>
+        <select value={addForm.enrollment_status} onChange={(e) => setAddForm({ ...addForm, enrollment_status: e.target.value as any })} style={selectStyle}>
           {ENROLLMENT_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
         </select>
 
-        {/* Billing Policy */}
         <div style={{ marginTop: 16, marginBottom: 4 }}>
           <strong style={{ fontSize: 13, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {t('plans.section_billing')}
@@ -618,137 +872,6 @@ export default function PlansPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />
-
-      {/* Confirm archive */}
-      <ConfirmDialog
-        open={archiving !== null}
-        message={t('plans.confirm_archive')}
-        confirmLabel={t('plans.archive')}
-        cancelLabel={t('plans.cancel')}
-        onConfirm={handleArchive}
-        onCancel={() => setArchiving(null)}
-      />
-    </div>
-  );
-}
-
-// ─── Accordion row ────────────────────────────────────────────────────────────
-
-function PlanAccordionRow({
-  plan, expanded, onToggle,
-  onEdit, onDuplicate, onToggleEnrollment, onArchive, onDelete,
-  onAddPrice, onEditPrice, onDeletePrice,
-  onAddAllowance, onDeleteAllowance,
-  onEditCenters,
-  t,
-}: {
-  plan: Plan; expanded: boolean; onToggle: () => void;
-  onEdit: () => void; onDuplicate: () => void; onToggleEnrollment: () => void;
-  onArchive: () => void; onDelete: () => void;
-  onAddPrice: () => void; onEditPrice: (row: PriceRow) => void; onDeletePrice: (id: number) => void;
-  onAddAllowance: () => void; onDeleteAllowance: (id: number) => void;
-  onEditCenters: () => void;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const menuItems: ContextMenuItem[] = [
-    { label: t('plans.edit'), onClick: onEdit },
-    { label: t('plans.duplicate'), onClick: onDuplicate },
-    plan.enrollment_status === 'open'
-      ? { label: t('plans.close_enrollment'), onClick: onToggleEnrollment }
-      : { label: t('plans.open_enrollment'), onClick: onToggleEnrollment },
-    ...(plan.lifecycle_status === 'active' ? [{ label: t('plans.archive'), onClick: onArchive }] : []),
-    { label: t('plans.delete'), onClick: onDelete, danger: true },
-  ];
-
-  return (
-    <div style={cardStyle}>
-      {/* Collapsed row */}
-      <div
-        style={rowStyle}
-        onClick={onToggle}
-      >
-        <span style={{ fontSize: 14, color: '#888', userSelect: 'none', marginRight: 6 }}>
-          {expanded ? '▼' : '▶'}
-        </span>
-        <span style={{ fontWeight: 600, flex: 1, fontSize: 15 }}>{plan.name}</span>
-        <span style={{ color: '#555', fontSize: 14, marginRight: 16 }}>{fmtPrice(plan.current_price)}</span>
-        <StatusBadge status={plan.lifecycle_status} label={t(`status.${plan.lifecycle_status}`)} />
-        <StatusBadge status={plan.enrollment_status === 'open' ? 'active' : 'inactive'} label={t(`status.${plan.enrollment_status}`)} />
-        <span style={{ fontSize: 13, color: '#888', marginLeft: 8 }}>
-          {plan.member_count} members
-        </span>
-        <div onClick={(e) => e.stopPropagation()} style={{ marginLeft: 12 }}>
-          <ContextMenu items={menuItems} ariaLabel={`Actions for ${plan.name}`} />
-        </div>
-      </div>
-
-      {/* Expanded detail */}
-      {expanded && (
-        <div style={{ padding: '0 16px 16px' }}>
-          {/* Status section */}
-          <SectionHeader title={t('plans.section_status')} />
-          <DetailRow label={t('plans.label_lifecycle_status')} value={t(`status.${plan.lifecycle_status}`)} />
-          <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
-          <DetailRow label="Members" value={String(plan.member_count)} />
-
-          {/* Billing section */}
-          <SectionHeader title={t('plans.section_billing')} />
-          {plan.billing_policy ? (
-            <>
-              <DetailRow label={t('plans.billing_initial')} value={fmtBillingInterval(plan.billing_policy.initial_billing_interval, plan.billing_policy.initial_billing_unit)} />
-              <DetailRow label={t('plans.billing_recurring')} value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`} />
-              <DetailRow label={t('plans.service_initial')} value={fmtBillingInterval(plan.billing_policy.initial_service_interval, plan.billing_policy.initial_service_unit)} />
-              <DetailRow label={t('plans.service_recurring')} value={fmtBillingInterval(plan.billing_policy.recurring_service_interval, plan.billing_policy.recurring_service_unit)} />
-              <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} />
-            </>
-          ) : (
-            <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_billing')}</p>
-          )}
-
-          {/* Centers section */}
-          <SectionHeader title={t('plans.section_centers')} action={<button onClick={onEditCenters} style={linkBtn}>Edit</button>} />
-          {(plan.centers ?? []).length === 0 ? (
-            <DetailRow label="" value={t('plans.all_centers')} />
-          ) : (
-            (plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)
-          )}
-
-          {/* Included Services section */}
-          <SectionHeader title={t('plans.section_services')} action={<button onClick={onAddAllowance} style={linkBtn}>+ Add</button>} />
-          {(plan.allowances ?? []).length === 0 ? (
-            <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_allowances')}</p>
-          ) : (
-            (plan.allowances ?? []).map((a) => (
-              <div key={a.id} style={{ ...detailRowStyle, alignItems: 'center' }}>
-                <span style={labelStyle}>{a.activity_type_name}</span>
-                <span style={valueStyle}>
-                  {a.allowance_type === 'unlimited'
-                    ? t('plans.unlimited')
-                    : `${a.session_count} sessions / ${fmtBillingInterval(a.recurrence_interval ?? 1, a.recurrence_unit ?? 'month')}`}
-                </span>
-                <button onClick={() => onDeleteAllowance(a.id)} style={dangerLinkBtn}>✕</button>
-              </div>
-            ))
-          )}
-
-          {/* Price History section */}
-          <SectionHeader title={t('plans.section_prices')} action={<button onClick={onAddPrice} style={linkBtn}>+ Add</button>} />
-          {(plan.price_history ?? []).length === 0 ? (
-            <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_prices')}</p>
-          ) : (
-            (plan.price_history ?? []).map((row) => (
-              <div key={row.id} style={{ ...detailRowStyle, alignItems: 'center' }}>
-                <span style={labelStyle}>{String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}</span>
-                <span style={valueStyle}>€{parseFloat(row.price).toFixed(2)}</span>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => onEditPrice(row)} style={linkBtn}>Edit</button>
-                  <button onClick={() => onDeletePrice(row.id)} style={dangerLinkBtn}>✕</button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -789,6 +912,12 @@ const rowStyle: React.CSSProperties = {
   cursor: 'pointer', userSelect: 'none',
 };
 
+const colHeaderStyle: React.CSSProperties = {
+  display: 'flex', padding: '6px 16px', gap: 10,
+  fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
+  marginBottom: 4,
+};
+
 const detailRowStyle: React.CSSProperties = {
   display: 'flex', gap: 8, padding: '3px 0', fontSize: 13,
 };
@@ -799,6 +928,24 @@ const labelStyle: React.CSSProperties = {
 
 const valueStyle: React.CSSProperties = {
   color: '#111', flex: 1,
+};
+
+const inlineLabelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4,
+};
+
+const inlineInputStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
+  fontSize: 14, boxSizing: 'border-box', background: '#fff',
+};
+
+const inlineSelectStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
+  fontSize: 14, boxSizing: 'border-box', background: '#fff',
+};
+
+const detailLabelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
 };
 
 const linkBtn: React.CSSProperties = {

@@ -12,9 +12,12 @@ interface PlanRow {
   lifecycle_status: string;
   enrollment_status: string;
   created_by: number | null;
+  created_by_name?: string | null;
   modified_at: string | null;
   modified_by: number | null;
+  modified_by_name?: string | null;
   deleted_at: string | null;
+  deleted_by: number | null;
   created_at: string;
 }
 
@@ -117,10 +120,16 @@ async function planExists(planId: string | string[], gymId: string): Promise<boo
 membershipPlansRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const status = req.query.lifecycle_status as string | undefined;
-  let sql = 'SELECT * FROM membership_plans WHERE gym_id = ? AND deleted_at IS NULL';
+  let sql = `SELECT mp.*,
+                    gm_c.name AS created_by_name,
+                    gm_m.name AS modified_by_name
+             FROM membership_plans mp
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = mp.created_by
+             LEFT JOIN gym_memberships gm_m ON gm_m.id = mp.modified_by
+             WHERE mp.gym_id = ? AND mp.deleted_at IS NULL`;
   const params: (string | number)[] = [gymId];
-  if (status) { sql += ' AND lifecycle_status = ?'; params.push(status); }
-  sql += ' ORDER BY name ASC';
+  if (status) { sql += ' AND mp.lifecycle_status = ?'; params.push(status); }
+  sql += ' ORDER BY mp.name ASC';
   const { rows } = await db.query<PlanRow>(sql, params);
   const enriched = await Promise.all(rows.map(p => enrichPlan(p, gymId)));
   res.json(enriched);
@@ -128,9 +137,18 @@ membershipPlansRouter.get('/', async (req, res) => {
 
 membershipPlansRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const row = await gymFetchOne('membership_plans', req.params.id, gymId, { softDelete: true });
-  if (!row) return res.status(404).json({ error: 'Plan not found' });
-  res.json(await enrichPlan(row, gymId));
+  const { rows } = await db.query<PlanRow>(
+    `SELECT mp.*,
+            gm_c.name AS created_by_name,
+            gm_m.name AS modified_by_name
+     FROM membership_plans mp
+     LEFT JOIN gym_memberships gm_c ON gm_c.id = mp.created_by
+     LEFT JOIN gym_memberships gm_m ON gm_m.id = mp.modified_by
+     WHERE mp.id = ? AND mp.gym_id = ? AND mp.deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
+  res.json(await enrichPlan(rows[0], gymId));
 });
 
 membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => {
@@ -159,6 +177,10 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   const { gymId } = getTenantContext(req);
   const { name, description, lifecycle_status, enrollment_status } = req.body;
 
+  const VALID_ENROLLMENT = ['open', 'closed', 'paused'];
+  if (enrollment_status && !VALID_ENROLLMENT.includes(enrollment_status)) {
+    return res.status(400).json({ error: 'Invalid enrollment_status' });
+  }
   if (enrollment_status === 'open' && lifecycle_status && lifecycle_status !== 'active') {
     return res.status(400).json({ error: 'enrollment can only be opened when lifecycle_status is active' });
   }
@@ -333,8 +355,8 @@ membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res
 membershipPlansRouter.put('/:id/enrollment', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { enrollment_status } = req.body;
-  if (!['open', 'closed'].includes(enrollment_status)) {
-    return res.status(400).json({ error: 'enrollment_status must be open or closed' });
+  if (!['open', 'closed', 'paused'].includes(enrollment_status)) {
+    return res.status(400).json({ error: 'enrollment_status must be open, closed, or paused' });
   }
   const { rows: plan } = await db.query(
     'SELECT lifecycle_status FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
