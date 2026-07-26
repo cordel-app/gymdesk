@@ -3,8 +3,9 @@
  *
  * Roles map to modules with a PermissionLevel. Backend middleware uses this
  * to gate reads (requireModuleAccess) and writes (requireModuleWrite).
- * The frontend mirrors this matrix in apps/admin/src/config/permissions.ts
- * to drive sidebar visibility.
+ * The frontend must mirror this matrix exactly in
+ * apps/admin/src/config/permissions.ts (sidebar + write affordances).
+ * When changing a cell, update both files and the table in docs/architecture.md.
  */
 
 export type AppRole =
