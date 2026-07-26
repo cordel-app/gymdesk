@@ -199,18 +199,17 @@ app.use('/widgets', requireAuth(), tenantContext, widgetsRouter);
 - Copy the Plans page (`[locale]/plans/`) as a starting point.
 
 ### 5. Sidebar entry (`config/navigationGroups.ts`)
-Navigation is config-driven — add an item to the right group instead of editing `Sidebar.tsx`. Use `{{locale}}` in `href` (replaced at render time), a `labelKey` for i18n, and an optional `requiredRole` (`staff | admin | superadmin`, hierarchical — `filterNavGroups` hides items above the user's role). A group with a `requiredRole` gates all its items.
+Navigation is config-driven — add an item to the right group instead of editing `Sidebar.tsx`. Use `{{locale}}` in `href` (replaced at render time) and a `labelKey` for i18n. Groups are gated by `module` (`canAccessModule` from `config/permissions.ts`); put the page in the group whose module matches the API router's `requireModuleAccess(...)`. Superadmin-only Cordel items use `requiredRole: 'superadmin'`.
 ```ts
 // Inside the matching group's `items` array:
 { href: '/{{locale}}/widgets', labelKey: 'nav.widgets' },
-
-// Admin-only item (or put it in a group that already has requiredRole: 'admin'):
-{ href: '/{{locale}}/widgets', labelKey: 'nav.widgets', requiredRole: 'admin' },
 
 // With a soft-delete sub-page:
 { href: '/{{locale}}/widgets', labelKey: 'nav.widgets',
   children: [{ href: '/{{locale}}/widgets/deleted', labelKey: 'nav.widgets_deleted' }] },
 ```
+
+**RBAC matrix sync:** `api/src/infra/permissions.ts` is the source of truth. Any cell change must be copied to `apps/admin/src/config/permissions.ts` and the table in `docs/architecture.md` in the same PR — never let admin nav/write affordances drift from API enforcement.
 
 ### 6. i18n (`locales/base/{en,es,ca}.json`)
 Add a `"widgets"` namespace to each file:

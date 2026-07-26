@@ -26,6 +26,7 @@ Use `/plan` to generate a structured implementation plan before coding. Use the 
 - All config via environment variables. No hardcoded values.
 - Backend-first: define the API contract before building UI.
 - Do not duplicate business logic in the frontend.
+- Admin pages that ship must be linked from `apps/admin/src/config/navigationGroups.ts` under the module that matches the API gate.
 
 ## Local development
 
