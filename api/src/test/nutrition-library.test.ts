@@ -31,8 +31,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [libraryItemId]);
   await cleanupTestGyms();
+  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [libraryItemId]);
   await db.end();
 });
 
