@@ -24,6 +24,8 @@ interface Promo {
   status: 'active' | 'inactive';
   created_at: string;
   created_by_name: string | null;
+  primary_action_type: string | null;
+  primary_value: string | null;
 }
 
 interface ChargeType { id: number; code: string }
@@ -81,30 +83,25 @@ export default function PromotionsPage() {
   const [searchInput, setSearchInput] = useState('');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Lookup data (loaded once)
   const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
   const [actionTypes, setActionTypes] = useState<ActionType[]>([]);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
 
-  // Expandable inline editor
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState(emptyPromoForm);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Benefits state (loaded per-expanded promotion)
   const [chargeBenefits, setChargeBenefits] = useState<ChargeBenefit[]>([]);
   const [periodBenefits, setPeriodBenefits] = useState<PeriodBenefit[]>([]);
   const [benefitsLoading, setBenefitsLoading] = useState(false);
 
-  // New benefit forms
   const [cbForm, setCbForm] = useState(emptyCbForm);
   const [pbForm, setPbForm] = useState(emptyPbForm);
   const [cbSaving, setCbSaving] = useState(false);
   const [pbSaving, setPbSaving] = useState(false);
 
-  // Modals
   const [detailFor, setDetailFor] = useState<Promo | null>(null);
   const [deleting, setDeleting] = useState<Promo | null>(null);
 
@@ -115,9 +112,7 @@ export default function PromotionsPage() {
   }, [gymLoading, isAdmin]);
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) {
-      loadLookups();
-    }
+    if (!gymLoading && isAdmin) loadLookups();
   }, [gymLoading, isAdmin]);
 
   useEffect(() => {
@@ -167,7 +162,7 @@ export default function PromotionsPage() {
     finally { setBenefitsLoading(false); }
   }
 
-  function openExpand(promo: Promo) {
+  function openEdit(promo: Promo) {
     if (expandedId === promo.id) {
       setExpandedId(null);
       return;
@@ -351,6 +346,18 @@ export default function PromotionsPage() {
 
   /* ---- render helpers ---- */
 
+  function fmtPeriod(starts: string, ends: string) {
+    return `${iso(starts)} – ${iso(ends)}`;
+  }
+
+  function fmtValue(actionType: string | null, value: string | null) {
+    if (!actionType) return '—';
+    if (actionType === 'waive') return tAction('waive' as any);
+    if (value == null) return '—';
+    if (actionType === 'percentage_discount') return `${value}%`;
+    return value;
+  }
+
   function renderInlineEditor(promo: Promo) {
     if (expandedId !== promo.id) return null;
     const cbAction = actionTypes.find((a) => a.id === parseInt(cbForm.action_type_id, 10));
@@ -361,7 +368,6 @@ export default function PromotionsPage() {
       <div style={{ padding: '20px 24px', borderTop: '1px solid #eee', background: '#fafafa' }}>
         {editError && <p style={{ margin: '0 0 12px', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
 
-        {/* Promotion fields */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
           <div style={{ gridColumn: '1 / -1' }}>
             <FormLabel>{t('label_name')} *</FormLabel>
@@ -459,7 +465,6 @@ export default function PromotionsPage() {
               )}
               {chargeBenefits.length === 0 && <p style={hintSt}>{t('no_charge_benefits')}</p>}
 
-              {/* Add row */}
               <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                 <select value={cbForm.charge_type_id} onChange={(e) => setCbForm({ ...cbForm, charge_type_id: e.target.value })} style={inlineSel}>
                   <option value="">{t('label_charge_type')}</option>
@@ -523,7 +528,6 @@ export default function PromotionsPage() {
               )}
               {periodBenefits.length === 0 && <p style={hintSt}>{t('no_period_benefits')}</p>}
 
-              {/* Add row */}
               <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                 <select value={pbForm.membership_plan_id} onChange={(e) => setPbForm({ ...pbForm, membership_plan_id: e.target.value })} style={inlineSel}>
                   <option value="">{t('label_plan')}</option>
@@ -568,29 +572,38 @@ export default function PromotionsPage() {
     const isExpanded = expandedId === promo.id;
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetailFor(promo) },
+      { label: t('edit'), onClick: () => openEdit(promo) },
       { label: t('duplicate'), onClick: () => handleDuplicate(promo) },
       { label: t('delete'), onClick: () => setDeleting(promo), danger: true },
     ];
 
     return (
       <div key={promo.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
-        <div
-          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
-          onClick={() => openExpand(promo)}
-        >
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12 }}>
           <div style={{ flex: 2, minWidth: 0 }}>
             <span style={{ fontWeight: 600, fontSize: 15 }}>{promo.name}</span>
+            {promo.description && (
+              <div style={{ color: '#666', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {promo.description}
+              </div>
+            )}
           </div>
-          <div style={{ flex: 2, minWidth: 0, color: '#666', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {promo.description ?? '—'}
+          <div style={{ width: 110, flexShrink: 0, color: '#555', fontSize: 13 }}>
+            {promo.primary_action_type ? tAction(promo.primary_action_type as any) : '—'}
           </div>
-          <div style={{ width: 90, flexShrink: 0, color: '#888', fontSize: 13 }}>{iso(promo.created_at)}</div>
-          <div style={{ width: 90, flexShrink: 0, color: '#888', fontSize: 13 }}>{iso(promo.starts_at)}</div>
-          <div style={{ width: 90, flexShrink: 0, color: '#888', fontSize: 13 }}>{iso(promo.ends_at)}</div>
+          <div style={{ width: 70, flexShrink: 0, color: '#555', fontSize: 13 }}>
+            {fmtValue(promo.primary_action_type, promo.primary_value != null ? String(promo.primary_value) : null)}
+          </div>
+          <div style={{ width: 180, flexShrink: 0, color: '#888', fontSize: 13 }}>
+            {fmtPeriod(promo.starts_at, promo.ends_at)}
+          </div>
           <div style={{ width: 80, flexShrink: 0 }}>
             <StatusBadge status={promo.status} label={tStatus(promo.status)} />
           </div>
-          <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <div style={{ width: 110, flexShrink: 0, color: '#888', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {promo.created_by_name ?? '—'}
+          </div>
+          <div style={{ width: 90, flexShrink: 0, color: '#888', fontSize: 13 }}>{iso(promo.created_at)}</div>
           <div onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} />
           </div>
@@ -600,24 +613,23 @@ export default function PromotionsPage() {
     );
   }
 
-  /* ---- header row ---- */
   function renderHeader() {
     return (
       <div style={{ display: 'flex', padding: '6px 16px', marginBottom: 4, color: '#999', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', gap: 12 }}>
         <span style={{ flex: 2 }}>{t('col_name')}</span>
-        <span style={{ flex: 2 }}>{t('col_description')}</span>
-        <span style={{ width: 90, flexShrink: 0 }}>{t('col_created')}</span>
-        <span style={{ width: 90, flexShrink: 0 }}>{t('col_starts')}</span>
-        <span style={{ width: 90, flexShrink: 0 }}>{t('col_ends')}</span>
+        <span style={{ width: 110, flexShrink: 0 }}>{t('col_type')}</span>
+        <span style={{ width: 70, flexShrink: 0 }}>{t('col_value')}</span>
+        <span style={{ width: 180, flexShrink: 0 }}>{t('col_period')}</span>
         <span style={{ width: 80, flexShrink: 0 }}>{t('col_status')}</span>
-        <span style={{ width: 64, flexShrink: 0 }} />
+        <span style={{ width: 110, flexShrink: 0 }}>{t('col_created_by')}</span>
+        <span style={{ width: 90, flexShrink: 0 }}>{t('col_created')}</span>
+        <span style={{ width: 36, flexShrink: 0 }} />
       </div>
     );
   }
 
   return (
     <div>
-      {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -659,7 +671,11 @@ export default function PromotionsPage() {
       />
 
       {detailFor && (
-        <PromotionDetailModal promotion={detailFor} onClose={() => setDetailFor(null)} />
+        <PromotionDetailModal
+          promotionId={detailFor.id}
+          promotionName={detailFor.name}
+          onClose={() => setDetailFor(null)}
+        />
       )}
     </div>
   );

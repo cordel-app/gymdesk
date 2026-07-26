@@ -50,9 +50,14 @@ promotionsRouter.get('/', async (req, res, next) => {
 
   try {
     const { rows } = await db.query(
-      `SELECT p.*, gm.name AS created_by_name
+      `SELECT p.*, gm.name AS created_by_name,
+              at_p.code AS primary_action_type, pcb.value AS primary_value
        FROM promotions p
        LEFT JOIN gym_memberships gm ON gm.id = p.created_by_membership_id
+       LEFT JOIN (SELECT MIN(id) AS id, promotion_id FROM promotion_charge_benefits GROUP BY promotion_id) pcb_min
+              ON pcb_min.promotion_id = p.id
+       LEFT JOIN promotion_charge_benefits pcb ON pcb.id = pcb_min.id
+       LEFT JOIN action_types at_p ON at_p.id = pcb.action_type_id
        WHERE ${where.join(' AND ')}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir}`,
       params,
@@ -78,8 +83,29 @@ promotionsRouter.get('/created-by-options', async (req, res, next) => {
 
 promotionsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const promo = await gymFetchOne('promotions', req.params.id, gymId);
-  if (!promo) return res.status(404).json({ error: 'Promotion not found' });
+  const { rows } = await db.query(
+    `SELECT p.*, gm.name AS created_by_name,
+            at_p.code AS primary_action_type, pcb.value AS primary_value
+     FROM promotions p
+     LEFT JOIN gym_memberships gm ON gm.id = p.created_by_membership_id
+     LEFT JOIN (SELECT MIN(id) AS id, promotion_id FROM promotion_charge_benefits GROUP BY promotion_id) pcb_min
+            ON pcb_min.promotion_id = p.id
+     LEFT JOIN promotion_charge_benefits pcb ON pcb.id = pcb_min.id
+     LEFT JOIN action_types at_p ON at_p.id = pcb.action_type_id
+     WHERE p.id = ? AND p.gym_id = ?`,
+    [req.params.id, gymId],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Promotion not found' });
+  const { rows: auditRows } = await db.query(
+    `SELECT actor_name, created_at AS modified_at
+     FROM audit_logs
+     WHERE gym_id = ? AND entity_type = 'promotion' AND entity_id = ? AND action = 'update'
+     ORDER BY created_at DESC LIMIT 1`,
+    [gymId, req.params.id],
+  );
+  const promo = { ...rows[0], ...(auditRows[0] ?? { modified_at: null, actor_name: null }) };
+  promo.modified_by_name = auditRows[0]?.actor_name ?? null;
+  delete promo.actor_name;
   res.json(promo);
 });
 

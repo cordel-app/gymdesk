@@ -543,7 +543,20 @@
     "label_action_type": "Acció",
     "label_value": "Valor",
     "label_plan": "Quota",
-    "label_duration_months": "Durada (mesos)"
+    "label_duration_months": "Durada (mesos)",
+    "edit": "Editar",
+    "col_type": "Tipus",
+    "col_period": "Període",
+    "col_created_by": "Creat per",
+    "detail_name": "Nom",
+    "detail_description": "Descripció",
+    "detail_type": "Tipus",
+    "detail_value": "Valor",
+    "detail_starts": "Data inici",
+    "detail_ends": "Data fi",
+    "detail_status": "Estat",
+    "detail_modified_by": "Modificat per",
+    "detail_modified_at": "Modificat el"
   },
   "audit": {
     "title": "Registre d'auditoria",

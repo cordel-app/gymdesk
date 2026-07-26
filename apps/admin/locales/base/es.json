@@ -543,7 +543,20 @@
     "label_action_type": "Acción",
     "label_value": "Valor",
     "label_plan": "Cuota",
-    "label_duration_months": "Duración (meses)"
+    "label_duration_months": "Duración (meses)",
+    "edit": "Editar",
+    "col_type": "Tipo",
+    "col_period": "Período",
+    "col_created_by": "Creado por",
+    "detail_name": "Nombre",
+    "detail_description": "Descripción",
+    "detail_type": "Tipo",
+    "detail_value": "Valor",
+    "detail_starts": "Fecha inicio",
+    "detail_ends": "Fecha fin",
+    "detail_status": "Estado",
+    "detail_modified_by": "Modificado por",
+    "detail_modified_at": "Modificado el"
   },
   "audit": {
     "title": "Registro de auditoría",
