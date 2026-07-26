@@ -41,13 +41,17 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
-## 4. Internal billing ledger first; Stripe deferred (Phase 8)
+## 4. Internal billing ledger first; card provider = Paycomet (#179–#185)
 
-**Decision**: payments are staff-recorded via the `billing_events` append-only ledger. Stripe integration is Phase 8 and deliberately deferred.
+**Decision**: payments are staff-recorded via the `billing_events` append-only ledger first. Card / online collection uses a **provider abstraction** with **Paycomet** as the first concrete adapter (GitHub #179–#185). Legacy Phase 8 Stripe tickets (#42–#44) are **superseded** and should not be implemented.
 
-**Why**: real gyms run on cash/transfer for a long time. Building the ledger first means members and staff get a working payment history and the data model is stable before Stripe adds webhook complexity.
+**Why**: real gyms run on cash/transfer for a long time; the ledger keeps history stable before webhooks. Paycomet is the provider specified in the open payments epic (tokens, payment requests, MIT recurring, cash+fiscal). Stripe was an earlier placeholder for “Phase 8”; Monei remains a possible future adapter behind the same abstraction, not a parallel product track.
 
-**Consequences**: `billing_events` is append-only (no updates, no deletes). Status changes emit a `status_changed` system event in the same transaction. Any future Stripe integration writes into the same ledger as `provider: 'stripe'`.
+**Consequences**:
+- `billing_events` stays append-only (no updates, no deletes). Status changes emit a `status_changed` system event in the same transaction.
+- Provider-backed money moves through `payment_tokens` / `payment_requests` (and webhooks) before writing ledger rows — see #180–#181.
+- Ledger / request rows record the provider id (e.g. `paycomet`), not a hardcoded Stripe-only shape.
+- Do not open new Stripe-specific schema; extend the abstraction if a second provider is needed.
 
 ---
 
