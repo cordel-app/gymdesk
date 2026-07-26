@@ -371,7 +371,7 @@ The sidebar is **config-driven** from `config/navigationGroups.ts`. Groups are c
 | System | `admin` | Audit log (gym-scoped) |
 | Cordel | `superadmin` | Gyms, Users, Audit log (platform-wide, `/cordel/audit`), Themes |
 
-The per-group "Dashboard" pages (Organization, Training, Nutrition, Financials, plus the singular `/membership`) are **placeholder shells** ("coming soon") today. Some functional pages (e.g. `/memberships` — the user-membership manager with ledger + promotion-apply modals — and `/schedule`) exist and are reachable but are not yet linked from a nav group.
+The per-group "Dashboard" pages (Organization, Training, Nutrition, Financials, plus the singular `/membership`) are **placeholder shells** ("coming soon") today. Operational pages are linked from `navigationGroups.ts`: **Organization → Team** (`/team`, Clerk invites + impersonation) beside **Staff** (HR `/staff`); **Training → Schedule** (`/schedule`); **Payments → Memberships** (`/memberships`, enrollments + ledger) beside Transactions.
 
 ### AppShell (admin)
 Wraps all admin pages. Hides sidebar + header for sign-in/sign-up and the unauthenticated home page.

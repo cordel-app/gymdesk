@@ -51,6 +51,10 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.dashboard',
       },
       {
+        href: '/{{locale}}/team',
+        labelKey: 'nav.team',
+      },
+      {
         href: '/{{locale}}/staff',
         labelKey: 'nav.staff',
       },
@@ -88,6 +92,10 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/training',
         labelKey: 'nav.dashboard',
+      },
+      {
+        href: '/{{locale}}/schedule',
+        labelKey: 'nav.schedule',
       },
       {
         href: '/{{locale}}/exercises',
@@ -132,6 +140,10 @@ export const navigationGroups: NavGroup[] = [
     labelKey: 'nav.groups.payments',
     module: 'PAYMENTS',
     items: [
+      {
+        href: '/{{locale}}/memberships',
+        labelKey: 'nav.memberships',
+      },
       {
         href: '/{{locale}}/payments/transactions',
         labelKey: 'nav.transactions',
