@@ -26,6 +26,7 @@ Use `/plan` to generate a structured implementation plan before coding. Use the 
 - All config via environment variables. No hardcoded values.
 - Backend-first: define the API contract before building UI.
 - Do not duplicate business logic in the frontend.
+- RBAC: `api/src/infra/permissions.ts` is the source of truth; keep `apps/admin/src/config/permissions.ts` and the architecture permission table identical.
 
 ## Local development
 
