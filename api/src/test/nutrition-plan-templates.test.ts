@@ -1,4 +1,4 @@
-// Tests for nutrition-plan-templates.ts and meals-catalog.ts routers
+// Tests for nutrition-plan-templates.ts router
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -11,13 +11,22 @@ import {
 } from './helpers';
 
 let gymId: string;
+// Seeded library item — global (no gym_id), cleaned up manually in afterAll.
+let libraryItemId: number;
 
 beforeAll(async () => {
-  gymId = await createTestGym();
+  gymId = await createTestGym('NPT Test Gym');
   await createTestMembership(gymId, 'admin');
+
+  const { insertId } = await db.query(
+    "INSERT INTO nutrition_library_items (name, category) VALUES ('NPT Test Protein', 'main_dish')",
+    [],
+  );
+  libraryItemId = insertId;
 });
 
 afterAll(async () => {
+  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [libraryItemId]);
   await cleanupTestGyms();
   await db.end();
 });
@@ -36,11 +45,6 @@ describe('auth guard', () => {
     const res = await request.post('/nutrition-plan-templates').send({ name: 'X' });
     expect(res.status).toBe(401);
   });
-
-  it('returns 401 without auth on GET /dishes', async () => {
-    const res = await request.get('/dishes');
-    expect(res.status).toBe(401);
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -48,8 +52,8 @@ describe('auth guard', () => {
 // ---------------------------------------------------------------------------
 
 describe('tenant isolation', () => {
-  it('returns 403 on GET /nutrition-plan-templates when user has no membership in this gym', async () => {
-    const otherId = await createTestGym('Other Gym Nutrition');
+  it('returns 403 on GET when user has no membership in this gym', async () => {
+    const otherId = await createTestGym('NPT Other Gym');
     const res = await request
       .get('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -58,12 +62,11 @@ describe('tenant isolation', () => {
   });
 
   it('returns 404 when fetching a template that belongs to another gym', async () => {
-    const gymA = await createTestGym('Gym A Nutrition');
+    const gymA = await createTestGym('NPT Gym A');
     await createTestMembership(gymA, 'admin');
-    const gymB = await createTestGym('Gym B Nutrition');
+    const gymB = await createTestGym('NPT Gym B');
     await createTestMembership(gymB, 'admin');
 
-    // Create template in gymA
     const createRes = await request
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -72,7 +75,6 @@ describe('tenant isolation', () => {
     expect(createRes.status).toBe(201);
     const templateId = createRes.body.id;
 
-    // Access with gymB's x-gym-id
     const res = await request
       .get(`/nutrition-plan-templates/${templateId}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -82,230 +84,25 @@ describe('tenant isolation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Role guard
+// Role guard — accountant has NONE on NUTRITION
 // ---------------------------------------------------------------------------
 
 describe('role guard', () => {
-  it('returns 403 when a member tries to create a template', async () => {
-    const memberGymId = await createTestGym('Member Role Gym Nutrition');
-    await createTestMembership(memberGymId, 'member');
+  it('returns 403 when accountant tries to POST /nutrition-plan-templates', async () => {
+    const accountantGymId = await createTestGym('NPT Accountant Gym');
+    await createTestMembership(accountantGymId, 'accountant');
 
     const res = await request
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', memberGymId)
+      .set('x-gym-id', accountantGymId)
       .send({ name: 'Should Fail' });
     expect(res.status).toBe(403);
   });
-
-  it('returns 403 when a member tries to create a dish', async () => {
-    const memberGymId = await createTestGym('Member Role Gym Dishes');
-    await createTestMembership(memberGymId, 'member');
-
-    const res = await request
-      .post('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', memberGymId)
-      .send({ name: 'Forbidden Dish' });
-    expect(res.status).toBe(403);
-  });
 });
 
 // ---------------------------------------------------------------------------
-// Dishes (meals catalog) — happy path and FK constraint
-// ---------------------------------------------------------------------------
-
-describe('dishes catalog', () => {
-  it('creates a dish', async () => {
-    const res = await request
-      .post('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Grilled Chicken', calories: 300, protein: 40 });
-    expect(res.status).toBe(201);
-    expect(res.body.name).toBe('Grilled Chicken');
-    expect(parseFloat(res.body.calories)).toBe(300); // MySQL DECIMAL returns as string
-  });
-
-  it('soft-deletes a dish (204) even when it is referenced by a template', async () => {
-    // Create dish
-    const dishRes = await request
-      .post('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Protected Dish' });
-    expect(dishRes.status).toBe(201);
-    const dishId = dishRes.body.id;
-
-    // Create template
-    const tplRes = await request
-      .post('/nutrition-plan-templates')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Template For Dish FK Test' });
-    expect(tplRes.status).toBe(201);
-    const tplId = tplRes.body.id;
-
-    // Add day
-    const dayRes = await request
-      .post(`/nutrition-plan-templates/${tplId}/days`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ weekday: 0 });
-    expect(dayRes.status).toBe(201);
-    const dayId = dayRes.body.id;
-
-    // Add meal
-    const mealRes = await request
-      .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Lunch' });
-    expect(mealRes.status).toBe(201);
-    const mealId = mealRes.body.id;
-
-    // Add dish to meal
-    const addDishRes = await request
-      .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals/${mealId}/dishes`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ dish_id: dishId });
-    expect(addDishRes.status).toBe(201);
-
-    // Soft-delete the dish — succeeds even when referenced (data is kept, just marked deleted)
-    const deleteRes = await request
-      .delete(`/dishes/${dishId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(deleteRes.status).toBe(204);
-  });
-
-  it('lists dishes', async () => {
-    const res = await request
-      .get('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-  });
-
-  it('updates a dish', async () => {
-    const createRes = await request
-      .post('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Updatable Dish' });
-    expect(createRes.status).toBe(201);
-    const dishId = createRes.body.id;
-
-    const res = await request
-      .put(`/dishes/${dishId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Updated Dish Name', calories: 500 });
-    expect(res.status).toBe(200);
-    expect(res.body.name).toBe('Updated Dish Name');
-  });
-
-  it('deletes a dish that is not referenced', async () => {
-    const createRes = await request
-      .post('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Deletable Dish' });
-    expect(createRes.status).toBe(201);
-    const dishId = createRes.body.id;
-
-    const res = await request
-      .delete(`/dishes/${dishId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(204);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Sides catalog
-// ---------------------------------------------------------------------------
-
-describe('sides catalog', () => {
-  it('creates a side', async () => {
-    const res = await request
-      .post('/sides')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Brown Rice' });
-    expect(res.status).toBe(201);
-    expect(res.body.name).toBe('Brown Rice');
-  });
-
-  it('lists sides', async () => {
-    const res = await request
-      .get('/sides')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-  });
-
-  it('deletes a side', async () => {
-    const createRes = await request
-      .post('/sides')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Quinoa To Delete' });
-    expect(createRes.status).toBe(201);
-
-    const res = await request
-      .delete(`/sides/${createRes.body.id}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(204);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Sauces catalog
-// ---------------------------------------------------------------------------
-
-describe('sauces catalog', () => {
-  it('creates a sauce', async () => {
-    const res = await request
-      .post('/sauces')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Tomato Sauce' });
-    expect(res.status).toBe(201);
-    expect(res.body.name).toBe('Tomato Sauce');
-  });
-
-  it('lists sauces', async () => {
-    const res = await request
-      .get('/sauces')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-  });
-
-  it('deletes a sauce', async () => {
-    const createRes = await request
-      .post('/sauces')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Sauce To Delete' });
-    expect(createRes.status).toBe(201);
-
-    const res = await request
-      .delete(`/sauces/${createRes.body.id}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(204);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Nutrition plan templates — CRUD happy path
+// CRUD happy path
 // ---------------------------------------------------------------------------
 
 describe('nutrition plan templates CRUD', () => {
@@ -316,9 +113,9 @@ describe('nutrition plan templates CRUD', () => {
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'My Test Plan', description: 'Test desc', status: 'active' });
+      .send({ name: 'My Test Plan NPT', description: 'Test desc', status: 'active' });
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ name: 'My Test Plan', status: 'active' });
+    expect(res.body).toMatchObject({ name: 'My Test Plan NPT', status: 'active' });
     tplId = res.body.id;
   });
 
@@ -354,9 +151,9 @@ describe('nutrition plan templates CRUD', () => {
       .put(`/nutrition-plan-templates/${tplId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Updated Plan Name' });
+      .send({ name: 'Updated NPT Plan Name' });
     expect(res.status).toBe(200);
-    expect(res.body.name).toBe('Updated Plan Name');
+    expect(res.body.name).toBe('Updated NPT Plan Name');
   });
 
   it('soft-deletes a template and hides it from list', async () => {
@@ -364,7 +161,7 @@ describe('nutrition plan templates CRUD', () => {
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Plan To Delete' });
+      .send({ name: 'NPT Plan To Delete' });
     expect(createRes.status).toBe(201);
     const id = createRes.body.id;
 
@@ -374,14 +171,14 @@ describe('nutrition plan templates CRUD', () => {
       .set('x-gym-id', gymId);
     expect(delRes.status).toBe(204);
 
-    // Should not appear in list
+    // Must not appear in the list
     const listRes = await request
       .get('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(listRes.body.items.find((t: any) => t.id === id)).toBeUndefined();
 
-    // Should return 404 when fetched directly
+    // Must return 404 when fetched directly
     const getRes = await request
       .get(`/nutrition-plan-templates/${id}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -420,7 +217,7 @@ describe('days', () => {
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Plan For Days Tests' });
+      .send({ name: 'NPT Plan For Days Tests' });
     tplId = res.body.id;
   });
 
@@ -435,7 +232,6 @@ describe('days', () => {
   });
 
   it('returns 409 when adding the same weekday twice', async () => {
-    // Weekday 2 first time
     const first = await request
       .post(`/nutrition-plan-templates/${tplId}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -443,7 +239,6 @@ describe('days', () => {
       .send({ weekday: 2 });
     expect(first.status).toBe(201);
 
-    // Weekday 2 second time
     const second = await request
       .post(`/nutrition-plan-templates/${tplId}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -452,12 +247,22 @@ describe('days', () => {
     expect(second.status).toBe(409);
   });
 
-  it('returns 400 for invalid weekday', async () => {
+  it('accepts weekday 7 (All Days) as valid', async () => {
     const res = await request
       .post(`/nutrition-plan-templates/${tplId}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ weekday: 7 });
+    expect(res.status).toBe(201);
+    expect(res.body.weekday).toBe(7);
+  });
+
+  it('returns 400 for weekday 8 (out of valid range)', async () => {
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplId}/days`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ weekday: 8 });
     expect(res.status).toBe(400);
   });
 
@@ -478,7 +283,6 @@ describe('days', () => {
   });
 
   it('reorders days', async () => {
-    // Ensure at least two days exist (weekdays 3 and 4)
     const d3 = await request
       .post(`/nutrition-plan-templates/${tplId}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -513,7 +317,7 @@ describe('meals', () => {
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Plan For Meals Tests' });
+      .send({ name: 'NPT Plan For Meals Tests' });
     tplId = tplRes.body.id;
 
     const dayRes = await request
@@ -534,6 +338,17 @@ describe('meals', () => {
     expect(res.body.name).toBe('Breakfast');
   });
 
+  it('adds a meal with a main_dish_id from nutrition_library_items', async () => {
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Lunch With Protein', main_dish_id: libraryItemId });
+    expect(res.status).toBe(201);
+    expect(res.body.main_dish_id).toBe(libraryItemId);
+    expect(res.body.main_dish_name).toBe('NPT Test Protein');
+  });
+
   it('returns 400 when adding a meal without a name', async () => {
     const res = await request
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
@@ -543,12 +358,32 @@ describe('meals', () => {
     expect(res.status).toBe(400);
   });
 
+  it('updates a meal with library FK fields', async () => {
+    const addRes = await request
+      .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Dinner' });
+    expect(addRes.status).toBe(201);
+    const mealId = addRes.body.id;
+
+    const res = await request
+      .put(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals/${mealId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Updated Dinner', main_dish_id: libraryItemId });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Updated Dinner');
+    expect(res.body.main_dish_id).toBe(libraryItemId);
+    expect(res.body.main_dish_name).toBe('NPT Test Protein');
+  });
+
   it('deletes a meal', async () => {
     const addRes = await request
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Meal To Delete' });
+      .send({ name: 'Meal To Delete NPT' });
     expect(addRes.status).toBe(201);
 
     const res = await request
@@ -563,12 +398,12 @@ describe('meals', () => {
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Meal Reorder 1' });
+      .send({ name: 'Meal Reorder A' });
     const m2 = await request
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Meal Reorder 2' });
+      .send({ name: 'Meal Reorder B' });
 
     const res = await request
       .put(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals/reorder`)
@@ -581,30 +416,20 @@ describe('meals', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Full happy path: create template → add day → add meal → add dish → fetch hierarchy
+// Hierarchy — verify shape: { id, name, status, days, restrictions, goals }
 // ---------------------------------------------------------------------------
 
-describe('full hierarchy happy path', () => {
-  it('builds a template hierarchy and returns it correctly', async () => {
-    // Create dish
-    const dishRes = await request
-      .post('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Hierarchy Test Dish', calories: 200, protein: 25 });
-    expect(dishRes.status).toBe(201);
-    const dishId = dishRes.body.id;
-
-    // Create template
+describe('hierarchy', () => {
+  it('returns template with days (meals with library names), restrictions, and goals', async () => {
     const tplRes = await request
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Hierarchy Test Plan' });
+      .send({ name: 'NPT Hierarchy Test Plan' });
     expect(tplRes.status).toBe(201);
     const tplId = tplRes.body.id;
 
-    // Add day
+    // Add a day with a meal that references a library item
     const dayRes = await request
       .post(`/nutrition-plan-templates/${tplId}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -613,66 +438,181 @@ describe('full hierarchy happy path', () => {
     expect(dayRes.status).toBe(201);
     const dayId = dayRes.body.id;
 
-    // Add meal
-    const mealRes = await request
+    await request
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Dinner' });
-    expect(mealRes.status).toBe(201);
-    const mealId = mealRes.body.id;
+      .send({ name: 'Dinner', main_dish_id: libraryItemId });
 
-    // Add dish to meal
-    const addDishRes = await request
-      .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals/${mealId}/dishes`)
+    // Add a restriction
+    await request
+      .post(`/nutrition-plan-templates/${tplId}/restrictions`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ dish_id: dishId });
-    expect(addDishRes.status).toBe(201);
-    expect(addDishRes.body.dish_name).toBe('Hierarchy Test Dish');
+      .send({ nutrition_library_item_id: libraryItemId, applies_all_days: 1 });
 
-    // Fetch hierarchy
+    // Add a goal
+    await request
+      .post(`/nutrition-plan-templates/${tplId}/goals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ item_name: 'Protein', quantity: 150, unit: 'g', frequency: 'daily' });
+
     const hierRes = await request
       .get(`/nutrition-plan-templates/${tplId}/hierarchy`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
+
     expect(hierRes.status).toBe(200);
     expect(hierRes.body.id).toBe(tplId);
     expect(Array.isArray(hierRes.body.days)).toBe(true);
     expect(hierRes.body.days).toHaveLength(1);
     expect(Array.isArray(hierRes.body.days[0].meals)).toBe(true);
     expect(hierRes.body.days[0].meals).toHaveLength(1);
-    expect(Array.isArray(hierRes.body.days[0].meals[0].dishes)).toBe(true);
-    expect(hierRes.body.days[0].meals[0].dishes).toHaveLength(1);
-    expect(hierRes.body.days[0].meals[0].dishes[0].dish_name).toBe('Hierarchy Test Dish');
+    // Library FK columns must be present on the meal
+    expect(hierRes.body.days[0].meals[0].main_dish_id).toBe(libraryItemId);
+    expect(hierRes.body.days[0].meals[0].main_dish_name).toBe('NPT Test Protein');
+    expect(Array.isArray(hierRes.body.restrictions)).toBe(true);
+    expect(hierRes.body.restrictions).toHaveLength(1);
+    expect(hierRes.body.restrictions[0].nutrition_library_item_id).toBe(libraryItemId);
+    expect(Array.isArray(hierRes.body.goals)).toBe(true);
+    expect(hierRes.body.goals).toHaveLength(1);
+    expect(hierRes.body.goals[0].item_name).toBe('Protein');
+  });
+
+  it('returns 404 for a non-existent template', async () => {
+    const res = await request
+      .get('/nutrition-plan-templates/non-existent/hierarchy')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Duplicate
+// Restrictions
+// ---------------------------------------------------------------------------
+
+describe('restrictions', () => {
+  let tplId: string;
+
+  beforeAll(async () => {
+    const res = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'NPT Plan For Restrictions Tests' });
+    tplId = res.body.id;
+  });
+
+  it('posts a restriction and returns 201 with item_name', async () => {
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplId}/restrictions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ nutrition_library_item_id: libraryItemId, applies_all_days: 0 });
+    expect(res.status).toBe(201);
+    expect(res.body.nutrition_library_item_id).toBe(libraryItemId);
+    expect(res.body.item_name).toBe('NPT Test Protein');
+  });
+
+  it('deletes a restriction', async () => {
+    const createRes = await request
+      .post(`/nutrition-plan-templates/${tplId}/restrictions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ nutrition_library_item_id: libraryItemId, applies_all_days: 1 });
+    expect(createRes.status).toBe(201);
+    const rid = createRes.body.id;
+
+    const delRes = await request
+      .delete(`/nutrition-plan-templates/${tplId}/restrictions/${rid}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(delRes.status).toBe(204);
+  });
+
+  it('returns 400 when nutrition_library_item_id is missing', async () => {
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplId}/restrictions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ applies_all_days: 1 });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Goals
+// ---------------------------------------------------------------------------
+
+describe('goals', () => {
+  let tplId: string;
+
+  beforeAll(async () => {
+    const res = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'NPT Plan For Goals Tests' });
+    tplId = res.body.id;
+  });
+
+  it('posts a goal and returns 201', async () => {
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplId}/goals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ item_name: 'Protein', quantity: 150, unit: 'g', frequency: 'daily' });
+    expect(res.status).toBe(201);
+    expect(res.body.item_name).toBe('Protein');
+    expect(Number(res.body.quantity)).toBe(150);
+    expect(res.body.unit).toBe('g');
+    expect(res.body.frequency).toBe('daily');
+  });
+
+  it('deletes a goal', async () => {
+    const createRes = await request
+      .post(`/nutrition-plan-templates/${tplId}/goals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ item_name: 'Carbs', quantity: 200, unit: 'g' });
+    expect(createRes.status).toBe(201);
+    const gid = createRes.body.id;
+
+    const delRes = await request
+      .delete(`/nutrition-plan-templates/${tplId}/goals/${gid}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(delRes.status).toBe(204);
+  });
+
+  it('returns 400 when item_name is missing', async () => {
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplId}/goals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ quantity: 100, unit: 'g' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate — deep copy including days, meals, restrictions, and goals
 // ---------------------------------------------------------------------------
 
 describe('duplicate', () => {
-  it('creates a deep copy of a template including days, meals, and dishes', async () => {
-    // Create a dish to use
-    const dishRes = await request
-      .post('/dishes')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Duplicate Test Dish' });
-    expect(dishRes.status).toBe(201);
-    const dishId = dishRes.body.id;
-
+  it('creates a deep copy including days, meals, restrictions, and goals', async () => {
     // Create source template
     const tplRes = await request
       .post('/nutrition-plan-templates')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Source Plan For Duplication' });
+      .send({ name: 'NPT Source Plan For Duplication', status: 'active' });
     expect(tplRes.status).toBe(201);
     const tplId = tplRes.body.id;
 
-    // Add day, meal, dish
+    // Add day + meal with a library item
     const dayRes = await request
       .post(`/nutrition-plan-templates/${tplId}/days`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -680,18 +620,25 @@ describe('duplicate', () => {
       .send({ weekday: 0 });
     const dayId = dayRes.body.id;
 
-    const mealRes = await request
+    await request
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'Breakfast' });
-    const mealId = mealRes.body.id;
+      .send({ name: 'Breakfast', main_dish_id: libraryItemId });
 
+    // Add restriction
     await request
-      .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals/${mealId}/dishes`)
+      .post(`/nutrition-plan-templates/${tplId}/restrictions`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ dish_id: dishId });
+      .send({ nutrition_library_item_id: libraryItemId, applies_all_days: 1 });
+
+    // Add goal
+    await request
+      .post(`/nutrition-plan-templates/${tplId}/goals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ item_name: 'Protein', quantity: 150, unit: 'g' });
 
     // Duplicate
     const dupRes = await request
@@ -699,7 +646,7 @@ describe('duplicate', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(dupRes.status).toBe(201);
-    expect(dupRes.body.name).toContain('Source Plan For Duplication');
+    expect(dupRes.body.name).toContain('NPT Source Plan For Duplication');
     expect(dupRes.body.name).toContain('Copy');
     expect(Number(dupRes.body.day_count)).toBe(1);
 
@@ -711,7 +658,11 @@ describe('duplicate', () => {
     expect(hierRes.status).toBe(200);
     expect(hierRes.body.days).toHaveLength(1);
     expect(hierRes.body.days[0].meals).toHaveLength(1);
-    expect(hierRes.body.days[0].meals[0].dishes).toHaveLength(1);
+    expect(hierRes.body.days[0].meals[0].main_dish_id).toBe(libraryItemId);
+    expect(hierRes.body.restrictions).toHaveLength(1);
+    expect(hierRes.body.restrictions[0].nutrition_library_item_id).toBe(libraryItemId);
+    expect(hierRes.body.goals).toHaveLength(1);
+    expect(hierRes.body.goals[0].item_name).toBe('Protein');
   });
 
   it('returns 404 when duplicating a non-existent template', async () => {

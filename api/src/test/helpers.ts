@@ -54,12 +54,10 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM workout_template_blocks WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM workout_templates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM exercises WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM nutrition_plan_template_meal_dishes WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM nutrition_plan_template_restrictions WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM nutrition_plan_template_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM nutrition_plan_template_meals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM nutrition_plan_template_days WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM nutrition_plan_templates WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM dishes WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM sides WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM sauces WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, ids);
 }

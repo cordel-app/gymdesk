@@ -51,7 +51,7 @@ import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { staffRouter } from './api/staff';
 import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
-import { dishesRouter, sidesRouter, saucesRouter } from './api/meals-catalog';
+import { nutritionLibraryRouter } from './api/nutrition-library';
 import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
@@ -167,9 +167,8 @@ app.use('/class-sessions',   requireAuth(), tenantContext, centerContext, requir
 
 // NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionPlanTemplatesRouter);
-app.use('/dishes',  requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), dishesRouter);
-app.use('/sides',   requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), sidesRouter);
-app.use('/sauces',  requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), saucesRouter);
+// Global read-only catalog — no gym_id required; only requireAuth + module gate
+app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionLibraryRouter);
 
 // FINANCIALS module — admin=RW, front_desk/accountant=R, trainer*/nutritionist/member=NONE
 app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), membershipPlansRouter);
