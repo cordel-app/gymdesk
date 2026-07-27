@@ -127,8 +127,8 @@ Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate
 | Bookings (`bookings`) | MEMBERS | `requireModuleWrite('MEMBERS')` | `POST /:id/attendance` = `requireRole('admin','front_desk','trainer_performance','trainer_perf_nutrition')`. |
 | Exercises, Workout templates, Training plan templates | TRAINING | `requireModuleWrite('TRAINING')` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). |
 | Training plans (`training-plans` + `members/:id/…`) | TRAINING | `requireModuleWrite('TRAINING')` | See personalized plans notes (migration 054, 066). |
-| Dishes, Sides, Sauces (`meals-catalog`) | NUTRITION | `requireModuleWrite('NUTRITION')` | `DELETE /dishes/:id` returns 409 if used in any nutrition plan. |
-| Nutrition plan templates | NUTRITION | `requireModuleWrite('NUTRITION')` | Full hierarchy with deep clone + reorder. |
+| Nutrition Library (`nutrition-library`) | NUTRITION | read: `requireModuleAccess('NUTRITION')`, no writes | Global catalog (no `gym_id`), 32 seeded items, 6 categories. `GET /nutrition-library?category=`. |
+| Nutrition plan templates | NUTRITION | `requireModuleWrite('NUTRITION')` | Hierarchy: days → meals (4 library FK selectors) + restrictions + goals. Deep clone + reorder. |
 | User memberships (`user-memberships`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | DELETE = `requireRole('admin')`. Status changes emit billing events. |
 | Billing ledger (`billing-events`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Append-only. |
 | Payments (`payments`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Operational view; excludes `status_changed`. |
@@ -193,7 +193,7 @@ Every domain table has `gym_id CHAR(36) REFERENCES gyms`. Every query filters by
 SELECT * FROM members WHERE gym_id = ? AND deleted_at IS NULL
 ```
 
-The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it from `GymContext.activeGymId`. Global lookup tables (`benefit_types`, `charge_types`, `action_types`) are the deliberate exception — they have no `gym_id` and are seeded in their migrations.
+The frontend sends `x-gym-id` on every request via `apiFetch()`, which reads it from `GymContext.activeGymId`. Global lookup tables (`benefit_types`, `charge_types`, `action_types`, `nutrition_library_items`, `result_types`) are the deliberate exception — they have no `gym_id` and are seeded in their migrations.
 
 ---
 
@@ -276,9 +276,7 @@ app.use('/promotions',             requireAuth(), tenantContext, promotionsRoute
 app.use('/promotions/:id',         requireAuth(), tenantContext, promotionDetailsRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userClassPackagesRouter);
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, nutritionPlanTemplatesRouter);
-app.use('/dishes',  requireAuth(), tenantContext, dishesRouter);
-app.use('/sides',   requireAuth(), tenantContext, sidesRouter);
-app.use('/sauces',  requireAuth(), tenantContext, saucesRouter);
+app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionLibraryRouter);
 
 // package-credits and plan-allowances register booking-lifecycle hooks as side-effect imports
 // (package-credits imported BEFORE plan-allowances so its hook queues first).
