@@ -82,7 +82,7 @@ describe('GET /system/themes/:id/assignments', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(typeof res.body.is_org_default).toBe('boolean');
+    expect(typeof res.body.is_gym_default).toBe('boolean');
     expect(Array.isArray(res.body.centers)).toBe(true);
   });
 });
@@ -102,13 +102,25 @@ describe('PUT /system/themes/:id/set-default', () => {
     expect(rows[0].theme_id).toBe(themeId);
   });
 
-  it('reflects is_org_default in assignments after set-default', async () => {
+  it('reflects is_gym_default in assignments after set-default', async () => {
     const res = await request
       .get(`/system/themes/${themeId}/assignments`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.is_org_default).toBe(true);
+    expect(res.body.is_gym_default).toBe(true);
+  });
+
+  it('returns 400 when theme is not active', async () => {
+    // Set theme to draft first
+    await db.query("UPDATE themes SET status = 'draft' WHERE id = ?", [themeId]);
+    const res = await request
+      .put(`/system/themes/${themeId}/set-default`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+    // Restore active for later tests
+    await db.query("UPDATE themes SET status = 'active' WHERE id = ?", [themeId]);
   });
 });
 
@@ -160,6 +172,17 @@ describe('POST /system/themes/:id/assign-centers', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 400 when theme is not active', async () => {
+    await db.query("UPDATE themes SET status = 'draft' WHERE id = ?", [themeId]);
+    const res = await request
+      .post(`/system/themes/${themeId}/assign-centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ center_ids: [centerId] });
+    expect(res.status).toBe(400);
+    await db.query("UPDATE themes SET status = 'active' WHERE id = ?", [themeId]);
+  });
+
   it('returns 400 for center from another gym', async () => {
     const res = await request
       .post(`/system/themes/${themeId}/assign-centers`)
@@ -201,25 +224,31 @@ describe('DELETE /system/themes/:id/centers/:centerId (restore inheritance)', ()
 // ─── DELETE /system/themes/:id — blocked when in use ─────────────────────────
 
 describe('DELETE /system/themes/:id (in-use guard)', () => {
-  it('returns 409 when theme is set as org default', async () => {
+  it('returns 409 when theme is set as gym default', async () => {
     await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [themeId, gymId]);
-    const res = await request
-      .delete(`/system/themes/${themeId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/in use/i);
-    await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+    try {
+      const res = await request
+        .delete(`/system/themes/${themeId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(409);
+      expect(res.body.error).toMatch(/gym default/i);
+    } finally {
+      await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+    }
   });
 
   it('returns 409 when theme is explicitly assigned to a center', async () => {
     await db.query('UPDATE centers SET theme_id = ? WHERE id = ?', [themeId, centerId]);
-    const res = await request
-      .delete(`/system/themes/${themeId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/in use/i);
-    await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
+    try {
+      const res = await request
+        .delete(`/system/themes/${themeId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(409);
+      expect(res.body.error).toMatch(/center/i);
+    } finally {
+      await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
+    }
   });
 });

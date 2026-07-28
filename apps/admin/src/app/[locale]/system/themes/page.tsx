@@ -23,7 +23,7 @@ interface Theme {
   gym_id: string | null;
   name: string;
   description: string | null;
-  status: 'draft' | 'active' | 'deleted';
+  status: 'draft' | 'active' | 'inactive' | 'deleted';
   type: 'system' | 'custom';
   has_logo: boolean;
   logo_updated_at: string | null;
@@ -39,21 +39,72 @@ interface ThemeDetail extends Theme {
   modified_by_name: string | null;
 }
 
-const STATUSES = ['draft', 'active', 'deleted'] as const;
+const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
-const COLOR_FIELDS: { key: keyof ThemeTokens['colors']; labelKey: string }[] = [
-  { key: 'appBackground',             labelKey: 'label_app_bg' },
-  { key: 'headerBackground',          labelKey: 'label_header_bg' },
-  { key: 'headerText',                labelKey: 'label_header_text' },
-  { key: 'headerSeparatorColor',      labelKey: 'label_header_sep_color' },
-  { key: 'sidebarBackground',         labelKey: 'label_sidebar_bg' },
-  { key: 'sidebarText',               labelKey: 'label_sidebar_text' },
-  { key: 'sidebarSelectedBackground', labelKey: 'label_sidebar_sel_bg' },
-  { key: 'sidebarSelectedText',       labelKey: 'label_sidebar_sel_text' },
+
+const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors']; labelKey: string }[] }[] = [
+  {
+    groupKey: 'group_application',
+    fields: [
+      { key: 'pageBackground',  labelKey: 'label_page_bg' },
+      { key: 'cardBackground',  labelKey: 'label_card_bg' },
+      { key: 'cardBorder',      labelKey: 'label_card_border' },
+    ],
+  },
+  {
+    groupKey: 'group_header',
+    fields: [
+      { key: 'headerBackground',     labelKey: 'label_header_bg' },
+      { key: 'headerText',           labelKey: 'label_header_text' },
+      { key: 'headerSeparatorColor', labelKey: 'label_header_sep_color' },
+    ],
+  },
+  {
+    groupKey: 'group_sidebar',
+    fields: [
+      { key: 'sidebarBackground',           labelKey: 'label_sidebar_bg' },
+      { key: 'sidebarText',                 labelKey: 'label_sidebar_text' },
+      { key: 'sidebarSelectedItemBackground', labelKey: 'label_sidebar_sel_bg' },
+      { key: 'sidebarSelectedItemText',     labelKey: 'label_sidebar_sel_text' },
+      { key: 'sidebarHoverBackground',      labelKey: 'label_sidebar_hover_bg' },
+    ],
+  },
+  {
+    groupKey: 'group_navigation',
+    fields: [
+      { key: 'dropdownBackground',  labelKey: 'label_dropdown_bg' },
+      { key: 'dropdownText',        labelKey: 'label_dropdown_text' },
+      { key: 'dropdownHoverBackground', labelKey: 'label_dropdown_hover_bg' },
+    ],
+  },
+  {
+    groupKey: 'group_buttons',
+    fields: [
+      { key: 'primaryButton',     labelKey: 'label_primary_btn' },
+      { key: 'primaryButtonText', labelKey: 'label_primary_btn_text' },
+      { key: 'secondaryButton',   labelKey: 'label_secondary_btn' },
+      { key: 'secondaryButtonText', labelKey: 'label_secondary_btn_text' },
+    ],
+  },
+  {
+    groupKey: 'group_status',
+    fields: [
+      { key: 'statusSuccess', labelKey: 'label_status_success' },
+      { key: 'statusWarning', labelKey: 'label_status_warning' },
+      { key: 'statusError',   labelKey: 'label_status_error' },
+      { key: 'statusInfo',    labelKey: 'label_status_info' },
+    ],
+  },
+  {
+    groupKey: 'group_links',
+    fields: [
+      { key: 'linkColor',      labelKey: 'label_link_color' },
+      { key: 'linkHoverColor', labelKey: 'label_link_hover_color' },
+    ],
+  },
 ];
 
 type SectionKey = 'branding' | 'typography' | 'colors' | 'advanced';
-const ALL_SECTIONS: SectionKey[] = ['branding', 'typography', 'colors', 'advanced'];
 
 const emptyForm = { name: '', description: '', tokens: DEFAULT_TOKENS };
 
@@ -96,12 +147,14 @@ export default function ThemesPage() {
   const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['branding']));
   const [editForm, setEditForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [tokenSaving, setTokenSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Inline status saving
+  // Status saving
   const [statusSaving, setStatusSaving] = useState<string | null>(null);
 
   // Add modal
@@ -160,6 +213,24 @@ export default function ThemesPage() {
     });
   }
 
+  function scheduleTokenSave(tokens: ThemeTokens) {
+    if (!expandedId) return;
+    if (tokenSaveTimer.current) clearTimeout(tokenSaveTimer.current);
+    tokenSaveTimer.current = setTimeout(async () => {
+      setTokenSaving(true);
+      try {
+        await apiFetch(`/platform/themes/${expandedId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ tokens }),
+        });
+      } catch (err: any) {
+        toast(err.message ?? t('error_generic'));
+      } finally {
+        setTokenSaving(false);
+      }
+    }, 600);
+  }
+
   async function handleStatusChange(theme: Theme, newStatus: string) {
     setStatusSaving(theme.id);
     try {
@@ -172,20 +243,17 @@ export default function ThemesPage() {
     }
   }
 
-  async function handleSave() {
+  async function handleBrandingSave() {
     if (!expandedId) return;
-    const theme = themes.find((th) => th.id === expandedId);
-    if (!theme) return;
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
     setSaving(true);
     setEditError(null);
     try {
       await apiFetch(`/platform/themes/${expandedId}`, {
         method: 'PUT',
-        body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null, tokens: editForm.tokens }),
+        body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null }),
       });
       if (editLogoFile) await uploadLogo(expandedId);
-      setExpandedId(null);
       load();
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
@@ -265,8 +333,7 @@ export default function ThemesPage() {
       load();
     } catch (err: any) {
       setDeleting(null);
-      if (err.message?.includes('assigned')) toast(t('error_conflict'));
-      else toast(err.message ?? t('error_generic'));
+      toast(err.message ?? t('error_generic'));
     }
   }
 
@@ -306,7 +373,7 @@ export default function ThemesPage() {
     border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff',
   };
 
-  function renderSection(title: string, key: SectionKey, content: React.ReactNode) {
+  function renderSection(title: string, key: SectionKey, content: React.ReactNode, hint?: React.ReactNode) {
     const open = openSections.has(key);
     return (
       <div key={key} style={{ borderTop: '1px solid #eee' }}>
@@ -315,7 +382,7 @@ export default function ThemesPage() {
           onClick={() => toggleSection(key)}
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#333', textAlign: 'left' }}
         >
-          {title}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>{title}{hint}</span>
           <span style={{ fontSize: 12, color: '#aaa', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
         </button>
         {open && <div style={{ paddingBottom: 16 }}>{content}</div>}
@@ -352,56 +419,110 @@ export default function ThemesPage() {
                 )}
               </div>
               <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
-            </div>
-          ))}
-
-          {renderSection(t('section_typography'), 'typography', (
-            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('tab_typography')}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
-              {TYPO_LEVELS.map((lv) => {
-                const typo = editForm.tokens.typography[lv];
-                return (
-                  <>
-                    <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
-                    <select key={`${lv}-font`} value={typo.fontFamily} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } } })} style={selectStyle}>
-                      {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                    <input key={`${lv}-color`} type="color" value={typo.color} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, color: e.target.value } } } })} style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }} />
-                  </>
-                );
-              })}
+              <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
+                <button onClick={handleBrandingSave} disabled={saving} style={btnSmall('#6c63ff')}>{saving ? t('saving') : t('save_changes')}</button>
+              </div>
             </div>
           ))}
 
           {renderSection(t('section_colors'), 'colors', (
             <div>
-              {COLOR_FIELDS.map(({ key, labelKey }) => (
-                <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
-                  <input type="color" value={editForm.tokens.colors[key] as string} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, colors: { ...editForm.tokens.colors, [key]: e.target.value } } })} style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }} />
+              {COLOR_GROUPS.map(({ groupKey, fields }) => (
+                <div key={groupKey} style={{ marginBottom: 20 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
+                  {fields.map(({ key, labelKey }) => (
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
+                      <input
+                        type="color"
+                        value={editForm.tokens.colors[key] as string}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, [key]: e.target.value } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+                      />
+                    </div>
+                  ))}
                 </div>
               ))}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-                <input type="number" min={0} max={20} value={editForm.tokens.colors.headerSeparatorHeight} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } } })} style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }} />
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={editForm.tokens.colors.headerSeparatorHeight}
+                  onChange={(e) => {
+                    const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } };
+                    setEditForm({ ...editForm, tokens: next });
+                    scheduleTokenSave(next);
+                  }}
+                  style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
+                />
               </div>
+              {tokenSaving && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
+            </div>
+          ))}
+
+          {renderSection(t('section_typography'), 'typography', (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('tab_typography')}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
+                {TYPO_LEVELS.map((lv) => {
+                  const typo = editForm.tokens.typography[lv];
+                  return (
+                    <>
+                      <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
+                      <select
+                        key={`${lv}-font`}
+                        value={typo.fontFamily}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={selectStyle}
+                      >
+                        {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                      <input
+                        key={`${lv}-color`}
+                        type="color"
+                        value={typo.color}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, color: e.target.value } } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+                      />
+                    </>
+                  );
+                })}
+              </div>
+              {tokenSaving && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
             </div>
           ))}
 
           {renderSection(t('section_advanced'), 'advanced', (
-            <ThemeAdvancedSection
-              advanced={advanced}
-              onChange={(next) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, advanced: next } })}
-              namespace="themes"
-            />
+            <div>
+              <ThemeAdvancedSection
+                advanced={advanced}
+                onChange={(next) => {
+                  const tokens = { ...editForm.tokens, advanced: next };
+                  setEditForm({ ...editForm, tokens });
+                  scheduleTokenSave(tokens);
+                }}
+                namespace="themes"
+              />
+              {tokenSaving && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
+            </div>
           ))}
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-          <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={handleSave} disabled={saving} style={btnSmall('#6c63ff')}>{saving ? t('saving') : t('save_changes')}</button>
         </div>
       </div>
     );
@@ -447,7 +568,7 @@ export default function ThemesPage() {
       width: 72,
       render: (th) => (
         <div style={{ display: 'flex', gap: 3 }}>
-          {([th.tokens?.colors?.sidebarSelectedBackground, th.tokens?.colors?.headerBackground, th.tokens?.colors?.appBackground] as (string | undefined)[]).map((c, i) => (
+          {([th.tokens?.colors?.sidebarSelectedItemBackground, th.tokens?.colors?.headerBackground, th.tokens?.colors?.pageBackground] as (string | undefined)[]).map((c, i) => (
             <div key={i} title={['Primary', 'Secondary', 'Background'][i]} style={{ width: 18, height: 18, borderRadius: 3, background: c ?? '#ccc', border: '1px solid #ddd' }} />
           ))}
         </div>
@@ -461,23 +582,7 @@ export default function ThemesPage() {
     {
       header: t('col_status'),
       width: 130,
-      render: (th) => (
-        th.status !== 'deleted' ? (
-          <select
-            value={th.status}
-            disabled={statusSaving === th.id}
-            onChange={(e) => handleStatusChange(th, e.target.value)}
-            onClick={(e) => e.stopPropagation()}
-            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ddd', fontSize: 12, cursor: 'pointer', background: '#fff' }}
-          >
-            {(['draft', 'active'] as const).map((s) => (
-              <option key={s} value={s}>{tStatus(s)}</option>
-            ))}
-          </select>
-        ) : (
-          <StatusBadge status={th.status} label={tStatus(th.status)} />
-        )
-      ),
+      render: (th) => <StatusBadge status={th.status} label={tStatus(th.status)} />,
     },
     {
       header: t('col_actions'),
@@ -486,9 +591,16 @@ export default function ThemesPage() {
         const items = [];
         if (th.status !== 'deleted') {
           items.push({ label: t('edit'), onClick: () => openExpand(th) });
-          if (!th.is_system_default) {
-            items.push({ label: t('action_set_system_default'), onClick: () => handleSetSystemDefault(th) });
-          }
+        }
+        if (th.status === 'draft' || th.status === 'inactive') {
+          items.push({ label: t('action_activate'), onClick: () => handleStatusChange(th, 'active') });
+        }
+        if (th.status === 'active') {
+          items.push({ label: t('action_set_draft'), onClick: () => handleStatusChange(th, 'draft') });
+          items.push({ label: t('action_set_inactive'), onClick: () => handleStatusChange(th, 'inactive') });
+        }
+        if (th.status === 'active' && !th.is_system_default) {
+          items.push({ label: t('action_set_system_default'), onClick: () => handleSetSystemDefault(th) });
         }
         items.push({ label: t('action_details'), onClick: () => openDetails(th) });
         if (th.status !== 'deleted') {

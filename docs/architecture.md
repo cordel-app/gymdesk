@@ -380,26 +380,28 @@ Wraps all admin pages. Hides sidebar + header for sign-in/sign-up and the unauth
 - **Base Themes** — `gym_id IS NULL`. Platform-owned, managed by superadmins via **Cordel → Base Themes**. Never duplicated into customer data. Exactly one Base Theme carries `is_system_default = 1` (migration 072) — the factory default assigned when a new organization is created.
 - **Customer Themes** — `gym_id = <gymId>`. Gym-owned, created by cloning any Base or Customer Theme. Editable and soft-deletable by gym admins via **System → Themes**.
 
-Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057, FK on `themes.id`). Themes carry a versioned `tokens` JSON column covering typography (5 levels × `fontFamily` + `color`) and colors (`appBackground`, `headerBackground`, `headerText`, `headerSeparatorColor`, `headerSeparatorHeight`, `sidebarBackground`, `sidebarText`, `sidebarSelectedBackground`, `sidebarSelectedText`). Each center may optionally override the gym's default theme via `centers.theme_id` (migration 065).
+Each gym references an optional **Theme** entity (`gyms.theme_id`, migration 057, FK on `themes.id`). Themes carry a versioned `tokens` JSON column (`v: 2` as of migration 079) covering typography (5 levels × `fontFamily` + `color`) and 26 named colors grouped as: **Application** (`pageBackground`, `cardBackground`, `cardBorder`), **Header** (`headerBackground`, `headerText`, `headerSeparatorColor`, `headerSeparatorHeight`), **Sidebar** (`sidebarBackground`, `sidebarText`, `sidebarSelectedItemBackground`, `sidebarSelectedItemText`, `sidebarHoverBackground`), **Navigation** (`dropdownBackground`, `dropdownText`, `dropdownHoverBackground`), **Buttons** (`primaryButton`, `primaryButtonText`, `secondaryButton`, `secondaryButtonText`), **Status** (`statusSuccess`, `statusWarning`, `statusError`, `statusInfo`), **Links** (`linkColor`, `linkHoverColor`). Additional design tokens live in the `advanced` JSONB map (layout, shape, shadows, typography, animations). Each center may optionally override the gym's default theme via `centers.theme_id` (migration 065).
+
+**Theme ownership and lifecycle:** `gym_id IS NULL` = system/base theme (Cordel-owned); `gym_id = <id>` = customer theme. Status lifecycle: `draft → active → inactive → deleted` (migration 079 widens the CHECK constraint). Deleting or setting a theme to `draft`/`inactive` is blocked (409) when it is assigned as the gym's default (`gyms.theme_id`) or to any center (`centers.theme_id`). Only `active` themes can be assigned as gym default or to centers.
 
 `ThemeProvider` in both the admin app (`context/GymContext` → `activeGym.theme.tokens`) and the member app (`context/AppContext` → resolved via `GET /me/gym`) writes `--gd-*` CSS variables to `<html>` on gym switch; legacy `--brand`/`--chrome`/`--accent` aliases are preserved. Logos are `MEDIUMBLOB` (≤ 512 KB; allow-list: PNG, SVG, JPEG, WEBP), served public at `GET /themes/:id/logo` (`Cache-Control: immutable`). The member app resolves its gym and theme in one call via `GET /me/gym` (no `x-gym-id` header required).
 
 **Theme resolution order (per center):**
 1. `centers.theme_id` (explicit center assignment)
-2. `gyms.theme_id` (org default)
+2. `gyms.theme_id` (gym default)
 3. First theme alphabetically
 
 **API surface:**
-- `GET|POST|PUT|DELETE /platform/themes` — superadmin Base Themes CRUD only (`gym_id IS NULL`). `GET /` returns base themes with `description`, `type`, `is_system_default`, `usage_count`. `GET /:id` additionally includes `created_by_name` / `modified_by_name` from `audit_logs`. `POST` and `PUT` accept `description` (added in migration 068).
-- `PUT /platform/themes/:id/set-system-default` — atomically marks one Base Theme as `is_system_default = 1` and clears all others (superadmin only). Does not affect existing org `gyms.theme_id` assignments.
+- `GET|POST|PUT|DELETE /platform/themes` — superadmin Base Themes CRUD only (`gym_id IS NULL`). `PUT` accepts `status` in `['draft','active','inactive']`; setting `draft`/`inactive` is blocked (409) when assigned as gym default or to centers. `DELETE` is also blocked (409) for the same reason.
+- `PUT /platform/themes/:id/set-system-default` — atomically marks one Base Theme as `is_system_default = 1` and clears all others (superadmin only).
 - `POST /platform/themes/clone/:id` — clone a Base Theme into a new Base Theme (superadmin only).
 - `GET /system/themes` — gym admin: lists Base Themes + Customer Themes for the active gym.
 - `POST /system/themes/clone/:id` — clone any accessible theme into a new Customer Theme.
-- `PUT|DELETE /system/themes/:id` — update/soft-delete a Customer Theme (delete blocked if theme is org default or assigned to any center: 409 with "This theme is currently in use. Remove all assignments before deleting it.").
-- `GET /system/themes/:id/assignments` — returns `{ is_org_default, centers: [{id, name, is_inherited}] }` — only centers using this theme (inherited = org default, assigned = explicit `centers.theme_id`).
-- `PUT /system/themes/:id/set-default` — sets `gyms.theme_id` for the active gym (replaces previous default atomically).
+- `PUT|DELETE /system/themes/:id` — update/soft-delete a Customer Theme (same protection rules as above).
+- `GET /system/themes/:id/assignments` — returns `{ is_gym_default, centers: [{id, name, is_inherited}] }`.
+- `PUT /system/themes/:id/set-default` — sets `gyms.theme_id`; rejects non-active themes (400).
 - `GET /system/themes/:id/unassigned-centers` — centers not currently using this theme (for the assign picker).
-- `POST /system/themes/:id/assign-centers` — body `{ center_ids }`: sets `centers.theme_id` for each center.
+- `POST /system/themes/:id/assign-centers` — body `{ center_ids }`; rejects non-active themes (400).
 - `DELETE /system/themes/:id/centers/:centerId` — restores inheritance: sets `centers.theme_id = NULL`.
 
 ### Middleware (both apps)

@@ -25,7 +25,16 @@ function validateTokens(tokens: any): string | null {
   if (!tokens || typeof tokens !== 'object') return 'tokens must be an object';
   const { colors, typography } = tokens;
   if (colors) {
-    const hexFields = ['appBackground','headerBackground','headerText','headerSeparatorColor','sidebarBackground','sidebarText','sidebarSelectedBackground','sidebarSelectedText'];
+    const hexFields = [
+      'pageBackground', 'cardBackground', 'cardBorder',
+      'headerBackground', 'headerText', 'headerSeparatorColor',
+      'sidebarBackground', 'sidebarText',
+      'sidebarSelectedItemBackground', 'sidebarSelectedItemText', 'sidebarHoverBackground',
+      'dropdownBackground', 'dropdownText', 'dropdownHoverBackground',
+      'primaryButton', 'primaryButtonText', 'secondaryButton', 'secondaryButtonText',
+      'statusSuccess', 'statusWarning', 'statusError', 'statusInfo',
+      'linkColor', 'linkHoverColor',
+    ];
     for (const f of hexFields) {
       if (colors[f] !== undefined && !HEX_RE.test(colors[f])) return `colors.${f} must be a hex color like #rrggbb`;
     }
@@ -58,17 +67,39 @@ function shapeTheme(row: any) {
 
 const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at';
 
+async function checkGymThemeProtected(id: string, gymId: string): Promise<{ isGymDefault: boolean; centerCount: number }> {
+  const { rows: gymRefs } = await db.query<{ cnt: number }>(
+    'SELECT COUNT(*) AS cnt FROM gyms WHERE theme_id = ? AND id = ?',
+    [id, gymId],
+  );
+  const { rows: centerRefs } = await db.query<{ cnt: number }>(
+    'SELECT COUNT(*) AS cnt FROM centers WHERE theme_id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [id, gymId],
+  );
+  return {
+    isGymDefault: Number(gymRefs[0].cnt) > 0,
+    centerCount: Number(centerRefs[0].cnt),
+  };
+}
+
 // ─── List: base themes + customer themes for this gym ─────────────────────────
 
 gymThemesRouter.get('/', async (req, res, next) => {
   try {
     const { gymId } = getTenantContext(req);
     await requireRole('admin')(req, res, async () => {
+      const status = req.query.status as string | undefined;
+      const params: any[] = [gymId];
+      let statusClause = 'AND deleted_at IS NULL';
+      if (status) {
+        statusClause = 'AND status = ?';
+        params.push(status);
+      }
       const { rows } = await db.query(
         `SELECT ${SELECT_COLS} FROM themes
-         WHERE (gym_id IS NULL OR gym_id = ?) AND deleted_at IS NULL
+         WHERE (gym_id IS NULL OR gym_id = ?) ${statusClause}
          ORDER BY gym_id IS NULL DESC, created_at ASC`,
-        [gymId],
+        params,
       );
       res.json(rows.map(shapeTheme));
     });
@@ -79,7 +110,7 @@ gymThemesRouter.get('/', async (req, res, next) => {
 
 gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
   try {
-    const { gymId, gymMembershipId } = getTenantContext(req);
+    const { gymId } = getTenantContext(req);
     await requireRole('admin')(req, res, async () => {
       const { rows: source } = await db.query(
         `SELECT ${SELECT_COLS} FROM themes
@@ -127,9 +158,24 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
       const current = existingRows[0];
 
       const { name, description, tokens, status } = req.body;
-      const ALLOWED_STATUSES = ['draft', 'active'];
+      const ALLOWED_STATUSES = ['draft', 'active', 'inactive'];
       if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
         return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
+      }
+
+      // Block status downgrade when theme is assigned
+      if (status === 'draft' || status === 'inactive') {
+        const { isGymDefault, centerCount } = await checkGymThemeProtected(req.params.id, gymId);
+        if (isGymDefault) {
+          return res.status(409).json({
+            error: `This Theme cannot be marked as ${status === 'draft' ? 'Draft' : 'Inactive'} because it is configured as the Gym Default Theme.`,
+          });
+        }
+        if (centerCount > 0) {
+          return res.status(409).json({
+            error: `This Theme cannot be marked as ${status === 'draft' ? 'Draft' : 'Inactive'} because it is assigned to one or more Centers.`,
+          });
+        }
       }
 
       if (name !== undefined && name.trim() !== current.name) {
@@ -228,13 +274,12 @@ gymThemesRouter.delete('/:id', async (req, res, next) => {
       if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
       if (existing[0].deleted_at) return res.status(409).json({ error: 'Theme is already deleted' });
 
-      const { rows: gymRefs } = await db.query('SELECT id FROM gyms WHERE theme_id = ? AND id = ? LIMIT 1', [req.params.id, gymId]);
-      const { rows: centerRefs } = await db.query(
-        'SELECT id FROM centers WHERE theme_id = ? AND gym_id = ? AND deleted_at IS NULL LIMIT 1',
-        [req.params.id, gymId],
-      );
-      if (gymRefs.length > 0 || centerRefs.length > 0) {
-        return res.status(409).json({ error: 'This theme is currently in use. Remove all assignments before deleting it.' });
+      const { isGymDefault, centerCount } = await checkGymThemeProtected(req.params.id, gymId);
+      if (isGymDefault) {
+        return res.status(409).json({ error: 'This Theme cannot be deleted because it is configured as the Gym Default Theme.' });
+      }
+      if (centerCount > 0) {
+        return res.status(409).json({ error: 'This Theme cannot be deleted because it is assigned to one or more Centers.' });
       }
 
       await db.query(
@@ -261,7 +306,7 @@ gymThemesRouter.get('/:id/assignments', async (req, res, next) => {
       if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
 
       const { rows: gymRows } = await db.query('SELECT theme_id FROM gyms WHERE id = ?', [gymId]);
-      const is_org_default = gymRows[0]?.theme_id === req.params.id;
+      const is_gym_default = gymRows[0]?.theme_id === req.params.id;
 
       const { rows: centers } = await db.query(
         `SELECT c.id, c.name, (c.theme_id IS NULL) AS is_inherited
@@ -273,22 +318,25 @@ gymThemesRouter.get('/:id/assignments', async (req, res, next) => {
         [gymId, req.params.id, req.params.id],
       );
 
-      res.json({ is_org_default, centers: centers.map((c: any) => ({ ...c, is_inherited: !!c.is_inherited })) });
+      res.json({ is_gym_default, centers: centers.map((c: any) => ({ ...c, is_inherited: !!c.is_inherited })) });
     });
   } catch (err) { next(err); }
 });
 
-// ─── Assignments: set as org default ─────────────────────────────────────────
+// ─── Assignments: set as gym default ─────────────────────────────────────────
 
 gymThemesRouter.put('/:id/set-default', async (req, res, next) => {
   try {
     const { gymId } = getTenantContext(req);
     await requireRole('admin')(req, res, async () => {
       const { rows: themeRows } = await db.query(
-        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
+        'SELECT id, status FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
         [req.params.id, gymId],
       );
       if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+      if (themeRows[0].status !== 'active') {
+        return res.status(400).json({ error: 'Only Active themes can be set as the Gym Default Theme.' });
+      }
 
       await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [req.params.id, gymId]);
       recordAudit(req, { action: 'update', entityType: 'gym', entityId: gymId, next: { default_theme_id: req.params.id } });
@@ -331,10 +379,13 @@ gymThemesRouter.post('/:id/assign-centers', async (req, res, next) => {
     const { gymId } = getTenantContext(req);
     await requireRole('admin')(req, res, async () => {
       const { rows: themeRows } = await db.query(
-        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
+        'SELECT id, status FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
         [req.params.id, gymId],
       );
       if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+      if (themeRows[0].status !== 'active') {
+        return res.status(400).json({ error: 'Only Active themes can be assigned to Centers.' });
+      }
 
       const { center_ids } = req.body;
       if (!Array.isArray(center_ids) || center_ids.length === 0) {

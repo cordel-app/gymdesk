@@ -18,7 +18,7 @@ const LOGO_MAX_BYTES = 512 * 1024; // 512 KB
 
 export function defaultTokens() {
   return {
-    v: 1,
+    v: 2,
     typography: {
       h1:    { fontFamily: 'system-ui, -apple-system, sans-serif', color: '#111827' },
       h2:    { fontFamily: 'system-ui, -apple-system, sans-serif', color: '#111827' },
@@ -27,15 +27,31 @@ export function defaultTokens() {
       small: { fontFamily: 'system-ui, -apple-system, sans-serif', color: '#6b7280' },
     },
     colors: {
-      appBackground:             '#f5f5f5',
-      headerBackground:          '#1a1a2e',
-      headerText:                '#ffffff',
-      headerSeparatorColor:      '#6c63ff',
-      headerSeparatorHeight:     2,
-      sidebarBackground:         '#1a1a2e',
-      sidebarText:               '#e5e7eb',
-      sidebarSelectedBackground: '#6c63ff',
-      sidebarSelectedText:       '#ffffff',
+      pageBackground:               '#f5f5f5',
+      cardBackground:               '#ffffff',
+      cardBorder:                   '#e5e7eb',
+      headerBackground:             '#1a1a2e',
+      headerText:                   '#ffffff',
+      headerSeparatorColor:         '#6c63ff',
+      headerSeparatorHeight:        2,
+      sidebarBackground:            '#1a1a2e',
+      sidebarText:                  '#e5e7eb',
+      sidebarSelectedItemBackground:'#6c63ff',
+      sidebarSelectedItemText:      '#ffffff',
+      sidebarHoverBackground:       '#2d2d4a',
+      dropdownBackground:           '#ffffff',
+      dropdownText:                 '#111827',
+      dropdownHoverBackground:      '#f5f5f5',
+      primaryButton:                '#6c63ff',
+      primaryButtonText:            '#ffffff',
+      secondaryButton:              '#ffffff',
+      secondaryButtonText:          '#374151',
+      statusSuccess:                '#059669',
+      statusWarning:                '#d97706',
+      statusError:                  '#dc2626',
+      statusInfo:                   '#2563eb',
+      linkColor:                    '#6c63ff',
+      linkHoverColor:               '#5a52d5',
     },
   };
 }
@@ -53,7 +69,16 @@ function validateTokens(tokens: any): string | null {
   if (!tokens || typeof tokens !== 'object') return 'tokens must be an object';
   const { colors, typography } = tokens;
   if (colors) {
-    const hexFields = ['appBackground','headerBackground','headerText','headerSeparatorColor','sidebarBackground','sidebarText','sidebarSelectedBackground','sidebarSelectedText'];
+    const hexFields = [
+      'pageBackground', 'cardBackground', 'cardBorder',
+      'headerBackground', 'headerText', 'headerSeparatorColor',
+      'sidebarBackground', 'sidebarText',
+      'sidebarSelectedItemBackground', 'sidebarSelectedItemText', 'sidebarHoverBackground',
+      'dropdownBackground', 'dropdownText', 'dropdownHoverBackground',
+      'primaryButton', 'primaryButtonText', 'secondaryButton', 'secondaryButtonText',
+      'statusSuccess', 'statusWarning', 'statusError', 'statusInfo',
+      'linkColor', 'linkHoverColor',
+    ];
     for (const f of hexFields) {
       if (colors[f] !== undefined && !HEX_RE.test(colors[f])) return `colors.${f} must be a hex color like #rrggbb`;
     }
@@ -82,6 +107,21 @@ function shapeTheme(row: any) {
     has_logo: !!row.logo_mime,
     is_system_default: !!row.is_system_default,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
+  };
+}
+
+async function checkThemeProtected(id: string): Promise<{ isGymDefault: boolean; centerCount: number }> {
+  const { rows: gymRefs } = await db.query<{ cnt: number }>(
+    'SELECT COUNT(*) AS cnt FROM gyms WHERE theme_id = ?',
+    [id],
+  );
+  const { rows: centerRefs } = await db.query<{ cnt: number }>(
+    'SELECT COUNT(*) AS cnt FROM centers WHERE theme_id = ? AND deleted_at IS NULL',
+    [id],
+  );
+  return {
+    isGymDefault: Number(gymRefs[0].cnt) > 0,
+    centerCount: Number(centerRefs[0].cnt),
   };
 }
 
@@ -189,7 +229,7 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
 
 themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
   const { name, description, tokens, status } = req.body;
-  const ALLOWED_STATUSES = ['draft', 'active'];
+  const ALLOWED_STATUSES = ['draft', 'active', 'inactive'];
   if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
   }
@@ -201,6 +241,21 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
   if (existingRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
   const current = existingRows[0];
   if (current.deleted_at) return res.status(409).json({ error: 'Theme is deleted' });
+
+  // Block status downgrade when theme is assigned
+  if (status === 'draft' || status === 'inactive') {
+    const { isGymDefault, centerCount } = await checkThemeProtected(req.params.id);
+    if (isGymDefault) {
+      return res.status(409).json({
+        error: `This Theme cannot be marked as ${status === 'draft' ? 'Draft' : 'Inactive'} because it is configured as the Gym Default Theme.`,
+      });
+    }
+    if (centerCount > 0) {
+      return res.status(409).json({
+        error: `This Theme cannot be marked as ${status === 'draft' ? 'Draft' : 'Inactive'} because it is assigned to one or more Centers.`,
+      });
+    }
+  }
 
   if (name !== undefined && name.trim() !== current.name) {
     const { rows: nameConflict } = await db.query(
@@ -333,14 +388,12 @@ themesRouter.delete('/:id', requireSuperadmin, async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
   if (existing[0].deleted_at) return res.status(409).json({ error: 'Theme is already deleted' });
 
-  // Guard: refuse if any gym or center still references this theme.
-  const { rows: gymRefs } = await db.query('SELECT id FROM gyms WHERE theme_id = ? LIMIT 1', [req.params.id]);
-  if (gymRefs.length > 0) {
-    return res.status(409).json({ error: 'Theme is assigned to one or more gyms. Reassign them first.' });
+  const { isGymDefault, centerCount } = await checkThemeProtected(req.params.id);
+  if (isGymDefault) {
+    return res.status(409).json({ error: 'This Theme cannot be deleted because it is configured as the Gym Default Theme.' });
   }
-  const { rows: centerRefs } = await db.query('SELECT id FROM centers WHERE theme_id = ? AND deleted_at IS NULL LIMIT 1', [req.params.id]);
-  if (centerRefs.length > 0) {
-    return res.status(409).json({ error: 'Theme is assigned to one or more centers. Reassign them first.' });
+  if (centerCount > 0) {
+    return res.status(409).json({ error: 'This Theme cannot be deleted because it is assigned to one or more Centers.' });
   }
 
   await db.query(
