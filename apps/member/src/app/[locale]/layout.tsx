@@ -4,9 +4,11 @@ import { enUS, esES, caES } from '@clerk/localizations';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { AppProvider } from '@/context/AppContext';
+import { ImpersonationProvider } from '@/context/ImpersonationContext';
 import { BottomNav } from '@/components/BottomNav';
 import { CenterSwitcher } from '@/components/CenterSwitcher';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { AdminBar } from '@/components/AdminBar';
 
 export const metadata: Metadata = {
   title: 'Gymdesk',
@@ -40,13 +42,16 @@ export default async function LocaleLayout({
         <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
             <AppProvider>
-              <ThemeProvider>
-                <CenterSwitcher />
-                <div style={{ paddingBottom: 72 }}>
-                  {children}
-                </div>
-                <BottomNav />
-              </ThemeProvider>
+              <ImpersonationProvider>
+                <ThemeProvider>
+                  <AdminBar />
+                  <CenterSwitcher />
+                  <div style={{ paddingBottom: 72 }}>
+                    {children}
+                  </div>
+                  <BottomNav />
+                </ThemeProvider>
+              </ImpersonationProvider>
             </AppProvider>
           </NextIntlClientProvider>
         </body>

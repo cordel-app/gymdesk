@@ -1840,6 +1840,16 @@
     "impersonating_label": "Estás suplantando a:",
     "signed_in_as": "Conectado como:",
     "stop_button": "Detener suplantación",
-    "stopped": "Suplantación finalizada."
+    "stopped": "Suplantación finalizada.",
+    "button_impersonate": "Suplantar",
+    "dialog_title": "Suplantar un usuario",
+    "search_placeholder": "Buscar por nombre…",
+    "searching": "Buscando…",
+    "search_empty": "No se encontraron usuarios activos.",
+    "type_member": "Miembro",
+    "type_staff": "Personal",
+    "cancel": "Cancelar",
+    "error_start": "No se pudo iniciar la suplantación.",
+    "account_locked_hint": "Las acciones de cuenta están desactivadas durante la suplantación"
   }
 }

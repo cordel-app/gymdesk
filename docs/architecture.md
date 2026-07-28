@@ -161,7 +161,7 @@ Trainers are `trainer_performance` or `trainer_perf_nutrition` rows in `gym_memb
 - Frontend: `GymContext` exposes `isSuperadmin` from Clerk's `useUser()`.
 - `infra/seed.ts` bootstraps the first superadmin from `SEED_USER_ID`.
 
-### User Impersonation (#135)
+### User Impersonation (#135, extended by #189)
 Superadmins can impersonate any active gym user for support and debugging without a password change.
 
 **How it works (separation of authentication and authorization):**
@@ -169,19 +169,29 @@ Superadmins can impersonate any active gym user for support and debugging withou
 - The frontend stores an impersonation session in `sessionStorage` (survives refresh, cleared on tab close).
 - `apiFetch()` appends `x-impersonate-as: <userId>` to every request while impersonating.
 - `tenantContext` detects this header and, after confirming the caller is a superadmin, looks up the target's `gym_memberships` row and sets `req.tenantCtx.role` to the effective user's role. `requireRole()` guards then automatically see the impersonated role.
+- `TenantContext` carries `effectiveUserId` — equals `impersonatedUserId` during impersonation, otherwise equals `userId`. All `/me/*` handlers use `effectiveUserId` (not `userId`) for member data lookups so impersonated requests see the correct member's data.
 - `recordAudit` encodes both identities in `actor_name` (e.g. `"Alice Johnson (impersonating John Smith)"`) so every business audit row remains traceable.
 
-**API surface** (`api/src/api/impersonation.ts`, mounted at `/platform/impersonation`):
-- `POST /platform/impersonation/:userId` — validate target (active, not soft-deleted, not another superadmin), record `impersonation_started` audit event, return effective user's `{ id, name, role, gym_id }`.
-- `POST /platform/impersonation/stop` — record `impersonation_ended` with optional `duration_seconds`.
+**API surface** (`api/src/api/impersonation.ts`, mounted at `/platform/impersonation`, no `tenantContext` middleware — uses `requireSuperadmin` only):
+- `GET /platform/impersonation/candidates?q=&gym_id=` — returns active staff (non-member roles in `gym_memberships`, name LIKE) + linked members (`members.clerk_user_id IS NOT NULL`, not deleted); excludes the caller and other superadmins; deduplicates by userId. Returns `[{ userId, name, type, role, gymId }]`.
+- `POST /platform/impersonation/stop` — accepts `{ impersonated_user_id, impersonated_user_name?, impersonated_role?, duration_seconds? }`, returns 204. Must be declared before `/:userId` in the router to avoid being swallowed by the dynamic segment.
+- `POST /platform/impersonation/:userId` — validate target (active membership in the gym, not another superadmin, not yourself); return `{ id, name, role, gym_id, gymIds: string[] }`. `gymIds` lists all gyms the target belongs to and is used by the frontend to restrict the gym selector.
 
-**Frontend** (`apps/admin/src/context/ImpersonationContext.tsx`):
-- `ImpersonationProvider` wraps the app and rehydrates from `sessionStorage` on mount.
-- `ImpersonationBanner` is rendered at the top of every page via `AppShell` while impersonating.
-- `GymContext.activeGym.role` is overridden from the impersonation session so nav gating reflects the effective user's access.
-- "Impersonate" action appears in the Team page (`/team`) for active, non-superadmin members when the viewer is a superadmin.
+**Frontend — Admin app** (`apps/admin/src/`):
+- `ImpersonationContext.tsx` — `ImpersonationSession` includes `gymIds: string[]`; `ImpersonationProvider` wraps the app and rehydrates from `sessionStorage` on mount.
+- `TopHeader.tsx` — renders an "Impersonate" button (superadmin only, not while impersonating) and an `ImpersonationDialog`; replaces `UserButton` with a locked avatar div during impersonation.
+- `ImpersonationDialog.tsx` — modal with debounced search calling `GET /candidates`, results list with member/staff type badges, confirms via `POST /:userId`.
+- `GymContext.tsx` — while impersonating, filters visible gyms to `session.gymIds` and overrides `role` with `effectiveRole`.
 
-**Restrictions**: cannot impersonate disabled/soft-deleted users, other superadmins, or yourself. No new DB tables.
+**Frontend — Member app** (`apps/member/src/`):
+- `ImpersonationContext.tsx` — same session shape as admin app.
+- `AdminBar.tsx` — superadmin-only top strip rendered above `CenterSwitcher` in the layout; shows "Impersonate" button (via `MemberImpersonationDialog`) when not impersonating, or `ImpersonationBanner` when impersonating.
+- `MemberImpersonationDialog.tsx` — uses raw `fetch` (not `apiFetch`) since `gymId` may not yet be resolved in `AppContext` when impersonation starts.
+- `ImpersonationBanner.tsx` — amber top bar with stop button; calls `POST /platform/impersonation/stop`.
+- `AppContext.tsx` — exposes `isSuperadmin` (via `useUser()` + Clerk `publicMetadata`); reads sessionStorage on mount and adds `x-impersonate-as` to the initial `GET /me/gym` call.
+- `apiClient.ts` — appends `x-impersonate-as` header to all API calls when an impersonation session is stored.
+
+**Restrictions**: cannot impersonate disabled users, other superadmins, or yourself. No new DB tables.
 
 ---
 

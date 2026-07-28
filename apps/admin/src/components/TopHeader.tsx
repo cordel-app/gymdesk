@@ -1,13 +1,22 @@
 'use client';
 
+import { useState } from 'react';
 import { UserButton } from '@clerk/nextjs';
+import { useTranslations } from 'next-intl';
+import { useUser } from '@clerk/nextjs';
 import { LanguagePicker } from './LanguagePicker';
 import { GymSelector } from './GymSelector';
 import { CenterSelector } from './CenterSelector';
+import { ImpersonationDialog } from './ImpersonationDialog';
 import { useGym } from '@/context/GymContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 
 export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const { isSuperadmin, activeGym, gyms, loading } = useGym();
+  const { isImpersonating, session } = useImpersonation();
+  const { user } = useUser();
+  const t = useTranslations('impersonation');
+  const [dialogOpen, setDialogOpen] = useState(false);
   // Superadmins always see the selector (they can jump to any gym); regular
   // users only see it when they belong to more than one, so a single-gym
   // admin/staff/coach isn't shown a pointless dropdown.
@@ -63,8 +72,41 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
         {showSelector && <GymSelector />}
         <CenterSelector />
         <LanguagePicker />
-        <UserButton />
+        {isSuperadmin && !isImpersonating && (
+          <button
+            onClick={() => setDialogOpen(true)}
+            style={{
+              padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 5, cursor: 'pointer',
+              background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.35)',
+              color: 'var(--gd-header-text, #fff)', whiteSpace: 'nowrap',
+            }}
+          >
+            {t('button_impersonate')}
+          </button>
+        )}
+        {isImpersonating ? (
+          <div
+            title={t('account_locked_hint')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'not-allowed',
+              opacity: 0.6, fontSize: 13, color: 'var(--gd-header-text, #fff)',
+            }}
+          >
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 14, fontWeight: 700,
+            }}>
+              {(user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? '?').charAt(0).toUpperCase()}
+            </div>
+          </div>
+        ) : (
+          <UserButton />
+        )}
       </div>
+
+      {dialogOpen && <ImpersonationDialog onClose={() => setDialogOpen(false)} />}
     </header>
   );
 }

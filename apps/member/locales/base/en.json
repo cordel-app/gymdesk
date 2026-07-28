@@ -162,5 +162,20 @@
       "monthly": "Monthly",
       "yearly": "Yearly"
     }
+  },
+  "impersonation": {
+    "impersonating_label": "You are impersonating:",
+    "signed_in_as": "Signed in as:",
+    "stop_button": "Stop Impersonating",
+    "stopped": "Impersonation ended.",
+    "button_impersonate": "Impersonate",
+    "dialog_title": "Impersonate a User",
+    "search_placeholder": "Search by name…",
+    "searching": "Searching…",
+    "search_empty": "No active users found.",
+    "type_member": "Member",
+    "type_staff": "Staff",
+    "cancel": "Cancel",
+    "error_start": "Could not start impersonation."
   }
 }

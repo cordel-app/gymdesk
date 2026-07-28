@@ -1867,6 +1867,16 @@
     "impersonating_label": "Esteu suplantant:",
     "signed_in_as": "Connectat com:",
     "stop_button": "Atura la suplantació",
-    "stopped": "Suplantació finalitzada."
+    "stopped": "Suplantació finalitzada.",
+    "button_impersonate": "Suplantar",
+    "dialog_title": "Suplantar un usuari",
+    "search_placeholder": "Cerca per nom…",
+    "searching": "Cercant…",
+    "search_empty": "No s'han trobat usuaris actius.",
+    "type_member": "Membre",
+    "type_staff": "Personal",
+    "cancel": "Cancel·lar",
+    "error_start": "No s'ha pogut iniciar la suplantació.",
+    "account_locked_hint": "Les accions del compte estan desactivades durant la suplantació"
   }
 }

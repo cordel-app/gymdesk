@@ -59,7 +59,7 @@ export default function TeamPage() {
   async function handleImpersonate(member: TeamMember) {
     if (!activeGymId || !member.user_id) return;
     try {
-      const res = await apiFetch<{ id: string; name: string; role: string; gym_id: string }>(
+      const res = await apiFetch<{ id: string; name: string; role: string; gym_id: string; gymIds: string[] }>(
         `/platform/impersonation/${member.user_id}`,
         { method: 'POST' },
       );
@@ -73,6 +73,7 @@ export default function TeamPage() {
         effectiveName: res.name,
         effectiveRole: res.role,
         gymId: res.gym_id,
+        gymIds: res.gymIds,
         authenticatorName,
         startedAt: Date.now(),
       });
