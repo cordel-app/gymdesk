@@ -22,7 +22,7 @@ interface Theme {
   gym_id: string | null;
   name: string;
   description: string | null;
-  status: 'draft' | 'active' | 'deleted';
+  status: 'draft' | 'active' | 'inactive' | 'deleted';
   is_base: boolean;
   has_logo: boolean;
   logo_updated_at: string | null;
@@ -38,7 +38,7 @@ interface AssignmentCenter {
 }
 
 interface Assignments {
-  is_org_default: boolean;
+  is_gym_default: boolean;
   centers: AssignmentCenter[];
 }
 
@@ -47,21 +47,74 @@ interface UnassignedCenter {
   name: string;
 }
 
-const STATUSES = ['draft', 'active', 'deleted'] as const;
+const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
-const COLOR_FIELDS: { key: keyof ThemeTokens['colors']; labelKey: string }[] = [
-  { key: 'appBackground',             labelKey: 'label_app_bg' },
-  { key: 'headerBackground',          labelKey: 'label_header_bg' },
-  { key: 'headerText',                labelKey: 'label_header_text' },
-  { key: 'headerSeparatorColor',      labelKey: 'label_header_sep_color' },
-  { key: 'sidebarBackground',         labelKey: 'label_sidebar_bg' },
-  { key: 'sidebarText',               labelKey: 'label_sidebar_text' },
-  { key: 'sidebarSelectedBackground', labelKey: 'label_sidebar_sel_bg' },
-  { key: 'sidebarSelectedText',       labelKey: 'label_sidebar_sel_text' },
+
+const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors']; labelKey: string }[] }[] = [
+  {
+    groupKey: 'group_application',
+    fields: [
+      { key: 'pageBackground',  labelKey: 'label_page_bg' },
+      { key: 'cardBackground',  labelKey: 'label_card_bg' },
+      { key: 'cardBorder',      labelKey: 'label_card_border' },
+    ],
+  },
+  {
+    groupKey: 'group_header',
+    fields: [
+      { key: 'headerBackground',     labelKey: 'label_header_bg' },
+      { key: 'headerText',           labelKey: 'label_header_text' },
+      { key: 'headerSeparatorColor', labelKey: 'label_header_sep_color' },
+    ],
+  },
+  {
+    groupKey: 'group_sidebar',
+    fields: [
+      { key: 'sidebarBackground',             labelKey: 'label_sidebar_bg' },
+      { key: 'sidebarText',                   labelKey: 'label_sidebar_text' },
+      { key: 'sidebarSelectedItemBackground', labelKey: 'label_sidebar_sel_bg' },
+      { key: 'sidebarSelectedItemText',       labelKey: 'label_sidebar_sel_text' },
+      { key: 'sidebarHoverBackground',        labelKey: 'label_sidebar_hover_bg' },
+    ],
+  },
+  {
+    groupKey: 'group_navigation',
+    fields: [
+      { key: 'dropdownBackground',      labelKey: 'label_dropdown_bg' },
+      { key: 'dropdownText',            labelKey: 'label_dropdown_text' },
+      { key: 'dropdownHoverBackground', labelKey: 'label_dropdown_hover_bg' },
+    ],
+  },
+  {
+    groupKey: 'group_buttons',
+    fields: [
+      { key: 'primaryButton',       labelKey: 'label_primary_btn' },
+      { key: 'primaryButtonText',   labelKey: 'label_primary_btn_text' },
+      { key: 'secondaryButton',     labelKey: 'label_secondary_btn' },
+      { key: 'secondaryButtonText', labelKey: 'label_secondary_btn_text' },
+    ],
+  },
+  {
+    groupKey: 'group_status',
+    fields: [
+      { key: 'statusSuccess', labelKey: 'label_status_success' },
+      { key: 'statusWarning', labelKey: 'label_status_warning' },
+      { key: 'statusError',   labelKey: 'label_status_error' },
+      { key: 'statusInfo',    labelKey: 'label_status_info' },
+    ],
+  },
+  {
+    groupKey: 'group_links',
+    fields: [
+      { key: 'linkColor',      labelKey: 'label_link_color' },
+      { key: 'linkHoverColor', labelKey: 'label_link_hover_color' },
+    ],
+  },
 ];
 
 type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments' | 'advanced';
-const ALL_SECTIONS: SectionKey[] = ['branding', 'typography', 'colors', 'assignments', 'advanced'];
+// Assignments first, then Branding → Colors → Typography → Advanced
+const ALL_SECTIONS: SectionKey[] = ['assignments', 'branding', 'colors', 'typography', 'advanced'];
 const CENTERS_INITIAL_LIMIT = 10;
 
 const emptyForm = { name: '', description: '', tokens: DEFAULT_TOKENS };
@@ -82,13 +135,15 @@ export default function GymThemesPage() {
   const [statusFilter, setStatusFilter] = useState('');
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['branding']));
+  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['assignments']));
   const [editForm, setEditForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [tokenSaving, setTokenSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [statusSaving, setStatusSaving] = useState<string | null>(null);
 
@@ -141,7 +196,7 @@ export default function GymThemesPage() {
   function openExpand(theme: Theme) {
     if (expandedId === theme.id) { setExpandedId(null); return; }
     setExpandedId(theme.id);
-    setOpenSections(theme.is_base ? new Set<SectionKey>(['assignments']) : new Set<SectionKey>(['branding']));
+    setOpenSections(new Set<SectionKey>(['assignments']));
     setEditForm({ name: theme.name, description: theme.description ?? '', tokens: theme.tokens ?? DEFAULT_TOKENS });
     setEditError(null);
     setEditLogoFile(null);
@@ -243,14 +298,32 @@ export default function GymThemesPage() {
     }
   }
 
-  async function handleSave(theme: Theme) {
+  function scheduleTokenSave(tokens: ThemeTokens) {
+    if (!expandedId) return;
+    if (tokenSaveTimer.current) clearTimeout(tokenSaveTimer.current);
+    tokenSaveTimer.current = setTimeout(async () => {
+      setTokenSaving(true);
+      try {
+        await apiFetch(`/system/themes/${expandedId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ tokens }),
+        });
+      } catch (err: any) {
+        toast(err.message ?? t('error_generic'));
+      } finally {
+        setTokenSaving(false);
+      }
+    }, 600);
+  }
+
+  async function handleBrandingSave(theme: Theme) {
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
     setSaving(true);
     setEditError(null);
     try {
       await apiFetch(`/system/themes/${theme.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null, tokens: editForm.tokens }),
+        body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null }),
       });
       if (editLogoFile) {
         const token = await getToken();
@@ -264,7 +337,6 @@ export default function GymThemesPage() {
           throw new Error(json.error ?? 'Logo upload failed');
         }
       }
-      setExpandedId(null);
       await Promise.all([load(), refreshGyms()]);
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
@@ -351,6 +423,7 @@ export default function GymThemesPage() {
   }
 
   function renderAssignmentsContent(theme: Theme) {
+    const canAssign = theme.status === 'active';
     if (assignmentsLoading || !assignments) {
       return <p style={{ color: '#888', fontSize: 14 }}>{t('loading')}</p>;
     }
@@ -358,9 +431,16 @@ export default function GymThemesPage() {
     const visibleCenters = showAllCenters ? filteredCenters : filteredCenters.slice(0, CENTERS_INITIAL_LIMIT);
     return (
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid #eee', marginBottom: 16 }}>
-          <input type="checkbox" id={`org-default-${theme.id}`} checked={assignments.is_org_default} disabled={assignments.is_org_default || settingDefault} onChange={() => !assignments.is_org_default && handleSetDefault(theme.id)} style={{ width: 16, height: 16, cursor: assignments.is_org_default ? 'default' : 'pointer' }} />
-          <label htmlFor={`org-default-${theme.id}`} style={{ fontSize: 14, fontWeight: 500, cursor: assignments.is_org_default ? 'default' : 'pointer' }}>{t('assign_org_default')}</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid #eee', marginBottom: 16, opacity: canAssign ? 1 : 0.5 }}>
+          <input
+            type="checkbox"
+            id={`gym-default-${theme.id}`}
+            checked={assignments.is_gym_default}
+            disabled={assignments.is_gym_default || settingDefault || !canAssign}
+            onChange={() => canAssign && !assignments.is_gym_default && handleSetDefault(theme.id)}
+            style={{ width: 16, height: 16, cursor: (assignments.is_gym_default || !canAssign) ? 'default' : 'pointer' }}
+          />
+          <label htmlFor={`gym-default-${theme.id}`} style={{ fontSize: 14, fontWeight: 500, cursor: (assignments.is_gym_default || !canAssign) ? 'default' : 'pointer' }}>{t('assign_gym_default')}</label>
         </div>
         <div style={{ marginBottom: 8 }}>
           <p style={{ margin: '0 0 10px', fontWeight: 600, fontSize: 14 }}>{t('assign_centers_title')} ({assignments.centers.length})</p>
@@ -391,7 +471,14 @@ export default function GymThemesPage() {
           )}
         </div>
         <div style={{ marginTop: 12 }}>
-          <button onClick={() => openPicker(theme.id)} style={btnSmall('#6c63ff')}>{t('assign_centers_btn')}</button>
+          <button
+            onClick={() => openPicker(theme.id)}
+            disabled={!canAssign}
+            title={canAssign ? undefined : tStatus('active')}
+            style={{ ...btnSmall('#6c63ff'), opacity: canAssign ? 1 : 0.5, cursor: canAssign ? 'pointer' : 'not-allowed' }}
+          >
+            {t('assign_centers_btn')}
+          </button>
         </div>
       </div>
     );
@@ -409,6 +496,8 @@ export default function GymThemesPage() {
         {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
 
         <div style={{ marginTop: 12 }}>
+          {sections.includes('assignments') && renderSection(t('section_assignments'), 'assignments', renderAssignmentsContent(theme))}
+
           {sections.includes('branding') && renderSection(t('section_branding'), 'branding', (
             <div>
               <FormLabel>{t('label_name')}</FormLabel>
@@ -430,61 +519,113 @@ export default function GymThemesPage() {
                 )}
               </div>
               <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
-            </div>
-          ))}
-
-          {sections.includes('typography') && renderSection(t('section_typography'), 'typography', (
-            <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_level')}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
-              {TYPO_LEVELS.map((lv) => {
-                const typo = editForm.tokens.typography[lv];
-                return (
-                  <>
-                    <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
-                    <select key={`${lv}-font`} value={typo.fontFamily} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } } })} style={selectStyle}>
-                      {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                    </select>
-                    <input key={`${lv}-color`} type="color" value={typo.color} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, color: e.target.value } } } })} style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }} />
-                  </>
-                );
-              })}
+              <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
+                <button onClick={() => handleBrandingSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>{saving ? t('saving') : t('save_changes')}</button>
+              </div>
             </div>
           ))}
 
           {sections.includes('colors') && renderSection(t('section_colors'), 'colors', (
             <div>
-              {COLOR_FIELDS.map(({ key, labelKey }) => (
-                <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
-                  <input type="color" value={editForm.tokens.colors[key] as string} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, colors: { ...editForm.tokens.colors, [key]: e.target.value } } })} style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }} />
+              {COLOR_GROUPS.map(({ groupKey, fields }) => (
+                <div key={groupKey} style={{ marginBottom: 20 }}>
+                  <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
+                  {fields.map(({ key, labelKey }) => (
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
+                      <input
+                        type="color"
+                        value={editForm.tokens.colors[key] as string}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, [key]: e.target.value } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+                      />
+                    </div>
+                  ))}
                 </div>
               ))}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-                <input type="number" min={0} max={20} value={editForm.tokens.colors.headerSeparatorHeight} onChange={(e) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } } })} style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }} />
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={editForm.tokens.colors.headerSeparatorHeight}
+                  onChange={(e) => {
+                    const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } };
+                    setEditForm({ ...editForm, tokens: next });
+                    scheduleTokenSave(next);
+                  }}
+                  style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
+                />
               </div>
+              {tokenSaving && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
             </div>
           ))}
 
-          {sections.includes('assignments') && renderSection(t('section_assignments'), 'assignments', renderAssignmentsContent(theme))}
+          {sections.includes('typography') && renderSection(t('section_typography'), 'typography', (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_level')}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
+                {TYPO_LEVELS.map((lv) => {
+                  const typo = editForm.tokens.typography[lv];
+                  return (
+                    <>
+                      <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
+                      <select
+                        key={`${lv}-font`}
+                        value={typo.fontFamily}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={selectStyle}
+                      >
+                        {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                      </select>
+                      <input
+                        key={`${lv}-color`}
+                        type="color"
+                        value={typo.color}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, color: e.target.value } } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+                      />
+                    </>
+                  );
+                })}
+              </div>
+              {tokenSaving && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
+            </div>
+          ))}
 
           {renderSection(t('section_advanced'), 'advanced', (
-            <ThemeAdvancedSection
-              advanced={advanced}
-              onChange={(next) => setEditForm({ ...editForm, tokens: { ...editForm.tokens, advanced: next } })}
-              namespace="gym_themes"
-            />
+            <div>
+              <ThemeAdvancedSection
+                advanced={advanced}
+                onChange={(next) => {
+                  const tokens = { ...editForm.tokens, advanced: next };
+                  setEditForm({ ...editForm, tokens });
+                  if (!isBase) scheduleTokenSave(tokens);
+                }}
+                namespace="gym_themes"
+              />
+              {tokenSaving && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
+            </div>
           ))}
         </div>
 
-        {!isBase ? (
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-            <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={() => handleSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>{saving ? t('saving') : t('save_changes')}</button>
-          </div>
-        ) : (
+        {isBase && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
             <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
           </div>
@@ -500,11 +641,18 @@ export default function GymThemesPage() {
 
     const menuItems: ContextMenuItem[] = [
       { label: t('clone'), onClick: () => openClone(theme) },
-      { label: t('details'), onClick: () => setDetails(theme) },
     ];
     if (!isDeleted && !theme.is_base) {
+      if (theme.status === 'draft' || theme.status === 'inactive') {
+        menuItems.push({ label: t('action_activate'), onClick: () => handleStatusChange(theme, 'active') });
+      }
+      if (theme.status === 'active') {
+        menuItems.push({ label: t('action_set_draft'), onClick: () => handleStatusChange(theme, 'draft') });
+        menuItems.push({ label: t('action_set_inactive'), onClick: () => handleStatusChange(theme, 'inactive') });
+      }
       menuItems.push({ label: t('delete'), onClick: () => setDeleting(theme), danger: true });
     }
+    menuItems.push({ label: t('details'), onClick: () => setDetails(theme) });
 
     return (
       <div key={theme.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
@@ -536,27 +684,12 @@ export default function GymThemesPage() {
           </div>
 
           <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-            {([colors?.sidebarSelectedBackground, colors?.headerBackground, colors?.appBackground] as (string | undefined)[]).map((c, i) => (
+            {([colors?.sidebarSelectedItemBackground, colors?.headerBackground, colors?.pageBackground] as (string | undefined)[]).map((c, i) => (
               <div key={i} title={['Primary', 'Secondary', 'Background'][i]} style={{ width: 18, height: 18, borderRadius: 3, background: c ?? '#ccc', border: '1px solid #ddd' }} />
             ))}
           </div>
 
-          {!theme.is_base && !isDeleted && (
-            <div onClick={(e) => e.stopPropagation()}>
-              <select
-                value={theme.status}
-                disabled={statusSaving === theme.id}
-                onChange={(e) => handleStatusChange(theme, e.target.value)}
-                style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ddd', fontSize: 12, cursor: 'pointer', background: '#fff' }}
-              >
-                {(['draft', 'active'] as const).map((s) => (
-                  <option key={s} value={s}>{tStatus(s)}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {theme.is_base && <StatusBadge status={theme.status} label={tStatus(theme.status)} />}
+          <StatusBadge status={theme.status} label={tStatus(theme.status)} />
 
           {!isDeleted && (
             <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>

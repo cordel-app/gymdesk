@@ -55,7 +55,7 @@ export function ThemeAdvancedSection({ advanced, onChange, namespace }: Props) {
                   <div key={attr.key} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{t(attr.labelKey as any)}</div>
-                      {!custom && (
+                      {!custom && attr.type !== 'color' && (
                         <div style={{ fontSize: 11, color: '#aaa' }}>{String(inherited)}</div>
                       )}
                     </div>
@@ -80,6 +80,13 @@ export function ThemeAdvancedSection({ advanced, onChange, namespace }: Props) {
                         >
                           {attr.options!.map((o) => <option key={o} value={o}>{o}</option>)}
                         </select>
+                      ) : attr.type === 'color' ? (
+                        <input
+                          type="color"
+                          value={String(value)}
+                          onChange={(e) => set(attr.key, e.target.value)}
+                          style={{ width: 40, height: 30, border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+                        />
                       ) : (
                         <input
                           type="text"
