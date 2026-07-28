@@ -244,7 +244,7 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
 
   // Block status downgrade when theme is assigned
   if (status === 'draft' || status === 'inactive') {
-    const { isGymDefault, centerCount } = await checkThemeProtected(req.params.id);
+    const { isGymDefault, centerCount } = await checkThemeProtected(req.params.id as string);
     if (isGymDefault) {
       return res.status(409).json({
         error: `This Theme cannot be marked as ${status === 'draft' ? 'Draft' : 'Inactive'} because it is configured as the Gym Default Theme.`,
@@ -388,7 +388,7 @@ themesRouter.delete('/:id', requireSuperadmin, async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
   if (existing[0].deleted_at) return res.status(409).json({ error: 'Theme is already deleted' });
 
-  const { isGymDefault, centerCount } = await checkThemeProtected(req.params.id);
+  const { isGymDefault, centerCount } = await checkThemeProtected(req.params.id as string);
   if (isGymDefault) {
     return res.status(409).json({ error: 'This Theme cannot be deleted because it is configured as the Gym Default Theme.' });
   }
