@@ -11,9 +11,9 @@ Engineering quality backlog (tests, typing, helpers, member-app gap analysis) li
 `docs/tech-debt.md` as a **map** of GitHub issues (#81–#86) — same model as this roadmap.
 Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub issue body.
 
-## Status (2026-07-23)
+## Status (2026-07-28)
 
-- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154, #156 (RBAC permission matrix — 7 granular roles + module gates), #157 (Membership Plans inline editing, Details modal, Duplicate action, Created By/At columns, paused enrollment status), #159 (move Payment Providers to Financials), #160 (Training Plans UX: Conclude Plan action, list columns, expired validation, Details dialog fixes), #161 (Specialities UX alignment), #164 (Training Plan workout builder parity with Workout Templates), #158 (Promotions management UX: Edit action in context menu, read-only rows, restructured list columns with Type/Value/Period/Created By, expanded Details modal with full audit info), #177 (pino structured logging), #178 (promtail config files — deploy to VPS to activate), #162 (Meals sub-entities UX alignment), #163 (Nutrition Library + redesigned Nutrition Plan Templates), #189 (User Impersonation UX v2: header Impersonate button + search dialog in admin and member apps; full member app support with AdminBar, ImpersonationBanner, MemberImpersonationDialog; account action lockout during impersonation; gym selector restricted to impersonated user's gyms via gymIds; all /me/* handlers use effectiveUserId from TenantContext; GET /platform/impersonation/candidates endpoint; impersonation.test.ts with 19 tests).
+- **Done**: Phase M (#45–#49, MySQL cutover 2026-07-04), P0.1–P0.3, P1.1–P1.8, P2.1–P2.8, P3.1–P3.4, P4.1–P4.5, P5.1–P5.6, P6.1–P6.3, #114, #117, #120, #121, #123, #124, #127, #129, #131, #132, #135, #144, #154, #156 (RBAC permission matrix — 7 granular roles + module gates), #157 (Membership Plans inline editing, Details modal, Duplicate action, Created By/At columns, paused enrollment status), #159 (move Payment Providers to Financials), #160 (Training Plans UX: Conclude Plan action, list columns, expired validation, Details dialog fixes), #161 (Specialities UX alignment), #164 (Training Plan workout builder parity with Workout Templates), #158 (Promotions management UX: Edit action in context menu, read-only rows, restructured list columns with Type/Value/Period/Created By, expanded Details modal with full audit info), #177 (pino structured logging), #178 (promtail config files — deploy to VPS to activate), #162 (Meals sub-entities UX alignment), #163 (Nutrition Library + redesigned Nutrition Plan Templates), #188 (Theme Model v2 + Editor UX: color token hard-switch to v2 shape with 26 grouped colors + dropdownBackground + modalBackground advanced field; inactive lifecycle status; StatusBadge in table row + context menu for status changes; auto-save for Colors/Typography/Advanced; explicit Save/Cancel only for Branding section; protection guard blocks draft/inactive/delete when assigned; assign/set-default gated to active themes only; renamed org_default → gym_default), #189 (User Impersonation UX v2: header Impersonate button + search dialog in admin and member apps; full member app support with AdminBar, ImpersonationBanner, MemberImpersonationDialog; account action lockout during impersonation; gym selector restricted to impersonated user's gyms via gymIds; all /me/* handlers use effectiveUserId from TenantContext; GET /platform/impersonation/candidates endpoint; impersonation.test.ts with 19 tests).
 - **Training module redesign (#60–#63, done)**: dynamic Workout Block form driven by
   `blockFieldConfig.ts` (#60); tree-grid Training Plan Template editor (#61); dependency
   awareness for shared catalog entities (#62); tree-grid Workout Template editor with
@@ -123,7 +123,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   (hidden until a gym has >1 center). Member app: `GET /me/centers` + an optional
   center switcher, hidden for the single-center case. **Phase 7 (#39–#41) is superseded
   and closed** — its `gym_locations`/nullable-FK design was never implemented.
-- **Deferred**: Phase 8 (Stripe payments).
+- **Phase 8 — MONEI payments (active, replacing deferred Stripe plan)**: provider abstraction + DB migrations (#179, #180), API routers + isolated payment page token endpoint (#181), admin MemberPaymentsModal (#182), member payment banner + success/error pages (#183), isolated payment page app at `pay.vdicube.com` (#204), infra/Docker for the payment container (#205), recurring MIT billing run (#184), cash payment recording + fiscal receipt (#185).
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
 - Legacy cleanup complete: `/fares` and `/subscriptions` routers + the old
@@ -141,7 +141,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
 - **Multi-location (updated 2026-07-15)**: shipped as **Phase 9 — Centers (#59)**, superseding
   the deferred Phase 7 `gym_locations` design (never built). `Center` is the single location
   concept; `Gym` remains the tenant boundary.
-- **Payments**: internal `billing_events` ledger first (staff-recorded); Stripe is Phase 8.
+- **Payments**: internal `billing_events` ledger first (staff-recorded); MONEI is the active PSP for Phase 8 (replaced Stripe/Paycomet). Gymdesk owns all subscription logic; MONEI only tokenizes and charges. PCI scope minimized via isolated `fitness-payment` container at `pay.vdicube.com`.
 - `fares` → `membership_plans` and `subscriptions` → `user_memberships` **evolve in place**
   with data-carrying migrations; old routes/pages are replaced.
 - Trainers are existing `coach`-role rows in `gym_memberships`; trainer data (specialities)
@@ -265,12 +265,20 @@ Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https:/
 | Centers/Resources/Events admin UI + Member center assignment | [#59](https://github.com/cordel-app/gymdesk/issues/59) | L | backend |
 | Member app center plumbing | [#59](https://github.com/cordel-app/gymdesk/issues/59) | S | backend |
 
-### Phase 8 — Stripe payments (deferred)
+### Phase 8 — MONEI payments
 | Ticket | Issue | Size | Depends on |
 |---|---|---|---|
-| P8.1 billing_provider_events + webhook endpoint | [#42](https://github.com/cordel-app/gymdesk/issues/42) | M | #10 |
-| P8.2 Sync members/plans to Stripe | [#43](https://github.com/cordel-app/gymdesk/issues/43) | L | #42 |
-| P8.3 Process Stripe webhooks into the ledger | [#44](https://github.com/cordel-app/gymdesk/issues/44) | L | #43 #10 |
+| P8.1 Payment provider abstraction layer (MoneiProvider) | [#179](https://github.com/cordel-app/gymdesk/issues/179) | M | — |
+| P8.2 DB migrations — payment_methods + payment_requests | [#180](https://github.com/cordel-app/gymdesk/issues/180) | S | #179 |
+| P8.3 payment-requests + payment-page token + webhooks API | [#181](https://github.com/cordel-app/gymdesk/issues/181) | M | #179 #180 |
+| P8.4 Isolated payment page app (vanilla JS + Monei iframe) | [#204](https://github.com/cordel-app/gymdesk/issues/204) | M | #179 #181 |
+| P8.5 Infra — Docker + deploy for fitness-payment container | [#205](https://github.com/cordel-app/gymdesk/issues/205) | S | #204 |
+| P8.6 Admin app — MemberPaymentsModal + payment-providers page | [#182](https://github.com/cordel-app/gymdesk/issues/182) | M | #181 |
+| P8.7 Member app — payment banner, success and error pages | [#183](https://github.com/cordel-app/gymdesk/issues/183) | M | #181 |
+| P8.8 Recurring billing run — MIT charges | [#184](https://github.com/cordel-app/gymdesk/issues/184) | M | #179 #180 #181 |
+| P8.9 Cash payment recording + fiscal receipt generation | [#185](https://github.com/cordel-app/gymdesk/issues/185) | M | #182 |
+
+_(Old Stripe tickets #42–#44 are closed and superseded by this phase.)_
 
 ## Member app follow-ups (spike #85, 2026-07-19)
 
@@ -286,6 +294,6 @@ Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https:/
 
 ## Critical path
 
-- **Billing**: P1.1 → P1.5 → P1.6 — the ledger unblocks packages (Phase 3), promotions (Phase 4), and Stripe (Phase 8).
+- **Billing**: P1.1 → P1.5 → P1.6 — the ledger unblocks packages (Phase 3), promotions (Phase 4), and MONEI payments (Phase 8).
 - **Classes**: P2.3 → P2.4 → P2.5 — the session model unblocks everything class-related.
 - Phases 3, 4, and 5 are parallelizable once their Phase 1/2 dependencies land.

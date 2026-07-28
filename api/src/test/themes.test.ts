@@ -197,9 +197,76 @@ describe('POST /platform/themes', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .send({
         name: 'Test Base Theme Bad Tokens',
-        tokens: { colors: { appBackground: 'not-a-hex' } },
+        tokens: { colors: { pageBackground: 'not-a-hex' } },
       });
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── PUT /platform/themes/:id ────────────────────────────────────────────────
+
+describe('PUT /platform/themes/:id', () => {
+  let putThemeId: string;
+
+  beforeAll(async () => {
+    mockAsSuperadmin();
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme PUT' });
+    putThemeId = res.body.id;
+  });
+
+  it('accepts inactive as a valid status', async () => {
+    const res = await request
+      .put(`/platform/themes/${putThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ status: 'inactive' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('inactive');
+  });
+
+  it('accepts active as a valid status', async () => {
+    const res = await request
+      .put(`/platform/themes/${putThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ status: 'active' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
+  });
+
+  it('blocks setting draft when theme is assigned as gym default (409)', async () => {
+    // Assign as gym default directly in DB
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [putThemeId, gymId]);
+    try {
+      const res = await request
+        .put(`/platform/themes/${putThemeId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .send({ status: 'draft' });
+      expect(res.status).toBe(409);
+    } finally {
+      await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+    }
+  });
+
+  it('blocks setting inactive when theme is assigned to a center (409)', async () => {
+    // Get a center for the gym
+    const { rows: centerRows } = await db.query<{ id: string }>(
+      'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL LIMIT 1',
+      [gymId],
+    );
+    if (centerRows.length === 0) return; // skip if no centers
+    const centerId = centerRows[0].id;
+    await db.query('UPDATE centers SET theme_id = ? WHERE id = ?', [putThemeId, centerId]);
+    try {
+      const res = await request
+        .put(`/platform/themes/${putThemeId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .send({ status: 'inactive' });
+      expect(res.status).toBe(409);
+    } finally {
+      await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
+    }
   });
 });
 
