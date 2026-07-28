@@ -26,7 +26,7 @@ Use `/plan` to generate a structured implementation plan before coding. Use the 
 - All config via environment variables. No hardcoded values.
 - Backend-first: define the API contract before building UI.
 - Do not duplicate business logic in the frontend.
-- Card payments: follow `docs/decisions.md` §4 (Paycomet epic #179–#185; do not implement superseded Stripe #42–#44).
+- Card payments: follow `docs/decisions.md` §4 (Monei epic #179–#185; do not implement superseded Stripe #42–#44).
 
 ## Local development
 

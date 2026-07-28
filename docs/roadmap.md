@@ -122,7 +122,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   (hidden until a gym has >1 center). Member app: `GET /me/centers` + an optional
   center switcher, hidden for the single-center case. **Phase 7 (#39–#41) is superseded
   and closed** — its `gym_locations`/nullable-FK design was never implemented.
-- **In progress / next**: card payments via **Paycomet** (#179–#185). Phase 8 Stripe (#42–#44) superseded — do not implement.
+- **In progress / next**: card payments via **Monei** (#179–#185). Phase 8 Stripe (#42–#44) superseded — do not implement.
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
 - Legacy cleanup complete: `/fares` and `/subscriptions` routers + the old
@@ -140,7 +140,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
 - **Multi-location (updated 2026-07-15)**: shipped as **Phase 9 — Centers (#59)**, superseding
   the deferred Phase 7 `gym_locations` design (never built). `Center` is the single location
   concept; `Gym` remains the tenant boundary.
-- **Payments (updated 2026-07-26)**: internal `billing_events` ledger first (staff-recorded); card provider track is **Paycomet** via #179–#185 (abstraction → tokens/requests → webhooks → admin/member UX → MIT → cash+fiscal). Stripe Phase 8 (#42–#44) is **superseded**.
+- **Payments (updated 2026-07-28)**: internal `billing_events` ledger first (staff-recorded); card provider track is **Monei** via #179–#185 (abstraction → tokens/requests → webhooks → admin/member UX → MIT → cash+fiscal). Stripe Phase 8 (#42–#44) is **superseded**.
 - `fares` → `membership_plans` and `subscriptions` → `user_memberships` **evolve in place**
   with data-carrying migrations; old routes/pages are replaced.
 - Trainers are existing `coach`-role rows in `gym_memberships`; trainer data (specialities)
@@ -264,9 +264,9 @@ Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https:/
 | Centers/Resources/Events admin UI + Member center assignment | [#59](https://github.com/cordel-app/gymdesk/issues/59) | L | backend |
 | Member app center plumbing | [#59](https://github.com/cordel-app/gymdesk/issues/59) | S | backend |
 
-### Phase 8 — Card payments (Paycomet) — supersedes Stripe plan
+### Phase 8 — Card payments (Monei) — supersedes Stripe plan
 
-Former Stripe tickets [#42](https://github.com/cordel-app/gymdesk/issues/42)–[#44](https://github.com/cordel-app/gymdesk/issues/44) are **superseded**. Implement the Paycomet epic instead:
+Former Stripe tickets [#42](https://github.com/cordel-app/gymdesk/issues/42)–[#44](https://github.com/cordel-app/gymdesk/issues/44) are **superseded**. Implement the Monei epic instead:
 
 | Ticket | Issue | Size | Depends on |
 |---|---|---|---|
@@ -292,6 +292,6 @@ Former Stripe tickets [#42](https://github.com/cordel-app/gymdesk/issues/42)–[
 
 ## Critical path
 
-- **Billing**: P1.1 → P1.5 → P1.6 — the ledger unblocks packages (Phase 3), promotions (Phase 4), and Paycomet payments (#179–#185).
+- **Billing**: P1.1 → P1.5 → P1.6 — the ledger unblocks packages (Phase 3), promotions (Phase 4), and Monei payments (#179–#185).
 - **Classes**: P2.3 → P2.4 → P2.5 — the session model unblocks everything class-related.
 - Phases 3, 4, and 5 are parallelizable once their Phase 1/2 dependencies land.
