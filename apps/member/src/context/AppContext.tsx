@@ -3,6 +3,8 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 
+const IMPERSONATION_KEY = 'impersonation_session';
+
 export interface MemberProfile {
   id: number;
   name: string;
@@ -36,6 +38,7 @@ interface AppContextValue {
   activeCenterId: number | null;
   setActiveCenterId: (id: number) => void;
   theme: MemberGymTheme | null;
+  isSuperadmin: boolean;
 }
 
 const AppContext = createContext<AppContextValue>({
@@ -47,6 +50,7 @@ const AppContext = createContext<AppContextValue>({
   activeCenterId: null,
   setActiveCenterId: () => {},
   theme: null,
+  isSuperadmin: false,
 });
 
 // gymId prop is kept for backward compat but is ignored — the provider
@@ -54,6 +58,7 @@ const AppContext = createContext<AppContextValue>({
 export function AppProvider({ children }: { children: ReactNode; gymId?: string | null }) {
   const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
+  const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
 
   const [gymId, setGymId] = useState<string | null>(null);
   const [theme, setTheme] = useState<MemberGymTheme | null>(null);
@@ -73,9 +78,22 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
       try {
         const token = await getToken();
 
+        // Read impersonation session so we can pass x-impersonate-as to GET /me/gym.
+        let impersonateAs: string | null = null;
+        try {
+          const stored = typeof window !== 'undefined' ? sessionStorage.getItem(IMPERSONATION_KEY) : null;
+          if (stored) {
+            const session = JSON.parse(stored);
+            impersonateAs = session?.effectiveUserId ?? null;
+          }
+        } catch {}
+
+        const gymHeaders: Record<string, string> = { Authorization: `Bearer ${token}` };
+        if (impersonateAs) gymHeaders['x-impersonate-as'] = impersonateAs;
+
         // #68: resolve gym + theme without knowing gymId upfront.
         const gymRes = await fetch('/api/proxy/me/gym', {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: gymHeaders,
         });
         if (!gymRes.ok) {
           setLoading(false);
@@ -125,7 +143,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }
 
   return (
-    <AppContext.Provider value={{ gymId, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme }}>
+    <AppContext.Provider value={{ gymId, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin }}>
       {children}
     </AppContext.Provider>
   );

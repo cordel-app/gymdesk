@@ -20,6 +20,12 @@ export interface TenantContext {
   /** Set when a superadmin is impersonating another user. */
   impersonatedUserId?: string;
   impersonatedActorName?: string | null;
+  /**
+   * The Clerk user ID to use for member data lookups.
+   * Equals impersonatedUserId during impersonation, otherwise equals userId.
+   * Use this (not userId) in /me/* handlers that query by clerk_user_id.
+   */
+  effectiveUserId: string;
 }
 
 declare global {
@@ -86,11 +92,12 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
         actorName,
         impersonatedUserId: impersonateAs,
         impersonatedActorName,
+        effectiveUserId: impersonateAs,
       };
       return next();
     }
 
-    req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true, actorName };
+    req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true, actorName, effectiveUserId: userId };
     return next();
   }
 
@@ -103,7 +110,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  req.tenantCtx = { userId, gymId, role: rows[0].role, gymMembershipId: rows[0].id, isSuperadmin: false, actorName };
+  req.tenantCtx = { userId, gymId, role: rows[0].role, gymMembershipId: rows[0].id, isSuperadmin: false, actorName, effectiveUserId: userId };
   next();
 }
 

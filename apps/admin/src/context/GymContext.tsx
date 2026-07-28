@@ -114,25 +114,33 @@ export function GymProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('activeGymId', id);
   }
 
-  const rawActiveGym = gyms.find((g) => g.id === activeGymId) ?? null;
-
-  // When a superadmin is impersonating, expose the effective user's role so
-  // nav gating and UI permission checks reflect the impersonated user's access.
-  const activeGym = rawActiveGym && typeof window !== 'undefined' ? (() => {
+  // When a superadmin is impersonating, filter gyms to the impersonated user's
+  // accessible gyms and expose the effective user's role for nav gating.
+  const { visibleGyms, rawActiveGym, activeGym } = (() => {
+    if (typeof window === 'undefined') {
+      const raw = gyms.find((g) => g.id === activeGymId) ?? null;
+      return { visibleGyms: gyms, rawActiveGym: raw, activeGym: raw };
+    }
     try {
       const stored = sessionStorage.getItem('impersonation_session');
       if (stored) {
         const session = JSON.parse(stored);
-        if (session?.gymId === rawActiveGym.id && session?.effectiveRole) {
-          return { ...rawActiveGym, role: session.effectiveRole as GymOption['role'] };
+        if (session?.gymIds?.length) {
+          const filtered = gyms.filter((g) => session.gymIds.includes(g.id));
+          const raw = filtered.find((g) => g.id === activeGymId) ?? filtered[0] ?? null;
+          const effective = raw && session.effectiveRole
+            ? { ...raw, role: session.effectiveRole as GymOption['role'] }
+            : raw;
+          return { visibleGyms: filtered, rawActiveGym: raw, activeGym: effective };
         }
       }
     } catch {}
-    return rawActiveGym;
-  })() : rawActiveGym;
+    const raw = gyms.find((g) => g.id === activeGymId) ?? null;
+    return { visibleGyms: gyms, rawActiveGym: raw, activeGym: raw };
+  })();
 
   return (
-    <GymContext.Provider value={{ gyms, activeGymId, activeGym, setActiveGymId, loading, isSuperadmin, refreshGyms: loadGyms }}>
+    <GymContext.Provider value={{ gyms: visibleGyms, activeGymId: rawActiveGym?.id ?? activeGymId, activeGym, setActiveGymId, loading, isSuperadmin, refreshGyms: loadGyms }}>
       {children}
     </GymContext.Provider>
   );

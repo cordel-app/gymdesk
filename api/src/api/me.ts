@@ -19,7 +19,22 @@ export const meLinkRouter = Router();
 export const meGymRouter = Router();
 
 meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  const userId = req.auth?.userId;
+  const callerUserId = req.auth?.userId;
+  if (!callerUserId) return res.status(401).json({ error: 'Unauthorized' });
+
+  // Support impersonation: if a superadmin sends x-impersonate-as, resolve the
+  // target member's gym instead of the admin's own (non-existent) member row.
+  let lookupUserId = callerUserId;
+  const impersonateAs = req.headers['x-impersonate-as'] as string | undefined;
+  if (impersonateAs && impersonateAs !== callerUserId) {
+    try {
+      const caller = await clerkClient.users.getUser(callerUserId);
+      if ((caller.publicMetadata as any)?.platform_role === 'superadmin') {
+        lookupUserId = impersonateAs;
+      }
+    } catch { /* ignore — proceed with caller's own gym */ }
+  }
+
   try {
     const { rows } = await db.query(
       `SELECT g.id, g.name,
@@ -32,7 +47,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
        LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
        WHERE m.clerk_user_id = ? AND m.deleted_at IS NULL
        LIMIT 1`,
-      [userId],
+      [lookupUserId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'No gym found for this user' });
     const row = rows[0];
@@ -90,7 +105,7 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
 });
 
 meRouter.get('/profile', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
       `SELECT m.*, m.membership_plan_id AS fare_id,
@@ -98,7 +113,7 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
        FROM members m
        LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
        WHERE m.gym_id = ? AND m.clerk_user_id = ? AND m.deleted_at IS NULL`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
     res.json(rows[0]);
@@ -108,13 +123,13 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
 });
 
 meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const { phone } = req.body as { phone?: string };
   try {
     const { rowCount } = await db.query(
       `UPDATE members SET phone = COALESCE(?, phone)
        WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL`,
-      [phone ?? null, gymId, userId],
+      [phone ?? null, gymId, effectiveUserId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Member not found' });
     const { rows } = await db.query(
@@ -123,7 +138,7 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
        FROM members m
        LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
        WHERE m.gym_id = ? AND m.clerk_user_id = ? AND m.deleted_at IS NULL`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     res.json(rows[0]);
   } catch (err) {
@@ -134,7 +149,7 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
 // #59: the centers this member is assigned to, so the member app can
 // resolve a default and (if there's more than one) offer a switcher.
 meRouter.get('/centers', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
       `SELECT c.id, c.name, mc.is_default
@@ -143,7 +158,7 @@ meRouter.get('/centers', requireRole('member'), async (req: Request, res: Respon
        JOIN members m ON m.id = mc.member_id
        WHERE m.gym_id = ? AND m.clerk_user_id = ? AND mc.deleted_at IS NULL AND c.deleted_at IS NULL
        ORDER BY mc.is_default DESC, c.name ASC`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     res.json(rows);
   } catch (err) {
@@ -152,7 +167,7 @@ meRouter.get('/centers', requireRole('member'), async (req: Request, res: Respon
 });
 
 meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     // P2.5: joined via class_sessions + class_types (the flat classes table is gone).
     const { rows } = await db.query(
@@ -166,7 +181,7 @@ meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Respo
        JOIN members m ON m.id = b.member_id
        WHERE b.gym_id = ? AND m.clerk_user_id = ?
        ORDER BY cs.starts_at ASC`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     res.json(rows);
   } catch (err) {
@@ -184,11 +199,11 @@ meRouter.get('/bookings', requireRole('member'), async (req: Request, res: Respo
  *     lock icon rather than a Book button.
  */
 meRouter.get('/schedule', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     const { rows: memberRows } = await db.query(
       'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     if (memberRows.length === 0) return res.json([]);
     const memberId = memberRows[0].id;
@@ -251,13 +266,13 @@ meRouter.get('/schedule', requireRole('member'), async (req: Request, res: Respo
 
 /** Book self on a session. Returns the booking with booked/waitlisted status. */
 meRouter.post('/bookings', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const { class_session_id } = req.body;
   if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const { rows: memberRows } = await db.query(
       'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member profile not found' });
     const result = await bookMemberOnSession(gymId, memberRows[0].id, Number(class_session_id));
@@ -274,7 +289,7 @@ meRouter.post('/bookings', requireRole('member'), async (req: Request, res: Resp
  * render "expired" without duplicating the rule.
  */
 meRouter.get('/class-packages', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
       `SELECT ucp.id, ucp.sessions_remaining, ucp.expires_at, ucp.purchased_at, ucp.status,
@@ -284,7 +299,7 @@ meRouter.get('/class-packages', requireRole('member'), async (req: Request, res:
        JOIN members m ON m.id = ucp.member_id
        WHERE ucp.gym_id = ? AND m.clerk_user_id = ?
        ORDER BY ucp.purchased_at DESC`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     const shaped = rows.map((r: any) => {
       let status = r.status;
@@ -298,7 +313,7 @@ meRouter.get('/class-packages', requireRole('member'), async (req: Request, res:
 
 /** Cancel own booking. Rejected once the session has already started. */
 meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId, gymMembershipId } = getTenantContext(req);
+  const { gymId, effectiveUserId, gymMembershipId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
       `SELECT b.id, cs.starts_at
@@ -306,7 +321,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
        JOIN class_sessions cs ON cs.id = b.class_session_id
        JOIN members m ON m.id = b.member_id
        WHERE b.id = ? AND b.gym_id = ? AND m.clerk_user_id = ?`,
-      [req.params.id, gymId, userId],
+      [req.params.id, gymId, effectiveUserId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
     if (new Date(rows[0].starts_at) <= new Date()) {
@@ -326,11 +341,11 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
  * -> exercises).
  */
 meRouter.get('/training-plans', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     const { rows: memberRows } = await db.query(
       'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     if (memberRows.length === 0) return res.json([]);
     const memberId = memberRows[0].id;
@@ -345,11 +360,11 @@ meRouter.get('/training-plans', requireRole('member'), async (req: Request, res:
   } catch (err) { next(err); }
 });
 
-/** Resolves the caller's members.id, or throws a 404-shaped error if unlinked. */
-async function requireMemberId(gymId: string, userId: string): Promise<number> {
+/** Resolves the members.id for the given clerk_user_id, or throws a 404-shaped error if unlinked. */
+async function requireMemberId(gymId: string, effectiveUserId: string): Promise<number> {
   const { rows } = await db.query(
     'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
-    [gymId, userId],
+    [gymId, effectiveUserId],
   );
   if (rows.length === 0) throw Object.assign(new Error('Member profile not found'), { status: 404 });
   return rows[0].id;
@@ -360,14 +375,14 @@ async function requireMemberId(gymId: string, userId: string): Promise<number> {
  * WorkoutExercise that belongs to one of their own (non-deleted) TrainingPlans.
  */
 meRouter.post('/exercise-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const { workout_exercise_id, logged_date, notes, duration_seconds, skipped, sets } = req.body;
   if (!workout_exercise_id || !logged_date) {
     return res.status(400).json({ error: 'workout_exercise_id and logged_date are required' });
   }
   if (sets != null && !Array.isArray(sets)) return res.status(400).json({ error: 'sets must be an array' });
   try {
-    const memberId = await requireMemberId(gymId, userId);
+    const memberId = await requireMemberId(gymId, effectiveUserId);
     const { rows: weRows } = await db.query(
       `SELECT we.exercise_id FROM workout_exercises we
        JOIN workout_blocks wb ON wb.id = we.workout_block_id
@@ -414,11 +429,11 @@ meRouter.post('/exercise-logs', requireRole('member'), async (req: Request, res:
 
 /** #55: member edits their own log (ownership-checked). No DELETE route. */
 meRouter.put('/exercise-logs/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const { notes, duration_seconds, skipped, sets } = req.body;
   if (sets != null && !Array.isArray(sets)) return res.status(400).json({ error: 'sets must be an array' });
   try {
-    const memberId = await requireMemberId(gymId, userId);
+    const memberId = await requireMemberId(gymId, effectiveUserId);
     await db.transaction(async (tx) => {
       const { rowCount } = await tx.query(
         `UPDATE exercise_logs SET
@@ -457,10 +472,10 @@ meRouter.put('/exercise-logs/:id', requireRole('member'), async (req: Request, r
 
 /** #55: history for progress charts — filter by exercise id. */
 meRouter.get('/exercise-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const exerciseId = req.query.exercise as string | undefined;
   try {
-    const memberId = await requireMemberId(gymId, userId);
+    const memberId = await requireMemberId(gymId, effectiveUserId);
     const params: any[] = [gymId, memberId];
     let sql = `SELECT el.*, e.name AS exercise_name,
                       (SELECT JSON_ARRAYAGG(item) FROM (
@@ -484,13 +499,13 @@ meRouter.get('/exercise-logs', requireRole('member'), async (req: Request, res: 
  * from the block's own configuration — never trusted from the client.
  */
 meRouter.post('/workout-block-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const { workout_block_id, logged_date, started_at, finished_at, result_value, notes } = req.body;
   if (!workout_block_id || !logged_date) {
     return res.status(400).json({ error: 'workout_block_id and logged_date are required' });
   }
   try {
-    const memberId = await requireMemberId(gymId, userId);
+    const memberId = await requireMemberId(gymId, effectiveUserId);
     const { rows: blockRows } = await db.query(
       `SELECT wb.result_type FROM workout_blocks wb
        JOIN workouts w ON w.id = wb.workout_id
@@ -517,10 +532,10 @@ meRouter.post('/workout-block-logs', requireRole('member'), async (req: Request,
 
 /** #55: member edits their own block log (ownership-checked). No DELETE route. */
 meRouter.put('/workout-block-logs/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const { started_at, finished_at, result_value, notes } = req.body;
   try {
-    const memberId = await requireMemberId(gymId, userId);
+    const memberId = await requireMemberId(gymId, effectiveUserId);
     const { rowCount } = await db.query(
       `UPDATE workout_block_logs SET
         started_at = IF(?, ?, started_at), finished_at = IF(?, ?, finished_at),
@@ -544,9 +559,9 @@ meRouter.put('/workout-block-logs/:id', requireRole('member'), async (req: Reque
 
 /** #55: history list. */
 meRouter.get('/workout-block-logs', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
-    const memberId = await requireMemberId(gymId, userId);
+    const memberId = await requireMemberId(gymId, effectiveUserId);
     const { rows } = await db.query(
       'SELECT * FROM workout_block_logs WHERE gym_id = ? AND member_id = ? ORDER BY logged_date DESC, id DESC',
       [gymId, memberId],
@@ -560,7 +575,7 @@ meRouter.get('/workout-block-logs', requireRole('member'), async (req: Request, 
 
 /** P4.5: names of promotions applied to the caller's current membership, if any. */
 meRouter.get('/promotions', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
       `SELECT p.id, p.name, p.description
@@ -571,7 +586,7 @@ meRouter.get('/promotions', requireRole('member'), async (req: Request, res: Res
        WHERE ump.gym_id = ? AND m.clerk_user_id = ?
          AND ump.status = 'applied' AND um.status = 'active'
        ORDER BY ump.applied_at DESC`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -581,7 +596,7 @@ meRouter.get('/promotions', requireRole('member'), async (req: Request, res: Res
 // { membership: {...} | null } — null when the member has none, so the client
 // can render an empty state without treating 404 as an error.
 meRouter.get('/membership', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   try {
     // Prefer active > paused > any non-cancelled > most recent by starts_at.
     const { rows: mships } = await db.query(
@@ -597,7 +612,7 @@ meRouter.get('/membership', requireRole('member'), async (req: Request, res: Res
          FIELD(um.status, 'active','paused','expired','cancelled'),
          um.starts_at DESC
        LIMIT 1`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     if (!mships[0]) return res.json({ membership: null });
 
@@ -623,7 +638,7 @@ meRouter.get('/membership', requireRole('member'), async (req: Request, res: Res
 
 // P1.8: read-only paginated ledger for the caller's own member row.
 meRouter.get('/billing-events', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, effectiveUserId } = getTenantContext(req);
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 50), 10) || 50, 1), 200);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
@@ -632,7 +647,7 @@ meRouter.get('/billing-events', requireRole('member'), async (req: Request, res:
       `SELECT COUNT(*) AS total FROM billing_events be
        JOIN members m ON m.id = be.member_id
        WHERE be.gym_id = ? AND m.clerk_user_id = ?`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     const { rows } = await db.query(
       `SELECT be.id, be.user_membership_id, be.event_type, be.previous_status, be.new_status,
@@ -642,7 +657,7 @@ meRouter.get('/billing-events', requireRole('member'), async (req: Request, res:
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
        WHERE be.gym_id = ? AND m.clerk_user_id = ?
        ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
-      [gymId, userId],
+      [gymId, effectiveUserId],
     );
     res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
   } catch (err) {
