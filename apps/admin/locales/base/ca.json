@@ -1452,6 +1452,26 @@
     "saving": "Desant…",
     "save_changes": "Desa els Canvis"
   },
+  "event_bookings": {
+    "label_confirmed": "Membres confirmats",
+    "label_waitlist": "Llista d'espera",
+    "col_member": "Membre",
+    "col_booking_date": "Data de reserva",
+    "col_status": "Estat",
+    "col_position": "#",
+    "col_waiting_since": "En espera des de",
+    "col_actions": "Accions",
+    "add_member": "Afegir a l'esdeveniment",
+    "select_member": "Selecciona un membre…",
+    "remove": "Elimina",
+    "promote": "Promou",
+    "promote_disabled": "L'esdeveniment és ple",
+    "loading": "Carregant reserves…",
+    "empty_confirmed": "Sense reserves confirmades.",
+    "empty_waitlist": "Ningú a la llista d'espera.",
+    "confirm_remove": "Vols eliminar aquesta reserva?",
+    "error_generic": "Alguna cosa ha fallat."
+  },
   "gym_themes": {
     "title": "Temes",
     "loading": "Carregant…",

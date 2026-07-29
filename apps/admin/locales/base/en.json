@@ -1430,6 +1430,26 @@
     "saving": "Saving…",
     "save_changes": "Save Changes"
   },
+  "event_bookings": {
+    "label_confirmed": "Confirmed Members",
+    "label_waitlist": "Waiting List",
+    "col_member": "Member",
+    "col_booking_date": "Booking Date",
+    "col_status": "Status",
+    "col_position": "#",
+    "col_waiting_since": "Waiting Since",
+    "col_actions": "Actions",
+    "add_member": "Add to Event",
+    "select_member": "Select a member…",
+    "remove": "Remove",
+    "promote": "Promote",
+    "promote_disabled": "Event is at full capacity",
+    "loading": "Loading bookings…",
+    "empty_confirmed": "No confirmed bookings.",
+    "empty_waitlist": "No one on the waiting list.",
+    "confirm_remove": "Remove this booking?",
+    "error_generic": "Something went wrong."
+  },
   "gym_themes": {
     "title": "Themes",
     "loading": "Loading…",

@@ -1425,6 +1425,26 @@
     "saving": "Guardando…",
     "save_changes": "Guardar Cambios"
   },
+  "event_bookings": {
+    "label_confirmed": "Miembros confirmados",
+    "label_waitlist": "Lista de espera",
+    "col_member": "Miembro",
+    "col_booking_date": "Fecha de reserva",
+    "col_status": "Estado",
+    "col_position": "#",
+    "col_waiting_since": "En espera desde",
+    "col_actions": "Acciones",
+    "add_member": "Añadir al evento",
+    "select_member": "Selecciona un miembro…",
+    "remove": "Eliminar",
+    "promote": "Promover",
+    "promote_disabled": "El evento está lleno",
+    "loading": "Cargando reservas…",
+    "empty_confirmed": "Sin reservas confirmadas.",
+    "empty_waitlist": "Nadie en la lista de espera.",
+    "confirm_remove": "¿Eliminar esta reserva?",
+    "error_generic": "Algo salió mal."
+  },
   "gym_themes": {
     "title": "Temas",
     "loading": "Cargando…",
