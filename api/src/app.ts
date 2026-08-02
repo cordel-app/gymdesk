@@ -54,6 +54,7 @@ import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
 import { calendarEventsRouter } from './api/calendar-events';
+import { calendarEventSeriesRouter } from './api/calendar-event-series';
 import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
@@ -167,7 +168,8 @@ app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext
 app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), exerciseLogsRouter);
 app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), workoutBlockLogsRouter);
 app.use('/class-sessions',    requireAuth(), tenantContext, centerContext, requireModuleAccess('TRAINING'), classSessionsRouter);
-app.use('/calendar-events',  requireAuth(), tenantContext, requireModuleAccess('TRAINING'), calendarEventsRouter);
+app.use('/calendar-events',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), calendarEventsRouter);
+app.use('/calendar-event-series', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), calendarEventSeriesRouter);
 
 // NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionPlanTemplatesRouter);
