@@ -413,7 +413,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
     borderRadius: 8,
     padding: '10px 14px',
     marginBottom: 10,
-    background: '#fff',
+    background: 'var(--gd-card-bg, #ffffff)',
   };
 
   const showRounds = isBlockFieldVisible(type, 'rounds');

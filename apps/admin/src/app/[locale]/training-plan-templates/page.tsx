@@ -620,7 +620,7 @@ const sortBtnStyle = (active: boolean): React.CSSProperties => ({
 const cardStyle = (editing: boolean): React.CSSProperties => ({
   border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
   borderRadius: 10,
-  background: '#fff',
+  background: 'var(--gd-card-bg, #ffffff)',
   overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {

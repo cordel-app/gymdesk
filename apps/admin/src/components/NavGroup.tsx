@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CSSProperties } from 'react';
+import { CSSProperties, useState } from 'react';
 import { NavGroup as NavGroupType, NavItem as NavItemType } from '@/config/navigationGroups';
 
 interface NavGroupProps {
@@ -25,10 +25,12 @@ export function NavGroup({
 }: NavGroupProps) {
   const pathname = usePathname();
   const t = useTranslations();
+  const [hoveredHref, setHoveredHref] = useState<string | null>(null);
 
   function renderNavItem(item: NavItemType) {
     const active = pathname === item.href;
     const isParentOfActive = !!item.children && pathname.startsWith(item.href);
+    const hovered = hoveredHref === item.href && !active;
 
     return (
       <div key={item.href}>
@@ -38,12 +40,16 @@ export function NavGroup({
         <Link
           href={item.href}
           onClick={onNavigate}
+          onMouseEnter={() => setHoveredHref(item.href)}
+          onMouseLeave={() => setHoveredHref(null)}
           style={{
             display: 'block',
             padding: '10px 20px',
-            color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+            color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
             textDecoration: 'none',
-            background: active && !isParentOfActive ? 'rgba(255,255,255,0.1)' : 'transparent',
+            background: active && !isParentOfActive
+              ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))'
+              : hovered ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))' : 'transparent',
             borderLeft: active && !isParentOfActive ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
             fontWeight: active ? 600 : 400,
             fontSize: 15,
@@ -64,18 +70,23 @@ export function NavGroup({
   function renderChildNavItem(item: NavItemType) {
     const active = pathname === item.href;
     const isParentOfActive = !!item.children && pathname.startsWith(item.href);
+    const hovered = hoveredHref === item.href && !active;
 
     return (
       <div key={item.href}>
         <Link
           href={item.href}
           onClick={onNavigate}
+          onMouseEnter={() => setHoveredHref(item.href)}
+          onMouseLeave={() => setHoveredHref(null)}
           style={{
             display: 'block',
             padding: '8px 20px 8px 36px',
-            color: active ? '#fff' : 'rgba(255,255,255,0.6)',
+            color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
             textDecoration: 'none',
-            background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+            background: active
+              ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))'
+              : hovered ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))' : 'transparent',
             borderLeft: active ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
             fontWeight: active ? 600 : 400,
             fontSize: 14,
