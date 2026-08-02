@@ -355,6 +355,8 @@
     "archived": "Archived",
     "open": "Open",
     "closed": "Closed",
+    "public": "Public",
+    "staff_only": "Staff Only",
     "deleted": "Deleted",
     "completed": "Completed",
     "scheduled": "Scheduled",

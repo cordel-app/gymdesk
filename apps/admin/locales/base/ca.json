@@ -333,7 +333,9 @@
     "scheduled": "Programat",
     "archived": "Arxivat",
     "open": "Obert",
-    "closed": "Tancat"
+    "closed": "Tancat",
+    "public": "Públic",
+    "staff_only": "Només personal"
   },
   "plans": {
     "title": "Quotes",

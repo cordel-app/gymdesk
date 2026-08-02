@@ -333,6 +333,8 @@
     "archived": "Archivado",
     "open": "Abierto",
     "closed": "Cerrado",
+    "public": "Público",
+    "staff_only": "Solo personal",
     "under_maintenance": "En mantenimiento"
   },
   "plans": {

@@ -54,7 +54,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
   if (!userId) return null;
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    'SELECT id FROM gym_memberships WHERE gym_id = ? AND clerk_user_id = ? LIMIT 1',
+    'SELECT id FROM gym_memberships WHERE gym_id = ? AND user_id = ? LIMIT 1',
     [gymId, userId],
   );
   return rows.length > 0 ? rows[0].id : null;
@@ -177,12 +177,16 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   const { gymId } = getTenantContext(req);
   const { name, description, lifecycle_status, enrollment_status } = req.body;
 
-  const VALID_ENROLLMENT = ['open', 'closed', 'paused'];
+  const VALID_LIFECYCLE = ['draft', 'active', 'paused', 'inactive'];
+  const VALID_ENROLLMENT = ['public', 'staff_only', 'closed'];
+  if (lifecycle_status && !VALID_LIFECYCLE.includes(lifecycle_status)) {
+    return res.status(400).json({ error: 'Invalid lifecycle_status' });
+  }
   if (enrollment_status && !VALID_ENROLLMENT.includes(enrollment_status)) {
     return res.status(400).json({ error: 'Invalid enrollment_status' });
   }
-  if (enrollment_status === 'open' && lifecycle_status && lifecycle_status !== 'active') {
-    return res.status(400).json({ error: 'enrollment can only be opened when lifecycle_status is active' });
+  if (['public', 'staff_only'].includes(enrollment_status) && lifecycle_status && lifecycle_status !== 'active') {
+    return res.status(400).json({ error: 'enrollment can only be public or staff_only when lifecycle_status is active' });
   }
 
   const callerMemberId = await getCallerMembershipId(req);
@@ -336,12 +340,12 @@ membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res
     [req.params.id, gymId],
   );
   if (Number(active[0].n) > 0) {
-    return res.status(400).json({ error: 'Cannot archive a plan with active memberships.' });
+    return res.status(400).json({ error: 'Cannot deactivate a plan with active memberships.' });
   }
   const callerMemberId = await getCallerMembershipId(req);
   const { rowCount } = await db.query(
     `UPDATE membership_plans
-     SET lifecycle_status = 'archived', enrollment_status = 'closed', modified_at = NOW(), modified_by = ?
+     SET lifecycle_status = 'inactive', enrollment_status = 'closed', modified_at = NOW(), modified_by = ?
      WHERE id = ? AND gym_id = ? AND lifecycle_status = 'active' AND deleted_at IS NULL`,
     [callerMemberId, req.params.id, gymId],
   );
@@ -355,15 +359,15 @@ membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res
 membershipPlansRouter.put('/:id/enrollment', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { enrollment_status } = req.body;
-  if (!['open', 'closed', 'paused'].includes(enrollment_status)) {
-    return res.status(400).json({ error: 'enrollment_status must be open, closed, or paused' });
+  if (!['public', 'staff_only', 'closed'].includes(enrollment_status)) {
+    return res.status(400).json({ error: 'enrollment_status must be public, staff_only, or closed' });
   }
   const { rows: plan } = await db.query(
     'SELECT lifecycle_status FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],
   );
   if (plan.length === 0) return res.status(404).json({ error: 'Plan not found' });
-  if (enrollment_status === 'open' && plan[0].lifecycle_status !== 'active') {
+  if (['public', 'staff_only'].includes(enrollment_status) && plan[0].lifecycle_status !== 'active') {
     return res.status(400).json({ error: 'Cannot open enrollment on a non-active plan' });
   }
   const callerMemberId = await getCallerMembershipId(req);
