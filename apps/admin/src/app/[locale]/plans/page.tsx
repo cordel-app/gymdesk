@@ -46,8 +46,8 @@ interface Plan {
   id: number;
   name: string;
   description: string | null;
-  lifecycle_status: 'draft' | 'active' | 'archived';
-  enrollment_status: 'open' | 'closed' | 'paused';
+  lifecycle_status: 'draft' | 'active' | 'paused' | 'inactive';
+  enrollment_status: 'public' | 'staff_only' | 'closed';
   current_price: string | null;
   member_count: number;
   billing_policy: BillingPolicy | null;
@@ -61,8 +61,8 @@ interface Plan {
   deleted_at: string | null;
 }
 
-const LIFECYCLE_STATUSES = ['draft', 'active', 'archived'] as const;
-const ENROLLMENT_STATUSES = ['open', 'closed', 'paused'] as const;
+const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
+const ENROLLMENT_STATUSES = ['public', 'staff_only', 'closed'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 
@@ -487,7 +487,7 @@ export default function PlansPage() {
                   </div>
                   <div style={{ minWidth: 90, flexShrink: 0 }}>
                     <StatusBadge
-                      status={plan.enrollment_status === 'open' ? 'active' : plan.enrollment_status === 'paused' ? 'paused' : 'inactive'}
+                      status={plan.enrollment_status === 'public' ? 'active' : plan.enrollment_status === 'staff_only' ? 'paused' : 'inactive'}
                       label={t(`status.${plan.enrollment_status}`)}
                     />
                   </div>
@@ -659,7 +659,7 @@ export default function PlansPage() {
                 <span style={detailLabelStyle}>{t('plans.details_enrollment_status')}</span>
                 <div style={{ marginTop: 4 }}>
                   <StatusBadge
-                    status={detailsPlan.enrollment_status === 'open' ? 'active' : detailsPlan.enrollment_status === 'paused' ? 'paused' : 'inactive'}
+                    status={detailsPlan.enrollment_status === 'public' ? 'active' : detailsPlan.enrollment_status === 'staff_only' ? 'paused' : 'inactive'}
                     label={t(`status.${detailsPlan.enrollment_status}`)}
                   />
                 </div>
