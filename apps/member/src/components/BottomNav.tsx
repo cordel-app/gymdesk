@@ -2,27 +2,27 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { useApp } from '@/context/AppContext';
 
-// All planned tabs. A tab only renders once its feature ships (ENABLED_TABS):
-// schedule -> P2.8, membership -> P1.8, training -> P5.6, profile -> member profile page.
 const TABS = [
   { key: 'home', path: '', icon: '⌂' },
   { key: 'schedule', path: '/schedule', icon: '▦' },
   { key: 'membership', path: '/membership', icon: '✦' },
   { key: 'packages', path: '/packages', icon: '◈' },
   { key: 'training', path: '/training', icon: '⚑' },
+  { key: 'notifications', path: '/notifications', icon: '🔔' },
   { key: 'profile', path: '/profile', icon: '◉' },
 ] as const;
 
-const ENABLED_TABS: ReadonlyArray<(typeof TABS)[number]['key']> = ['home', 'schedule', 'membership', 'packages', 'training', 'profile'];
+const ENABLED_TABS: ReadonlyArray<(typeof TABS)[number]['key']> = ['home', 'schedule', 'membership', 'packages', 'training', 'notifications', 'profile'];
 
 export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations('nav');
+  const { unreadNotifications } = useApp();
 
-  // No nav chrome during the auth flow
   if (pathname.includes('/sign-in') || pathname.includes('/sign-up')) return null;
 
   const tabs = TABS.filter((tab) => ENABLED_TABS.includes(tab.key));
@@ -46,6 +46,7 @@ export function BottomNav() {
     }}>
       {tabs.map((tab) => {
         const active = isActive(tab.path);
+        const showBadge = tab.key === 'notifications' && unreadNotifications > 0;
         return (
           <button
             key={tab.key}
@@ -65,7 +66,20 @@ export function BottomNav() {
               fontSize: 12,
             }}
           >
-            <span style={{ fontSize: 20, lineHeight: 1 }}>{tab.icon}</span>
+            <span style={{ position: 'relative', fontSize: 20, lineHeight: 1 }}>
+              {tab.icon}
+              {showBadge && (
+                <span style={{
+                  position: 'absolute', top: -4, right: -6,
+                  background: '#ef4444', color: '#fff',
+                  borderRadius: 999, fontSize: 9, fontWeight: 700,
+                  padding: '1px 4px', minWidth: 14, textAlign: 'center',
+                  lineHeight: '14px',
+                }}>
+                  {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                </span>
+              )}
+            </span>
             {t(tab.key)}
           </button>
         );

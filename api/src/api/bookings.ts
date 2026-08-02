@@ -159,7 +159,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
 
     // Only a freed 'booked' slot promotes someone; cancelling a 'waitlisted'
     // booking doesn't create a new spot.
-    if (b.status !== 'booked') return { promoted: null };
+    if (b.status !== 'booked') return { promoted: null, promotedMemberId: null };
 
     const { rows: waitRows } = await tx.query(
       `SELECT id, member_id, waitlist_position FROM bookings
@@ -167,7 +167,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
        ORDER BY waitlist_position ASC LIMIT 1 FOR UPDATE`,
       [b.class_session_id],
     );
-    if (waitRows.length === 0) return { promoted: null };
+    if (waitRows.length === 0) return { promoted: null, promotedMemberId: null };
     await tx.query(
       "UPDATE bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
       [waitRows[0].id],
@@ -187,7 +187,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     const pc = await packageCredits();
     await pc.debitPackageIfClaimed(tx, waitRows[0].id, gymId);
 
-    return { promoted: waitRows[0].id };
+    return { promoted: waitRows[0].id, promotedMemberId: waitRows[0].member_id };
   });
 }
 

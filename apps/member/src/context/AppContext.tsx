@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 
 const IMPERSONATION_KEY = 'impersonation_session';
@@ -39,6 +39,8 @@ interface AppContextValue {
   setActiveCenterId: (id: number) => void;
   theme: MemberGymTheme | null;
   isSuperadmin: boolean;
+  unreadNotifications: number;
+  refreshUnreadCount: () => void;
 }
 
 const AppContext = createContext<AppContextValue>({
@@ -51,6 +53,8 @@ const AppContext = createContext<AppContextValue>({
   setActiveCenterId: () => {},
   theme: null,
   isSuperadmin: false,
+  unreadNotifications: 0,
+  refreshUnreadCount: () => {},
 });
 
 // gymId prop is kept for backward compat but is ignored — the provider
@@ -67,6 +71,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const [loading, setLoading] = useState(true);
   const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
     if (!isSignedIn || !user) {
@@ -127,6 +132,15 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
             const fallback = data.find((c) => c.is_default)?.id ?? data[0]?.id ?? null;
             setActiveCenterIdState(storedId && data.find((c) => c.id === storedId) ? storedId : fallback);
           }
+
+          // Fetch unread notification count
+          const notifRes = await fetch('/api/proxy/me/notifications/count', {
+            headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
+          });
+          if (notifRes.ok) {
+            const { unread } = await notifRes.json();
+            setUnreadNotifications(unread ?? 0);
+          }
         }
         // 403/404 means not linked yet — redirect handled by link/page.tsx
       } finally {
@@ -137,13 +151,27 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     loadAll();
   }, [isSignedIn, user?.id]);
 
+  const fetchUnreadCount = useCallback(async () => {
+    if (!gymId) return;
+    try {
+      const token = await getToken();
+      const res = await fetch('/api/proxy/me/notifications/count', {
+        headers: { Authorization: `Bearer ${token}`, 'x-gym-id': gymId },
+      });
+      if (res.ok) {
+        const { unread } = await res.json();
+        setUnreadNotifications(unread ?? 0);
+      }
+    } catch {}
+  }, [gymId, getToken]);
+
   function setActiveCenterId(id: number) {
     setActiveCenterIdState(id);
     if (gymId) localStorage.setItem(`activeCenterId:${gymId}`, String(id));
   }
 
   return (
-    <AppContext.Provider value={{ gymId, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin }}>
+    <AppContext.Provider value={{ gymId, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
       {children}
     </AppContext.Provider>
   );

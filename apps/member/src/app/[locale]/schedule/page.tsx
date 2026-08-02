@@ -8,12 +8,13 @@ import { useApiClient } from '@/lib/apiClient';
 
 interface Session {
   id: number;
-  class_type_id: number;
+  activity_type_id: number;
   class_type_name: string;
   class_type_description: string | null;
   starts_at: string;
   ends_at: string;
-  room_name: string | null;
+  space_name: string | null;
+  trainer_name: string | null;
   effective_capacity: number;
   booked_count: number;
   spots_left: number;
@@ -21,6 +22,7 @@ interface Session {
   my_waitlist_position: number | null;
   my_booking_id: number | null;
   access_locked: boolean;
+  can_cancel: boolean;
   kind: 'session';
 }
 
@@ -192,13 +194,14 @@ export default function MemberSchedulePage() {
                       )}
                     </div>
                     <div style={styles.name}>{s.class_type_name}</div>
-                    {s.room_name && <div style={styles.sub}>{s.room_name}</div>}
+                    {s.space_name && <div style={styles.sub}>{s.space_name}</div>}
+                    {s.trainer_name && <div style={styles.sub}>{s.trainer_name}</div>}
                     <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                      {s.access_locked ? null : myStatus && s.my_booking_id ? (
+                      {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
                         <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelSession(s.my_booking_id!, s.id)}>
                           {isBusy ? '…' : t('member_schedule.cancel_booking')}
                         </button>
-                      ) : spots > 0 ? (
+                      ) : myStatus ? null : spots > 0 ? (
                         <button style={styles.btnBook} disabled={isBusy} onClick={() => bookSession(s.id)}>
                           {isBusy ? '…' : t('member_schedule.book')}
                         </button>

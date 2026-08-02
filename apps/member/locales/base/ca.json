@@ -23,7 +23,8 @@
     "membership": "Quota",
     "packages": "Bons",
     "training": "Entreno",
-    "profile": "Perfil"
+    "profile": "Perfil",
+    "notifications": "Alertes"
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
@@ -118,6 +119,20 @@
     "event_booked": "Tens plaça a l'esdeveniment.",
     "event_waitlisted": "Afegit a la llista d'espera de l'esdeveniment.",
     "event_cancelled": "Reserva de l'esdeveniment cancel·lada."
+  },
+  "notifications": {
+    "title": "Notificacions",
+    "loading": "Carregant…",
+    "empty": "Sense notificacions encara.",
+    "mark_all_read": "Marcar tot com llegit",
+    "all_read": "Tot al dia.",
+    "type_booking_confirmed": "Reserva confirmada",
+    "type_waitlist_joined": "Afegit a la llista d'espera",
+    "type_promoted_from_waitlist": "Promogut de la llista d'espera",
+    "type_event_cancelled": "Sessió cancel·lada",
+    "type_event_updated": "Sessió actualitzada",
+    "type_booking_reminder_24h": "Recordatori: demà",
+    "type_booking_reminder_1h": "Recordatori: comença aviat"
   },
   "membership": {
     "title": "La meva quota",

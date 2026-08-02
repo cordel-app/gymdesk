@@ -23,7 +23,8 @@
     "membership": "Cuota",
     "packages": "Bonos",
     "training": "Entreno",
-    "profile": "Perfil"
+    "profile": "Perfil",
+    "notifications": "Alertas"
   },
   "common": {
     "error": "Algo ha ido mal.",
@@ -118,6 +119,20 @@
     "event_booked": "Tienes plaza en el evento.",
     "event_waitlisted": "Añadido a la lista de espera del evento.",
     "event_cancelled": "Reserva de evento cancelada."
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "loading": "Cargando…",
+    "empty": "Sin notificaciones aún.",
+    "mark_all_read": "Marcar todo como leído",
+    "all_read": "Todo al día.",
+    "type_booking_confirmed": "Reserva confirmada",
+    "type_waitlist_joined": "Añadido a lista de espera",
+    "type_promoted_from_waitlist": "Promovido de lista de espera",
+    "type_event_cancelled": "Sesión cancelada",
+    "type_event_updated": "Sesión actualizada",
+    "type_booking_reminder_24h": "Recordatorio: mañana",
+    "type_booking_reminder_1h": "Recordatorio: empieza pronto"
   },
   "membership": {
     "title": "Mi cuota",

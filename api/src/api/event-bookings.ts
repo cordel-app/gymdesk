@@ -95,15 +95,15 @@ export async function cancelEventBooking(gymId: string, bookingId: number, actor
       [actorMembershipId ?? null, bookingId],
     );
 
-    if (b.status !== 'booked') return { promoted: null };
+    if (b.status !== 'booked') return { promoted: null, promotedMemberId: null };
 
     const { rows: waitRows } = await tx.query(
-      `SELECT id FROM event_bookings
+      `SELECT id, member_id FROM event_bookings
        WHERE event_id = ? AND status = 'waitlisted'
        ORDER BY waitlist_position ASC LIMIT 1 FOR UPDATE`,
       [b.event_id],
     );
-    if (waitRows.length === 0) return { promoted: null };
+    if (waitRows.length === 0) return { promoted: null, promotedMemberId: null };
 
     await tx.query(
       `UPDATE event_bookings
@@ -112,7 +112,7 @@ export async function cancelEventBooking(gymId: string, bookingId: number, actor
        WHERE id = ?`,
       [actorMembershipId ?? null, waitRows[0].id],
     );
-    return { promoted: waitRows[0].id };
+    return { promoted: waitRows[0].id, promotedMemberId: waitRows[0].member_id };
   });
 }
 

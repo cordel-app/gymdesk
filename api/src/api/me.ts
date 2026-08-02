@@ -6,6 +6,7 @@ import { bookMemberOnSession, cancelBooking } from './bookings';
 import { bookMemberOnEvent, cancelEventBooking } from './event-bookings';
 import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
+import { sendNotification } from '../infra/notifications';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -216,10 +217,11 @@ meRouter.get('/schedule', requireRole('member'), async (req: Request, res: Respo
     if (to) { where.push('cs.starts_at <= ?'); params.push(to); }
 
     const { rows } = await db.query(
-      `SELECT cs.id, cs.class_type_id, cs.starts_at, cs.ends_at,
-              ct.name AS class_type_name, ct.description AS class_type_description,
-              r.name AS room_name,
-              COALESCE(cs.max_capacity_override, ct.max_capacity) AS effective_capacity,
+      `SELECT cs.id, cs.activity_type_id, cs.starts_at, cs.ends_at,
+              at.name AS class_type_name, at.description AS class_type_description,
+              sp.name AS space_name,
+              tm.name AS trainer_name,
+              COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
               (
                 SELECT COUNT(*) FROM bookings b
                 WHERE b.class_session_id = cs.id AND b.status = 'booked'
@@ -250,16 +252,19 @@ meRouter.get('/schedule', requireRole('member'), async (req: Request, res: Respo
                   AND ctum.class_type_id = cs.class_type_id
               ) AS access_locked
        FROM class_sessions cs
-       JOIN class_types ct ON ct.id = cs.class_type_id
-       LEFT JOIN rooms r ON r.id = cs.room_id
+       JOIN activity_types at ON at.id = cs.activity_type_id
+       LEFT JOIN spaces sp ON sp.id = cs.space_id
+       LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at ASC`,
       [memberId, memberId, memberId, memberId, ...params],
     );
+    const now = new Date();
     const shaped = rows.map((r: any) => ({
       ...r,
       spots_left: Math.max(0, Number(r.effective_capacity) - Number(r.booked_count)),
       access_locked: !!Number(r.access_locked),
+      can_cancel: new Date(r.starts_at) > now,
     }));
     res.json(shaped);
   } catch (err) { next(err); }
@@ -276,7 +281,21 @@ meRouter.post('/bookings', requireRole('member'), async (req: Request, res: Resp
       [gymId, effectiveUserId],
     );
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member profile not found' });
-    const result = await bookMemberOnSession(gymId, memberRows[0].id, Number(class_session_id));
+    const memberId = memberRows[0].id;
+    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id));
+    // Notify fire-and-forget
+    db.query(
+      `SELECT at.name AS title, cs.starts_at FROM class_sessions cs
+       JOIN activity_types at ON at.id = cs.activity_type_id WHERE cs.id = ?`,
+      [class_session_id],
+    ).then(({ rows: si }: any) => {
+      if (si.length > 0) {
+        sendNotification(gymId, memberId,
+          result.status === 'booked' ? 'booking_confirmed' : 'waitlist_joined',
+          'session', Number(class_session_id),
+          { title: si[0].title, starts_at: si[0].starts_at });
+      }
+    }).catch(() => {});
     res.status(201).json(result);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You already have a booking for this session.' });
@@ -317,9 +336,11 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
   const { gymId, effectiveUserId, gymMembershipId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT b.id, cs.starts_at
+      `SELECT b.id, b.class_session_id, cs.starts_at,
+              at.name AS title
        FROM bookings b
        JOIN class_sessions cs ON cs.id = b.class_session_id
+       JOIN activity_types at ON at.id = cs.activity_type_id
        JOIN members m ON m.id = b.member_id
        WHERE b.id = ? AND b.gym_id = ? AND m.clerk_user_id = ?`,
       [req.params.id, gymId, effectiveUserId],
@@ -328,7 +349,11 @@ meRouter.delete('/bookings/:id', requireRole('member'), async (req: Request, res
     if (new Date(rows[0].starts_at) <= new Date()) {
       return res.status(400).json({ error: 'Cannot cancel a booking after the session has started.' });
     }
-    await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
+    if (cancelResult.promotedMemberId) {
+      sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
+        rows[0].class_session_id, { title: rows[0].title, starts_at: rows[0].starts_at });
+    }
     res.status(204).send();
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -687,7 +712,18 @@ meRouter.post('/event-bookings', requireRole('member'), async (req: Request, res
       [gymId, effectiveUserId],
     );
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member profile not found' });
-    const result = await bookMemberOnEvent(gymId, memberRows[0].id, Number(event_id));
+    const memberId = memberRows[0].id;
+    const result = await bookMemberOnEvent(gymId, memberId, Number(event_id));
+    // Notify fire-and-forget
+    db.query('SELECT name AS title, starts_at FROM events WHERE id = ?', [event_id])
+      .then(({ rows: ei }: any) => {
+        if (ei.length > 0) {
+          sendNotification(gymId, memberId,
+            result.status === 'booked' ? 'booking_confirmed' : 'waitlist_joined',
+            'event', Number(event_id),
+            { title: ei[0].title, starts_at: ei[0].starts_at });
+        }
+      }).catch(() => {});
     res.status(201).json(result);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -704,7 +740,7 @@ meRouter.delete('/event-bookings/:id', requireRole('member'), async (req: Reques
   const { gymId, effectiveUserId, gymMembershipId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT eb.id, eb.status, eb.booked_at, e.starts_at
+      `SELECT eb.id, eb.event_id, eb.status, eb.booked_at, e.starts_at, e.name
        FROM event_bookings eb
        JOIN events e ON e.id = eb.event_id
        JOIN members m ON m.id = eb.member_id
@@ -728,8 +764,181 @@ meRouter.delete('/event-bookings/:id', requireRole('member'), async (req: Reques
       }
     }
 
-    await cancelEventBooking(gymId, Number(req.params.id), gymMembershipId);
+    const cancelResult = await cancelEventBooking(gymId, Number(req.params.id), gymMembershipId);
+    if (cancelResult.promotedMemberId) {
+      sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'event',
+        booking.event_id, { title: booking.name ?? '', starts_at: booking.starts_at });
+    }
     res.status(204).send();
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #194: member's in-app notifications, newest first. */
+meRouter.get('/notifications', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 50), 10) || 50, 1), 100);
+    const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
+    const { rows } = await db.query(
+      `SELECT id, type, entity_type, entity_id, payload, read_at, created_at
+       FROM member_notifications
+       WHERE gym_id = ? AND member_id = ?
+       ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      [gymId, memberId],
+    );
+    const { rows: countRows } = await db.query(
+      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      [gymId, memberId],
+    );
+    res.json({ items: rows, unread: Number(countRows[0].unread) });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #194: unread notification count only (cheap poll for badge). */
+meRouter.get('/notifications/count', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const { rows } = await db.query(
+      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      [gymId, memberId],
+    );
+    res.json({ unread: Number(rows[0].unread) });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #194: mark all notifications read (must be before /:id/read to avoid param capture). */
+meRouter.put('/notifications/read-all', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const { rowCount } = await db.query(
+      'UPDATE member_notifications SET read_at = UTC_TIMESTAMP() WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      [gymId, memberId],
+    );
+    res.json({ updated: rowCount });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #194: mark a single notification read. */
+meRouter.put('/notifications/:id/read', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const { rowCount } = await db.query(
+      'UPDATE member_notifications SET read_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ? AND member_id = ? AND read_at IS NULL',
+      [req.params.id, gymId, memberId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Notification not found or already read' });
+    res.status(204).send();
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #194: upcoming confirmed bookings (sessions + events) within the next 30 days. */
+meRouter.get('/upcoming', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const now = new Date().toISOString();
+    const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [{ rows: sessionRows }, { rows: eventRows }] = await Promise.all([
+      db.query(
+        `SELECT b.id AS booking_id, 'session' AS kind,
+                cs.id AS entity_id, at.name AS title, sp.name AS space_name,
+                tm.name AS trainer_name, cs.starts_at, cs.ends_at
+         FROM bookings b
+         JOIN class_sessions cs ON cs.id = b.class_session_id
+         JOIN activity_types at ON at.id = cs.activity_type_id
+         LEFT JOIN spaces sp ON sp.id = cs.space_id
+         LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
+         WHERE b.gym_id = ? AND b.member_id = ? AND b.status = 'booked'
+           AND cs.status = 'scheduled'
+           AND cs.starts_at >= ? AND cs.starts_at <= ?
+         ORDER BY cs.starts_at ASC`,
+        [gymId, memberId, now, future],
+      ),
+      db.query(
+        `SELECT eb.id AS booking_id, 'event' AS kind,
+                e.id AS entity_id, e.name AS title, NULL AS space_name,
+                NULL AS trainer_name, e.starts_at, e.ends_at
+         FROM event_bookings eb
+         JOIN events e ON e.id = eb.event_id
+         WHERE eb.gym_id = ? AND eb.member_id = ? AND eb.status = 'booked'
+           AND e.status = 'scheduled'
+           AND e.starts_at >= ? AND e.starts_at <= ?
+         ORDER BY e.starts_at ASC`,
+        [gymId, memberId, now, future],
+      ),
+    ]);
+
+    const combined = [...sessionRows, ...eventRows].sort((a: any, b: any) =>
+      a.starts_at.localeCompare(b.starts_at),
+    );
+    res.json(combined);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #194: past booking history (sessions + events), paginated. */
+meRouter.get('/activity-history', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 20), 10) || 20, 1), 100);
+  const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const cutoff = new Date().toISOString();
+
+    const [{ rows: sessionRows }, { rows: eventRows }] = await Promise.all([
+      db.query(
+        `SELECT b.id AS booking_id, 'session' AS kind,
+                cs.id AS entity_id, at.name AS title,
+                cs.starts_at, cs.ends_at, b.status AS booking_status,
+                b.attendance_status, b.cancelled_at
+         FROM bookings b
+         JOIN class_sessions cs ON cs.id = b.class_session_id
+         JOIN activity_types at ON at.id = cs.activity_type_id
+         WHERE b.gym_id = ? AND b.member_id = ?
+           AND cs.starts_at < ?
+         ORDER BY cs.starts_at DESC`,
+        [gymId, memberId, cutoff],
+      ),
+      db.query(
+        `SELECT eb.id AS booking_id, 'event' AS kind,
+                e.id AS entity_id, e.name AS title,
+                e.starts_at, e.ends_at, eb.status AS booking_status,
+                NULL AS attendance_status, eb.cancelled_at
+         FROM event_bookings eb
+         JOIN events e ON e.id = eb.event_id
+         WHERE eb.gym_id = ? AND eb.member_id = ?
+           AND e.starts_at < ?
+         ORDER BY e.starts_at DESC`,
+        [gymId, memberId, cutoff],
+      ),
+    ]);
+
+    const combined = [...sessionRows, ...eventRows]
+      .sort((a: any, b: any) => b.starts_at.localeCompare(a.starts_at))
+      .slice(offset, offset + limit);
+    res.json({ items: combined, limit, offset });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
