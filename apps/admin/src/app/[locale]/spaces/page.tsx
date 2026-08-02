@@ -383,7 +383,7 @@ export default function SpacesPage() {
       : '—';
 
     return (
-      <div key={space.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
+      <div key={space.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
         <div
           style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
           onClick={() => openExpand(space)}

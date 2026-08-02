@@ -881,7 +881,7 @@ const pagerStyle = (disabled: boolean): React.CSSProperties => ({
 });
 const cardStyle = (editing: boolean): React.CSSProperties => ({
   border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
-  borderRadius: 10, background: '#fff', overflow: 'hidden',
+  borderRadius: 10, background: 'var(--gd-card-bg, #ffffff)', overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',

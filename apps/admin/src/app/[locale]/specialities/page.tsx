@@ -187,7 +187,7 @@ export default function SpecialitiesPage() {
     ];
 
     return (
-      <div key={row.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: '#fff' }}>
+      <div key={row.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
         {/* Row summary */}
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12 }}>
           <div style={{ flex: 2, minWidth: 0 }}>
