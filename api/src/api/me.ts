@@ -3,6 +3,7 @@ import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { bookMemberOnSession, cancelBooking } from './bookings';
+import { bookMemberOnEvent, cancelEventBooking } from './event-bookings';
 import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 
@@ -632,6 +633,105 @@ meRouter.get('/membership', requireRole('member'), async (req: Request, res: Res
     }
     res.json({ membership: { ...um, benefits } });
   } catch (err) {
+    next(err);
+  }
+});
+
+/** Upcoming calendar events with the member's own booking status. */
+meRouter.get('/events', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const { rows: memberRows } = await db.query(
+      'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
+      [gymId, effectiveUserId],
+    );
+    if (memberRows.length === 0) return res.json([]);
+    const memberId = memberRows[0].id;
+
+    const from = (req.query.from as string) || new Date().toISOString();
+    const to = req.query.to as string | undefined;
+    const where: string[] = ["e.gym_id = ?", "e.status = 'scheduled'", "e.starts_at >= ?", "e.deleted_at IS NULL"];
+    const params: any[] = [gymId, from];
+    if (to) { where.push('e.starts_at <= ?'); params.push(to); }
+
+    const { rows } = await db.query(
+      `SELECT e.*,
+              (SELECT COUNT(*) FROM event_bookings eb WHERE eb.event_id = e.id AND eb.status = 'booked') AS booked_count,
+              (SELECT COUNT(*) FROM event_bookings eb WHERE eb.event_id = e.id AND eb.status = 'waitlisted') AS waitlist_count,
+              (SELECT eb.status FROM event_bookings eb WHERE eb.event_id = e.id AND eb.member_id = ? AND eb.status <> 'cancelled' LIMIT 1) AS my_booking_status,
+              (SELECT eb.id FROM event_bookings eb WHERE eb.event_id = e.id AND eb.member_id = ? AND eb.status <> 'cancelled' LIMIT 1) AS my_booking_id,
+              (SELECT eb.booked_at FROM event_bookings eb WHERE eb.event_id = e.id AND eb.member_id = ? AND eb.status = 'booked' LIMIT 1) AS my_booked_at
+       FROM events e
+       WHERE ${where.join(' AND ')}
+       ORDER BY e.starts_at ASC`,
+      [memberId, memberId, memberId, ...params],
+    );
+    const shaped = rows.map((r: any) => ({
+      ...r,
+      booked_count: Number(r.booked_count),
+      waitlist_count: Number(r.waitlist_count),
+      is_full: r.capacity !== null && Number(r.booked_count) >= Number(r.capacity),
+    }));
+    res.json(shaped);
+  } catch (err) { next(err); }
+});
+
+/** Book self on a calendar event. */
+meRouter.post('/event-bookings', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  const { event_id } = req.body;
+  if (!event_id) return res.status(400).json({ error: 'event_id is required' });
+  try {
+    const { rows: memberRows } = await db.query(
+      'SELECT id FROM members WHERE gym_id = ? AND clerk_user_id = ? AND deleted_at IS NULL',
+      [gymId, effectiveUserId],
+    );
+    if (memberRows.length === 0) return res.status(404).json({ error: 'Member profile not found' });
+    const result = await bookMemberOnEvent(gymId, memberRows[0].id, Number(event_id));
+    res.status(201).json(result);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * Cancel own event booking.
+ * Booked: allowed only if event starts > 24h from now OR booking was made < 4h ago.
+ * Waitlisted: always allowed.
+ */
+meRouter.delete('/event-bookings/:id', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId, gymMembershipId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT eb.id, eb.status, eb.booked_at, e.starts_at
+       FROM event_bookings eb
+       JOIN events e ON e.id = eb.event_id
+       JOIN members m ON m.id = eb.member_id
+       WHERE eb.id = ? AND eb.gym_id = ? AND m.clerk_user_id = ?`,
+      [req.params.id, gymId, effectiveUserId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
+    const booking = rows[0];
+    if (booking.status === 'cancelled') return res.status(400).json({ error: 'Booking is already cancelled' });
+
+    if (booking.status === 'booked') {
+      const now = Date.now();
+      const eventStart = new Date(booking.starts_at).getTime();
+      const bookedAt = new Date(booking.booked_at).getTime();
+      const moreThan24hBefore = eventStart - now > 24 * 60 * 60 * 1000;
+      const within4hOfBooking = now - bookedAt < 4 * 60 * 60 * 1000;
+      if (!moreThan24hBefore && !within4hOfBooking) {
+        return res.status(400).json({
+          error: 'Cancellation is no longer available. You can only cancel more than 24 hours before the event or within 4 hours of booking.',
+        });
+      }
+    }
+
+    await cancelEventBooking(gymId, Number(req.params.id), gymMembershipId);
+    res.status(204).send();
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });

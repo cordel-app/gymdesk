@@ -112,7 +112,12 @@
     "plan_required": "Esta clase requiere una cuota compatible.",
     "booked": "Ya tienes la plaza.",
     "waitlisted_at": "En lista de espera — posición {pos}.",
-    "cancelled": "Reserva cancelada."
+    "cancelled": "Reserva cancelada.",
+    "status_waitlisted": "En lista de espera",
+    "leave_waitlist": "Salir de la lista de espera",
+    "event_booked": "Tienes plaza en el evento.",
+    "event_waitlisted": "Añadido a la lista de espera del evento.",
+    "event_cancelled": "Reserva de evento cancelada."
   },
   "membership": {
     "title": "Mi cuota",

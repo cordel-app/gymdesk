@@ -112,7 +112,12 @@
     "plan_required": "This class needs a matching plan.",
     "booked": "You're booked.",
     "waitlisted_at": "Added to waitlist — position {pos}.",
-    "cancelled": "Booking cancelled."
+    "cancelled": "Booking cancelled.",
+    "status_waitlisted": "Waitlisted",
+    "leave_waitlist": "Leave waiting list",
+    "event_booked": "You're booked for the event.",
+    "event_waitlisted": "Added to the event waiting list.",
+    "event_cancelled": "Event booking cancelled."
   },
   "membership": {
     "title": "My membership",

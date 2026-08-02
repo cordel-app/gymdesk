@@ -112,7 +112,12 @@
     "plan_required": "Aquesta classe requereix una quota compatible.",
     "booked": "Ja tens la plaça.",
     "waitlisted_at": "A la llista d'espera — posició {pos}.",
-    "cancelled": "Reserva cancel·lada."
+    "cancelled": "Reserva cancel·lada.",
+    "status_waitlisted": "A la llista d'espera",
+    "leave_waitlist": "Sortir de la llista d'espera",
+    "event_booked": "Tens plaça a l'esdeveniment.",
+    "event_waitlisted": "Afegit a la llista d'espera de l'esdeveniment.",
+    "event_cancelled": "Reserva de l'esdeveniment cancel·lada."
   },
   "membership": {
     "title": "La meva quota",

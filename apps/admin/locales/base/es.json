@@ -41,7 +41,8 @@
     "activity_types": "Tipos de actividad",
     "spaces": "Espacios",
     "nutrition_library": "Biblioteca Nutricional",
-    "nutrition_plan_templates": "Plantillas de Plan Nutricional"
+    "nutrition_plan_templates": "Plantillas de Plan Nutricional",
+    "calendar": "Calendario"
   },
   "dashboard": {
     "title": "Panel",
@@ -1425,6 +1426,26 @@
     "saving": "Guardando…",
     "save_changes": "Guardar Cambios"
   },
+  "event_bookings": {
+    "label_confirmed": "Miembros confirmados",
+    "label_waitlist": "Lista de espera",
+    "col_member": "Miembro",
+    "col_booking_date": "Fecha de reserva",
+    "col_status": "Estado",
+    "col_position": "#",
+    "col_waiting_since": "En espera desde",
+    "col_actions": "Acciones",
+    "add_member": "Añadir al evento",
+    "select_member": "Selecciona un miembro…",
+    "remove": "Eliminar",
+    "promote": "Promover",
+    "promote_disabled": "El evento está lleno",
+    "loading": "Cargando reservas…",
+    "empty_confirmed": "Sin reservas confirmadas.",
+    "empty_waitlist": "Nadie en la lista de espera.",
+    "confirm_remove": "¿Eliminar esta reserva?",
+    "error_generic": "Algo salió mal."
+  },
   "gym_themes": {
     "title": "Temas",
     "loading": "Cargando…",
@@ -1635,7 +1656,10 @@
     "error_generic": "Algo ha ido mal.",
     "cancel": "Cancelar",
     "saving": "Guardando…",
-    "save_changes": "Guardar cambios"
+    "save_changes": "Guardar cambios",
+    "label_default_space": "Espacio por defecto",
+    "label_default_trainer": "Entrenador por defecto",
+    "label_color": "Color"
   },
   "staff": {
     "title": "Staff",
@@ -1914,5 +1938,44 @@
     "cancel": "Cancelar",
     "error_start": "No se pudo iniciar la suplantación.",
     "account_locked_hint": "Las acciones de cuenta están desactivadas durante la suplantación"
+  },
+  "calendar": {
+    "title": "Calendario",
+    "new_event": "+ Nuevo Evento",
+    "loading": "Cargando…",
+    "filter_all": "Todos",
+    "filter_space": "Espacio",
+    "filter_activity_type": "Tipo de Actividad",
+    "filter_trainer": "Entrenador",
+    "filter_select_placeholder": "Seleccionar…",
+    "today": "Hoy",
+    "view_day": "Día",
+    "view_week": "Semana",
+    "view_month": "Mes",
+    "event_title": "Título",
+    "event_activity_type": "Tipo de Actividad",
+    "event_starts": "Inicio",
+    "event_ends": "Fin",
+    "event_all_day": "Todo el día",
+    "event_space": "Espacio",
+    "event_trainer": "Entrenador",
+    "event_status": "Estado",
+    "event_color": "Color",
+    "event_description": "Descripción",
+    "status_draft": "Borrador",
+    "status_scheduled": "Programado",
+    "status_completed": "Completado",
+    "status_cancelled": "Cancelado",
+    "modal_create": "Nuevo Evento",
+    "modal_edit": "Editar Evento",
+    "save_changes": "Guardar cambios",
+    "saving": "Guardando…",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "deleting": "Eliminando…",
+    "color_clear": "Borrar",
+    "error_title_required": "El título es obligatorio.",
+    "error_end_before_start": "La hora de fin debe ser posterior a la de inicio.",
+    "error_generic": "Algo salió mal."
   }
 }
