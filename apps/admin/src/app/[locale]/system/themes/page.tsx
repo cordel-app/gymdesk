@@ -446,23 +446,25 @@ export default function ThemesPage() {
                       />
                     </div>
                   ))}
+                  {groupKey === 'group_header' && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editForm.tokens.colors.headerSeparatorHeight}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={20}
-                  value={editForm.tokens.colors.headerSeparatorHeight}
-                  onChange={(e) => {
-                    const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } };
-                    setEditForm({ ...editForm, tokens: next });
-                    scheduleTokenSave(next);
-                  }}
-                  style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-                />
-              </div>
               {tokenSaving && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
             </div>
           ))}

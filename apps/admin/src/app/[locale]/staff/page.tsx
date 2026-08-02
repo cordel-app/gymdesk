@@ -538,7 +538,7 @@ export default function StaffPage() {
     }
 
     return (
-      <div key={member.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
+      <div key={member.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
         <div
           style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
           onClick={() => openExpand(member)}
@@ -602,7 +602,7 @@ export default function StaffPage() {
 
   function renderNewRow() {
     return (
-      <div style={{ border: '2px solid #4c6ef5', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
+      <div style={{ border: '2px solid #4c6ef5', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
         <div style={{ padding: '12px 16px', fontWeight: 600, fontSize: 15, color: '#4c6ef5' }}>
           {t('new_member_title')}
         </div>

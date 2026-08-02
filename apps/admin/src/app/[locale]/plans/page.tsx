@@ -904,7 +904,7 @@ const selectStyle: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = {
-  border: '1px solid #e2e2e6', borderRadius: 10, overflow: 'hidden', background: '#fff',
+  border: '1px solid #e2e2e6', borderRadius: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)',
 };
 
 const rowStyle: React.CSSProperties = {
