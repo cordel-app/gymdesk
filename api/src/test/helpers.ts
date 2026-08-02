@@ -44,6 +44,7 @@ export async function cleanupTestGyms() {
   const marks = ids.map(() => '?').join(',');
   // Delete in FK dependency order to avoid constraint violations.
   await db.query(`DELETE FROM bookings WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM member_notifications WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids);

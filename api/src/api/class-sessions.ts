@@ -4,6 +4,7 @@ import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tena
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
+import { sendBulkNotification } from '../infra/notifications';
 
 const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
 
@@ -169,11 +170,35 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('TRAINING'), async (r
   const { gymId } = getTenantContext(req);
   const reason = String(req.body?.cancellation_reason ?? '').trim();
   if (!reason) return res.status(400).json({ error: 'cancellation_reason is required' });
+
+  const { rows: sessionRows } = await db.query(
+    `SELECT cs.id, cs.starts_at, at.name AS title
+     FROM class_sessions cs
+     JOIN activity_types at ON at.id = cs.activity_type_id
+     WHERE cs.id = ? AND cs.gym_id = ? AND cs.status <> 'cancelled' AND cs.deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
+
+  const session = sessionRows[0];
   const { rowCount } = await db.query(
-    "UPDATE class_sessions SET status = 'cancelled', cancellation_reason = ? WHERE id = ? AND gym_id = ? AND status <> 'cancelled' AND deleted_at IS NULL",
+    "UPDATE class_sessions SET status = 'cancelled', cancellation_reason = ? WHERE id = ? AND gym_id = ?",
     [reason, req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
+
+  // Notify all booked members fire-and-forget
+  const { rows: bookedRows } = await db.query(
+    "SELECT member_id FROM bookings WHERE class_session_id = ? AND gym_id = ? AND status = 'booked'",
+    [req.params.id, gymId],
+  );
+  const memberIds = bookedRows.map((r: any) => r.member_id);
+  sendBulkNotification(gymId, memberIds, 'event_cancelled', 'session', Number(req.params.id), {
+    title: session.title,
+    starts_at: session.starts_at,
+    reason,
+  });
+
   recordAudit(req, { action: 'cancel', entityType: 'class_session', entityId: req.params.id, next: { cancellation_reason: reason } });
   res.status(204).send();
 });

@@ -23,7 +23,8 @@
     "membership": "Membership",
     "packages": "Packages",
     "training": "Training",
-    "profile": "Profile"
+    "profile": "Profile",
+    "notifications": "Alerts"
   },
   "common": {
     "error": "Something went wrong.",
@@ -118,6 +119,20 @@
     "event_booked": "You're booked for the event.",
     "event_waitlisted": "Added to the event waiting list.",
     "event_cancelled": "Event booking cancelled."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "loading": "Loading…",
+    "empty": "No notifications yet.",
+    "mark_all_read": "Mark all read",
+    "all_read": "All caught up.",
+    "type_booking_confirmed": "Booking confirmed",
+    "type_waitlist_joined": "Added to waitlist",
+    "type_promoted_from_waitlist": "Promoted from waitlist",
+    "type_event_cancelled": "Session cancelled",
+    "type_event_updated": "Session updated",
+    "type_booking_reminder_24h": "Reminder: tomorrow",
+    "type_booking_reminder_1h": "Reminder: starting soon"
   },
   "membership": {
     "title": "My membership",
