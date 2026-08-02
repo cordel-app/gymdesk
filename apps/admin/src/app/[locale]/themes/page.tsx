@@ -7,6 +7,7 @@ import { useLocale } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -15,7 +16,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeAdvancedSection } from '@/components/ThemeAdvancedSection';
 import { btnStyle, btnSmall } from '@/components/ui';
-import { DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
+import { DEFAULT_TOKENS, FONT_STACKS, applyTokens, type ThemeTokens } from '@/lib/themeTokens';
 
 interface Theme {
   id: string;
@@ -127,6 +128,7 @@ export default function GymThemesPage() {
   const { getToken } = useAuth();
   const { apiFetch } = useApiClient();
   const { activeGym, isSuperadmin, loading: gymLoading, refreshGyms } = useGym();
+  const { centers, activeCenterId, refreshCenters } = useCenter();
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { toast } = useToast();
 
@@ -144,6 +146,7 @@ export default function GymThemesPage() {
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const origTokensRef = useRef<ThemeTokens | null>(null);
 
   const [statusSaving, setStatusSaving] = useState<string | null>(null);
 
@@ -193,11 +196,21 @@ export default function GymThemesPage() {
     return `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`;
   }
 
+  function isExpandedThemeActive(): boolean {
+    if (!expandedId) return false;
+    const effectiveCenterId = activeCenterId ?? (centers.length === 1 ? centers[0].id : null);
+    const activeCenter = effectiveCenterId !== null ? centers.find((c) => c.id === effectiveCenterId) : null;
+    if (activeCenter?.theme_id) return activeCenter.theme_id === expandedId;
+    return expandedId === activeGym?.theme?.id;
+  }
+
   function openExpand(theme: Theme) {
     if (expandedId === theme.id) { setExpandedId(null); return; }
     setExpandedId(theme.id);
     setOpenSections(new Set<SectionKey>(['assignments']));
-    setEditForm({ name: theme.name, description: theme.description ?? '', tokens: theme.tokens ?? DEFAULT_TOKENS });
+    const tokens = theme.tokens ?? DEFAULT_TOKENS;
+    setEditForm({ name: theme.name, description: theme.description ?? '', tokens });
+    origTokensRef.current = tokens;
     setEditError(null);
     setEditLogoFile(null);
     setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
@@ -248,7 +261,7 @@ export default function GymThemesPage() {
     setSettingDefault(true);
     try {
       await apiFetch(`/system/themes/${themeId}/set-default`, { method: 'PUT' });
-      await Promise.all([loadAssignments(themeId), refreshGyms()]);
+      await Promise.all([loadAssignments(themeId), refreshGyms(), refreshCenters()]);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -260,7 +273,7 @@ export default function GymThemesPage() {
     setRestoringId(centerId);
     try {
       await apiFetch(`/system/themes/${themeId}/centers/${centerId}`, { method: 'DELETE' });
-      await loadAssignments(themeId);
+      await Promise.all([loadAssignments(themeId), refreshGyms(), refreshCenters()]);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -290,7 +303,7 @@ export default function GymThemesPage() {
         body: JSON.stringify({ center_ids: Array.from(pickerSelected) }),
       });
       setPickerOpen(false);
-      await loadAssignments(pickerThemeId);
+      await Promise.all([loadAssignments(pickerThemeId), refreshGyms(), refreshCenters()]);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -300,16 +313,22 @@ export default function GymThemesPage() {
 
   function scheduleTokenSave(tokens: ThemeTokens) {
     if (!expandedId) return;
+    // Apply immediately so the user sees changes without waiting for the save round-trip.
+    if (isExpandedThemeActive()) applyTokens(tokens);
     if (tokenSaveTimer.current) clearTimeout(tokenSaveTimer.current);
+    const themeId = expandedId;
     tokenSaveTimer.current = setTimeout(async () => {
       setTokenSaving(true);
       try {
-        await apiFetch(`/system/themes/${expandedId}`, {
+        await apiFetch(`/system/themes/${themeId}`, {
           method: 'PUT',
           body: JSON.stringify({ tokens }),
         });
+        origTokensRef.current = tokens;
+        await Promise.all([refreshGyms(), refreshCenters()]);
       } catch (err: any) {
         toast(err.message ?? t('error_generic'));
+        if (origTokensRef.current) applyTokens(origTokensRef.current);
       } finally {
         setTokenSaving(false);
       }
@@ -546,23 +565,25 @@ export default function GymThemesPage() {
                       />
                     </div>
                   ))}
+                  {groupKey === 'group_header' && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={20}
+                        value={editForm.tokens.colors.headerSeparatorHeight}
+                        onChange={(e) => {
+                          const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } };
+                          setEditForm({ ...editForm, tokens: next });
+                          scheduleTokenSave(next);
+                        }}
+                        style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={20}
-                  value={editForm.tokens.colors.headerSeparatorHeight}
-                  onChange={(e) => {
-                    const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } };
-                    setEditForm({ ...editForm, tokens: next });
-                    scheduleTokenSave(next);
-                  }}
-                  style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-                />
-              </div>
               {tokenSaving && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
             </div>
           ))}
@@ -655,7 +676,7 @@ export default function GymThemesPage() {
     menuItems.push({ label: t('details'), onClick: () => setDetails(theme) });
 
     return (
-      <div key={theme.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: '#fff' }}>
+      <div key={theme.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
         <div
           style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isDeleted ? 'default' : 'pointer' }}
           onClick={() => !isDeleted && openExpand(theme)}
