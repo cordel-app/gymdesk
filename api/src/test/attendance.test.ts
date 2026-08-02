@@ -22,6 +22,12 @@ async function createActivityType(gymId: string, maxCapacity = 10): Promise<numb
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, ?, ?, 'active')`,
     [gymId, name, maxCapacity],
   );
+  // Mirror into class_types so class_sessions.class_type_id FK is satisfied on CI
+  // (pre-migration-059 schema still has that column and constraint).
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, ?, ?, 'active')`,
+    [insertId, gymId, name, maxCapacity],
+  ).catch(() => { /* class_types may not exist on fully-migrated DBs */ });
   return insertId;
 }
 
