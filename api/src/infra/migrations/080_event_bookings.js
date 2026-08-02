@@ -21,7 +21,7 @@ exports.up = async (knex) => {
       t.datetime('booked_at');
       t.datetime('waitlisted_at');
       t.datetime('cancelled_at');
-      t.datetime('created_at').notNullable().defaultTo(knex.raw('UTC_TIMESTAMP()'));
+      t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
       t.integer('created_by_membership_id').unsigned()
         .references('id').inTable('gym_memberships').onDelete('SET NULL');
       t.datetime('modified_at');

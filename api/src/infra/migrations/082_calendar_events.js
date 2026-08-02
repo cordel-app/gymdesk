@@ -38,8 +38,8 @@ exports.up = async (knex) => {
     t.integer('deleted_by_membership_id').unsigned().nullable()
       .references('id').inTable('gym_memberships').onDelete('SET NULL');
 
-    t.datetime('created_at').notNullable().defaultTo(knex.raw('UTC_TIMESTAMP()'));
-    t.datetime('updated_at').notNullable().defaultTo(knex.raw('UTC_TIMESTAMP() ON UPDATE UTC_TIMESTAMP()'));
+    t.datetime('created_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP'));
+    t.datetime('updated_at').notNullable().defaultTo(knex.raw('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'));
 
     t.index(['gym_id', 'starts_at', 'ends_at'], 'calendar_events_gym_range_idx');
     t.index(['gym_id', 'space_id', 'starts_at', 'ends_at'], 'calendar_events_space_range_idx');
