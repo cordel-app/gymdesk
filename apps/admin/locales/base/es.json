@@ -507,20 +507,35 @@
       "completed": "Realizada"
     },
     "roster_title": "Lista de asistentes",
-    "booked_heading": "Inscritos",
+    "booked_heading": "Confirmados",
     "waitlist_heading": "Lista de espera",
     "no_bookings": "Aún no hay reservas.",
     "booking_status": {
       "booked": "Reservado",
       "waitlisted": "En espera",
-      "cancelled": "Cancelado",
-      "attended": "Asistió",
-      "no_show": "No asistió"
+      "cancelled": "Cancelado"
     },
-    "mark_attended": "Asistió",
-    "mark_no_show": "No asistió",
+    "attendance_status": {
+      "pending": "Pendiente",
+      "present": "Presente",
+      "absent": "Ausente"
+    },
+    "mark_present": "Presente",
+    "mark_absent": "Ausente",
+    "bulk_present": "Marcar todos como presentes",
+    "bulk_present_done": "{n} marcados como presentes.",
+    "effective_trainer": "Impartido por",
+    "effective_trainer_placeholder": "— Selecciona entrenador —",
+    "effective_trainer_confirmed": "Entrenador confirmado.",
+    "add_member_heading": "Añadir socio",
     "pick_member": "— Selecciona un socio —",
     "book_member": "Reservar",
+    "over_capacity_warning": "La sesión supera el aforo — socio añadido como entrada directa.",
+    "complete_session": "Completar sesión",
+    "complete_session_confirm": "¿Completar la sesión {name}? {pending, plural, =0 {Todos los socios han sido procesados.} other {{pending} socios aún tienen asistencia pendiente.}}",
+    "complete_success": "Sesión marcada como completada.",
+    "complete_blocked_pending": "{n} {n, plural, one {socio tiene} other {socios tienen}} asistencia pendiente. Márcalos como presentes o ausentes primero.",
+    "complete_blocked_no_trainer": "Por favor, confirma el entrenador que impartió la sesión antes de completarla.",
     "close": "Cerrar",
     "label_space": "Espacio"
   },

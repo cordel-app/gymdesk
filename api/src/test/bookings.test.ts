@@ -148,7 +148,7 @@ describe('Bookings', () => {
     expect(rows[0].waitlist_position).toBeNull();
   });
 
-  it('records attendance (mark as attended)', async () => {
+  it('records attendance (mark as present)', async () => {
     // Get the now-booked member2 booking
     const listRes = await request
       .get(`/bookings?session_id=${sessionId}`)
@@ -161,9 +161,10 @@ describe('Bookings', () => {
       .post(`/bookings/${booking.id}/attendance`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ status: 'attended' });
+      .send({ status: 'present' });
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('attended');
+    expect(res.body.attendance_status).toBe('present');
+    expect(res.body.status).toBe('booked'); // lifecycle status unchanged
   });
 });

@@ -20,6 +20,7 @@ interface Session {
   class_type_capacity: number;
   effective_capacity: number;
   trainer_membership_id: number | null;
+  effective_trainer_membership_id: number | null;
   space_id: number | null;
   space_name: string | null;
   starts_at: string;
@@ -27,9 +28,13 @@ interface Session {
   max_capacity_override: number | null;
   status: 'scheduled' | 'cancelled' | 'completed';
   cancellation_reason: string | null;
+  booked_count: number;
+  attendance_present: number;
+  attendance_pending: number;
+  attendance_absent: number;
 }
 interface ClassType { id: number; name: string; duration_minutes: number; max_capacity: number; status: string }
-interface Trainer { gym_membership_id: number; user_id: string; specialities: { name: string }[] }
+interface Trainer { gym_membership_id: number; user_id: string; name: string; specialities: { name: string }[] }
 interface Space { id: number; name: string; status: string }
 
 const emptyForm = {
@@ -209,12 +214,17 @@ export default function SchedulePage() {
                     <div style={{ fontWeight: 600 }}>{s.class_type_name}</div>
                     <div style={{ fontSize: 13, color: '#666' }}>
                       {s.space_name ?? '—'}
-                      {s.trainer_membership_id ? ` · ${t('schedule.trainer')}: ${trainers.find(t => t.gym_membership_id === s.trainer_membership_id)?.user_id.slice(0, 10) ?? '—'}` : ''}
+                      {s.trainer_membership_id ? ` · ${trainers.find((tr) => tr.gym_membership_id === s.trainer_membership_id)?.name ?? '—'}` : ''}
                     </div>
                   </div>
-                  <div style={{ fontSize: 13, color: '#666', minWidth: 60, textAlign: 'right' }}>
-                    {t('schedule.capacity')}: {s.effective_capacity}
-                  </div>
+                  {s.booked_count > 0 && (
+                    <div style={{ fontSize: 12, color: '#555', textAlign: 'right', lineHeight: 1.4 }}>
+                      <div style={{ fontWeight: 600 }}>{s.booked_count}/{s.effective_capacity}</div>
+                      {s.status !== 'scheduled' ? null : s.attendance_pending > 0
+                        ? <div style={{ color: '#b26a00' }}>{s.attendance_present}✓ {s.attendance_pending}?</div>
+                        : <div style={{ color: '#1e7e40' }}>{s.attendance_present}✓</div>}
+                    </div>
+                  )}
                   <StatusBadge status={s.status === 'scheduled' ? 'active' : s.status === 'cancelled' ? 'cancelled' : 'expired'} label={t(`schedule.status.${s.status}`)} />
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={() => setRosterFor(s)} style={btnSmall('#6c63ff')}>{t('schedule.roster')}</button>
@@ -284,7 +294,12 @@ export default function SchedulePage() {
         <SessionRosterPanel
           session={rosterFor}
           canAttendance={canWrite}
+          trainers={trainers.map((tr) => ({ gym_membership_id: tr.gym_membership_id, name: tr.name }))}
           onClose={() => setRosterFor(null)}
+          onSessionUpdated={(updated) => {
+            setSessions((prev) => prev.map((s) => s.id === updated.id ? { ...s, ...updated } : s));
+            setRosterFor((prev) => prev?.id === updated.id ? { ...prev, ...updated } : prev);
+          }}
         />
       )}
     </div>
