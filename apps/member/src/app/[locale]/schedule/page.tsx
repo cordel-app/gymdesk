@@ -197,11 +197,11 @@ export default function MemberSchedulePage() {
                     {s.space_name && <div style={styles.sub}>{s.space_name}</div>}
                     {s.trainer_name && <div style={styles.sub}>{s.trainer_name}</div>}
                     <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                      {s.access_locked ? null : myStatus && s.my_booking_id ? (
+                      {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
                         <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelSession(s.my_booking_id!, s.id)}>
                           {isBusy ? '…' : t('member_schedule.cancel_booking')}
                         </button>
-                      ) : spots > 0 ? (
+                      ) : myStatus ? null : spots > 0 ? (
                         <button style={styles.btnBook} disabled={isBusy} onClick={() => bookSession(s.id)}>
                           {isBusy ? '…' : t('member_schedule.book')}
                         </button>
