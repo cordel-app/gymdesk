@@ -22,12 +22,23 @@ interface ActivityType {
   max_capacity: number;
   speciality_id: number | null;
   speciality_name: string | null;
+  default_space_id: number | null;
+  default_space_name: string | null;
+  default_trainer_membership_id: number | null;
+  default_trainer_name: string | null;
+  color: string | null;
   status: 'active' | 'inactive';
 }
 interface Speciality { id: number; name: string }
+interface Space { id: number; name: string }
+interface Trainer { gym_membership_id: number; name: string }
 
 const STATUSES = ['active', 'inactive'] as const;
-const emptyForm = { name: '', description: '', duration_minutes: '', intensity_level: '', max_capacity: '', speciality_id: '', status: 'active' };
+const emptyForm = {
+  name: '', description: '', duration_minutes: '', intensity_level: '', max_capacity: '',
+  speciality_id: '', status: 'active',
+  default_space_id: '', default_trainer_membership_id: '', color: '',
+};
 
 export default function ActivityTypesPage() {
   const t = useTranslations();
@@ -39,6 +50,8 @@ export default function ActivityTypesPage() {
 
   const [rows, setRows] = useState<ActivityType[]>([]);
   const [specs, setSpecs] = useState<Speciality[]>([]);
+  const [spaces, setSpaces] = useState<Space[]>([]);
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -55,11 +68,13 @@ export default function ActivityTypesPage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [ct, ss] = await Promise.all([
+      const [ct, ss, sp, tr] = await Promise.all([
         apiFetch<ActivityType[]>(`/activity-types${statusFilter ? `?status=${statusFilter}` : ''}`),
         apiFetch<Speciality[]>('/specialities'),
+        apiFetch<Space[]>('/spaces'),
+        apiFetch<Trainer[]>('/trainers'),
       ]);
-      setRows(ct); setSpecs(ss);
+      setRows(ct); setSpecs(ss); setSpaces(sp); setTrainers(tr);
     } catch (err: any) { toast(err.message ?? t('activity_types.error_generic')); }
     finally { setLoading(false); }
   }
@@ -78,6 +93,9 @@ export default function ActivityTypesPage() {
       intensity_level: form.intensity_level ? parseInt(form.intensity_level, 10) : null,
       speciality_id: form.speciality_id ? parseInt(form.speciality_id, 10) : null,
       status: form.status,
+      default_space_id: form.default_space_id ? parseInt(form.default_space_id, 10) : null,
+      default_trainer_membership_id: form.default_trainer_membership_id ? parseInt(form.default_trainer_membership_id, 10) : null,
+      color: form.color || null,
     };
     try {
       if (editing) await apiFetch(`/activity-types/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -106,7 +124,7 @@ export default function ActivityTypesPage() {
       header: t('activity_types.col_actions'), width: 180,
       render: (r) => (
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => { setEditing(r); setForm({ name: r.name, description: r.description ?? '', duration_minutes: String(r.duration_minutes), intensity_level: r.intensity_level ? String(r.intensity_level) : '', max_capacity: String(r.max_capacity), speciality_id: r.speciality_id ? String(r.speciality_id) : '', status: r.status }); setError(null); setModalOpen(true); }} style={btnSmall('#444')}>{t('activity_types.edit')}</button>
+          <button onClick={() => { setEditing(r); setForm({ name: r.name, description: r.description ?? '', duration_minutes: String(r.duration_minutes), intensity_level: r.intensity_level ? String(r.intensity_level) : '', max_capacity: String(r.max_capacity), speciality_id: r.speciality_id ? String(r.speciality_id) : '', status: r.status, default_space_id: r.default_space_id ? String(r.default_space_id) : '', default_trainer_membership_id: r.default_trainer_membership_id ? String(r.default_trainer_membership_id) : '', color: r.color ?? '' }); setError(null); setModalOpen(true); }} style={btnSmall('#444')}>{t('activity_types.edit')}</button>
           <button onClick={() => setDeleting(r)} style={btnSmall('#c0392b')}>{t('activity_types.delete')}</button>
         </div>
       ),
@@ -158,6 +176,30 @@ export default function ActivityTypesPage() {
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}>
           {STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
         </select>
+        <FormLabel>{t('activity_types.label_default_space')}</FormLabel>
+        <select value={form.default_space_id} onChange={(e) => setForm({ ...form, default_space_id: e.target.value })}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}>
+          <option value="">—</option>
+          {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <FormLabel>{t('activity_types.label_default_trainer')}</FormLabel>
+        <select value={form.default_trainer_membership_id} onChange={(e) => setForm({ ...form, default_trainer_membership_id: e.target.value })}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}>
+          <option value="">—</option>
+          {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name}</option>)}
+        </select>
+        <FormLabel>{t('activity_types.label_color')}</FormLabel>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <input type="color" value={form.color || '#3b82f6'}
+            onChange={(e) => setForm({ ...form, color: e.target.value })}
+            style={{ width: 40, height: 36, border: 'none', cursor: 'pointer', padding: 0 }} />
+          {form.color && (
+            <button onClick={() => setForm({ ...form, color: '' })}
+              style={{ fontSize: 13, color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}>
+              Clear
+            </button>
+          )}
+        </div>
       </CrudModal>
 
       <ConfirmDialog open={deleting !== null} message={t('activity_types.confirm_delete')}

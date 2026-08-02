@@ -71,12 +71,12 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.activity_types',
       },
       {
-        href: '/{{locale}}/class-packages',
-        labelKey: 'nav.class_packages',
+        href: '/{{locale}}/calendar',
+        labelKey: 'nav.calendar',
       },
       {
-        href: '/{{locale}}/events',
-        labelKey: 'nav.events',
+        href: '/{{locale}}/class-packages',
+        labelKey: 'nav.class_packages',
       },
     ],
   },

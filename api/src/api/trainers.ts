@@ -12,10 +12,10 @@ export const trainersRouter = Router();
 trainersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows: trainers } = await db.query(
-    `SELECT gm.id AS gym_membership_id, gm.user_id, gm.role, gm.created_at
+    `SELECT gm.id AS gym_membership_id, gm.user_id, gm.name, gm.role, gm.created_at
      FROM gym_memberships gm
      WHERE gm.gym_id = ? AND gm.role IN ('trainer_performance','trainer_perf_nutrition')
-     ORDER BY gm.created_at ASC`,
+     ORDER BY gm.name ASC`,
     [gymId],
   );
   if (trainers.length === 0) return res.json([]);
