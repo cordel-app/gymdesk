@@ -15,9 +15,11 @@ interface CrudModalProps {
   onCancel: () => void;
   onSave: () => void;
   children: ReactNode;
+  /** Optional node rendered before the Cancel/Save buttons (e.g. a Delete button). */
+  extraFooter?: ReactNode;
 }
 
-export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, cancelLabel, saveLabel, onCancel, onSave, children }: CrudModalProps) {
+export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, cancelLabel, saveLabel, onCancel, onSave, children, extraFooter }: CrudModalProps) {
   if (!open) return null;
 
   return (
@@ -29,7 +31,8 @@ export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, 
 
         {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end', alignItems: 'center' }}>
+          {extraFooter}
           <button onClick={onCancel} style={btnStyle('#aaa')} disabled={saving}>{cancelLabel}</button>
           {!hideSave && <button onClick={onSave} style={btnStyle('#6c63ff')} disabled={saving || saveDisabled}>{saveLabel}</button>}
         </div>

@@ -41,7 +41,8 @@
     "payment_providers": "Payment Providers",
     "spaces": "Spaces",
     "nutrition_library": "Nutrition Library",
-    "nutrition_plan_templates": "Nutrition Plan Templates"
+    "nutrition_plan_templates": "Nutrition Plan Templates",
+    "calendar": "Calendar"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -1651,7 +1652,10 @@
     "error_generic": "Something went wrong.",
     "cancel": "Cancel",
     "saving": "Saving…",
-    "save_changes": "Save Changes"
+    "save_changes": "Save Changes",
+    "label_default_space": "Default Space",
+    "label_default_trainer": "Default Trainer",
+    "label_color": "Colour"
   },
   "weekday": {
     "0": "Sunday",
@@ -1939,5 +1943,44 @@
     "cancel": "Cancel",
     "error_start": "Could not start impersonation.",
     "account_locked_hint": "Account actions are disabled while impersonating"
+  },
+  "calendar": {
+    "title": "Calendar",
+    "new_event": "+ New Event",
+    "loading": "Loading…",
+    "filter_all": "All",
+    "filter_space": "Space",
+    "filter_activity_type": "Activity Type",
+    "filter_trainer": "Trainer",
+    "filter_select_placeholder": "Select…",
+    "today": "Today",
+    "view_day": "Day",
+    "view_week": "Week",
+    "view_month": "Month",
+    "event_title": "Title",
+    "event_activity_type": "Activity Type",
+    "event_starts": "Starts",
+    "event_ends": "Ends",
+    "event_all_day": "All Day",
+    "event_space": "Space",
+    "event_trainer": "Trainer",
+    "event_status": "Status",
+    "event_color": "Colour",
+    "event_description": "Description",
+    "status_draft": "Draft",
+    "status_scheduled": "Scheduled",
+    "status_completed": "Completed",
+    "status_cancelled": "Cancelled",
+    "modal_create": "New Event",
+    "modal_edit": "Edit Event",
+    "save_changes": "Save Changes",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "deleting": "Deleting…",
+    "color_clear": "Clear",
+    "error_title_required": "Title is required.",
+    "error_end_before_start": "End time must be after start time.",
+    "error_generic": "Something went wrong."
   }
 }
