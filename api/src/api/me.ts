@@ -222,7 +222,7 @@ meRouter.get('/schedule', requireRole('member'), async (req: Request, res: Respo
               COALESCE(cs.max_capacity_override, ct.max_capacity) AS effective_capacity,
               (
                 SELECT COUNT(*) FROM bookings b
-                WHERE b.class_session_id = cs.id AND b.status IN ('booked','attended','no_show')
+                WHERE b.class_session_id = cs.id AND b.status = 'booked'
               ) AS booked_count,
               (
                 SELECT b.status FROM bookings b

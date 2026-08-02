@@ -512,20 +512,35 @@
       "completed": "Completed"
     },
     "roster_title": "Roster",
-    "booked_heading": "Booked",
+    "booked_heading": "Confirmed",
     "waitlist_heading": "Waitlist",
     "no_bookings": "No bookings yet.",
     "booking_status": {
       "booked": "Booked",
       "waitlisted": "Waitlist",
-      "cancelled": "Cancelled",
-      "attended": "Attended",
-      "no_show": "No-show"
+      "cancelled": "Cancelled"
     },
-    "mark_attended": "Attended",
-    "mark_no_show": "No-show",
+    "attendance_status": {
+      "pending": "Pending",
+      "present": "Present",
+      "absent": "Absent"
+    },
+    "mark_present": "Present",
+    "mark_absent": "Absent",
+    "bulk_present": "Mark All Present",
+    "bulk_present_done": "Marked {n} as present.",
+    "effective_trainer": "Delivered By",
+    "effective_trainer_placeholder": "— Select trainer —",
+    "effective_trainer_confirmed": "Trainer confirmed.",
+    "add_member_heading": "Add Member",
     "pick_member": "— Select a member —",
     "book_member": "Book",
+    "over_capacity_warning": "Session is over capacity — member added as walk-in.",
+    "complete_session": "Complete Session",
+    "complete_session_confirm": "Complete this {name} session? {pending, plural, =0 {All members have been processed.} other {{pending} members still have pending attendance.}}",
+    "complete_success": "Session marked as completed.",
+    "complete_blocked_pending": "{n} {n, plural, one {member has} other {members have}} pending attendance. Mark them as present or absent first.",
+    "complete_blocked_no_trainer": "Please confirm the trainer who delivered this session before completing it.",
     "close": "Close",
     "label_space": "Space"
   },

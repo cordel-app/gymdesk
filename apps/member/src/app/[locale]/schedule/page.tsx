@@ -17,7 +17,7 @@ interface Session {
   effective_capacity: number;
   booked_count: number;
   spots_left: number;
-  my_booking_status: 'booked' | 'waitlisted' | 'attended' | 'no_show' | null;
+  my_booking_status: 'booked' | 'waitlisted' | null;
   my_waitlist_position: number | null;
   my_booking_id: number | null;
   access_locked: boolean;

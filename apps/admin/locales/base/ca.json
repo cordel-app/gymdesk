@@ -508,21 +508,37 @@
       "completed": "Realitzada"
     },
     "roster_title": "Llista d'assistents",
-    "booked_heading": "Inscrits",
+    "booked_heading": "Confirmats",
     "waitlist_heading": "Llista d'espera",
     "no_bookings": "Encara no hi ha reserves.",
     "booking_status": {
       "booked": "Reservat",
       "waitlisted": "En espera",
-      "cancelled": "Cancel·lat",
-      "attended": "Va assistir",
-      "no_show": "No va assistir"
+      "cancelled": "Cancel·lat"
     },
-    "mark_attended": "Va assistir",
-    "mark_no_show": "No va assistir",
+    "attendance_status": {
+      "pending": "Pendent",
+      "present": "Present",
+      "absent": "Absent"
+    },
+    "mark_present": "Present",
+    "mark_absent": "Absent",
+    "bulk_present": "Marcar tots com a presents",
+    "bulk_present_done": "{n} marcats com a presents.",
+    "effective_trainer": "Impartit per",
+    "effective_trainer_placeholder": "— Tria l'entrenador —",
+    "effective_trainer_confirmed": "Entrenador confirmat.",
+    "add_member_heading": "Afegir soci",
     "pick_member": "— Tria un soci —",
     "book_member": "Reservar",
-    "close": "Tancar"
+    "over_capacity_warning": "La sessió supera l'aforament — soci afegit com a entrada directa.",
+    "complete_session": "Completar sessió",
+    "complete_session_confirm": "Completar la sessió {name}? {pending, plural, =0 {Tots els socis han estat processats.} other {{pending} socis encara tenen assistència pendent.}}",
+    "complete_success": "Sessió marcada com a completada.",
+    "complete_blocked_pending": "{n} {n, plural, one {soci té} other {socis tenen}} assistència pendent. Marca'ls com a presents o absents primer.",
+    "complete_blocked_no_trainer": "Si us plau, confirma l'entrenador que va impartir la sessió abans de completar-la.",
+    "close": "Tancar",
+    "label_space": "Espai"
   },
   "promotions": {
     "title": "Promocions",
