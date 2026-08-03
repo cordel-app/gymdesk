@@ -333,8 +333,6 @@
     "archived": "Archivado",
     "open": "Abierto",
     "closed": "Cerrado",
-    "public": "Público",
-    "staff_only": "Solo personal",
     "under_maintenance": "En mantenimiento"
   },
   "plans": {
@@ -432,7 +430,14 @@
     "label_initial_billing_interval": "Facturación inicial",
     "label_recurring_billing_interval": "Facturación recurrente",
     "label_initial_service_interval": "Servicio inicial",
-    "label_recurring_service_interval": "Servicio recurrente"
+    "label_recurring_service_interval": "Servicio recurrente",
+    "section_charge_benefits": "Beneficios de cargo",
+    "section_period_benefits": "Beneficios periódicos",
+    "cb_action_no_benefit": "Sin beneficio",
+    "cb_action_waive": "Eximir cargo",
+    "cb_action_percentage_discount": "% Descuento",
+    "cb_action_fixed_discount": "Descuento fijo",
+    "details_deleted_by": "Eliminado por"
   },
   "prices": {
     "title": "Precios",
