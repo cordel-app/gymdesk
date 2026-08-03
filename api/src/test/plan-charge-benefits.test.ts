@@ -18,6 +18,15 @@ async function getChargeTypeId(code: string): Promise<number> {
   return rows[0].id;
 }
 
+async function createGymCharge(gymId: string, chargeTypeId: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO gym_charges (gym_id, charge_type_id, amount, currency, billing_frequency, availability)
+     VALUES (?, ?, 0, 'EUR', 'month', 'available')`,
+    [gymId, chargeTypeId],
+  );
+  return insertId;
+}
+
 async function createPlan(gymId: string, createdBy: number): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, created_by)
@@ -33,8 +42,8 @@ describe('Plan Charge Benefits', () => {
   let membershipId: number;
   let planId: number;
   let otherPlanId: number;
-  let membershipFeeId: number;
-  let registrationFeeId: number;
+  let membershipFeeGymChargeId: number;
+  let registrationFeeGymChargeId: number;
 
   beforeAll(async () => {
     gymId = await createTestGym('CB Gym');
@@ -57,8 +66,11 @@ describe('Plan Charge Benefits', () => {
     planId = await createPlan(gymId, membershipId);
     otherPlanId = await createPlan(otherGymId, otherMRows[0].id);
 
-    membershipFeeId = await getChargeTypeId('membership_fee');
-    registrationFeeId = await getChargeTypeId('registration_fee');
+    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
+    const registrationFeeTypeId = await getChargeTypeId('registration_fee');
+
+    membershipFeeGymChargeId = await createGymCharge(gymId, membershipFeeTypeId);
+    registrationFeeGymChargeId = await createGymCharge(gymId, registrationFeeTypeId);
   });
 
   // ─── Auth / role ────────────────────────────────────────────────────────────
@@ -133,24 +145,24 @@ describe('Plan Charge Benefits', () => {
   // ─── PUT ────────────────────────────────────────────────────────────────────
 
   describe('PUT /membership-plans/:id/charge-benefits', () => {
-    it('saves charge benefits and returns them with charge_type_code', async () => {
+    it('saves charge benefits and returns them with gym_charge_code', async () => {
       const res = await request
         .put(`/membership-plans/${planId}/charge-benefits`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send([
-          { charge_type_id: membershipFeeId, action: 'waive', value: null },
-          { charge_type_id: registrationFeeId, action: 'percentage_discount', value: 20 },
+          { gym_charge_id: membershipFeeGymChargeId, action: 'waive', value: null },
+          { gym_charge_id: registrationFeeGymChargeId, action: 'percentage_discount', value: 20 },
         ]);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
 
-      const waive = res.body.find((cb: any) => cb.charge_type_code === 'membership_fee');
+      const waive = res.body.find((cb: any) => cb.gym_charge_code === 'membership_fee');
       expect(waive).toBeDefined();
       expect(waive.action).toBe('waive');
       expect(waive.value).toBeNull();
 
-      const pct = res.body.find((cb: any) => cb.charge_type_code === 'registration_fee');
+      const pct = res.body.find((cb: any) => cb.gym_charge_code === 'registration_fee');
       expect(pct).toBeDefined();
       expect(pct.action).toBe('percentage_discount');
       expect(parseFloat(pct.value)).toBe(20);
@@ -171,7 +183,7 @@ describe('Plan Charge Benefits', () => {
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send([
-          { charge_type_id: membershipFeeId, action: 'fixed_discount', value: 10 },
+          { gym_charge_id: membershipFeeGymChargeId, action: 'fixed_discount', value: 10 },
         ]);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
@@ -193,7 +205,7 @@ describe('Plan Charge Benefits', () => {
         .put(`/membership-plans/${planId}/charge-benefits`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
-        .send([{ charge_type_id: membershipFeeId, action: 'unknown_action' }]);
+        .send([{ gym_charge_id: membershipFeeGymChargeId, action: 'unknown_action' }]);
       expect(res.status).toBe(400);
     });
 
@@ -215,7 +227,7 @@ describe('Plan Charge Benefits', () => {
         .put(`/membership-plans/${planId}/charge-benefits`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
-        .send([{ charge_type_id: membershipFeeId, action: 'waive', value: null }]);
+        .send([{ gym_charge_id: membershipFeeGymChargeId, action: 'waive', value: null }]);
     });
 
     it('returns charge_benefits in enriched plan', async () => {
@@ -226,7 +238,7 @@ describe('Plan Charge Benefits', () => {
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.charge_benefits)).toBe(true);
       expect(res.body.charge_benefits.length).toBeGreaterThanOrEqual(1);
-      expect(res.body.charge_benefits[0]).toHaveProperty('charge_type_code');
+      expect(res.body.charge_benefits[0]).toHaveProperty('gym_charge_code');
       expect(res.body.charge_benefits[0]).toHaveProperty('action');
     });
 

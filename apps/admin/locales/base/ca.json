@@ -438,7 +438,11 @@
     "cb_action_waive": "Eximir càrrec",
     "cb_action_percentage_discount": "% Descompte",
     "cb_action_fixed_discount": "Descompte fix",
-    "details_deleted_by": "Eliminat per"
+    "details_deleted_by": "Eliminat per",
+    "no_charge_benefits": "No hi ha beneficis de càrrecs configurats.",
+    "cb_col_charge": "Càrrec",
+    "cb_col_action": "Acció",
+    "save_charge_benefits": "Desar beneficis de càrrecs"
   },
   "prices": {
     "title": "Preus",
@@ -614,7 +618,13 @@
     "detail_ends": "Data fi",
     "detail_status": "Estat",
     "detail_modified_by": "Modificat per",
-    "detail_modified_at": "Modificat el"
+    "detail_modified_at": "Modificat el",
+    "col_charge": "Càrrec",
+    "cb_action_no_benefit": "Sense benefici",
+    "cb_action_waive": "Eximir",
+    "cb_action_percentage_discount": "% Descompte",
+    "cb_action_fixed_discount": "Descompte fix",
+    "save_charge_benefits": "Desar beneficis de càrrecs"
   },
   "audit": {
     "title": "Registre d'auditoria",
