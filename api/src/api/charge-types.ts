@@ -8,6 +8,8 @@ import { db } from '../infra/db';
 export const chargeTypesRouter = Router();
 
 chargeTypesRouter.get('/', async (_req, res) => {
-  const { rows } = await db.query('SELECT id, code, active FROM charge_types ORDER BY id ASC');
+  const { rows } = await db.query(
+    'SELECT id, code, name, active, is_gym_charge FROM charge_types ORDER BY id ASC',
+  );
   res.json(rows);
 });

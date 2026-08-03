@@ -125,6 +125,11 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
       "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
       [id, name],
     );
+    await db.query(
+      `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, created_at)
+       SELECT ?, id, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+      [id],
+    );
     const { rows } = await db.query(
       `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
       [id],

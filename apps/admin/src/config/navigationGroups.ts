@@ -156,6 +156,10 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.promotions',
       },
       {
+        href: '/{{locale}}/financials/gym-charges',
+        labelKey: 'nav.gym_charges',
+      },
+      {
         href: '/{{locale}}/financials/payment-providers',
         labelKey: 'nav.payment_providers',
       },

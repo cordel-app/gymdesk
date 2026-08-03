@@ -23,6 +23,7 @@ import './api/plan-allowances';
 import { classPackagesRouter } from './api/class-packages';
 import { userClassPackagesRouter } from './api/user-class-packages';
 import { actionTypesRouter } from './api/action-types';
+import { gymChargesRouter } from './api/gym-charges';
 import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
@@ -179,6 +180,7 @@ app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('
 app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), benefitTypesRouter);
 app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), chargeTypesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), actionTypesRouter);
+app.use('/gym-charges',      requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), gymChargesRouter);
 app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), promotionsRouter);
 app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), promotionDetailsRouter);
 

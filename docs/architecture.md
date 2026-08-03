@@ -133,6 +133,7 @@ Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate
 | Billing ledger (`billing-events`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Append-only. |
 | Payments (`payments`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Operational view; excludes `status_changed`. |
 | Membership plans, Benefit types, Charge types, Promotions | FINANCIALS | `requireRole('admin')` | Admin-only within FINANCIALS module. |
+| Gym charges (`gym-charges`) | FINANCIALS | read: any FINANCIALS role; write: `requireRole('admin')` | Per-gym configuration of predefined charge types. Rows auto-created at gym creation. No POST or DELETE. `charge_types` extended with `name` + `is_gym_charge` flag (migration 088). |
 | Audit log (`audit-logs`) | SYSTEM | — | Read-only; `?scope=all` for superadmin. |
 | Themes (`/system/themes`) | SYSTEM | — | R/W within SYSTEM module. |
 | Action types (`action-types`) | any role | — | Global lookup (no `gym_id`), seeded in migration. |
@@ -274,6 +275,7 @@ app.use('/audit-logs',             requireAuth(), tenantContext, auditLogsRouter
 app.use('/membership-plans',       requireAuth(), tenantContext, membershipPlansRouter);
 app.use('/benefit-types',          requireAuth(), tenantContext, benefitTypesRouter);
 app.use('/charge-types',           requireAuth(), tenantContext, chargeTypesRouter);
+app.use('/gym-charges',            requireAuth(), tenantContext, gymChargesRouter);
 app.use('/billing-events',         requireAuth(), tenantContext, billingEventsRouter);
 app.use('/spaces',                 requireAuth(), tenantContext, spacesRouter);
 app.use('/specialities',           requireAuth(), tenantContext, specialitiesRouter);
@@ -445,7 +447,8 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Billing ledger | `billing-events.ts` | Ledger drawer in `[locale]/memberships/` | Append-only (GET + POST). `status_changed` rows are system-emitted. |
 | Payments | `payments.ts` | `[locale]/payments/` (Transactions) | PAYMENTS module (#129). Operational view of `billing_events` excluding `status_changed`. Exposes `POST /payments/apply-promotion` which delegates to the exported `applyPromotionToMembership` from `membership-promotions.ts`. |
 | Payment Providers | — | `[locale]/financials/payment-providers/` (placeholder) | FINANCIALS module (#159). Configuration of payment infrastructure (Stripe, Monei, Cash, etc.). Moved from Payments to Financials; Front Desk and other operational roles have no access. |
-| Charge types | `charge-types.ts` | (inside ledger's Record-payment modal) | Global lookup (no `gym_id`), seeded. |
+| Charge types | `charge-types.ts` | (inside ledger's Record-payment modal) | Global lookup (no `gym_id`), seeded. Extended in migration 088 with `name VARCHAR(100)` and `is_gym_charge TINYINT(1)` flag; 4 new codes added (`locker_rental`, `parking_fee`, `access_key`, `premium_fitness_app`). |
+| Gym charges | `gym-charges.ts` | `[locale]/financials/gym-charges/` | Per-gym configuration of the 6 predefined gym-charge types (#215). `gym_charges` table (migration 088): `gym_id`, `charge_type_id`, `description`, `amount`, `currency` (EUR only), `billing_frequency` (once/week/month/year), `availability` (available/unavailable), `notes`, full audit fields. Rows auto-inserted at gym creation (`INSERT IGNORE … FROM charge_types WHERE is_gym_charge = 1`). No create/delete — availability is set to `unavailable` to disable a charge. Admin UI: expandable-row list, context menu (Details / Edit), read-only Details modal with full audit info, explicit inline Edit mode with Save/Cancel. |
 | Class packages | `class-packages.ts`, `user-class-packages.ts`, `package-credits.ts` | `[locale]/class-packages/` | Catalog + per-member packages + credit transactions; credits consumed/refunded on booking lifecycle. |
 | Promotions | `promotions.ts`, `promotion-details.ts`, `action-types.ts` | `[locale]/promotions/` | Admin-only. Plan targeting, charge benefits, period benefits. `action_types` is a global lookup. |
 | Exercises / Muscles / Result Types | `exercises.ts`, `result-types.ts` | `[locale]/exercises/` | Per-gym exercise catalog; admin/coach CRUD; `POST /exercises/import-defaults` seeds defaults. Soft delete (`status='deleted'` + `deleted_at`). Muscles are a static in-app catalog (`domain/muscles.ts`, slug keys on `exercise_muscles.muscle`, labels via admin i18n) — no muscles table or CRUD. `GET /exercises/:id/references` powers the dependency dialog (#62). **Result types (#154)**: `result_types` is a global catalog table (9 types: repetitions, weight, distance, duration, pace, speed, calories, rpe, rest_time) with no `gym_id`. `exercise_allowed_result_types` is a join table (exercise_id + result_type_id composite PK, no `gym_id`, FKs CASCADE from both sides). `GET /exercises` returns `allowed_result_types` as a JSON array; PUT/POST accept `allowed_result_type_ids`. `GET /result-types` returns the full catalog (auth + tenant context required, no role gate). |
