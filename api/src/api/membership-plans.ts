@@ -45,6 +45,16 @@ interface BillingPolicyRow {
   auto_renew: boolean;
 }
 
+interface ChargeBenefitRow {
+  id: number;
+  gym_id: string;
+  membership_plan_id: number;
+  charge_type_id: number;
+  charge_type_code: string;
+  action: string;
+  value: string | null;
+}
+
 export const membershipPlansRouter = Router();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -61,7 +71,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, allowances, centers, memberCount] = await Promise.all([
+  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
       [plan.id, gymId],
@@ -89,6 +99,13 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
        WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
+    db.query<ChargeBenefitRow>(
+      `SELECT pcb.*, ct.code AS charge_type_code
+       FROM plan_charge_benefits pcb
+       JOIN charge_types ct ON ct.id = pcb.charge_type_id
+       WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
+      [plan.id, gymId],
+    ).then(r => r.rows),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -104,6 +121,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     allowances,
     centers,
     member_count: memberCount,
+    charge_benefits: chargeBenefits,
   };
 }
 
@@ -252,80 +270,91 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
   const callerMemberId = await getCallerMembershipId(req);
 
   try {
-    await db.query('START TRANSACTION', []);
-
-    const { insertId: newPlanId } = await db.query(
-      `INSERT INTO membership_plans
-       (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
-       VALUES (?, ?, ?, 'draft', 'closed', ?)`,
-      [gymId, `${orig.name} (Copy)`, orig.description ?? null, callerMemberId],
-    );
-
-    // Copy billing policy
-    const { rows: bp } = await db.query(
-      'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
-      [req.params.id, gymId],
-    );
-    if (bp.length > 0) {
-      const b = bp[0];
-      await db.query(
-        `INSERT INTO billing_policies
-         (gym_id, membership_plan_id, initial_billing_interval, initial_billing_unit,
-          recurring_billing_interval, recurring_billing_unit,
-          initial_service_interval, initial_service_unit,
-          recurring_service_interval, recurring_service_unit, auto_renew)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, newPlanId, b.initial_billing_interval, b.initial_billing_unit,
-         b.recurring_billing_interval, b.recurring_billing_unit,
-         b.initial_service_interval, b.initial_service_unit,
-         b.recurring_service_interval, b.recurring_service_unit, b.auto_renew],
+    const newPlanId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO membership_plans
+         (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
+         VALUES (?, ?, ?, 'draft', 'closed', ?)`,
+        [gymId, `${orig.name} (Copy)`, orig.description ?? null, callerMemberId],
       );
-    }
 
-    // Copy prices
-    const { rows: prices } = await db.query(
-      'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ?',
-      [req.params.id, gymId],
-    );
-    for (const p of prices) {
-      await db.query(
-        'INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, valid_to) VALUES (?, ?, ?, ?, ?)',
-        [gymId, newPlanId, p.price, p.valid_from, p.valid_to],
+      // Copy billing policy
+      const { rows: bp } = await tx.query(
+        'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
+        [req.params.id, gymId],
       );
-    }
+      if (bp.length > 0) {
+        const b = bp[0];
+        await tx.query(
+          `INSERT INTO billing_policies
+           (gym_id, membership_plan_id, initial_billing_interval, initial_billing_unit,
+            recurring_billing_interval, recurring_billing_unit,
+            initial_service_interval, initial_service_unit,
+            recurring_service_interval, recurring_service_unit, auto_renew)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, insertId, b.initial_billing_interval, b.initial_billing_unit,
+           b.recurring_billing_interval, b.recurring_billing_unit,
+           b.initial_service_interval, b.initial_service_unit,
+           b.recurring_service_interval, b.recurring_service_unit, b.auto_renew],
+        );
+      }
 
-    // Copy allowances
-    const { rows: allowances } = await db.query(
-      'SELECT * FROM plan_allowances WHERE membership_plan_id = ? AND gym_id = ?',
-      [req.params.id, gymId],
-    );
-    for (const a of allowances) {
-      await db.query(
-        `INSERT INTO plan_allowances
-         (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, newPlanId, a.activity_type_id, a.allowance_type, a.session_count, a.recurrence_interval, a.recurrence_unit],
+      // Copy prices
+      const { rows: prices } = await tx.query(
+        'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ?',
+        [req.params.id, gymId],
       );
-    }
+      for (const p of prices) {
+        await tx.query(
+          'INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, valid_to) VALUES (?, ?, ?, ?, ?)',
+          [gymId, insertId, p.price, p.valid_from, p.valid_to],
+        );
+      }
 
-    // Copy centers
-    const { rows: centers } = await db.query(
-      'SELECT * FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?',
-      [req.params.id, gymId],
-    );
-    for (const c of centers) {
-      await db.query(
-        'INSERT INTO membership_plan_centers (gym_id, membership_plan_id, center_id) VALUES (?, ?, ?)',
-        [gymId, newPlanId, c.center_id],
+      // Copy allowances
+      const { rows: allowances } = await tx.query(
+        'SELECT * FROM plan_allowances WHERE membership_plan_id = ? AND gym_id = ?',
+        [req.params.id, gymId],
       );
-    }
+      for (const a of allowances) {
+        await tx.query(
+          `INSERT INTO plan_allowances
+           (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, insertId, a.activity_type_id, a.allowance_type, a.session_count, a.recurrence_interval, a.recurrence_unit],
+        );
+      }
 
-    await db.query('COMMIT', []);
+      // Copy centers
+      const { rows: centers } = await tx.query(
+        'SELECT * FROM membership_plan_centers WHERE membership_plan_id = ? AND gym_id = ?',
+        [req.params.id, gymId],
+      );
+      for (const c of centers) {
+        await tx.query(
+          'INSERT INTO membership_plan_centers (gym_id, membership_plan_id, center_id) VALUES (?, ?, ?)',
+          [gymId, insertId, c.center_id],
+        );
+      }
+
+      // Copy charge benefits
+      const { rows: cbs } = await tx.query(
+        'SELECT * FROM plan_charge_benefits WHERE membership_plan_id = ? AND gym_id = ?',
+        [req.params.id, gymId],
+      );
+      for (const cb of cbs) {
+        await tx.query(
+          'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, charge_type_id, action, value) VALUES (?, ?, ?, ?, ?)',
+          [gymId, insertId, cb.charge_type_id, cb.action, cb.value],
+        );
+      }
+
+      return insertId;
+    });
 
     const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [newPlanId]);
     res.status(201).json(await enrichPlan(rows[0], gymId));
   } catch (err) {
-    await db.query('ROLLBACK', []).catch(() => {});
     next(err);
   }
 });
@@ -644,4 +673,61 @@ membershipPlansRouter.delete('/:id/prices/:priceId', requireRole('admin'), async
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Price not found' });
   res.status(204).send();
+});
+
+// ─── Charge Benefits ──────────────────────────────────────────────────────────
+
+membershipPlansRouter.get('/:id/charge-benefits', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const { rows } = await db.query<ChargeBenefitRow>(
+    `SELECT pcb.*, ct.code AS charge_type_code
+     FROM plan_charge_benefits pcb
+     JOIN charge_types ct ON ct.id = pcb.charge_type_id
+     WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
+    [req.params.id, gymId],
+  );
+  res.json(rows);
+});
+
+const VALID_CB_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'];
+
+membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+  const items = req.body;
+  if (!Array.isArray(items)) return res.status(400).json({ error: 'body must be an array' });
+
+  for (const item of items) {
+    if (!item.charge_type_id || !VALID_CB_ACTIONS.includes(item.action)) {
+      return res.status(400).json({ error: 'Each item requires charge_type_id and a valid action' });
+    }
+    if (['percentage_discount', 'fixed_discount'].includes(item.action) && item.value == null) {
+      return res.status(400).json({ error: `action ${item.action} requires a value` });
+    }
+  }
+
+  try {
+    await db.query(
+      'DELETE FROM plan_charge_benefits WHERE membership_plan_id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    for (const item of items) {
+      const value = ['no_benefit', 'waive'].includes(item.action) ? null : parseFloat(item.value);
+      await db.query(
+        'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, charge_type_id, action, value) VALUES (?, ?, ?, ?, ?)',
+        [gymId, req.params.id, item.charge_type_id, item.action, value ?? null],
+      );
+    }
+    const { rows } = await db.query<ChargeBenefitRow>(
+      `SELECT pcb.*, ct.code AS charge_type_code
+       FROM plan_charge_benefits pcb
+       JOIN charge_types ct ON ct.id = pcb.charge_type_id
+       WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
+      [req.params.id, gymId],
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
 });
