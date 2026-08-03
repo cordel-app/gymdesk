@@ -7,11 +7,9 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 const STATUSES = ['active', 'inactive'] as const;
 const SELECT = `
   SELECT at.*,
-    s.name  AS speciality_name,
     sp.name AS default_space_name,
     gm.name AS default_trainer_name
   FROM activity_types at
-  LEFT JOIN specialities s  ON s.id  = at.speciality_id
   LEFT JOIN spaces       sp ON sp.id = at.default_space_id
   LEFT JOIN gym_memberships gm ON gm.id = at.default_trainer_membership_id
 `;
@@ -52,17 +50,13 @@ function validate(body: any) {
 
 activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, duration_minutes, intensity_level, max_capacity, speciality_id, status,
+  const { name, description, duration_minutes, intensity_level, max_capacity, status,
           default_space_id, default_trainer_membership_id, color } = req.body;
   if (!name?.trim() || duration_minutes == null || max_capacity == null) {
     return res.status(400).json({ error: 'name, duration_minutes and max_capacity are required' });
   }
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
 
-  if (speciality_id) {
-    const { rows } = await db.query('SELECT id FROM specialities WHERE id = ? AND gym_id = ?', [speciality_id, gymId]);
-    if (rows.length === 0) return res.status(404).json({ error: 'Speciality not found' });
-  }
   if (default_space_id) {
     const { rows } = await db.query('SELECT id FROM spaces WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [default_space_id, gymId]);
     if (rows.length === 0) return res.status(404).json({ error: 'Space not found' });
@@ -70,14 +64,14 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   try {
     const row = await insertAndFetch(
       `INSERT INTO activity_types
-       (gym_id, name, description, duration_minutes, intensity_level, max_capacity, speciality_id, status,
+       (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
         default_space_id, default_trainer_membership_id, color)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null,
        parseInt(duration_minutes, 10),
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
        parseInt(max_capacity, 10),
-       speciality_id ?? null, status ?? 'active',
+       status ?? 'active',
        default_space_id ?? null, default_trainer_membership_id ?? null, color ?? null],
       `${SELECT} WHERE at.id = ?`,
       (id) => [id],
@@ -92,13 +86,9 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
 activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
-  const { name, description, duration_minutes, intensity_level, max_capacity, speciality_id, status,
+  const { name, description, duration_minutes, intensity_level, max_capacity, status,
           default_space_id, default_trainer_membership_id, color } = req.body;
 
-  if (speciality_id) {
-    const { rows } = await db.query('SELECT id FROM specialities WHERE id = ? AND gym_id = ?', [speciality_id, gymId]);
-    if (rows.length === 0) return res.status(404).json({ error: 'Speciality not found' });
-  }
   if (default_space_id) {
     const { rows } = await db.query('SELECT id FROM spaces WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [default_space_id, gymId]);
     if (rows.length === 0) return res.status(404).json({ error: 'Space not found' });
@@ -111,7 +101,6 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         duration_minutes               = COALESCE(?, duration_minutes),
         intensity_level                = IF(?, ?, intensity_level),
         max_capacity                   = COALESCE(?, max_capacity),
-        speciality_id                  = IF(?, ?, speciality_id),
         status                         = COALESCE(?, status),
         default_space_id               = IF(?, ?, default_space_id),
         default_trainer_membership_id  = IF(?, ?, default_trainer_membership_id),
@@ -123,7 +112,6 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         duration_minutes != null ? parseInt(duration_minutes, 10) : null,
         'intensity_level' in req.body ? 1 : 0, intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
         max_capacity != null ? parseInt(max_capacity, 10) : null,
-        'speciality_id' in req.body ? 1 : 0, speciality_id ?? null,
         status ?? null,
         'default_space_id' in req.body ? 1 : 0, default_space_id ?? null,
         'default_trainer_membership_id' in req.body ? 1 : 0, default_trainer_membership_id ?? null,

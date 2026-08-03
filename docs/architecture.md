@@ -93,8 +93,8 @@ gymdesk/
 |------|-------|-----|----------------|
 | `superadmin` | Platform | Cordel internal | Clerk `publicMetadata.platform_role === 'superadmin'` |
 | `admin` | Gym | Gym/studio owner | `gym_memberships.role` |
-| `trainer_performance` | Gym | Performance trainer | `gym_memberships.role` (+ trainer specialities) |
-| `trainer_perf_nutrition` | Gym | Trainer + nutrition | `gym_memberships.role` (+ trainer specialities) |
+| `trainer_performance` | Gym | Performance trainer | `gym_memberships.role` |
+| `trainer_perf_nutrition` | Gym | Trainer + nutrition | `gym_memberships.role` |
 | `front_desk` | Gym | Receptionist | `gym_memberships.role` |
 | `accountant` | Gym | Accountant | `gym_memberships.role` |
 | `nutritionist` | Gym | Nutritionist | `gym_memberships.role` |
@@ -153,7 +153,7 @@ router.delete('/:id', requireRole('admin'), handler);  // explicit last-admin gu
 app.use('/public', publicRouter);
 ```
 
-Trainers are `trainer_performance` or `trainer_perf_nutrition` rows in `gym_memberships`; trainer data (specialities) is surfaced via the `trainers` router.
+Trainers are `trainer_performance` or `trainer_perf_nutrition` rows in `gym_memberships`; the `trainers` router surfaces them for assignment to class types and sessions.
 
 ### Platform superadmin (Clerk metadata)
 - `requireSuperadmin` middleware checks `user.publicMetadata.platform_role === 'superadmin'`.
@@ -278,7 +278,6 @@ app.use('/charge-types',           requireAuth(), tenantContext, chargeTypesRout
 app.use('/gym-charges',            requireAuth(), tenantContext, gymChargesRouter);
 app.use('/billing-events',         requireAuth(), tenantContext, billingEventsRouter);
 app.use('/spaces',                 requireAuth(), tenantContext, spacesRouter);
-app.use('/specialities',           requireAuth(), tenantContext, specialitiesRouter);
 app.use('/trainers',               requireAuth(), tenantContext, trainersRouter);
 app.use('/activity-types',         requireAuth(), tenantContext, activityTypesRouter);
 app.use('/class-sessions',         requireAuth(), tenantContext, classSessionsRouter);
@@ -433,9 +432,8 @@ All strings live in each app's `locales/base/{en,es,ca}.json`, namespaced by fea
 | Members | `members.ts` | `[locale]/members/` (+ `/deleted`) | Canonical staff-level CRUD reference. Soft-delete + restore; `clerk_user_id`; `/:id/invite`, `/:id/reinvite`, `/:id/revoke-invite` for member-portal access. Removing a member with a pending invite revokes it in Clerk. |
 | Team | `gym-users.ts` | `[locale]/team/`, `[locale]/link-team/` | Admin-only. Invite/grant/change-role/remove admin/coach/staff. Clerk invitation flow, self-edit & last-admin guards, audited. Removing a pending invite revokes it in Clerk (UI labels this "Revoke"). |
 | Spaces | `spaces.ts` | `[locale]/spaces/` | Admin-only CRUD. Inline creation row (no pre-API-call); clicking row expands read-only accordion (General/Availability/Activity Types/Notes sections all auto-shown); Edit from context menu opens inline edit form; StatusBadge in row; Details modal with full audit info. Duplicate, soft-delete, activity-type assignments, availability hours, notes. `space_activity_types` join table. SELECT LEFT JOINs `gym_memberships` ×3 for `created_by_name`, `modified_by_name`, `deleted_by_name`. |
-| Specialities | `specialities.ts` | `[locale]/specialities/` | Admin-only CRUD; linked to trainers. |
-| Trainers | `trainers.ts` | `[locale]/trainers/` | Lists `coach` members; PUT assigns specialities. |
-| Activity types | `activity-types.ts` | `[locale]/activity-types/` | Admin-only CRUD (renamed from `class-types` in #70). Extended in #190 with `default_space_id`, `default_trainer_membership_id`, `color` — calendar defaults auto-populated when an activity type is selected in CalendarEventModal. |
+| Trainers | `trainers.ts` | `[locale]/trainers/` | Lists coach-role members with availability management. Speciality concept removed in #219. |
+| Activity types | `activity-types.ts` | `[locale]/activity-types/` | Admin-only CRUD (renamed from `class-types` in #70). Extended in #190 with `default_space_id`, `default_trainer_membership_id`, `color` — calendar defaults auto-populated when an activity type is selected in CalendarEventModal. Speciality concept removed in #219. |
 | Calendar events | `calendar-events.ts`, `calendar-event-series.ts` | `[locale]/calendar/` | TRAINING module (#190 #191). Standalone and recurring scheduled events. **Recurrence** (#191): `calendar_event_series` table stores the pattern template; `calendar_events` gains `series_id` FK (ON DELETE SET NULL) and `series_occurrence_date DATE` (canonical scheduled date, survives drag-and-drop). Pure-TS `domain/recurrenceEngine.ts` generates occurrence dates (daily/weekdays/weekends/weekly/monthly/yearly, configurable interval, end by date/count/never, 13-month rolling cap for never-ending series). "Exploded" storage: each occurrence is an independent `calendar_events` row — bookings and attendance attach to individual events. Scope-based mutations via `?scope=this|this_and_following|entire_series` on PUT/DELETE: `this` edits/cancels one; `this_and_following` splits the series (truncates original end_date, creates new series from cutDate); `entire_series` updates template + regenerates future occurrences. Recurring cancellation uses `status='cancelled'` (visible on calendar); standalone delete uses soft-delete. `GET /calendar-event-series` and `DELETE /calendar-event-series/:id` (cancels future + soft-deletes series row). MySQL DATE columns returned as JS Date objects by mysql2 — `toDateStr()` normalizer in calendar-events.ts handles both types. Admin UI: ScopeDialog appears before editing/deleting a recurring event; RecurrenceEditor component in CalendarEventModal for create and whole-series edits. Full CRUD with space/trainer conflict detection (409). FullCalendar v6 day/week/month views, drag-and-drop and resize (always `scope=this`). Soft-delete, full audit fields, status CHECK. |
 | Class sessions | `class-sessions.ts` | `[locale]/schedule/` | Scheduled instances of an activity type (space, trainer, capacity). Create/update/cancel by admin/coach/staff. `effective_trainer_membership_id` records who actually delivered the session (set via `PUT /:id/effective-trainer`). `POST /:id/bulk-present` marks all pending confirmed bookings as present. `POST /:id/complete` completes the session — hard-blocked unless all confirmed bookings have a non-pending `attendance_status` and at least one trainer is set (responds 400 with `{pending_count, missing_trainer}`). GET SELECT includes `booked_count`, `attendance_present`, `attendance_absent`, `attendance_pending` subquery counts. |
 | Bookings | `bookings.ts` | (inside Schedule) | Waitlist, capacity, attendance. `attendance_status VARCHAR(20)` ('pending'|'present'|'absent') tracks attendance separately from the booking lifecycle `status` ('booked'|'waitlisted'|'cancelled'). `POST /:id/attendance` sets attendance_status (staff-level: admin/front_desk/trainer roles). `POST /bookings` accepts `force=true` to add a walk-in over capacity (always inserts as 'booked', returns `over_capacity: true`). Credit consume/refund hooks via `package-credits` and `plan-allowances`. |

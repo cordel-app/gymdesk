@@ -14,7 +14,6 @@ import { benefitTypesRouter } from './api/benefit-types';
 import { chargeTypesRouter } from './api/charge-types';
 import { billingEventsRouter } from './api/billing-events';
 import { spacesRouter } from './api/spaces';
-import { specialitiesRouter } from './api/specialities';
 import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
 import { classSessionsRouter } from './api/class-sessions';
@@ -141,7 +140,6 @@ app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE
 app.use('/gym-users',     requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), gymUsersRouter);
 app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), spacesRouter);
-app.use('/specialities',  requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), specialitiesRouter);
 app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), trainersRouter);
 app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), staffRouter);
 app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), activityTypesRouter);

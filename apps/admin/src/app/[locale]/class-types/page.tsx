@@ -20,14 +20,11 @@ interface ClassType {
   duration_minutes: number;
   intensity_level: number | null;
   max_capacity: number;
-  speciality_id: number | null;
-  speciality_name: string | null;
   status: 'active' | 'inactive';
 }
-interface Speciality { id: number; name: string }
 
 const STATUSES = ['active', 'inactive'] as const;
-const emptyForm = { name: '', description: '', duration_minutes: '', intensity_level: '', max_capacity: '', speciality_id: '', status: 'active' };
+const emptyForm = { name: '', description: '', duration_minutes: '', intensity_level: '', max_capacity: '', status: 'active' };
 
 export default function ClassTypesPage() {
   const t = useTranslations();
@@ -38,7 +35,6 @@ export default function ClassTypesPage() {
   const { toast } = useToast();
 
   const [rows, setRows] = useState<ClassType[]>([]);
-  const [specs, setSpecs] = useState<Speciality[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -55,11 +51,8 @@ export default function ClassTypesPage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [ct, ss] = await Promise.all([
-        apiFetch<ClassType[]>(`/class-types${statusFilter ? `?status=${statusFilter}` : ''}`),
-        apiFetch<Speciality[]>('/specialities'),
-      ]);
-      setRows(ct); setSpecs(ss);
+      const ct = await apiFetch<ClassType[]>(`/class-types${statusFilter ? `?status=${statusFilter}` : ''}`);
+      setRows(ct);
     } catch (err: any) { toast(err.message ?? t('class_types.error_generic')); }
     finally { setLoading(false); }
   }
@@ -76,7 +69,6 @@ export default function ClassTypesPage() {
       duration_minutes: parseInt(form.duration_minutes, 10),
       max_capacity: parseInt(form.max_capacity, 10),
       intensity_level: form.intensity_level ? parseInt(form.intensity_level, 10) : null,
-      speciality_id: form.speciality_id ? parseInt(form.speciality_id, 10) : null,
       status: form.status,
     };
     try {
@@ -97,7 +89,6 @@ export default function ClassTypesPage() {
 
   const columns: Column<ClassType>[] = [
     { header: t('class_types.col_name'), render: (r) => r.name },
-    { header: t('class_types.col_speciality'), render: (r) => r.speciality_name ?? '—' },
     { header: t('class_types.col_duration'), width: 100, render: (r) => `${r.duration_minutes} min` },
     { header: t('class_types.col_capacity'), width: 100, render: (r) => r.max_capacity },
     { header: t('class_types.col_intensity'), width: 100, render: (r) => r.intensity_level ?? '—' },
@@ -106,7 +97,7 @@ export default function ClassTypesPage() {
       header: t('class_types.col_actions'), width: 180,
       render: (r) => (
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={() => { setEditing(r); setForm({ name: r.name, description: r.description ?? '', duration_minutes: String(r.duration_minutes), intensity_level: r.intensity_level ? String(r.intensity_level) : '', max_capacity: String(r.max_capacity), speciality_id: r.speciality_id ? String(r.speciality_id) : '', status: r.status }); setError(null); setModalOpen(true); }} style={btnSmall('#444')}>{t('class_types.edit')}</button>
+          <button onClick={() => { setEditing(r); setForm({ name: r.name, description: r.description ?? '', duration_minutes: String(r.duration_minutes), intensity_level: r.intensity_level ? String(r.intensity_level) : '', max_capacity: String(r.max_capacity), status: r.status }); setError(null); setModalOpen(true); }} style={btnSmall('#444')}>{t('class_types.edit')}</button>
           <button onClick={() => setDeleting(r)} style={btnSmall('#c0392b')}>{t('class_types.delete')}</button>
         </div>
       ),
@@ -147,12 +138,6 @@ export default function ClassTypesPage() {
         <FormInput type="number" min="1" step="1" value={form.max_capacity} onChange={(e) => setForm({ ...form, max_capacity: e.target.value })} />
         <FormLabel>{t('class_types.label_intensity')}</FormLabel>
         <FormInput type="number" min="1" max="5" step="1" value={form.intensity_level} onChange={(e) => setForm({ ...form, intensity_level: e.target.value })} />
-        <FormLabel>{t('class_types.label_speciality')}</FormLabel>
-        <select value={form.speciality_id} onChange={(e) => setForm({ ...form, speciality_id: e.target.value })}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}>
-          <option value="">—</option>
-          {specs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
         <FormLabel>{t('class_types.label_status')}</FormLabel>
         <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}>
