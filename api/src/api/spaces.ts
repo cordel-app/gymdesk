@@ -8,9 +8,15 @@ import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers
 const STATUSES = ['active', 'inactive', 'under_maintenance'] as const;
 
 const SELECT = `
-  SELECT s.*, c.name AS center_name
+  SELECT s.*, c.name AS center_name,
+         gm_c.name AS created_by_name,
+         gm_m.name AS modified_by_name,
+         gm_d.name AS deleted_by_name
   FROM spaces s
   LEFT JOIN centers c ON c.id = s.center_id
+  LEFT JOIN gym_memberships gm_c ON gm_c.id = s.created_by_membership_id
+  LEFT JOIN gym_memberships gm_m ON gm_m.id = s.modified_by_membership_id
+  LEFT JOIN gym_memberships gm_d ON gm_d.id = s.deleted_by_membership_id
 `;
 
 export const spacesRouter = Router();
