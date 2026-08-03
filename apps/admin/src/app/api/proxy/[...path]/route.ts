@@ -25,6 +25,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
       method: req.method,
       headers,
       body,
+      cache: 'no-store',
     });
 
     const resBody = res.status === 204 ? null : await res.text();

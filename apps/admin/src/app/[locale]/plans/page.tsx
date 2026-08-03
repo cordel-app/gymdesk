@@ -642,12 +642,10 @@ export default function PlansPage() {
               <span style={detailLabelStyle}>{t('plans.details_name')}</span>
               <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 500 }}>{detailsPlan.name}</p>
             </div>
-            {detailsPlan.description && (
-              <div>
-                <span style={detailLabelStyle}>{t('plans.details_description')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>{detailsPlan.description}</p>
-              </div>
-            )}
+            <div>
+              <span style={detailLabelStyle}>{t('plans.details_description')}</span>
+              <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>{detailsPlan.description ?? '—'}</p>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <span style={detailLabelStyle}>{t('plans.details_status')}</span>
@@ -679,18 +677,14 @@ export default function PlansPage() {
                 <span style={detailLabelStyle}>{t('plans.details_created_by')}</span>
                 <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.created_by_name ?? '—'}</p>
               </div>
-              {detailsPlan.modified_at && (
-                <div>
-                  <span style={detailLabelStyle}>{t('plans.details_modified_at')}</span>
-                  <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(detailsPlan.modified_at).toLocaleString()}</p>
-                </div>
-              )}
-              {detailsPlan.modified_by_name && (
-                <div>
-                  <span style={detailLabelStyle}>{t('plans.details_modified_by')}</span>
-                  <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.modified_by_name}</p>
-                </div>
-              )}
+              <div>
+                <span style={detailLabelStyle}>{t('plans.details_modified_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.modified_at ? new Date(detailsPlan.modified_at).toLocaleString() : '—'}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('plans.details_modified_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.modified_by_name ?? '—'}</p>
+              </div>
               {detailsPlan.deleted_at && (
                 <div>
                   <span style={detailLabelStyle}>{t('plans.details_deleted_at')}</span>
