@@ -49,8 +49,9 @@ interface ChargeBenefitRow {
   id: number;
   gym_id: string;
   membership_plan_id: number;
-  charge_type_id: number;
-  charge_type_code: string;
+  gym_charge_id: number;
+  gym_charge_code: string;
+  gym_charge_name: string;
   action: string;
   value: string | null;
 }
@@ -100,9 +101,10 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
     db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS charge_type_code
+      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name
        FROM plan_charge_benefits pcb
-       JOIN charge_types ct ON ct.id = pcb.charge_type_id
+       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+       JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
       [plan.id, gymId],
     ).then(r => r.rows),
@@ -344,8 +346,8 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       );
       for (const cb of cbs) {
         await tx.query(
-          'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, charge_type_id, action, value) VALUES (?, ?, ?, ?, ?)',
-          [gymId, insertId, cb.charge_type_id, cb.action, cb.value],
+          'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
+          [gymId, insertId, cb.gym_charge_id, cb.action, cb.value],
         );
       }
 
@@ -681,9 +683,10 @@ membershipPlansRouter.get('/:id/charge-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
   const { rows } = await db.query<ChargeBenefitRow>(
-    `SELECT pcb.*, ct.code AS charge_type_code
+    `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name
      FROM plan_charge_benefits pcb
-     JOIN charge_types ct ON ct.id = pcb.charge_type_id
+     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+     JOIN charge_types ct ON ct.id = gc.charge_type_id
      WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
     [req.params.id, gymId],
   );
@@ -699,11 +702,23 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
   if (!Array.isArray(items)) return res.status(400).json({ error: 'body must be an array' });
 
   for (const item of items) {
-    if (!item.charge_type_id || !VALID_CB_ACTIONS.includes(item.action)) {
-      return res.status(400).json({ error: 'Each item requires charge_type_id and a valid action' });
+    if (!item.gym_charge_id || !VALID_CB_ACTIONS.includes(item.action)) {
+      return res.status(400).json({ error: 'Each item requires gym_charge_id and a valid action' });
     }
     if (['percentage_discount', 'fixed_discount'].includes(item.action) && item.value == null) {
       return res.status(400).json({ error: `action ${item.action} requires a value` });
+    }
+  }
+
+  if (items.length > 0) {
+    const ids = items.map((i: any) => i.gym_charge_id);
+    const placeholders = ids.map(() => '?').join(',');
+    const { rows: gcRows } = await db.query(
+      `SELECT id FROM gym_charges WHERE gym_id = ? AND id IN (${placeholders})`,
+      [gymId, ...ids],
+    );
+    if (gcRows.length !== ids.length) {
+      return res.status(400).json({ error: 'One or more gym_charge_id values not found in this gym' });
     }
   }
 
@@ -715,14 +730,15 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
     for (const item of items) {
       const value = ['no_benefit', 'waive'].includes(item.action) ? null : parseFloat(item.value);
       await db.query(
-        'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, charge_type_id, action, value) VALUES (?, ?, ?, ?, ?)',
-        [gymId, req.params.id, item.charge_type_id, item.action, value ?? null],
+        'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
+        [gymId, req.params.id, item.gym_charge_id, item.action, value ?? null],
       );
     }
     const { rows } = await db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS charge_type_code
+      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name
        FROM plan_charge_benefits pcb
-       JOIN charge_types ct ON ct.id = pcb.charge_type_id
+       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+       JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
       [req.params.id, gymId],
     );

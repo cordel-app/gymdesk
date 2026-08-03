@@ -41,6 +41,8 @@ interface Allowance {
 interface Center { id: number; name: string; }
 interface PriceRow { id: number; price: string; valid_from: string; valid_to: string | null; }
 interface ActivityType { id: number; name: string; }
+interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; }
+interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; action: string; value: string | null; }
 
 interface Plan {
   id: number;
@@ -59,12 +61,14 @@ interface Plan {
   modified_at: string | null;
   modified_by_name: string | null;
   deleted_at: string | null;
+  charge_benefits: ChargeBenefit[];
 }
 
 const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
 const ENROLLMENT_STATUSES = ['public', 'staff_only', 'closed'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
+const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
 
 const emptyAddForm = {
   name: '',
@@ -164,11 +168,23 @@ export default function PlansPage() {
   const [allCenters, setAllCenters] = useState<Center[]>([]);
   const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
 
+  // Charge benefits
+  const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
+  const [cbEditForPlanId, setCbEditForPlanId] = useState<number | null>(null);
+  const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
+  const [cbSaving, setCbSaving] = useState(false);
+
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   useEffect(() => {
     if (!gymLoading && !isAdmin) router.replace(`/${locale}`);
   }, [gymLoading, isAdmin]);
+
+  useEffect(() => {
+    if (!gymLoading && activeGymId) {
+      apiFetch<GymCharge[]>('/gym-charges').then(setGymCharges).catch(() => {});
+    }
+  }, [gymLoading, activeGymId]);
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
@@ -420,6 +436,48 @@ export default function PlansPage() {
     }
   }
 
+  // ─── Charge Benefits ────────────────────────────────────────────────────────
+
+  function openCbEdit(plan: Plan) {
+    const draft: Record<number, { action: string; value: string }> = {};
+    for (const cb of plan.charge_benefits ?? []) {
+      draft[cb.gym_charge_id] = { action: cb.action, value: cb.value ?? '' };
+    }
+    setCbDraft(draft);
+    setCbEditForPlanId(plan.id);
+  }
+
+  function cancelCbEdit() {
+    setCbEditForPlanId(null);
+    setCbDraft({});
+  }
+
+  async function saveCbEdit(planId: number) {
+    setCbSaving(true);
+    try {
+      const items = gymCharges
+        .filter((gc) => cbDraft[gc.id]?.action && cbDraft[gc.id].action !== 'no_benefit')
+        .map((gc) => ({
+          gym_charge_id: gc.id,
+          action: cbDraft[gc.id].action,
+          value: ['percentage_discount', 'fixed_discount'].includes(cbDraft[gc.id].action)
+            ? parseFloat(cbDraft[gc.id].value) || 0
+            : null,
+        }));
+      await apiFetch(`/membership-plans/${planId}/charge-benefits`, {
+        method: 'PUT',
+        body: JSON.stringify(items),
+      });
+      setCbEditForPlanId(null);
+      setCbDraft({});
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('plans.error_generic'));
+    } finally {
+      setCbSaving(false);
+    }
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   if (gymLoading || !isAdmin) return null;
@@ -596,6 +654,65 @@ export default function PlansPage() {
                           <button onClick={() => handleDeleteAllowance(plan.id, a.id)} style={dangerLinkBtn}>✕</button>
                         </div>
                       ))
+                    )}
+
+                    {gymCharges.length > 0 && (
+                      <>
+                        <SectionHeader
+                          title={t('plans.section_charge_benefits')}
+                          action={
+                            cbEditForPlanId === plan.id ? null :
+                            <button onClick={() => openCbEdit(plan)} style={linkBtn}>Edit</button>
+                          }
+                        />
+                        {cbEditForPlanId === plan.id ? (
+                          <>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '4px 12px', alignItems: 'center', marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>{t('plans.cb_col_charge')}</span>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>{t('plans.cb_col_action')}</span>
+                              <span />
+                            </div>
+                            {gymCharges.map((gc) => (
+                              <div key={gc.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '3px 12px', alignItems: 'center', padding: '2px 0' }}>
+                                <span style={{ fontSize: 13 }}>{gc.charge_type_name}</span>
+                                <select
+                                  value={cbDraft[gc.id]?.action ?? 'no_benefit'}
+                                  onChange={(e) => setCbDraft((prev) => ({ ...prev, [gc.id]: { ...prev[gc.id], action: e.target.value, value: '' } }))}
+                                  style={{ padding: '5px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12, background: '#fff' }}
+                                >
+                                  {CHARGE_ACTIONS.map((a) => (
+                                    <option key={a} value={a}>{t(`plans.cb_action_${a}`)}</option>
+                                  ))}
+                                </select>
+                                {['percentage_discount', 'fixed_discount'].includes(cbDraft[gc.id]?.action ?? '') ? (
+                                  <input
+                                    type="number" min="0" step="0.01"
+                                    value={cbDraft[gc.id]?.value ?? ''}
+                                    onChange={(e) => setCbDraft((prev) => ({ ...prev, [gc.id]: { ...prev[gc.id], value: e.target.value } }))}
+                                    placeholder="0"
+                                    style={{ width: 70, padding: '5px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                                  />
+                                ) : <span />}
+                              </div>
+                            ))}
+                            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                              <button onClick={cancelCbEdit} style={linkBtn}>{t('plans.cancel')}</button>
+                              <button onClick={() => saveCbEdit(plan.id)} disabled={cbSaving} style={linkBtn}>
+                                {cbSaving ? t('plans.saving') : t('plans.save_charge_benefits')}
+                              </button>
+                            </div>
+                          </>
+                        ) : (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').length === 0 ? (
+                          <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_charge_benefits')}</p>
+                        ) : (
+                          (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').map((cb) => (
+                            <div key={cb.id} style={detailRowStyle}>
+                              <span style={labelStyle}>{cb.gym_charge_name}</span>
+                              <span style={valueStyle}>{cb.action}{cb.value != null ? ` — ${cb.value}` : ''}</span>
+                            </div>
+                          ))
+                        )}
+                      </>
                     )}
 
                     <SectionHeader title={t('plans.section_prices')} action={<button onClick={() => openAddPrice(plan.id)} style={linkBtn}>+ Add</button>} />

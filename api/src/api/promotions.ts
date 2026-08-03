@@ -51,13 +51,12 @@ promotionsRouter.get('/', async (req, res, next) => {
   try {
     const { rows } = await db.query(
       `SELECT p.*, gm.name AS created_by_name,
-              at_p.code AS primary_action_type, pcb.value AS primary_value
+              pcb.action AS primary_action_type, pcb.value AS primary_value
        FROM promotions p
        LEFT JOIN gym_memberships gm ON gm.id = p.created_by_membership_id
        LEFT JOIN (SELECT MIN(id) AS id, promotion_id FROM promotion_charge_benefits GROUP BY promotion_id) pcb_min
               ON pcb_min.promotion_id = p.id
        LEFT JOIN promotion_charge_benefits pcb ON pcb.id = pcb_min.id
-       LEFT JOIN action_types at_p ON at_p.id = pcb.action_type_id
        WHERE ${where.join(' AND ')}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir}`,
       params,
@@ -85,13 +84,12 @@ promotionsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
     `SELECT p.*, gm.name AS created_by_name,
-            at_p.code AS primary_action_type, pcb.value AS primary_value
+            pcb.action AS primary_action_type, pcb.value AS primary_value
      FROM promotions p
      LEFT JOIN gym_memberships gm ON gm.id = p.created_by_membership_id
      LEFT JOIN (SELECT MIN(id) AS id, promotion_id FROM promotion_charge_benefits GROUP BY promotion_id) pcb_min
             ON pcb_min.promotion_id = p.id
      LEFT JOIN promotion_charge_benefits pcb ON pcb.id = pcb_min.id
-     LEFT JOIN action_types at_p ON at_p.id = pcb.action_type_id
      WHERE p.id = ? AND p.gym_id = ?`,
     [req.params.id, gymId],
   );
@@ -209,8 +207,8 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       );
       for (const cb of cbs) {
         await tx.query(
-          'INSERT INTO promotion_charge_benefits (gym_id, promotion_id, charge_type_id, action_type_id, value) VALUES (?, ?, ?, ?, ?)',
-          [gymId, newId, cb.charge_type_id, cb.action_type_id, cb.value],
+          'INSERT INTO promotion_charge_benefits (gym_id, promotion_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
+          [gymId, newId, cb.gym_charge_id, cb.action, cb.value],
         );
       }
 

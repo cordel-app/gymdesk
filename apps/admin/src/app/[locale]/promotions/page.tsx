@@ -28,14 +28,16 @@ interface Promo {
   primary_value: string | null;
 }
 
-interface ChargeType { id: number; code: string }
+interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; }
 interface ActionType { id: number; code: string }
 interface MembershipPlan { id: number; name: string }
 
 interface ChargeBenefit {
   id: number;
-  charge_type_id: number;
-  action_type_id: number;
+  gym_charge_id: number;
+  gym_charge_name: string;
+  gym_charge_code: string;
+  action: string;
   value: string | null;
 }
 
@@ -50,6 +52,7 @@ interface PeriodBenefit {
 }
 
 const STATUSES = ['active', 'inactive'] as const;
+const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
 const iso = (v: string) => (v ? v.slice(0, 10) : '');
 
 const emptyPromoForm = {
@@ -61,14 +64,12 @@ const emptyPromoForm = {
   status: 'active' as 'active' | 'inactive',
 };
 
-const emptyCbForm = { charge_type_id: '', action_type_id: '', value: '' };
 const emptyPbForm = { membership_plan_id: '', action_type_id: '', value: '', duration_months: '' };
 
 export default function PromotionsPage() {
   const t = useTranslations('promotions');
   const tStatus = useTranslations('status');
   const tAction = useTranslations('action_type');
-  const tCharge = useTranslations('charge_type');
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
@@ -83,7 +84,7 @@ export default function PromotionsPage() {
   const [searchInput, setSearchInput] = useState('');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
+  const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
   const [actionTypes, setActionTypes] = useState<ActionType[]>([]);
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
 
@@ -93,11 +94,10 @@ export default function PromotionsPage() {
   const [editError, setEditError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  const [chargeBenefits, setChargeBenefits] = useState<ChargeBenefit[]>([]);
+  const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
   const [periodBenefits, setPeriodBenefits] = useState<PeriodBenefit[]>([]);
   const [benefitsLoading, setBenefitsLoading] = useState(false);
 
-  const [cbForm, setCbForm] = useState(emptyCbForm);
   const [pbForm, setPbForm] = useState(emptyPbForm);
   const [cbSaving, setCbSaving] = useState(false);
   const [pbSaving, setPbSaving] = useState(false);
@@ -121,12 +121,12 @@ export default function PromotionsPage() {
 
   async function loadLookups() {
     try {
-      const [ct, at, pl] = await Promise.all([
-        apiFetch<ChargeType[]>('/charge-types'),
+      const [gc, at, pl] = await Promise.all([
+        apiFetch<GymCharge[]>('/gym-charges'),
         apiFetch<ActionType[]>('/action-types'),
         apiFetch<MembershipPlan[]>('/membership-plans?status=active'),
       ]);
-      setChargeTypes(ct);
+      setGymCharges(gc);
       setActionTypes(at);
       setPlans(pl);
     } catch { /* non-critical */ }
@@ -156,7 +156,11 @@ export default function PromotionsPage() {
         apiFetch<ChargeBenefit[]>(`/promotions/${promotionId}/charge-benefits`),
         apiFetch<PeriodBenefit[]>(`/promotions/${promotionId}/period-benefits`),
       ]);
-      setChargeBenefits(cbs);
+      const draft: Record<number, { action: string; value: string }> = {};
+      for (const cb of cbs) {
+        draft[cb.gym_charge_id] = { action: cb.action, value: cb.value ?? '' };
+      }
+      setCbDraft(draft);
       setPeriodBenefits(pbs);
     } catch { /* show empty */ }
     finally { setBenefitsLoading(false); }
@@ -177,7 +181,7 @@ export default function PromotionsPage() {
       status: promo.status,
     });
     setEditError(null);
-    setCbForm(emptyCbForm);
+    setCbDraft({});
     setPbForm(emptyPbForm);
     loadBenefits(promo.id);
     setTimeout(() => nameInputRef.current?.focus(), 50);
@@ -202,9 +206,8 @@ export default function PromotionsPage() {
         status: row.status,
       });
       setEditError(null);
-      setCbForm(emptyCbForm);
+      setCbDraft({});
       setPbForm(emptyPbForm);
-      setChargeBenefits([]);
       setPeriodBenefits([]);
       setTimeout(() => nameInputRef.current?.focus(), 80);
     } catch (err: any) {
@@ -269,34 +272,25 @@ export default function PromotionsPage() {
 
   /* ---- charge benefits ---- */
 
-  async function addChargeBenefit(promotionId: number) {
-    if (!cbForm.charge_type_id || !cbForm.action_type_id) return;
-    const action = actionTypes.find((a) => a.id === parseInt(cbForm.action_type_id, 10));
+  async function saveChargeBenefits(promotionId: number) {
     setCbSaving(true);
     try {
+      const items = Object.entries(cbDraft)
+        .filter(([, v]) => v.action && v.action !== 'no_benefit')
+        .map(([gcId, v]) => ({
+          gym_charge_id: parseInt(gcId, 10),
+          action: v.action,
+          value: v.action === 'waive' ? null : v.value === '' ? null : parseFloat(v.value),
+        }));
       await apiFetch(`/promotions/${promotionId}/charge-benefits`, {
-        method: 'POST',
-        body: JSON.stringify({
-          charge_type_id: parseInt(cbForm.charge_type_id, 10),
-          action_type_id: parseInt(cbForm.action_type_id, 10),
-          value: action?.code === 'waive' ? null : cbForm.value === '' ? null : parseFloat(cbForm.value),
-        }),
+        method: 'PUT',
+        body: JSON.stringify({ items }),
       });
-      setCbForm(emptyCbForm);
-      loadBenefits(promotionId);
+      toast(t('saved'));
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
       setCbSaving(false);
-    }
-  }
-
-  async function deleteChargeBenefit(promotionId: number, cbId: number) {
-    try {
-      await apiFetch(`/promotions/${promotionId}/charge-benefits/${cbId}`, { method: 'DELETE' });
-      loadBenefits(promotionId);
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
     }
   }
 
@@ -360,7 +354,6 @@ export default function PromotionsPage() {
 
   function renderInlineEditor(promo: Promo) {
     if (expandedId !== promo.id) return null;
-    const cbAction = actionTypes.find((a) => a.id === parseInt(cbForm.action_type_id, 10));
     const pbAction = actionTypes.find((a) => a.id === parseInt(pbForm.action_type_id, 10));
     const needsValue = (code?: string) => code && code !== 'waive';
 
@@ -435,62 +428,48 @@ export default function PromotionsPage() {
           <p style={sectionTitle}>{t('section_charge_benefits')}</p>
           {benefitsLoading ? <p style={hintSt}>{t('loading')}</p> : (
             <>
-              {chargeBenefits.length > 0 && (
-                <table style={tableSt}>
-                  <thead>
-                    <tr>
-                      <th style={thSt}>{t('col_charge_type')}</th>
-                      <th style={thSt}>{t('col_action')}</th>
-                      <th style={thSt}>{t('col_value')}</th>
-                      <th style={{ ...thSt, width: 48 }} />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {chargeBenefits.map((cb) => {
-                      const ct = chargeTypes.find((c) => c.id === cb.charge_type_id);
-                      const at = actionTypes.find((a) => a.id === cb.action_type_id);
-                      return (
-                        <tr key={cb.id}>
-                          <td style={tdSt}>{ct ? tCharge(ct.code as any) : `#${cb.charge_type_id}`}</td>
-                          <td style={tdSt}>{at ? tAction(at.code as any) : `#${cb.action_type_id}`}</td>
-                          <td style={tdSt}>{cb.value ?? '—'}</td>
-                          <td style={tdSt}>
-                            <button onClick={() => deleteChargeBenefit(promo.id, cb.id)} style={btnSmall('#c0392b')}>✕</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              {gymCharges.length === 0 ? (
+                <p style={hintSt}>{t('no_charge_benefits')}</p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '6px 12px', alignItems: 'center', marginBottom: 12 }}>
+                  {gymCharges.map((gc) => {
+                    const draft = cbDraft[gc.id] ?? { action: 'no_benefit', value: '' };
+                    return (
+                      <>
+                        <span key={`name-${gc.id}`} style={{ fontSize: 13 }}>{gc.charge_type_name}</span>
+                        <select
+                          key={`action-${gc.id}`}
+                          value={draft.action}
+                          onChange={(e) => setCbDraft({ ...cbDraft, [gc.id]: { ...draft, action: e.target.value } })}
+                          style={{ ...inlineSel, minWidth: 160, flex: 'none' }}
+                        >
+                          {CHARGE_ACTIONS.map((a) => (
+                            <option key={a} value={a}>{t(`cb_action_${a}` as any)}</option>
+                          ))}
+                        </select>
+                        {draft.action !== 'no_benefit' && draft.action !== 'waive' ? (
+                          <input
+                            key={`value-${gc.id}`}
+                            type="number" min="0" step="0.01"
+                            value={draft.value}
+                            onChange={(e) => setCbDraft({ ...cbDraft, [gc.id]: { ...draft, value: e.target.value } })}
+                            style={{ ...inlineSel, width: 90, minWidth: 0, flex: 'none' }}
+                          />
+                        ) : (
+                          <span key={`placeholder-${gc.id}`} />
+                        )}
+                      </>
+                    );
+                  })}
+                </div>
               )}
-              {chargeBenefits.length === 0 && <p style={hintSt}>{t('no_charge_benefits')}</p>}
-
-              <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-                <select value={cbForm.charge_type_id} onChange={(e) => setCbForm({ ...cbForm, charge_type_id: e.target.value })} style={inlineSel}>
-                  <option value="">{t('label_charge_type')}</option>
-                  {chargeTypes.map((c) => <option key={c.id} value={c.id}>{tCharge(c.code as any)}</option>)}
-                </select>
-                <select value={cbForm.action_type_id} onChange={(e) => setCbForm({ ...cbForm, action_type_id: e.target.value })} style={inlineSel}>
-                  <option value="">{t('label_action_type')}</option>
-                  {actionTypes.map((a) => <option key={a.id} value={a.id}>{tAction(a.code as any)}</option>)}
-                </select>
-                {needsValue(cbAction?.code) && (
-                  <input
-                    type="number" min="0" step="0.01"
-                    placeholder={t('label_value')}
-                    value={cbForm.value}
-                    onChange={(e) => setCbForm({ ...cbForm, value: e.target.value })}
-                    style={{ ...inlineSel, width: 100 }}
-                  />
-                )}
-                <button
-                  onClick={() => addChargeBenefit(promo.id)}
-                  disabled={cbSaving || !cbForm.charge_type_id || !cbForm.action_type_id}
-                  style={btnSmall('#6c63ff')}
-                >
-                  {t('add_charge_benefit')}
-                </button>
-              </div>
+              {gymCharges.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={() => saveChargeBenefits(promo.id)} disabled={cbSaving} style={btnSmall('#6c63ff')}>
+                    {cbSaving ? t('saving') : t('save_charge_benefits')}
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>

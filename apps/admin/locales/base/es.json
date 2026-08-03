@@ -438,7 +438,11 @@
     "cb_action_waive": "Eximir cargo",
     "cb_action_percentage_discount": "% Descuento",
     "cb_action_fixed_discount": "Descuento fijo",
-    "details_deleted_by": "Eliminado por"
+    "details_deleted_by": "Eliminado por",
+    "no_charge_benefits": "No hay beneficios de cargos configurados.",
+    "cb_col_charge": "Cargo",
+    "cb_col_action": "Acción",
+    "save_charge_benefits": "Guardar beneficios de cargos"
   },
   "prices": {
     "title": "Precios",
@@ -613,7 +617,13 @@
     "detail_ends": "Fecha fin",
     "detail_status": "Estado",
     "detail_modified_by": "Modificado por",
-    "detail_modified_at": "Modificado el"
+    "detail_modified_at": "Modificado el",
+    "col_charge": "Cargo",
+    "cb_action_no_benefit": "Sin beneficio",
+    "cb_action_waive": "Eximir",
+    "cb_action_percentage_discount": "% Descuento",
+    "cb_action_fixed_discount": "Descuento fijo",
+    "save_charge_benefits": "Guardar beneficios de cargos"
   },
   "audit": {
     "title": "Registro de auditoría",

@@ -63,82 +63,60 @@ promotionDetailsRouter.get('/charge-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const promotionId = (req.params as any).id;
   const { rows } = await db.query(
-    'SELECT * FROM promotion_charge_benefits WHERE promotion_id = ? AND gym_id = ? ORDER BY id ASC',
+    `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code
+     FROM promotion_charge_benefits pcb
+     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+     JOIN charge_types ct ON ct.id = gc.charge_type_id
+     WHERE pcb.promotion_id = ? AND pcb.gym_id = ?
+     ORDER BY ct.name ASC`,
     [promotionId, gymId],
   );
   res.json(rows);
 });
 
-function validateChargeBenefit(actionCode: string, value: any) {
-  const parsed = value != null && value !== '' ? parseFloat(value) : null;
-  if (actionCode === 'waive' && parsed !== null) return 'Waive actions must not carry a value';
-  if (actionCode !== 'waive' && parsed === null) return 'This action requires a value';
-  if (actionCode === 'percentage_discount' && parsed !== null && (parsed < 0 || parsed > 100)) {
-    return 'Percentage must be between 0 and 100';
-  }
-  if (parsed !== null && parsed < 0) return 'Value must be non-negative';
-  return null;
-}
-
-promotionDetailsRouter.post('/charge-benefits', requireRole('admin'), async (req, res, next) => {
+promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const promotionId = parseInt((req.params as any).id, 10);
-  const { charge_type_id, action_type_id, value } = req.body;
-  if (!charge_type_id || !action_type_id) return res.status(400).json({ error: 'charge_type_id and action_type_id are required' });
+  const { items } = req.body;
+  if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
   if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
 
-  const { rows: actionRows } = await db.query('SELECT code FROM action_types WHERE id = ?', [action_type_id]);
-  if (actionRows.length === 0) return res.status(404).json({ error: 'Action type not found' });
-  const actionCode = actionRows[0].code;
-  const err = validateChargeBenefit(actionCode, value);
-  if (err) return res.status(400).json({ error: err });
+  const active = items.filter((i: any) => i.action && i.action !== 'no_benefit');
 
-  const parsedValue = value != null && value !== '' ? parseFloat(value) : null;
-  try {
-    const row = await insertAndFetch(
-      `INSERT INTO promotion_charge_benefits (gym_id, promotion_id, charge_type_id, action_type_id, value)
-       VALUES (?, ?, ?, ?, ?)`,
-      [gymId, promotionId, charge_type_id, action_type_id, parsedValue],
-      'SELECT * FROM promotion_charge_benefits WHERE id = ?',
-      (id) => [id],
+  if (active.length > 0) {
+    const gymChargeIds = active.map((i: any) => i.gym_charge_id);
+    const placeholders = gymChargeIds.map(() => '?').join(',');
+    const { rows: owned } = await db.query(
+      `SELECT id FROM gym_charges WHERE gym_id = ? AND id IN (${placeholders})`,
+      [gymId, ...gymChargeIds],
     );
-    res.status(201).json(row);
-  } catch (err) { next(err); }
-});
+    if (owned.length !== gymChargeIds.length) {
+      return res.status(404).json({ error: 'One or more gym charges not found in this gym' });
+    }
+  }
 
-promotionDetailsRouter.put('/charge-benefits/:cbId', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = (req.params as any).id;
-  const { cbId } = req.params;
-  const { charge_type_id, action_type_id, value } = req.body;
-  if (!charge_type_id || !action_type_id) return res.status(400).json({ error: 'charge_type_id and action_type_id are required' });
-
-  const { rows: actionRows } = await db.query('SELECT code FROM action_types WHERE id = ?', [action_type_id]);
-  if (actionRows.length === 0) return res.status(404).json({ error: 'Action type not found' });
-  const err = validateChargeBenefit(actionRows[0].code, value);
-  if (err) return res.status(400).json({ error: err });
-
-  const parsedValue = value != null && value !== '' ? parseFloat(value) : null;
   try {
-    const { rowCount } = await db.query(
-      'UPDATE promotion_charge_benefits SET charge_type_id = ?, action_type_id = ?, value = ? WHERE id = ? AND promotion_id = ? AND gym_id = ?',
-      [charge_type_id, action_type_id, parsedValue, cbId, promotionId, gymId],
+    await db.transaction(async (tx) => {
+      await tx.query('DELETE FROM promotion_charge_benefits WHERE promotion_id = ? AND gym_id = ?', [promotionId, gymId]);
+      for (const item of active) {
+        const value = item.value != null && item.value !== '' ? parseFloat(item.value) : null;
+        await tx.query(
+          'INSERT INTO promotion_charge_benefits (gym_id, promotion_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
+          [gymId, promotionId, item.gym_charge_id, item.action, value],
+        );
+      }
+    });
+    const { rows } = await db.query(
+      `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code
+       FROM promotion_charge_benefits pcb
+       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+       JOIN charge_types ct ON ct.id = gc.charge_type_id
+       WHERE pcb.promotion_id = ? AND pcb.gym_id = ?
+       ORDER BY ct.name ASC`,
+      [promotionId, gymId],
     );
-    if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Charge benefit not found' });
-    const { rows } = await db.query('SELECT * FROM promotion_charge_benefits WHERE id = ?', [cbId]);
-    res.json(rows[0]);
+    res.json(rows);
   } catch (err) { next(err); }
-});
-
-promotionDetailsRouter.delete('/charge-benefits/:cbId', requireRole('admin'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = (req.params as any).id;
-  const { rowCount } = await db.query(
-    'DELETE FROM promotion_charge_benefits WHERE id = ? AND promotion_id = ? AND gym_id = ?',
-    [req.params.cbId, promotionId, gymId],
-  );
-  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Charge benefit not found' });
-  res.status(204).send();
 });
 
 /* ---------- period benefits ---------- */

@@ -452,7 +452,11 @@
     "yes": "Yes",
     "no": "No",
     "all_centers": "All centers (no restriction)",
-    "unlimited": "Unlimited"
+    "unlimited": "Unlimited",
+    "no_charge_benefits": "No charge benefits configured.",
+    "cb_col_charge": "Charge",
+    "cb_col_action": "Action",
+    "save_charge_benefits": "Save charge benefits"
   },
   "prices": {
     "title": "Prices",
@@ -627,7 +631,13 @@
     "detail_ends": "End Date",
     "detail_status": "Status",
     "detail_modified_by": "Modified By",
-    "detail_modified_at": "Modified At"
+    "detail_modified_at": "Modified At",
+    "col_charge": "Charge",
+    "cb_action_no_benefit": "No benefit",
+    "cb_action_waive": "Waive",
+    "cb_action_percentage_discount": "% Discount",
+    "cb_action_fixed_discount": "Fixed discount",
+    "save_charge_benefits": "Save charge benefits"
   },
   "audit": {
     "title": "Audit log",
