@@ -35,11 +35,11 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   let price = parseFloat(um.base_price ?? um.plan_base_price);
 
   const { rows: cbRows } = await tx.query(
-    `SELECT pcb.value, at.code AS action_code, ct.code AS charge_code
+    `SELECT pcb.value, pcb.action AS action_code, ct.code AS charge_code
      FROM user_membership_promotions ump
      JOIN promotion_charge_benefits pcb ON pcb.promotion_id = ump.promotion_id
-     JOIN action_types at ON at.id = pcb.action_type_id
-     JOIN charge_types ct ON ct.id = pcb.charge_type_id
+     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+     JOIN charge_types ct ON ct.id = gc.charge_type_id
      WHERE ump.user_membership_id = ? AND ump.status = 'applied'
        AND ct.code = 'membership_fee'`,
     [userMembershipId],
@@ -69,12 +69,12 @@ export async function applyPromotionToMembership(
     const um = umRows[0];
 
     const { rows: promoRows } = await tx.query(
-      'SELECT id, stackable, status, starts_at, ends_at FROM promotions WHERE id = ? AND gym_id = ?',
+      "SELECT id, stackable, lifecycle_status, starts_at, ends_at FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
       [promotionId, gymId],
     );
     if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
     const promo = promoRows[0];
-    if (promo.status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
+    if (promo.lifecycle_status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
     const now = new Date();
     if (new Date(promo.starts_at) > now || new Date(promo.ends_at) < now) {
       throw Object.assign(new Error('Promotion is outside its active window'), { status: 400 });
@@ -153,12 +153,12 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
 
       // Load promotion
       const { rows: promoRows } = await tx.query(
-        "SELECT id, stackable, status, starts_at, ends_at FROM promotions WHERE id = ? AND gym_id = ?",
+        "SELECT id, stackable, lifecycle_status, starts_at, ends_at FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
         [promotion_id, gymId],
       );
       if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
       const promo = promoRows[0];
-      if (promo.status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
+      if (promo.lifecycle_status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
       const now = new Date();
       if (new Date(promo.starts_at) > now || new Date(promo.ends_at) < now) {
         throw Object.assign(new Error('Promotion is outside its active window'), { status: 400 });

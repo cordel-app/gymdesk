@@ -12,13 +12,15 @@ interface PromoDetail {
   starts_at: string;
   ends_at: string;
   stackable: number;
-  status: string;
+  lifecycle_status: string;
   created_at: string;
   created_by_name: string | null;
   modified_at: string | null;
   modified_by_name: string | null;
-  primary_action_type: string | null;
-  primary_value: string | null;
+  deleted_at: string | null;
+  deleted_by_name: string | null;
+  free_period_paid_months: number | null;
+  free_period_bonus_months: number | null;
 }
 
 export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
@@ -27,7 +29,7 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
   onClose: () => void;
 }) {
   const t = useTranslations('promotions');
-  const tAction = useTranslations('action_type');
+  const tStatus = useTranslations('status');
   const { apiFetch } = useApiClient();
   const [detail, setDetail] = useState<PromoDetail | null>(null);
 
@@ -56,12 +58,17 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
           <>
             {field(t('detail_name'), detail.name)}
             {field(t('detail_description'), detail.description)}
-            {field(t('detail_type'), detail.primary_action_type ? tAction(detail.primary_action_type as any) : null)}
-            {field(t('detail_value'), detail.primary_value != null ? String(detail.primary_value) : null)}
             {field(t('detail_starts'), detail.starts_at?.slice(0, 10))}
             {field(t('detail_ends'), detail.ends_at?.slice(0, 10))}
-            {field(t('detail_status'), detail.status)}
-            {field(t('label_stackable'), detail.stackable ? t('yes') : t('no'))}
+            {field(t('detail_lifecycle_status'), detail.lifecycle_status ? tStatus(detail.lifecycle_status as any) : null)}
+            {field(t('detail_stackable'), detail.stackable ? t('yes') : t('no'))}
+
+            {(detail.free_period_paid_months != null || detail.free_period_bonus_months != null) && (
+              <>
+                {field(t('detail_paid_months'), detail.free_period_paid_months != null ? String(detail.free_period_paid_months) : null)}
+                {field(t('detail_bonus_months'), detail.free_period_bonus_months != null ? String(detail.free_period_bonus_months) : null)}
+              </>
+            )}
 
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>
               <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Audit</p>
@@ -69,6 +76,8 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
               {field(t('detail_created_at'), detail.created_at?.slice(0, 10))}
               {field(t('detail_modified_by'), detail.modified_by_name)}
               {field(t('detail_modified_at'), detail.modified_at?.slice(0, 10))}
+              {detail.deleted_at && field(t('detail_deleted_by'), detail.deleted_by_name)}
+              {detail.deleted_at && field(t('detail_deleted_at'), detail.deleted_at?.slice(0, 10))}
             </div>
           </>
         )}
