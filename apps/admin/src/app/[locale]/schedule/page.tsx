@@ -34,7 +34,7 @@ interface Session {
   attendance_absent: number;
 }
 interface ClassType { id: number; name: string; duration_minutes: number; max_capacity: number; status: string }
-interface Trainer { gym_membership_id: number; user_id: string; name: string; specialities: { name: string }[] }
+interface Trainer { gym_membership_id: number; user_id: string; name: string }
 interface Space { id: number; name: string; status: string }
 
 const emptyForm = {
@@ -261,7 +261,7 @@ export default function SchedulePage() {
         <select value={form.trainer_membership_id} onChange={(e) => setForm({ ...form, trainer_membership_id: e.target.value })}
                 style={selectStyle}>
           <option value="">—</option>
-          {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.user_id.slice(0, 10)}…{tr.specialities.length ? ` (${tr.specialities.map((s) => s.name).join(', ')})` : ''}</option>)}
+          {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name ?? tr.user_id.slice(0, 10) + '…'}</option>)}
         </select>
         <FormLabel>{t('schedule.label_space')}</FormLabel>
         <select value={form.space_id} onChange={(e) => setForm({ ...form, space_id: e.target.value })} style={selectStyle}>

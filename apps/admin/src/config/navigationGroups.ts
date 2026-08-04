@@ -63,10 +63,6 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.spaces',
       },
       {
-        href: '/{{locale}}/specialities',
-        labelKey: 'nav.specialities',
-      },
-      {
         href: '/{{locale}}/activity-types',
         labelKey: 'nav.activity_types',
       },

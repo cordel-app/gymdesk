@@ -208,7 +208,7 @@ Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https:/
 | Ticket | Issue | Size | Depends on |
 |---|---|---|---|
 | P2.1 Rooms CRUD | [#13](https://github.com/cordel-app/gymdesk/issues/13) | S | #2 |
-| P2.2 Specialities + trainer_specialities | [#14](https://github.com/cordel-app/gymdesk/issues/14) | M | #13 |
+| ~~P2.2 Specialities + trainer_specialities~~ | [#14](https://github.com/cordel-app/gymdesk/issues/14) | M | #13 | _(removed in #219)_ |
 | P2.3 class_types CRUD | [#15](https://github.com/cordel-app/gymdesk/issues/15) | M | #14 |
 | P2.4 ⚠️ Migrate classes → class_sessions | [#16](https://github.com/cordel-app/gymdesk/issues/16) | L | #15 |
 | P2.5 ⚠️ Bookings v2: waitlist, capacity, attendance | [#17](https://github.com/cordel-app/gymdesk/issues/17) | L | #16 |
