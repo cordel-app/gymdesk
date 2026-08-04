@@ -4,6 +4,17 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 9. No standalone Event entity (#221, 2026-08-05)
+
+**Decision**: the `events` and `event_bookings` tables, all related API endpoints, and all frontend surfaces were permanently removed. Any scheduled occurrence must be represented as a Calendar item (using `calendar_events`) with an appropriate type — not as a new standalone entity.
+
+**Consequences**:
+- Do not reintroduce `Event` as a standalone entity. If differentiation is needed (workshop, appointment, special activity), add a `type` column to `calendar_events` rather than creating a new table.
+- `GET /me/upcoming` and `GET /me/activity-history` return session bookings only.
+- The `member_notifications` table retains the `event_cancelled`/`event_updated` type values as dead historical rows; no new notifications of those types will be written.
+
+---
+
 ## 1. MySQL 8 (Oracle HeatWave) over PostgreSQL
 
 **Decision**: migrated from Neon Postgres to Oracle HeatWave MySQL (Phase M, 2026-07-03, ~€50/mo).
@@ -102,3 +113,4 @@ Short record of the settled choices that are not obvious from the code. Don't re
 - **Monei AoC**: Monei's current Attestation of Compliance must be obtained before production go-live. SAQ A eligibility is void without it.
 - **MIT consent**: the member must explicitly acknowledge recurring billing terms before the first CIT (captured in `payment_requests.consent_given_at`). Required by Visa/Mastercard card scheme rules.
 - **Dedicated VPS (recommended, deferred)**: for full PCI network isolation `fitness-payment` should run on its own VPS, not on the same host as `fitness-members`. The shared corfront deployment is an accepted risk with compensating controls (separate container, distinct port, no shared secrets). Migration to a dedicated VPS should be done before any formal QSA assessment.
+

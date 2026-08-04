@@ -26,24 +26,6 @@ interface Session {
   kind: 'session';
 }
 
-interface GymEvent {
-  id: number;
-  name: string;
-  description: string | null;
-  starts_at: string;
-  ends_at: string;
-  capacity: number | null;
-  booked_count: number;
-  waitlist_count: number;
-  is_full: boolean;
-  my_booking_status: 'booked' | 'waitlisted' | null;
-  my_booking_id: number | null;
-  my_booked_at: string | null;
-  kind: 'event';
-}
-
-type ScheduleItem = Session | GymEvent;
-
 function dayKey(iso: string) { return iso.slice(0, 10); }
 function timeOnly(iso: string) { return iso.slice(11, 16); }
 
@@ -55,12 +37,9 @@ export default function MemberSchedulePage() {
   const { isLinked, loading: appLoading } = useApp();
 
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [events, setEvents] = useState<GymEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingSession, setPendingSession] = useState<number | null>(null);
-  const [pendingEvent, setPendingEvent] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [cancelBlockedMsg, setCancelBlockedMsg] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -68,12 +47,8 @@ export default function MemberSchedulePage() {
     to.setDate(to.getDate() + 14);
     const toStr = to.toISOString();
     try {
-      const [sessionData, eventData] = await Promise.all([
-        apiFetch<Session[]>(`/me/schedule?to=${toStr}`),
-        apiFetch<GymEvent[]>(`/me/events?to=${toStr}`),
-      ]);
+      const sessionData = await apiFetch<Session[]>(`/me/schedule?to=${toStr}`);
       setSessions(sessionData.map((s) => ({ ...s, kind: 'session' as const })));
-      setEvents(eventData.map((e) => ({ ...e, kind: 'event' as const })));
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setLoading(false); }
   }
@@ -109,59 +84,23 @@ export default function MemberSchedulePage() {
     finally { setPendingSession(null); }
   }
 
-  async function bookEvent(eventId: number) {
-    setPendingEvent(eventId); setMessage(null); setCancelBlockedMsg(null);
-    try {
-      const result: any = await apiFetch('/me/event-bookings', {
-        method: 'POST', body: JSON.stringify({ event_id: eventId }),
-      });
-      setMessage(result.status === 'waitlisted'
-        ? t('member_schedule.event_waitlisted')
-        : t('member_schedule.event_booked'));
-      load();
-    } catch (err: any) {
-      setMessage(err.message ?? t('common.error'));
-    } finally { setPendingEvent(null); }
-  }
-
-  async function cancelEvent(bookingId: number, eventId: number) {
-    setPendingEvent(eventId); setMessage(null); setCancelBlockedMsg(null);
-    try {
-      await apiFetch(`/me/event-bookings/${bookingId}`, { method: 'DELETE' });
-      setMessage(t('member_schedule.event_cancelled'));
-      load();
-    } catch (err: any) {
-      if (err.message?.includes('Cancellation is no longer available')) {
-        setCancelBlockedMsg(err.message);
-      } else {
-        setMessage(err.message ?? t('common.error'));
-      }
-    } finally { setPendingEvent(null); }
-  }
-
   const grouped = useMemo(() => {
-    const all: ScheduleItem[] = [
-      ...sessions,
-      ...events,
-    ];
-    const g = new Map<string, ScheduleItem[]>();
-    for (const item of all) {
+    const g = new Map<string, Session[]>();
+    for (const item of sessions) {
       const k = dayKey(item.starts_at);
       const arr = g.get(k) ?? [];
       arr.push(item);
       g.set(k, arr);
     }
-    // Sort items within each day by starts_at
     for (const [, arr] of g) arr.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     return Array.from(g.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [sessions, events]);
+  }, [sessions]);
 
   return (
     <main style={styles.container}>
       <h1 style={styles.title}>{t('member_schedule.title')}</h1>
 
       {message && <div style={styles.message}>{message}</div>}
-      {cancelBlockedMsg && <div style={styles.errorMessage}>{cancelBlockedMsg}</div>}
 
       {loading ? (
         <p style={styles.hint}>{t('member_schedule.loading')}</p>
@@ -171,94 +110,41 @@ export default function MemberSchedulePage() {
         grouped.map(([day, list]) => (
           <section key={day} style={{ marginTop: 20 }}>
             <h2 style={styles.dayHead}>{day}</h2>
-            {list.map((item) => {
-              if (item.kind === 'session') {
-                const s = item;
-                const isBusy = pendingSession === s.id;
-                const myStatus = s.my_booking_status;
-                const spots = s.spots_left;
-                return (
-                  <div key={`s-${s.id}`} style={styles.card}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <span style={styles.time}>{timeOnly(s.starts_at)} – {timeOnly(s.ends_at)}</span>
-                      {s.access_locked ? (
-                        <span style={styles.pillLocked}>🔒 {t('member_schedule.plan_only')}</span>
-                      ) : myStatus === 'booked' ? (
-                        <span style={styles.pillBooked}>{t('member_schedule.status_booked')}</span>
-                      ) : myStatus === 'waitlisted' ? (
-                        <span style={styles.pillWait}>{t('member_schedule.waitlist_pos', { pos: s.my_waitlist_position ?? '?' })}</span>
-                      ) : spots > 0 ? (
-                        <span style={styles.spots}>{t('member_schedule.spots_left', { n: spots })}</span>
-                      ) : (
-                        <span style={styles.pillFull}>{t('member_schedule.full')}</span>
-                      )}
-                    </div>
-                    <div style={styles.name}>{s.class_type_name}</div>
-                    {s.space_name && <div style={styles.sub}>{s.space_name}</div>}
-                    {s.trainer_name && <div style={styles.sub}>{s.trainer_name}</div>}
-                    <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                      {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
-                        <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelSession(s.my_booking_id!, s.id)}>
-                          {isBusy ? '…' : t('member_schedule.cancel_booking')}
-                        </button>
-                      ) : myStatus ? null : spots > 0 ? (
-                        <button style={styles.btnBook} disabled={isBusy} onClick={() => bookSession(s.id)}>
-                          {isBusy ? '…' : t('member_schedule.book')}
-                        </button>
-                      ) : (
-                        <button style={styles.btnWait} disabled={isBusy} onClick={() => bookSession(s.id)}>
-                          {isBusy ? '…' : t('member_schedule.join_waitlist')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-
-              // Calendar Event card
-              const ev = item;
-              const isBusy = pendingEvent === ev.id;
-              const myStatus = ev.my_booking_status;
-              const isFull = ev.is_full;
+            {list.map((s) => {
+              const isBusy = pendingSession === s.id;
+              const myStatus = s.my_booking_status;
+              const spots = s.spots_left;
               return (
-                <div key={`e-${ev.id}`} style={{ ...styles.card, borderLeft: '3px solid #6c63ff' }}>
+                <div key={`s-${s.id}`} style={styles.card}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <span style={styles.time}>{timeOnly(ev.starts_at)} – {timeOnly(ev.ends_at)}</span>
-                    {myStatus === 'booked' ? (
+                    <span style={styles.time}>{timeOnly(s.starts_at)} – {timeOnly(s.ends_at)}</span>
+                    {s.access_locked ? (
+                      <span style={styles.pillLocked}>🔒 {t('member_schedule.plan_only')}</span>
+                    ) : myStatus === 'booked' ? (
                       <span style={styles.pillBooked}>{t('member_schedule.status_booked')}</span>
                     ) : myStatus === 'waitlisted' ? (
-                      <span style={styles.pillWait}>{t('member_schedule.status_waitlisted')}</span>
-                    ) : isFull ? (
+                      <span style={styles.pillWait}>{t('member_schedule.waitlist_pos', { pos: s.my_waitlist_position ?? '?' })}</span>
+                    ) : spots > 0 ? (
+                      <span style={styles.spots}>{t('member_schedule.spots_left', { n: spots })}</span>
+                    ) : (
                       <span style={styles.pillFull}>{t('member_schedule.full')}</span>
-                    ) : null}
-                  </div>
-                  <div style={styles.name}>{ev.name}</div>
-                  <div style={{ ...styles.sub, marginTop: 4 }}>
-                    {ev.capacity !== null
-                      ? `${ev.booked_count} / ${ev.capacity}`
-                      : `${ev.booked_count}`}
-                    {isFull && ev.capacity !== null && (
-                      <span style={{ ...styles.pillFull, marginLeft: 6, display: 'inline-block', padding: '1px 6px' }}>
-                        {t('member_schedule.full')}
-                      </span>
                     )}
                   </div>
+                  <div style={styles.name}>{s.class_type_name}</div>
+                  {s.space_name && <div style={styles.sub}>{s.space_name}</div>}
+                  {s.trainer_name && <div style={styles.sub}>{s.trainer_name}</div>}
                   <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                    {myStatus === 'booked' && ev.my_booking_id ? (
-                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelEvent(ev.my_booking_id!, ev.id)}>
+                    {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
+                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelSession(s.my_booking_id!, s.id)}>
                         {isBusy ? '…' : t('member_schedule.cancel_booking')}
                       </button>
-                    ) : myStatus === 'waitlisted' && ev.my_booking_id ? (
-                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelEvent(ev.my_booking_id!, ev.id)}>
-                        {isBusy ? '…' : t('member_schedule.leave_waitlist')}
-                      </button>
-                    ) : isFull ? (
-                      <button style={styles.btnWait} disabled={isBusy} onClick={() => bookEvent(ev.id)}>
-                        {isBusy ? '…' : t('member_schedule.join_waitlist')}
+                    ) : myStatus ? null : spots > 0 ? (
+                      <button style={styles.btnBook} disabled={isBusy} onClick={() => bookSession(s.id)}>
+                        {isBusy ? '…' : t('member_schedule.book')}
                       </button>
                     ) : (
-                      <button style={styles.btnBook} disabled={isBusy} onClick={() => bookEvent(ev.id)}>
-                        {isBusy ? '…' : t('member_schedule.book')}
+                      <button style={styles.btnWait} disabled={isBusy} onClick={() => bookSession(s.id)}>
+                        {isBusy ? '…' : t('member_schedule.join_waitlist')}
                       </button>
                     )}
                   </div>
@@ -276,7 +162,6 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
   title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: '#18181b' },
   message: { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 14 },
-  errorMessage: { background: '#fdeaea', color: '#c0392b', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 14 },
   dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' },
   card: { background: '#fff', borderRadius: 10, padding: 14, marginBottom: 10 },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: '#18181b' },

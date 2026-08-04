@@ -38,8 +38,6 @@ import { auditLogsRouter } from './api/audit-logs';
 import { centersRouter } from './api/centers';
 import { memberCentersRouter } from './api/member-centers';
 import { trainerAvailabilityRouter } from './api/trainer-availability';
-import { eventsRouter } from './api/events';
-import { eventBookingsRouter } from './api/event-bookings';
 // Side-effect import: registers the booking access hook for package credits.
 // Must be imported BEFORE plan-allowances so its hook is queued first
 // (plan-access checks getPackageIntent to know whether to bail on 403).
@@ -146,13 +144,11 @@ app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('OR
 app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), classPackagesRouter);
 app.use('/centers',       requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), centersRouter);
 app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), trainerAvailabilityRouter);
-app.use('/events',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), eventsRouter);
 
 // MEMBERS module — admin/front_desk=RW, trainer*/nutritionist=R_ASSIGNED, accountant/member=NONE
 app.use('/members',       requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), membersRouter);
 app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), memberCentersRouter);
 app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), bookingsRouter);
-app.use('/event-bookings', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), eventBookingsRouter);
 
 // TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE
 app.use('/muscles',          requireAuth(), tenantContext, requireModuleAccess('TRAINING'), musclesRouter);

@@ -115,10 +115,7 @@
     "waitlisted_at": "A la llista d'espera — posició {pos}.",
     "cancelled": "Reserva cancel·lada.",
     "status_waitlisted": "A la llista d'espera",
-    "leave_waitlist": "Sortir de la llista d'espera",
-    "event_booked": "Tens plaça a l'esdeveniment.",
-    "event_waitlisted": "Afegit a la llista d'espera de l'esdeveniment.",
-    "event_cancelled": "Reserva de l'esdeveniment cancel·lada."
+    "leave_waitlist": "Sortir de la llista d'espera"
   },
   "notifications": {
     "title": "Notificacions",
@@ -129,8 +126,6 @@
     "type_booking_confirmed": "Reserva confirmada",
     "type_waitlist_joined": "Afegit a la llista d'espera",
     "type_promoted_from_waitlist": "Promogut de la llista d'espera",
-    "type_event_cancelled": "Sessió cancel·lada",
-    "type_event_updated": "Sessió actualitzada",
     "type_booking_reminder_24h": "Recordatori: demà",
     "type_booking_reminder_1h": "Recordatori: comença aviat"
   },

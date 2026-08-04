@@ -9,7 +9,7 @@ import { useApiClient } from '@/lib/apiClient';
 interface Notification {
   id: number;
   type: string;
-  entity_type: 'session' | 'event' | null;
+  entity_type: 'session' | null;
   entity_id: number | null;
   payload: { title?: string; starts_at?: string; [key: string]: unknown } | null;
   read_at: string | null;
