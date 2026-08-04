@@ -42,7 +42,6 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   exercise:                       { kind: 'simple',   label: 'Exercises',                table: 'exercises',               nameColumn: 'name' },
   class_type:                     { kind: 'simple',   label: 'Class Types',              table: 'class_types',             nameColumn: 'name' },
   promotion:                      { kind: 'simple',   label: 'Promotions',               table: 'promotions',              nameColumn: 'name' },
-  event:                          { kind: 'simple',   label: 'Events',                   table: 'events',                  nameColumn: 'name' },
   center:                         { kind: 'simple',   label: 'Centers',                  table: 'centers',                 nameColumn: 'name' },
   space:                          { kind: 'simple',   label: 'Spaces',                   table: 'spaces',                  nameColumn: 'name' },
 

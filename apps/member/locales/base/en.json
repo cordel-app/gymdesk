@@ -115,10 +115,7 @@
     "waitlisted_at": "Added to waitlist — position {pos}.",
     "cancelled": "Booking cancelled.",
     "status_waitlisted": "Waitlisted",
-    "leave_waitlist": "Leave waiting list",
-    "event_booked": "You're booked for the event.",
-    "event_waitlisted": "Added to the event waiting list.",
-    "event_cancelled": "Event booking cancelled."
+    "leave_waitlist": "Leave waiting list"
   },
   "notifications": {
     "title": "Notifications",
@@ -129,8 +126,6 @@
     "type_booking_confirmed": "Booking confirmed",
     "type_waitlist_joined": "Added to waitlist",
     "type_promoted_from_waitlist": "Promoted from waitlist",
-    "type_event_cancelled": "Session cancelled",
-    "type_event_updated": "Session updated",
     "type_booking_reminder_24h": "Reminder: tomorrow",
     "type_booking_reminder_1h": "Reminder: starting soon"
   },
