@@ -30,8 +30,8 @@ interface Promo {
 }
 
 interface MembershipPlan { id: number; name: string }
-interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null }
-interface ChargeBenefit { id: number; gym_charge_id: number; action: string; value: string | null; gym_charge_name: string }
+interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; availability: string }
+interface ChargeBenefit { id: number; gym_charge_id: number; action: string; value: string | null; gym_charge_name: string; gym_charge_availability: string }
 interface ChargeType { id: number; code: string; name: string; is_gym_charge: number }
 interface PeriodBenefit {
   id: number;
@@ -131,7 +131,7 @@ export default function PromotionsPage() {
     try {
       const [pl, gc, ct] = await Promise.all([
         apiFetch<MembershipPlan[]>('/membership-plans?lifecycle_status=active'),
-        apiFetch<GymCharge[]>('/gym-charges'),
+        apiFetch<GymCharge[]>('/gym-charges?availability=available'),
         apiFetch<ChargeType[]>('/charge-types'),
       ]);
       setPlans(pl);
@@ -544,7 +544,12 @@ export default function PromotionsPage() {
             ? <p style={hintSt}>{t('no_charge_benefits')}</p>
             : cb.filter((c) => c.action !== 'no_benefit').map((c) => (
                 <div key={c.id} style={{ display: 'flex', gap: 16, fontSize: 13, padding: '3px 0' }}>
-                  <span style={{ minWidth: 160, color: '#555' }}>{c.gym_charge_name}</span>
+                  <span style={{ minWidth: 160, color: '#555' }}>
+                    {c.gym_charge_name}
+                    {c.gym_charge_availability === 'unavailable' && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 3 }}>Unavailable</span>
+                    )}
+                  </span>
                   <span>{t(`cb_action_${c.action}` as any)}{c.value != null ? ` — ${c.value}` : ''}</span>
                 </div>
               ))}
