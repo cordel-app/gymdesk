@@ -143,6 +143,100 @@ describe('GET /gym-charges/:id', () => {
   });
 });
 
+// ─── GET /gym-charges availability filter ─────────────────────────────────────
+
+describe('GET /gym-charges availability filter', () => {
+  let gymId: string;
+  let availableChargeId: number | undefined;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Charges Filter Gym');
+    await createTestMembership(gymId, 'admin');
+    await seedGymCharges(gymId);
+
+    // Mark the first charge as available and a second as unavailable so both
+    // filter branches have rows to return.
+    const { rows: charges } = await db.query<{ id: number }>(
+      'SELECT id FROM gym_charges WHERE gym_id = ? ORDER BY id ASC LIMIT 2',
+      [gymId],
+    );
+    if (charges.length >= 1) {
+      availableChargeId = charges[0].id;
+      await db.query(
+        `UPDATE gym_charges SET availability = 'available' WHERE id = ?`,
+        [charges[0].id],
+      );
+    }
+    if (charges.length >= 2) {
+      await db.query(
+        `UPDATE gym_charges SET availability = 'unavailable' WHERE id = ?`,
+        [charges[1].id],
+      );
+    }
+  });
+
+  it('returns 400 for an invalid availability query value', async () => {
+    const res = await request
+      .get('/gym-charges?availability=bad')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns only available charges when ?availability=available', async () => {
+    if (!availableChargeId) return; // no seeded rows — skip gracefully
+
+    const res = await request
+      .get('/gym-charges?availability=available')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.every((c: { availability: string }) => c.availability === 'available')).toBe(true);
+  });
+
+  it('returns only unavailable charges when ?availability=unavailable', async () => {
+    const res = await request
+      .get('/gym-charges?availability=unavailable')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.every((c: { availability: string }) => c.availability === 'unavailable')).toBe(true);
+  });
+
+  it('charge disappears from ?availability=available after being set to unavailable via PUT', async () => {
+    if (!availableChargeId) return; // no seeded rows — skip gracefully
+
+    // Confirm it appears before the update.
+    const before = await request
+      .get('/gym-charges?availability=available')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(before.status).toBe(200);
+    const idsBefore = (before.body as Array<{ id: number }>).map((c) => c.id);
+    expect(idsBefore).toContain(availableChargeId);
+
+    // Set it to unavailable via the API.
+    const put = await request
+      .put(`/gym-charges/${availableChargeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ availability: 'unavailable', billing_frequency: 'month', amount: 0 });
+    expect(put.status).toBe(200);
+    expect(put.body.availability).toBe('unavailable');
+
+    // Now it must not appear in the available filter.
+    const after = await request
+      .get('/gym-charges?availability=available')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(after.status).toBe(200);
+    const idsAfter = (after.body as Array<{ id: number }>).map((c) => c.id);
+    expect(idsAfter).not.toContain(availableChargeId);
+  });
+});
+
 // ─── PUT /gym-charges/:id ─────────────────────────────────────────────────────
 
 describe('PUT /gym-charges/:id', () => {

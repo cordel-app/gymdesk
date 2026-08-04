@@ -41,8 +41,8 @@ interface Allowance {
 interface Center { id: number; name: string; }
 interface PriceRow { id: number; price: string; valid_from: string; valid_to: string | null; }
 interface ActivityType { id: number; name: string; }
-interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; }
-interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; action: string; value: string | null; }
+interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; availability: string; }
+interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
 
 interface Plan {
   id: number;
@@ -182,7 +182,7 @@ export default function PlansPage() {
 
   useEffect(() => {
     if (!gymLoading && activeGymId) {
-      apiFetch<GymCharge[]>('/gym-charges').then(setGymCharges).catch(() => {});
+      apiFetch<GymCharge[]>('/gym-charges?availability=available').then(setGymCharges).catch(() => {});
     }
   }, [gymLoading, activeGymId]);
 
@@ -707,7 +707,12 @@ export default function PlansPage() {
                         ) : (
                           (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').map((cb) => (
                             <div key={cb.id} style={detailRowStyle}>
-                              <span style={labelStyle}>{cb.gym_charge_name}</span>
+                              <span style={labelStyle}>
+                                {cb.gym_charge_name}
+                                {cb.gym_charge_availability === 'unavailable' && (
+                                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 3 }}>Unavailable</span>
+                                )}
+                              </span>
                               <span style={valueStyle}>{cb.action}{cb.value != null ? ` — ${cb.value}` : ''}</span>
                             </div>
                           ))

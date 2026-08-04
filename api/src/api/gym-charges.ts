@@ -30,13 +30,20 @@ const SELECT = `
   LEFT JOIN gym_memberships mb ON mb.id = gc.modified_by_membership_id
 `;
 
+const VALID_AVAILABILITY = ['available', 'unavailable'];
+
 gymChargesRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const availability = typeof req.query.availability === 'string' ? req.query.availability : null;
+  if (availability && !VALID_AVAILABILITY.includes(availability)) {
+    return res.status(400).json({ error: `availability must be one of: ${VALID_AVAILABILITY.join(', ')}` });
+  }
   try {
-    const { rows } = await db.query(
-      `${SELECT} WHERE gc.gym_id = ? ORDER BY ct.id ASC`,
-      [gymId],
-    );
+    const params: unknown[] = [gymId];
+    let sql = `${SELECT} WHERE gc.gym_id = ?`;
+    if (availability) { sql += ' AND gc.availability = ?'; params.push(availability); }
+    sql += ' ORDER BY ct.id ASC';
+    const { rows } = await db.query(sql, params);
     res.json(rows);
   } catch (err) { next(err); }
 });

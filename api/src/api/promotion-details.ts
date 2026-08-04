@@ -63,7 +63,8 @@ promotionDetailsRouter.get('/charge-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const promotionId = (req.params as any).id;
   const { rows } = await db.query(
-    `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code
+    `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code,
+            gc.availability AS gym_charge_availability
      FROM promotion_charge_benefits pcb
      JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
      JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -87,11 +88,11 @@ promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req,
     const gymChargeIds = active.map((i: any) => i.gym_charge_id);
     const placeholders = gymChargeIds.map(() => '?').join(',');
     const { rows: owned } = await db.query(
-      `SELECT id FROM gym_charges WHERE gym_id = ? AND id IN (${placeholders})`,
+      `SELECT id FROM gym_charges WHERE gym_id = ? AND availability = 'available' AND id IN (${placeholders})`,
       [gymId, ...gymChargeIds],
     );
     if (owned.length !== gymChargeIds.length) {
-      return res.status(404).json({ error: 'One or more gym charges not found in this gym' });
+      return res.status(404).json({ error: 'One or more gym charges not found or not available in this gym' });
     }
   }
 
@@ -107,7 +108,8 @@ promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req,
       }
     });
     const { rows } = await db.query(
-      `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code
+      `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code,
+              gc.availability AS gym_charge_availability
        FROM promotion_charge_benefits pcb
        JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
        JOIN charge_types ct ON ct.id = gc.charge_type_id

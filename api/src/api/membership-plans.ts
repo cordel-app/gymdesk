@@ -52,6 +52,7 @@ interface ChargeBenefitRow {
   gym_charge_id: number;
   gym_charge_code: string;
   gym_charge_name: string;
+  gym_charge_availability: string;
   action: string;
   value: string | null;
 }
@@ -101,7 +102,8 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
     db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name
+      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name,
+              gc.availability AS gym_charge_availability
        FROM plan_charge_benefits pcb
        JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
        JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -683,7 +685,8 @@ membershipPlansRouter.get('/:id/charge-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
   const { rows } = await db.query<ChargeBenefitRow>(
-    `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name
+    `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name,
+            gc.availability AS gym_charge_availability
      FROM plan_charge_benefits pcb
      JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
      JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -714,11 +717,11 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
     const ids = items.map((i: any) => i.gym_charge_id);
     const placeholders = ids.map(() => '?').join(',');
     const { rows: gcRows } = await db.query(
-      `SELECT id FROM gym_charges WHERE gym_id = ? AND id IN (${placeholders})`,
+      `SELECT id FROM gym_charges WHERE gym_id = ? AND availability = 'available' AND id IN (${placeholders})`,
       [gymId, ...ids],
     );
     if (gcRows.length !== ids.length) {
-      return res.status(400).json({ error: 'One or more gym_charge_id values not found in this gym' });
+      return res.status(400).json({ error: 'One or more gym_charge_id values not found or not available in this gym' });
     }
   }
 
@@ -735,7 +738,8 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
       );
     }
     const { rows } = await db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name
+      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name,
+              gc.availability AS gym_charge_availability
        FROM plan_charge_benefits pcb
        JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
        JOIN charge_types ct ON ct.id = gc.charge_type_id
