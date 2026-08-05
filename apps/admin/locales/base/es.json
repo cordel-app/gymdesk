@@ -1935,6 +1935,7 @@
     "type_staff": "Personal",
     "cancel": "Cancelar",
     "error_start": "No se pudo iniciar la suplantación.",
+    "error_search": "No se pudo completar la búsqueda. Por favor, inténtalo de nuevo.",
     "account_locked_hint": "Las acciones de cuenta están desactivadas durante la suplantación"
   },
   "calendar": {

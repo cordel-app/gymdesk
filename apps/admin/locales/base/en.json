@@ -1949,6 +1949,7 @@
     "type_staff": "Staff",
     "cancel": "Cancel",
     "error_start": "Could not start impersonation.",
+    "error_search": "Unable to complete search. Please try again.",
     "account_locked_hint": "Account actions are disabled while impersonating"
   },
   "calendar": {

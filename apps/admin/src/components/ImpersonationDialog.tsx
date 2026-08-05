@@ -32,21 +32,27 @@ export function ImpersonationDialog({ onClose }: Props) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const search = useCallback(async (q: string) => {
     if (!activeGymId) return;
     setLoading(true);
+    setSearchError(null);
+    console.log('[Impersonation] Search initiated', { query: q, gymId: activeGymId });
     try {
       const results = await apiFetch<Candidate[]>(
         `/platform/impersonation/candidates?q=${encodeURIComponent(q)}&gym_id=${activeGymId}`,
       );
       setCandidates(results);
-    } catch {
+      console.log('[Impersonation] Search completed', { count: results.length });
+    } catch (err) {
+      console.error('[Impersonation] Search failed', err);
       setCandidates([]);
+      setSearchError(t('error_search'));
     } finally {
       setLoading(false);
     }
-  }, [activeGymId, apiFetch]);
+  }, [activeGymId, apiFetch, t]);
 
   useEffect(() => {
     const timer = setTimeout(() => search(query), 300);
@@ -119,7 +125,12 @@ export function ImpersonationDialog({ onClose }: Props) {
               {t('searching')}
             </div>
           )}
-          {!loading && candidates.length === 0 && (
+          {!loading && searchError && (
+            <div style={{ padding: '16px 20px', color: '#dc2626', fontSize: 14 }}>
+              {searchError}
+            </div>
+          )}
+          {!loading && !searchError && candidates.length === 0 && (
             <div style={{ padding: '16px 20px', color: 'var(--muted, #6b7280)', fontSize: 14 }}>
               {t('search_empty')}
             </div>

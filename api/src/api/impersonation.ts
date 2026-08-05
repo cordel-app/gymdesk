@@ -17,6 +17,8 @@ impersonationRouter.get('/candidates', requireSuperadmin, async (req, res, next)
   const gymId = req.query.gym_id as string | undefined;
   const q = ((req.query.q as string) ?? '').trim();
 
+  console.log('[Impersonation] Candidates search request', { adminId, gymId, q });
+
   if (!gymId) return res.status(400).json({ error: 'gym_id query param required' });
 
   try {
@@ -76,7 +78,9 @@ impersonationRouter.get('/candidates', requireSuperadmin, async (req, res, next)
     const seen = new Set<string>(staffFiltered.map((s) => s.userId));
     const dedupedMembers = members.filter((m) => !seen.has(m.userId));
 
-    res.json([...staffFiltered, ...dedupedMembers]);
+    const results = [...staffFiltered, ...dedupedMembers];
+    console.log('[Impersonation] Candidates search response', { gymId, q, count: results.length });
+    res.json(results);
   } catch (err) { next(err); }
 });
 
