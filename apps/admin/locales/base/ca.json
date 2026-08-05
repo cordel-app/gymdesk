@@ -1963,6 +1963,7 @@
     "type_staff": "Personal",
     "cancel": "Cancel·lar",
     "error_start": "No s'ha pogut iniciar la suplantació.",
+    "error_search": "No s'ha pogut completar la cerca. Si us plau, torneu-ho a intentar.",
     "account_locked_hint": "Les accions del compte estan desactivades durant la suplantació"
   },
   "calendar": {
