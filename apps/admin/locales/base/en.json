@@ -891,12 +891,12 @@
   },
   "training_plan_templates": {
     "title": "Training Plan Templates",
-    "add": "+ Add Template",
+    "add": "+ New Training Plan Template",
     "loading": "Loading…",
     "empty": "No training plan templates yet.",
     "col_name": "Name",
-    "col_created_by": "Created by",
-    "col_created_at": "Created at",
+    "col_created_by": "Created By",
+    "col_created_at": "Created",
     "col_status": "Status",
     "col_actions": "Actions",
     "filter_name": "Search by name…",
@@ -948,7 +948,12 @@
     "unsaved_changes": "You have unsaved changes. Do you want to save them before leaving?",
     "unsaved_save": "Save",
     "unsaved_discard": "Discard",
-    "n_workouts": "{count, plural, one {# workout} other {# workouts}}"
+    "n_workouts": "{count, plural, one {# workout} other {# workouts}}",
+    "col_description": "Description",
+    "assign_to_member": "Assign Plan to Member",
+    "section_general": "General",
+    "section_workouts": "Workouts",
+    "placeholder_name": "e.g. 12-Week Strength Program"
   },
   "training_plans": {
     "title": "Training Plans",
