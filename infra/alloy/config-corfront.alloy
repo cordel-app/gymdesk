@@ -1,0 +1,37 @@
+loki.write "grafana_cloud" {
+  endpoint {
+    url = "https://logs-prod-012.grafana.net/loki/api/v1/push"
+    basic_auth {
+      username = "969010"
+      password = env("GRAFANA_CLOUD_API_KEY")
+    }
+  }
+}
+
+loki.relabel "journal_meta" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "syslog_identifier"
+  }
+}
+
+loki.source.journal "journal" {
+  max_age       = "12h"
+  labels        = { job = "journal", host = "corfront" }
+  relabel_rules = loki.relabel.journal_meta.rules
+  forward_to    = [loki.write.grafana_cloud.receiver]
+}

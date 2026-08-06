@@ -183,13 +183,13 @@ template) → Sidebar → i18n (en/es/ca).
 |---|---|---|---|
 | Install pino structured logging in the API | [#177](https://github.com/cordel-app/gymdesk/issues/177) | S | — |
 
-### Phase 0b — Log shipping (promtail → Grafana Cloud Loki) ✅
+### Phase 0b — Log shipping (Grafana Alloy → Grafana Cloud Loki) ✅
 | Ticket | Issue | Size | Depends on |
 |---|---|---|---|
-| Set up promtail on VPS → Grafana Cloud Loki | [#178](https://github.com/cordel-app/gymdesk/issues/178) | M | #177 |
+| Set up Alloy on VPS → Grafana Cloud Loki | [#178](https://github.com/cordel-app/gymdesk/issues/178) | M | #177 |
 
-Config files: `infra/promtail/config-corback.yml`, `infra/promtail/config-corfront.yml`, `infra/promtail/promtail.service`, `infra/promtail/setup.sh`.
-Deploy: run `sudo bash infra/promtail/setup.sh` on each VPS after writing `/etc/promtail/secrets` with `GRAFANA_CLOUD_API_KEY=<token>`.
+Config files: `infra/alloy/config-corback.alloy`, `infra/alloy/config-corfront.alloy`, `infra/alloy/alloy.service`.
+Deploy: push to `main` triggers `.github/workflows/deploy-alloy.yml`; write `GRAFANA_CLOUD_API_KEY=<token>` to `~/.config/alloy/secrets` on each VPS on first install.
 Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https://logs-prod-012.grafana.net/loki/api/v1/push`.
 
 ### Phase 1 — Membership plans & billing core (replaces fares, subscriptions)
