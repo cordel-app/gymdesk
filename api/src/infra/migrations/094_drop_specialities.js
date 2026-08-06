@@ -7,8 +7,8 @@ exports.up = async (knex) => {
   // 1. Drop trainer_specialities (FK cascade handles child rows)
   await knex.schema.dropTableIfExists('trainer_specialities');
 
-  // 2. Remove speciality_id FK + column from class_types
-  if (await knex.schema.hasColumn('class_types', 'speciality_id')) {
+  // 2. Remove speciality_id FK + column from class_types (table may already be gone)
+  if (await knex.schema.hasTable('class_types') && await knex.schema.hasColumn('class_types', 'speciality_id')) {
     await knex.raw('ALTER TABLE class_types DROP FOREIGN KEY class_types_speciality_id_foreign').catch(() => {});
     await knex.schema.alterTable('class_types', (t) => t.dropColumn('speciality_id'));
   }
