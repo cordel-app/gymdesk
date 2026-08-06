@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import {
@@ -12,24 +12,29 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
-import { DataTable, Column } from '@/components/DataTable';
-import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { CrudModal } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { DependencyDialog, ReferenceReport } from '@/components/DependencyDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { ContextMenu } from '@/components/ContextMenu';
-import { btnStyle } from '@/components/ui';
+import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import { btnStyle, btnSmall } from '@/components/ui';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
-// BlockModal and ExerciseModal removed in #130 — editing is now fully inline inside WorkoutTemplateTree.
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface WorkoutTemplate {
   id: number;
   name: string;
   description: string | null;
+  notes: string | null;
   status: 'active' | 'inactive';
+  blocks_count: number;
   created_by_name: string | null;
   created_at: string;
+  modified_at: string | null;
+  modified_by_name: string | null;
+  deleted_at: string | null;
+  deleted_by_name: string | null;
 }
 
 interface ListResponse {
@@ -41,23 +46,38 @@ interface ListResponse {
 
 interface CreatedByOption { membership_id: number; name: string }
 
-type SortKey = 'name' | 'created_at' | 'status';
-
 const STATUSES = ['active', 'inactive'] as const;
-const LIMIT = 20;
-const emptyForm = { name: '', description: '', status: 'active' };
+
+type InlineNew = {
+  name: string;
+  description: string;
+  saving: boolean;
+  error: string | null;
+};
+
+type EditForm = {
+  name: string;
+  description: string;
+  status: WorkoutTemplate['status'];
+  notes: string;
+};
+
+const emptyEditForm: EditForm = { name: '', description: '', status: 'active', notes: '' };
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function WorkoutTemplatesPage() {
-  const t = useTranslations();
+  const t = useTranslations('workout_templates');
+  const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
 
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+
   const [rows, setRows] = useState<WorkoutTemplate[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const [statusFilter, setStatusFilter] = useState('');
@@ -65,29 +85,31 @@ export default function WorkoutTemplatesPage() {
   const [nameQuery, setNameQuery] = useState('');
   const [createdByFilter, setCreatedByFilter] = useState('');
   const [createdByOptions, setCreatedByOptions] = useState<CreatedByOption[]>([]);
-  const [sortKey, setSortKey] = useState<SortKey>('name');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<WorkoutTemplate | null>(null);
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<WorkoutTemplate | null>(null);
-  const [depDialog, setDepDialog] = useState<{ action: 'edit' | 'delete'; entity: WorkoutTemplate; refs: ReferenceReport } | null>(null);
-  const [checkingDeps, setCheckingDeps] = useState(false);
-  const [depBusy, setDepBusy] = useState(false);
-
-  // Row expansion + per-template lazy-loaded, cached hierarchy.
+  // Expandable rows + lazy-loaded hierarchy cache
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [hierarchies, setHierarchies] = useState<Record<number, WtHierarchy>>({});
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
-  const [inlineEditId, setInlineEditId] = useState<number | null>(null);
 
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  // Edit mode (General section inline edit)
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>(emptyEditForm);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Inline new row
+  const [inlineNew, setInlineNew] = useState<InlineNew | null>(null);
+  const newNameRef = useRef<HTMLInputElement>(null);
+
+  // Details modal
+  const [details, setDetails] = useState<WorkoutTemplate | null>(null);
+
+  // Delete confirm
+  const [deleting, setDeleting] = useState<WorkoutTemplate | null>(null);
+
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
-  // Debounce the name text input into the query that actually drives fetches.
+  // Debounce name search
   useEffect(() => {
     const id = setTimeout(() => setNameQuery(nameInput.trim()), 300);
     return () => clearTimeout(id);
@@ -101,146 +123,51 @@ export default function WorkoutTemplatesPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (nameQuery) params.set('name', nameQuery);
       if (createdByFilter) params.set('created_by', createdByFilter);
-      params.set('sort', sortKey);
-      params.set('dir', sortDir);
-      params.set('limit', String(LIMIT));
-      params.set('offset', String(offset));
+      params.set('sort', 'name');
+      params.set('dir', 'asc');
+      params.set('limit', '200');
+      params.set('offset', '0');
       const res = await apiFetch<ListResponse>(`/workout-templates?${params.toString()}`);
       setRows(res.items);
-      setTotal(res.total);
     } catch (err: any) {
-      toast(err.message ?? t('workout_templates.error_generic'));
+      toast(err.message ?? t('error_generic'));
     } finally {
       setLoading(false);
     }
-  }, [activeGymId, statusFilter, nameQuery, createdByFilter, sortKey, sortDir, offset]);
+  }, [activeGymId, statusFilter, nameQuery, createdByFilter]);
 
   useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
-
-  // Reset to first page whenever a filter or sort changes.
-  useEffect(() => { setOffset(0); }, [statusFilter, nameQuery, createdByFilter, sortKey, sortDir]);
 
   useEffect(() => {
     if (!activeGymId || gymLoading) return;
     apiFetch<CreatedByOption[]>('/workout-templates/created-by-options')
       .then(setCreatedByOptions)
-      .catch(() => { /* filter is best-effort; ignore load failure */ });
+      .catch(() => {});
   }, [activeGymId, gymLoading]);
 
-  function openAdd() { setEditing(null); setForm(emptyForm); setError(null); setModalOpen(true); }
-  function openEdit(w: WorkoutTemplate) {
-    setEditing(w);
-    setForm({ name: w.name, description: w.description ?? '', status: w.status });
-    setError(null); setModalOpen(true);
-  }
+  // ─── Expand / hierarchy ───────────────────────────────────────────────────
 
-  /** #62: check dependencies before edit/delete; warn only when some exist. */
-  async function guardedAction(action: 'edit' | 'delete', w: WorkoutTemplate) {
-    if (checkingDeps) return;
-    setCheckingDeps(true);
+  async function loadHierarchy(id: number) {
+    if (hierarchies[id] || hierLoading.has(id)) return;
+    setHierLoading((prev) => new Set(prev).add(id));
     try {
-      const refs = await apiFetch<ReferenceReport>(`/workout-templates/${w.id}/references`);
-      if (refs.usageCount > 0) { setDepDialog({ action, entity: w, refs }); return; }
-      if (action === 'edit') openEdit(w);
-      else setDeleting(w);
+      const h = await apiFetch<WtHierarchy>(`/workout-templates/${id}`);
+      setHierarchies((prev) => ({ ...prev, [id]: h }));
     } catch (err: any) {
-      toast(err.message ?? t('workout_templates.error_generic'));
-    } finally { setCheckingDeps(false); }
-  }
-
-  async function depContinue() {
-    if (!depDialog) return;
-    if (depDialog.action === 'edit') {
-      openEdit(depDialog.entity);
-      setDepDialog(null);
-      return;
-    }
-    setDepBusy(true);
-    try {
-      await apiFetch(`/workout-templates/${depDialog.entity.id}`, { method: 'DELETE' });
-      setDepDialog(null); load();
-    } catch (err: any) { setDepDialog(null); toast(err.message ?? t('workout_templates.error_generic')); }
-    finally { setDepBusy(false); }
-  }
-
-  async function save() {
-    if (!form.name.trim()) { setError(t('workout_templates.error_required')); return; }
-    setSaving(true); setError(null);
-    const body = { name: form.name.trim(), description: form.description.trim() || null, status: form.status };
-    try {
-      if (editing) await apiFetch(`/workout-templates/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
-      else await apiFetch('/workout-templates', { method: 'POST', body: JSON.stringify(body) });
-      setModalOpen(false); setEditing(null); setForm(emptyForm); load();
-    } catch (err: any) { setError(err.message ?? t('workout_templates.error_generic')); }
-    finally { setSaving(false); }
-  }
-
-  async function del() {
-    if (!deleting) return;
-    try { await apiFetch(`/workout-templates/${deleting.id}`, { method: 'DELETE' }); setDeleting(null); load(); }
-    catch (err: any) { setDeleting(null); toast(err.message ?? t('workout_templates.error_generic')); }
-  }
-
-  async function handleDuplicate(w: WorkoutTemplate) {
-    try {
-      const created = await apiFetch<WorkoutTemplate>(`/workout-templates/${w.id}/duplicate`, { method: 'POST' });
-      toast(t('workout_templates.duplicated'));
-      await load();
-      setExpanded((prev) => new Set(prev).add(created.id));
-      await refetchBranch(created.id);
-      setEditing(created);
-      setForm({ name: created.name, description: created.description ?? '', status: created.status });
-      setError(null);
-      setModalOpen(true);
-    } catch (err: any) {
-      toast(err.message ?? t('workout_templates.error_generic'));
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setHierLoading((prev) => { const next = new Set(prev); next.delete(id); return next; });
     }
   }
 
-  async function toggleExpand(row: WorkoutTemplate) {
+  function toggleExpand(id: number) {
+    if (editingId === id) return;
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-    // Lazy-load the hierarchy once and cache it; re-expand does not refetch.
-    if (!hierarchies[row.id] && !hierLoading.has(row.id)) {
-      setHierLoading((prev) => new Set(prev).add(row.id));
-      try {
-        const h = await apiFetch<WtHierarchy>(`/workout-templates/${row.id}`);
-        setHierarchies((prev) => ({ ...prev, [row.id]: h }));
-      } catch (err: any) {
-        toast(err.message ?? t('workout_templates.error_generic'));
-      } finally {
-        setHierLoading((prev) => { const next = new Set(prev); next.delete(row.id); return next; });
-      }
-    }
-  }
-
-  async function openInlineEdit(w: WorkoutTemplate) {
-    setExpanded((prev) => { const next = new Set(prev); next.add(w.id); return next; });
-    if (!hierarchies[w.id] && !hierLoading.has(w.id)) {
-      setHierLoading((prev) => new Set(prev).add(w.id));
-      try {
-        const h = await apiFetch<WtHierarchy>(`/workout-templates/${w.id}`);
-        setHierarchies((prev) => ({ ...prev, [w.id]: h }));
-      } catch (err: any) {
-        toast(err.message ?? t('workout_templates.error_generic'));
-        return;
-      } finally {
-        setHierLoading((prev) => { const next = new Set(prev); next.delete(w.id); return next; });
-      }
-    }
-    setInlineEditId(w.id);
-  }
-
-  async function saveInlineEdit(id: number, data: { name: string; description: string | null; status: string }) {
-    await apiFetch(`/workout-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-    setInlineEditId(null);
-    // Refresh the row in the list and the cached hierarchy
-    setRows((prev) => prev.map((r) => r.id === id ? { ...r, name: data.name, description: data.description, status: data.status as WorkoutTemplate['status'] } : r));
-    const h = await apiFetch<WtHierarchy>(`/workout-templates/${id}`);
-    setHierarchies((prev) => ({ ...prev, [id]: h }));
+    loadHierarchy(id);
   }
 
   const refetchBranch = useCallback(async (id: number) => {
@@ -248,11 +175,107 @@ export default function WorkoutTemplatesPage() {
       const h = await apiFetch<WtHierarchy>(`/workout-templates/${id}`);
       setHierarchies((prev) => ({ ...prev, [id]: h }));
     } catch (err: any) {
-      toast(err.message ?? t('workout_templates.error_generic'));
+      toast(err.message ?? t('error_generic'));
     }
   }, [apiFetch]);
 
-  /* ---- Drag-and-drop (blocks within/between templates, exercises within a block) ---- */
+  // ─── Inline new ──────────────────────────────────────────────────────────
+
+  function openInlineNew() {
+    setInlineNew({ name: '', description: '', saving: false, error: null });
+    setTimeout(() => newNameRef.current?.focus(), 50);
+  }
+
+  function cancelInlineNew() { setInlineNew(null); }
+
+  async function saveInlineNew() {
+    if (!inlineNew) return;
+    if (!inlineNew.name.trim()) {
+      setInlineNew({ ...inlineNew, error: t('error_required') });
+      return;
+    }
+    setInlineNew({ ...inlineNew, saving: true, error: null });
+    try {
+      await apiFetch<WorkoutTemplate>('/workout-templates', {
+        method: 'POST',
+        body: JSON.stringify({ name: inlineNew.name.trim(), description: inlineNew.description.trim() || null }),
+      });
+      setInlineNew(null);
+      load();
+    } catch (err: any) {
+      setInlineNew({ ...inlineNew, saving: false, error: err.message ?? t('error_generic') });
+    }
+  }
+
+  // ─── Edit (General section) ───────────────────────────────────────────────
+
+  function openEdit(wt: WorkoutTemplate) {
+    setEditingId(wt.id);
+    setEditForm({
+      name: wt.name,
+      description: wt.description ?? '',
+      status: wt.status,
+      notes: wt.notes ?? '',
+    });
+    setEditError(null);
+    setExpanded((prev) => new Set([...prev, wt.id]));
+    loadHierarchy(wt.id);
+  }
+
+  function cancelEdit() { setEditingId(null); setEditError(null); }
+
+  async function handleSave(wt: WorkoutTemplate) {
+    if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
+    setEditSaving(true); setEditError(null);
+    try {
+      await apiFetch(`/workout-templates/${wt.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          description: editForm.description.trim() || null,
+          status: editForm.status,
+          notes: editForm.notes.trim() || null,
+        }),
+      });
+      setEditingId(null);
+      load();
+    } catch (err: any) {
+      setEditError(err.message ?? t('error_generic'));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  // ─── Duplicate ────────────────────────────────────────────────────────────
+
+  async function handleDuplicate(wt: WorkoutTemplate) {
+    try {
+      const created = await apiFetch<WorkoutTemplate>(`/workout-templates/${wt.id}/duplicate`, { method: 'POST' });
+      toast(t('duplicated'));
+      await load();
+      openEdit(created);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
+  // ─── Delete ───────────────────────────────────────────────────────────────
+
+  async function handleDelete() {
+    if (!deleting) return;
+    try {
+      await apiFetch(`/workout-templates/${deleting.id}`, { method: 'DELETE' });
+      setDeleting(null);
+      if (editingId === deleting.id) setEditingId(null);
+      setExpanded((prev) => { const next = new Set(prev); next.delete(deleting.id); return next; });
+      load();
+    } catch (err: any) {
+      setDeleting(null);
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
+  // ─── DnD (cross-template block moves) ─────────────────────────────────────
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -260,9 +283,6 @@ export default function WorkoutTemplatesPage() {
   );
 
   async function moveBlock(sourceId: number, blockId: number, targetId: number, position: number | null) {
-    // Optimistic: remove from the source branch; insert into the target branch
-    // when its hierarchy is already loaded (a never-expanded target loads fresh
-    // on first expand, so nothing to patch there).
     const src = hierarchies[sourceId];
     const block = src?.blocks?.find((b) => b.id === blockId);
     if (src?.blocks && block) {
@@ -284,9 +304,8 @@ export default function WorkoutTemplatesPage() {
         body: JSON.stringify({ target_workout_template_id: targetId, position }),
       });
     } catch (err: any) {
-      toast(err.message ?? t('workout_templates.error_generic'));
+      toast(err.message ?? t('error_generic'));
     }
-    // Refresh only the affected branches, preserving expansion/filters/paging.
     refetchBranch(sourceId);
     if (hierarchies[targetId]) refetchBranch(targetId);
   }
@@ -297,7 +316,6 @@ export default function WorkoutTemplatesPage() {
     if (!overId || activeId === overId) return;
 
     if (activeId.startsWith('ex:')) {
-      // ex:<templateId>:<blockId>:<exId> — reorder within the same block only.
       const [, tplStr, blockStr, exStr] = activeId.split(':');
       if (!overId.startsWith(`ex:${tplStr}:${blockStr}:`)) return;
       const templateId = Number(tplStr);
@@ -320,14 +338,13 @@ export default function WorkoutTemplatesPage() {
           method: 'PUT', body: JSON.stringify({ order: reordered.map((x) => x.id) }),
         });
       } catch (err: any) {
-        toast(err.message ?? t('workout_templates.error_generic'));
-        refetchBranch(templateId); // resync from server on failure
+        toast(err.message ?? t('error_generic'));
+        refetchBranch(templateId);
       }
       return;
     }
 
     if (activeId.startsWith('block:')) {
-      // block:<templateId>:<blockId>
       const [, srcStr, blockStr] = activeId.split(':');
       const sourceId = Number(srcStr);
       const blockId = Number(blockStr);
@@ -349,11 +366,10 @@ export default function WorkoutTemplatesPage() {
               method: 'PUT', body: JSON.stringify({ order: reordered.map((b) => b.id) }),
             });
           } catch (err: any) {
-            toast(err.message ?? t('workout_templates.error_generic'));
+            toast(err.message ?? t('error_generic'));
             refetchBranch(sourceId);
           }
         } else {
-          // Cross-template: insert at the hovered block's slot.
           const tgt = hierarchies[overTplId];
           const idx = tgt?.blocks ? tgt.blocks.findIndex((b) => b.id === overBlockId) : -1;
           await moveBlock(sourceId, blockId, overTplId, idx >= 0 ? idx + 1 : null);
@@ -368,161 +384,392 @@ export default function WorkoutTemplatesPage() {
     }
   }
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(key); setSortDir('asc'); }
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function renderInlineNewRow() {
+    if (!inlineNew) return null;
+    return (
+      <div style={cardStyle}>
+        <div style={{ padding: '16px 20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={inlineLabelStyle}>{t('label_name')} *</label>
+              <input
+                ref={newNameRef}
+                value={inlineNew.name}
+                onChange={(e) => setInlineNew({ ...inlineNew, name: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveInlineNew(); if (e.key === 'Escape') cancelInlineNew(); }}
+                style={inlineInputStyle}
+              />
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('label_description')}</label>
+              <input
+                value={inlineNew.description}
+                onChange={(e) => setInlineNew({ ...inlineNew, description: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveInlineNew(); if (e.key === 'Escape') cancelInlineNew(); }}
+                style={inlineInputStyle}
+              />
+            </div>
+          </div>
+          {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+              {inlineNew.saving ? t('saving') : t('save_changes')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderRow(wt: WorkoutTemplate) {
+    const isExpanded = expanded.has(wt.id);
+    const isEditing = editingId === wt.id;
+
+    const descText = wt.description
+      ? wt.description.length > 60 ? wt.description.slice(0, 60) + '…' : wt.description
+      : '—';
+
+    const menuItems: ContextMenuItem[] = [
+      { label: t('details'), onClick: () => setDetails(wt) },
+      { label: t('edit'), onClick: () => openEdit(wt) },
+      { label: t('duplicate'), onClick: () => handleDuplicate(wt) },
+      { label: t('delete'), onClick: () => setDeleting(wt), danger: true },
+    ];
+
+    const h = hierarchies[wt.id];
+
+    return (
+      <div key={wt.id} style={cardStyle}>
+        {/* Collapsed header */}
+        <div style={rowStyle} onClick={() => toggleExpand(wt.id)}>
+          <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <TemplateDropTarget templateId={wt.id}>{wt.name}</TemplateDropTarget>
+          </div>
+          <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {descText}
+          </div>
+          <div style={{ minWidth: 90, fontSize: 13, color: '#555', flexShrink: 0 }}>
+            {t('blocks_count', { n: wt.blocks_count ?? 0 })}
+          </div>
+          <div style={{ minWidth: 90, fontSize: 13, color: '#888', flexShrink: 0 }}>
+            {fmtDate(wt.created_at)}
+          </div>
+          <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
+            {wt.created_by_name ?? '—'}
+          </div>
+          <div style={{ minWidth: 90, flexShrink: 0 }}>
+            <StatusBadge status={wt.status} label={tStatus(wt.status)} />
+          </div>
+          <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+            <ContextMenu items={menuItems} ariaLabel={`Actions for ${wt.name}`} />
+          </div>
+        </div>
+
+        {/* Inline edit form */}
+        {isEditing && (
+          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+            <SectionHeader title={t('section_general')} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={inlineLabelStyle}>{t('label_name')} *</label>
+                <input
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  autoFocus
+                  style={inlineInputStyle}
+                />
+              </div>
+              <div>
+                <label style={inlineLabelStyle}>{t('label_status')}</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value as WorkoutTemplate['status'] })}
+                  style={inlineSelectStyle}
+                >
+                  {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={inlineLabelStyle}>{t('label_description')}</label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  rows={2}
+                  style={{ ...inlineInputStyle, resize: 'vertical' }}
+                />
+              </div>
+            </div>
+
+            <SectionHeader title={t('section_workout_structure')} />
+            {hierLoading.has(wt.id) ? (
+              <p style={{ color: '#888', fontSize: 13, margin: '4px 0 12px' }}>{t('loading')}</p>
+            ) : h ? (
+              <WorkoutTemplateTree
+                templateId={wt.id}
+                hierarchy={h}
+                canWrite={!!canWrite}
+                onChanged={() => refetchBranch(wt.id)}
+              />
+            ) : null}
+
+            <SectionHeader title={t('section_notes')} />
+            <textarea
+              value={editForm.notes}
+              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+              rows={3}
+              placeholder={t('notes_placeholder')}
+              style={{ ...inlineInputStyle, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
+            />
+
+            {editError && <p style={errorStyle}>{editError}</p>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+              <button onClick={() => handleSave(wt)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+                {editSaving ? t('saving') : t('save_changes')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Read-only expanded sections */}
+        {isExpanded && !isEditing && (
+          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+            <SectionHeader title={t('section_general')} />
+            <DetailRow label={t('label_description')} value={wt.description ?? '—'} />
+            <DetailRow label={t('label_status')} value={tStatus(wt.status)} />
+
+            <SectionHeader title={t('section_workout_structure')} />
+            {hierLoading.has(wt.id) ? (
+              <p style={{ color: '#888', fontSize: 13, margin: '4px 0 12px' }}>{t('loading')}</p>
+            ) : h ? (
+              <WorkoutTemplateTree
+                templateId={wt.id}
+                hierarchy={h}
+                canWrite={!!canWrite}
+                onChanged={() => refetchBranch(wt.id)}
+              />
+            ) : null}
+
+            <SectionHeader title={t('section_notes')} />
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: wt.notes ? '#333' : '#aaa', whiteSpace: 'pre-wrap' }}>
+              {wt.notes ?? '—'}
+            </p>
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (gymLoading || !canWrite) return null;
 
-  const sortArrow = (key: SortKey) => (sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '');
-  const sortHeader = (key: SortKey, label: string) => (
-    <button onClick={() => toggleSort(key)} style={sortHeaderStyle}>{label}{sortArrow(key)}</button>
-  );
-
-  const columns: Column<WorkoutTemplate>[] = [
-    {
-      header: sortHeader('name', t('workout_templates.col_name')),
-      render: (w) => <TemplateDropTarget templateId={w.id}>{w.name}</TemplateDropTarget>,
-    },
-    { header: t('workout_templates.col_description'), render: (w) => w.description ?? '—' },
-    { header: t('workout_templates.col_created_by'), width: 180, render: (w) => w.created_by_name ?? '—' },
-    { header: sortHeader('created_at', t('workout_templates.col_created_at')), width: 160, render: (w) => formatDate(w.created_at, locale) },
-    { header: sortHeader('status', t('workout_templates.col_status')), width: 120, render: (w) => <StatusBadge status={w.status} label={t(`status.${w.status}`)} /> },
-    {
-      header: t('workout_templates.col_actions'), width: 80,
-      render: (w) => (
-        <ContextMenu
-          ariaLabel={t('workout_templates.col_actions')}
-          items={[
-            { label: t('workout_templates.details'), onClick: () => guardedAction('edit', w) },
-            { label: t('workout_templates.edit'), onClick: () => openInlineEdit(w) },
-            { label: t('workout_templates.duplicate'), onClick: () => handleDuplicate(w) },
-            { label: t('workout_templates.delete'), onClick: () => guardedAction('delete', w), danger: true },
-          ]}
-        />
-      ),
-    },
-  ];
-
-  const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = Math.min(offset + LIMIT, total);
-
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
-        <h1 style={{ margin: 0 }}>{t('workout_templates.title')}</h1>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <h1 style={{ margin: 0 }}>{t('title')}</h1>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
-            placeholder={t('workout_templates.filter_name')}
+            placeholder={t('filter_name')}
             style={filterInputStyle}
           />
           <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterInputStyle}>
-            <option value="">{t('workout_templates.filter_created_by_all')}</option>
+            <option value="">{t('filter_created_by_all')}</option>
             {createdByOptions.map((o) => <option key={o.membership_id} value={o.membership_id}>{o.name}</option>)}
           </select>
           <StatusFilter
             value={statusFilter}
             onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
-            allLabel={t('status.all')}
+            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
+            allLabel={tStatus('all')}
           />
-          <button onClick={openAdd} style={btnStyle()}>{t('workout_templates.add')}</button>
+          <button onClick={openInlineNew} style={btnStyle()} disabled={inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-        <DataTable
-          columns={columns}
-          rows={rows}
-          rowKey={(r) => r.id}
-          loading={loading}
-          loadingText={t('workout_templates.loading')}
-          emptyText={t('workout_templates.empty')}
-          expandedRowKeys={expanded}
-          onToggleExpand={toggleExpand}
-          renderExpanded={(row) => {
-            const h = hierarchies[row.id];
-            if (!h) return <p style={{ color: '#888', fontSize: 14, padding: '12px 20px 12px 44px', margin: 0 }}>{t('workout_templates.loading')}</p>;
-            return (
-              <WorkoutTemplateTree
-                templateId={row.id}
-                hierarchy={h}
-                canWrite={!!canWrite}
-                onChanged={() => refetchBranch(row.id)}
-                editMode={inlineEditId === row.id}
-                onEditSave={(data) => saveInlineEdit(row.id, data)}
-                onEditCancel={() => setInlineEditId(null)}
-              />
-            );
-          }}
-        />
-      </DndContext>
-
-      {total > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
-          <span style={{ color: '#666', fontSize: 14 }}>{t('audit.page_info', { start: pageStart, end: pageEnd, total })}</span>
-          <button onClick={() => setOffset(Math.max(0, offset - LIMIT))} disabled={offset === 0} style={pagerStyle(offset === 0)}>‹</button>
-          <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={pagerStyle(pageEnd >= total)}>›</button>
+      {/* Column headers */}
+      {(rows.length > 0 || inlineNew) && (
+        <div style={colHeaderStyle}>
+          <div style={{ flex: 2 }}>{t('col_name')}</div>
+          <div style={{ flex: 3 }}>{t('col_description')}</div>
+          <div style={{ minWidth: 90 }}>{t('col_workout_info')}</div>
+          <div style={{ minWidth: 90 }}>{t('col_created')}</div>
+          <div style={{ minWidth: 100 }}>{t('col_created_by')}</div>
+          <div style={{ minWidth: 90 }}>{t('col_status')}</div>
+          <div style={{ minWidth: 68 }} />
         </div>
       )}
 
+      {/* Inline new row */}
+      {renderInlineNewRow()}
+
+      {/* Template list */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        {loading ? (
+          <p style={{ color: '#888' }}>{t('loading')}</p>
+        ) : rows.length === 0 && !inlineNew ? (
+          <p style={{ color: '#888' }}>{t('empty')}</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {rows.map(renderRow)}
+          </div>
+        )}
+      </DndContext>
+
+      {/* Details modal */}
       <CrudModal
-        open={modalOpen}
-        title={editing ? t('workout_templates.modal_edit') : t('workout_templates.modal_add')}
-        error={error} saving={saving}
-        cancelLabel={t('workout_templates.cancel')}
-        saveLabel={saving ? t('workout_templates.saving') : editing ? t('workout_templates.save_changes') : t('workout_templates.modal_add')}
-        onCancel={() => { setModalOpen(false); setEditing(null); setForm(emptyForm); setError(null); }}
-        onSave={save}
+        open={details !== null}
+        title={t('details_title')}
+        error={null}
+        saving={false}
+        hideSave
+        cancelLabel={t('details_close')}
+        saveLabel=""
+        onCancel={() => setDetails(null)}
+        onSave={() => setDetails(null)}
       >
-        <FormLabel>{t('workout_templates.label_name')} *</FormLabel>
-        <FormInput value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
-        <FormLabel>{t('workout_templates.label_description')}</FormLabel>
-        <FormInput value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-        <FormLabel>{t('workout_templates.label_status')}</FormLabel>
-        <select
-          value={form.status}
-          onChange={(e) => setForm({ ...form, status: e.target.value })}
-          style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' }}
-        >
-          {STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
-        </select>
+        {details && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={detailSectionLabelStyle}>{t('section_general')}</div>
+            <div>
+              <span style={detailLabelStyle}>{t('details_name')}</span>
+              <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 500 }}>{details.name}</p>
+            </div>
+            <div>
+              <span style={detailLabelStyle}>{t('details_description')}</span>
+              <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap', color: details.description ? '#333' : '#aaa' }}>
+                {details.description ?? '—'}
+              </p>
+            </div>
+            <div>
+              <span style={detailLabelStyle}>{t('details_status')}</span>
+              <div style={{ marginTop: 4 }}>
+                <StatusBadge status={details.status} label={tStatus(details.status)} />
+              </div>
+            </div>
+            <div>
+              <span style={detailLabelStyle}>{t('details_notes')}</span>
+              <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap', color: details.notes ? '#333' : '#aaa' }}>
+                {details.notes ?? '—'}
+              </p>
+            </div>
+
+            <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+            <div style={detailSectionLabelStyle}>Audit</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <span style={detailLabelStyle}>{t('details_created_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(details.created_at).toLocaleString()}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('details_created_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by_name ?? '—'}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('details_modified_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_at ? new Date(details.modified_at).toLocaleString() : '—'}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('details_modified_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by_name ?? '—'}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('details_deleted_at')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_at ? new Date(details.deleted_at).toLocaleString() : '—'}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('details_deleted_by')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by_name ?? '—'}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </CrudModal>
 
-      <ConfirmDialog open={deleting !== null} message={t('workout_templates.confirm_delete')}
-                     confirmLabel={t('workout_templates.delete')} cancelLabel={t('workout_templates.cancel')}
-                     onConfirm={del} onCancel={() => setDeleting(null)} />
-
-      <DependencyDialog
-        open={depDialog !== null}
-        message={depDialog ? t(`dependencies.workout_template_${depDialog.action}`, { name: depDialog.entity.name, count: depDialog.refs.usageCount }) : ''}
-        question={t('dependencies.question')}
-        references={depDialog?.refs.references ?? []}
-        moreLabel={depDialog && depDialog.refs.usageCount > depDialog.refs.references.length
-          ? t('dependencies.more', { n: depDialog.refs.usageCount - depDialog.refs.references.length }) : null}
-        referenceHref={`/${locale}/training-plan-templates`}
-        confirmLabel={t('dependencies.continue')}
-        cancelLabel={t('dependencies.cancel')}
-        onConfirm={depContinue}
-        onCancel={() => setDepDialog(null)}
-        busy={depBusy}
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={deleting !== null}
+        message={`${t('confirm_delete_title')}\n\n${t('confirm_delete_body')}`}
+        confirmLabel={t('confirm_delete')}
+        cancelLabel={t('cancel')}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleting(null)}
       />
     </div>
   );
 }
 
-function formatDate(value: string, locale: string): string {
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionHeader({ title }: { title: string }) {
+  return (
+    <div style={{ borderBottom: '1px solid var(--gd-border, #eee)', margin: '16px 0 8px', paddingBottom: 4 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
+    </div>
+  );
 }
 
-const filterInputStyle: React.CSSProperties = { padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff' };
-const sortHeaderStyle: React.CSSProperties = { background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', fontWeight: 600, color: 'inherit' };
-const pagerStyle = (disabled: boolean): React.CSSProperties => ({
-  background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '4px 12px',
-  cursor: disabled ? 'default' : 'pointer', color: disabled ? '#bbb' : '#333', fontSize: 16,
-});
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13 }}>
+      <span style={{ width: 160, flexShrink: 0, color: '#666' }}>{label}</span>
+      <span style={{ color: '#111', flex: 1 }}>{value}</span>
+    </div>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const cardStyle: React.CSSProperties = {
+  border: '1px solid #e2e2e6', borderRadius: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)',
+};
+
+const rowStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+  cursor: 'pointer', userSelect: 'none',
+};
+
+const colHeaderStyle: React.CSSProperties = {
+  display: 'flex', padding: '6px 16px', gap: 10,
+  fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
+  marginBottom: 4,
+};
+
+const filterInputStyle: React.CSSProperties = {
+  padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff',
+};
+
+const inlineLabelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4,
+};
+
+const inlineInputStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
+  fontSize: 14, boxSizing: 'border-box', background: '#fff',
+};
+
+const inlineSelectStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
+  fontSize: 14, boxSizing: 'border-box', background: '#fff',
+};
+
+const detailLabelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
+};
+
+const detailSectionLabelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em',
+};
+
+const errorStyle: React.CSSProperties = {
+  margin: '8px 0 0', fontSize: 13, color: '#c0392b',
+};

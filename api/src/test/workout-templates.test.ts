@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  request, TEST_AUTH_HEADER, createTestGym, createTestMembership, cleanupTestGyms,
+  request, TEST_AUTH_HEADER, TEST_USER_ID, createTestGym, createTestMembership, cleanupTestGyms,
 } from './helpers';
 
 let gymId: string;
@@ -138,5 +138,110 @@ describe('POST /workout-templates/:id/duplicate', () => {
       .post(`/workout-templates/${templateId}/duplicate`)
       .set('x-gym-id', gymId)
       .expect(401);
+  });
+});
+
+describe('audit columns — PUT and DELETE', () => {
+  let membershipId: number;
+
+  beforeAll(async () => {
+    const { rows } = await db.query<{ id: number }>(
+      'SELECT id FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
+      [TEST_USER_ID, gymId],
+    );
+    membershipId = rows[0].id;
+  });
+
+  it('PUT /:id stamps modified_at and modified_by_membership_id', async () => {
+    await request
+      .put(`/workout-templates/${templateId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Upper Body (Edited)' })
+      .expect(200);
+
+    const { rows } = await db.query<{ modified_at: Date | null; modified_by_membership_id: number | null }>(
+      'SELECT modified_at, modified_by_membership_id FROM workout_templates WHERE id = ?',
+      [templateId],
+    );
+    expect(rows[0].modified_at).not.toBeNull();
+    expect(rows[0].modified_by_membership_id).toBe(membershipId);
+  });
+
+  it('DELETE /:id stamps deleted_by_membership_id', async () => {
+    const createRes = await request
+      .post('/workout-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Audit Delete Test', status: 'active' })
+      .expect(201);
+    const deleteId: number = createRes.body.id;
+
+    await request
+      .delete(`/workout-templates/${deleteId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .expect(204);
+
+    // Query without deleted_at IS NULL so the soft-deleted row is visible.
+    const { rows } = await db.query<{ deleted_by_membership_id: number | null }>(
+      'SELECT deleted_by_membership_id FROM workout_templates WHERE id = ?',
+      [deleteId],
+    );
+    expect(rows[0].deleted_by_membership_id).toBe(membershipId);
+  });
+});
+
+describe('paginated GET / — new list fields', () => {
+  it('returns blocks_count matching the actual number of non-deleted blocks', async () => {
+    const res = await request
+      .get('/workout-templates')
+      .query({ limit: 20 })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('items');
+    expect(Array.isArray(res.body.items)).toBe(true);
+
+    // templateId was given exactly 1 block in the module-level beforeAll.
+    const item = res.body.items.find((t: any) => t.id === templateId);
+    expect(item).toBeDefined();
+    expect(Number(item.blocks_count)).toBe(1);
+  });
+
+  it('includes modified_by_name key in each paginated item', async () => {
+    const res = await request
+      .get('/workout-templates')
+      .query({ limit: 20 })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .expect(200);
+
+    const item = res.body.items.find((t: any) => t.id === templateId);
+    expect(item).toBeDefined();
+    // The field must be present; it is null when the membership has no name set.
+    expect('modified_by_name' in item).toBe(true);
+  });
+
+  it('includes notes in the paginated list when set on the template', async () => {
+    const createRes = await request
+      .post('/workout-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Notes Template', status: 'active', notes: 'Trainer notes here' })
+      .expect(201);
+    const notesTemplateId: number = createRes.body.id;
+
+    const res = await request
+      .get('/workout-templates')
+      .query({ limit: 100 })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .expect(200);
+
+    const item = res.body.items.find((t: any) => t.id === notesTemplateId);
+    expect(item).toBeDefined();
+    expect(item.notes).toBe('Trainer notes here');
   });
 });
