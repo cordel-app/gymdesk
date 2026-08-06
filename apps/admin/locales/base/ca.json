@@ -878,12 +878,12 @@
   },
   "training_plan_templates": {
     "title": "Plantilles de pla d'entrenament",
-    "add": "+ Afegeix plantilla",
+    "add": "+ Nova plantilla de pla d'entrenament",
     "loading": "Carregant…",
     "empty": "Encara no hi ha plantilles de pla d'entrenament.",
     "col_name": "Nom",
     "col_created_by": "Creat per",
-    "col_created_at": "Creat el",
+    "col_created_at": "Creat",
     "col_status": "Estat",
     "col_actions": "Accions",
     "filter_name": "Cerca per nom…",
@@ -935,7 +935,12 @@
     "unsaved_changes": "Tens canvis sense desar. Vols desar-los abans de sortir?",
     "unsaved_save": "Desa",
     "unsaved_discard": "Descarta",
-    "n_workouts": "{count, plural, one {# rutina} other {# rutines}}"
+    "n_workouts": "{count, plural, one {# rutina} other {# rutines}}",
+    "col_description": "Descripció",
+    "assign_to_member": "Assigna pla a membre",
+    "section_general": "General",
+    "section_workouts": "Rutines",
+    "placeholder_name": "p.ex. Programa de força de 12 setmanes"
   },
   "training_plans": {
     "title": "Plans d'entrenament",

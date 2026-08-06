@@ -877,12 +877,12 @@
   },
   "training_plan_templates": {
     "title": "Plantillas de plan de entrenamiento",
-    "add": "+ Añadir plantilla",
+    "add": "+ Nueva plantilla de plan de entrenamiento",
     "loading": "Cargando…",
     "empty": "Aún no hay plantillas de plan de entrenamiento.",
     "col_name": "Nombre",
     "col_created_by": "Creado por",
-    "col_created_at": "Creado el",
+    "col_created_at": "Creado",
     "col_status": "Estado",
     "col_actions": "Acciones",
     "filter_name": "Buscar por nombre…",
@@ -934,7 +934,12 @@
     "unsaved_changes": "Tienes cambios sin guardar. ¿Quieres guardarlos antes de salir?",
     "unsaved_save": "Guardar",
     "unsaved_discard": "Descartar",
-    "n_workouts": "{count, plural, one {# rutina} other {# rutinas}}"
+    "n_workouts": "{count, plural, one {# rutina} other {# rutinas}}",
+    "col_description": "Descripción",
+    "assign_to_member": "Asignar plan a miembro",
+    "section_general": "General",
+    "section_workouts": "Rutinas",
+    "placeholder_name": "p.ej. Programa de fuerza de 12 semanas"
   },
   "training_plans": {
     "title": "Planes de entrenamiento",
