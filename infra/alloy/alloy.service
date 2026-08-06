@@ -1,0 +1,14 @@
+# User-mode systemd unit — install to ~/.config/systemd/user/alloy.service
+# Manages as: systemctl --user enable|start|restart|status alloy
+[Unit]
+Description=Grafana Alloy log shipper → Grafana Cloud Loki
+After=network-online.target
+
+[Service]
+EnvironmentFile=%h/.config/alloy/secrets
+ExecStart=%h/bin/alloy run %h/.config/alloy/config.alloy
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

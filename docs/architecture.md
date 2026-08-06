@@ -560,21 +560,21 @@ req.log.error({ orderId, err: e.message }, 'Provider API call failed')
 
 ### Log shipping (Phase 0b)
 
-Promtail ships journald entries from both VPS to Grafana Cloud Loki.
+Grafana Alloy ships journald entries from both VPS to Grafana Cloud Loki.
 
 **Architecture**:
 ```
 corback (fitness-api)          corfront (fitness-admin, fitness-members)
     journald                          journald
        ↓                                 ↓
-  promtail (systemd)             promtail (systemd)
+  alloy (systemd)               alloy (systemd)
        └──────────── Grafana Cloud Loki (xavieregea-logs) ────────────┘
                               ↓
                     Grafana Cloud UI / alerts
 ```
 
-**Config files**: `infra/promtail/config-corback.yml`, `infra/promtail/config-corfront.yml`, `infra/promtail/promtail.service`, `infra/promtail/setup.sh`.
+**Config files**: `infra/alloy/config-corback.alloy`, `infra/alloy/config-corfront.alloy`, `infra/alloy/alloy.service`.
 
-**Deployment**: Run `sudo bash infra/promtail/setup.sh` on each VPS. The script creates a `promtail` system user, downloads the arm64 binary, installs the config, and enables the systemd unit. The API key is read from `/etc/promtail/secrets` (not in git) as `GRAFANA_CLOUD_API_KEY`.
+**Deployment**: Handled by `.github/workflows/deploy-alloy.yml` on push to `main`. The workflow SSHs into each VPS, downloads the Alloy arm64 binary, writes the config and unit file, and restarts the service. The API key is read from `~/.config/alloy/secrets` (not in git) as `GRAFANA_CLOUD_API_KEY`.
 
 **Querying**: `{container="fitness-api"} |= "ord-001"` traces a single payment order across all log lines.
