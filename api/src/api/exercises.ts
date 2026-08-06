@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -42,6 +42,8 @@ musclesRouter.get('/', (_req, res) => {
 /* ---- Exercises ---- */
 const SELECT = `
   SELECT e.*,
+    gm_c.name AS created_by_name,
+    gm_m.name AS modified_by_name,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
@@ -49,7 +51,20 @@ const SELECT = `
      JOIN result_types rt ON rt.id = eart.result_type_id
      WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
   FROM exercises e
+  LEFT JOIN gym_memberships gm_c ON gm_c.id = e.created_by
+  LEFT JOIN gym_memberships gm_m ON gm_m.id = e.modified_by
 `;
+
+async function getCallerMembershipId(req: Request): Promise<number | null> {
+  const userId = req.auth?.userId;
+  if (!userId) return null;
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    'SELECT id FROM gym_memberships WHERE gym_id = ? AND user_id = ? LIMIT 1',
+    [gymId, userId],
+  );
+  return rows.length > 0 ? rows[0].id : null;
+}
 
 /** Parses body.muscles into normalized {key, role} pairs; returns an error string on bad input. */
 function parseMuscles(input: unknown): { key: string; role: 'principal' | 'secondary' }[] | string | undefined {
@@ -99,12 +114,14 @@ async function nameTaken(gymId: string, name: string, excludeId?: string | numbe
 exercisesRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const status = req.query.status as string | undefined;
+  const q = req.query.q as string | undefined;
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
   const params: any[] = [gymId];
   let sql = `${SELECT} WHERE e.gym_id = ? AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
+  if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
   sql += ' ORDER BY e.name ASC';
   const { rows } = await db.query(sql, params);
   res.json(rows);
@@ -147,15 +164,16 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
     if (await nameTaken(gymId, name.trim())) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
     }
+    const callerMemberId = await getCallerMembershipId(req);
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, image_url,
-           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, name.trim(), description ?? null, video_url ?? null, image_url ?? null,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
-         sets_default ?? null, notes_default ?? null, status ?? 'active'],
+         sets_default ?? null, notes_default ?? null, status ?? 'active', callerMemberId ?? null],
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
       if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, insertId, allowedResultTypeIds);
@@ -189,6 +207,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
     if (name?.trim() && await nameTaken(gymId, name.trim(), id)) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
     }
+    const callerMemberId = await getCallerMembershipId(req);
     await db.transaction(async (tx) => {
       const { rowCount } = await tx.query(
         `UPDATE exercises SET
@@ -201,7 +220,9 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
           sets_default          = IF(?, ?, sets_default),
           notes_default         = IF(?, ?, notes_default),
-          status                = COALESCE(?, status)
+          status                = COALESCE(?, status),
+          modified_at           = UTC_TIMESTAMP(),
+          modified_by           = ?
          WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
         [
           name?.trim() ?? null,
@@ -214,6 +235,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
           'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           status ?? null,
+          callerMemberId ?? null,
           id, gymId,
         ],
       );
@@ -232,14 +254,62 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
 
 exercisesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
+  const callerMemberId = await getCallerMembershipId(req);
   const { rowCount } = await db.query(
-    `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP()
+    `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?
       WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-    [req.params.id, gymId],
+    [callerMemberId ?? null, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise not found' });
   recordAudit(req, { action: 'delete', entityType: 'exercise', entityId: req.params.id });
   res.status(204).send();
+});
+
+exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = String(req.params.id);
+  try {
+    const { rows: orig } = await db.query(
+      `${SELECT} WHERE e.id = ? AND e.gym_id = ? AND e.status != 'deleted'`,
+      [id, gymId],
+    );
+    if (orig.length === 0) return res.status(404).json({ error: 'Exercise not found' });
+    const src = orig[0];
+    const callerMemberId = await getCallerMembershipId(req);
+    const copyName = `${src.name} (Copy)`;
+
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO exercises
+          (gym_id, name, description, video_url, image_url,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+           status, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+        [gymId, copyName, src.description, src.video_url, src.image_url,
+         src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
+         callerMemberId ?? null],
+      );
+      const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
+      for (const m of muscles) {
+        await tx.query(
+          'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, ?)',
+          [gymId, insertId, m.key, m.role],
+        );
+      }
+      const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
+      for (const rt of rts) {
+        await tx.query(
+          'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
+          [insertId, rt.id],
+        );
+      }
+      return insertId;
+    });
+
+    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
+    recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
 });
 
 /** Idempotent seed of the default exercise catalog. */
