@@ -128,7 +128,7 @@ Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate
 | Exercises, Workout templates, Training plan templates | TRAINING | `requireModuleWrite('TRAINING')` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). |
 | Training plans (`training-plans` + `members/:id/…`) | TRAINING | `requireModuleWrite('TRAINING')` | See personalized plans notes (migration 054, 066). |
 | Nutrition Library (`nutrition-library`) | NUTRITION | read: `requireModuleAccess('NUTRITION')`, no writes | Global catalog (no `gym_id`), 32 seeded items, 6 categories. `GET /nutrition-library?category=`. |
-| Nutrition plan templates | NUTRITION | `requireModuleWrite('NUTRITION')` | Hierarchy: days → meals (4 library FK selectors) + restrictions + goals. Deep clone + reorder. |
+| Nutrition plan templates | NUTRITION | `requireModuleWrite('NUTRITION')` | Hierarchy: days → meals (with `meal_type` + `display_name` + `notes` + `items[]`) + restrictions + goals. Meals carry a `nutrition_plan_template_meal_items` junction table (`component_type` CHECK main_dish/side/sauce/additional). Goals `item_name` validated against 13-value whitelist. Deep clone copies meal_items. |
 | User memberships (`user-memberships`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | DELETE = `requireRole('admin')`. Status changes emit billing events. |
 | Billing ledger (`billing-events`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Append-only. |
 | Payments (`payments`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Operational view; excludes `status_changed`. |

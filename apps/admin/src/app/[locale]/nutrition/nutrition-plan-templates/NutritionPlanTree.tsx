@@ -19,12 +19,23 @@ import { btnStyle, btnSmall } from '@/components/ui';
 
 interface LibraryItem { id: number; name: string; category: string }
 
+export interface MealItem {
+  id: number;
+  nutrition_library_item_id: number;
+  item_name: string;
+  component_type: string;
+  quantity: number | null;
+  unit: string | null;
+  position: number;
+}
+
 export interface HierMeal {
-  id: number; name: string; position: number;
-  main_dish_id: number | null; main_dish_name: string | null;
-  side_id: number | null; side_name: string | null;
-  sauce_id: number | null; sauce_name: string | null;
-  drink_id: number | null; drink_name: string | null;
+  id: number;
+  display_name: string;
+  meal_type: string | null;
+  notes: string | null;
+  position: number;
+  items: MealItem[];
 }
 export interface HierDay {
   id: number; weekday: number; position: number;
@@ -46,6 +57,19 @@ export interface Hierarchy {
   restrictions: HierRestriction[];
   goals: HierGoal[];
 }
+
+const MEAL_TYPES = [
+  'recien_levantado', 'breakfast', 'media_manana',
+  'lunch', 'snack', 'dinner', 'antes_de_dormir',
+] as const;
+
+const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'additional'] as const;
+
+const NUTRITION_GOALS = [
+  'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
+  'weight_loss', 'weight_gain', 'muscle_gain', 'maintenance',
+  'performance', 'recovery', 'energy',
+] as const;
 
 const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
@@ -188,6 +212,8 @@ export function NutritionPlanTree({
   );
 }
 
+/* ---- DayRow ---- */
+
 function DayRow({
   day, templateId, canWrite, libraryItems, onRemoveDay, onChanged,
 }: {
@@ -207,7 +233,7 @@ function DayRow({
   useEffect(() => { setMeals(day.meals ?? []); }, [day]);
 
   const [addingMeal, setAddingMeal] = useState(false);
-  const [addMealName, setAddMealName] = useState('');
+  const [addMealType, setAddMealType] = useState('');
   const [removingMeal, setRemovingMeal] = useState<HierMeal | null>(null);
 
   const base = `/nutrition-plan-templates/${templateId}/days/${day.id}`;
@@ -235,11 +261,11 @@ function DayRow({
   }
 
   async function addMeal() {
-    if (!addMealName.trim()) { toast(t('nutrition_plan_templates.tree_meal_name_required')); return; }
+    if (!addMealType) { toast(t('nutrition_plan_templates.tree_select_meal_type_required')); return; }
     setAddingMeal(true);
     try {
-      await apiFetch(`${base}/meals`, { method: 'POST', body: JSON.stringify({ name: addMealName.trim() }) });
-      setAddMealName('');
+      await apiFetch(`${base}/meals`, { method: 'POST', body: JSON.stringify({ meal_type: addMealType }) });
+      setAddMealType('');
       await onChanged();
     } catch (err: any) {
       toast(err.message ?? t('nutrition_plan_templates.error_generic'));
@@ -310,13 +336,16 @@ function DayRow({
 
         {canWrite && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
-            <input
-              value={addMealName}
-              onChange={(e) => setAddMealName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addMeal(); }}
-              placeholder={t('nutrition_plan_templates.tree_meal_placeholder')}
+            <select
+              value={addMealType}
+              onChange={(e) => setAddMealType(e.target.value)}
               style={{ ...selectStyle, flex: 1 }}
-            />
+            >
+              <option value="">{t('nutrition_plan_templates.tree_select_meal_type')}</option>
+              {MEAL_TYPES.map((mt) => (
+                <option key={mt} value={mt}>{t(`nutrition_plan_templates.tree_meal_type_${mt}`)}</option>
+              ))}
+            </select>
             <button onClick={addMeal} disabled={addingMeal} style={btnSmall()}>
               {t('nutrition_plan_templates.tree_add_meal')}
             </button>
@@ -336,6 +365,8 @@ function DayRow({
   );
 }
 
+/* ---- MealRow ---- */
+
 function MealRow({
   meal, templateId, dayId, canWrite, libraryItems, onRemove, onChanged,
 }: {
@@ -352,74 +383,82 @@ function MealRow({
   const { toast } = useToast();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: meal.id });
 
-  const [editingName, setEditingName] = useState(false);
-  const [nameValue, setNameValue] = useState(meal.name);
-  useEffect(() => { setNameValue(meal.name); }, [meal.name]);
+  const [editing, setEditing] = useState(false);
+  const [mealTypeVal, setMealTypeVal] = useState(meal.meal_type ?? '');
+  const [displayNameVal, setDisplayNameVal] = useState(meal.display_name);
+  const [notesVal, setNotesVal] = useState(meal.notes ?? '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setMealTypeVal(meal.meal_type ?? '');
+    setDisplayNameVal(meal.display_name);
+    setNotesVal(meal.notes ?? '');
+  }, [meal]);
 
   const base = `/nutrition-plan-templates/${templateId}/days/${dayId}/meals/${meal.id}`;
 
-  const mainDishOptions = libraryItems.filter((i) => i.category === 'main_dish');
-  const sideOptions = libraryItems.filter((i) => i.category === 'side');
-  const sauceOptions = libraryItems.filter((i) => i.category === 'sauce');
-  const drinkOptions = libraryItems.filter((i) => i.category === 'drink');
-
-  async function saveMealName() {
-    if (!nameValue.trim()) { setNameValue(meal.name); setEditingName(false); return; }
-    try {
-      await apiFetch(base, { method: 'PUT', body: JSON.stringify({ name: nameValue.trim() }) });
-      await onChanged();
-    } catch (err: any) {
-      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
-      setNameValue(meal.name);
-    }
-    setEditingName(false);
+  function cancelEdit() {
+    setMealTypeVal(meal.meal_type ?? '');
+    setDisplayNameVal(meal.display_name);
+    setNotesVal(meal.notes ?? '');
+    setEditing(false);
   }
 
-  async function updateMealField(field: string, value: number | null) {
+  async function saveMeal() {
+    setSaving(true);
     try {
-      await apiFetch(base, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+      await apiFetch(base, {
+        method: 'PUT',
+        body: JSON.stringify({
+          meal_type: mealTypeVal || undefined,
+          display_name: displayNameVal.trim() || undefined,
+          notes: notesVal.trim() || null,
+        }),
+      });
       await onChanged();
+      setEditing(false);
     } catch (err: any) {
       toast(err.message ?? t('nutrition_plan_templates.error_generic'));
-    }
+    } finally { setSaving(false); }
   }
+
+  const compactSummary = meal.items.length > 0
+    ? meal.items.map((i) => `${i.item_name}${i.quantity ? ` ${i.quantity}${i.unit ?? ''}` : ''}`).join(' · ')
+    : null;
 
   const mealStyle: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.6 : 1,
     background: '#fff',
-    border: '1px solid #ececf0',
+    border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
     borderRadius: 6,
-    padding: '10px 12px',
     marginBottom: 8,
+    overflow: 'hidden',
   };
 
   return (
     <div ref={setNodeRef} style={mealStyle}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+      {/* Read-mode header (always visible) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
         {canWrite && (
-          <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', fontSize: 14, userSelect: 'none' }}>⠿</span>
+          <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', fontSize: 14, userSelect: 'none', flexShrink: 0 }}>⠿</span>
         )}
-        {editingName && canWrite ? (
-          <input
-            autoFocus
-            value={nameValue}
-            onChange={(e) => setNameValue(e.target.value)}
-            onBlur={saveMealName}
-            onKeyDown={(e) => { if (e.key === 'Enter') saveMealName(); if (e.key === 'Escape') { setNameValue(meal.name); setEditingName(false); } }}
-            style={{ ...selectStyle, fontWeight: 600, fontSize: 14 }}
-          />
-        ) : (
-          <span
-            style={{ fontWeight: 600, fontSize: 14, cursor: canWrite ? 'text' : 'default' }}
-            onClick={() => canWrite && setEditingName(true)}
-            title={canWrite ? t('nutrition_plan_templates.tree_click_to_edit') : undefined}
-          >
-            {meal.name}
+        <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{meal.display_name}</span>
+        {compactSummary && (
+          <span style={{ fontSize: 12.5, color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {' · '}{compactSummary}
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {canWrite && !editing && (
+          <button
+            onClick={() => setEditing(true)}
+            style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontSize: 12, color: '#555' }}
+          >
+            {t('nutrition_plan_templates.edit')}
+          </button>
+        )}
         {canWrite && (
           <ContextMenu
             ariaLabel={t('nutrition_plan_templates.col_actions')}
@@ -428,77 +467,211 @@ function MealRow({
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, paddingLeft: canWrite ? 22 : 0 }}>
-        <LibrarySelector
-          label={t('nutrition_plan_templates.tree_label_main_dish')}
-          options={mainDishOptions}
-          value={meal.main_dish_id}
-          displayValue={meal.main_dish_name}
-          canWrite={canWrite}
-          noneLabel={t('nutrition_plan_templates.tree_none')}
-          onChange={(v) => updateMealField('main_dish_id', v)}
-        />
-        <LibrarySelector
-          label={t('nutrition_plan_templates.tree_label_side')}
-          options={sideOptions}
-          value={meal.side_id}
-          displayValue={meal.side_name}
-          canWrite={canWrite}
-          noneLabel={t('nutrition_plan_templates.tree_none')}
-          onChange={(v) => updateMealField('side_id', v)}
-        />
-        <LibrarySelector
-          label={t('nutrition_plan_templates.tree_label_sauce')}
-          options={sauceOptions}
-          value={meal.sauce_id}
-          displayValue={meal.sauce_name}
-          canWrite={canWrite}
-          noneLabel={t('nutrition_plan_templates.tree_none')}
-          onChange={(v) => updateMealField('sauce_id', v)}
-        />
-        <LibrarySelector
-          label={t('nutrition_plan_templates.tree_label_drink')}
-          options={drinkOptions}
-          value={meal.drink_id}
-          displayValue={meal.drink_name}
-          canWrite={canWrite}
-          noneLabel={t('nutrition_plan_templates.tree_none')}
-          onChange={(v) => updateMealField('drink_id', v)}
-        />
-      </div>
-    </div>
-  );
-}
+      {/* Edit mode body */}
+      {editing && (
+        <div style={{ borderTop: '1px solid #ececf0', padding: '12px 12px 14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <div>
+              <span style={microLabel}>{t('nutrition_plan_templates.tree_label_meal_type')}</span>
+              <select
+                value={mealTypeVal}
+                onChange={(e) => setMealTypeVal(e.target.value)}
+                style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const }}
+              >
+                <option value="">{t('nutrition_plan_templates.tree_select_meal_type')}</option>
+                {MEAL_TYPES.map((mt) => (
+                  <option key={mt} value={mt}>{t(`nutrition_plan_templates.tree_meal_type_${mt}`)}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span style={microLabel}>{t('nutrition_plan_templates.tree_label_display_name')}</span>
+              <input
+                value={displayNameVal}
+                onChange={(e) => setDisplayNameVal(e.target.value)}
+                style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const }}
+              />
+            </div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <span style={microLabel}>{t('nutrition_plan_templates.tree_label_notes')}</span>
+            <textarea
+              value={notesVal}
+              onChange={(e) => setNotesVal(e.target.value)}
+              rows={2}
+              style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const, resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </div>
 
-function LibrarySelector({
-  label, options, value, displayValue, canWrite, noneLabel, onChange,
-}: {
-  label: string;
-  options: LibraryItem[];
-  value: number | null;
-  displayValue: string | null;
-  canWrite: boolean;
-  noneLabel: string;
-  onChange: (value: number | null) => void;
-}) {
-  return (
-    <div>
-      <span style={microLabel}>{label}</span>
-      {canWrite ? (
-        <select
-          value={value != null ? String(value) : ''}
-          onChange={(e) => onChange(e.target.value === '' ? null : parseInt(e.target.value, 10))}
-          style={{ ...microSelect, width: '100%' }}
-        >
-          <option value="">— {noneLabel} —</option>
-          {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-      ) : (
-        <span style={{ fontSize: 12.5, color: '#555' }}>{displayValue ?? '—'}</span>
+          <MealItemsEditor
+            templateId={templateId}
+            dayId={dayId}
+            mealId={meal.id}
+            items={meal.items}
+            libraryItems={libraryItems}
+            canWrite={canWrite}
+            onChanged={onChanged}
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+            <button onClick={cancelEdit} style={cancelBtnStyle}>{t('nutrition_plan_templates.cancel')}</button>
+            <button onClick={saveMeal} disabled={saving} style={btnSmall()}>
+              {saving ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.save_changes')}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
 }
+
+/* ---- MealItemsEditor ---- */
+
+const emptyItemForm = { nutrition_library_item_id: '', component_type: '', quantity: '', unit: 'g' };
+
+function MealItemsEditor({
+  templateId, dayId, mealId, items, libraryItems, canWrite, onChanged,
+}: {
+  templateId: number;
+  dayId: number;
+  mealId: number;
+  items: MealItem[];
+  libraryItems: LibraryItem[];
+  canWrite: boolean;
+  onChanged: () => Promise<void> | void;
+}) {
+  const t = useTranslations();
+  const { apiFetch } = useApiClient();
+  const { toast } = useToast();
+
+  const [addForm, setAddForm] = useState(emptyItemForm);
+  const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<number | null>(null);
+
+  const base = `/nutrition-plan-templates/${templateId}/days/${dayId}/meals/${mealId}/items`;
+
+  async function addItem() {
+    if (!addForm.nutrition_library_item_id || !addForm.component_type) {
+      toast(t('nutrition_plan_templates.tree_item_required'));
+      return;
+    }
+    setAdding(true);
+    try {
+      await apiFetch(base, {
+        method: 'POST',
+        body: JSON.stringify({
+          nutrition_library_item_id: parseInt(addForm.nutrition_library_item_id, 10),
+          component_type: addForm.component_type,
+          quantity: addForm.quantity ? parseFloat(addForm.quantity) : null,
+          unit: addForm.unit.trim() || null,
+        }),
+      });
+      setAddForm(emptyItemForm);
+      await onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+    } finally { setAdding(false); }
+  }
+
+  async function removeItem() {
+    if (removingId == null) return;
+    try {
+      await apiFetch(`${base}/${removingId}`, { method: 'DELETE' });
+      setRemovingId(null);
+      await onChanged();
+    } catch (err: any) {
+      setRemovingId(null);
+      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+    }
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid #f0f0f5', paddingTop: 10 }}>
+      <span style={microLabel}>{t('nutrition_plan_templates.tree_label_items')}</span>
+      {items.length === 0 && (
+        <p style={{ color: '#aaa', fontSize: 12.5, margin: '4px 0 8px' }}>{t('nutrition_plan_templates.tree_no_items')}</p>
+      )}
+      {items.map((item) => (
+        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
+          <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{item.item_name}</span>
+          <span style={{ fontSize: 11.5, color: '#9ca3af' }}>
+            {t(`nutrition_plan_templates.tree_component_type_${item.component_type}`)}
+          </span>
+          {item.quantity != null && (
+            <span style={{ fontSize: 12.5, color: '#6b7280' }}>{item.quantity}{item.unit ?? ''}</span>
+          )}
+          {canWrite && (
+            <button onClick={() => setRemovingId(item.id)} style={removeBtnStyle}>×</button>
+          )}
+        </div>
+      ))}
+
+      {canWrite && (
+        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: 2, minWidth: 120 }}>
+            <span style={microLabel}>{t('nutrition_plan_templates.tree_label_library_item')}</span>
+            <select
+              value={addForm.nutrition_library_item_id}
+              onChange={(e) => setAddForm({ ...addForm, nutrition_library_item_id: e.target.value })}
+              style={{ ...microSelect, width: '100%' }}
+            >
+              <option value="">—</option>
+              {libraryItems.map((o) => (
+                <option key={o.id} value={o.id}>{o.name}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: 100 }}>
+            <span style={microLabel}>{t('nutrition_plan_templates.tree_label_component_type')}</span>
+            <select
+              value={addForm.component_type}
+              onChange={(e) => setAddForm({ ...addForm, component_type: e.target.value })}
+              style={{ ...microSelect, width: '100%' }}
+            >
+              <option value="">—</option>
+              {COMPONENT_TYPES.map((ct) => (
+                <option key={ct} value={ct}>{t(`nutrition_plan_templates.tree_component_type_${ct}`)}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ width: 70 }}>
+            <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={addForm.quantity}
+              onChange={(e) => setAddForm({ ...addForm, quantity: e.target.value })}
+              style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+            />
+          </div>
+          <div style={{ width: 60 }}>
+            <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
+            <input
+              value={addForm.unit}
+              onChange={(e) => setAddForm({ ...addForm, unit: e.target.value })}
+              style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+            />
+          </div>
+          <button onClick={addItem} disabled={adding} style={btnSmall()}>
+            {t('nutrition_plan_templates.tree_add_item')}
+          </button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={removingId !== null}
+        message={t('nutrition_plan_templates.tree_confirm_remove_item')}
+        confirmLabel={t('nutrition_plan_templates.tree_remove_item')}
+        cancelLabel={t('nutrition_plan_templates.cancel')}
+        onConfirm={removeItem}
+        onCancel={() => setRemovingId(null)}
+      />
+    </div>
+  );
+}
+
+/* ---- RestrictionsSection ---- */
 
 function RestrictionsSection({
   templateId, restrictions, canWrite, libraryItems, onChanged,
@@ -586,6 +759,8 @@ function RestrictionsSection({
   );
 }
 
+/* ---- GoalsSection ---- */
+
 const emptyGoalForm = { item_name: '', quantity: '', unit: '', frequency: 'daily' };
 type GoalForm = typeof emptyGoalForm;
 
@@ -609,7 +784,7 @@ function GoalsSection({
   const base = `/nutrition-plan-templates/${templateId}/goals`;
 
   async function addGoal() {
-    if (!addForm.item_name.trim() || !addForm.quantity || !addForm.unit.trim()) {
+    if (!addForm.item_name || !addForm.quantity || !addForm.unit.trim()) {
       toast(t('nutrition_plan_templates.tree_goal_required'));
       return;
     }
@@ -618,7 +793,7 @@ function GoalsSection({
       await apiFetch(base, {
         method: 'POST',
         body: JSON.stringify({
-          item_name: addForm.item_name.trim(),
+          item_name: addForm.item_name,
           quantity: parseFloat(addForm.quantity),
           unit: addForm.unit.trim(),
           frequency: addForm.frequency,
@@ -653,7 +828,9 @@ function GoalsSection({
       )}
       {goals.map((g) => (
         <div key={g.id} style={tagRowStyle}>
-          <span style={{ fontSize: 13.5, fontWeight: 500 }}>{g.item_name}</span>
+          <span style={{ fontSize: 13.5, fontWeight: 500 }}>
+            {t(`nutrition_plan_templates.tree_goal_name_${g.item_name}`, { defaultValue: g.item_name })}
+          </span>
           <span style={{ fontSize: 12.5, color: '#6b7280', marginLeft: 8 }}>{g.quantity} {g.unit} · {g.frequency}</span>
           {canWrite && (
             <button onClick={() => setRemovingId(g.id)} style={removeBtnStyle}>×</button>
@@ -670,12 +847,17 @@ function GoalsSection({
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 8 }}>
             <div>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_item_name')}</span>
-              <input
+              <select
                 autoFocus
                 value={addForm.item_name}
                 onChange={(e) => setAddForm({ ...addForm, item_name: e.target.value })}
                 style={{ ...selectStyle, width: '100%', boxSizing: 'border-box' as const }}
-              />
+              >
+                <option value="">—</option>
+                {NUTRITION_GOALS.map((g) => (
+                  <option key={g} value={g}>{t(`nutrition_plan_templates.tree_goal_name_${g}`)}</option>
+                ))}
+              </select>
             </div>
             <div>
               <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
@@ -713,7 +895,7 @@ function GoalsSection({
             <span style={{ flex: 1 }} />
             <button
               onClick={() => { setAddForm(emptyGoalForm); setAddOpen(false); }}
-              style={{ background: '#f4f4f6', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14 }}
+              style={cancelBtnStyle}
             >
               {t('nutrition_plan_templates.cancel')}
             </button>
@@ -742,3 +924,4 @@ const sectionStyle: React.CSSProperties = { marginTop: 20, borderTop: '1px solid
 const sectionHeaderStyle: React.CSSProperties = { margin: '0 0 10px', fontSize: 13.5, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 };
 const tagRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderBottom: '1px solid #f3f4f6' };
 const removeBtnStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: '#d1d5db', fontSize: 18, padding: '0 4px', marginLeft: 'auto', lineHeight: 1, fontWeight: 300 };
+const cancelBtnStyle: React.CSSProperties = { background: '#f4f4f6', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14 };

@@ -17,6 +17,21 @@ const MAX_LIMIT = 100;
 // weekday 0-6 = Mon-Sun, 7 = All Days
 const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
+const MEAL_TYPES = [
+  'recien_levantado', 'breakfast', 'media_manana',
+  'lunch', 'snack', 'dinner', 'antes_de_dormir',
+] as const;
+
+const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'additional'] as const;
+
+const NUTRITION_GOALS = [
+  'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
+  'weight_loss', 'weight_gain', 'muscle_gain', 'maintenance',
+  'performance', 'recovery', 'energy',
+] as const;
+
+/* ---- helpers ---- */
+
 async function reorder(tx: Tx, table: string, parentColumn: string, parentId: string | number, orderedIds: number[]) {
   await tx.query(`UPDATE ${table} SET position = position + 1000000 WHERE ${parentColumn} = ?`, [parentId]);
   for (let i = 0; i < orderedIds.length; i++) {
@@ -51,6 +66,31 @@ async function mealExists(dayId: string, mealId: string, gymId: string): Promise
 async function libraryItemExists(id: number): Promise<boolean> {
   const { rows } = await db.query('SELECT 1 FROM nutrition_library_items WHERE id = ?', [id]);
   return rows.length > 0;
+}
+
+const MEAL_SELECT = `
+  SELECT m.id, m.gym_id, m.nutrition_plan_template_day_id,
+         m.meal_type, m.display_name, m.notes, m.position
+  FROM nutrition_plan_template_meals m
+`;
+
+async function fetchMealWithItems(mealId: string | number) {
+  const { rows: mealRows } = await db.query(
+    `${MEAL_SELECT} WHERE m.id = ?`,
+    [mealId],
+  );
+  if (mealRows.length === 0) return null;
+  const meal = mealRows[0];
+  const { rows: items } = await db.query(
+    `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+            i.component_type, i.quantity, i.unit, i.position
+     FROM nutrition_plan_template_meal_items i
+     JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+     WHERE i.meal_id = ?
+     ORDER BY i.position ASC`,
+    [mealId],
+  );
+  return { ...meal, items };
 }
 
 /* ---- Templates ---- */
@@ -131,7 +171,7 @@ nutritionPlanTemplatesRouter.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Full hierarchy: template → days → meals (with library items) + restrictions + goals
+// Full hierarchy: template → days → meals (with items[]) + restrictions + goals
 nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
@@ -142,31 +182,32 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
     );
     if (tplRows.length === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
 
-    // Days → meals with library item names
     const { rows: dayRows } = await db.query(
       'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC',
       [id, gymId],
     );
     const days = await Promise.all(dayRows.map(async (day: any) => {
       const { rows: mealRows } = await db.query(
-        `SELECT m.*,
-                md.name AS main_dish_name,
-                si.name AS side_name,
-                sa.name AS sauce_name,
-                dr.name AS drink_name
-         FROM nutrition_plan_template_meals m
-         LEFT JOIN nutrition_library_items md ON md.id = m.main_dish_id
-         LEFT JOIN nutrition_library_items si ON si.id = m.side_id
-         LEFT JOIN nutrition_library_items sa ON sa.id = m.sauce_id
-         LEFT JOIN nutrition_library_items dr ON dr.id = m.drink_id
+        `${MEAL_SELECT}
          WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id = ?
          ORDER BY m.position ASC`,
         [day.id, gymId],
       );
-      return { ...day, meals: mealRows };
+      const meals = await Promise.all(mealRows.map(async (meal: any) => {
+        const { rows: items } = await db.query(
+          `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+                  i.component_type, i.quantity, i.unit, i.position
+           FROM nutrition_plan_template_meal_items i
+           JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+           WHERE i.meal_id = ?
+           ORDER BY i.position ASC`,
+          [meal.id],
+        );
+        return { ...meal, items };
+      }));
+      return { ...day, meals };
     }));
 
-    // Restrictions (template-level)
     const { rows: restrictionRows } = await db.query(
       `SELECT r.*, nli.name AS item_name, nli.category AS item_category
        FROM nutrition_plan_template_restrictions r
@@ -176,7 +217,6 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
       [id, gymId],
     );
 
-    // Goals (template-level)
     const { rows: goalRows } = await db.query(
       'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC',
       [id, gymId],
@@ -272,7 +312,7 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
         [gymId, copyName, src.description ?? null, 'draft', gymMembershipId],
       );
 
-      // Clone days → meals
+      // Clone days → meals → meal_items
       const { rows: days } = await tx.query(
         'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
         [id],
@@ -287,10 +327,20 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
           [day.id],
         );
         for (const meal of meals) {
-          await tx.query(
-            'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, name, position, main_dish_id, side_id, sauce_id, drink_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [gymId, newDayId, meal.name, meal.position, meal.main_dish_id ?? null, meal.side_id ?? null, meal.sauce_id ?? null, meal.drink_id ?? null],
+          const { insertId: newMealId } = await tx.query(
+            'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
+            [gymId, newDayId, meal.meal_type ?? null, meal.display_name, meal.notes ?? null, meal.position],
           );
+          const { rows: items } = await tx.query(
+            'SELECT * FROM nutrition_plan_template_meal_items WHERE meal_id = ? ORDER BY position ASC',
+            [meal.id],
+          );
+          for (const item of items) {
+            await tx.query(
+              'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
+            );
+          }
         }
       }
 
@@ -420,22 +470,25 @@ nutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals', async (req, res, next
   const { id, dayId } = req.params as { id: string; dayId: string };
   try {
     if (!(await dayExists(id, dayId, gymId))) return res.status(404).json({ error: 'Day not found' });
-    const { rows } = await db.query(
-      `SELECT m.*,
-              md.name AS main_dish_name,
-              si.name AS side_name,
-              sa.name AS sauce_name,
-              dr.name AS drink_name
-       FROM nutrition_plan_template_meals m
-       LEFT JOIN nutrition_library_items md ON md.id = m.main_dish_id
-       LEFT JOIN nutrition_library_items si ON si.id = m.side_id
-       LEFT JOIN nutrition_library_items sa ON sa.id = m.sauce_id
-       LEFT JOIN nutrition_library_items dr ON dr.id = m.drink_id
+    const { rows: mealRows } = await db.query(
+      `${MEAL_SELECT}
        WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id = ?
        ORDER BY m.position ASC`,
       [dayId, gymId],
     );
-    res.json(rows);
+    const meals = await Promise.all(mealRows.map(async (meal: any) => {
+      const { rows: items } = await db.query(
+        `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+                i.component_type, i.quantity, i.unit, i.position
+         FROM nutrition_plan_template_meal_items i
+         JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+         WHERE i.meal_id = ?
+         ORDER BY i.position ASC`,
+        [meal.id],
+      );
+      return { ...meal, items };
+    }));
+    res.json(meals);
   } catch (err) { next(err); }
 });
 
@@ -443,40 +496,24 @@ nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals', requireModuleWrite('
   const { gymId } = getTenantContext(req);
   const { id, dayId } = req.params as { id: string; dayId: string };
   if (!(await dayExists(id, dayId, gymId))) return res.status(404).json({ error: 'Day not found' });
-  const { name, main_dish_id, side_id, sauce_id, drink_id } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
-  if (main_dish_id != null && !(await libraryItemExists(Number(main_dish_id)))) {
-    return res.status(400).json({ error: 'main_dish_id is not a valid nutrition library item' });
+
+  const { meal_type, display_name, notes } = req.body;
+  if (!meal_type || !(MEAL_TYPES as readonly string[]).includes(meal_type)) {
+    return res.status(400).json({ error: `meal_type must be one of: ${MEAL_TYPES.join(', ')}` });
   }
-  if (side_id != null && !(await libraryItemExists(Number(side_id)))) {
-    return res.status(400).json({ error: 'side_id is not a valid nutrition library item' });
-  }
-  if (sauce_id != null && !(await libraryItemExists(Number(sauce_id)))) {
-    return res.status(400).json({ error: 'sauce_id is not a valid nutrition library item' });
-  }
-  if (drink_id != null && !(await libraryItemExists(Number(drink_id)))) {
-    return res.status(400).json({ error: 'drink_id is not a valid nutrition library item' });
-  }
+  const resolvedDisplayName = display_name?.trim() || meal_type;
+
   try {
     const { rows: posRows } = await db.query(
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ?',
       [dayId],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, name, position, main_dish_id, side_id, sauce_id, drink_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [gymId, dayId, name.trim(), posRows[0].next_position, main_dish_id ?? null, side_id ?? null, sauce_id ?? null, drink_id ?? null],
+      'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
+      [gymId, dayId, meal_type, resolvedDisplayName, notes ?? null, posRows[0].next_position],
     );
-    const { rows } = await db.query(
-      `SELECT m.*, md.name AS main_dish_name, si.name AS side_name, sa.name AS sauce_name, dr.name AS drink_name
-       FROM nutrition_plan_template_meals m
-       LEFT JOIN nutrition_library_items md ON md.id = m.main_dish_id
-       LEFT JOIN nutrition_library_items si ON si.id = m.side_id
-       LEFT JOIN nutrition_library_items sa ON sa.id = m.sauce_id
-       LEFT JOIN nutrition_library_items dr ON dr.id = m.drink_id
-       WHERE m.id = ?`,
-      [insertId],
-    );
-    res.status(201).json(rows[0]);
+    const meal = await fetchMealWithItems(insertId);
+    res.status(201).json(meal);
   } catch (err) { next(err); }
 });
 
@@ -488,18 +525,25 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requireModule
   if (!Array.isArray(order) || order.length === 0) return res.status(400).json({ error: 'order must be a non-empty array of meal ids' });
   try {
     await db.transaction(async (tx) => reorder(tx, 'nutrition_plan_template_meals', 'nutrition_plan_template_day_id', dayId, order));
-    const { rows } = await db.query(
-      `SELECT m.*, md.name AS main_dish_name, si.name AS side_name, sa.name AS sauce_name, dr.name AS drink_name
-       FROM nutrition_plan_template_meals m
-       LEFT JOIN nutrition_library_items md ON md.id = m.main_dish_id
-       LEFT JOIN nutrition_library_items si ON si.id = m.side_id
-       LEFT JOIN nutrition_library_items sa ON sa.id = m.sauce_id
-       LEFT JOIN nutrition_library_items dr ON dr.id = m.drink_id
+    const { rows: mealRows } = await db.query(
+      `${MEAL_SELECT}
        WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id = ?
        ORDER BY m.position ASC`,
       [dayId, gymId],
     );
-    res.json(rows);
+    const meals = await Promise.all(mealRows.map(async (meal: any) => {
+      const { rows: items } = await db.query(
+        `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+                i.component_type, i.quantity, i.unit, i.position
+         FROM nutrition_plan_template_meal_items i
+         JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+         WHERE i.meal_id = ?
+         ORDER BY i.position ASC`,
+        [meal.id],
+      );
+      return { ...meal, items };
+    }));
+    res.json(meals);
   } catch (err) { next(err); }
 });
 
@@ -511,34 +555,19 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireModule
   const updates: string[] = [];
   const params: any[] = [];
 
-  const { name, main_dish_id, side_id, sauce_id, drink_id } = req.body;
-  if (name !== undefined) {
-    if (!name?.trim()) return res.status(400).json({ error: 'name cannot be empty' });
-    updates.push('name = ?'); params.push(name.trim());
-  }
-  if ('main_dish_id' in req.body) {
-    if (main_dish_id != null && !(await libraryItemExists(Number(main_dish_id)))) {
-      return res.status(400).json({ error: 'main_dish_id is not a valid nutrition library item' });
+  const { meal_type, display_name, notes } = req.body;
+  if (meal_type !== undefined) {
+    if (!(MEAL_TYPES as readonly string[]).includes(meal_type)) {
+      return res.status(400).json({ error: `meal_type must be one of: ${MEAL_TYPES.join(', ')}` });
     }
-    updates.push('main_dish_id = ?'); params.push(main_dish_id ?? null);
+    updates.push('meal_type = ?'); params.push(meal_type);
   }
-  if ('side_id' in req.body) {
-    if (side_id != null && !(await libraryItemExists(Number(side_id)))) {
-      return res.status(400).json({ error: 'side_id is not a valid nutrition library item' });
-    }
-    updates.push('side_id = ?'); params.push(side_id ?? null);
+  if (display_name !== undefined) {
+    if (!display_name?.trim()) return res.status(400).json({ error: 'display_name cannot be empty' });
+    updates.push('display_name = ?'); params.push(display_name.trim());
   }
-  if ('sauce_id' in req.body) {
-    if (sauce_id != null && !(await libraryItemExists(Number(sauce_id)))) {
-      return res.status(400).json({ error: 'sauce_id is not a valid nutrition library item' });
-    }
-    updates.push('sauce_id = ?'); params.push(sauce_id ?? null);
-  }
-  if ('drink_id' in req.body) {
-    if (drink_id != null && !(await libraryItemExists(Number(drink_id)))) {
-      return res.status(400).json({ error: 'drink_id is not a valid nutrition library item' });
-    }
-    updates.push('drink_id = ?'); params.push(drink_id ?? null);
+  if ('notes' in req.body) {
+    updates.push('notes = ?'); params.push(notes ?? null);
   }
   if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
@@ -548,17 +577,8 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireModule
       `UPDATE nutrition_plan_template_meals SET ${updates.join(', ')} WHERE id = ? AND nutrition_plan_template_day_id = ? AND gym_id = ?`,
       params,
     );
-    const { rows } = await db.query(
-      `SELECT m.*, md.name AS main_dish_name, si.name AS side_name, sa.name AS sauce_name, dr.name AS drink_name
-       FROM nutrition_plan_template_meals m
-       LEFT JOIN nutrition_library_items md ON md.id = m.main_dish_id
-       LEFT JOIN nutrition_library_items si ON si.id = m.side_id
-       LEFT JOIN nutrition_library_items sa ON sa.id = m.sauce_id
-       LEFT JOIN nutrition_library_items dr ON dr.id = m.drink_id
-       WHERE m.id = ?`,
-      [mealId],
-    );
-    res.json(rows[0]);
+    const meal = await fetchMealWithItems(mealId);
+    res.json(meal);
   } catch (err) { next(err); }
 });
 
@@ -571,6 +591,123 @@ nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId', requireMod
       [mealId, dayId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Meal not found' });
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
+/* ---- Meal Items ---- */
+
+nutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals/:mealId/items', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  try {
+    if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
+    const { rows } = await db.query(
+      `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+              i.component_type, i.quantity, i.unit, i.position
+       FROM nutrition_plan_template_meal_items i
+       JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+       WHERE i.meal_id = ?
+       ORDER BY i.position ASC`,
+      [mealId],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
+
+  const { nutrition_library_item_id, component_type, quantity, unit } = req.body;
+  if (!nutrition_library_item_id) return res.status(400).json({ error: 'nutrition_library_item_id is required' });
+  if (!component_type || !(COMPONENT_TYPES as readonly string[]).includes(component_type)) {
+    return res.status(400).json({ error: `component_type must be one of: ${COMPONENT_TYPES.join(', ')}` });
+  }
+  if (!(await libraryItemExists(Number(nutrition_library_item_id)))) {
+    return res.status(400).json({ error: 'nutrition_library_item_id is not a valid nutrition library item' });
+  }
+
+  try {
+    const { rows: posRows } = await db.query(
+      'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM nutrition_plan_template_meal_items WHERE meal_id = ?',
+      [mealId],
+    );
+    const { insertId } = await db.query(
+      'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [gymId, mealId, Number(nutrition_library_item_id), component_type, quantity != null ? Number(quantity) : null, unit ?? null, posRows[0].next_position],
+    );
+    const { rows } = await db.query(
+      `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+              i.component_type, i.quantity, i.unit, i.position
+       FROM nutrition_plan_template_meal_items i
+       JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+       WHERE i.id = ?`,
+      [insertId],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id, dayId, mealId, itemId } = req.params as { id: string; dayId: string; mealId: string; itemId: string };
+  if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
+
+  const updates: string[] = [];
+  const params: any[] = [];
+  const { nutrition_library_item_id, component_type, quantity, unit } = req.body;
+
+  if (nutrition_library_item_id !== undefined) {
+    if (!(await libraryItemExists(Number(nutrition_library_item_id)))) {
+      return res.status(400).json({ error: 'nutrition_library_item_id is not a valid nutrition library item' });
+    }
+    updates.push('nutrition_library_item_id = ?'); params.push(Number(nutrition_library_item_id));
+  }
+  if (component_type !== undefined) {
+    if (!(COMPONENT_TYPES as readonly string[]).includes(component_type)) {
+      return res.status(400).json({ error: `component_type must be one of: ${COMPONENT_TYPES.join(', ')}` });
+    }
+    updates.push('component_type = ?'); params.push(component_type);
+  }
+  if ('quantity' in req.body) {
+    updates.push('quantity = ?'); params.push(quantity != null ? Number(quantity) : null);
+  }
+  if ('unit' in req.body) {
+    updates.push('unit = ?'); params.push(unit ?? null);
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
+
+  params.push(itemId, mealId);
+  try {
+    const { rowCount } = await db.query(
+      `UPDATE nutrition_plan_template_meal_items SET ${updates.join(', ')} WHERE id = ? AND meal_id = ?`,
+      params,
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Meal item not found' });
+    const { rows } = await db.query(
+      `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+              i.component_type, i.quantity, i.unit, i.position
+       FROM nutrition_plan_template_meal_items i
+       JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+       WHERE i.id = ?`,
+      [itemId],
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId/items/:itemId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id, dayId, mealId, itemId } = req.params as { id: string; dayId: string; mealId: string; itemId: string };
+  if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
+  try {
+    const { rowCount } = await db.query(
+      'DELETE FROM nutrition_plan_template_meal_items WHERE id = ? AND meal_id = ?',
+      [itemId, mealId],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Meal item not found' });
     res.status(204).send();
   } catch (err) { next(err); }
 });
@@ -688,7 +825,9 @@ nutritionPlanTemplatesRouter.post('/:id/goals', requireModuleWrite('NUTRITION'),
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Nutrition plan template not found' });
   const { item_name, quantity, unit, frequency, applies_all_days } = req.body;
-  if (!item_name?.trim()) return res.status(400).json({ error: 'item_name is required' });
+  if (!item_name || !(NUTRITION_GOALS as readonly string[]).includes(item_name)) {
+    return res.status(400).json({ error: `item_name must be one of: ${NUTRITION_GOALS.join(', ')}` });
+  }
   if (quantity == null || isNaN(Number(quantity))) return res.status(400).json({ error: 'quantity is required and must be a number' });
   if (!unit?.trim()) return res.status(400).json({ error: 'unit is required' });
   try {
@@ -698,7 +837,7 @@ nutritionPlanTemplatesRouter.post('/:id/goals', requireModuleWrite('NUTRITION'),
     );
     const { insertId } = await db.query(
       'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [gymId, id, item_name.trim(), Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
+      [gymId, id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query('SELECT * FROM nutrition_plan_template_goals WHERE id = ?', [insertId]);
     res.status(201).json(rows[0]);
@@ -712,8 +851,10 @@ nutritionPlanTemplatesRouter.put('/:id/goals/:gid', requireModuleWrite('NUTRITIO
   const params: any[] = [];
   const { item_name, quantity, unit, frequency, applies_all_days } = req.body;
   if (item_name !== undefined) {
-    if (!item_name?.trim()) return res.status(400).json({ error: 'item_name cannot be empty' });
-    updates.push('item_name = ?'); params.push(item_name.trim());
+    if (!(NUTRITION_GOALS as readonly string[]).includes(item_name)) {
+      return res.status(400).json({ error: `item_name must be one of: ${NUTRITION_GOALS.join(', ')}` });
+    }
+    updates.push('item_name = ?'); params.push(item_name);
   }
   if (quantity !== undefined) {
     if (isNaN(Number(quantity))) return res.status(400).json({ error: 'quantity must be a number' });

@@ -7,7 +7,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
-import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { CrudModal } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -65,11 +65,11 @@ export default function NutritionPlanTemplatesPage() {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  // Add modal
-  const [addOpen, setAddOpen] = useState(false);
-  const [addForm, setAddForm] = useState(emptyForm);
-  const [addSaving, setAddSaving] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
+  // Pending new (inline temp row)
+  const [pendingNew, setPendingNew] = useState(false);
+  const [pendingNewForm, setPendingNewForm] = useState(emptyForm);
+  const [pendingNewSaving, setPendingNewSaving] = useState(false);
+  const [pendingNewError, setPendingNewError] = useState<string | null>(null);
 
   // Inline editing
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -139,8 +139,14 @@ export default function NutritionPlanTemplatesPage() {
   }, [activeGymId, gymLoading]);
 
   function guardUnsaved(action: () => void) {
-    if (editingId !== null) setPendingAction(() => action);
+    if (editingId !== null || pendingNew) setPendingAction(() => action);
     else action();
+  }
+
+  function cancelPendingNew() {
+    setPendingNew(false);
+    setPendingNewForm(emptyForm);
+    setPendingNewError(null);
   }
 
   function startEdit(tpl: NutritionPlanTemplate) {
@@ -171,15 +177,15 @@ export default function NutritionPlanTemplatesPage() {
     } finally { setEditSaving(false); }
   }
 
-  async function saveAdd() {
-    if (!addForm.name.trim()) { setAddError(t('nutrition_plan_templates.error_required')); return; }
-    setAddSaving(true); setAddError(null);
-    const body = { name: addForm.name.trim(), description: addForm.description.trim() || null, status: addForm.status };
+  async function savePendingNew() {
+    if (!pendingNewForm.name.trim()) { setPendingNewError(t('nutrition_plan_templates.error_required')); return; }
+    setPendingNewSaving(true); setPendingNewError(null);
+    const body = { name: pendingNewForm.name.trim(), description: pendingNewForm.description.trim() || null, status: pendingNewForm.status };
     try {
       await apiFetch('/nutrition-plan-templates', { method: 'POST', body: JSON.stringify(body) });
-      setAddOpen(false); setAddForm(emptyForm); load();
-    } catch (err: any) { setAddError(err.message ?? t('nutrition_plan_templates.error_generic')); }
-    finally { setAddSaving(false); }
+      setPendingNew(false); setPendingNewForm(emptyForm); load();
+    } catch (err: any) { setPendingNewError(err.message ?? t('nutrition_plan_templates.error_generic')); }
+    finally { setPendingNewSaving(false); }
   }
 
   async function handleDuplicate(tpl: NutritionPlanTemplate) {
@@ -275,10 +281,10 @@ export default function NutritionPlanTemplatesPage() {
             allLabel={t('status.all')}
           />
           <button
-            onClick={() => guardUnsaved(() => { setAddForm(emptyForm); setAddError(null); setAddOpen(true); })}
+            onClick={() => guardUnsaved(() => { setPendingNewForm(emptyForm); setPendingNewError(null); setPendingNew(true); })}
             style={btnStyle()}
           >
-            {t('nutrition_plan_templates.add')}
+            {t('nutrition_plan_templates.add_new')}
           </button>
         </div>
       </div>
@@ -296,10 +302,21 @@ export default function NutritionPlanTemplatesPage() {
       {/* Template list */}
       {loading ? (
         <p style={{ color: '#888' }}>{t('nutrition_plan_templates.loading')}</p>
-      ) : rows.length === 0 ? (
+      ) : rows.length === 0 && !pendingNew ? (
         <p style={{ color: '#888' }}>{t('nutrition_plan_templates.empty')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {pendingNew && (
+            <PendingNewCard
+              form={pendingNewForm}
+              error={pendingNewError}
+              saving={pendingNewSaving}
+              t={t}
+              onFormChange={setPendingNewForm}
+              onSave={savePendingNew}
+              onCancel={cancelPendingNew}
+            />
+          )}
           {rows.map((row) => (
             <TemplateCard
               key={row.id}
@@ -337,27 +354,6 @@ export default function NutritionPlanTemplatesPage() {
         </div>
       )}
 
-      {/* Add modal */}
-      <CrudModal
-        open={addOpen}
-        title={t('nutrition_plan_templates.modal_add')}
-        error={addError}
-        saving={addSaving}
-        cancelLabel={t('nutrition_plan_templates.cancel')}
-        saveLabel={addSaving ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.modal_add')}
-        onCancel={() => { setAddOpen(false); setAddForm(emptyForm); setAddError(null); }}
-        onSave={saveAdd}
-      >
-        <FormLabel>{t('nutrition_plan_templates.label_name')} *</FormLabel>
-        <FormInput value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} autoFocus />
-        <FormLabel>{t('nutrition_plan_templates.label_description')}</FormLabel>
-        <FormInput value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
-        <FormLabel>{t('nutrition_plan_templates.label_status')}</FormLabel>
-        <select value={addForm.status} onChange={(e) => setAddForm({ ...addForm, status: e.target.value })} style={modalSelectStyle}>
-          {STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
-        </select>
-      </CrudModal>
-
       {/* Details dialog */}
       <DetailsDialog template={detailsTemplate} locale={locale} t={t} onClose={() => setDetailsTemplate(null)} />
 
@@ -381,6 +377,7 @@ export default function NutritionPlanTemplatesPage() {
           const action = pendingAction!;
           setPendingAction(null);
           cancelEdit();
+          cancelPendingNew();
           action();
         }}
         onCancel={() => setPendingAction(null)}
@@ -522,6 +519,67 @@ function TemplateCard({
   );
 }
 
+/* ---- PendingNewCard ---- */
+
+function PendingNewCard({
+  form, error, saving, t, onFormChange, onSave, onCancel,
+}: {
+  form: { name: string; description: string; status: string };
+  error: string | null;
+  saving: boolean;
+  t: ReturnType<typeof useTranslations>;
+  onFormChange: (f: { name: string; description: string; status: string }) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div style={{ border: '1.5px solid #4b45c6', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+      <div style={{ padding: '16px 16px 0' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_name')} *</label>
+            <input
+              autoFocus
+              value={form.name}
+              onChange={(e) => onFormChange({ ...form, name: e.target.value })}
+              onKeyDown={(e) => { if (e.key === 'Enter') onSave(); if (e.key === 'Escape') onCancel(); }}
+              style={inlineInputStyle}
+            />
+            {error && <p style={{ color: '#c00', fontSize: 13, margin: '4px 0 0' }}>{error}</p>}
+          </div>
+          <div>
+            <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_description')}</label>
+            <textarea
+              value={form.description}
+              onChange={(e) => onFormChange({ ...form, description: e.target.value })}
+              rows={2}
+              style={{ ...inlineInputStyle, resize: 'vertical' }}
+            />
+          </div>
+          <div>
+            <label style={inlineLabelStyle}>{t('nutrition_plan_templates.label_status')}</label>
+            <select
+              value={form.status}
+              onChange={(e) => onFormChange({ ...form, status: e.target.value })}
+              style={{ ...inlineInputStyle, width: 'auto' }}
+            >
+              {(['active', 'inactive', 'draft'] as const).map((s) => (
+                <option key={s} value={s}>{t(`status.${s}`)}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 14px', borderTop: '1px solid #ececf0', marginTop: 12 }}>
+        <button onClick={onCancel} style={cancelBtnStyle}>{t('nutrition_plan_templates.cancel')}</button>
+        <button onClick={onSave} disabled={saving} style={btnStyle()}>
+          {saving ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.save_changes')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ---- DetailsDialog ---- */
 
 function DetailsDialog({
@@ -579,7 +637,6 @@ function formatDate(value: string, locale: string): string {
 }
 
 const filterInputStyle: React.CSSProperties = { padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff' };
-const modalSelectStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' };
 const pagerStyle = (disabled: boolean): React.CSSProperties => ({
   background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '4px 12px',
   cursor: disabled ? 'default' : 'pointer', color: disabled ? '#bbb' : '#333', fontSize: 16,
