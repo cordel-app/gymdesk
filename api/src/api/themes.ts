@@ -185,6 +185,7 @@ themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   ]);
   const createEntry = auditRows.find((r: any) => r.action === 'create');
   const updateEntry = [...auditRows].reverse().find((r: any) => r.action === 'update');
+  const deleteEntry = [...auditRows].reverse().find((r: any) => r.action === 'delete');
 
   const row = rows[0];
   res.json({
@@ -192,14 +193,21 @@ themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
     usage_count: Number(row.usage_count),
     created_by_name: createEntry?.actor_name ?? null,
     modified_by_name: updateEntry?.actor_name ?? null,
+    deleted_by_name: deleteEntry?.actor_name ?? null,
   });
 });
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 themesRouter.post('/', requireSuperadmin, async (req, res) => {
-  const { name, description, tokens } = req.body;
+  const { name, description, tokens, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
+
+  const ALLOWED_CREATE_STATUSES = ['draft', 'active'];
+  const resolvedStatus = status ?? 'draft';
+  if (!ALLOWED_CREATE_STATUSES.includes(resolvedStatus)) {
+    return res.status(400).json({ error: `status must be one of: ${ALLOWED_CREATE_STATUSES.join(', ')}` });
+  }
 
   // Enforce name uniqueness among non-deleted rows.
   const { rows: existing } = await db.query(
@@ -214,8 +222,8 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
 
   const id = randomUUID();
   await db.query(
-    "INSERT INTO themes (id, gym_id, is_system_default, name, description, status, tokens, created_at) VALUES (?, NULL, 0, ?, ?, 'draft', ?, UTC_TIMESTAMP())",
-    [id, name.trim(), description?.trim() ?? null, JSON.stringify(mergedTokens)],
+    'INSERT INTO themes (id, gym_id, is_system_default, name, description, status, tokens, created_at) VALUES (?, NULL, 0, ?, ?, ?, ?, UTC_TIMESTAMP())',
+    [id, name.trim(), description?.trim() ?? null, resolvedStatus, JSON.stringify(mergedTokens)],
   );
   const { rows } = await db.query(
     'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',

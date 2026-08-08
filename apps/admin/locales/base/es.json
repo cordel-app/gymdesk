@@ -292,7 +292,17 @@
     "section_branding": "Marca",
     "section_typography": "Tipografía",
     "section_colors": "Colores",
-    "section_advanced": "Avanzado"
+    "section_advanced": "Avanzado",
+    "col_color_preview": "Colores",
+    "details_primary_color": "Color principal",
+    "details_bg_primary": "Fondo primario",
+    "details_bg_secondary": "Fondo secundario",
+    "details_bg_tertiary": "Fondo terciario",
+    "details_deleted_by": "Eliminado por",
+    "details_deleted_at": "Eliminado el",
+    "label_status": "Estado",
+    "section_general": "General",
+    "new_theme_placeholder": "Nuevo tema"
   },
   "system_users": {
     "title": "Superadministradores",

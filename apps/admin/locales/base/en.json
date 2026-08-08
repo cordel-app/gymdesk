@@ -317,7 +317,17 @@
     "adv_group_overlays": "Overlays",
     "adv_badge_inherited": "Inherited",
     "adv_badge_custom": "Custom",
-    "adv_restore_inherited": "Restore inherited value"
+    "adv_restore_inherited": "Restore inherited value",
+    "col_color_preview": "Colors",
+    "details_primary_color": "Primary Color",
+    "details_bg_primary": "Background Primary",
+    "details_bg_secondary": "Background Secondary",
+    "details_bg_tertiary": "Background Tertiary",
+    "details_deleted_by": "Deleted By",
+    "details_deleted_at": "Deleted At",
+    "label_status": "Status",
+    "section_general": "General",
+    "new_theme_placeholder": "New Theme"
   },
   "system_users": {
     "title": "Superadmins",
