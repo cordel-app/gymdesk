@@ -334,11 +334,12 @@ export default function ThemesPage() {
 
   async function handleDuplicate(theme: Theme) {
     try {
-      await apiFetch(`/platform/themes/clone/${theme.id}`, {
+      const dup = await apiFetch<Theme>(`/platform/themes/clone/${theme.id}`, {
         method: 'POST',
         body: JSON.stringify({ name: `${theme.name} (copy)` }),
       });
-      load();
+      await load();
+      enterEdit(dup);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     }

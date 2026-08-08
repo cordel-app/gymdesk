@@ -143,7 +143,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const sql = `
     SELECT
       t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-      t.logo_mime, t.logo_updated_at, t.created_at, t.modified_at, t.deleted_at,
+      t.logo_mime, t.logo_updated_at, t.tokens, t.created_at, t.modified_at, t.deleted_at,
       (
         SELECT COUNT(DISTINCT gg.id)
         FROM gyms gg
