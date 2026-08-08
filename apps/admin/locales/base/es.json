@@ -25,6 +25,7 @@
     "system_users": "Usuarios",
     "groups": {
       "membership": "Membresía",
+      "calendar": "Calendario",
       "organization": "Organización",
       "training": "Entrenamiento",
       "nutrition": "Nutrición",
@@ -165,6 +166,7 @@
     "typography_font": "Fuente",
     "typography_color": "Color",
     "label_page_bg": "Fondo de página",
+    "label_text_color": "Color de Texto",
     "label_card_bg": "Fondo de tarjeta",
     "label_card_border": "Borde de tarjeta",
     "label_header_bg": "Fondo del encabezado",

@@ -26,6 +26,7 @@
     "system_users": "Usuaris",
     "groups": {
       "membership": "Subscripció",
+      "calendar": "Calendari",
       "organization": "Organització",
       "training": "Entrenament",
       "nutrition": "Nutrició",
@@ -166,6 +167,7 @@
     "typography_font": "Font",
     "typography_color": "Color",
     "label_page_bg": "Fons de pàgina",
+    "label_text_color": "Color de Text",
     "label_card_bg": "Fons de targeta",
     "label_card_border": "Vora de targeta",
     "label_header_bg": "Fons de la capçalera",

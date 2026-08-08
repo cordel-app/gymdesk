@@ -53,7 +53,7 @@ export default function CalendarPage() {
   const [initialForm, setInitialForm] = useState<CalendarEventForm>(EMPTY_FORM);
 
   const role = activeGym?.role ?? 'member';
-  const canWrite = isSuperadmin || canWriteModule(role as any, 'TRAINING');
+  const canWrite = isSuperadmin || canWriteModule(role as any, 'CALENDAR');
 
   useEffect(() => {
     if (!gymLoading && !activeGymId) router.replace(`/${locale}`);
