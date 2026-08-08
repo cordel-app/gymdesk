@@ -28,6 +28,7 @@ export function defaultTokens() {
     },
     colors: {
       pageBackground:               '#f5f5f5',
+      textColor:                    '#111827',
       cardBackground:               '#ffffff',
       cardBorder:                   '#e5e7eb',
       headerBackground:             '#1a1a2e',
@@ -70,7 +71,7 @@ function validateTokens(tokens: any): string | null {
   const { colors, typography } = tokens;
   if (colors) {
     const hexFields = [
-      'pageBackground', 'cardBackground', 'cardBorder',
+      'pageBackground', 'textColor', 'cardBackground', 'cardBorder',
       'headerBackground', 'headerText', 'headerSeparatorColor',
       'sidebarBackground', 'sidebarText',
       'sidebarSelectedItemBackground', 'sidebarSelectedItemText', 'sidebarHoverBackground',
