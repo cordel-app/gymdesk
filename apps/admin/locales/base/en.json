@@ -26,6 +26,7 @@
     "system_users": "Users",
     "groups": {
       "membership": "Membership",
+      "calendar": "Calendar",
       "organization": "Organization",
       "training": "Training",
       "nutrition": "Nutrition",
@@ -165,6 +166,7 @@
     "typography_font": "Font",
     "typography_color": "Color",
     "label_page_bg": "Page Background",
+    "label_text_color": "Text Color",
     "label_card_bg": "Card Background",
     "label_card_border": "Card Border",
     "label_header_bg": "Header Background",

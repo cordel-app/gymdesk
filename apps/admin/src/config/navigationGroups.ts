@@ -42,6 +42,17 @@ export const navigationGroups: NavGroup[] = [
     ],
   },
   {
+    id: 'calendar',
+    labelKey: 'nav.groups.calendar',
+    module: 'CALENDAR',
+    items: [
+      {
+        href: '/{{locale}}/calendar',
+        labelKey: 'nav.calendar',
+      },
+    ],
+  },
+  {
     id: 'organization',
     labelKey: 'nav.groups.organization',
     module: 'ORGANIZATION',
@@ -65,10 +76,6 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/activity-types',
         labelKey: 'nav.activity_types',
-      },
-      {
-        href: '/{{locale}}/calendar',
-        labelKey: 'nav.calendar',
       },
       {
         href: '/{{locale}}/class-packages',
