@@ -6,6 +6,7 @@ import { useApp } from '@/context/AppContext';
 // Default token values kept in sync with apps/admin/src/lib/themeTokens.ts.
 const DEFAULT_COLORS = {
   appBackground:             '#f5f5f5',
+  textColor:                 '#111827',
   headerBackground:          '#18181b',
   headerText:                '#ffffff',
   headerSeparatorColor:      '#6c63ff',
@@ -20,7 +21,8 @@ function applyTokens(tokens: Record<string, any> | null) {
   const el = document.documentElement;
   const c = tokens?.colors ?? DEFAULT_COLORS;
 
-  el.style.setProperty('--gd-app-bg',               c.appBackground ?? DEFAULT_COLORS.appBackground);
+  el.style.setProperty('--gd-app-bg',               c.appBackground ?? c.pageBackground ?? DEFAULT_COLORS.appBackground);
+  el.style.setProperty('--gd-text',                 c.textColor ?? DEFAULT_COLORS.textColor);
   el.style.setProperty('--gd-header-bg',             c.headerBackground ?? DEFAULT_COLORS.headerBackground);
   el.style.setProperty('--gd-header-text',           c.headerText ?? DEFAULT_COLORS.headerText);
   el.style.setProperty('--gd-header-sep-color',      c.headerSeparatorColor ?? DEFAULT_COLORS.headerSeparatorColor);

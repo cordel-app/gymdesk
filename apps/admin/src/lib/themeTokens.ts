@@ -15,6 +15,7 @@ export interface ThemeTokens {
   colors: {
     // Application
     pageBackground: string;
+    textColor: string;
     cardBackground: string;
     cardBorder: string;
     // Header
@@ -203,6 +204,7 @@ export const DEFAULT_TOKENS: ThemeTokens = {
   },
   colors: {
     pageBackground:               '#f5f5f5',
+    textColor:                    '#111827',
     cardBackground:               '#ffffff',
     cardBorder:                   '#e5e7eb',
     headerBackground:             '#1a1a2e',
@@ -245,6 +247,7 @@ export function applyTokens(tokens: ThemeTokens) {
 
   // Application
   el.style.setProperty('--gd-app-bg',               c.pageBackground);
+  el.style.setProperty('--gd-text',                 c.textColor);
   el.style.setProperty('--gd-card-bg',              c.cardBackground);
   el.style.setProperty('--gd-card-border',          c.cardBorder);
   // Header
