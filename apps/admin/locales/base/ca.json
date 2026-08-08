@@ -293,7 +293,17 @@
     "section_branding": "Marca",
     "section_typography": "Tipografia",
     "section_colors": "Colors",
-    "section_advanced": "Avançat"
+    "section_advanced": "Avançat",
+    "col_color_preview": "Colors",
+    "details_primary_color": "Color principal",
+    "details_bg_primary": "Fons primari",
+    "details_bg_secondary": "Fons secundari",
+    "details_bg_tertiary": "Fons terciari",
+    "details_deleted_by": "Eliminat per",
+    "details_deleted_at": "Eliminat el",
+    "label_status": "Estat",
+    "section_general": "General",
+    "new_theme_placeholder": "Nou tema"
   },
   "system_users": {
     "title": "Superadministradors",

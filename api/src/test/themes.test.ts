@@ -123,6 +123,17 @@ describe('GET /platform/themes', () => {
       expect(theme.type).toBe('system');
     }
   });
+
+  it('each theme includes a tokens field (required for color preview)', async () => {
+    const res = await request
+      .get('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    for (const theme of res.body) {
+      expect(theme.tokens).toBeDefined();
+      expect(typeof theme.tokens).toBe('object');
+    }
+  });
 });
 
 // ─── GET /platform/themes/:id ─────────────────────────────────────────────────
@@ -147,6 +158,15 @@ describe('GET /platform/themes/:id', () => {
     expect(res.status).toBe(404);
   });
 
+  it('includes deleted_by_name field', async () => {
+    if (!baseThemeId) return;
+    const res = await request
+      .get(`/platform/themes/${baseThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    expect('deleted_by_name' in res.body).toBe(true);
+  });
+
   it('returns 404 for a non-existent id', async () => {
     const res = await request
       .get('/platform/themes/00000000-0000-0000-0000-000000000000')
@@ -169,6 +189,23 @@ describe('POST /platform/themes', () => {
     expect(res.body.type).toBe('system');
     expect(res.body.is_system_default).toBe(false);
     expect(res.body.name).toBe('Test Base Theme Alpha');
+  });
+
+  it('accepts status: active on creation', async () => {
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Active Status', status: 'active' });
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('active');
+  });
+
+  it('returns 400 for invalid status on creation', async () => {
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Bad Status', status: 'deleted' });
+    expect(res.status).toBe(400);
   });
 
   it('returns 400 when name is missing', async () => {
