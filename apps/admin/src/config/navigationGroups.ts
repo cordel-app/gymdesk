@@ -181,6 +181,10 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/themes',
         labelKey: 'nav.themes',
       },
+      {
+        href: '/{{locale}}/recycle-bin',
+        labelKey: 'nav.recycle_bin',
+      },
     ],
   },
   {

@@ -52,6 +52,7 @@ import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
 import { calendarEventsRouter } from './api/calendar-events';
+import { recycleBinRouter } from './api/recycle-bin';
 import { clerkWebhookRouter } from './api/webhooks';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
@@ -188,6 +189,7 @@ app.use('/payments',         requireAuth(), tenantContext, requireModuleAccess('
 // SYSTEM module — admin=RW, all others=NONE
 app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), auditLogsRouter);
 app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), gymThemesRouter);
+app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), recycleBinRouter);
 
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
