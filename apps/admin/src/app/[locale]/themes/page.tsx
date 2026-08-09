@@ -56,6 +56,7 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
     groupKey: 'group_application',
     fields: [
       { key: 'pageBackground',  labelKey: 'label_page_bg' },
+      { key: 'textColor',       labelKey: 'label_text_color' },
       { key: 'cardBackground',  labelKey: 'label_card_bg' },
       { key: 'cardBorder',      labelKey: 'label_card_border' },
     ],

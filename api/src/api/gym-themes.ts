@@ -26,7 +26,7 @@ function validateTokens(tokens: any): string | null {
   const { colors, typography } = tokens;
   if (colors) {
     const hexFields = [
-      'pageBackground', 'cardBackground', 'cardBorder',
+      'pageBackground', 'textColor', 'cardBackground', 'cardBorder',
       'headerBackground', 'headerText', 'headerSeparatorColor',
       'sidebarBackground', 'sidebarText',
       'sidebarSelectedItemBackground', 'sidebarSelectedItemText', 'sidebarHoverBackground',

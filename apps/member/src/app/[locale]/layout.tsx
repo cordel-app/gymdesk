@@ -39,7 +39,7 @@ export default async function LocaleLayout({
           <meta name="apple-mobile-web-app-capable" content="yes" />
           <link rel="manifest" href="/manifest.json" />
         </head>
-        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', fontSize: 16 }}>
+        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', color: 'var(--gd-text, #111827)', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
             <AppProvider>
               <ImpersonationProvider>
