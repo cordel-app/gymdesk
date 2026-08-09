@@ -35,6 +35,8 @@ declare global {
       tenantCtx?: TenantContext;
       /** Set by requireAuth() in app.ts after verifying the JWT. */
       auth?: { userId: string };
+      /** Set by requireSuperadmin() — display name of the authenticated superadmin. */
+      superadminName?: string | null;
     }
   }
 }
@@ -161,5 +163,6 @@ export async function requireSuperadmin(req: Request, res: Response, next: NextF
   if (meta.platform_role !== 'superadmin') {
     return res.status(403).json({ error: 'Forbidden' });
   }
+  req.superadminName = user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
   next();
 }
