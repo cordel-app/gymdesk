@@ -21,7 +21,7 @@
     "audit": "Registre d'auditoria",
     "themes": "Temes",
     "base_themes": "Temes base",
-    "system": "Sistema",
+    "system": "Configuració",
     "gyms": "Gimnasos",
     "system_users": "Usuaris",
     "groups": {
@@ -32,7 +32,7 @@
       "nutrition": "Nutrició",
       "payments": "Pagaments",
       "financials": "Finances",
-      "system": "Sistema",
+      "system": "Configuració",
       "cordel": "Cordel"
     },
     "centers": "Centres",

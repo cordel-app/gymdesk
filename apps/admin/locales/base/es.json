@@ -20,7 +20,7 @@
     "audit": "Registro de auditoría",
     "themes": "Temas",
     "base_themes": "Temas base",
-    "system": "Sistema",
+    "system": "Configuración",
     "gyms": "Gimnasios",
     "system_users": "Usuarios",
     "groups": {
@@ -31,7 +31,7 @@
       "nutrition": "Nutrición",
       "payments": "Pagos",
       "financials": "Finanzas",
-      "system": "Sistema",
+      "system": "Configuración",
       "cordel": "Cordel"
     },
     "centers": "Centros",
