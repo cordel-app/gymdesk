@@ -74,8 +74,13 @@ const CURRENT_STATUSES = [
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-const SECTIONS = ['general', 'employment', 'contact', 'schedule', 'permissions', 'notes'] as const;
+const SECTIONS = ['general', 'employment', 'contact', 'schedule', 'permissions', 'notes', 'clerk'] as const;
 type Section = (typeof SECTIONS)[number];
+
+interface ClerkStatus {
+  status: 'not_enrolled' | 'invited' | 'active' | 'suspended' | 'error';
+  userId: string | null;
+}
 
 const emptyForm = (): Partial<StaffMember> => ({
   first_name: '',
@@ -183,6 +188,9 @@ export default function StaffPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [clerkStatus, setClerkStatus] = useState<ClerkStatus | null>(null);
+  const [clerkLoading, setClerkLoading] = useState(false);
+
   const [detailsMember, setDetailsMember] = useState<StaffMember | null>(null);
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
   const [deactivating, setDeactivating] = useState<StaffMember | null>(null);
@@ -232,16 +240,23 @@ export default function StaffPage() {
   }
 
   function openExpand(member: StaffMember) {
-    if (expandedId === member.id) { setExpandedId(null); return; }
+    if (expandedId === member.id) { setExpandedId(null); setClerkStatus(null); return; }
     setForm({ ...member });
     setExpandedId(member.id);
     setActiveSection('general');
     setFormError(null);
+    setClerkStatus(null);
+    setClerkLoading(true);
+    apiFetch<ClerkStatus>(`/staff/${member.id}/clerk-status`)
+      .then(setClerkStatus)
+      .catch(() => setClerkStatus({ status: 'error', userId: null }))
+      .finally(() => setClerkLoading(false));
   }
 
   function cancelEdit() {
     setExpandedId(null);
     setFormError(null);
+    setClerkStatus(null);
   }
 
   async function handleSave() {
@@ -472,6 +487,58 @@ export default function StaffPage() {
     );
   }
 
+  function clerkStatusLabel(status: ClerkStatus['status']): string {
+    switch (status) {
+      case 'not_enrolled': return t('clerk_not_enrolled');
+      case 'invited': return t('clerk_invited');
+      case 'active': return t('clerk_active');
+      case 'suspended': return t('clerk_suspended');
+      case 'error': return t('clerk_error');
+    }
+  }
+
+  function clerkStatusColor(status: ClerkStatus['status']): string {
+    switch (status) {
+      case 'active': return '#2ecc71';
+      case 'suspended': return '#e74c3c';
+      case 'invited': return '#3498db';
+      default: return '#999';
+    }
+  }
+
+  function renderClerk() {
+    const field = (label: string, value: React.ReactNode) => (
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: 14 }}>{value}</div>
+      </div>
+    );
+    if (clerkLoading) {
+      return <p style={{ fontSize: 14, color: '#888' }}>{t('clerk_loading')}</p>;
+    }
+    if (!clerkStatus) {
+      return <p style={{ fontSize: 14, color: '#888' }}>{t('clerk_loading')}</p>;
+    }
+    const statusText = clerkStatusLabel(clerkStatus.status);
+    const dot = (
+      <span style={{
+        display: 'inline-block',
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        background: clerkStatusColor(clerkStatus.status),
+        marginRight: 6,
+        verticalAlign: 'middle',
+      }} />
+    );
+    return (
+      <div>
+        {field(t('clerk_status_label'), <span>{dot}{statusText}</span>)}
+        {clerkStatus.userId && field(t('clerk_user_id_label'), <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{clerkStatus.userId}</span>)}
+      </div>
+    );
+  }
+
   function renderSectionContent() {
     switch (activeSection) {
       case 'general': return renderGeneral();
@@ -480,6 +547,7 @@ export default function StaffPage() {
       case 'schedule': return renderSchedule();
       case 'permissions': return renderPermissions();
       case 'notes': return renderNotes();
+      case 'clerk': return renderClerk();
     }
   }
 
