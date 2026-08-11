@@ -1,7 +1,10 @@
 import { Router } from 'express';
+import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
 export const staffRouter = Router();
 
@@ -98,6 +101,38 @@ staffRouter.get('/:id', async (req, res) => {
   );
   if (!rows[0]) return res.status(404).json({ error: 'Staff member not found' });
   res.json(rows[0]);
+});
+
+staffRouter.get('/:id/clerk-status', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query<any>(
+    'SELECT gym_membership_id FROM staff WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Staff member not found' });
+
+  const { gym_membership_id } = rows[0];
+  if (!gym_membership_id) return res.json({ status: 'not_enrolled', userId: null });
+
+  const { rows: memberships } = await db.query<any>(
+    'SELECT user_id, status FROM gym_memberships WHERE id = ?',
+    [gym_membership_id],
+  );
+  if (!memberships[0]) return res.json({ status: 'not_enrolled', userId: null });
+
+  const { user_id, status } = memberships[0];
+  if (status === 'invited' || String(user_id).startsWith('invited_')) {
+    return res.json({ status: 'invited', userId: null });
+  }
+
+  try {
+    const user = await clerkClient.users.getUser(user_id);
+    const clerkStatus = user.banned || user.locked ? 'suspended' : 'active';
+    return res.json({ status: clerkStatus, userId: user_id });
+  } catch (err: any) {
+    if (err.status === 404) return res.json({ status: 'error', userId: user_id });
+    next(err);
+  }
 });
 
 staffRouter.post('/', requireRole('admin'), async (req, res, next) => {

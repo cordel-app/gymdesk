@@ -98,6 +98,30 @@ membersRouter.get('/:id', async (req, res) => {
   res.json(row);
 });
 
+membersRouter.get('/:id/clerk-status', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query<any>(
+    'SELECT clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+
+  const { clerk_user_id, invitation_id } = rows[0];
+
+  if (!clerk_user_id) {
+    return res.json({ status: invitation_id ? 'invited' : 'not_enrolled', userId: null });
+  }
+
+  try {
+    const user = await clerkClient.users.getUser(clerk_user_id);
+    const status = user.banned || user.locked ? 'suspended' : 'active';
+    return res.json({ status, userId: clerk_user_id });
+  } catch (err: any) {
+    if (err.status === 404) return res.json({ status: 'error', userId: clerk_user_id });
+    next(err);
+  }
+});
+
 membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, email, phone, fare_id, center_ids, default_center_id } = req.body;

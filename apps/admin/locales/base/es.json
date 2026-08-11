@@ -97,7 +97,16 @@
     "error_no_center": "Un miembro debe pertenecer al menos a un centro.",
     "error_default_not_assigned": "El centro predeterminado debe ser uno de los centros asignados.",
     "filter_center": "Centro",
-    "all_centers": "Todos los centros"
+    "all_centers": "Todos los centros",
+    "clerk_section_title": "Clerk",
+    "clerk_status_label": "Estado",
+    "clerk_user_id_label": "ID de usuario Clerk",
+    "clerk_loading": "Cargando…",
+    "clerk_not_enrolled": "No registrado",
+    "clerk_invited": "Invitado",
+    "clerk_active": "Activo",
+    "clerk_suspended": "Suspendido",
+    "clerk_error": "No se pudo obtener el estado"
   },
   "deleted_members": {
     "title": "Socios eliminados",
@@ -1806,7 +1815,16 @@
     "current_status_suspended": "Suspendido",
     "current_status_other": "Otro",
     "permissions_note": "Los permisos los determina el perfil del empleado.",
-    "notes_placeholder": "Notas internas…"
+    "notes_placeholder": "Notas internas…",
+    "section_clerk": "Clerk",
+    "clerk_status_label": "Estado",
+    "clerk_user_id_label": "ID de usuario Clerk",
+    "clerk_loading": "Cargando…",
+    "clerk_not_enrolled": "No registrado",
+    "clerk_invited": "Invitado",
+    "clerk_active": "Activo",
+    "clerk_suspended": "Suspendido",
+    "clerk_error": "No se pudo obtener el estado"
   },
   "spaces": {
     "title": "Espacios",

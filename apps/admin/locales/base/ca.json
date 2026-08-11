@@ -98,7 +98,16 @@
     "error_no_center": "Un membre ha de pertànyer almenys a un centre.",
     "error_default_not_assigned": "El centre predeterminat ha de ser un dels centres assignats.",
     "filter_center": "Centre",
-    "all_centers": "Tots els centres"
+    "all_centers": "Tots els centres",
+    "clerk_section_title": "Clerk",
+    "clerk_status_label": "Estat",
+    "clerk_user_id_label": "ID d'usuari Clerk",
+    "clerk_loading": "Carregant…",
+    "clerk_not_enrolled": "No registrat",
+    "clerk_invited": "Convidat",
+    "clerk_active": "Actiu",
+    "clerk_suspended": "Suspès",
+    "clerk_error": "No s'ha pogut obtenir l'estat"
   },
   "deleted_members": {
     "title": "Socis eliminats",
@@ -1834,7 +1843,16 @@
     "current_status_suspended": "Suspès",
     "current_status_other": "Altre",
     "permissions_note": "Els permisos els determina el perfil de l'empleat.",
-    "notes_placeholder": "Notes internes…"
+    "notes_placeholder": "Notes internes…",
+    "section_clerk": "Clerk",
+    "clerk_status_label": "Estat",
+    "clerk_user_id_label": "ID d'usuari Clerk",
+    "clerk_loading": "Carregant…",
+    "clerk_not_enrolled": "No registrat",
+    "clerk_invited": "Convidat",
+    "clerk_active": "Actiu",
+    "clerk_suspended": "Suspès",
+    "clerk_error": "No s'ha pogut obtenir l'estat"
   },
   "spaces": {
     "title": "Espais",

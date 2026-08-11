@@ -46,6 +46,8 @@ export default function MembersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trainingPlansFor, setTrainingPlansFor] = useState<Member | null>(null);
+  const [memberClerkStatus, setMemberClerkStatus] = useState<{ status: string; userId: string | null } | null>(null);
+  const [memberClerkLoading, setMemberClerkLoading] = useState(false);
 
   // #59: only shown once a gym actually has more than one center — a
   // single-center gym behaves exactly as before this feature existed.
@@ -92,6 +94,12 @@ export default function MembersPage() {
     setForm({ name: m.name, email: m.email, phone: m.phone ?? '', fare_id: m.fare_id ? String(m.fare_id) : '' });
     setError(null);
     setModalOpen(true);
+    setMemberClerkStatus(null);
+    setMemberClerkLoading(true);
+    apiFetch<{ status: string; userId: string | null }>(`/members/${m.id}/clerk-status`)
+      .then(setMemberClerkStatus)
+      .catch(() => setMemberClerkStatus({ status: 'error', userId: null }))
+      .finally(() => setMemberClerkLoading(false));
     if (showCenters) {
       try {
         const rows = await apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`);
@@ -111,6 +119,7 @@ export default function MembersPage() {
     setError(null);
     setAssignedCenterIds(new Set());
     setDefaultCenterId(null);
+    setMemberClerkStatus(null);
   }
 
   function toggleCenter(id: number, checked: boolean) {
@@ -318,6 +327,44 @@ export default function MembersPage() {
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+              </>
+            )}
+
+            {editing && (
+              <>
+                <hr style={{ border: 'none', borderTop: '1px solid #e8e8ed', margin: '20px 0 16px' }} />
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+                  {t('members.clerk_section_title')}
+                </div>
+                {memberClerkLoading ? (
+                  <p style={{ fontSize: 14, color: '#888', margin: 0 }}>{t('members.clerk_loading')}</p>
+                ) : memberClerkStatus ? (
+                  <div>
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{t('members.clerk_status_label')}</div>
+                      <div style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{
+                          display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                          background: memberClerkStatus.status === 'active' ? '#2ecc71'
+                            : memberClerkStatus.status === 'suspended' ? '#e74c3c'
+                            : memberClerkStatus.status === 'invited' ? '#3498db'
+                            : '#999',
+                        }} />
+                        {memberClerkStatus.status === 'not_enrolled' ? t('members.clerk_not_enrolled')
+                          : memberClerkStatus.status === 'invited' ? t('members.clerk_invited')
+                          : memberClerkStatus.status === 'active' ? t('members.clerk_active')
+                          : memberClerkStatus.status === 'suspended' ? t('members.clerk_suspended')
+                          : t('members.clerk_error')}
+                      </div>
+                    </div>
+                    {memberClerkStatus.userId && (
+                      <div>
+                        <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{t('members.clerk_user_id_label')}</div>
+                        <div style={{ fontSize: 13, fontFamily: 'monospace', color: '#555' }}>{memberClerkStatus.userId}</div>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
               </>
             )}
 

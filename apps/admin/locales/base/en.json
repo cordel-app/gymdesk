@@ -97,7 +97,16 @@
     "error_no_center": "A member must belong to at least one center.",
     "error_default_not_assigned": "Default center must be one of the assigned centers.",
     "filter_center": "Center",
-    "all_centers": "All centers"
+    "all_centers": "All centers",
+    "clerk_section_title": "Clerk",
+    "clerk_status_label": "Status",
+    "clerk_user_id_label": "Clerk User ID",
+    "clerk_loading": "Loading…",
+    "clerk_not_enrolled": "Not enrolled",
+    "clerk_invited": "Invited",
+    "clerk_active": "Active",
+    "clerk_suspended": "Suspended",
+    "clerk_error": "Unable to retrieve status"
   },
   "deleted_members": {
     "title": "Deleted Members",
@@ -1820,7 +1829,16 @@
     "current_status_suspended": "Suspended",
     "current_status_other": "Other",
     "permissions_note": "Permissions are determined by the staff member’s profile.",
-    "notes_placeholder": "Internal notes…"
+    "notes_placeholder": "Internal notes…",
+    "section_clerk": "Clerk",
+    "clerk_status_label": "Status",
+    "clerk_user_id_label": "Clerk User ID",
+    "clerk_loading": "Loading…",
+    "clerk_not_enrolled": "Not enrolled",
+    "clerk_invited": "Invited",
+    "clerk_active": "Active",
+    "clerk_suspended": "Suspended",
+    "clerk_error": "Unable to retrieve status"
   },
   "spaces": {
     "title": "Spaces",
