@@ -21,7 +21,7 @@
     "audit": "Audit log",
     "themes": "Themes",
     "base_themes": "Base Themes",
-    "system": "System",
+    "system": "Configuration",
     "gyms": "Gyms",
     "system_users": "Users",
     "groups": {
@@ -32,7 +32,7 @@
       "nutrition": "Nutrition",
       "payments": "Payments",
       "financials": "Financials",
-      "system": "System",
+      "system": "Configuration",
       "cordel": "Cordel"
     },
     "centers": "Centers",
