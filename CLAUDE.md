@@ -18,6 +18,44 @@ Use **Plans** (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/
 
 Use `/plan` to generate a structured implementation plan before coding. Use the `db-reviewer` agent to check migration files. Use the `test-writer` agent to generate test files.
 
+## Parallel agents (worktree workflow)
+
+Multiple Claude Code agents may work simultaneously, each in its own worktree and feature branch.
+
+### Ground rules
+
+- **One agent per worktree.** Never modify files in another agent's worktree directory.
+- **One feature branch per task.** Always branch from `main`; never branch from another feature branch.
+- **No destructive Git commands** (`git reset --hard`, `git clean -fd`, `git checkout -- .`, `git restore .`, `git branch -D`) unless the user explicitly requests them. Never discard changes to make a merge succeed.
+
+### Required sync before feature completion
+
+Before a feature is considered complete, the agent must integrate the latest `origin/main` into its branch:
+
+```bash
+git fetch origin
+git merge origin/main   # always merge, never rebase
+```
+
+If conflicts occur:
+- Resolve them carefully — preserve valid changes from **both** sides.
+- Never blindly choose "ours" or "theirs".
+- Pay particular attention to `docs/roadmap.md` (see below).
+- Run tests after resolving conflicts.
+- Confirm the working tree is clean before marking the feature done.
+
+Use `/finish-feature` to run through the full sync + test + status checklist automatically.
+
+### Special handling of docs/roadmap.md
+
+`roadmap.md` is a shared file modified by multiple parallel agents.
+
+- Keep changes minimal and focused on the current task.
+- Do not reformat or reorder unrelated sections.
+- Do not remove another agent's entries.
+- When resolving merge conflicts in `roadmap.md`, keep changes from both sides — merge the sections manually rather than picking one side.
+- Always sync with `origin/main` before the final commit if `roadmap.md` was modified.
+
 ## Hard constraints
 
 - No microservices, no event sourcing, no AI/LLM integrations.
@@ -78,4 +116,6 @@ Before opening the PR, run these checks in order:
 
    Only update a file if the ticket genuinely changes what it documents. Navigation-only or i18n-only changes rarely need doc updates; new API surface, DB schema, or architectural patterns almost always do.
 
-4. **Open the PR** — commit doc changes together with the feature and run `gh pr create --base main` on a branch named `feat/<slug>-<issue-number>`. Include the issue number in the PR title and body (`Closes #N`).
+4. **Sync with origin/main** — run `/finish-feature` (or manually: `git fetch origin && git merge origin/main`). Resolve any conflicts carefully (see the Parallel agents section above). Re-run tests if any conflicts touched API code. The working tree must be clean before opening the PR.
+
+5. **Open the PR** — commit doc changes together with the feature and run `gh pr create --base main` on a branch named `feat/<slug>-<issue-number>`. Include the issue number in the PR title and body (`Closes #N`).
