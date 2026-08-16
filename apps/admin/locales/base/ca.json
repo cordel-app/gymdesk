@@ -2132,7 +2132,17 @@
     "color_clear": "Netejar",
     "error_title_required": "El títol és obligatori.",
     "error_end_before_start": "L'hora de fi ha de ser posterior a la d'inici.",
-    "error_generic": "Alguna cosa ha anat malament."
+    "error_generic": "Alguna cosa ha anat malament.",
+    "delete_event": "Eliminar esdeveniment",
+    "delete_confirm_title": "Eliminar esdeveniment?",
+    "delete_confirm_message": "Aquesta acció no es pot desfer.",
+    "metadata_section": "Metadades",
+    "metadata_created_by": "Creat per",
+    "metadata_created_at": "Creat el",
+    "metadata_updated_by": "Actualitzat per",
+    "metadata_updated_at": "Actualitzat el",
+    "metadata_deleted_by": "Eliminat per",
+    "metadata_deleted_at": "Eliminat el"
   },
   "gym_charges": {
     "title": "Càrrecs del Gimnàs",

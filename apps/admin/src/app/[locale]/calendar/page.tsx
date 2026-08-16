@@ -12,7 +12,8 @@ import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { btnStyle } from '@/components/ui';
-import { CalendarEventModal, toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
+import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
+import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -32,6 +33,8 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: '#ef4444',
 };
 
+const PANEL_WIDTH = 380;
+
 export default function CalendarPage() {
   const t = useTranslations('calendar');
   const router = useRouter();
@@ -48,8 +51,9 @@ export default function CalendarPage() {
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [filterId, setFilterId] = useState('');
 
-  const [modalOpen, setModalOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingMeta, setEditingMeta] = useState<EventMeta | null>(null);
   const [initialForm, setInitialForm] = useState<CalendarEventForm>(EMPTY_FORM);
 
   const role = activeGym?.role ?? 'member';
@@ -105,19 +109,28 @@ export default function CalendarPage() {
   function openCreate(start: Date, end?: Date) {
     const allDay = !end;
     setEditingId(null);
+    setEditingMeta(null);
     setInitialForm({
       ...EMPTY_FORM,
       starts_at: allDay ? toDateLocal(start) : toDateTimeLocal(start),
       ends_at:   allDay ? toDateLocal(start)  : toDateTimeLocal(end ?? new Date(start.getTime() + 60 * 60000)),
       all_day:   allDay,
     });
-    setModalOpen(true);
+    setPanelOpen(true);
   }
 
   function openEdit(event: any) {
     const e = event.extendedProps;
     const allDay = !!e.all_day;
     setEditingId(e.id);
+    setEditingMeta({
+      created_by_name:  e.created_by_name  ?? null,
+      created_at:       e.created_at       ?? null,
+      modified_by_name: e.modified_by_name ?? null,
+      updated_at:       e.updated_at       ?? null,
+      deleted_by_name:  e.deleted_by_name  ?? null,
+      deleted_at:       e.deleted_at       ?? null,
+    });
     setInitialForm({
       title:                 e.title,
       activity_type_id:      e.activity_type_id ? String(e.activity_type_id) : '',
@@ -130,7 +143,13 @@ export default function CalendarPage() {
       description:           e.description ?? '',
       status:                e.status ?? 'scheduled',
     });
-    setModalOpen(true);
+    setPanelOpen(true);
+  }
+
+  function closePanel() {
+    setPanelOpen(false);
+    setEditingId(null);
+    setEditingMeta(null);
   }
 
   async function handleSave(form: CalendarEventForm) {
@@ -151,14 +170,14 @@ export default function CalendarPage() {
     } else {
       await apiFetch('/calendar-events', { method: 'POST', body: JSON.stringify(body) });
     }
-    setModalOpen(false);
+    closePanel();
     refetch();
   }
 
   async function handleDelete() {
     if (!editingId) return;
     await apiFetch(`/calendar-events/${editingId}`, { method: 'DELETE' });
-    setModalOpen(false);
+    closePanel();
     refetch();
   }
 
@@ -201,9 +220,9 @@ export default function CalendarPage() {
   if (gymLoading) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', gap: 12 }}>
       {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         {canWrite && (
           <button onClick={() => openCreate(new Date())} style={btnStyle('#6c63ff')}>
@@ -213,7 +232,7 @@ export default function CalendarPage() {
       </div>
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flexShrink: 0 }}>
         {(['all', 'space', 'activity_type', 'trainer'] as FilterMode[]).map((mode) => (
           <button
             key={mode}
@@ -240,60 +259,68 @@ export default function CalendarPage() {
         )}
       </div>
 
-      {/* Calendar */}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <FullCalendar
-          ref={calendarRef}
-          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView="timeGridDay"
-          headerToolbar={{
-            left:   'prev,next today',
-            center: 'title',
-            right:  'timeGridDay,timeGridWeek,dayGridMonth',
-          }}
-          buttonText={{
-            today: t('today'),
-            day:   t('view_day'),
-            week:  t('view_week'),
-            month: t('view_month'),
-          }}
-          events={fetchEvents}
-          selectable={canWrite}
-          editable={canWrite}
-          eventResizableFromStart={canWrite}
-          height="100%"
-          select={(info: any) => openCreate(info.start, info.end)}
-          dateClick={(info: any) => openCreate(info.date)}
-          eventClick={(info: any) => openEdit(info.event)}
-          eventDrop={handleDrop}
-          eventResize={handleResize}
-          eventContent={(arg: any) => {
-            const e = arg.event.extendedProps;
-            return (
-              <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
-                <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {arg.event.title}
+      {/* Calendar + panel split view */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 0 }}>
+        {/* Calendar */}
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          <FullCalendar
+            ref={calendarRef}
+            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+            initialView="timeGridDay"
+            headerToolbar={{
+              left:   'prev,next today',
+              center: 'title',
+              right:  'timeGridDay,timeGridWeek,dayGridMonth',
+            }}
+            buttonText={{
+              today: t('today'),
+              day:   t('view_day'),
+              week:  t('view_week'),
+              month: t('view_month'),
+            }}
+            events={fetchEvents}
+            selectable={canWrite}
+            editable={canWrite}
+            eventResizableFromStart={canWrite}
+            height="100%"
+            select={(info: any) => openCreate(info.start, info.end)}
+            dateClick={(info: any) => openCreate(info.date)}
+            eventClick={(info: any) => openEdit(info.event)}
+            eventDrop={handleDrop}
+            eventResize={handleResize}
+            eventContent={(arg: any) => {
+              const e = arg.event.extendedProps;
+              return (
+                <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
+                  <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {arg.event.title}
+                  </div>
+                  {e.trainer_name && <div style={{ opacity: 0.85 }}>{e.trainer_name}</div>}
+                  {e.space_name   && <div style={{ opacity: 0.85 }}>{e.space_name}</div>}
                 </div>
-                {e.trainer_name && <div style={{ opacity: 0.85 }}>{e.trainer_name}</div>}
-                {e.space_name   && <div style={{ opacity: 0.85 }}>{e.space_name}</div>}
-              </div>
-            );
-          }}
-        />
-      </div>
+              );
+            }}
+          />
+        </div>
 
-      <CalendarEventModal
-        open={modalOpen}
-        editing={editingId ? { id: editingId } : null}
-        initialForm={initialForm}
-        activityTypes={activityTypes}
-        spaces={spaces}
-        trainers={trainers}
-        onSave={handleSave}
-        onDelete={editingId ? handleDelete : undefined}
-        onCancel={() => setModalOpen(false)}
-        canWrite={canWrite}
-      />
+        {/* Details panel */}
+        {panelOpen && (
+          <div style={{ width: PANEL_WIDTH, flexShrink: 0, overflow: 'hidden' }}>
+            <EventDetailsPanel
+              open={panelOpen}
+              editing={editingId && editingMeta ? { id: editingId, meta: editingMeta } : null}
+              initialForm={initialForm}
+              activityTypes={activityTypes}
+              spaces={spaces}
+              trainers={trainers}
+              onSave={handleSave}
+              onDelete={handleDelete}
+              onClose={closePanel}
+              canWrite={canWrite}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
