@@ -275,12 +275,12 @@ nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async 
 });
 
 nutritionPlanTemplatesRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   const { id } = req.params as { id: string };
   try {
     const { rowCount } = await db.query(
-      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
-      [gymMembershipId, id, gymId],
+      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+      [gymMembershipId, actorName, id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
     recordAudit(req, { action: 'delete', entityType: 'nutrition_plan_template', entityId: id });

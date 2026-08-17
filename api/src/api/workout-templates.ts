@@ -316,14 +316,14 @@ workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, r
 });
 
 workoutTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { rowCount } = await db.query(
     `UPDATE workout_templates
         SET deleted_at = UTC_TIMESTAMP(), status = 'deleted',
-            deleted_by_membership_id = ?
+            deleted_by_membership_id = ?, deleted_by_name = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, id, gymId],
+    [gymMembershipId, actorName, id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Workout template not found' });
   recordAudit(req, { action: 'delete', entityType: 'workout_template', entityId: id });
