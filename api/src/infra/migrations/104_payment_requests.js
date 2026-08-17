@@ -21,7 +21,7 @@ exports.up = async (knex) => {
     t.dateTime('consent_given_at').nullable();
     t.string('initiated_by', 64).nullable();
     t.string('source', 20).notNullable();
-    t.dateTime('created_at').defaultTo(knex.raw('UTC_TIMESTAMP()'));
+    t.dateTime('created_at').defaultTo(knex.raw('CURRENT_TIMESTAMP'));
     t.dateTime('completed_at').nullable();
 
     // CHECK constraints inline — single atomic DDL statement

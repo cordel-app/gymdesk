@@ -14,7 +14,7 @@ exports.up = async (knex) => {
     t.string('card_last4', 4).nullable();
     t.string('card_brand', 20).nullable();
     t.json('metadata').nullable();
-    t.dateTime('created_at').defaultTo(knex.raw('UTC_TIMESTAMP()'));
+    t.dateTime('created_at').defaultTo(knex.raw('CURRENT_TIMESTAMP'));
 
     t.unique(['gym_id', 'member_id', 'provider'], { indexName: 'uq_member_gym_provider' });
     t.foreign('gym_id').references('gyms.id').onDelete('CASCADE');
