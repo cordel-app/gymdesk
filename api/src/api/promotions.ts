@@ -192,7 +192,7 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 promotionsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   try {
     const { rows: existing } = await db.query(
       "SELECT name FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
@@ -201,9 +201,9 @@ promotionsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => 
     if (existing.length === 0) return res.status(404).json({ error: 'Promotion not found' });
     await db.query(
       `UPDATE promotions
-         SET lifecycle_status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
+         SET lifecycle_status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ?
        WHERE id = ? AND gym_id = ?`,
-      [gymMembershipId ?? null, req.params.id, gymId],
+      [gymMembershipId ?? null, actorName, req.params.id, gymId],
     );
     recordAudit(req, { action: 'delete', entityType: 'promotion', entityId: req.params.id, entityName: existing[0].name });
     res.status(204).send();

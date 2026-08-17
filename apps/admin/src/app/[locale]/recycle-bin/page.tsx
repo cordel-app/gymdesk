@@ -42,6 +42,8 @@ interface RecycleBinItem {
   id: number;
   name: string;
   description: string | null;
+  created_at: string;
+  created_by_name: string | null;
   deleted_by_name: string | null;
   deleted_at: string;
 }
@@ -294,8 +296,11 @@ export default function RecycleBinPage() {
                 <td style={tdStyle}>
                   <EntityTypeBadge entityType={item.entity_type} label={t(`entity_${item.entity_type}`)} />
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 500, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {item.name}
+                <td style={{ ...tdStyle, maxWidth: 240 }}>
+                  <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, whiteSpace: 'nowrap' }}>
+                    {t('details_created_by')}: {item.created_by_name ?? '—'} · {fmtDate(item.created_at)}
+                  </div>
                 </td>
                 <td style={{ ...tdStyle, color: '#888', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {item.description ?? '—'}

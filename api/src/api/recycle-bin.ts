@@ -46,81 +46,99 @@ function branchFor(type: EntityType, gymId: string): UnionBranch {
     case 'membership_plan':
       return {
         sql: `SELECT 'membership_plan' AS entity_type, mp.id, mp.name, mp.description,
-               gm.name AS deleted_by_name, mp.deleted_at
+               COALESCE(mp.deleted_by_name, gm_d.name) AS deleted_by_name, mp.deleted_at,
+               mp.created_at, gm_c.name AS created_by_name
              FROM membership_plans mp
-             LEFT JOIN gym_memberships gm ON gm.id = mp.deleted_by
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = mp.deleted_by
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = mp.created_by
              WHERE mp.gym_id = ? AND mp.deleted_at IS NOT NULL`,
         params: [gymId],
       };
     case 'promotion':
       return {
         sql: `SELECT 'promotion' AS entity_type, p.id, p.name, p.description,
-               gm.name AS deleted_by_name, p.deleted_at
+               COALESCE(p.deleted_by_name, gm_d.name) AS deleted_by_name, p.deleted_at,
+               p.created_at, gm_c.name AS created_by_name
              FROM promotions p
-             LEFT JOIN gym_memberships gm ON gm.id = p.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = p.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = p.created_by_membership_id
              WHERE p.gym_id = ? AND p.lifecycle_status = 'deleted'`,
         params: [gymId],
       };
     case 'center':
       return {
         sql: `SELECT 'center' AS entity_type, c.id, c.name, NULL AS description,
-               gm.name AS deleted_by_name, c.deleted_at
+               COALESCE(c.deleted_by_name, gm_d.name) AS deleted_by_name, c.deleted_at,
+               c.created_at, gm_c.name AS created_by_name
              FROM centers c
-             LEFT JOIN gym_memberships gm ON gm.id = c.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = c.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = c.created_by_membership_id
              WHERE c.gym_id = ? AND c.deleted_at IS NOT NULL`,
         params: [gymId],
       };
     case 'space':
       return {
         sql: `SELECT 'space' AS entity_type, s.id, s.name, s.description,
-               gm.name AS deleted_by_name, s.deleted_at
+               COALESCE(s.deleted_by_name, gm_d.name) AS deleted_by_name, s.deleted_at,
+               s.created_at, gm_c.name AS created_by_name
              FROM spaces s
-             LEFT JOIN gym_memberships gm ON gm.id = s.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = s.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = s.created_by_membership_id
              WHERE s.gym_id = ? AND s.deleted_at IS NOT NULL`,
         params: [gymId],
       };
     case 'class_package':
       return {
         sql: `SELECT 'class_package' AS entity_type, cp.id, cp.name, cp.description,
-               gm.name AS deleted_by_name, cp.deleted_at
+               COALESCE(cp.deleted_by_name, gm_d.name) AS deleted_by_name, cp.deleted_at,
+               cp.created_at, gm_c.name AS created_by_name
              FROM class_packages cp
-             LEFT JOIN gym_memberships gm ON gm.id = cp.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = cp.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = cp.created_by_membership_id
              WHERE cp.gym_id = ? AND cp.deleted_at IS NOT NULL`,
         params: [gymId],
       };
     case 'exercise':
       return {
         sql: `SELECT 'exercise' AS entity_type, e.id, e.name, e.description,
-               gm.name AS deleted_by_name, e.deleted_at
+               COALESCE(e.deleted_by_name, gm_d.name) AS deleted_by_name, e.deleted_at,
+               e.created_at, gm_c.name AS created_by_name
              FROM exercises e
-             LEFT JOIN gym_memberships gm ON gm.id = e.deleted_by
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = e.deleted_by
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = e.created_by
              WHERE e.gym_id = ? AND e.status = 'deleted'`,
         params: [gymId],
       };
     case 'workout_template':
       return {
         sql: `SELECT 'workout_template' AS entity_type, wt.id, wt.name, wt.description,
-               gm.name AS deleted_by_name, wt.deleted_at
+               COALESCE(wt.deleted_by_name, gm_d.name) AS deleted_by_name, wt.deleted_at,
+               wt.created_at, gm_c.name AS created_by_name
              FROM workout_templates wt
-             LEFT JOIN gym_memberships gm ON gm.id = wt.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = wt.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = wt.created_by_membership_id
              WHERE wt.gym_id = ? AND wt.status = 'deleted'`,
         params: [gymId],
       };
     case 'training_plan_template':
       return {
         sql: `SELECT 'training_plan_template' AS entity_type, tpt.id, tpt.name, tpt.description,
-               gm.name AS deleted_by_name, tpt.deleted_at
+               COALESCE(tpt.deleted_by_name, gm_d.name) AS deleted_by_name, tpt.deleted_at,
+               tpt.created_at, gm_c.name AS created_by_name
              FROM training_plan_templates tpt
-             LEFT JOIN gym_memberships gm ON gm.id = tpt.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = tpt.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
              WHERE tpt.gym_id = ? AND tpt.status = 'deleted'`,
         params: [gymId],
       };
     case 'nutrition_plan_template':
       return {
         sql: `SELECT 'nutrition_plan_template' AS entity_type, npt.id, npt.name, npt.description,
-               gm.name AS deleted_by_name, npt.deleted_at
+               COALESCE(npt.deleted_by_name, gm_d.name) AS deleted_by_name, npt.deleted_at,
+               npt.created_at, gm_c.name AS created_by_name
              FROM nutrition_plan_templates npt
-             LEFT JOIN gym_memberships gm ON gm.id = npt.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = npt.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = npt.created_by_membership_id
              WHERE npt.gym_id = ? AND npt.status = 'deleted'`,
         params: [gymId],
       };
@@ -129,7 +147,8 @@ function branchFor(type: EntityType, gymId: string): UnionBranch {
         sql: `SELECT 'theme' AS entity_type, t.id,
                CONVERT(t.name USING utf8mb4) AS name,
                CONVERT(t.description USING utf8mb4) AS description,
-               NULL AS deleted_by_name, t.deleted_at
+               CONVERT(t.deleted_by_name USING utf8mb4) AS deleted_by_name, t.deleted_at,
+               t.created_at, NULL AS created_by_name
              FROM themes t
              WHERE t.gym_id = ? AND t.status = 'deleted'`,
         params: [gymId],
@@ -220,7 +239,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'membership_plan':
       sql = `SELECT mp.id, mp.name, mp.description, mp.lifecycle_status, mp.enrollment_status,
                     mp.created_at, mp.modified_at, mp.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(mp.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM membership_plans mp
              LEFT JOIN gym_memberships gm_c ON gm_c.id = mp.created_by
              LEFT JOIN gym_memberships gm_m ON gm_m.id = mp.modified_by
@@ -230,7 +250,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'promotion':
       sql = `SELECT p.id, p.name, p.description, p.lifecycle_status, p.starts_at, p.ends_at,
                     p.stackable, p.created_at, p.deleted_at,
-                    gm_c.name AS created_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name,
+                    COALESCE(p.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM promotions p
              LEFT JOIN gym_memberships gm_c ON gm_c.id = p.created_by_membership_id
              LEFT JOIN gym_memberships gm_d ON gm_d.id = p.deleted_by_membership_id
@@ -239,7 +260,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'center':
       sql = `SELECT c.id, c.name, c.code, c.phone, c.email, c.address_line_1, c.address_line_2,
                     c.city, c.country, c.status, c.created_at, c.modified_at, c.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(c.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM centers c
              LEFT JOIN gym_memberships gm_c ON gm_c.id = c.created_by_membership_id
              LEFT JOIN gym_memberships gm_m ON gm_m.id = c.modified_by_membership_id
@@ -249,7 +271,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'space':
       sql = `SELECT s.id, s.name, s.description, s.capacity, s.status, s.notes,
                     s.opening_time, s.closing_time, s.created_at, s.modified_at, s.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(s.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM spaces s
              LEFT JOIN gym_memberships gm_c ON gm_c.id = s.created_by_membership_id
              LEFT JOIN gym_memberships gm_m ON gm_m.id = s.modified_by_membership_id
@@ -259,7 +282,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'class_package':
       sql = `SELECT cp.id, cp.name, cp.description, cp.number_of_sessions, cp.price,
                     cp.validity_days, cp.status, cp.notes, cp.created_at, cp.modified_at, cp.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(cp.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM class_packages cp
              LEFT JOIN gym_memberships gm_c ON gm_c.id = cp.created_by_membership_id
              LEFT JOIN gym_memberships gm_m ON gm_m.id = cp.modified_by_membership_id
@@ -269,7 +293,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'exercise':
       sql = `SELECT e.id, e.name, e.description, e.video_url, e.image_url, e.status,
                     e.created_at, e.modified_at, e.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(e.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM exercises e
              LEFT JOIN gym_memberships gm_c ON gm_c.id = e.created_by
              LEFT JOIN gym_memberships gm_m ON gm_m.id = e.modified_by
@@ -279,7 +304,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'workout_template':
       sql = `SELECT wt.id, wt.name, wt.description, wt.notes, wt.status,
                     wt.created_at, wt.modified_at, wt.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(wt.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM workout_templates wt
              LEFT JOIN gym_memberships gm_c ON gm_c.id = wt.created_by_membership_id
              LEFT JOIN gym_memberships gm_m ON gm_m.id = wt.modified_by_membership_id
@@ -289,7 +315,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'training_plan_template':
       sql = `SELECT tpt.id, tpt.name, tpt.description, tpt.status,
                     tpt.created_at, tpt.modified_at, tpt.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(tpt.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM training_plan_templates tpt
              LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
              LEFT JOIN gym_memberships gm_m ON gm_m.id = tpt.modified_by_membership_id
@@ -299,7 +326,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
     case 'nutrition_plan_template':
       sql = `SELECT npt.id, npt.name, npt.description, npt.status,
                     npt.created_at, npt.modified_at, npt.deleted_at,
-                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name, gm_d.name AS deleted_by_name
+                    gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
+                    COALESCE(npt.deleted_by_name, gm_d.name) AS deleted_by_name
              FROM nutrition_plan_templates npt
              LEFT JOIN gym_memberships gm_c ON gm_c.id = npt.created_by_membership_id
              LEFT JOIN gym_memberships gm_m ON gm_m.id = npt.modified_by_membership_id
@@ -307,7 +335,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
              WHERE npt.id = ? AND npt.gym_id = ? AND npt.status = 'deleted'`;
       break;
     case 'theme':
-      sql = `SELECT t.id, t.name, t.description, t.status, t.created_at, t.modified_at, t.deleted_at
+      sql = `SELECT t.id, t.name, t.description, t.status, t.created_at, t.modified_at, t.deleted_at,
+                    t.deleted_by_name
              FROM themes t
              WHERE t.id = ? AND t.gym_id = ? AND t.status = 'deleted'`;
       break;
