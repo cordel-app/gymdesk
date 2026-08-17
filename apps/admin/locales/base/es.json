@@ -2107,7 +2107,17 @@
     "color_clear": "Borrar",
     "error_title_required": "El título es obligatorio.",
     "error_end_before_start": "La hora de fin debe ser posterior a la de inicio.",
-    "error_generic": "Algo salió mal."
+    "error_generic": "Algo salió mal.",
+    "delete_event": "Eliminar evento",
+    "delete_confirm_title": "¿Eliminar evento?",
+    "delete_confirm_message": "Esta acción no se puede deshacer.",
+    "metadata_section": "Metadatos",
+    "metadata_created_by": "Creado por",
+    "metadata_created_at": "Creado el",
+    "metadata_updated_by": "Actualizado por",
+    "metadata_updated_at": "Actualizado el",
+    "metadata_deleted_by": "Eliminado por",
+    "metadata_deleted_at": "Eliminado el"
   },
   "gym_charges": {
     "title": "Cargos del Gimnasio",
