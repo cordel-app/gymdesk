@@ -11,14 +11,20 @@ const STATUSES = ['draft', 'scheduled', 'completed', 'cancelled'] as const;
 const SELECT = `
   SELECT
     ce.*,
-    at.name  AS activity_type_name,
-    at.color AS activity_type_color,
-    sp.name  AS space_name,
-    gm.name  AS trainer_name
+    at.name   AS activity_type_name,
+    at.color  AS activity_type_color,
+    sp.name   AS space_name,
+    gm.name   AS trainer_name,
+    gm2.name  AS created_by_name,
+    gm3.name  AS modified_by_name,
+    gm4.name  AS deleted_by_name
   FROM calendar_events ce
-  LEFT JOIN activity_types  at ON at.id = ce.activity_type_id
-  LEFT JOIN spaces           sp ON sp.id = ce.space_id
-  LEFT JOIN gym_memberships gm ON gm.id = ce.trainer_membership_id
+  LEFT JOIN activity_types  at   ON at.id   = ce.activity_type_id
+  LEFT JOIN spaces           sp  ON sp.id   = ce.space_id
+  LEFT JOIN gym_memberships gm   ON gm.id   = ce.trainer_membership_id
+  LEFT JOIN gym_memberships gm2  ON gm2.id  = ce.created_by_membership_id
+  LEFT JOIN gym_memberships gm3  ON gm3.id  = ce.modified_by_membership_id
+  LEFT JOIN gym_memberships gm4  ON gm4.id  = ce.deleted_by_membership_id
 `;
 
 /** Interval overlap: new event [newStart, newEnd) overlaps existing if newStart < end AND newEnd > start */
