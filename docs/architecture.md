@@ -47,6 +47,16 @@ gymdesk/
       migrations/                  # Knex migration .js files (001_ … 052_)
       swagger.ts                   # OpenAPI spec served at GET /docs
       seed.ts                      # Dev seed (sets a Clerk user as platform superadmin)
+    payments/                      # Payment provider abstraction layer (#179)
+      types.ts                     # Shared value types (PaymentStatus, CreatePaymentRequestParams, …)
+      provider.ts                  # PaymentProvider interface (createPaymentRequest, parseWebhook, executeRecurring)
+      index.ts                     # getPaymentProvider() factory — reads PAYMENT_PROVIDER env var, caches singleton
+      providers/
+        monei/
+          index.ts                 # MoneiProvider implements PaymentProvider
+          client.ts                # fetch wrapper for https://api.monei.com/v1
+          webhook.ts               # HMAC-SHA256 signature verification (timingSafeEqual first) + payload mapping
+          types.ts                 # Monei-specific internal types
   apps/
     admin/src/                     # Staff/admin Next.js app (port :8081 both locally and deployed)
       app/[locale]/                # Next.js App Router pages (one folder per domain)
