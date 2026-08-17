@@ -25,8 +25,9 @@ interface Promo {
   lifecycle_status: 'active' | 'inactive';
   created_at: string;
   created_by_name: string | null;
-  free_period_paid_months: number | null;
-  free_period_bonus_months: number | null;
+  free_months: number | null;
+  paid_months: number | null;
+  bonus_months: number | null;
 }
 
 interface MembershipPlan { id: number; name: string }
@@ -41,17 +42,43 @@ interface PeriodBenefit {
   quantity: number;
   frequency_interval: number;
   frequency_unit: 'week' | 'month';
+  duration_months: number | null;
   enabled: number;
+}
+interface IncludedBenefit {
+  id: number;
+  charge_type_id: number;
+  charge_type_code: string;
+  charge_type_name: string;
+  quantity: number;
 }
 
 const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
-const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
+const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'] as const;
 const FREQ_UNITS = ['week', 'month'] as const;
 const NEW_ID = 0;
 
 const iso = (v: string) => (v ? v.slice(0, 10) : '');
 const truncate = (s: string | null, n = 60) =>
   s ? (s.length > n ? s.slice(0, n) + '…' : s) : '—';
+
+// Build a locale date string like "1 Aug 2026"
+function fmtDate(d: Date, locale: string) {
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+// Add N calendar months to a date
+function addMonths(d: Date, n: number): Date {
+  const result = new Date(d);
+  result.setMonth(result.getMonth() + n);
+  return result;
+}
+
+function subtractDay(d: Date): Date {
+  const result = new Date(d);
+  result.setDate(result.getDate() - 1);
+  return result;
+}
 
 function emptyEditForm(promo?: Promo) {
   return {
@@ -61,8 +88,9 @@ function emptyEditForm(promo?: Promo) {
     ends_at: promo ? iso(promo.ends_at) : '',
     stackable: promo ? !!promo.stackable : false,
     lifecycle_status: (promo?.lifecycle_status ?? 'active') as 'active' | 'inactive',
-    free_period_paid_months: promo?.free_period_paid_months != null ? String(promo.free_period_paid_months) : '',
-    free_period_bonus_months: promo?.free_period_bonus_months != null ? String(promo.free_period_bonus_months) : '',
+    free_months: promo?.free_months != null ? String(promo.free_months) : '',
+    paid_months: promo?.paid_months != null ? String(promo.paid_months) : '',
+    bonus_months: promo?.bonus_months != null ? String(promo.bonus_months) : '',
   };
 }
 type EditForm = ReturnType<typeof emptyEditForm>;
@@ -91,20 +119,19 @@ export default function PromotionsPage() {
   const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
   const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
-  // Expanded and editing are separate concerns
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // Per-row sub-resource cache
   const [cachedPlans, setCachedPlans] = useState<Record<number, number[]>>({});
   const [cachedCb, setCachedCb] = useState<Record<number, ChargeBenefit[]>>({});
   const [cachedPb, setCachedPb] = useState<Record<number, PeriodBenefit[]>>({});
+  const [cachedIb, setCachedIb] = useState<Record<number, IncludedBenefit[]>>({});
 
-  // Edit drafts (active while editingId is set)
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [plansDraft, setPlansDraft] = useState<number[]>([]);
   const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
   const [pbDraft, setPbDraft] = useState<PeriodBenefit[]>([]);
+  const [ibDraft, setIbDraft] = useState<IncludedBenefit[]>([]);
 
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -114,6 +141,9 @@ export default function PromotionsPage() {
   const [deleting, setDeleting] = useState<Promo | null>(null);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+
+  // Sellable items = charge types that are not gym charges
+  const sellableItems = chargeTypes.filter((c) => !c.is_gym_charge);
 
   useEffect(() => {
     if (!gymLoading && !isAdmin) router.replace(`/${locale}`);
@@ -136,7 +166,7 @@ export default function PromotionsPage() {
       ]);
       setPlans(pl);
       setGymCharges(gc);
-      setChargeTypes(ct.filter((c) => !c.is_gym_charge));
+      setChargeTypes(ct);
     } catch { /* non-critical */ }
   }
 
@@ -159,17 +189,19 @@ export default function PromotionsPage() {
 
   async function loadSubResources(promoId: number) {
     try {
-      const [ap, cb, pb] = await Promise.all([
+      const [ap, cb, pb, ib] = await Promise.all([
         apiFetch<{ id: number }[]>(`/promotions/${promoId}/plans`),
         apiFetch<ChargeBenefit[]>(`/promotions/${promoId}/charge-benefits`),
         apiFetch<PeriodBenefit[]>(`/promotions/${promoId}/period-benefits`),
+        apiFetch<IncludedBenefit[]>(`/promotions/${promoId}/included-benefits`),
       ]);
       setCachedPlans((prev) => ({ ...prev, [promoId]: ap.map((p) => p.id) }));
       setCachedCb((prev) => ({ ...prev, [promoId]: cb }));
       setCachedPb((prev) => ({ ...prev, [promoId]: pb }));
-      return { ap: ap.map((p) => p.id), cb, pb };
+      setCachedIb((prev) => ({ ...prev, [promoId]: ib }));
+      return { ap: ap.map((p) => p.id), cb, pb, ib };
     } catch {
-      return { ap: [], cb: [], pb: [] };
+      return { ap: [], cb: [], pb: [], ib: [] };
     }
   }
 
@@ -190,12 +222,13 @@ export default function PromotionsPage() {
     setEditingId(promo.id);
     setEditForm(emptyEditForm(promo));
     setEditError(null);
-    const { ap, cb, pb } = await loadSubResources(promo.id);
+    const { ap, cb, pb, ib } = await loadSubResources(promo.id);
     setPlansDraft(ap);
     const cbMap: Record<number, { action: string; value: string }> = {};
     for (const c of cb) cbMap[c.gym_charge_id] = { action: c.action, value: c.value ?? '' };
     setCbDraft(cbMap);
     setPbDraft(pb.map((p) => ({ ...p })));
+    setIbDraft(ib.map((i) => ({ ...i })));
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
 
@@ -217,6 +250,7 @@ export default function PromotionsPage() {
     setPlansDraft([]);
     setCbDraft({});
     setPbDraft([]);
+    setIbDraft([]);
     setEditError(null);
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
@@ -242,8 +276,9 @@ export default function PromotionsPage() {
         ends_at: editForm.ends_at,
         stackable: editForm.stackable,
         lifecycle_status: editForm.lifecycle_status,
-        free_period_paid_months: editForm.free_period_paid_months !== '' ? parseInt(editForm.free_period_paid_months, 10) : null,
-        free_period_bonus_months: editForm.free_period_bonus_months !== '' ? parseInt(editForm.free_period_bonus_months, 10) : null,
+        free_months: editForm.free_months !== '' ? parseInt(editForm.free_months, 10) : null,
+        paid_months: editForm.paid_months !== '' ? parseInt(editForm.paid_months, 10) : null,
+        bonus_months: editForm.bonus_months !== '' ? parseInt(editForm.bonus_months, 10) : null,
       };
 
       let id = promoId;
@@ -265,7 +300,7 @@ export default function PromotionsPage() {
         .map((gc) => ({
           gym_charge_id: gc.id,
           action: cbDraft[gc.id].action,
-          value: ['percentage_discount', 'fixed_discount'].includes(cbDraft[gc.id].action)
+          value: ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(cbDraft[gc.id].action)
             ? parseFloat(cbDraft[gc.id].value) || 0 : null,
         }));
       await apiFetch(`/promotions/${id}/charge-benefits`, {
@@ -278,11 +313,21 @@ export default function PromotionsPage() {
         quantity: pb.quantity,
         frequency_interval: pb.frequency_interval,
         frequency_unit: pb.frequency_unit,
+        duration_months: pb.duration_months ?? null,
         enabled: pb.enabled,
       }));
       await apiFetch(`/promotions/${id}/period-benefits`, {
         method: 'PUT',
         body: JSON.stringify({ items: pbItems }),
+      });
+
+      const ibItems = ibDraft.map((ib) => ({
+        charge_type_id: ib.charge_type_id,
+        quantity: ib.quantity,
+      }));
+      await apiFetch(`/promotions/${id}/included-benefits`, {
+        method: 'PUT',
+        body: JSON.stringify({ items: ibItems }),
       });
 
       setEditingId(null);
@@ -325,11 +370,11 @@ export default function PromotionsPage() {
   // ─── Period benefit draft helpers ─────────────────────────────────────────
 
   function addPbRow() {
-    const firstCt = chargeTypes[0];
+    const firstCt = sellableItems[0];
     if (!firstCt) return;
     setPbDraft((prev) => [
       ...prev,
-      { id: -(Date.now()), charge_type_id: firstCt.id, charge_type_code: firstCt.code, charge_type_name: firstCt.name, quantity: 1, frequency_interval: 1, frequency_unit: 'month', enabled: 1 },
+      { id: -(Date.now()), charge_type_id: firstCt.id, charge_type_code: firstCt.code, charge_type_name: firstCt.name, quantity: 1, frequency_interval: 1, frequency_unit: 'month', duration_months: null, enabled: 1 },
     ]);
   }
 
@@ -338,7 +383,30 @@ export default function PromotionsPage() {
       if (i !== idx) return r;
       const next = { ...r, ...patch };
       if (patch.charge_type_id != null) {
-        const ct = chargeTypes.find((c) => c.id === patch.charge_type_id);
+        const ct = sellableItems.find((c) => c.id === patch.charge_type_id);
+        if (ct) { next.charge_type_code = ct.code; next.charge_type_name = ct.name; }
+      }
+      return next;
+    }));
+  }
+
+  // ─── Included benefit draft helpers ───────────────────────────────────────
+
+  function addIbRow() {
+    const firstCt = sellableItems[0];
+    if (!firstCt) return;
+    setIbDraft((prev) => [
+      ...prev,
+      { id: -(Date.now()), charge_type_id: firstCt.id, charge_type_code: firstCt.code, charge_type_name: firstCt.name, quantity: 1 },
+    ]);
+  }
+
+  function updateIbRow(idx: number, patch: Partial<IncludedBenefit>) {
+    setIbDraft((prev) => prev.map((r, i) => {
+      if (i !== idx) return r;
+      const next = { ...r, ...patch };
+      if (patch.charge_type_id != null) {
+        const ct = sellableItems.find((c) => c.id === patch.charge_type_id);
         if (ct) { next.charge_type_code = ct.code; next.charge_type_name = ct.name; }
       }
       return next;
@@ -355,12 +423,95 @@ export default function PromotionsPage() {
 
   if (gymLoading || !isAdmin) return null;
 
+  // ─── Timeline preview ─────────────────────────────────────────────────────
+
+  function renderTimeline(fm: EditForm) {
+    const free = parseInt(fm.free_months, 10) || 0;
+    const paid = parseInt(fm.paid_months, 10) || 0;
+    const bonus = parseInt(fm.bonus_months, 10) || 0;
+    if (free === 0 && paid === 0 && bonus === 0) return null;
+
+    // Hypothetical enrollment = first of current month
+    const now = new Date();
+    const enrollment = new Date(now.getFullYear(), now.getMonth(), 1);
+    const enrollmentStr = fmtDate(enrollment, locale);
+
+    type Row = { period: number; from: Date; to: Date | null; status: string; billing: string };
+    const timelineRows: Row[] = [];
+    let cursor = new Date(enrollment);
+    let period = 1;
+
+    for (let i = 0; i < free; i++) {
+      const from = new Date(cursor);
+      const next = addMonths(cursor, 1);
+      timelineRows.push({ period, from, to: subtractDay(next), status: t('timeline_free'), billing: t('timeline_no_charge') });
+      cursor = next;
+      period++;
+    }
+    for (let i = 0; i < paid; i++) {
+      const from = new Date(cursor);
+      const next = addMonths(cursor, 1);
+      timelineRows.push({ period, from, to: subtractDay(next), status: t('timeline_paid_promo'), billing: t('timeline_promo_price') });
+      cursor = next;
+      period++;
+    }
+    for (let i = 0; i < bonus; i++) {
+      const from = new Date(cursor);
+      const next = addMonths(cursor, 1);
+      timelineRows.push({ period, from, to: subtractDay(next), status: t('timeline_bonus'), billing: t('timeline_no_charge') });
+      cursor = next;
+      period++;
+    }
+    // Regular pricing row
+    timelineRows.push({ period, from: cursor, to: null, status: t('timeline_paid_regular'), billing: t('timeline_regular_price') });
+
+    return (
+      <div style={subSectionSt}>
+        <p style={sectionLabelSt}>{t('section_timeline')}</p>
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>{t('timeline_example_note', { date: enrollmentStr })}</p>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={thSt}>{t('col_period')}</th>
+                <th style={thSt}>{t('col_dates')}</th>
+                <th style={thSt}>Status</th>
+                <th style={thSt}>{t('col_billing')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {timelineRows.map((row, idx) => {
+                const isFree = row.status === t('timeline_free') || row.status === t('timeline_bonus');
+                const isRegular = row.status === t('timeline_paid_regular');
+                const bg = isFree ? '#f0fdf4' : isRegular ? '#f9fafb' : '#fefce8';
+                return (
+                  <tr key={idx} style={{ background: bg }}>
+                    <td style={tdSt}>{row.to ? row.period : `${row.period}+`}</td>
+                    <td style={tdSt}>
+                      {row.to
+                        ? `${fmtDate(row.from, locale)} – ${fmtDate(row.to, locale)}`
+                        : `From ${fmtDate(row.from, locale)}`}
+                    </td>
+                    <td style={{ ...tdSt, fontWeight: 500 }}>{row.status}</td>
+                    <td style={{ ...tdSt, color: isFree ? '#166534' : isRegular ? '#666' : '#854d0e' }}>{row.billing}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>{t('timeline_disclaimer')}</p>
+      </div>
+    );
+  }
+
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
   function renderEditSection(promoId: number) {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
 
+        {/* General */}
         <p style={sectionLabelSt}>{t('section_general')}</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
           <div style={{ gridColumn: '1 / -1' }}>
@@ -381,11 +532,11 @@ export default function PromotionsPage() {
             />
           </div>
           <div>
-            <label style={inlineLabelSt}>{t('label_starts')} *</label>
+            <label style={inlineLabelSt}>{t('label_starts')} * <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(Promotion Availability)</span></label>
             <input type="date" value={editForm.starts_at} onChange={(e) => setEditForm({ ...editForm, starts_at: e.target.value })} style={inlineInputSt} />
           </div>
           <div>
-            <label style={inlineLabelSt}>{t('label_ends')} *</label>
+            <label style={inlineLabelSt}>{t('label_ends')} * <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(Promotion Availability)</span></label>
             <input type="date" value={editForm.ends_at} onChange={(e) => setEditForm({ ...editForm, ends_at: e.target.value })} style={inlineInputSt} />
           </div>
           <div>
@@ -428,6 +579,26 @@ export default function PromotionsPage() {
           </div>
         </div>
 
+        {/* Billing & Duration */}
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_billing_duration')}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16px' }}>
+            <div>
+              <label style={inlineLabelSt}>{t('label_free_months')}</label>
+              <input type="number" min="0" value={editForm.free_months} onChange={(e) => setEditForm({ ...editForm, free_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+            <div>
+              <label style={inlineLabelSt}>{t('label_paid_months')}</label>
+              <input type="number" min="0" value={editForm.paid_months} onChange={(e) => setEditForm({ ...editForm, paid_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+            <div>
+              <label style={inlineLabelSt}>{t('label_bonus_months')}</label>
+              <input type="number" min="0" value={editForm.bonus_months} onChange={(e) => setEditForm({ ...editForm, bonus_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+          </div>
+          {renderTimeline(editForm)}
+        </div>
+
         {/* Charge Benefits */}
         {gymCharges.length > 0 && (
           <div style={subSectionSt}>
@@ -448,7 +619,7 @@ export default function PromotionsPage() {
                       <option key={a} value={a}>{t(`cb_action_${a}` as any)}</option>
                     ))}
                   </select>
-                  {['percentage_discount', 'fixed_discount'].includes(cbDraft[gc.id]?.action ?? '') ? (
+                  {['percentage_discount', 'fixed_discount', 'fixed_price'].includes(cbDraft[gc.id]?.action ?? '') ? (
                     <input
                       type="number" min="0" step="0.01"
                       value={cbDraft[gc.id]?.value ?? ''}
@@ -463,15 +634,44 @@ export default function PromotionsPage() {
           </div>
         )}
 
+        {/* Included Benefits */}
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_included_benefits')}</p>
+          {ibDraft.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: '3px 8px', alignItems: 'center', marginBottom: 8 }}>
+              <span style={colHeaderSt}>{t('col_sellable_item')}</span>
+              <span style={colHeaderSt}>{t('col_quantity')}</span>
+              <span />
+              {ibDraft.map((ib, idx) => (
+                <div key={ib.id} style={{ display: 'contents' }}>
+                  <select
+                    value={ib.charge_type_id}
+                    onChange={(e) => updateIbRow(idx, { charge_type_id: parseInt(e.target.value, 10) })}
+                    style={inlineSelectSt}
+                  >
+                    {sellableItems.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+                  </select>
+                  <input type="number" min="1" value={ib.quantity} onChange={(e) => updateIbRow(idx, { quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
+                  <button onClick={() => setIbDraft((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {sellableItems.length > 0 && (
+            <button onClick={addIbRow} style={btnSmall('#6c63ff')}>{t('add_included_benefit')}</button>
+          )}
+        </div>
+
         {/* Period Benefits */}
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_period_benefits')}</p>
           {pbDraft.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 80px 70px 100px 60px 28px', gap: '3px 8px', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 70px 70px 90px 80px 60px 28px', gap: '3px 8px', alignItems: 'center', marginBottom: 8 }}>
               <span style={colHeaderSt}>{t('col_benefit_type')}</span>
               <span style={colHeaderSt}>{t('col_quantity')}</span>
               <span style={colHeaderSt}>{t('label_frequency_interval')}</span>
               <span style={colHeaderSt}>{t('label_frequency_unit')}</span>
+              <span style={colHeaderSt}>{t('col_duration_months')}</span>
               <span style={colHeaderSt}>{t('col_enabled')}</span>
               <span />
               {pbDraft.map((pb, idx) => (
@@ -481,13 +681,20 @@ export default function PromotionsPage() {
                     onChange={(e) => updatePbRow(idx, { charge_type_id: parseInt(e.target.value, 10) })}
                     style={inlineSelectSt}
                   >
-                    {chargeTypes.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+                    {sellableItems.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
                   </select>
                   <input type="number" min="1" value={pb.quantity} onChange={(e) => updatePbRow(idx, { quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
                   <input type="number" min="1" value={pb.frequency_interval} onChange={(e) => updatePbRow(idx, { frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
                   <select value={pb.frequency_unit} onChange={(e) => updatePbRow(idx, { frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
                     {FREQ_UNITS.map((u) => <option key={u} value={u}>{t(`frequency_${u}` as any)}</option>)}
                   </select>
+                  <input
+                    type="number" min="1"
+                    value={pb.duration_months ?? ''}
+                    onChange={(e) => updatePbRow(idx, { duration_months: e.target.value ? parseInt(e.target.value, 10) : null })}
+                    placeholder="—"
+                    style={{ ...inlineSelectSt, width: '100%' }}
+                  />
                   <label style={{ display: 'flex', justifyContent: 'center' }}>
                     <input type="checkbox" checked={!!pb.enabled} onChange={(e) => updatePbRow(idx, { enabled: e.target.checked ? 1 : 0 })} />
                   </label>
@@ -496,24 +703,9 @@ export default function PromotionsPage() {
               ))}
             </div>
           )}
-          {chargeTypes.length > 0 && (
+          {sellableItems.length > 0 && (
             <button onClick={addPbRow} style={btnSmall('#6c63ff')}>{t('add_period_benefit')}</button>
           )}
-        </div>
-
-        {/* Free Period */}
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_free_period')}</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <div>
-              <label style={inlineLabelSt}>{t('label_paid_months')}</label>
-              <input type="number" min="1" value={editForm.free_period_paid_months} onChange={(e) => setEditForm({ ...editForm, free_period_paid_months: e.target.value })} style={inlineInputSt} placeholder="—" />
-            </div>
-            <div>
-              <label style={inlineLabelSt}>{t('label_bonus_months')}</label>
-              <input type="number" min="1" value={editForm.free_period_bonus_months} onChange={(e) => setEditForm({ ...editForm, free_period_bonus_months: e.target.value })} style={inlineInputSt} placeholder="—" />
-            </div>
-          </div>
         </div>
 
       </div>
@@ -524,9 +716,26 @@ export default function PromotionsPage() {
     const ap = cachedPlans[promo.id] ?? [];
     const cb = cachedCb[promo.id] ?? [];
     const pb = cachedPb[promo.id] ?? [];
+    const ib = cachedIb[promo.id] ?? [];
+
+    const free = promo.free_months ?? 0;
+    const paid = promo.paid_months ?? 0;
+    const bonus = promo.bonus_months ?? 0;
 
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+
+        {/* Billing & Duration summary */}
+        {(free > 0 || paid > 0 || bonus > 0) && (
+          <div style={subSectionSt}>
+            <p style={sectionLabelSt}>{t('section_billing_duration')}</p>
+            <div style={{ display: 'flex', gap: 24, fontSize: 13, flexWrap: 'wrap' }}>
+              {free > 0 && <span><strong>{t('label_free_months')}:</strong> {free}</span>}
+              {paid > 0 && <span><strong>{t('label_paid_months')}:</strong> {paid}</span>}
+              {bonus > 0 && <span><strong>{t('label_bonus_months')}:</strong> {bonus}</span>}
+            </div>
+          </div>
+        )}
 
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_applicable_plans')}</p>
@@ -556,6 +765,30 @@ export default function PromotionsPage() {
         </div>
 
         <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_included_benefits')}</p>
+          {ib.length === 0
+            ? <p style={hintSt}>{t('no_included_benefits')}</p>
+            : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={thSt}>{t('col_sellable_item')}</th>
+                    <th style={thSt}>{t('col_quantity')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ib.map((i) => (
+                    <tr key={i.id}>
+                      <td style={tdSt}>{i.charge_type_name}</td>
+                      <td style={tdSt}>{i.quantity}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+
+        <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_period_benefits')}</p>
           {pb.length === 0
             ? <p style={hintSt}>{t('no_period_benefits')}</p>
@@ -566,6 +799,7 @@ export default function PromotionsPage() {
                     <th style={thSt}>{t('col_benefit_type')}</th>
                     <th style={thSt}>{t('col_quantity')}</th>
                     <th style={thSt}>{t('col_frequency')}</th>
+                    <th style={thSt}>{t('col_duration_months')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -574,22 +808,13 @@ export default function PromotionsPage() {
                       <td style={tdSt}>{p.charge_type_name}</td>
                       <td style={tdSt}>{p.quantity}</td>
                       <td style={tdSt}>{p.frequency_interval} {t(`frequency_${p.frequency_unit}` as any)}</td>
+                      <td style={tdSt}>{p.duration_months ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
         </div>
-
-        {(promo.free_period_paid_months != null || promo.free_period_bonus_months != null) && (
-          <div style={subSectionSt}>
-            <p style={sectionLabelSt}>{t('section_free_period')}</p>
-            <div style={{ display: 'flex', gap: 24, fontSize: 13 }}>
-              <span><strong>{t('label_paid_months')}:</strong> {promo.free_period_paid_months ?? '—'}</span>
-              <span><strong>{t('label_bonus_months')}:</strong> {promo.free_period_bonus_months ?? '—'}</span>
-            </div>
-          </div>
-        )}
 
       </div>
     );

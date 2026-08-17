@@ -19,8 +19,9 @@ interface PromoDetail {
   modified_by_name: string | null;
   deleted_at: string | null;
   deleted_by_name: string | null;
-  free_period_paid_months: number | null;
-  free_period_bonus_months: number | null;
+  free_months: number | null;
+  paid_months: number | null;
+  bonus_months: number | null;
 }
 
 export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
@@ -63,10 +64,11 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
             {field(t('detail_lifecycle_status'), detail.lifecycle_status ? tStatus(detail.lifecycle_status as any) : null)}
             {field(t('detail_stackable'), detail.stackable ? t('yes') : t('no'))}
 
-            {(detail.free_period_paid_months != null || detail.free_period_bonus_months != null) && (
+            {(detail.free_months != null || detail.paid_months != null || detail.bonus_months != null) && (
               <>
-                {field(t('detail_paid_months'), detail.free_period_paid_months != null ? String(detail.free_period_paid_months) : null)}
-                {field(t('detail_bonus_months'), detail.free_period_bonus_months != null ? String(detail.free_period_bonus_months) : null)}
+                {field(t('detail_free_months'), detail.free_months != null ? String(detail.free_months) : null)}
+                {field(t('detail_paid_months'), detail.paid_months != null ? String(detail.paid_months) : null)}
+                {field(t('detail_bonus_months'), detail.bonus_months != null ? String(detail.bonus_months) : null)}
               </>
             )}
 
