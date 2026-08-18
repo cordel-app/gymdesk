@@ -10,6 +10,10 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   expired:   { bg: '#f3eafd', fg: '#7d3cbd' },
   draft:     { bg: '#eef2f7', fg: '#5a6b7b' },
   deleted:   { bg: '#fdeaea', fg: '#c0392b' },
+  // Payment request statuses
+  pending:   { bg: '#fff4e0', fg: '#b26a00' },
+  completed: { bg: '#e6f6ec', fg: '#1e7e40' },
+  failed:    { bg: '#fdeaea', fg: '#c0392b' },
 };
 
 const DEFAULT = { bg: '#f0f0f0', fg: '#666666' };
