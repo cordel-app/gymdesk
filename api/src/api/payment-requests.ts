@@ -3,20 +3,27 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { getPaymentProvider } from '../payments';
+import { parseQuery, z } from '../infra/validate';
 
 export const paymentRequestsRouter = Router();
 
 // Module-level read gate (requireModuleAccess('PAYMENTS')) applied in app.ts
 
+const PR_STATUSES = ['pending', 'completed', 'failed', 'expired'] as const;
+
 paymentRequestsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   const { gymId } = getTenantContext(req);
-  const { member_id, status } = req.query as Record<string, string | undefined>;
+  const q = parseQuery(req, res, z.object({
+    member_id: z.coerce.number().int().positive().optional(),
+    status: z.enum(PR_STATUSES).optional(),
+  }));
+  if (!q) return;
 
   try {
     const params: (string | number)[] = [gymId];
     let where = 'WHERE pr.gym_id = ?';
-    if (member_id) { where += ' AND pr.member_id = ?'; params.push(Number(member_id)); }
-    if (status) { where += ' AND pr.status = ?'; params.push(status); }
+    if (q.member_id !== undefined) { where += ' AND pr.member_id = ?'; params.push(q.member_id); }
+    if (q.status) { where += ' AND pr.status = ?'; params.push(q.status); }
 
     const { rows } = await db.query(
       `SELECT pr.id, pr.user_membership_id, pr.member_id, pr.amount, pr.currency,
