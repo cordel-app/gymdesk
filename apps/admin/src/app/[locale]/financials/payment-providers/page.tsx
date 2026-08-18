@@ -4,7 +4,7 @@ const apiBase = process.env.CORDEL_FITNESS_API_URL ?? '';
 
 export default function PaymentProvidersPage() {
   const provider = process.env.PAYMENT_PROVIDER ?? 'monei';
-  const env = process.env.PAYMENT_ENV ?? 'sandbox';
+  const env = process.env.PAYMENT_ENV;
   const webhookUrl = `${apiBase}/webhooks/payment`;
 
   const moneiConfigured =
@@ -17,7 +17,11 @@ export default function PaymentProvidersPage() {
       <section style={card}>
         <h2 style={sectionTitle}>Active provider</h2>
         <Row label="Provider" value={provider} />
-        <Row label="Environment" value={env} highlight={env === 'sandbox' ? 'warning' : 'ok'} />
+        <Row
+          label="Environment"
+          value={env ?? '— not set —'}
+          highlight={env === 'production' ? 'ok' : env === 'sandbox' ? 'warning' : 'error'}
+        />
       </section>
 
       {provider === 'monei' && (
