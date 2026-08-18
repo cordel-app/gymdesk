@@ -9,6 +9,7 @@ import { canWriteModule } from '@/config/permissions';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { MemberTrainingPlansModal } from './MemberTrainingPlansModal';
+import { MemberPaymentsModal } from './MemberPaymentsModal';
 
 interface Plan {
   id: number;
@@ -46,6 +47,7 @@ export default function MembersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [trainingPlansFor, setTrainingPlansFor] = useState<Member | null>(null);
+  const [paymentsFor, setPaymentsFor] = useState<Member | null>(null);
   const [memberClerkStatus, setMemberClerkStatus] = useState<{ status: string; userId: string | null } | null>(null);
   const [memberClerkLoading, setMemberClerkLoading] = useState(false);
 
@@ -56,6 +58,7 @@ export default function MembersPage() {
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
 
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  const canManagePayments = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
 
   async function load() {
     if (!activeGymId) {
@@ -262,6 +265,9 @@ export default function MembersPage() {
                     {canManageTraining && (
                       <button onClick={() => setTrainingPlansFor(m)} style={btnSmall('#6c63ff')}>{t('members.training_plans')}</button>
                     )}
+                    {canManagePayments && (
+                      <button onClick={() => setPaymentsFor(m)} style={btnSmall('#2980b9')}>💳 {t('members.payments')}</button>
+                    )}
                     <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('members.edit')}</button>
                     {!linked && !pendingInvite && (
                       <button onClick={() => handleInvite(m.id)} style={btnSmall('#2980b9')}>{t('members.action_invite')}</button>
@@ -382,6 +388,10 @@ export default function MembersPage() {
 
       {trainingPlansFor && (
         <MemberTrainingPlansModal memberId={trainingPlansFor.id} memberName={trainingPlansFor.name} onClose={() => setTrainingPlansFor(null)} />
+      )}
+
+      {paymentsFor && (
+        <MemberPaymentsModal memberId={paymentsFor.id} memberName={paymentsFor.name} onClose={() => setPaymentsFor(null)} />
       )}
     </div>
   );

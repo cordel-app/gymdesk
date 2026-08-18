@@ -27,9 +27,11 @@ userMembershipsRouter.get('/', async (req, res) => {
   if (status && !STATUSES.includes(status as Status)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
+  const memberId = req.query.member_id as string | undefined;
   const params: any[] = [gymId];
   let sql = `${LIST_SELECT} WHERE um.gym_id = ?`;
   if (status) { sql += ' AND um.status = ?'; params.push(status); }
+  if (memberId) { sql += ' AND um.member_id = ?'; params.push(memberId); }
   sql += ' ORDER BY um.starts_at DESC';
   const { rows } = await db.query(sql, params);
   res.json(rows);
