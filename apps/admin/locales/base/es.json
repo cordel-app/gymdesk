@@ -42,6 +42,8 @@
     "spaces": "Espacios",
     "nutrition_library": "Biblioteca Nutricional",
     "nutrition_plan_templates": "Plantillas de Plan Nutricional",
+    "base_nutrition_library": "Biblioteca Nutricional Base",
+    "base_nutrition_plan_templates": "Plantillas Base",
     "calendar": "Calendario",
     "recycle_bin": "Papelera de reciclaje"
   },

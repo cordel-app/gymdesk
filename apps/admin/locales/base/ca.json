@@ -43,6 +43,8 @@
     "spaces": "Espais",
     "nutrition_library": "Biblioteca Nutricional",
     "nutrition_plan_templates": "Plantilles de Pla Nutricional",
+    "base_nutrition_library": "Biblioteca Nutricional Base",
+    "base_nutrition_plan_templates": "Plantilles Base",
     "calendar": "Calendari",
     "recycle_bin": "Paperera de reciclatge"
   },
