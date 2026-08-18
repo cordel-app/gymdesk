@@ -27,8 +27,10 @@ async function makeGymIdNullable(knex, tableName, newFkName) {
     await knex.raw(`ALTER TABLE \`${tableName}\` DROP FOREIGN KEY \`${row.CONSTRAINT_NAME}\``).catch(() => {});
   }
 
-  await knex.raw(`ALTER TABLE \`${tableName}\` MODIFY COLUMN gym_id CHAR(36) NULL`).catch(() => {});
+  // Do NOT .catch() here — a failure leaves the column NOT NULL with no FK, which is broken state.
+  await knex.raw(`ALTER TABLE \`${tableName}\` MODIFY COLUMN gym_id CHAR(36) NULL`);
 
+  // .catch() is safe: "constraint already exists" is a legitimate no-op on re-run.
   await knex.raw(
     `ALTER TABLE \`${tableName}\` ADD CONSTRAINT \`${newFkName}\` FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE`,
   ).catch(() => {});
@@ -36,18 +38,44 @@ async function makeGymIdNullable(knex, tableName, newFkName) {
 
 exports.up = async (knex) => {
   // ── 1. nutrition_library_items: add gym_id, status, modified_at ────────────
+  //
+  // Each DDL step is individually guarded so a partial failure on a prior run
+  // does not silently skip later steps.
   const hasGymId = await knex.schema.hasColumn('nutrition_library_items', 'gym_id');
   if (!hasGymId) {
-    await knex.raw(
-      'ALTER TABLE nutrition_library_items ADD COLUMN gym_id CHAR(36) NULL AFTER id',
-    );
-    // Drop the old global (name, category) unique; can't cover nullable gym_id properly.
-    await knex.raw('ALTER TABLE nutrition_library_items DROP INDEX nli_name_category_unique').catch(() => {});
-    // Functional unique index: treats NULL gym_id as '' for uniqueness purposes.
+    await knex.raw('ALTER TABLE nutrition_library_items ADD COLUMN gym_id CHAR(36) NULL AFTER id');
+  }
+
+  // Drop old global (name, category) unique — only if it still exists.
+  const [oldIdx] = await knex.raw(
+    "SELECT INDEX_NAME FROM information_schema.STATISTICS " +
+    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nutrition_library_items' " +
+    "AND INDEX_NAME = 'nli_name_category_unique'",
+  );
+  if (oldIdx.length) {
+    await knex.raw('ALTER TABLE nutrition_library_items DROP INDEX nli_name_category_unique');
+  }
+
+  // Functional unique index: treats NULL gym_id as '' for uniqueness purposes.
+  const [newIdx] = await knex.raw(
+    "SELECT INDEX_NAME FROM information_schema.STATISTICS " +
+    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'nutrition_library_items' " +
+    "AND INDEX_NAME = 'nli_gym_name_cat'",
+  );
+  if (!newIdx.length) {
     await knex.raw(
       "CREATE UNIQUE INDEX nli_gym_name_cat ON nutrition_library_items ((COALESCE(gym_id, '')), name, category)",
     );
-    await knex.raw('ALTER TABLE nutrition_library_items ADD CONSTRAINT nli_gym_fk FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE').catch(() => {});
+  }
+
+  const [existingFk] = await knex.raw(
+    "SELECT CONSTRAINT_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS " +
+    "WHERE TABLE_NAME = 'nutrition_library_items' AND CONSTRAINT_NAME = 'nli_gym_fk' AND CONSTRAINT_SCHEMA = DATABASE()",
+  );
+  if (!existingFk.length) {
+    await knex.raw(
+      'ALTER TABLE nutrition_library_items ADD CONSTRAINT nli_gym_fk FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE',
+    );
   }
 
   const hasStatus = await knex.schema.hasColumn('nutrition_library_items', 'status');
@@ -56,7 +84,7 @@ exports.up = async (knex) => {
       "ALTER TABLE nutrition_library_items ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'active'",
     );
     await knex.raw(
-      "ALTER TABLE nutrition_library_items ADD CONSTRAINT nli_status_check CHECK (status IN ('active','deleted'))",
+      "ALTER TABLE nutrition_library_items ADD CONSTRAINT chk_nli_status CHECK (status IN ('active','deleted'))",
     );
   }
 
@@ -114,7 +142,7 @@ exports.up = async (knex) => {
         created_by_membership_id  INT UNSIGNED NULL,
         modified_by_membership_id INT UNSIGNED NULL,
         deleted_by_membership_id  INT UNSIGNED NULL,
-        created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        created_at           DATETIME NOT NULL DEFAULT (UTC_TIMESTAMP()),
         modified_at          DATETIME NULL,
         deleted_at           DATETIME NULL,
         PRIMARY KEY (id),
@@ -123,7 +151,7 @@ exports.up = async (knex) => {
         CONSTRAINT mnp_gym_fk    FOREIGN KEY (gym_id)     REFERENCES gyms(id) ON DELETE CASCADE,
         CONSTRAINT mnp_member_fk FOREIGN KEY (member_id)  REFERENCES members(id) ON DELETE CASCADE,
         CONSTRAINT mnp_tpl_fk    FOREIGN KEY (template_id) REFERENCES nutrition_plan_templates(id) ON DELETE SET NULL,
-        CONSTRAINT mnp_status_check CHECK (status IN ('active','completed','deleted'))
+        CONSTRAINT chk_mnp_status CHECK (status IN ('active','completed','deleted'))
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
   }
@@ -141,7 +169,8 @@ exports.up = async (knex) => {
         INDEX mnpd_plan_idx (member_nutrition_plan_id),
         CONSTRAINT mnpd_gym_fk  FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
         CONSTRAINT mnpd_plan_fk FOREIGN KEY (member_nutrition_plan_id) REFERENCES member_nutrition_plans(id) ON DELETE CASCADE,
-        CONSTRAINT mnpd_weekday_check CHECK (weekday BETWEEN 0 AND 7)
+        -- weekday 0–6 = Mon–Sun; 7 = "All Days" sentinel (same convention as nutrition_plan_template_days)
+        CONSTRAINT chk_mnpd_weekday CHECK (weekday BETWEEN 0 AND 7)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
   }
@@ -161,7 +190,7 @@ exports.up = async (knex) => {
         INDEX mnpm_day_idx (member_nutrition_plan_day_id),
         CONSTRAINT mnpm_gym_fk  FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
         CONSTRAINT mnpm_day_fk  FOREIGN KEY (member_nutrition_plan_day_id) REFERENCES member_nutrition_plan_days(id) ON DELETE CASCADE,
-        CONSTRAINT mnpm_meal_type_check CHECK (meal_type IS NULL OR meal_type IN ('recien_levantado','breakfast','media_manana','lunch','snack','dinner','antes_de_dormir'))
+        CONSTRAINT chk_mnpm_meal_type CHECK (meal_type IS NULL OR meal_type IN ('recien_levantado','breakfast','media_manana','lunch','snack','dinner','antes_de_dormir'))
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
   }
@@ -183,7 +212,7 @@ exports.up = async (knex) => {
         CONSTRAINT mnpmi_gym_fk  FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
         CONSTRAINT mnpmi_meal_fk FOREIGN KEY (meal_id) REFERENCES member_nutrition_plan_meals(id) ON DELETE CASCADE,
         CONSTRAINT mnpmi_lib_fk  FOREIGN KEY (nutrition_library_item_id) REFERENCES nutrition_library_items(id) ON DELETE RESTRICT,
-        CONSTRAINT mnpmi_comp_check CHECK (component_type IN ('main_dish','side','sauce','additional'))
+        CONSTRAINT chk_mnpmi_comp CHECK (component_type IN ('main_dish','side','sauce','additional'))
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
   }
@@ -256,7 +285,7 @@ exports.down = async (knex) => {
 
   // Revert nutrition_library_items
   await knex.raw('ALTER TABLE nutrition_library_items DROP COLUMN modified_at').catch(() => {});
-  await knex.raw('ALTER TABLE nutrition_library_items DROP CHECK nli_status_check').catch(() => {});
+  await knex.raw('ALTER TABLE nutrition_library_items DROP CHECK chk_nli_status').catch(() => {});
   await knex.raw('ALTER TABLE nutrition_library_items DROP COLUMN status').catch(() => {});
   await knex.raw('DROP INDEX nli_gym_name_cat ON nutrition_library_items').catch(() => {});
   await knex.raw('ALTER TABLE nutrition_library_items DROP FOREIGN KEY nli_gym_fk').catch(() => {});
