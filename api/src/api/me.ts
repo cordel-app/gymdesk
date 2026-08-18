@@ -1,4 +1,6 @@
+import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
+import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
@@ -6,6 +8,7 @@ import { bookMemberOnSession, cancelBooking } from './bookings';
 import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
+import { getPaymentProvider } from '../payments';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -731,6 +734,99 @@ meRouter.put('/notifications/:id/read', requireRole('member'), async (req: Reque
     if (rowCount === 0) return res.status(404).json({ error: 'Notification not found or already read' });
     res.status(204).send();
   } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// ── Member payment requests ─────────────────────────────────────────────────
+
+const memberPaymentRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  // Key on Clerk userId — all requests here are authenticated, so userId is always present.
+  // Explicitly avoiding req.ip to prevent the express-rate-limit IPv6 validation warning.
+  keyGenerator: (req) => (req as any).auth?.userId ?? 'unauthenticated',
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many payment requests. Please try again later.' }),
+});
+
+/** Member's own payment request history. */
+meRouter.get('/payment-requests', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const { rows } = await db.query(
+      `SELECT id, user_membership_id, amount, currency, status, provider, source, created_at, completed_at
+       FROM payment_requests
+       WHERE gym_id = ? AND member_id = ?
+       ORDER BY created_at DESC`,
+      [gymId, memberId],
+    );
+    res.json(rows);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** Member self-initiates a payment for their active membership. Stamps consent_given_at. */
+meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit as any, async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId, effectiveUserId } = getTenantContext(req);
+  try {
+    const memberId = await requireMemberId(gymId, effectiveUserId);
+
+    const { rows: umRows } = await db.query<{ id: number; final_price: string; member_email: string }>(
+      `SELECT um.id, um.final_price, m.email AS member_email
+       FROM user_memberships um
+       JOIN members m ON m.id = um.member_id
+       WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'
+       LIMIT 1`,
+      [gymId, memberId],
+    );
+    if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
+    const um = umRows[0];
+
+    const { rows: ctRows } = await db.query<{ id: number }>(
+      `SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1`,
+    );
+    if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
+
+    const amount = Math.round(parseFloat(um.final_price) * 100);
+    const orderId = crypto.randomUUID();
+    const pageToken = crypto.randomUUID();
+    const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+    req.log.info({ orderId, memberId, amount }, 'Member payment request created');
+
+    const provider = getPaymentProvider();
+    const result = await provider.createPaymentRequest({
+      orderId,
+      amount,
+      currency: 'EUR',
+      description: 'Membership fee',
+      memberEmail: um.member_email,
+      okUrl: process.env.PAYMENT_OK_URL ?? '',
+      koUrl: process.env.PAYMENT_KO_URL ?? '',
+      notificationUrl: process.env.PAYMENT_NOTIFICATION_URL ?? '',
+    });
+
+    req.log.info({ orderId, providerOrderId: result.providerOrderId }, 'Provider API call succeeded');
+
+    const { insertId } = await db.query(
+      `INSERT INTO payment_requests
+         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+          status, provider, provider_order, page_token, page_token_expires,
+          consent_given_at, source)
+       VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
+      [gymId, um.id, memberId, um.final_price, ctRows[0].id, orderId, pageToken, pageTokenExpires],
+    );
+
+    const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
+    res.status(201).json({ id: insertId, checkoutUrl });
+  } catch (err: any) {
+    req.log.error({ err: (err as Error).message }, 'Member payment request creation failed');
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }

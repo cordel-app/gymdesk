@@ -108,7 +108,38 @@
     "clerk_invited": "Invited",
     "clerk_active": "Active",
     "clerk_suspended": "Suspended",
-    "clerk_error": "Unable to retrieve status"
+    "clerk_error": "Unable to retrieve status",
+    "payments": "Payments"
+  },
+  "member_payments": {
+    "title": "Member Payments",
+    "loading": "Loading…",
+    "empty": "No payment records for this member.",
+    "col_amount": "Amount",
+    "col_status": "Status",
+    "col_date": "Date",
+    "status_pending": "Pending",
+    "status_completed": "Completed",
+    "status_failed": "Failed",
+    "status_expired": "Expired",
+    "request_button": "Request payment",
+    "requesting": "Requesting…",
+    "link_label": "Payment link generated:",
+    "copy_button": "Copy link",
+    "copied": "Copied!",
+    "error_generic": "Something went wrong.",
+    "close": "Close"
+  },
+  "payment_providers": {
+    "title": "Payment Provider",
+    "provider_label": "Active provider",
+    "env_label": "Environment",
+    "env_sandbox": "Sandbox",
+    "env_production": "Production",
+    "links_title": "Resources",
+    "link_docs": "Monei Documentation",
+    "link_dashboard": "Monei Dashboard",
+    "credentials_note": "Credentials are managed via environment variables and GitHub secrets and cannot be changed from this interface."
   },
   "deleted_members": {
     "title": "Deleted Members",

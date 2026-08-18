@@ -108,7 +108,38 @@
     "clerk_invited": "Invitado",
     "clerk_active": "Activo",
     "clerk_suspended": "Suspendido",
-    "clerk_error": "No se pudo obtener el estado"
+    "clerk_error": "No se pudo obtener el estado",
+    "payments": "Pagos"
+  },
+  "member_payments": {
+    "title": "Pagos del socio",
+    "loading": "Cargando…",
+    "empty": "Este socio no tiene pagos registrados.",
+    "col_amount": "Importe",
+    "col_status": "Estado",
+    "col_date": "Fecha",
+    "status_pending": "Pendiente",
+    "status_completed": "Completado",
+    "status_failed": "Fallido",
+    "status_expired": "Expirado",
+    "request_button": "Solicitar pago",
+    "requesting": "Solicitando…",
+    "link_label": "Enlace de pago generado:",
+    "copy_button": "Copiar enlace",
+    "copied": "¡Copiado!",
+    "error_generic": "Algo ha ido mal.",
+    "close": "Cerrar"
+  },
+  "payment_providers": {
+    "title": "Proveedor de pagos",
+    "provider_label": "Proveedor activo",
+    "env_label": "Entorno",
+    "env_sandbox": "Sandbox",
+    "env_production": "Producción",
+    "links_title": "Recursos",
+    "link_docs": "Documentación Monei",
+    "link_dashboard": "Panel de Monei",
+    "credentials_note": "Las credenciales se gestionan mediante variables de entorno y secretos de GitHub. No se pueden modificar desde esta interfaz."
   },
   "deleted_members": {
     "title": "Socios eliminados",

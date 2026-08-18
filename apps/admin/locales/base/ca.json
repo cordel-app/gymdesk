@@ -109,7 +109,38 @@
     "clerk_invited": "Convidat",
     "clerk_active": "Actiu",
     "clerk_suspended": "Suspès",
-    "clerk_error": "No s'ha pogut obtenir l'estat"
+    "clerk_error": "No s'ha pogut obtenir l'estat",
+    "payments": "Pagaments"
+  },
+  "member_payments": {
+    "title": "Pagaments del soci",
+    "loading": "Carregant…",
+    "empty": "Aquest soci no té pagaments registrats.",
+    "col_amount": "Import",
+    "col_status": "Estat",
+    "col_date": "Data",
+    "status_pending": "Pendent",
+    "status_completed": "Completat",
+    "status_failed": "Fallat",
+    "status_expired": "Caducat",
+    "request_button": "Sol·licitar pagament",
+    "requesting": "Sol·licitant…",
+    "link_label": "Enllaç de pagament generat:",
+    "copy_button": "Copiar enllaç",
+    "copied": "Copiat!",
+    "error_generic": "Quelcom ha anat malament.",
+    "close": "Tancar"
+  },
+  "payment_providers": {
+    "title": "Proveïdor de pagaments",
+    "provider_label": "Proveïdor actiu",
+    "env_label": "Entorn",
+    "env_sandbox": "Sandbox",
+    "env_production": "Producció",
+    "links_title": "Recursos",
+    "link_docs": "Documentació Monei",
+    "link_dashboard": "Tauler de Monei",
+    "credentials_note": "Les credencials es gestionen mitjançant variables d'entorn i secrets de GitHub. No es poden modificar des d'aquesta interfície."
   },
   "deleted_members": {
     "title": "Socis eliminats",
