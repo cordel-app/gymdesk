@@ -137,8 +137,9 @@ Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate
 | Bookings (`bookings`) | MEMBERS | `requireModuleWrite('MEMBERS')` | `POST /:id/attendance` = `requireRole('admin','front_desk','trainer_performance','trainer_perf_nutrition')`. `POST /bookings` accepts `force=true` for over-capacity walk-ins. Class-session attendance endpoints (`bulk-present`, `effective-trainer`, `complete`) use `requireRole` or `requireModuleWrite('TRAINING')`. |
 | Exercises, Workout templates, Training plan templates | TRAINING | `requireModuleWrite('TRAINING')` | `POST /exercises/import-defaults` seeds a per-gym catalog. Deletes are soft (#62). |
 | Training plans (`training-plans` + `members/:id/…`) | TRAINING | `requireModuleWrite('TRAINING')` | See personalized plans notes (migration 054, 066). |
-| Nutrition Library (`nutrition-library`) | NUTRITION | read: `requireModuleAccess('NUTRITION')`, no writes | Global catalog (no `gym_id`), 32 seeded items, 6 categories. `GET /nutrition-library?category=`. |
-| Nutrition plan templates | NUTRITION | `requireModuleWrite('NUTRITION')` | Hierarchy: days → meals (with `meal_type` + `display_name` + `notes` + `items[]`) + restrictions + goals. Meals carry a `nutrition_plan_template_meal_items` junction table (`component_type` CHECK main_dish/side/sauce/additional). Goals `item_name` validated against 13-value whitelist. Deep clone copies meal_items. |
+| Nutrition Library (`nutrition-library`) | NUTRITION | read: `requireModuleAccess('NUTRITION')`, no writes | `nutrition_library_items` has `gym_id CHAR(36) NULL` (migration 103 — NULL = Cordel-owned base item), `status VARCHAR(20) DEFAULT 'active'`, `modified_at`. Functional unique index `COALESCE(gym_id,'')` handles NULL-safe uniqueness. 32 seeded items, 6 categories. `GET /nutrition-library?category=`. Platform CRUD at `/platform/nutrition-library` (`requireSuperadmin`). |
+| Nutrition plan templates | NUTRITION | `requireModuleWrite('NUTRITION')` | `nutrition_plan_templates.gym_id` is nullable (migration 103 — NULL = Cordel base template). `cloned_from_id INT UNSIGNED FK→self` tracks lineage. `GET /nutrition-plan-templates?type=base\|gym\|all`; `owner_type` field on every row. `POST /:id/clone` deep-copies any template → gym-owned draft. `POST /:id/assign` (body: `{member_id, start_date}`) deep-clones → `member_nutrition_plans`. Platform CRUD at `/platform/nutrition-plan-templates` (`requireSuperadmin`). |
+| Member nutrition plans (`member-nutrition-plans`) | NUTRITION | `requireModuleAccess('NUTRITION')` | Created via `POST /nutrition-plan-templates/:id/assign`. Tables: `member_nutrition_plans` → `member_nutrition_plan_days` → `member_nutrition_plan_meals` + `member_nutrition_plan_meal_items` + `member_nutrition_plan_restrictions` + `member_nutrition_plan_goals` (all with `gym_id`). `GET /member-nutrition-plans?member_id=`, `GET /:id`, `GET /:id/hierarchy`, `DELETE /:id` (soft-delete). |
 | User memberships (`user-memberships`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | DELETE = `requireRole('admin')`. Status changes emit billing events. |
 | Billing ledger (`billing-events`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Append-only. |
 | Payments (`payments`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Operational view; excludes `status_changed`. |
@@ -302,6 +303,9 @@ app.use('/promotions/:id',         requireAuth(), tenantContext, promotionDetail
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, userClassPackagesRouter);
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, nutritionPlanTemplatesRouter);
 app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionLibraryRouter);
+app.use('/member-nutrition-plans', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), memberNutritionPlansRouter);
+app.use('/platform/nutrition-library', requireAuth(), platformNutritionLibraryRouter);
+app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);
 
 // package-credits and plan-allowances register booking-lifecycle hooks as side-effect imports
 // (package-credits imported BEFORE plan-allowances so its hook queues first).

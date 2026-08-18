@@ -75,17 +75,19 @@ const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 export function NutritionPlanTree({
   templateId, hierarchy, canWrite, onChanged,
+  apiBase = '/nutrition-plan-templates',
 }: {
   templateId: number;
   hierarchy: Hierarchy;
   canWrite: boolean;
   onChanged: () => Promise<void> | void;
+  apiBase?: string;
 }) {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
-  const base = `/nutrition-plan-templates/${templateId}`;
+  const base = `${apiBase}/${templateId}`;
 
   const [days, setDays] = useState<HierDay[]>(hierarchy.days ?? []);
   useEffect(() => { setDays(hierarchy.days ?? []); }, [hierarchy]);

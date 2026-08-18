@@ -42,6 +42,8 @@
     "spaces": "Spaces",
     "nutrition_library": "Nutrition Library",
     "nutrition_plan_templates": "Nutrition Plan Templates",
+    "base_nutrition_library": "Base Nutrition Library",
+    "base_nutrition_plan_templates": "Base Templates",
     "calendar": "Calendar",
     "recycle_bin": "Recycle Bin"
   },
