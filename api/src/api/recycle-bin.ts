@@ -15,7 +15,8 @@ type EntityType =
   | 'workout_template'
   | 'training_plan_template'
   | 'nutrition_plan_template'
-  | 'theme';
+  | 'theme'
+  | 'activity_type';
 
 const VALID_ENTITY_TYPES: EntityType[] = [
   'membership_plan',
@@ -28,6 +29,7 @@ const VALID_ENTITY_TYPES: EntityType[] = [
   'training_plan_template',
   'nutrition_plan_template',
   'theme',
+  'activity_type',
 ];
 
 const SORT_COLUMNS: Record<string, string> = {
@@ -132,6 +134,15 @@ function branchFor(type: EntityType, gymId: string): UnionBranch {
                NULL AS deleted_by_name, t.deleted_at
              FROM themes t
              WHERE t.gym_id = ? AND t.status = 'deleted'`,
+        params: [gymId],
+      };
+    case 'activity_type':
+      return {
+        sql: `SELECT 'activity_type' AS entity_type, at.id, at.name, at.description,
+               gm.name AS deleted_by_name, at.deleted_at
+             FROM activity_types at
+             LEFT JOIN gym_memberships gm ON gm.id = at.deleted_by_membership_id
+             WHERE at.gym_id = ? AND at.deleted_at IS NOT NULL`,
         params: [gymId],
       };
   }
@@ -311,6 +322,17 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
              FROM themes t
              WHERE t.id = ? AND t.gym_id = ? AND t.status = 'deleted'`;
       break;
+    case 'activity_type':
+      sql = `SELECT at.id, at.name, at.description, at.status, at.duration_minutes,
+                    at.max_capacity, at.intensity_level, at.color,
+                    at.created_at, at.modified_at, at.deleted_at,
+                    cb.name AS created_by_name, mb.name AS modified_by_name, db2.name AS deleted_by_name
+             FROM activity_types at
+             LEFT JOIN gym_memberships cb  ON cb.id  = at.created_by_membership_id
+             LEFT JOIN gym_memberships mb  ON mb.id  = at.modified_by_membership_id
+             LEFT JOIN gym_memberships db2 ON db2.id = at.deleted_by_membership_id
+             WHERE at.id = ? AND at.gym_id = ? AND at.deleted_at IS NOT NULL`;
+      break;
   }
 
   const { rows } = await db.query(sql, [id, gymId]);
@@ -370,6 +392,10 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
     case 'theme':
       sql = `UPDATE themes SET status = 'active', deleted_at = NULL WHERE id = ? AND gym_id = ? AND status = 'deleted'`;
       checkDeletedCondition = "status = 'deleted'";
+      break;
+    case 'activity_type':
+      sql = `UPDATE activity_types SET deleted_at = NULL, deleted_by_membership_id = NULL, status = 'active' WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
+      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
   }
 

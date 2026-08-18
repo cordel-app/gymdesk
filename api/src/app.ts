@@ -16,6 +16,7 @@ import { billingEventsRouter } from './api/billing-events';
 import { spacesRouter } from './api/spaces';
 import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
+import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-rules';
 import { classSessionsRouter } from './api/class-sessions';
 // Side-effect import: registers the booking access hook for plan allowances + center validation.
 import './api/plan-allowances';
@@ -142,6 +143,7 @@ app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireMo
 app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), trainersRouter);
 app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), staffRouter);
 app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), activityTypesRouter);
+app.use('/activity-types/:activityTypeId/schedule-rules', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), activityTypeScheduleRulesRouter);
 app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), classPackagesRouter);
 app.use('/centers',       requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), centersRouter);
 app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), trainerAvailabilityRouter);
