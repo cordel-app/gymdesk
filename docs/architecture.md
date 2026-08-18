@@ -142,6 +142,10 @@ Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate
 | User memberships (`user-memberships`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | DELETE = `requireRole('admin')`. Status changes emit billing events. |
 | Billing ledger (`billing-events`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Append-only. |
 | Payments (`payments`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Operational view; excludes `status_changed`. |
+| Payment requests (`payment-requests`) | PAYMENTS | `requireModuleAccess('PAYMENTS')` write: `requireModuleWrite('PAYMENTS')` | Admin/staff-initiated payment requests. MONEI flow: creates `payment_requests` row + page_token (10-min TTL). Member self-service: `GET/POST /me/payment-requests` (rate-limit POST 3/hour per Clerk userId). |
+| Payment page token (`payment-page`) | none | none (token auth) | No Clerk auth. `GET /payment-page/token/:token` — single-use lookup consumed immediately (page_token set to NULL on read). Used by the isolated `pay.vdicube.com` app. Rate-limited 20/min per IP. |
+| Payment webhooks (`/webhooks/payment`) | none | HMAC-SHA256 (Monei signature) | Mounted before `express.json()` with `express.raw`. Fail-fast: `parseWebhook()` verifies HMAC as first op; returns 400 on invalid sig (no DB queries). On success: updates `payment_requests`, inserts `billing_events`, upserts `payment_methods`. Idempotent. Rate-limited 60/min per IP. |
+| Internal billing cleanup (`/billing/cleanup`) | none | `X-Internal-Secret` header | POST expires stale pending payment_requests. Called by nightly billing workflow. |
 | Membership plans, Benefit types, Charge types, Promotions | FINANCIALS | `requireRole('admin')` | Admin-only within FINANCIALS module. |
 | Gym charges (`gym-charges`) | FINANCIALS | read: any FINANCIALS role; write: `requireRole('admin')` | Per-gym configuration of predefined charge types. Rows auto-created at gym creation. No POST or DELETE. `charge_types` extended with `name` + `is_gym_charge` flag (migration 088). |
 | Audit log (`audit-logs`) | SYSTEM | — | Read-only; `?scope=all` for superadmin. |

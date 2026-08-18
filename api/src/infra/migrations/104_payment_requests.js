@@ -30,7 +30,9 @@ exports.up = async (knex) => {
 
     // Lookup by page_token on every payment page load; unique enforces 1:1 with request
     t.unique(['page_token'], { indexName: 'uq_payment_requests_page_token' });
-    // Lookup by provider_ref on every webhook reconciliation
+    // Lookup by provider_order on every webhook reconciliation (our orderId sent to Monei)
+    t.index(['provider_order'], 'idx_payment_requests_provider_order');
+    // Lookup by provider_ref for Monei payment ID lookups
     t.index(['provider_ref'], 'idx_payment_requests_provider_ref');
 
     t.foreign('gym_id').references('gyms.id').onDelete('CASCADE');

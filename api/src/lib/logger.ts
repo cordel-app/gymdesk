@@ -6,5 +6,5 @@ export const logger = pino({
     process.env.NODE_ENV !== 'production'
       ? { target: 'pino-pretty', options: { colorize: true } }
       : undefined,
-  redact: ['req.headers.authorization', 'body.password'],
+  redact: ['req.headers.authorization', 'body.password', 'req.params.token', 'req.query.token'],
 });
