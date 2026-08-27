@@ -208,6 +208,15 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/cordel/audit',
         labelKey: 'nav.audit',
       },
+      {
+        href: '/{{locale}}/cordel/nutrition-library',
+        labelKey: 'nav.base_nutrition_library',
+        separatorAbove: true,
+      },
+      {
+        href: '/{{locale}}/cordel/nutrition-plan-templates',
+        labelKey: 'nav.base_nutrition_plan_templates',
+      },
     ],
   },
 ];
