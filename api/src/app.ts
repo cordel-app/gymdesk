@@ -51,9 +51,18 @@ import { staffRouter } from './api/staff';
 import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
+import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
+import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
+import { platformExercisesRouter } from './api/platform-exercises';
+import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
+import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
+import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 import { calendarEventsRouter } from './api/calendar-events';
 import { recycleBinRouter } from './api/recycle-bin';
-import { clerkWebhookRouter } from './api/webhooks';
+import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
+import { paymentRequestsRouter } from './api/payment-requests';
+import { paymentPageRouter } from './api/payment-page';
+import { billingRouter } from './api/billing';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
 import { swaggerSpec } from './infra/swagger';
@@ -66,6 +75,10 @@ app.use(requestLogger);
 // Clerk webhooks must be mounted BEFORE express.json(): signature verification
 // needs the exact raw request bytes, so this route parses its own raw body.
 app.use('/webhooks/clerk', express.raw({ type: 'application/json' }), clerkWebhookRouter);
+
+// Payment webhooks must also precede express.json() for the same reason.
+// express.raw({ type: '*/*' }) captures any content-type Monei may use.
+app.use('/webhooks/payment', express.raw({ type: '*/*' }), paymentWebhookRouter);
 
 app.use(express.json());
 
@@ -116,6 +129,12 @@ app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }
 // Public endpoints — no auth, no tenant context (identified by gym slug)
 app.use('/public', publicRouter);
 
+// Payment page — no Clerk auth; authenticated by single-use page_token
+app.use('/payment-page', paymentPageRouter);
+
+// Internal billing runner — authenticated by X-Internal-Secret header
+app.use('/billing', billingRouter);
+
 // Theme logo — no auth (img tags in both apps need this)
 app.use('/themes', themesPublicRouter);
 
@@ -124,6 +143,11 @@ app.use('/gyms', requireAuth(), gymsRouter);
 
 // Platform superadmin routes
 app.use('/platform/themes', requireAuth(), themesRouter);
+app.use('/platform/nutrition-library', requireAuth(), platformNutritionLibraryRouter);
+app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);
+app.use('/platform/exercises', requireAuth(), platformExercisesRouter);
+app.use('/platform/workout-templates', requireAuth(), platformWorkoutTemplatesRouter);
+app.use('/platform/training-plan-templates', requireAuth(), platformTrainingPlanTemplatesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 app.use('/platform/impersonation', requireAuth(), impersonationRouter);
@@ -167,6 +191,7 @@ app.use('/calendar-events',  requireAuth(), tenantContext, requireModuleAccess('
 
 // NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionPlanTemplatesRouter);
+app.use('/member-nutrition-plans', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), memberNutritionPlansRouter);
 // Global read-only catalog — no gym_id required; only requireAuth + module gate
 app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionLibraryRouter);
 
@@ -184,7 +209,8 @@ app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('
 app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), userMembershipsRouter);
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), membershipPromotionsRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), userClassPackagesRouter);
-app.use('/payments',         requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), paymentsRouter);
+app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), paymentsRouter);
+app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), paymentRequestsRouter);
 
 // SYSTEM module — admin=RW, all others=NONE
 app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), auditLogsRouter);

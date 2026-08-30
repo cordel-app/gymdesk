@@ -848,3 +848,313 @@ describe('duplicate', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Type filter — ?type=base and ?type=gym
+// ---------------------------------------------------------------------------
+
+describe('type filter', () => {
+  let baseTemplateId: number;
+
+  beforeAll(async () => {
+    // Insert a global base template (gym_id IS NULL) directly.
+    const { insertId } = await db.query(
+      "INSERT INTO nutrition_plan_templates (gym_id, name, status) VALUES (NULL, 'NPT Base Template Type Filter', 'active')",
+      [],
+    );
+    baseTemplateId = insertId;
+  });
+
+  afterAll(async () => {
+    // Base templates have gym_id IS NULL so cleanupTestGyms won't remove them.
+    await db.query('DELETE FROM nutrition_plan_templates WHERE id = ?', [baseTemplateId]);
+  });
+
+  it('?type=base returns only base templates (owner_type=base)', async () => {
+    const res = await request
+      .get('/nutrition-plan-templates?type=base')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    const found = res.body.items.find((t: any) => t.id === baseTemplateId);
+    expect(found).toBeDefined();
+    for (const item of res.body.items) {
+      expect(item.owner_type).toBe('base');
+    }
+  });
+
+  it('?type=base excludes gym-owned templates', async () => {
+    // Create a gym-owned template
+    const createRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Gym Owned For TypeFilter ${Date.now()}` });
+    expect(createRes.status).toBe(201);
+    const gymOwnedId = createRes.body.id;
+
+    const res = await request
+      .get('/nutrition-plan-templates?type=base')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const found = res.body.items.find((t: any) => t.id === gymOwnedId);
+    expect(found).toBeUndefined();
+  });
+
+  it('?type=gym returns only gym-owned templates (owner_type=gym)', async () => {
+    const res = await request
+      .get('/nutrition-plan-templates?type=gym')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    const found = res.body.items.find((t: any) => t.id === baseTemplateId);
+    expect(found).toBeUndefined();
+    for (const item of res.body.items) {
+      expect(item.owner_type).toBe('gym');
+    }
+  });
+
+  it('default list (no ?type) includes both base and gym-owned templates', async () => {
+    const res = await request
+      .get('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ownerTypes = res.body.items.map((t: any) => t.owner_type);
+    expect(ownerTypes).toContain('base');
+    expect(ownerTypes).toContain('gym');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Clone — deep-copies a base or gym-owned template into a new gym-owned copy
+// ---------------------------------------------------------------------------
+
+describe('clone', () => {
+  let baseTemplateId: number;
+
+  beforeAll(async () => {
+    // Insert a global base template with a day so the deep copy is exercised.
+    const { insertId } = await db.query(
+      "INSERT INTO nutrition_plan_templates (gym_id, name, status) VALUES (NULL, 'NPT Clone Source Base', 'active')",
+      [],
+    );
+    baseTemplateId = insertId;
+    await db.query(
+      'INSERT INTO nutrition_plan_template_days (gym_id, nutrition_plan_template_id, weekday, position) VALUES (NULL, ?, 1, 0)',
+      [baseTemplateId],
+    );
+  });
+
+  afterAll(async () => {
+    await db.query('DELETE FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ?', [baseTemplateId]);
+    await db.query('DELETE FROM nutrition_plan_templates WHERE id = ?', [baseTemplateId]);
+  });
+
+  it('clones a gym-owned template into a new gym-owned copy with cloned_from_id set', async () => {
+    const createRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Clone Source Gym ${Date.now()}` });
+    expect(createRes.status).toBe(201);
+    const sourceId = createRes.body.id;
+
+    const cloneRes = await request
+      .post(`/nutrition-plan-templates/${sourceId}/clone`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(cloneRes.status).toBe(201);
+    expect(cloneRes.body.name).toContain('Copy');
+    expect(cloneRes.body.owner_type).toBe('gym');
+    expect(Number(cloneRes.body.cloned_from_id)).toBe(Number(sourceId));
+  });
+
+  it('clones a base template into a gym-owned copy with cloned_from_id set', async () => {
+    const cloneRes = await request
+      .post(`/nutrition-plan-templates/${baseTemplateId}/clone`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(cloneRes.status).toBe(201);
+    expect(cloneRes.body.owner_type).toBe('gym');
+    expect(Number(cloneRes.body.cloned_from_id)).toBe(baseTemplateId);
+  });
+
+  it('accepts an explicit name for the cloned template', async () => {
+    const createRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Clone Named Source ${Date.now()}` });
+    expect(createRes.status).toBe(201);
+
+    const explicitName = `NPT Explicit Clone Name ${Date.now()}`;
+    const cloneRes = await request
+      .post(`/nutrition-plan-templates/${createRes.body.id}/clone`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: explicitName });
+    expect(cloneRes.status).toBe(201);
+    expect(cloneRes.body.name).toBe(explicitName);
+  });
+
+  it('returns 404 when cloning a non-existent template', async () => {
+    const res = await request
+      .post('/nutrition-plan-templates/non-existent/clone')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 409 when the cloned default name conflicts with an existing gym template', async () => {
+    const sourceName = `NPT Conflict Source ${Date.now()}`;
+    const createRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: sourceName });
+    expect(createRes.status).toBe(201);
+    const sourceId = createRes.body.id;
+
+    // First clone creates "<sourceName> (Copy)"
+    const firstClone = await request
+      .post(`/nutrition-plan-templates/${sourceId}/clone`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(firstClone.status).toBe(201);
+
+    // Second clone with same default name → 409
+    const secondClone = await request
+      .post(`/nutrition-plan-templates/${sourceId}/clone`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(secondClone.status).toBe(409);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Assign — deep-clones a template into a member_nutrition_plans row
+// ---------------------------------------------------------------------------
+
+describe('assign', () => {
+  let testMemberId: number;
+
+  beforeAll(async () => {
+    const { insertId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'NPT Assign Member', ?)`,
+      [gymId, `npt-assign-${Date.now()}@test.com`],
+    );
+    testMemberId = insertId;
+  });
+
+  it('assigns a template to a member and returns 201 with the new member_nutrition_plan', async () => {
+    const tplRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Assign Test ${Date.now()}` });
+    expect(tplRes.status).toBe(201);
+
+    const assignRes = await request
+      .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: testMemberId });
+    expect(assignRes.status).toBe(201);
+    expect(Number(assignRes.body.member_id)).toBe(testMemberId);
+    expect(Number(assignRes.body.template_id)).toBe(Number(tplRes.body.id));
+    expect(assignRes.body.status).toBe('active');
+  });
+
+  it('deep-copies template days into the member plan', async () => {
+    const tplRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Assign Days Test ${Date.now()}` });
+    expect(tplRes.status).toBe(201);
+    const tplId = tplRes.body.id;
+
+    await request
+      .post(`/nutrition-plan-templates/${tplId}/days`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ weekday: 1 });
+
+    const assignRes = await request
+      .post(`/nutrition-plan-templates/${tplId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: testMemberId });
+    expect(assignRes.status).toBe(201);
+
+    // Verify the day was copied into the member plan
+    const { rows } = await db.query(
+      'SELECT * FROM member_nutrition_plan_days WHERE member_nutrition_plan_id = ?',
+      [assignRes.body.id],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].weekday).toBe(1);
+  });
+
+  it('accepts an optional start_date', async () => {
+    const tplRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Assign StartDate ${Date.now()}` });
+    expect(tplRes.status).toBe(201);
+
+    const assignRes = await request
+      .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: testMemberId, start_date: '2026-01-01' });
+    expect(assignRes.status).toBe(201);
+    expect(assignRes.body.start_date).toBeTruthy();
+  });
+
+  it('returns 400 when member_id is missing', async () => {
+    const tplRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Assign NoMember ${Date.now()}` });
+    expect(tplRes.status).toBe(201);
+
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when member_id does not belong to this gym', async () => {
+    const tplRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Assign WrongMember ${Date.now()}` });
+    expect(tplRes.status).toBe(201);
+
+    const res = await request
+      .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: 999999 });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when template does not exist', async () => {
+    const res = await request
+      .post('/nutrition-plan-templates/non-existent/assign')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: testMemberId });
+    expect(res.status).toBe(404);
+  });
+});

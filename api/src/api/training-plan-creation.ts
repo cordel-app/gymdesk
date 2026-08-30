@@ -32,7 +32,7 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
 
   if (templateId) {
     const { rows: tplRows } = await tx.query(
-      "SELECT * FROM training_plan_templates WHERE id = ? AND gym_id = ? AND status = 'active'",
+      "SELECT * FROM training_plan_templates WHERE id = ? AND (gym_id IS NULL OR gym_id = ?) AND status = 'active'",
       [templateId, gymId],
     );
     if (tplRows.length === 0) {

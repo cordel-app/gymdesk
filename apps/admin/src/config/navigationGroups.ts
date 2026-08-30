@@ -204,6 +204,28 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/cordel/audit',
         labelKey: 'nav.audit',
       },
+      {
+        href: '/{{locale}}/cordel/nutrition-library',
+        labelKey: 'nav.base_nutrition_library',
+        separatorAbove: true,
+      },
+      {
+        href: '/{{locale}}/cordel/nutrition-plan-templates',
+        labelKey: 'nav.base_nutrition_plan_templates',
+      },
+      {
+        href: '/{{locale}}/cordel/exercises',
+        labelKey: 'nav.base_exercises',
+        separatorAbove: true,
+      },
+      {
+        href: '/{{locale}}/cordel/workout-templates',
+        labelKey: 'nav.base_workout_templates',
+      },
+      {
+        href: '/{{locale}}/cordel/training-plan-templates',
+        labelKey: 'nav.base_training_plan_templates',
+      },
     ],
   },
 ];
