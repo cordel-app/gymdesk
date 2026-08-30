@@ -54,40 +54,50 @@ vi.mock('@clerk/backend', async (importOriginal) => {
   };
 });
 
-const TARGET_ID = 'impersonation-target-id';
 const STAFF_ID = 'impersonation-staff-id';
+const LINKED_MEMBER_CLERK_ID = 'impersonation-linked-member-id';
 
 afterAll(async () => {
   await cleanupTestGyms();
   await db.end();
 });
 
-// ─── GET /platform/impersonation/candidates ──────────────────────────────────
+// ─── GET /platform/impersonation/targets ─────────────────────────────────────
 
-describe('GET /platform/impersonation/candidates', () => {
+describe('GET /platform/impersonation/targets', () => {
   let gymId: string;
+  let linkedMemberId: number;
+  let unlinkedMemberId: number;
 
   beforeAll(async () => {
-    gymId = await createTestGym('Candidates Test Gym');
+    gymId = await createTestGym('Targets Test Gym');
 
-    // Staff member with a name
+    // Staff member
     await db.query(
       `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
        VALUES (?, ?, 'trainer_performance', 'active', 'Alice Trainer')`,
       [STAFF_ID, gymId],
     );
 
-    // Member via members table with a linked clerk user
-    await db.query(
+    // Linked member (has a Clerk account)
+    const { insertId: lId } = await db.query(
       `INSERT INTO members (gym_id, name, email, clerk_user_id)
        VALUES (?, 'Bob Member', 'bob@test.com', ?)`,
-      [gymId, TARGET_ID],
+      [gymId, LINKED_MEMBER_CLERK_ID],
     );
+    linkedMemberId = lId;
+
+    // Unlinked member (no Clerk account — the core new case)
+    const { insertId: uId } = await db.query(
+      `INSERT INTO members (gym_id, name, email)
+       VALUES (?, 'Carol Unlinked', 'carol@test.com')`,
+      [gymId],
+    );
+    unlinkedMemberId = uId;
   });
 
   beforeEach(() => {
     mockGetUser.mockClear();
-    // Restore default: TEST_USER_ID → superadmin, everything else → regular user
     mockGetUser.mockImplementation(async (userId: string) => {
       if (userId === TEST_USER_ID) {
         return { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Super Admin', firstName: 'Super', lastName: 'Admin', emailAddresses: [], primaryEmailAddressId: null };
@@ -98,59 +108,68 @@ describe('GET /platform/impersonation/candidates', () => {
 
   it('returns 401 when no Authorization header', async () => {
     const res = await request
-      .get('/platform/impersonation/candidates')
+      .get('/platform/impersonation/targets')
       .query({ gym_id: gymId });
-
     expect(res.status).toBe(401);
   });
 
   it('returns 403 when authenticated but not superadmin', async () => {
     mockGetUser.mockResolvedValue({ publicMetadata: {}, fullName: 'Regular', firstName: 'Regular', lastName: 'User', emailAddresses: [], primaryEmailAddressId: null });
-
     const res = await request
-      .get('/platform/impersonation/candidates')
+      .get('/platform/impersonation/targets')
       .set('Authorization', TEST_AUTH_HEADER)
       .query({ gym_id: gymId });
-
     expect(res.status).toBe(403);
   });
 
   it('returns 400 when gym_id query param is missing', async () => {
     const res = await request
-      .get('/platform/impersonation/candidates')
+      .get('/platform/impersonation/targets')
       .set('Authorization', TEST_AUTH_HEADER);
-
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/gym_id/);
   });
 
-  it('returns staff and members for the gym', async () => {
+  it('returns staff and members (including unlinked) for the gym', async () => {
     const res = await request
-      .get('/platform/impersonation/candidates')
+      .get('/platform/impersonation/targets')
       .set('Authorization', TEST_AUTH_HEADER)
       .query({ gym_id: gymId, q: '' });
 
     expect(res.status).toBe(200);
-    const ids = res.body.map((u: any) => u.userId);
+    const ids = res.body.map((u: any) => u.id);
     expect(ids).toContain(STAFF_ID);
-    expect(ids).toContain(TARGET_ID);
+    expect(ids).toContain(`member:${linkedMemberId}`);
+    expect(ids).toContain(`member:${unlinkedMemberId}`);
+  });
+
+  it('includes members without a Clerk account (no clerk_user_id)', async () => {
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: 'Carol' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].id).toBe(`member:${unlinkedMemberId}`);
+    expect(res.body[0].type).toBe('member');
+    expect(res.body[0].role).toBe('member');
   });
 
   it('filters by name search', async () => {
     const res = await request
-      .get('/platform/impersonation/candidates')
+      .get('/platform/impersonation/targets')
       .set('Authorization', TEST_AUTH_HEADER)
       .query({ gym_id: gymId, q: 'Alice' });
 
     expect(res.status).toBe(200);
     expect(res.body.length).toBe(1);
-    expect(res.body[0].userId).toBe(STAFF_ID);
+    expect(res.body[0].id).toBe(STAFF_ID);
     expect(res.body[0].type).toBe('staff');
   });
 
   it('excludes staff users who are superadmins', async () => {
     mockGetUser.mockImplementation(async (userId: string) => {
-      // Both the caller and STAFF_ID are superadmins
       if (userId === TEST_USER_ID || userId === STAFF_ID) {
         return { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Super', firstName: 'Super', lastName: 'Admin', emailAddresses: [], primaryEmailAddressId: null };
       }
@@ -158,14 +177,30 @@ describe('GET /platform/impersonation/candidates', () => {
     });
 
     const res = await request
-      .get('/platform/impersonation/candidates')
+      .get('/platform/impersonation/targets')
       .set('Authorization', TEST_AUTH_HEADER)
       .query({ gym_id: gymId, q: 'Alice' });
 
     expect(res.status).toBe(200);
-    // STAFF_ID is a superadmin so must be excluded
-    const ids = res.body.map((u: any) => u.userId);
+    const ids = res.body.map((u: any) => u.id);
     expect(ids).not.toContain(STAFF_ID);
+  });
+
+  it('does not include deleted members', async () => {
+    const { insertId } = await db.query(
+      `INSERT INTO members (gym_id, name, email, deleted_at)
+       VALUES (?, 'Dave Deleted', 'dave@test.com', UTC_TIMESTAMP())`,
+      [gymId],
+    );
+
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: 'Dave' });
+
+    expect(res.status).toBe(200);
+    const ids = res.body.map((u: any) => u.id);
+    expect(ids).not.toContain(`member:${insertId}`);
   });
 });
 
@@ -185,19 +220,16 @@ describe('POST /platform/impersonation/stop', () => {
   it('returns 401 when no Authorization header', async () => {
     const res = await request
       .post('/platform/impersonation/stop')
-      .send({ impersonated_user_id: TARGET_ID });
-
+      .send({ impersonated_user_id: `member:1` });
     expect(res.status).toBe(401);
   });
 
   it('returns 403 when not superadmin', async () => {
     mockGetUser.mockResolvedValue({ publicMetadata: {}, fullName: 'Regular', firstName: 'Regular', lastName: 'User', emailAddresses: [], primaryEmailAddressId: null });
-
     const res = await request
       .post('/platform/impersonation/stop')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ impersonated_user_id: TARGET_ID });
-
+      .send({ impersonated_user_id: `member:1` });
     expect(res.status).toBe(403);
   });
 
@@ -206,34 +238,122 @@ describe('POST /platform/impersonation/stop', () => {
       .post('/platform/impersonation/stop')
       .set('Authorization', TEST_AUTH_HEADER)
       .send({});
-
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/impersonated_user_id/);
   });
 
-  it('returns 204 on success', async () => {
+  it('returns 204 on success for member id', async () => {
     const res = await request
       .post('/platform/impersonation/stop')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ impersonated_user_id: TARGET_ID, duration_seconds: 42 });
-
+      .send({ impersonated_user_id: `member:42`, duration_seconds: 42 });
     expect(res.status).toBe(204);
   });
 });
 
-// ─── POST /platform/impersonation/:userId ────────────────────────────────────
+// ─── POST /platform/impersonation/:targetId ───────────────────────────────────
 
-describe('POST /platform/impersonation/:userId', () => {
+describe('POST /platform/impersonation/:targetId — member impersonation', () => {
+  let gymId: string;
+  let memberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Member Impersonation Test Gym');
+    const { insertId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Eve Unlinked', 'eve@test.com')`,
+      [gymId],
+    );
+    memberId = insertId;
+  });
+
+  beforeEach(() => {
+    mockGetUser.mockClear();
+    mockGetUser.mockImplementation(async (userId: string) => {
+      if (userId === TEST_USER_ID) {
+        return { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Super Admin', firstName: 'Super', lastName: 'Admin', emailAddresses: [], primaryEmailAddressId: null };
+      }
+      return { publicMetadata: {}, fullName: 'Target', firstName: 'Target', lastName: 'User', emailAddresses: [], primaryEmailAddressId: null };
+    });
+  });
+
+  it('returns 401 when no Authorization header', async () => {
+    const res = await request
+      .post(`/platform/impersonation/${memberId}`)
+      .set('x-gym-id', gymId)
+      .send({ targetType: 'member' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 when targetType is missing', async () => {
+    const res = await request
+      .post(`/platform/impersonation/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/targetType/);
+  });
+
+  it('returns 400 when x-gym-id header is missing', async () => {
+    const res = await request
+      .post(`/platform/impersonation/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ targetType: 'member' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/x-gym-id/);
+  });
+
+  it('succeeds for unlinked member (no clerk_user_id)', async () => {
+    const res = await request
+      .post(`/platform/impersonation/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ targetType: 'member' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      id: `member:${memberId}`,
+      name: 'Eve Unlinked',
+      role: 'member',
+      gym_id: gymId,
+      gymIds: [gymId],
+    });
+  });
+
+  it('returns 400 for deleted member', async () => {
+    const { insertId } = await db.query(
+      `INSERT INTO members (gym_id, name, email, deleted_at)
+       VALUES (?, 'Frank Deleted', 'frank@test.com', UTC_TIMESTAMP())`,
+      [gymId],
+    );
+    const res = await request
+      .post(`/platform/impersonation/${insertId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ targetType: 'member' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for member belonging to a different gym (tenant isolation)', async () => {
+    const gymB = await createTestGym('Gym B Isolation Member');
+    const res = await request
+      .post(`/platform/impersonation/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymB)
+      .send({ targetType: 'member' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /platform/impersonation/:targetId — staff impersonation', () => {
   let gymId: string;
 
   beforeAll(async () => {
-    gymId = await createTestGym('Start Impersonation Test Gym');
-
-    // Insert an active gym_membership for TARGET_ID
+    gymId = await createTestGym('Staff Impersonation Test Gym');
     await db.query(
-      `INSERT INTO gym_memberships (user_id, gym_id, role, status)
-       VALUES (?, ?, 'member', 'active')`,
-      [TARGET_ID, gymId],
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES (?, ?, 'member', 'active', 'Grace Staff')`,
+      [LINKED_MEMBER_CLERK_ID, gymId],
     );
   });
 
@@ -247,77 +367,17 @@ describe('POST /platform/impersonation/:userId', () => {
     });
   });
 
-  it('returns 401 when no Authorization header', async () => {
-    const res = await request
-      .post(`/platform/impersonation/${TARGET_ID}`)
-      .set('x-gym-id', gymId)
-      .send();
-
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 403 when not superadmin', async () => {
-    mockGetUser.mockResolvedValue({ publicMetadata: {}, fullName: 'Regular', firstName: 'Regular', lastName: 'User', emailAddresses: [], primaryEmailAddressId: null });
-
-    const res = await request
-      .post(`/platform/impersonation/${TARGET_ID}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send();
-
-    expect(res.status).toBe(403);
-  });
-
-  it('returns 400 when x-gym-id header is missing', async () => {
-    const res = await request
-      .post(`/platform/impersonation/${TARGET_ID}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .send();
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/x-gym-id/);
-  });
-
-  it('returns 400 when trying to impersonate yourself', async () => {
+  it('returns 400 when trying to impersonate yourself as staff', async () => {
     const res = await request
       .post(`/platform/impersonation/${TEST_USER_ID}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send();
-
+      .send({ targetType: 'staff' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/yourself/);
   });
 
-  it('returns 404 when target user does not exist in Clerk', async () => {
-    // requireSuperadmin calls getUser(TEST_USER_ID) → superadmin
-    // then the route calls getUser(targetId) → throws (simulating Clerk 404)
-    mockGetUser.mockImplementationOnce(async () => ({
-      publicMetadata: { platform_role: 'superadmin' },
-      fullName: 'Super Admin',
-      firstName: 'Super',
-      lastName: 'Admin',
-      emailAddresses: [],
-      primaryEmailAddressId: null,
-    }));
-    mockGetUser.mockImplementationOnce(async () => {
-      throw new Error('User not found');
-    });
-
-    const res = await request
-      .post('/platform/impersonation/nonexistent-clerk-id')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send();
-
-    expect(res.status).toBe(404);
-  });
-
   it('returns 400 when target is another superadmin', async () => {
-    const otherSuperadminId = 'other-superadmin-id';
-
-    // requireSuperadmin: getUser(TEST_USER_ID) → superadmin
-    // route target check: getUser(otherSuperadminId) → superadmin
     mockGetUser.mockImplementation(async () => ({
       publicMetadata: { platform_role: 'superadmin' },
       fullName: 'Other Super Admin',
@@ -326,40 +386,35 @@ describe('POST /platform/impersonation/:userId', () => {
       emailAddresses: [],
       primaryEmailAddressId: null,
     }));
-
     const res = await request
-      .post(`/platform/impersonation/${otherSuperadminId}`)
+      .post(`/platform/impersonation/other-superadmin-id`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send();
-
+      .send({ targetType: 'staff' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/superadmin/);
   });
 
   it('returns 400 when target has no active membership in the gym', async () => {
-    const noMembershipId = 'no-membership-user-id';
-
     const res = await request
-      .post(`/platform/impersonation/${noMembershipId}`)
+      .post(`/platform/impersonation/no-membership-user-id`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send();
-
+      .send({ targetType: 'staff' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/membership/);
   });
 
-  it('returns the target user data with gymIds on success', async () => {
+  it('returns target data with gymIds on success', async () => {
     const res = await request
-      .post(`/platform/impersonation/${TARGET_ID}`)
+      .post(`/platform/impersonation/${LINKED_MEMBER_CLERK_ID}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send();
+      .send({ targetType: 'staff' });
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      id: TARGET_ID,
+      id: LINKED_MEMBER_CLERK_ID,
       name: expect.any(String),
       role: 'member',
       gym_id: gymId,
@@ -367,16 +422,13 @@ describe('POST /platform/impersonation/:userId', () => {
     });
   });
 
-  it('does not return TARGET_ID memberships from another gym (tenant isolation)', async () => {
-    const gymB = await createTestGym('Gym B Isolation');
-
+  it('returns 400 for tenant isolation (target in wrong gym)', async () => {
+    const gymB = await createTestGym('Gym B Isolation Staff');
     const res = await request
-      .post(`/platform/impersonation/${TARGET_ID}`)
+      .post(`/platform/impersonation/${LINKED_MEMBER_CLERK_ID}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymB)
-      .send();
-
-    // TARGET_ID has no membership in gymB
+      .send({ targetType: 'staff' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/membership/);
   });

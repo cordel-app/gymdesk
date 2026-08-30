@@ -21,11 +21,19 @@ export interface TenantContext {
   impersonatedUserId?: string;
   impersonatedActorName?: string | null;
   /**
-   * The Clerk user ID to use for member data lookups.
-   * Equals impersonatedUserId during impersonation, otherwise equals userId.
-   * Use this (not userId) in /me/* handlers that query by clerk_user_id.
+   * Application-level effective identity being impersonated.
+   * For member impersonation: members.id (as string).
+   * For staff impersonation: gym_memberships.user_id (Clerk user ID).
+   * For normal usage: equals userId.
+   * Use this in /me/* handlers via resolveMemberId() — do not assume it is a Clerk user ID.
    */
   effectiveUserId: string;
+  /**
+   * Indicates the type of impersonation target.
+   * 'member' when impersonating via members.id, 'staff' when impersonating via gym_memberships.user_id.
+   * null when not impersonating.
+   */
+  effectiveType: 'member' | 'staff' | null;
 }
 
 declare global {
@@ -58,7 +66,41 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
     const impersonateAs = req.headers['x-impersonate-as'] as string | undefined;
 
     if (impersonateAs && impersonateAs !== userId) {
-      // Validate the target user has an active membership in this gym
+      // Member impersonation: x-impersonate-as header is "member:<members.id>"
+      if (impersonateAs.startsWith('member:')) {
+        const memberId = Number(impersonateAs.slice(7));
+        if (!memberId) {
+          return res.status(400).json({ error: 'Invalid member impersonation target' });
+        }
+
+        const { rows: memberRows } = await db.query<{ id: number; name: string; gym_id: string }>(
+          `SELECT m.id, m.name, m.gym_id FROM members m
+           JOIN gyms g ON g.id = m.gym_id
+           WHERE m.id = ? AND m.gym_id = ? AND m.deleted_at IS NULL
+             AND (g.deleted_at IS NULL OR g.deleted_at > UTC_TIMESTAMP())`,
+          [memberId, gymId],
+        );
+
+        if (!memberRows[0]) {
+          return res.status(400).json({ error: 'Impersonation target not found or not active in this gym' });
+        }
+
+        req.tenantCtx = {
+          userId,
+          gymId,
+          role: 'member',
+          gymMembershipId: null,
+          isSuperadmin: true,
+          actorName,
+          impersonatedUserId: impersonateAs,
+          impersonatedActorName: memberRows[0].name,
+          effectiveUserId: String(memberRows[0].id),
+          effectiveType: 'member',
+        };
+        return next();
+      }
+
+      // Staff impersonation: x-impersonate-as header is a Clerk user ID
       const { rows: targetRows } = await db.query<{ id: number; role: GymRole }>(
         `SELECT gm.id, gm.role FROM gym_memberships gm
          JOIN gyms g ON g.id = gm.gym_id
@@ -74,7 +116,6 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
       let impersonatedActorName: string | null = null;
       try {
         const targetClerkUser = await clerkClient.users.getUser(impersonateAs);
-        // Prevent impersonating another superadmin
         if ((targetClerkUser.publicMetadata as any)?.platform_role === 'superadmin') {
           return res.status(400).json({ error: 'Cannot impersonate another superadmin' });
         }
@@ -95,11 +136,12 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
         impersonatedUserId: impersonateAs,
         impersonatedActorName,
         effectiveUserId: impersonateAs,
+        effectiveType: 'staff',
       };
       return next();
     }
 
-    req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true, actorName, effectiveUserId: userId };
+    req.tenantCtx = { userId, gymId, role: 'admin', gymMembershipId: null, isSuperadmin: true, actorName, effectiveUserId: userId, effectiveType: null };
     return next();
   }
 
@@ -112,7 +154,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  req.tenantCtx = { userId, gymId, role: rows[0].role, gymMembershipId: rows[0].id, isSuperadmin: false, actorName, effectiveUserId: userId };
+  req.tenantCtx = { userId, gymId, role: rows[0].role, gymMembershipId: rows[0].id, isSuperadmin: false, actorName, effectiveUserId: userId, effectiveType: null };
   next();
 }
 
