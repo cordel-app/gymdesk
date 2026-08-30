@@ -45,6 +45,9 @@
     "nutrition_plan_templates": "Plantilles de Pla Nutricional",
     "base_nutrition_library": "Biblioteca Nutricional Base",
     "base_nutrition_plan_templates": "Plantilles Base",
+    "base_exercises": "Exercicis Base",
+    "base_workout_templates": "Entrenaments Base",
+    "base_training_plan_templates": "Plans Base",
     "calendar": "Calendari",
     "recycle_bin": "Paperera de reciclatge"
   },
@@ -848,11 +851,16 @@
     "col_primary_muscles": "Músculs principals",
     "col_created_at": "Creat el",
     "col_created_by": "Creat per",
+    "col_type": "Tipus",
     "col_status": "Estat",
     "col_actions": "Accions",
+    "type_base": "Base",
+    "type_gym": "Gym",
     "details": "Detalls",
     "edit": "Editar",
     "duplicate": "Duplicar",
+    "clone": "Clonar al gym",
+    "cloned": "Exercici clonat al catàleg del gym.",
     "delete": "Eliminar",
     "modal_add": "Afegir exercici",
     "modal_edit": "Editar exercici",
@@ -972,7 +980,12 @@
     "tree_no_blocks": "Encara no hi ha blocs.",
     "tree_no_exercises": "Encara no hi ha exercicis.",
     "tree_drag_handle": "Arrossega per reordenar",
-    "block_type_limit_exceeded": "Els blocs de tipus {type} permeten un màxim de {max} exercicis. Elimina exercicis abans de canviar el tipus."
+    "block_type_limit_exceeded": "Els blocs de tipus {type} permeten un màxim de {max} exercicis. Elimina exercicis abans de canviar el tipus.",
+    "col_type": "Tipus",
+    "type_base": "Base",
+    "type_gym": "Gimnàs",
+    "clone": "Clonar al gimnàs",
+    "cloned": "Plantilla d'entrenament clonada al catàleg del gimnàs."
   },
   "training_plan_templates": {
     "title": "Plantilles de pla d'entrenament",
@@ -1038,7 +1051,12 @@
     "assign_to_member": "Assigna pla a membre",
     "section_general": "General",
     "section_workouts": "Rutines",
-    "placeholder_name": "p.ex. Programa de força de 12 setmanes"
+    "placeholder_name": "p.ex. Programa de força de 12 setmanes",
+    "col_type": "Tipus",
+    "type_base": "Base",
+    "type_gym": "Gimnàs",
+    "clone": "Clonar al gimnàs",
+    "cloned": "Plantilla de pla d'entrenament clonada al catàleg del gimnàs."
   },
   "training_plans": {
     "title": "Plans d'entrenament",
