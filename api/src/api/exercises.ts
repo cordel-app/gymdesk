@@ -119,7 +119,7 @@ exercisesRouter.get('/', async (req, res) => {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
   const params: any[] = [gymId];
-  let sql = `${SELECT} WHERE e.gym_id = ? AND e.status != 'deleted'`;
+  let sql = `${SELECT} WHERE (e.gym_id = ? OR e.gym_id IS NULL) AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
   if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
   sql += ' ORDER BY e.name ASC';
@@ -130,7 +130,7 @@ exercisesRouter.get('/', async (req, res) => {
 exercisesRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    `${SELECT} WHERE e.id = ? AND e.gym_id = ? AND e.status != 'deleted'`,
+    `${SELECT} WHERE e.id = ? AND (e.gym_id = ? OR e.gym_id IS NULL) AND e.status != 'deleted'`,
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
@@ -189,8 +189,12 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
 
 exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  // Express 5 types params as string | string[]; helpers expect a scalar id.
   const id = String(req.params.id);
+  // Guard: base exercises (gym_id IS NULL) may only be modified via /platform/exercises
+  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM exercises WHERE id = ?', [id]);
+  if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
+    return res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
+  }
   const {
     name, description, video_url, image_url,
     min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
@@ -254,6 +258,10 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
 
 exercisesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId, actorName } = getTenantContext(req);
+  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM exercises WHERE id = ?', [req.params.id]);
+  if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
+    return res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
+  }
   const callerMemberId = await getCallerMembershipId(req);
   const { rowCount } = await db.query(
     `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?, deleted_by_name = ?
@@ -288,6 +296,54 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
         [gymId, copyName, src.description, src.video_url, src.image_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
          callerMemberId ?? null],
+      );
+      const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
+      for (const m of muscles) {
+        await tx.query(
+          'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, ?)',
+          [gymId, insertId, m.key, m.role],
+        );
+      }
+      const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
+      for (const rt of rts) {
+        await tx.query(
+          'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
+          [insertId, rt.id],
+        );
+      }
+      return insertId;
+    });
+
+    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
+    recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+/** Clone a base exercise into the gym's own catalog. */
+exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const id = String(req.params.id);
+  try {
+    const { rows: orig } = await db.query(
+      `${SELECT} WHERE e.id = ? AND e.gym_id IS NULL AND e.status != 'deleted'`,
+      [id],
+    );
+    if (orig.length === 0) return res.status(404).json({ error: 'Base exercise not found' });
+    const src = orig[0];
+    const callerMemberId = await getCallerMembershipId(req);
+    const copyName = `${src.name} (Copy)`;
+
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO exercises
+          (gym_id, name, description, video_url, image_url,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+           status, created_by, cloned_from_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+        [gymId, copyName, src.description, src.video_url, src.image_url,
+         src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
+         callerMemberId ?? null, id],
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
       for (const m of muscles) {

@@ -44,6 +44,9 @@
     "nutrition_plan_templates": "Plantillas de Plan Nutricional",
     "base_nutrition_library": "Biblioteca Nutricional Base",
     "base_nutrition_plan_templates": "Plantillas Base",
+    "base_exercises": "Ejercicios Base",
+    "base_workout_templates": "Entrenamientos Base",
+    "base_training_plan_templates": "Planes Base",
     "calendar": "Calendario",
     "recycle_bin": "Papelera de reciclaje"
   },
@@ -847,11 +850,16 @@
     "col_primary_muscles": "Músculos principales",
     "col_created_at": "Creado el",
     "col_created_by": "Creado por",
+    "col_type": "Tipo",
     "col_status": "Estado",
     "col_actions": "Acciones",
+    "type_base": "Base",
+    "type_gym": "Gym",
     "details": "Detalles",
     "edit": "Editar",
     "duplicate": "Duplicar",
+    "clone": "Clonar al gym",
+    "cloned": "Ejercicio clonado al catálogo del gym.",
     "delete": "Eliminar",
     "modal_add": "Añadir ejercicio",
     "modal_edit": "Editar ejercicio",
@@ -971,7 +979,12 @@
     "tree_no_blocks": "Aún no hay bloques.",
     "tree_no_exercises": "Aún no hay ejercicios.",
     "tree_drag_handle": "Arrastra para reordenar",
-    "block_type_limit_exceeded": "Los bloques de tipo {type} permiten un máximo de {max} ejercicios. Elimina ejercicios antes de cambiar el tipo."
+    "block_type_limit_exceeded": "Los bloques de tipo {type} permiten un máximo de {max} ejercicios. Elimina ejercicios antes de cambiar el tipo.",
+    "col_type": "Tipo",
+    "type_base": "Base",
+    "type_gym": "Gimnasio",
+    "clone": "Clonar al gimnasio",
+    "cloned": "Plantilla de entrenamiento clonada al catálogo del gimnasio."
   },
   "training_plan_templates": {
     "title": "Plantillas de plan de entrenamiento",
@@ -1037,7 +1050,12 @@
     "assign_to_member": "Asignar plan a miembro",
     "section_general": "General",
     "section_workouts": "Rutinas",
-    "placeholder_name": "p.ej. Programa de fuerza de 12 semanas"
+    "placeholder_name": "p.ej. Programa de fuerza de 12 semanas",
+    "col_type": "Tipo",
+    "type_base": "Base",
+    "type_gym": "Gimnasio",
+    "clone": "Clonar al gimnasio",
+    "cloned": "Plantilla de plan de entrenamiento clonada al catálogo del gimnasio."
   },
   "training_plans": {
     "title": "Planes de entrenamiento",

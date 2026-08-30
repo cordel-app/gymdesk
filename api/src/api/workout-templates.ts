@@ -39,15 +39,20 @@ const MAX_LIMIT = 100;
 
 async function templateExists(id: string, gymId: string): Promise<boolean> {
   const { rows } = await db.query(
-    'SELECT 1 FROM workout_templates WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    'SELECT 1 FROM workout_templates WHERE id = ? AND (gym_id = ? OR gym_id IS NULL) AND deleted_at IS NULL',
     [id, gymId],
   );
   return rows.length > 0;
 }
 
+async function isBaseTemplate(id: string): Promise<boolean> {
+  const { rows } = await db.query('SELECT gym_id FROM workout_templates WHERE id = ?', [id]);
+  return rows.length > 0 && rows[0].gym_id === null;
+}
+
 async function blockExists(blockId: string, templateId: string, gymId: string): Promise<boolean> {
   const { rows } = await db.query(
-    'SELECT 1 FROM workout_template_blocks WHERE id = ? AND workout_template_id = ? AND gym_id = ? AND deleted_at IS NULL',
+    'SELECT 1 FROM workout_template_blocks WHERE id = ? AND workout_template_id = ? AND (gym_id = ? OR gym_id IS NULL) AND deleted_at IS NULL',
     [blockId, templateId, gymId],
   );
   return rows.length > 0;
@@ -141,7 +146,7 @@ workoutTemplatesRouter.get('/', async (req, res, next) => {
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
-    const where: string[] = ['wt.gym_id = ?', 'wt.deleted_at IS NULL'];
+    const where: string[] = ['(wt.gym_id = ? OR wt.gym_id IS NULL)', 'wt.deleted_at IS NULL'];
     const params: (string | number)[] = [gymId];
     if (status) { where.push('wt.status = ?'); params.push(status); }
     if (name) { where.push('wt.name LIKE ?'); params.push(`%${name}%`); }
@@ -247,7 +252,7 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
        LEFT JOIN gym_memberships gm_c ON gm_c.id = wt.created_by_membership_id
        LEFT JOIN gym_memberships gm_m ON gm_m.id = wt.modified_by_membership_id
        LEFT JOIN gym_memberships gm_d ON gm_d.id = wt.deleted_by_membership_id
-       WHERE wt.id = ? AND wt.gym_id = ? AND wt.deleted_at IS NULL`,
+       WHERE wt.id = ? AND (wt.gym_id = ? OR wt.gym_id IS NULL) AND wt.deleted_at IS NULL`,
       [id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Workout template not found' });
@@ -285,6 +290,9 @@ workoutTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
 workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
+  if (await isBaseTemplate(id)) {
+    return res.status(403).json({ error: 'Base workout templates can only be modified by Cordel administrators.' });
+  }
   const { name, description, status, notes } = req.body;
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
@@ -318,6 +326,9 @@ workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, r
 workoutTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   const { id } = req.params as { id: string };
+  if (await isBaseTemplate(id)) {
+    return res.status(403).json({ error: 'Base workout templates can only be modified by Cordel administrators.' });
+  }
   const { rowCount } = await db.query(
     `UPDATE workout_templates
         SET deleted_at = UTC_TIMESTAMP(), status = 'deleted',
@@ -401,6 +412,65 @@ workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), as
   }
 });
 
+workoutTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: srcRows } = await db.query(
+      'SELECT * FROM workout_templates WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
+      [id],
+    );
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Base workout template not found' });
+    const src = srcRows[0];
+    const copyName = `${src.name} (Copy)`;
+
+    let createdId: number;
+    await db.transaction(async (tx) => {
+      const { insertId: newId } = await tx.query(
+        `INSERT INTO workout_templates
+          (gym_id, name, description, status, notes, created_by_membership_id,
+           modified_at, modified_by_membership_id, cloned_from_id)
+         VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+        [gymId, copyName, src.description ?? null, 'active', src.notes ?? null,
+         gymMembershipId, gymMembershipId, id],
+      );
+      createdId = newId;
+
+      const { rows: blocks } = await tx.query(
+        'SELECT * FROM workout_template_blocks WHERE workout_template_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+        [id],
+      );
+      for (const block of blocks) {
+        const { insertId: newBlockId } = await tx.query(
+          `INSERT INTO workout_template_blocks
+            (gym_id, workout_template_id, position, name, description, type,
+             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, newId, block.position, block.name, block.description, block.type,
+           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes],
+        );
+        const { rows: exercises } = await tx.query(
+          'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
+          [block.id],
+        );
+        for (const ex of exercises) {
+          await tx.query(
+            `INSERT INTO workout_template_exercises
+              (gym_id, workout_template_block_id, exercise_id, position, min_reps, max_reps, sets, rest_seconds, tempo,
+               result_type_id, target_value, min_value, max_value, unit)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, newBlockId, ex.exercise_id, ex.position, ex.min_reps, ex.max_reps, ex.sets, ex.rest_seconds, ex.tempo,
+             ex.result_type_id ?? null, ex.target_value ?? null, ex.min_value ?? null, ex.max_value ?? null, ex.unit ?? null],
+          );
+        }
+      }
+    });
+    const { rows: newRows } = await db.query('SELECT * FROM workout_templates WHERE id = ?', [createdId!]);
+    recordAudit(req, { action: 'create', entityType: 'workout_template', entityId: createdId!, next: newRows[0] });
+    res.status(201).json(newRows[0]);
+  } catch (err) { next(err); }
+});
+
 /* ---- WorkoutTemplateBlock ---- */
 
 workoutTemplatesRouter.get('/:id/blocks', async (req, res, next) => {
@@ -422,6 +492,7 @@ workoutTemplatesRouter.post('/:id/blocks', requireModuleWrite('TRAINING'), async
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Workout template not found' });
+  if (await isBaseTemplate(id)) return res.status(403).json({ error: 'Base workout templates can only be modified by Cordel administrators.' });
   const parsed = parseBlockBody(req.body);
   if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
   try {

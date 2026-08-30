@@ -27,6 +27,7 @@ interface Exercise {
   min_reps_default: number | null; max_reps_default: number | null;
   sets_default: number | null; rest_default_seconds: number | null; notes_default: string | null;
   status: 'active' | 'inactive';
+  gym_id: string | null;
   created_at: string; created_by_name: string | null;
   modified_at: string | null; modified_by_name: string | null;
   muscles: ExerciseMuscle[] | null;
@@ -259,6 +260,18 @@ export default function ExercisesPage() {
       const dup = await apiFetch<Exercise>(`/exercises/${ex.id}/duplicate`, { method: 'POST' });
       await load();
       enterEdit(dup);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
+  // ─── Clone base exercise ──────────────────────────────────────────────────
+
+  async function handleClone(ex: Exercise) {
+    try {
+      await apiFetch(`/exercises/${ex.id}/clone`, { method: 'POST' });
+      toast(t('cloned'));
+      load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     }
@@ -508,14 +521,20 @@ export default function ExercisesPage() {
   function renderRow(ex: Exercise) {
     const isEditing = editingId === ex.id;
     const isExpanded = isEditing || expandedId === ex.id;
+    const isBase = ex.gym_id === null;
     const principalMuscles = (ex.muscles ?? []).filter((m) => m.role === 'principal').map((m) => muscleLabel(m.key)).join(', ') || '—';
 
-    const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetailFor(ex) },
-      { label: t('edit'), onClick: () => guardedAction('edit', ex) },
-      { label: t('duplicate'), onClick: () => handleDuplicate(ex) },
-      { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true },
-    ];
+    const menuItems: ContextMenuItem[] = isBase
+      ? [
+          { label: t('details'), onClick: () => setDetailFor(ex) },
+          { label: t('clone'), onClick: () => handleClone(ex) },
+        ]
+      : [
+          { label: t('details'), onClick: () => setDetailFor(ex) },
+          { label: t('edit'), onClick: () => guardedAction('edit', ex) },
+          { label: t('duplicate'), onClick: () => handleDuplicate(ex) },
+          { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true },
+        ];
 
     return (
       <div key={ex.id} style={cardSt}>
@@ -534,6 +553,12 @@ export default function ExercisesPage() {
           </div>
           <div style={{ minWidth: 120, flexShrink: 0, fontSize: 13, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ex.created_by_name ?? '—'}
+          </div>
+          <div style={{ minWidth: 64, flexShrink: 0 }}>
+            {isBase
+              ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
+              : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
+            }
           </div>
           <div style={{ minWidth: 80, flexShrink: 0 }}>
             <StatusBadge status={ex.status} label={tStatus(ex.status)} />
@@ -556,6 +581,7 @@ export default function ExercisesPage() {
         <span style={{ minWidth: 140, flexShrink: 0 }}>{t('col_primary_muscles')}</span>
         <span style={{ minWidth: 90, flexShrink: 0 }}>{t('col_created_at')}</span>
         <span style={{ minWidth: 120, flexShrink: 0 }}>{t('col_created_by')}</span>
+        <span style={{ minWidth: 64, flexShrink: 0 }}>{t('col_type')}</span>
         <span style={{ minWidth: 80, flexShrink: 0 }}>{t('col_status')}</span>
         <span style={{ minWidth: 13, flexShrink: 0 }} />
         <span style={{ minWidth: 32, flexShrink: 0 }} />
