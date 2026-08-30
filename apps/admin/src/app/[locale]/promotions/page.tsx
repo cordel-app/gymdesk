@@ -509,7 +509,7 @@ export default function PromotionsPage() {
 
   function renderEditSection(promoId: number) {
     return (
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
 
         {/* General */}
         <p style={sectionLabelSt}>{t('section_general')}</p>
@@ -723,7 +723,7 @@ export default function PromotionsPage() {
     const bonus = promo.bonus_months ?? 0;
 
     return (
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
 
         {/* Billing & Duration summary */}
         {(free > 0 || paid > 0 || bonus > 0) && (
@@ -949,12 +949,12 @@ export default function PromotionsPage() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const cardSt: React.CSSProperties = { border: '1px solid var(--gd-border, #e2e2e6)', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--gd-surface, #fff)' };
+const cardSt: React.CSSProperties = { border: '1px solid var(--gd-card-border, #e2e2e6)', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--gd-card-bg, #fff)' };
 const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '12px 20px', gap: 12, cursor: 'pointer' };
 const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
-const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-border, #eee)' };
+const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
 const sectionLabelSt: React.CSSProperties = { margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
 const hintSt: React.CSSProperties = { color: '#aaa', fontSize: 13, margin: 0 };
 const colHeaderSt: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em', paddingBottom: 2 };
