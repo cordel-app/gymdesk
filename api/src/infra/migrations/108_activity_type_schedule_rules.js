@@ -6,9 +6,8 @@
  * One-off rules: start_date is the occurrence date; end_date is null.
  */
 exports.up = async (knex) => {
-  if (await knex.schema.hasTable('activity_type_schedule_rules')) return;
-
-  await knex.schema.createTable('activity_type_schedule_rules', (t) => {
+  if (!(await knex.schema.hasTable('activity_type_schedule_rules'))) {
+    await knex.schema.createTable('activity_type_schedule_rules', (t) => {
     t.increments('id').unsigned().primary();
 
     t.string('gym_id', 36).notNullable()
@@ -35,10 +34,11 @@ exports.up = async (knex) => {
     t.time('start_time').notNullable();
     t.time('end_time').notNullable();
 
-    t.datetime('created_at').notNullable().defaultTo(knex.raw('UTC_TIMESTAMP()'));
+    t.datetime('created_at').notNullable().defaultTo(knex.fn.now());
 
     t.index(['gym_id', 'activity_type_id'], 'atsr_gym_activity_idx');
-  });
+    });
+  }
 
   const [chkRows] = await knex.raw(
     "SELECT 1 FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'chk_atsr_type'",
@@ -57,9 +57,19 @@ exports.up = async (knex) => {
       "ALTER TABLE activity_type_schedule_rules ADD CONSTRAINT chk_atsr_ordinal CHECK (ordinal IS NULL OR ordinal IN ('first','second','third','fourth','fifth','last'))",
     );
   }
+
+  const [wdRows] = await knex.raw(
+    "SELECT 1 FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'chk_atsr_weekday'",
+  );
+  if (wdRows.length === 0) {
+    await knex.raw(
+      'ALTER TABLE activity_type_schedule_rules ADD CONSTRAINT chk_atsr_weekday CHECK (weekday IS NULL OR weekday BETWEEN 0 AND 6)',
+    );
+  }
 };
 
 exports.down = async (knex) => {
+  await knex.raw('ALTER TABLE activity_type_schedule_rules DROP CHECK chk_atsr_weekday').catch(() => {});
   await knex.raw('ALTER TABLE activity_type_schedule_rules DROP CHECK chk_atsr_ordinal').catch(() => {});
   await knex.raw('ALTER TABLE activity_type_schedule_rules DROP CHECK chk_atsr_type').catch(() => {});
   await knex.schema.dropTableIfExists('activity_type_schedule_rules');

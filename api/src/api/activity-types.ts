@@ -10,6 +10,14 @@ import {
 
 const STATUSES = ['active', 'inactive'] as const;
 
+function formatRule(r: any) {
+  return {
+    ...r,
+    start_time: typeof r.start_time === 'string' ? r.start_time.slice(0, 5) : r.start_time,
+    end_time: typeof r.end_time === 'string' ? r.end_time.slice(0, 5) : r.end_time,
+  };
+}
+
 const SELECT = `
   SELECT at.*,
     sp.name   AS default_space_name,
@@ -55,7 +63,7 @@ activityTypesRouter.get('/:id', async (req, res) => {
     'SELECT * FROM activity_type_schedule_rules WHERE activity_type_id = ? AND gym_id = ? ORDER BY created_at ASC',
     [req.params.id, gymId],
   );
-  res.json({ ...rows[0], schedule_rules: rules });
+  res.json({ ...rows[0], schedule_rules: rules.map(formatRule) });
 });
 
 function validate(body: any) {

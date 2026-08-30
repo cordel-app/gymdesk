@@ -52,11 +52,21 @@ exports.up = async (knex) => {
 };
 
 exports.down = async (knex) => {
-  for (const col of [
-    'deleted_by_membership_id', 'deleted_at',
-    'modified_by_membership_id', 'modified_at',
-    'created_by_membership_id', 'default_center_id',
-  ]) {
+  const fkCols = [
+    'deleted_by_membership_id',
+    'created_by_membership_id',
+    'modified_by_membership_id',
+    'default_center_id',
+  ];
+  for (const col of fkCols) {
+    if (await knex.schema.hasColumn('activity_types', col)) {
+      await knex.schema.alterTable('activity_types', (t) => {
+        t.dropForeign([col]);
+        t.dropColumn(col);
+      });
+    }
+  }
+  for (const col of ['deleted_at', 'modified_at']) {
     if (await knex.schema.hasColumn('activity_types', col)) {
       await knex.schema.alterTable('activity_types', (t) => t.dropColumn(col));
     }

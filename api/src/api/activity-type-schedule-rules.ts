@@ -54,6 +54,15 @@ function validateRule(body: any): string | null {
   return null;
 }
 
+function formatRule(row: any) {
+  if (!row) return row;
+  return {
+    ...row,
+    start_time: typeof row.start_time === 'string' ? row.start_time.slice(0, 5) : row.start_time,
+    end_time: typeof row.end_time === 'string' ? row.end_time.slice(0, 5) : row.end_time,
+  };
+}
+
 // GET /activity-types/:activityTypeId/schedule-rules
 activityTypeScheduleRulesRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -65,7 +74,7 @@ activityTypeScheduleRulesRouter.get('/', async (req, res) => {
     'SELECT * FROM activity_type_schedule_rules WHERE activity_type_id = ? AND gym_id = ? ORDER BY created_at ASC',
     [activityTypeId, gymId],
   );
-  res.json(rows);
+  res.json(rows.map(formatRule));
 });
 
 // POST /activity-types/:activityTypeId/schedule-rules
@@ -99,7 +108,7 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
   await materializeScheduleRule(insertId, gymTimezone);
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [insertId]);
-  res.status(201).json(rows[0]);
+  res.status(201).json(formatRule(rows[0]));
 });
 
 // PUT /activity-types/:activityTypeId/schedule-rules/:ruleId
@@ -143,7 +152,7 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   await materializeScheduleRule(Number(ruleId), gymTimezone);
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);
-  res.json(rows[0]);
+  res.json(formatRule(rows[0]));
 });
 
 // DELETE /activity-types/:activityTypeId/schedule-rules/:ruleId

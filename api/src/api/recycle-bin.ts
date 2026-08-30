@@ -158,9 +158,11 @@ function branchFor(type: EntityType, gymId: string): UnionBranch {
     case 'activity_type':
       return {
         sql: `SELECT 'activity_type' AS entity_type, at.id, at.name, at.description,
-               gm.name AS deleted_by_name, at.deleted_at
+               gm_d.name AS deleted_by_name, at.deleted_at,
+               at.created_at, gm_c.name AS created_by_name
              FROM activity_types at
-             LEFT JOIN gym_memberships gm ON gm.id = at.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = at.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = at.created_by_membership_id
              WHERE at.gym_id = ? AND at.deleted_at IS NOT NULL`,
         params: [gymId],
       };
