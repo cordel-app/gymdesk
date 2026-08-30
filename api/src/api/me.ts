@@ -797,9 +797,10 @@ const memberPaymentRateLimit = rateLimit({
 
 /** Member's own payment request history. */
 meRouter.get('/payment-requests', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, effectiveUserId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   try {
-    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
       `SELECT id, user_membership_id, amount, currency, status, provider, source, created_at, completed_at
        FROM payment_requests
@@ -816,9 +817,10 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
 
 /** Member self-initiates a payment for their active membership. Stamps consent_given_at. */
 meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit as any, async (req: Request, res: Response, next: NextFunction) => {
-  const { gymId, effectiveUserId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   try {
-    const memberId = await requireMemberId(gymId, effectiveUserId);
+    const memberId = await resolveMemberId(gymId, ctx);
 
     const { rows: umRows } = await db.query<{ id: number; final_price: string; member_email: string }>(
       `SELECT um.id, um.final_price, m.email AS member_email
