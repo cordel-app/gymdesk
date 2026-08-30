@@ -297,7 +297,7 @@ export default function SystemGymsPage() {
 
         {/* Inline edit */}
         {isEditing && (
-          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
             <SectionHeader title={t('section_general')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
@@ -342,7 +342,7 @@ export default function SystemGymsPage() {
 
         {/* Read-only expanded sections */}
         {isExpanded && !isEditing && (
-          <div style={{ padding: '0 20px 16px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+          <div style={{ padding: '0 20px 16px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
             <SectionHeader title={t('section_general')} />
             <DetailRow label={t('label_description')} value={gym.description ?? '—'} />
             <DetailRow label={t('label_status')} value={tStatus(gym.status)} />
@@ -508,7 +508,7 @@ export default function SystemGymsPage() {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <div style={{ borderBottom: '1px solid var(--gd-border, #eee)', margin: '16px 0 8px', paddingBottom: 4 }}>
+    <div style={{ borderBottom: '1px solid var(--gd-card-border, #eee)', margin: '16px 0 8px', paddingBottom: 4 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
     </div>
   );
