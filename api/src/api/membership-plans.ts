@@ -102,11 +102,11 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
     db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name,
-              gc.availability AS gym_charge_availability
+      `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
+              gc.status AS gym_charge_status
        FROM plan_charge_benefits pcb
        JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-       JOIN charge_types ct ON ct.id = gc.charge_type_id
+       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
       [plan.id, gymId],
     ).then(r => r.rows),
@@ -717,7 +717,7 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
     const ids = items.map((i: any) => i.gym_charge_id);
     const placeholders = ids.map(() => '?').join(',');
     const { rows: gcRows } = await db.query(
-      `SELECT id FROM gym_charges WHERE gym_id = ? AND availability = 'available' AND id IN (${placeholders})`,
+      `SELECT id FROM gym_charges WHERE gym_id = ? AND status = 'active' AND deleted_at IS NULL AND id IN (${placeholders})`,
       [gymId, ...ids],
     );
     if (gcRows.length !== ids.length) {
@@ -738,11 +738,11 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
       );
     }
     const { rows } = await db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name,
-              gc.availability AS gym_charge_availability
+      `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
+              gc.status AS gym_charge_status
        FROM plan_charge_benefits pcb
        JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-       JOIN charge_types ct ON ct.id = gc.charge_type_id
+       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
       [req.params.id, gymId],
     );
