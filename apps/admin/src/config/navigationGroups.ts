@@ -77,10 +77,6 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/activity-types',
         labelKey: 'nav.activity_types',
       },
-      {
-        href: '/{{locale}}/class-packages',
-        labelKey: 'nav.class_packages',
-      },
     ],
   },
   {
@@ -159,8 +155,8 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.promotions',
       },
       {
-        href: '/{{locale}}/financials/gym-charges',
-        labelKey: 'nav.gym_charges',
+        href: '/{{locale}}/financials/sellable-items',
+        labelKey: 'nav.sellable_items',
       },
       {
         href: '/{{locale}}/financials/payment-providers',
