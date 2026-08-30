@@ -548,7 +548,7 @@ function TemplateCard({
 
       {/* Inline edit form — shown when editing */}
       {editing && (
-        <div style={{ padding: '0 20px 4px', borderTop: '1px solid var(--gd-border, #ececf0)' }}>
+        <div style={{ padding: '0 20px 4px', borderTop: '1px solid var(--gd-card-border, #ececf0)' }}>
           <SectionHeader title={t('section_general')} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
@@ -594,7 +594,7 @@ function TemplateCard({
 
       {/* Expanded workout tree — shown when expanded (editing or read-only) */}
       {expanded && (
-        <div style={{ borderTop: '1px solid var(--gd-border, #ececf0)' }}>
+        <div style={{ borderTop: '1px solid var(--gd-card-border, #ececf0)' }}>
           {hierLoading || !hierarchy ? (
             <p style={{ color: '#888', fontSize: 14, padding: '12px 20px 12px 44px', margin: 0 }}>
               {t('loading')}
