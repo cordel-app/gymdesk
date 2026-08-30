@@ -16,7 +16,7 @@ export function CenterSelector() {
       style={{
         background: 'rgba(255,255,255,0.1)',
         border: '1px solid rgba(255,255,255,0.2)',
-        color: '#fff',
+        color: 'inherit',
         borderRadius: 6,
         padding: '4px 8px',
         fontSize: 13,
