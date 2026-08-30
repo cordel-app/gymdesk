@@ -128,13 +128,13 @@ export function EventDetailsPanel({
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', height: '100%',
-      borderLeft: '1px solid var(--gd-border, #e5e7eb)',
+      borderLeft: '1px solid var(--gd-card-border, #e5e7eb)',
       background: 'var(--gd-card-bg, var(--gd-bg-secondary, #f9fafb))',
     }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '14px 16px', borderBottom: '1px solid var(--gd-border, #e5e7eb)',
+        padding: '14px 16px', borderBottom: '1px solid var(--gd-card-border, #e5e7eb)',
         flexShrink: 0,
       }}>
         <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
@@ -248,7 +248,7 @@ export function EventDetailsPanel({
 
         {/* Metadata */}
         {meta && (
-          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--gd-border, #e5e7eb)' }}>
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--gd-card-border, #e5e7eb)' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>
               {t('metadata_section')}
             </div>
@@ -266,7 +266,7 @@ export function EventDetailsPanel({
       {deleteState !== 'confirming' && (
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 8,
-          padding: '12px 16px', borderTop: '1px solid var(--gd-border, #e5e7eb)', flexShrink: 0,
+          padding: '12px 16px', borderTop: '1px solid var(--gd-card-border, #e5e7eb)', flexShrink: 0,
         }}>
           {canWrite && (
             <button
