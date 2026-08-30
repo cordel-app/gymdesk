@@ -22,6 +22,7 @@ export interface TrainingPlanTemplate {
   description: string | null;
   status: 'active' | 'inactive' | 'draft';
   workout_count: number;
+  gym_id: string | null;
   created_by_name: string | null;
   created_at: string;
   modified_at: string | null;
@@ -216,6 +217,18 @@ export default function TrainingPlanTemplatesPage() {
     }
   }
 
+  // ─── Clone base template ─────────────────────────────────────────────────────
+
+  async function handleClone(tpl: TrainingPlanTemplate) {
+    try {
+      await apiFetch(`/training-plan-templates/${tpl.id}/clone`, { method: 'POST' });
+      toast(t('cloned'));
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
   // ─── Delete ──────────────────────────────────────────────────────────────────
 
   async function handleDelete() {
@@ -324,6 +337,7 @@ export default function TrainingPlanTemplatesPage() {
           <div style={{ width: 20, flexShrink: 0 }} />
           <div style={{ flex: 2 }}>{t('col_name')}</div>
           <div style={{ flex: 3 }}>{t('col_description')}</div>
+          <div style={{ minWidth: 64 }}>{t('col_type')}</div>
           <div style={{ minWidth: 90 }}>{t('col_workout_count')}</div>
           <div style={{ minWidth: 100 }}>{t('col_created_at')}</div>
           <div style={{ minWidth: 110 }}>{t('col_created_by')}</div>
@@ -395,6 +409,7 @@ export default function TrainingPlanTemplatesPage() {
               onEdit={() => startEdit(row)}
               onDetails={() => setDetailsTemplate(row)}
               onDuplicate={() => handleDuplicate(row)}
+              onClone={() => handleClone(row)}
               onDelete={() => setDeleting(row)}
               onAssign={() => setAssigning(row)}
               onEditFormChange={(f) => setEditForm(f)}
@@ -444,7 +459,7 @@ export default function TrainingPlanTemplatesPage() {
 function TemplateCard({
   template, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t, tStatus, fmtDate,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onDelete, onAssign,
+  onToggleExpand, onEdit, onDetails, onDuplicate, onClone, onDelete, onAssign,
   onEditFormChange, onSave, onCancel, onChanged,
 }: {
   template: TrainingPlanTemplate;
@@ -464,6 +479,7 @@ function TemplateCard({
   onEdit: () => void;
   onDetails: () => void;
   onDuplicate: () => void;
+  onClone: () => void;
   onDelete: () => void;
   onAssign: () => void;
   onEditFormChange: (f: EditForm) => void;
@@ -471,13 +487,20 @@ function TemplateCard({
   onCancel: () => void;
   onChanged: () => void;
 }) {
-  const menuItems: ContextMenuItem[] = [
-    { label: t('details'), onClick: onDetails },
-    ...(canWrite ? [{ label: t('edit'), onClick: onEdit }] : []),
-    ...(canWrite ? [{ label: t('duplicate'), onClick: onDuplicate }] : []),
-    ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign }] : []),
-    ...(canWrite ? [{ label: t('delete'), onClick: onDelete, danger: true }] : []),
-  ];
+  const isBase = template.gym_id === null;
+  const menuItems: ContextMenuItem[] = isBase
+    ? [
+        { label: t('details'), onClick: onDetails },
+        { label: t('clone'), onClick: onClone },
+        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign }] : []),
+      ]
+    : [
+        { label: t('details'), onClick: onDetails },
+        ...(canWrite ? [{ label: t('edit'), onClick: onEdit }] : []),
+        ...(canWrite ? [{ label: t('duplicate'), onClick: onDuplicate }] : []),
+        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign }] : []),
+        ...(canWrite ? [{ label: t('delete'), onClick: onDelete, danger: true }] : []),
+      ];
 
   const descText = template.description
     ? template.description.length > 60 ? template.description.slice(0, 60) + '…' : template.description
@@ -499,6 +522,12 @@ function TemplateCard({
         </span>
         <span style={{ flex: 3, fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {descText}
+        </span>
+        <span style={{ minWidth: 64, flexShrink: 0 }}>
+          {isBase
+            ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
+            : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
+          }
         </span>
         <span style={{ minWidth: 90, fontSize: 13, color: '#666', flexShrink: 0 }}>
           {t('n_workouts', { count: template.workout_count })}

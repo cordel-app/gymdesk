@@ -74,7 +74,7 @@ const CURRENT_STATUSES = [
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-const SECTIONS = ['general', 'employment', 'contact', 'schedule', 'permissions', 'notes', 'clerk'] as const;
+const SECTIONS = ['general', 'employment', 'schedule', 'notes', 'clerk'] as const;
 type Section = (typeof SECTIONS)[number];
 
 interface ClerkStatus {
@@ -162,6 +162,15 @@ const inputStyle: React.CSSProperties = {
 };
 
 const selectStyle: React.CSSProperties = { ...inputStyle, background: '#fff' };
+
+const subsectionLabelStyle: React.CSSProperties = {
+  margin: '0 0 12px 0',
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+  color: '#aaa',
+};
 
 export default function StaffPage() {
   const t = useTranslations('staff');
@@ -342,25 +351,62 @@ export default function StaffPage() {
 
   function renderGeneral() {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-        <FormRow label={t('label_first_name') + ' *'}>
-          <input ref={firstNameRef} style={inputStyle} value={form.first_name ?? ''} onChange={(e) => patchForm({ first_name: e.target.value })} />
-        </FormRow>
-        <FormRow label={t('label_last_name') + ' *'}>
-          <input style={inputStyle} value={form.last_name ?? ''} onChange={(e) => patchForm({ last_name: e.target.value })} />
-        </FormRow>
-        <FormRow label={t('label_email') + ' *'}>
-          <input style={inputStyle} type="email" value={form.email ?? ''} onChange={(e) => patchForm({ email: e.target.value })} />
-        </FormRow>
-        <FormRow label={t('label_mobile_phone')}>
-          <input style={inputStyle} value={form.mobile_phone ?? ''} onChange={(e) => patchForm({ mobile_phone: e.target.value || null })} />
-        </FormRow>
-        <FormRow label={t('label_date_of_birth')}>
-          <input style={inputStyle} type="date" value={form.date_of_birth ?? ''} onChange={(e) => patchForm({ date_of_birth: e.target.value || null })} />
-        </FormRow>
-        <FormRow label={t('label_national_id')}>
-          <input style={inputStyle} value={form.national_id ?? ''} onChange={(e) => patchForm({ national_id: e.target.value || null })} />
-        </FormRow>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+        {/* Personal information */}
+        <div>
+          <p style={subsectionLabelStyle}>{t('subsection_personal')}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+            <FormRow label={t('label_first_name') + ' *'}>
+              <input ref={firstNameRef} style={inputStyle} value={form.first_name ?? ''} onChange={(e) => patchForm({ first_name: e.target.value })} />
+            </FormRow>
+            <FormRow label={t('label_last_name') + ' *'}>
+              <input style={inputStyle} value={form.last_name ?? ''} onChange={(e) => patchForm({ last_name: e.target.value })} />
+            </FormRow>
+            <FormRow label={t('label_email') + ' *'}>
+              <input style={inputStyle} type="email" value={form.email ?? ''} onChange={(e) => patchForm({ email: e.target.value })} />
+            </FormRow>
+            <FormRow label={t('label_mobile_phone')}>
+              <input style={inputStyle} value={form.mobile_phone ?? ''} onChange={(e) => patchForm({ mobile_phone: e.target.value || null })} />
+            </FormRow>
+            <FormRow label={t('label_date_of_birth')}>
+              <input style={inputStyle} type="date" value={form.date_of_birth ?? ''} onChange={(e) => patchForm({ date_of_birth: e.target.value || null })} />
+            </FormRow>
+            <FormRow label={t('label_national_id')}>
+              <input style={inputStyle} value={form.national_id ?? ''} onChange={(e) => patchForm({ national_id: e.target.value || null })} />
+            </FormRow>
+          </div>
+        </div>
+
+        {/* Contact information */}
+        <div>
+          <p style={subsectionLabelStyle}>{t('subsection_contact')}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+            <FormRow label={t('label_company_email')}>
+              <input style={inputStyle} type="email" value={form.company_email ?? ''} onChange={(e) => patchForm({ company_email: e.target.value || null })} />
+            </FormRow>
+            <FormRow label={t('label_company_phone')}>
+              <input style={inputStyle} value={form.company_phone ?? ''} onChange={(e) => patchForm({ company_phone: e.target.value || null })} />
+            </FormRow>
+            <FormRow label={t('label_personal_phone')}>
+              <input style={inputStyle} value={form.personal_phone ?? ''} onChange={(e) => patchForm({ personal_phone: e.target.value || null })} />
+            </FormRow>
+            <FormRow label={t('label_emergency_contact')}>
+              <input style={inputStyle} value={form.emergency_contact ?? ''} onChange={(e) => patchForm({ emergency_contact: e.target.value || null })} />
+            </FormRow>
+            <FormRow label={t('label_emergency_phone')}>
+              <input style={inputStyle} value={form.emergency_phone ?? ''} onChange={(e) => patchForm({ emergency_phone: e.target.value || null })} />
+            </FormRow>
+          </div>
+        </div>
+
+        {/* Profile */}
+        <div>
+          <p style={subsectionLabelStyle}>{t('subsection_profile')}</p>
+          <div style={{ color: '#555', fontSize: 14 }}>
+            <p style={{ margin: '0 0 8px 0' }}><strong>{t('label_profile')}:</strong> {form.profile}</p>
+            <p style={{ margin: 0, color: '#888', fontSize: 13 }}>{t('permissions_note')}</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -399,27 +445,6 @@ export default function StaffPage() {
     );
   }
 
-  function renderContact() {
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-        <FormRow label={t('label_company_email')}>
-          <input style={inputStyle} type="email" value={form.company_email ?? ''} onChange={(e) => patchForm({ company_email: e.target.value || null })} />
-        </FormRow>
-        <FormRow label={t('label_company_phone')}>
-          <input style={inputStyle} value={form.company_phone ?? ''} onChange={(e) => patchForm({ company_phone: e.target.value || null })} />
-        </FormRow>
-        <FormRow label={t('label_personal_phone')}>
-          <input style={inputStyle} value={form.personal_phone ?? ''} onChange={(e) => patchForm({ personal_phone: e.target.value || null })} />
-        </FormRow>
-        <FormRow label={t('label_emergency_contact')}>
-          <input style={inputStyle} value={form.emergency_contact ?? ''} onChange={(e) => patchForm({ emergency_contact: e.target.value || null })} />
-        </FormRow>
-        <FormRow label={t('label_emergency_phone')}>
-          <input style={inputStyle} value={form.emergency_phone ?? ''} onChange={(e) => patchForm({ emergency_phone: e.target.value || null })} />
-        </FormRow>
-      </div>
-    );
-  }
 
   function renderSchedule() {
     const selectedDays = (form.working_days ?? '').split(',').filter(Boolean);
@@ -465,14 +490,6 @@ export default function StaffPage() {
     );
   }
 
-  function renderPermissions() {
-    return (
-      <div style={{ color: '#555', fontSize: 14 }}>
-        <p style={{ margin: '0 0 8px 0' }}><strong>{t('label_profile')}:</strong> {form.profile}</p>
-        <p style={{ margin: 0, color: '#888', fontSize: 13 }}>{t('permissions_note')}</p>
-      </div>
-    );
-  }
 
   function renderNotes() {
     return (
@@ -543,9 +560,7 @@ export default function StaffPage() {
     switch (activeSection) {
       case 'general': return renderGeneral();
       case 'employment': return renderEmployment();
-      case 'contact': return renderContact();
       case 'schedule': return renderSchedule();
-      case 'permissions': return renderPermissions();
       case 'notes': return renderNotes();
       case 'clerk': return renderClerk();
     }

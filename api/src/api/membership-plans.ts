@@ -241,7 +241,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
 });
 
 membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, actorName } = getTenantContext(req);
   const { rows: active } = await db.query(
     `SELECT COUNT(*) AS n FROM user_memberships
      WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
@@ -252,9 +252,9 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   }
   const callerMemberId = await getCallerMembershipId(req);
   const { rowCount } = await db.query(
-    `UPDATE membership_plans SET deleted_at = NOW(), deleted_by = ?, enrollment_status = 'closed'
+    `UPDATE membership_plans SET deleted_at = NOW(), deleted_by = ?, deleted_by_name = ?, enrollment_status = 'closed'
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [callerMemberId, req.params.id, gymId],
+    [callerMemberId, actorName, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Plan not found' });
   recordAudit(req, { action: 'delete', entityType: 'membership_plan', entityId: req.params.id });

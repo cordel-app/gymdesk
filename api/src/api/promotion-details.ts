@@ -82,6 +82,13 @@ promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req,
   if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
   if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
 
+  const VALID_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
+  for (const item of items) {
+    if (item.action && !VALID_ACTIONS.includes(item.action)) {
+      return res.status(400).json({ error: `Invalid action: ${item.action}` });
+    }
+  }
+
   const active = items.filter((i: any) => i.action && i.action !== 'no_benefit');
 
   if (active.length > 0) {
@@ -100,7 +107,8 @@ promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req,
     await db.transaction(async (tx) => {
       await tx.query('DELETE FROM promotion_charge_benefits WHERE promotion_id = ? AND gym_id = ?', [promotionId, gymId]);
       for (const item of active) {
-        const value = item.value != null && item.value !== '' ? parseFloat(item.value) : null;
+        const needsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(item.action);
+        const value = needsValue && item.value != null && item.value !== '' ? parseFloat(item.value) : null;
         await tx.query(
           'INSERT INTO promotion_charge_benefits (gym_id, promotion_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
           [gymId, promotionId, item.gym_charge_id, item.action, value],
@@ -155,9 +163,10 @@ promotionDetailsRouter.put('/period-benefits', requireRole('admin'), async (req,
     await db.transaction(async (tx) => {
       await tx.query('DELETE FROM promotion_period_benefits WHERE promotion_id = ? AND gym_id = ?', [promotionId, gymId]);
       for (const item of items) {
+        const dur = item.duration_months != null ? parseInt(item.duration_months, 10) : null;
         await tx.query(
-          'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [gymId, promotionId, item.charge_type_id, parseInt(item.quantity, 10), parseInt(item.frequency_interval, 10), item.frequency_unit, item.enabled != null ? (item.enabled ? 1 : 0) : 1],
+          'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [gymId, promotionId, item.charge_type_id, parseInt(item.quantity, 10), parseInt(item.frequency_interval, 10), item.frequency_unit, dur ?? null, item.enabled != null ? (item.enabled ? 1 : 0) : 1],
         );
       }
     });
@@ -174,13 +183,17 @@ promotionDetailsRouter.put('/period-benefits', requireRole('admin'), async (req,
 });
 
 function validatePeriodBenefit(body: any) {
-  const { charge_type_id, quantity, frequency_interval, frequency_unit } = body;
+  const { charge_type_id, quantity, frequency_interval, frequency_unit, duration_months } = body;
   if (!charge_type_id) return 'charge_type_id is required';
   const qty = parseInt(quantity, 10);
   if (isNaN(qty) || qty <= 0) return 'quantity must be a positive integer';
   const freq = parseInt(frequency_interval, 10);
   if (isNaN(freq) || freq <= 0) return 'frequency_interval must be a positive integer';
   if (!['week', 'month'].includes(frequency_unit)) return "frequency_unit must be 'week' or 'month'";
+  if (duration_months != null) {
+    const dur = parseInt(duration_months, 10);
+    if (isNaN(dur) || dur <= 0) return 'duration_months must be a positive integer';
+  }
   return null;
 }
 
@@ -191,11 +204,12 @@ promotionDetailsRouter.post('/period-benefits', requireRole('admin'), async (req
   if (err) return res.status(400).json({ error: err });
   if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
 
-  const { charge_type_id, quantity, frequency_interval, frequency_unit, enabled } = req.body;
+  const { charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled } = req.body;
   try {
+    const dur = duration_months != null ? parseInt(duration_months, 10) : null;
     const row = await insertAndFetch(
-      'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [gymId, promotionId, charge_type_id, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit, enabled != null ? (enabled ? 1 : 0) : 1],
+      'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [gymId, promotionId, charge_type_id, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit, dur ?? null, enabled != null ? (enabled ? 1 : 0) : 1],
       `SELECT ppb.*, ct.code AS charge_type_code, ct.name AS charge_type_name
        FROM promotion_period_benefits ppb
        JOIN charge_types ct ON ct.id = ppb.charge_type_id
@@ -213,14 +227,15 @@ promotionDetailsRouter.put('/period-benefits/:pbId', requireRole('admin'), async
   const err = validatePeriodBenefit(req.body);
   if (err) return res.status(400).json({ error: err });
 
-  const { charge_type_id, quantity, frequency_interval, frequency_unit, enabled } = req.body;
+  const { charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled } = req.body;
   try {
+    const dur = duration_months != null ? parseInt(duration_months, 10) : null;
     const { rowCount } = await db.query(
       `UPDATE promotion_period_benefits
-         SET charge_type_id = ?, quantity = ?, frequency_interval = ?, frequency_unit = ?, enabled = ?
+         SET charge_type_id = ?, quantity = ?, frequency_interval = ?, frequency_unit = ?, duration_months = ?, enabled = ?
        WHERE id = ? AND promotion_id = ? AND gym_id = ?`,
       [charge_type_id, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit,
-       enabled != null ? (enabled ? 1 : 0) : 1, pbId, promotionId, gymId],
+       dur ?? null, enabled != null ? (enabled ? 1 : 0) : 1, pbId, promotionId, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Period benefit not found' });
     const { rows } = await db.query(
@@ -244,5 +259,70 @@ promotionDetailsRouter.delete('/period-benefits/:pbId', requireRole('admin'), as
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Period benefit not found' });
     res.status(204).send();
+  } catch (err) { next(err); }
+});
+
+/* ---------- included benefits ---------- */
+
+promotionDetailsRouter.get('/included-benefits', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const promotionId = (req.params as any).id;
+  try {
+    const { rows } = await db.query(
+      `SELECT pib.*, ct.code AS charge_type_code, ct.name AS charge_type_name
+       FROM promotion_included_benefits pib
+       JOIN charge_types ct ON ct.id = pib.charge_type_id
+       WHERE pib.promotion_id = ? AND pib.gym_id = ?
+       ORDER BY pib.id ASC`,
+      [promotionId, gymId],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+promotionDetailsRouter.put('/included-benefits', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const promotionId = parseInt((req.params as any).id, 10);
+  const { items } = req.body;
+  if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
+  if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
+
+  for (const item of items) {
+    if (!item.charge_type_id) return res.status(400).json({ error: 'charge_type_id is required' });
+    const qty = parseInt(item.quantity, 10);
+    if (isNaN(qty) || qty <= 0) return res.status(400).json({ error: 'quantity must be a positive integer' });
+  }
+
+  if (items.length > 0) {
+    const chargeTypeIds = items.map((i: any) => i.charge_type_id);
+    const placeholders = chargeTypeIds.map(() => '?').join(',');
+    const { rows: validTypes } = await db.query(
+      `SELECT id FROM charge_types WHERE is_gym_charge = 0 AND id IN (${placeholders})`,
+      chargeTypeIds,
+    );
+    if (validTypes.length !== chargeTypeIds.length) {
+      return res.status(400).json({ error: 'One or more charge types are invalid or are gym charges' });
+    }
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.query('DELETE FROM promotion_included_benefits WHERE promotion_id = ? AND gym_id = ?', [promotionId, gymId]);
+      for (const item of items) {
+        await tx.query(
+          'INSERT INTO promotion_included_benefits (gym_id, promotion_id, charge_type_id, quantity) VALUES (?, ?, ?, ?)',
+          [gymId, promotionId, item.charge_type_id, parseInt(item.quantity, 10)],
+        );
+      }
+    });
+    const { rows } = await db.query(
+      `SELECT pib.*, ct.code AS charge_type_code, ct.name AS charge_type_name
+       FROM promotion_included_benefits pib
+       JOIN charge_types ct ON ct.id = pib.charge_type_id
+       WHERE pib.promotion_id = ? AND pib.gym_id = ?
+       ORDER BY pib.id ASC`,
+      [promotionId, gymId],
+    );
+    res.json(rows);
   } catch (err) { next(err); }
 });

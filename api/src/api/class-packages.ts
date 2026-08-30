@@ -163,12 +163,12 @@ classPackagesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
 });
 
 classPackagesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   const { rowCount } = await db.query(
     `UPDATE class_packages
-     SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
+     SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, req.params.id, gymId],
+    [gymMembershipId, actorName, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Class package not found' });
   res.status(204).send();

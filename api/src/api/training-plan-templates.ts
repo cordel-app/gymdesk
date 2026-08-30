@@ -3,6 +3,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
+import { createTrainingPlanTx } from './training-plan-creation';
 
 /**
  * #55: TrainingPlanTemplate (reusable multi-day program) + the ordered
@@ -32,7 +33,7 @@ async function reorder(tx: Tx, table: string, parentColumn: string, parentId: st
 
 async function templateExists(id: string, gymId: string): Promise<boolean> {
   const { rows } = await db.query(
-    "SELECT 1 FROM training_plan_templates WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+    "SELECT 1 FROM training_plan_templates WHERE id = ? AND (gym_id = ? OR gym_id IS NULL) AND status != 'deleted'",
     [id, gymId],
   );
   return rows.length > 0;
@@ -59,7 +60,7 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
-    const where: string[] = ['tpt.gym_id = ?', "tpt.status != 'deleted'"];
+    const where: string[] = ['(tpt.gym_id = ? OR tpt.gym_id IS NULL)', "tpt.status != 'deleted'"];
     const params: any[] = [gymId];
     if (status) { where.push('tpt.status = ?'); params.push(status); }
     if (name) { where.push('tpt.name LIKE ?'); params.push(`%${name}%`); }
@@ -126,7 +127,7 @@ trainingPlanTemplatesRouter.get('/:id', async (req, res, next) => {
         ) t1) AS workouts
        FROM training_plan_templates tpt
        LEFT JOIN gym_memberships gm ON gm.id = tpt.created_by_membership_id
-       WHERE tpt.id = ? AND tpt.gym_id = ? AND tpt.status != 'deleted'`,
+       WHERE tpt.id = ? AND (tpt.gym_id = ? OR tpt.gym_id IS NULL) AND tpt.status != 'deleted'`,
       [id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Training plan template not found' });
@@ -174,7 +175,7 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
           WHERE j.training_plan_template_id = tpt.id
           ORDER BY j.position
         ) t1) AS workouts
-       FROM training_plan_templates tpt WHERE tpt.id = ? AND tpt.gym_id = ? AND tpt.status != 'deleted'`,
+       FROM training_plan_templates tpt WHERE tpt.id = ? AND (tpt.gym_id = ? OR tpt.gym_id IS NULL) AND tpt.status != 'deleted'`,
       [id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Training plan template not found' });
@@ -206,6 +207,10 @@ trainingPlanTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req
 trainingPlanTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
+  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM training_plan_templates WHERE id = ?', [id]);
+  if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
+    return res.status(403).json({ error: 'Base training plan templates can only be modified by Cordel administrators.' });
+  }
   const { name, description, status } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
@@ -226,11 +231,15 @@ trainingPlanTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (r
 });
 
 trainingPlanTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   const { id } = req.params as { id: string };
+  const { rows: ownerCheck } = await db.query('SELECT gym_id FROM training_plan_templates WHERE id = ?', [id]);
+  if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
+    return res.status(403).json({ error: 'Base training plan templates can only be modified by Cordel administrators.' });
+  }
   const { rowCount } = await db.query(
-    "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
-    [gymMembershipId, id, gymId],
+    "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+    [gymMembershipId, actorName, id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Training plan template not found' });
   recordAudit(req, { action: 'delete', entityType: 'training_plan_template', entityId: id });
@@ -291,6 +300,76 @@ trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'
     res.status(201).json(newRows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A template with this name already exists.');
+  }
+});
+
+/** Clone a base training plan template into the gym's own catalog. */
+trainingPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  try {
+    const { rows: srcRows } = await db.query(
+      "SELECT * FROM training_plan_templates WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      [id],
+    );
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Base training plan template not found' });
+    const src = srcRows[0];
+
+    const copyName = `${src.name} (Copy)`;
+
+    const { insertId: newId } = await db.query(
+      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by_membership_id, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [gymId, copyName, src.description ?? null, 'draft', gymMembershipId, id],
+    );
+
+    const { rows: workouts } = await db.query(
+      'SELECT * FROM training_plan_template_workouts WHERE training_plan_template_id = ? ORDER BY position ASC',
+      [id],
+    );
+    for (const w of workouts) {
+      await db.query(
+        'INSERT INTO training_plan_template_workouts (gym_id, training_plan_template_id, workout_template_id, position, scheduled_weekday) VALUES (?, ?, ?, ?, ?)',
+        [gymId, newId, w.workout_template_id, w.position, w.scheduled_weekday],
+      );
+    }
+
+    const { rows: newRows } = await db.query(
+      `SELECT tpt.*,
+              gm_c.name AS created_by_name,
+              (SELECT COUNT(*) FROM training_plan_template_workouts WHERE training_plan_template_id = tpt.id) AS workout_count
+       FROM training_plan_templates tpt
+       LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
+       WHERE tpt.id = ?`,
+      [newId],
+    );
+    recordAudit(req, { action: 'create', entityType: 'training_plan_template', entityId: newId, next: newRows[0] });
+    res.status(201).json(newRows[0]);
+  } catch (err) { next(err); }
+});
+
+/** Assign a training plan template (gym-owned or base) to a member. */
+trainingPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  const { member_id, name, description, start_date, valid_to } = req.body;
+  if (!member_id) return res.status(400).json({ error: 'member_id is required' });
+  try {
+    const result = await db.transaction(async (tx) => {
+      return createTrainingPlanTx(tx, {
+        gymId,
+        memberId: member_id,
+        gymMembershipId,
+        templateId: Number(id),
+        name: name ?? null,
+        description: description ?? null,
+        startDate: start_date ?? null,
+        validTo: valid_to ?? null,
+      });
+    });
+    res.status(201).json({ id: result.planId, member_id, mtp_id: result.mtpId, name: result.planName });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
   }
 });
 

@@ -210,16 +210,17 @@ spacesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next)
 });
 
 spacesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   const { rowCount } = await db.query(
     `UPDATE spaces SET
        status = 'deleted',
        deleted_at = UTC_TIMESTAMP(),
        modified_at = UTC_TIMESTAMP(),
        modified_by_membership_id = ?,
-       deleted_by_membership_id = ?
+       deleted_by_membership_id = ?,
+       deleted_by_name = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, gymMembershipId, req.params.id, gymId],
+    [gymMembershipId, gymMembershipId, actorName, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Space not found' });
   recordAudit(req, { action: 'soft_delete', entityType: 'space', entityId: req.params.id });

@@ -61,6 +61,7 @@ type InlineNew = {
   name: string;
   description: string;
   capacity: string;
+  center_id: string;
   saving: boolean;
   error: string | null;
 };
@@ -84,6 +85,7 @@ export default function SpacesPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [centerFilter, setCenterFilter] = useState('');
   const [centers, setCenters] = useState<Center[]>([]);
+  const [centersError, setCentersError] = useState(false);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
 
   // Accordion: which rows are expanded (read-only view)
@@ -132,7 +134,12 @@ export default function SpacesPage() {
   }
 
   async function loadCenters() {
-    try { setCenters(await apiFetch<Center[]>('/centers')); } catch { /* non-fatal */ }
+    try {
+      setCenters(await apiFetch<Center[]>('/centers'));
+      setCentersError(false);
+    } catch {
+      setCentersError(true);
+    }
   }
 
   async function loadActivityTypes() {
@@ -160,7 +167,8 @@ export default function SpacesPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', description: '', capacity: '', saving: false, error: null });
+    const defaultCenterId = centers.length === 1 ? String(centers[0].id) : '';
+    setInlineNew({ name: '', description: '', capacity: '', center_id: defaultCenterId, saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -179,6 +187,10 @@ export default function SpacesPage() {
       setInlineNew({ ...inlineNew, error: t('error_capacity') });
       return;
     }
+    if (centers.length > 1 && !inlineNew.center_id) {
+      setInlineNew({ ...inlineNew, error: t('error_center_required') });
+      return;
+    }
     setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
       await apiFetch<Space>('/spaces', {
@@ -187,6 +199,7 @@ export default function SpacesPage() {
           name: inlineNew.name.trim(),
           description: inlineNew.description.trim() || null,
           capacity: cap,
+          ...(inlineNew.center_id ? { center_id: parseInt(inlineNew.center_id, 10) } : {}),
         }),
       });
       setInlineNew(null);
@@ -288,10 +301,14 @@ export default function SpacesPage() {
 
   function renderInlineNewRow() {
     if (!inlineNew) return null;
+    const hasNoCenters = !centersError && centers.length === 0;
+    const isMultiCenter = centers.length > 1;
+    const saveBlocked = hasNoCenters || centersError;
+
     return (
       <div style={cardStyle}>
         <div style={{ padding: '16px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 120px', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMultiCenter ? '1fr 1fr 120px 1fr' : '1fr 1fr 120px', gap: 12, marginBottom: 12 }}>
             <div>
               <label style={inlineLabelStyle}>{t('label_name')} *</label>
               <input
@@ -319,11 +336,26 @@ export default function SpacesPage() {
                 style={inlineInputStyle}
               />
             </div>
+            {isMultiCenter && (
+              <div>
+                <label style={inlineLabelStyle}>{t('label_center')} *</label>
+                <select
+                  value={inlineNew.center_id}
+                  onChange={(e) => setInlineNew({ ...inlineNew, center_id: e.target.value })}
+                  style={inlineSelectStyle}
+                >
+                  <option value="">{t('placeholder_center')}</option>
+                  {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            )}
           </div>
+          {centersError && <p style={errorStyle}>{t('error_centers_load')}</p>}
+          {hasNoCenters && <p style={errorStyle}>{t('no_centers_available')}</p>}
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving || saveBlocked} style={btnSmall('#6c63ff')}>
               {inlineNew.saving ? t('saving') : t('save_changes')}
             </button>
           </div>

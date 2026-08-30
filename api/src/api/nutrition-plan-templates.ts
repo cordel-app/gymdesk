@@ -98,6 +98,8 @@ async function fetchMealWithItems(mealId: string | number) {
 nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const status = req.query.status as string | undefined;
+  // ?type=base|gym filters by owner; default returns both
+  const type = req.query.type as 'base' | 'gym' | undefined;
   if (status && !STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
@@ -112,8 +114,16 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
   try {
-    const where: string[] = ['npt.gym_id = ?', "npt.status != 'deleted'"];
-    const params: any[] = [gymId];
+    // Scope: gym-owned rows always included; base (gym_id IS NULL) included unless type=gym
+    const scopeClause = type === 'base'
+      ? 'npt.gym_id IS NULL'
+      : type === 'gym'
+        ? 'npt.gym_id = ?'
+        : '(npt.gym_id = ? OR npt.gym_id IS NULL)';
+    const scopeParams: any[] = type === 'base' ? [] : [gymId];
+
+    const where: string[] = [scopeClause, "npt.status != 'deleted'"];
+    const params: any[] = [...scopeParams];
     if (status) { where.push('npt.status = ?'); params.push(status); }
     if (name) { where.push('npt.name LIKE ?'); params.push(`%${name}%`); }
     if (createdBy !== null) { where.push('npt.created_by_membership_id = ?'); params.push(createdBy); }
@@ -125,6 +135,7 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
     );
     const { rows } = await db.query(
       `SELECT npt.*,
+              IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type,
               gm_c.name AS created_by_name,
               gm_m.name AS modified_by_name,
               gm_d.name AS deleted_by_name,
@@ -160,10 +171,10 @@ nutritionPlanTemplatesRouter.get('/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT npt.*, gm.name AS created_by_name
+      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type, gm.name AS created_by_name
        FROM nutrition_plan_templates npt
        LEFT JOIN gym_memberships gm ON gm.id = npt.created_by_membership_id
-       WHERE npt.id = ? AND npt.gym_id = ? AND npt.status != 'deleted'`,
+       WHERE npt.id = ? AND (npt.gym_id = ? OR npt.gym_id IS NULL) AND npt.status != 'deleted'`,
       [req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
@@ -177,21 +188,24 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
   const { id } = req.params as { id: string };
   try {
     const { rows: tplRows } = await db.query(
-      "SELECT id, name, status FROM nutrition_plan_templates WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+      "SELECT id, name, status, IF(gym_id IS NULL, 'base', 'gym') AS owner_type FROM nutrition_plan_templates WHERE id = ? AND (gym_id = ? OR gym_id IS NULL) AND status != 'deleted'",
       [id, gymId],
     );
     if (tplRows.length === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
 
+    const gymIdFilter = tplRows[0].owner_type === 'base' ? null : gymId;
     const { rows: dayRows } = await db.query(
-      'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC',
-      [id, gymId],
+      gymIdFilter
+        ? 'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC'
+        : 'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? AND gym_id IS NULL ORDER BY position ASC',
+      gymIdFilter ? [id, gymIdFilter] : [id],
     );
     const days = await Promise.all(dayRows.map(async (day: any) => {
       const { rows: mealRows } = await db.query(
-        `${MEAL_SELECT}
-         WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id = ?
-         ORDER BY m.position ASC`,
-        [day.id, gymId],
+        gymIdFilter
+          ? `${MEAL_SELECT} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id = ? ORDER BY m.position ASC`
+          : `${MEAL_SELECT} WHERE m.nutrition_plan_template_day_id = ? AND m.gym_id IS NULL ORDER BY m.position ASC`,
+        gymIdFilter ? [day.id, gymIdFilter] : [day.id],
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {
         const { rows: items } = await db.query(
@@ -209,17 +223,25 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
     }));
 
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
-       FROM nutrition_plan_template_restrictions r
-       JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
-       WHERE r.nutrition_plan_template_id = ? AND r.gym_id = ?
-       ORDER BY r.position ASC`,
-      [id, gymId],
+      gymIdFilter
+        ? `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+           FROM nutrition_plan_template_restrictions r
+           JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
+           WHERE r.nutrition_plan_template_id = ? AND r.gym_id = ?
+           ORDER BY r.position ASC`
+        : `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+           FROM nutrition_plan_template_restrictions r
+           JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
+           WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
+           ORDER BY r.position ASC`,
+      gymIdFilter ? [id, gymIdFilter] : [id],
     );
 
     const { rows: goalRows } = await db.query(
-      'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC',
-      [id, gymId],
+      gymIdFilter
+        ? 'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC'
+        : 'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id IS NULL ORDER BY position ASC',
+      gymIdFilter ? [id, gymIdFilter] : [id],
     );
 
     res.json({ ...tplRows[0], days, restrictions: restrictionRows, goals: goalRows });
@@ -275,12 +297,12 @@ nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async 
 });
 
 nutritionPlanTemplatesRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   const { id } = req.params as { id: string };
   try {
     const { rowCount } = await db.query(
-      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
-      [gymMembershipId, id, gymId],
+      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+      [gymMembershipId, actorName, id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
     recordAudit(req, { action: 'delete', entityType: 'nutrition_plan_template', entityId: id });
@@ -389,6 +411,197 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A template with this name already exists.');
   }
+});
+
+/* Clone a base or gym-owned template → new gym-owned copy (with cloned_from_id tracking). */
+nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  try {
+    // Source may be a base template (gym_id IS NULL) or this gym's own template
+    const { rows: srcRows } = await db.query(
+      "SELECT * FROM nutrition_plan_templates WHERE id = ? AND (gym_id = ? OR gym_id IS NULL) AND status != 'deleted'",
+      [id, gymId],
+    );
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
+    const src = srcRows[0];
+
+    const baseName = req.body?.name?.trim() || `${src.name} (Copy)`;
+    const { rows: conflict } = await db.query(
+      "SELECT id FROM nutrition_plan_templates WHERE gym_id = ? AND name = ? AND status != 'deleted'",
+      [gymId, baseName],
+    );
+    if (conflict.length > 0) return res.status(409).json({ error: 'A template with this name already exists in your gym' });
+
+    const newId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by_membership_id, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?)',
+        [gymId, baseName, src.description ?? null, 'draft', gymMembershipId, src.id],
+      );
+
+      const { rows: days } = await tx.query(
+        'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
+        [id],
+      );
+      for (const day of days) {
+        const { insertId: newDayId } = await tx.query(
+          'INSERT INTO nutrition_plan_template_days (gym_id, nutrition_plan_template_id, weekday, position) VALUES (?, ?, ?, ?)',
+          [gymId, insertId, day.weekday, day.position],
+        );
+        const { rows: meals } = await tx.query(
+          'SELECT * FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ? ORDER BY position ASC',
+          [day.id],
+        );
+        for (const meal of meals) {
+          const { insertId: newMealId } = await tx.query(
+            'INSERT INTO nutrition_plan_template_meals (gym_id, nutrition_plan_template_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
+            [gymId, newDayId, meal.meal_type ?? null, meal.display_name, meal.notes ?? null, meal.position],
+          );
+          const { rows: items } = await tx.query(
+            'SELECT * FROM nutrition_plan_template_meal_items WHERE meal_id = ? ORDER BY position ASC',
+            [meal.id],
+          );
+          for (const item of items) {
+            await tx.query(
+              'INSERT INTO nutrition_plan_template_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
+            );
+          }
+        }
+      }
+
+      const { rows: restrictions } = await tx.query(
+        'SELECT * FROM nutrition_plan_template_restrictions WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
+        [id],
+      );
+      for (const r of restrictions) {
+        await tx.query(
+          'INSERT INTO nutrition_plan_template_restrictions (gym_id, nutrition_plan_template_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
+          [gymId, insertId, r.nutrition_library_item_id, r.applies_all_days, r.position],
+        );
+      }
+
+      const { rows: goals } = await tx.query(
+        'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
+        [id],
+      );
+      for (const g of goals) {
+        await tx.query(
+          'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position],
+        );
+      }
+
+      return insertId;
+    });
+
+    const { rows: newRows } = await db.query(
+      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type,
+              gm_c.name AS created_by_name
+       FROM nutrition_plan_templates npt
+       LEFT JOIN gym_memberships gm_c ON gm_c.id = npt.created_by_membership_id
+       WHERE npt.id = ?`,
+      [newId],
+    );
+    recordAudit(req, { action: 'create', entityType: 'nutrition_plan_template', entityId: newId, next: newRows[0] });
+    res.status(201).json(newRows[0]);
+  } catch (err: any) {
+    handleDupEntry(err, res, next, 'A template with this name already exists.');
+  }
+});
+
+/* Assign template to a member — deep-clones into member_nutrition_plans (independent copy). */
+nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { id } = req.params as { id: string };
+  const { member_id, start_date } = req.body;
+  if (!member_id) return res.status(400).json({ error: 'member_id is required' });
+
+  try {
+    // Validate member belongs to this gym
+    const { rows: memberRows } = await db.query(
+      "SELECT id, name FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL",
+      [Number(member_id), gymId],
+    );
+    if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+    // Source: base or gym-owned template
+    const { rows: srcRows } = await db.query(
+      "SELECT * FROM nutrition_plan_templates WHERE id = ? AND (gym_id = ? OR gym_id IS NULL) AND status != 'deleted'",
+      [id, gymId],
+    );
+    if (srcRows.length === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
+    const src = srcRows[0];
+
+    const newPlanId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        'INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [gymId, Number(member_id), src.id, src.name, src.description ?? null, start_date ?? null, 'active', gymMembershipId],
+      );
+
+      const { rows: days } = await tx.query(
+        'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
+        [id],
+      );
+      for (const day of days) {
+        const { insertId: newDayId } = await tx.query(
+          'INSERT INTO member_nutrition_plan_days (gym_id, member_nutrition_plan_id, weekday, position) VALUES (?, ?, ?, ?)',
+          [gymId, insertId, day.weekday, day.position],
+        );
+        const { rows: meals } = await tx.query(
+          'SELECT * FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ? ORDER BY position ASC',
+          [day.id],
+        );
+        for (const meal of meals) {
+          const { insertId: newMealId } = await tx.query(
+            'INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
+            [gymId, newDayId, meal.meal_type ?? null, meal.display_name, meal.notes ?? null, meal.position],
+          );
+          const { rows: items } = await tx.query(
+            'SELECT * FROM nutrition_plan_template_meal_items WHERE meal_id = ? ORDER BY position ASC',
+            [meal.id],
+          );
+          for (const item of items) {
+            await tx.query(
+              'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
+            );
+          }
+        }
+      }
+
+      const { rows: restrictions } = await tx.query(
+        'SELECT * FROM nutrition_plan_template_restrictions WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
+        [id],
+      );
+      for (const r of restrictions) {
+        await tx.query(
+          'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
+          [gymId, insertId, r.nutrition_library_item_id, r.applies_all_days, r.position],
+        );
+      }
+
+      const { rows: goals } = await tx.query(
+        'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
+        [id],
+      );
+      for (const g of goals) {
+        await tx.query(
+          'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position],
+        );
+      }
+
+      return insertId;
+    });
+
+    const { rows } = await db.query(
+      'SELECT * FROM member_nutrition_plans WHERE id = ?',
+      [newPlanId],
+    );
+    recordAudit(req, { action: 'create', entityType: 'member_nutrition_plan', entityId: newPlanId, next: rows[0] });
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
 });
 
 /* ---- Days ---- */
