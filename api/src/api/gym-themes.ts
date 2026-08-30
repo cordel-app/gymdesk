@@ -265,7 +265,7 @@ gymThemesRouter.delete('/:id/logo', async (req, res, next) => {
 
 gymThemesRouter.delete('/:id', async (req, res, next) => {
   try {
-    const { gymId } = getTenantContext(req);
+    const { gymId, actorName } = getTenantContext(req);
     await requireRole('admin')(req, res, async () => {
       const { rows: existing } = await db.query(
         'SELECT id, deleted_at FROM themes WHERE id = ? AND gym_id = ?',
@@ -283,8 +283,8 @@ gymThemesRouter.delete('/:id', async (req, res, next) => {
       }
 
       await db.query(
-        "UPDATE themes SET status = 'deleted', deleted_at = UTC_TIMESTAMP() WHERE id = ?",
-        [req.params.id],
+        "UPDATE themes SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ? WHERE id = ?",
+        [actorName, req.params.id],
       );
       recordAudit(req, { action: 'delete', entityType: 'theme', entityId: req.params.id });
       res.status(204).send();

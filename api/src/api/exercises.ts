@@ -253,12 +253,12 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
 });
 
 exercisesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, actorName } = getTenantContext(req);
   const callerMemberId = await getCallerMembershipId(req);
   const { rowCount } = await db.query(
-    `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?
+    `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?, deleted_by_name = ?
       WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-    [callerMemberId ?? null, req.params.id, gymId],
+    [callerMemberId ?? null, actorName, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise not found' });
   recordAudit(req, { action: 'delete', entityType: 'exercise', entityId: req.params.id });

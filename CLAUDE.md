@@ -81,7 +81,19 @@ Copy `.env.example` to `.env` in each app directory before starting.
 
 Run tests with `npm test` inside `api/`. All test files live under `api/src/test/`. Reuse the helpers in `helpers.ts` — `createTestGym`, `createTestMembership`, `request`, etc.
 
-### Rules for every new test file
+### Unit tests vs integration tests
+
+Write **unit tests** when the code under test has no DB or HTTP dependency — pure functions, middleware logic, crypto/validation helpers. No `createTestGym`, no `cleanupTestGyms`, no `db.end()`. Mock external dependencies with `vi.mock` or `vi.spyOn`.
+
+Write **integration tests** for routers and anything that must exercise the full Express + MySQL stack. All rules below apply to integration tests only.
+
+Good candidates for unit tests:
+- Signature verification and payload parsing (e.g. `payments-provider.test.ts`)
+- `requireModuleAccess` / `requireModuleWrite` permission matrix
+- `tenantContext` and `centerContext` middleware
+- Pure helper functions and input validation
+
+### Rules for every new integration test file
 
 - One file per domain (e.g. `bookings.test.ts`, `members.test.ts`).
 - Always call `cleanupTestGyms()` in `afterAll` and `db.end()` last.
@@ -106,7 +118,7 @@ Before opening the PR, run these checks in order:
 
 1. **Migration review** — if any migration file was added or changed, run the `db-reviewer` agent on it. Fix all BLOCKERs before continuing.
 
-2. **Test file** — if a new router was added, run the `test-writer` agent to generate `api/src/test/<router>.test.ts`. Run `npm test` inside `api/` to confirm it passes.
+2. **Test files** — for every new router, run the `test-writer` agent to generate `api/src/test/<router>.test.ts` (integration test). For any new pure functions or middleware, also write a unit test file (no DB helpers, use `vi.mock`/`vi.spyOn`). Run `npm test` inside `api/` to confirm all pass.
 
 3. **Doc updates** — check whether the changes warrant updating any `.md` files:
    - `docs/roadmap.md` — mark the ticket done and update the Status section if the feature is complete.

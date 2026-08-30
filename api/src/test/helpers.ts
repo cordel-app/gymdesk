@@ -43,6 +43,8 @@ export async function cleanupTestGyms() {
   if (ids.length === 0) return;
   const marks = ids.map(() => '?').join(',');
   // Delete in FK dependency order to avoid constraint violations.
+  await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM payment_methods WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM bookings WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_notifications WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
@@ -62,5 +64,10 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM nutrition_plan_templates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_events WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_charges WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM promotion_included_benefits WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM promotion_period_benefits WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM promotion_charge_benefits WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM promotion_membership_plans WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM promotions WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, ids);
 }

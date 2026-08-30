@@ -177,16 +177,16 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 centersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   try {
     const dependent = await firstDependentTable(Number(req.params.id), gymId);
     if (dependent) {
       return res.status(409).json({ error: `Cannot delete center: it still has ${dependent.replace(/_/g, ' ')}.` });
     }
     const { rowCount } = await db.query(
-      `UPDATE centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?, deleted_by_membership_id = ?
+      `UPDATE centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?, deleted_by_membership_id = ?, deleted_by_name = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, gymMembershipId, req.params.id, gymId],
+      [gymMembershipId, gymMembershipId, actorName, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Center not found' });
     recordAudit(req, { action: 'soft_delete', entityType: 'center', entityId: req.params.id });
