@@ -8,16 +8,15 @@ export const impersonationRouter = Router();
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
 /**
- * GET /platform/impersonation/candidates?q=<search>&gym_id=<id>
+ * GET /platform/impersonation/targets?q=<search>&gym_id=<id>
  * Superadmin-only. Returns active members + staff for the given gym, excluding
  * the caller and other superadmins. Used by the Impersonate dialog.
+ * Members are eligible regardless of whether they have a Clerk account.
  */
-impersonationRouter.get('/candidates', requireSuperadmin, async (req, res, next) => {
+impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) => {
   const adminId = req.auth!.userId;
   const gymId = req.query.gym_id as string | undefined;
   const q = ((req.query.q as string) ?? '').trim();
-
-  console.log('[Impersonation] Candidates search request', { adminId, gymId, q });
 
   if (!gymId) return res.status(400).json({ error: 'gym_id query param required' });
 
@@ -40,54 +39,52 @@ impersonationRouter.get('/candidates', requireSuperadmin, async (req, res, next)
       [gymId, adminId, like],
     );
 
-    // Members: members table rows that are linked (have a clerk_user_id) and not deleted
+    // Members: all active (non-deleted) members in this gym regardless of Clerk account
     const { rows: memberRows } = await db.query<{
-      user_id: string; name: string; gym_id: string;
+      id: number; name: string; gym_id: string; clerk_user_id: string | null;
     }>(
-      `SELECT m.clerk_user_id AS user_id, m.name, m.gym_id
+      `SELECT m.id, m.name, m.gym_id, m.clerk_user_id
        FROM members m
        WHERE m.gym_id = ?
-         AND m.clerk_user_id != ?
-         AND m.clerk_user_id IS NOT NULL
          AND m.deleted_at IS NULL
          AND m.name LIKE ?
        ORDER BY m.name ASC
        LIMIT 50`,
-      [gymId, adminId, like],
+      [gymId, like],
     );
 
-    // Filter out other superadmins from staff list
+    // Filter out other superadmins from staff list (requires Clerk lookup)
     const staffFiltered: any[] = [];
     for (const s of staffRows) {
       try {
         const u = await clerkClient.users.getUser(s.user_id);
         if ((u.publicMetadata as any)?.platform_role === 'superadmin') continue;
-        staffFiltered.push({ userId: s.user_id, name: s.name, type: 'staff', role: s.role, gymId: s.gym_id });
+        staffFiltered.push({ id: s.user_id, name: s.name, type: 'staff', role: s.role, gymId: s.gym_id });
       } catch { /* skip users that no longer exist in Clerk */ }
     }
 
-    const members = memberRows.map((m) => ({
-      userId: m.user_id,
-      name: m.name,
-      type: 'member',
-      role: 'member',
-      gymId: m.gym_id,
-    }));
+    // Exclude caller from members list (if the superadmin also has a member row)
+    // and exclude members whose clerk_user_id matches a staff row (already included above)
+    const staffUserIds = new Set(staffFiltered.map((s) => s.id));
+    const members = memberRows
+      .filter((m) => m.clerk_user_id !== adminId)
+      .filter((m) => !m.clerk_user_id || !staffUserIds.has(m.clerk_user_id))
+      .map((m) => ({
+        id: `member:${m.id}`,
+        name: m.name,
+        type: 'member' as const,
+        role: 'member',
+        gymId: m.gym_id,
+      }));
 
-    // Deduplicate: a user could appear in both lists if a staff member also has a members row
-    const seen = new Set<string>(staffFiltered.map((s) => s.userId));
-    const dedupedMembers = members.filter((m) => !seen.has(m.userId));
-
-    const results = [...staffFiltered, ...dedupedMembers];
-    console.log('[Impersonation] Candidates search response', { gymId, q, count: results.length });
-    res.json(results);
+    res.json([...staffFiltered, ...members]);
   } catch (err) { next(err); }
 });
 
 /**
  * POST /platform/impersonation/stop
  * Superadmin-only. Signals the end of an impersonation session.
- * Declared BEFORE /:userId so it isn't swallowed by the dynamic segment.
+ * Declared BEFORE /:targetId so it isn't swallowed by the dynamic segment.
  */
 impersonationRouter.post('/stop', requireSuperadmin, async (req, res, next) => {
   const { impersonated_user_id, impersonated_user_name, impersonated_role, duration_seconds } = req.body ?? {};
@@ -95,25 +92,61 @@ impersonationRouter.post('/stop', requireSuperadmin, async (req, res, next) => {
   if (!impersonated_user_id) return res.status(400).json({ error: 'impersonated_user_id required' });
 
   try {
-    void { impersonated_user_name, impersonated_role, duration_seconds }; // accepted but not stored (no tenantCtx on platform routes)
+    void { impersonated_user_name, impersonated_role, duration_seconds };
     res.status(204).send();
   } catch (err) { next(err); }
 });
 
 /**
- * POST /platform/impersonation/:userId
- * Superadmin-only. Validates the target, then returns
- * the effective user's data for the frontend banner and role override.
+ * POST /platform/impersonation/:targetId
+ * Superadmin-only. Validates the target and returns the effective identity.
+ * Body: { targetType: 'member' | 'staff' }
+ * For members: targetId is members.id; returns id as "member:<id>".
+ * For staff: targetId is gym_memberships.user_id (Clerk user ID).
  */
-impersonationRouter.post('/:userId', requireSuperadmin, async (req, res, next) => {
+impersonationRouter.post('/:targetId', requireSuperadmin, async (req, res, next) => {
   const adminId = req.auth!.userId;
-  const targetId = String(req.params.userId);
+  const targetId = String(req.params.targetId);
   const gymId = req.headers['x-gym-id'] as string | undefined;
+  const { targetType } = req.body as { targetType?: string };
 
   if (!gymId) return res.status(400).json({ error: 'x-gym-id header required' });
-  if (targetId === adminId) return res.status(400).json({ error: 'Cannot impersonate yourself' });
+  if (!targetType || !['member', 'staff'].includes(targetType)) {
+    return res.status(400).json({ error: 'targetType must be "member" or "staff"' });
+  }
 
   try {
+    if (targetType === 'member') {
+      const memberId = Number(targetId);
+      if (!memberId) return res.status(400).json({ error: 'Invalid member target ID' });
+
+      // Cannot impersonate yourself (check if the caller's member row matches)
+      const { rows: selfRows } = await db.query<{ id: number }>(
+        'SELECT id FROM members WHERE id = ? AND clerk_user_id = ?',
+        [memberId, adminId],
+      );
+      if (selfRows[0]) return res.status(400).json({ error: 'Cannot impersonate yourself' });
+
+      const { rows } = await db.query<{ id: number; name: string; gym_id: string }>(
+        `SELECT m.id, m.name, m.gym_id FROM members m
+         WHERE m.id = ? AND m.gym_id = ? AND m.deleted_at IS NULL`,
+        [memberId, gymId],
+      );
+      if (!rows[0]) return res.status(400).json({ error: 'Member not found or not active in this gym' });
+
+      res.json({
+        id: `member:${rows[0].id}`,
+        name: rows[0].name,
+        role: 'member',
+        gym_id: rows[0].gym_id,
+        gymIds: [rows[0].gym_id],
+      });
+      return;
+    }
+
+    // Staff impersonation
+    if (targetId === adminId) return res.status(400).json({ error: 'Cannot impersonate yourself' });
+
     const targetUser = await clerkClient.users.getUser(targetId).catch(() => null);
     if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
@@ -121,52 +154,25 @@ impersonationRouter.post('/:userId', requireSuperadmin, async (req, res, next) =
       return res.status(400).json({ error: 'Cannot impersonate another superadmin' });
     }
 
-    // Validate active membership (status='active', not soft-deleted)
-    const { rows } = await db.query<{ id: number; role: string }>(
-      `SELECT gm.id, gm.role FROM gym_memberships gm
-       WHERE gm.user_id = ? AND gm.gym_id = ?
-         AND gm.status = 'active'`,
+    const { rows } = await db.query<{ id: number; role: string; name: string }>(
+      `SELECT gm.id, gm.role, gm.name FROM gym_memberships gm
+       WHERE gm.user_id = ? AND gm.gym_id = ? AND gm.status = 'active'`,
       [targetId, gymId],
     );
 
-    if (!rows[0]) {
-      // Also allow members who have a members row (linked, not deleted) — member role
-      const { rows: memberRows } = await db.query<{ id: number }>(
-        `SELECT gm.id FROM gym_memberships gm
-         JOIN members m ON m.clerk_user_id = gm.user_id AND m.gym_id = gm.gym_id
-         WHERE gm.user_id = ? AND gm.gym_id = ?
-           AND gm.role = 'member'
-           AND m.deleted_at IS NULL`,
-        [targetId, gymId],
-      );
-      if (!memberRows[0]) {
-        return res.status(400).json({ error: 'Target user has no active membership in this gym' });
-      }
-    }
+    if (!rows[0]) return res.status(400).json({ error: 'Target user has no active membership in this gym' });
 
-    const primaryEmail = targetUser.emailAddresses?.find(
-      (e: any) => e.id === targetUser.primaryEmailAddressId,
-    ) ?? targetUser.emailAddresses?.[0];
-
-    const targetName =
-      targetUser.fullName ||
-      [targetUser.firstName, targetUser.lastName].filter(Boolean).join(' ') ||
-      primaryEmail?.emailAddress ||
-      targetId;
-
-    // Fetch all gym IDs the target belongs to (for gym selector restriction)
     const { rows: gymRows } = await db.query<{ gym_id: string }>(
       `SELECT gym_id FROM gym_memberships WHERE user_id = ? AND status = 'active'`,
       [targetId],
     );
-    const gymIds = gymRows.map((r) => r.gym_id);
 
     res.json({
       id: targetId,
-      name: targetName,
-      role: rows[0]?.role ?? 'member',
+      name: rows[0].name,
+      role: rows[0].role,
       gym_id: gymId,
-      gymIds,
+      gymIds: gymRows.map((r) => r.gym_id),
     });
   } catch (err) { next(err); }
 });

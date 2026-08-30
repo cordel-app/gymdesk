@@ -52,6 +52,12 @@ import { staffRouter } from './api/staff';
 import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
+import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
+import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
+import { platformExercisesRouter } from './api/platform-exercises';
+import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
+import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
+import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 import { calendarEventsRouter } from './api/calendar-events';
 import { recycleBinRouter } from './api/recycle-bin';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
@@ -138,6 +144,11 @@ app.use('/gyms', requireAuth(), gymsRouter);
 
 // Platform superadmin routes
 app.use('/platform/themes', requireAuth(), themesRouter);
+app.use('/platform/nutrition-library', requireAuth(), platformNutritionLibraryRouter);
+app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);
+app.use('/platform/exercises', requireAuth(), platformExercisesRouter);
+app.use('/platform/workout-templates', requireAuth(), platformWorkoutTemplatesRouter);
+app.use('/platform/training-plan-templates', requireAuth(), platformTrainingPlanTemplatesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 app.use('/platform/impersonation', requireAuth(), impersonationRouter);
@@ -182,6 +193,7 @@ app.use('/calendar-events',  requireAuth(), tenantContext, requireModuleAccess('
 
 // NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionPlanTemplatesRouter);
+app.use('/member-nutrition-plans', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), memberNutritionPlansRouter);
 // Global read-only catalog — no gym_id required; only requireAuth + module gate
 app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionLibraryRouter);
 

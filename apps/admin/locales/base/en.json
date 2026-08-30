@@ -42,6 +42,11 @@
     "spaces": "Spaces",
     "nutrition_library": "Nutrition Library",
     "nutrition_plan_templates": "Nutrition Plan Templates",
+    "base_nutrition_library": "Base Nutrition Library",
+    "base_nutrition_plan_templates": "Base Templates",
+    "base_exercises": "Base Exercises",
+    "base_workout_templates": "Base Workout Templates",
+    "base_training_plan_templates": "Base Training Plans",
     "calendar": "Calendar",
     "recycle_bin": "Recycle Bin"
   },
@@ -859,11 +864,16 @@
     "col_primary_muscles": "Primary Muscles",
     "col_created_at": "Created At",
     "col_created_by": "Created By",
+    "col_type": "Type",
     "col_status": "Status",
     "col_actions": "Actions",
+    "type_base": "Base",
+    "type_gym": "Gym",
     "details": "Details",
     "edit": "Edit",
     "duplicate": "Duplicate",
+    "clone": "Clone to gym",
+    "cloned": "Exercise cloned to gym catalog.",
     "delete": "Delete",
     "modal_add": "Add Exercise",
     "modal_edit": "Edit Exercise",
@@ -983,7 +993,12 @@
     "tree_no_blocks": "No blocks yet.",
     "tree_no_exercises": "No exercises yet.",
     "tree_drag_handle": "Drag to reorder",
-    "block_type_limit_exceeded": "{type} blocks allow a maximum of {max} exercises. Remove exercises before changing the type."
+    "block_type_limit_exceeded": "{type} blocks allow a maximum of {max} exercises. Remove exercises before changing the type.",
+    "col_type": "Type",
+    "type_base": "Base",
+    "type_gym": "Gym",
+    "clone": "Clone to gym",
+    "cloned": "Workout template cloned to gym catalog."
   },
   "training_plan_templates": {
     "title": "Training Plan Templates",
@@ -1049,7 +1064,12 @@
     "assign_to_member": "Assign Plan to Member",
     "section_general": "General",
     "section_workouts": "Workouts",
-    "placeholder_name": "e.g. 12-Week Strength Program"
+    "placeholder_name": "e.g. 12-Week Strength Program",
+    "col_type": "Type",
+    "type_base": "Base",
+    "type_gym": "Gym",
+    "clone": "Clone to gym",
+    "cloned": "Training plan template cloned to gym catalog."
   },
   "training_plans": {
     "title": "Training Plans",
