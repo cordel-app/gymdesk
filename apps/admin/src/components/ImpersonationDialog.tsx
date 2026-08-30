@@ -8,8 +8,8 @@ import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useToast } from '@/components/Toast';
 
-interface Candidate {
-  userId: string;
+interface Target {
+  id: string;
   name: string;
   type: 'member' | 'staff';
   role: string;
@@ -29,7 +29,7 @@ export function ImpersonationDialog({ onClose }: Props) {
   const { toast } = useToast();
 
   const [query, setQuery] = useState('');
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -38,16 +38,13 @@ export function ImpersonationDialog({ onClose }: Props) {
     if (!activeGymId) return;
     setLoading(true);
     setSearchError(null);
-    console.log('[Impersonation] Search initiated', { query: q, gymId: activeGymId });
     try {
-      const results = await apiFetch<Candidate[]>(
-        `/platform/impersonation/candidates?q=${encodeURIComponent(q)}&gym_id=${activeGymId}`,
+      const results = await apiFetch<Target[]>(
+        `/platform/impersonation/targets?q=${encodeURIComponent(q)}&gym_id=${activeGymId}`,
       );
-      setCandidates(results);
-      console.log('[Impersonation] Search completed', { count: results.length });
+      setTargets(results);
     } catch (err) {
-      console.error('[Impersonation] Search failed', err);
-      setCandidates([]);
+      setTargets([]);
       setSearchError(t('error_search'));
     } finally {
       setLoading(false);
@@ -61,13 +58,16 @@ export function ImpersonationDialog({ onClose }: Props) {
 
   useEffect(() => { search(''); }, [search]);
 
-  async function handleImpersonate(candidate: Candidate) {
+  async function handleImpersonate(target: Target) {
     if (starting) return;
-    setStarting(candidate.userId);
+    setStarting(target.id);
     try {
       const data = await apiFetch<{
         id: string; name: string; role: string; gym_id: string; gymIds: string[];
-      }>(`/platform/impersonation/${candidate.userId}`, { method: 'POST' });
+      }>(`/platform/impersonation/${encodeURIComponent(target.id)}`, {
+        method: 'POST',
+        body: JSON.stringify({ targetType: target.type }),
+      });
 
       startImpersonation({
         effectiveUserId: data.id,
@@ -130,22 +130,22 @@ export function ImpersonationDialog({ onClose }: Props) {
               {searchError}
             </div>
           )}
-          {!loading && !searchError && candidates.length === 0 && (
+          {!loading && !searchError && targets.length === 0 && (
             <div style={{ padding: '16px 20px', color: 'var(--muted, #6b7280)', fontSize: 14 }}>
               {t('search_empty')}
             </div>
           )}
-          {candidates.map((c) => (
+          {targets.map((c) => (
             <button
-              key={c.userId}
+              key={c.id}
               onClick={() => handleImpersonate(c)}
-              disabled={starting === c.userId}
+              disabled={starting === c.id}
               style={{
                 display: 'flex', alignItems: 'center', gap: 12,
                 width: '100%', padding: '12px 20px', border: 'none',
                 background: 'none', cursor: 'pointer', textAlign: 'left',
                 borderBottom: '1px solid var(--border, #f0f0f0)',
-                opacity: starting && starting !== c.userId ? 0.5 : 1,
+                opacity: starting && starting !== c.id ? 0.5 : 1,
               }}
             >
               <div style={{
