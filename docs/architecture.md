@@ -183,26 +183,26 @@ Superadmins can impersonate any active gym user for support and debugging withou
 **How it works (separation of authentication and authorization):**
 - The authenticated identity never changes. Only the *effective* identity used for authorization changes.
 - The frontend stores an impersonation session in `sessionStorage` (survives refresh, cleared on tab close).
-- `apiFetch()` appends `x-impersonate-as: <userId>` to every request while impersonating.
-- `tenantContext` detects this header and, after confirming the caller is a superadmin, looks up the target's `gym_memberships` row and sets `req.tenantCtx.role` to the effective user's role. `requireRole()` guards then automatically see the impersonated role.
-- `TenantContext` carries `effectiveUserId` — equals `impersonatedUserId` during impersonation, otherwise equals `userId`. All `/me/*` handlers use `effectiveUserId` (not `userId`) for member data lookups so impersonated requests see the correct member's data.
+- `apiFetch()` appends `x-impersonate-as: <value>` to every request while impersonating. The value is `member:<id>` when impersonating a member (using `members.id`), or the Clerk user ID when impersonating a staff user.
+- `tenantContext` detects this header and, after confirming the caller is a superadmin, resolves the effective identity. For `member:<id>` prefixed values it queries `members` directly (no `gym_memberships` join needed, so members without Clerk accounts are eligible). For Clerk user IDs it falls back to the existing `gym_memberships` lookup. Sets `effectiveType: 'member' | 'staff' | null` on the context.
+- `TenantContext` carries `effectiveUserId` and `effectiveType`. For member impersonation `effectiveUserId` is the `members.id` as a string; for staff or normal usage it is the Clerk user ID. All `/me/*` handlers use the `resolveMemberId(gymId, ctx)` helper which routes to `WHERE members.id = ?` or `WHERE clerk_user_id = ?` depending on `effectiveType`.
 - `recordAudit` encodes both identities in `actor_name` (e.g. `"Alice Johnson (impersonating John Smith)"`) so every business audit row remains traceable.
 
 **API surface** (`api/src/api/impersonation.ts`, mounted at `/platform/impersonation`, no `tenantContext` middleware — uses `requireSuperadmin` only):
-- `GET /platform/impersonation/candidates?q=&gym_id=` — returns active staff (non-member roles in `gym_memberships`, name LIKE) + linked members (`members.clerk_user_id IS NOT NULL`, not deleted); excludes the caller and other superadmins; deduplicates by userId. Returns `[{ userId, name, type, role, gymId }]`.
-- `POST /platform/impersonation/stop` — accepts `{ impersonated_user_id, impersonated_user_name?, impersonated_role?, duration_seconds? }`, returns 204. Must be declared before `/:userId` in the router to avoid being swallowed by the dynamic segment.
-- `POST /platform/impersonation/:userId` — validate target (active membership in the gym, not another superadmin, not yourself); return `{ id, name, role, gym_id, gymIds: string[] }`. `gymIds` lists all gyms the target belongs to and is used by the frontend to restrict the gym selector.
+- `GET /platform/impersonation/targets?q=&gym_id=` — returns active staff (non-member roles in `gym_memberships`, name LIKE) + **all active members** (`members.deleted_at IS NULL`, no Clerk requirement); excludes the caller and other superadmins. Returns `[{ id, name, type, role, gymId }]` where member `id` is `"member:<members.id>"` and staff `id` is the Clerk user ID.
+- `POST /platform/impersonation/stop` — accepts `{ impersonated_user_id, impersonated_user_name?, impersonated_role?, duration_seconds? }`, returns 204. Must be declared before `/:targetId` in the router to avoid being swallowed by the dynamic segment.
+- `POST /platform/impersonation/:targetId` — body `{ targetType: 'member' | 'staff' }`. For members: queries `members` by `id`; returns `{ id: 'member:<N>', name, role: 'member', gym_id, gymIds }`. For staff: Clerk lookup + gym_memberships check (not another superadmin, not yourself); returns `{ id: <clerkUserId>, name, role, gym_id, gymIds }`. `gymIds` restricts the gym selector in the frontend.
 
 **Frontend — Admin app** (`apps/admin/src/`):
 - `ImpersonationContext.tsx` — `ImpersonationSession` includes `gymIds: string[]`; `ImpersonationProvider` wraps the app and rehydrates from `sessionStorage` on mount.
 - `TopHeader.tsx` — renders an "Impersonate" button (superadmin only, not while impersonating) and an `ImpersonationDialog`; replaces `UserButton` with a locked avatar div during impersonation.
-- `ImpersonationDialog.tsx` — modal with debounced search calling `GET /candidates`, results list with member/staff type badges, confirms via `POST /:userId`.
+- `ImpersonationDialog.tsx` — modal with debounced search calling `GET /targets`, results list with member/staff type badges, confirms via `POST /:targetId` with `{ targetType }` body.
 - `GymContext.tsx` — while impersonating, filters visible gyms to `session.gymIds` and overrides `role` with `effectiveRole`.
 
 **Frontend — Member app** (`apps/member/src/`):
 - `ImpersonationContext.tsx` — same session shape as admin app.
 - `AdminBar.tsx` — superadmin-only top strip rendered above `CenterSwitcher` in the layout; shows "Impersonate" button (via `MemberImpersonationDialog`) when not impersonating, or `ImpersonationBanner` when impersonating.
-- `MemberImpersonationDialog.tsx` — uses raw `fetch` (not `apiFetch`) since `gymId` may not yet be resolved in `AppContext` when impersonation starts.
+- `MemberImpersonationDialog.tsx` — uses raw `fetch` (not `apiFetch`) since `gymId` may not yet be resolved in `AppContext` when impersonation starts; calls `GET /targets` and `POST /:targetId` with `{ targetType }` body.
 - `ImpersonationBanner.tsx` — amber top bar with stop button; calls `POST /platform/impersonation/stop`.
 - `AppContext.tsx` — exposes `isSuperadmin` (via `useUser()` + Clerk `publicMetadata`); reads sessionStorage on mount and adds `x-impersonate-as` to the initial `GET /me/gym` call.
 - `apiClient.ts` — appends `x-impersonate-as` header to all API calls when an impersonation session is stored.

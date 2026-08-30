@@ -82,16 +82,16 @@ describe('GET /platform/impersonation/targets', () => {
     // Linked member (has a Clerk account)
     const { insertId: lId } = await db.query(
       `INSERT INTO members (gym_id, name, email, clerk_user_id)
-       VALUES (?, 'Bob Member', 'bob@test.com', ?)`,
-      [gymId, LINKED_MEMBER_CLERK_ID],
+       VALUES (?, 'Bob Member', ?, ?)`,
+      [gymId, `bob+${gymId}@test.com`, LINKED_MEMBER_CLERK_ID],
     );
     linkedMemberId = lId;
 
     // Unlinked member (no Clerk account — the core new case)
     const { insertId: uId } = await db.query(
       `INSERT INTO members (gym_id, name, email)
-       VALUES (?, 'Carol Unlinked', 'carol@test.com')`,
-      [gymId],
+       VALUES (?, 'Carol Unlinked', ?)`,
+      [gymId, `carol+${gymId}@test.com`],
     );
     unlinkedMemberId = uId;
   });
@@ -189,8 +189,8 @@ describe('GET /platform/impersonation/targets', () => {
   it('does not include deleted members', async () => {
     const { insertId } = await db.query(
       `INSERT INTO members (gym_id, name, email, deleted_at)
-       VALUES (?, 'Dave Deleted', 'dave@test.com', UTC_TIMESTAMP())`,
-      [gymId],
+       VALUES (?, 'Dave Deleted', ?, UTC_TIMESTAMP())`,
+      [gymId, `dave+${gymId}@test.com`],
     );
 
     const res = await request
@@ -260,8 +260,8 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
   beforeAll(async () => {
     gymId = await createTestGym('Member Impersonation Test Gym');
     const { insertId } = await db.query(
-      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Eve Unlinked', 'eve@test.com')`,
-      [gymId],
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Eve Unlinked', ?)`,
+      [gymId, `eve+${gymId}@test.com`],
     );
     memberId = insertId;
   });
@@ -323,8 +323,8 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
   it('returns 400 for deleted member', async () => {
     const { insertId } = await db.query(
       `INSERT INTO members (gym_id, name, email, deleted_at)
-       VALUES (?, 'Frank Deleted', 'frank@test.com', UTC_TIMESTAMP())`,
-      [gymId],
+       VALUES (?, 'Frank Deleted', ?, UTC_TIMESTAMP())`,
+      [gymId, `frank+${gymId}@test.com`],
     );
     const res = await request
       .post(`/platform/impersonation/${insertId}`)
@@ -354,6 +354,12 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
       `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
        VALUES (?, ?, 'member', 'active', 'Grace Staff')`,
       [LINKED_MEMBER_CLERK_ID, gymId],
+    );
+    // Also insert a members row so the linked clerk user has a profile in this gym
+    await db.query(
+      `INSERT IGNORE INTO members (gym_id, name, email, clerk_user_id)
+       VALUES (?, 'Grace Staff', ?, ?)`,
+      [gymId, `grace+${gymId}@test.com`, LINKED_MEMBER_CLERK_ID],
     );
   });
 
