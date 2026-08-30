@@ -366,7 +366,7 @@ trainingPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('TRAINING'), 
         validTo: valid_to ?? null,
       });
     });
-    res.status(201).json(result);
+    res.status(201).json({ id: result.planId, member_id, mtp_id: result.mtpId, name: result.planName });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
