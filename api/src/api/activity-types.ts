@@ -218,7 +218,7 @@ activityTypesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
 
   // Cancel future calendar events from schedule rules (preserve past ones)
-  await cancelFutureOccurrencesByActivityType(parseInt(req.params.id, 10));
+  await cancelFutureOccurrencesByActivityType(parseInt(req.params.id as string, 10));
 
   await db.query(
     'UPDATE activity_types SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ? WHERE id = ? AND gym_id = ?',

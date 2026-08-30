@@ -66,7 +66,7 @@ function formatRule(row: any) {
 // GET /activity-types/:activityTypeId/schedule-rules
 activityTypeScheduleRulesRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { activityTypeId } = req.params;
+  const activityTypeId = (req.params as any).activityTypeId as string;
   if (!(await resolveActivityType(activityTypeId, gymId))) {
     return res.status(404).json({ error: 'Activity type not found' });
   }
@@ -80,7 +80,7 @@ activityTypeScheduleRulesRouter.get('/', async (req, res) => {
 // POST /activity-types/:activityTypeId/schedule-rules
 activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { activityTypeId } = req.params;
+  const activityTypeId = (req.params as any).activityTypeId as string;
   if (!(await resolveActivityType(activityTypeId, gymId))) {
     return res.status(404).json({ error: 'Activity type not found' });
   }
@@ -114,7 +114,8 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
 // PUT /activity-types/:activityTypeId/schedule-rules/:ruleId
 activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { activityTypeId, ruleId } = req.params;
+  const activityTypeId = (req.params as any).activityTypeId as string;
+  const { ruleId } = req.params;
   if (!(await resolveActivityType(activityTypeId, gymId))) {
     return res.status(404).json({ error: 'Activity type not found' });
   }
@@ -158,7 +159,8 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
 // DELETE /activity-types/:activityTypeId/schedule-rules/:ruleId
 activityTypeScheduleRulesRouter.delete('/:ruleId', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { activityTypeId, ruleId } = req.params;
+  const activityTypeId = (req.params as any).activityTypeId as string;
+  const { ruleId } = req.params;
   if (!(await resolveActivityType(activityTypeId, gymId))) {
     return res.status(404).json({ error: 'Activity type not found' });
   }
