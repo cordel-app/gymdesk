@@ -191,7 +191,7 @@ export default function CentersPage() {
   function renderExpanded(center: Center) {
     if (expandedId !== center.id) return null;
     return (
-      <div style={{ padding: '16px 24px 20px', borderTop: '1px solid #eee', background: '#fafafa', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px 32px' }}>
+      <div style={{ padding: '16px 24px 20px', borderTop: '1px solid #eee', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px 32px' }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#aaa', marginBottom: 6 }}>{t('section_contact')}</div>
           <DetailItem label={t('label_email')} value={center.email} />
