@@ -22,8 +22,8 @@ afterAll(async () => {
  */
 async function seedGymCharges(gymId: string): Promise<void> {
   await db.query(
-    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, created_at)
-     SELECT ?, id, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, is_system, created_at)
+     SELECT ?, id, 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
     [gymId],
   );
 }

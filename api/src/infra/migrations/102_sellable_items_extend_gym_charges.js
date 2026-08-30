@@ -18,14 +18,38 @@ exports.up = async (knex) => {
 
   // BLOCKER FIX: Make charge_type_id nullable so custom items (no charge type) can be inserted.
   // The column already exists from migration 088; we only alter its nullability.
+  // We must drop the existing FK, alter the column, then re-add the FK to avoid
+  // "Duplicate foreign key constraint name" errors on re-run.
   const hasCtid = await has('charge_type_id');
   if (hasCtid) {
-    // Alter to nullable — safe to re-run (.alter() is idempotent if already nullable)
-    await knex.schema.alterTable('gym_charges', (t) => {
-      t.integer('charge_type_id').unsigned().nullable()
-        .references('id').inTable('charge_types').onDelete('CASCADE')
-        .alter();
-    });
+    // Check if the column is already nullable (skip if already done)
+    const [colInfo] = await knex.raw(
+      `SELECT IS_NULLABLE FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'gym_charges' AND COLUMN_NAME = 'charge_type_id'`,
+    );
+    if (colInfo[0] && colInfo[0].IS_NULLABLE === 'NO') {
+      // Drop the FK constraint first (Knex names it <table>_<col>_foreign)
+      const fkName = 'gym_charges_charge_type_id_foreign';
+      const [fkCheck] = await knex.raw(
+        `SELECT COUNT(*) AS cnt FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'gym_charges'
+         AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'`,
+        [fkName],
+      );
+      if (fkCheck[0].cnt > 0) {
+        await knex.raw(`ALTER TABLE gym_charges DROP FOREIGN KEY \`${fkName}\``);
+      }
+      // Alter nullability without re-adding FK (Knex .alter() without .references() is safe)
+      await knex.schema.alterTable('gym_charges', (t) => {
+        t.integer('charge_type_id').unsigned().nullable().alter();
+      });
+      // Re-add the FK
+      await knex.schema.alterTable('gym_charges', (t) => {
+        t.integer('charge_type_id').unsigned().nullable()
+          .references('id').inTable('charge_types').onDelete('CASCADE')
+          .alter();
+      });
+    }
   }
 
   // name — backfilled from charge_types.name for system rows
