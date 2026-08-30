@@ -35,6 +35,7 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       right: 0,
       height: 52,
       background: 'var(--gd-header-bg, var(--chrome, #1a1a2e))',
+      color: 'var(--gd-header-text, #fff)',
       borderBottom: 'var(--gd-header-sep-height, 1px) solid var(--gd-header-sep-color, rgba(255,255,255,0.1))',
       display: 'flex',
       alignItems: 'center',
@@ -49,20 +50,20 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
           className="hamburger-btn"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            color: 'var(--gd-header-text, #fff)', padding: 4, display: 'none', flexDirection: 'column',
+            color: 'inherit', padding: 4, display: 'none', flexDirection: 'column',
             gap: 5, alignItems: 'center', justifyContent: 'center',
           }}
           aria-label="Toggle menu"
         >
-          <span style={{ display: 'block', width: 22, height: 2, background: 'var(--gd-header-text, #fff)', borderRadius: 2 }} />
-          <span style={{ display: 'block', width: 22, height: 2, background: 'var(--gd-header-text, #fff)', borderRadius: 2 }} />
-          <span style={{ display: 'block', width: 22, height: 2, background: 'var(--gd-header-text, #fff)', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 22, height: 2, background: 'currentColor', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 22, height: 2, background: 'currentColor', borderRadius: 2 }} />
+          <span style={{ display: 'block', width: 22, height: 2, background: 'currentColor', borderRadius: 2 }} />
         </button>
         {logoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={logoSrc} alt={activeGym?.name ?? 'Gymdesk'} style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
         ) : (
-          <strong style={{ color: 'var(--gd-header-text, #fff)', fontSize: 18 }}>
+          <strong style={{ fontSize: 18 }}>
             {activeGym?.name ?? 'Gymdesk'}
           </strong>
         )}
@@ -78,7 +79,7 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
             style={{
               padding: '4px 12px', fontSize: 13, fontWeight: 600, borderRadius: 5, cursor: 'pointer',
               background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.35)',
-              color: 'var(--gd-header-text, #fff)', whiteSpace: 'nowrap',
+              color: 'inherit', whiteSpace: 'nowrap',
             }}
           >
             {t('button_impersonate')}
@@ -89,7 +90,7 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
             title={t('account_locked_hint')}
             style={{
               display: 'flex', alignItems: 'center', gap: 8, cursor: 'not-allowed',
-              opacity: 0.6, fontSize: 13, color: 'var(--gd-header-text, #fff)',
+              opacity: 0.6, fontSize: 13, color: 'inherit',
             }}
           >
             <div style={{
