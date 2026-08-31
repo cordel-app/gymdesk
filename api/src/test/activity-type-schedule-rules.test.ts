@@ -167,6 +167,7 @@ describe('POST schedule-rule one_off', () => {
       });
     expect(res.status).toBe(201);
     expect(res.body.type).toBe('one_off');
+    expect(res.body.start_date).toBe('2026-09-01');   // must be YYYY-MM-DD, not an ISO timestamp
     expect(res.body.start_time).toBe('09:00');
     expect(res.body.end_time).toBe('10:00');
     expect(res.body.activity_type_id).toBe(activityTypeId);
@@ -205,6 +206,8 @@ describe('POST schedule-rule weekly', () => {
       });
     expect(res.status).toBe(201);
     expect(res.body.type).toBe('weekly');
+    expect(res.body.start_date).toBe('2026-09-01');   // must be YYYY-MM-DD
+    expect(res.body.end_date).toBe('2026-12-31');     // must be YYYY-MM-DD
     expect(res.body.weekday).toBe(1);
     expect(res.body.start_time).toBe('18:00');
     expect(res.body.end_time).toBe('19:00');
@@ -301,6 +304,34 @@ describe('validation', () => {
         start_date: '2026-09-01',
         start_time: '09:00',
         end_time: '10:00',
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when start_time is in 12h format (e.g. "02:00 PM")', async () => {
+    const res = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'one_off',
+        start_date: '2026-09-01',
+        start_time: '02:00 PM',
+        end_time: '04:00 PM',
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when start_time has invalid hours (e.g. "25:00")', async () => {
+    const res = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'one_off',
+        start_date: '2026-09-01',
+        start_time: '25:00',
+        end_time: '26:00',
       });
     expect(res.status).toBe(400);
   });

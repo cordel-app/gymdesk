@@ -1,4 +1,4 @@
-// Tests for gym-charges.ts router
+// Tests for sellable-items.ts router (formerly gym-charges)
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -37,9 +37,9 @@ async function firstChargeId(gymId: string): Promise<number | undefined> {
   return rows[0]?.id;
 }
 
-// ─── GET /gym-charges ─────────────────────────────────────────────────────────
+// ─── GET /sellable-items ─────────────────────────────────────────────────────────
 
-describe('GET /gym-charges', () => {
+describe('GET /sellable-items', () => {
   let gymId: string;
   let gymNoModule: string;  // trainer_performance — FINANCIALS = NONE → 403
   let gymReadOnly: string;  // accountant — FINANCIALS = R → 200
@@ -62,13 +62,13 @@ describe('GET /gym-charges', () => {
   });
 
   it('returns 401 without auth', async () => {
-    const res = await request.get('/gym-charges').set('x-gym-id', gymId);
+    const res = await request.get('/sellable-items').set('x-gym-id', gymId);
     expect(res.status).toBe(401);
   });
 
   it('returns 403 when user has no membership in the gym (tenant isolation)', async () => {
     const res = await request
-      .get('/gym-charges')
+      .get('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymNoMembership);
     expect(res.status).toBe(403);
@@ -76,7 +76,7 @@ describe('GET /gym-charges', () => {
 
   it('returns 403 when the role has no FINANCIALS module access (trainer_performance)', async () => {
     const res = await request
-      .get('/gym-charges')
+      .get('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymNoModule);
     expect(res.status).toBe(403);
@@ -84,7 +84,7 @@ describe('GET /gym-charges', () => {
 
   it('returns 200 with an array for admin', async () => {
     const res = await request
-      .get('/gym-charges')
+      .get('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -93,7 +93,7 @@ describe('GET /gym-charges', () => {
 
   it('returns 200 with an array for accountant (FINANCIALS read-only access)', async () => {
     const res = await request
-      .get('/gym-charges')
+      .get('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymReadOnly);
     expect(res.status).toBe(200);
@@ -101,9 +101,9 @@ describe('GET /gym-charges', () => {
   });
 });
 
-// ─── GET /gym-charges/:id ─────────────────────────────────────────────────────
+// ─── GET /sellable-items/:id ─────────────────────────────────────────────────────
 
-describe('GET /gym-charges/:id', () => {
+describe('GET /sellable-items/:id', () => {
   let gymA: string;
   let gymB: string;
 
@@ -122,7 +122,7 @@ describe('GET /gym-charges/:id', () => {
     if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
 
     const res = await request
-      .get(`/gym-charges/${chargeId}`)
+      .get(`/sellable-items/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymA);
     expect(res.status).toBe(200);
@@ -136,16 +136,16 @@ describe('GET /gym-charges/:id', () => {
 
     // chargeId is from gymA; request scoped to gymB → WHERE id = ? AND gym_id = ? → empty
     const res = await request
-      .get(`/gym-charges/${chargeId}`)
+      .get(`/sellable-items/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymB);
     expect(res.status).toBe(404);
   });
 });
 
-// ─── GET /gym-charges filters ─────────────────────────────────────────────────
+// ─── GET /sellable-items filters ─────────────────────────────────────────────────
 
-describe('GET /gym-charges filters', () => {
+describe('GET /sellable-items filters', () => {
   let gymId: string;
   let activeChargeId: number | undefined;
 
@@ -170,7 +170,7 @@ describe('GET /gym-charges filters', () => {
 
   it('returns 400 for an invalid status query value', async () => {
     const res = await request
-      .get('/gym-charges?status=bad')
+      .get('/sellable-items?status=bad')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
@@ -178,7 +178,7 @@ describe('GET /gym-charges filters', () => {
 
   it('returns 400 for an invalid type query value', async () => {
     const res = await request
-      .get('/gym-charges?type=bad')
+      .get('/sellable-items?type=bad')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
@@ -186,7 +186,7 @@ describe('GET /gym-charges filters', () => {
 
   it('returns only active charges when ?status=active', async () => {
     const res = await request
-      .get('/gym-charges?status=active')
+      .get('/sellable-items?status=active')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -196,7 +196,7 @@ describe('GET /gym-charges filters', () => {
 
   it('returns only inactive charges when ?status=inactive', async () => {
     const res = await request
-      .get('/gym-charges?status=inactive')
+      .get('/sellable-items?status=inactive')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -208,14 +208,14 @@ describe('GET /gym-charges filters', () => {
     if (!activeChargeId) return;
 
     const deactivate = await request
-      .post(`/gym-charges/${activeChargeId}/deactivate`)
+      .post(`/sellable-items/${activeChargeId}/deactivate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(deactivate.status).toBe(200);
     expect(deactivate.body.status).toBe('inactive');
 
     const after = await request
-      .get('/gym-charges?status=inactive')
+      .get('/sellable-items?status=inactive')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(after.status).toBe(200);
@@ -224,9 +224,9 @@ describe('GET /gym-charges filters', () => {
   });
 });
 
-// ─── PUT /gym-charges/:id ─────────────────────────────────────────────────────
+// ─── PUT /sellable-items/:id ─────────────────────────────────────────────────────
 
-describe('PUT /gym-charges/:id', () => {
+describe('PUT /sellable-items/:id', () => {
   let gymAdmin: string;    // TEST_USER_ID = admin here → PUT allowed
   let gymAccountant: string; // TEST_USER_ID = accountant here → PUT blocked by requireRole
   let gymOther: string;    // used as cross-gym isolation source
@@ -250,7 +250,7 @@ describe('PUT /gym-charges/:id', () => {
     if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
 
     const res = await request
-      .put(`/gym-charges/${chargeId}`)
+      .put(`/sellable-items/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAccountant)
       .send({ amount: 9.99, billing_frequency: 'month', availability: 'available' });
@@ -269,7 +269,7 @@ describe('PUT /gym-charges/:id', () => {
     };
 
     const res = await request
-      .put(`/gym-charges/${chargeId}`)
+      .put(`/sellable-items/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAdmin)
       .send(payload);
@@ -288,7 +288,7 @@ describe('PUT /gym-charges/:id', () => {
     if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
 
     const res = await request
-      .put(`/gym-charges/${chargeId}`)
+      .put(`/sellable-items/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAdmin)
       .send({ amount: 1.0 });
@@ -296,9 +296,9 @@ describe('PUT /gym-charges/:id', () => {
   });
 });
 
-// ─── POST /gym-charges — create custom sellable item ─────────────────────────
+// ─── POST /sellable-items — create custom sellable item ─────────────────────────
 
-describe('POST /gym-charges', () => {
+describe('POST /sellable-items', () => {
   let gymId: string;
 
   beforeAll(async () => {
@@ -308,7 +308,7 @@ describe('POST /gym-charges', () => {
 
   it('returns 400 when name is missing', async () => {
     const res = await request
-      .post('/gym-charges')
+      .post('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ type: 'fee', amount: 10 });
@@ -317,7 +317,7 @@ describe('POST /gym-charges', () => {
 
   it('returns 400 when type is missing', async () => {
     const res = await request
-      .post('/gym-charges')
+      .post('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Test Item' });
@@ -326,7 +326,7 @@ describe('POST /gym-charges', () => {
 
   it('returns 400 when units is not a positive integer', async () => {
     const res = await request
-      .post('/gym-charges')
+      .post('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bad Units', type: 'sessions', units: -5 });
@@ -335,7 +335,7 @@ describe('POST /gym-charges', () => {
 
   it('creates a custom sellable item and returns 201 with is_system = 0', async () => {
     const res = await request
-      .post('/gym-charges')
+      .post('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
@@ -354,7 +354,7 @@ describe('POST /gym-charges', () => {
 
   it('creates a sessions item with units', async () => {
     const res = await request
-      .post('/gym-charges')
+      .post('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Session Pack 10', type: 'sessions', units: 10, amount: 90 });
@@ -364,9 +364,9 @@ describe('POST /gym-charges', () => {
   });
 });
 
-// ─── DELETE /gym-charges/:id — soft-delete custom items ──────────────────────
+// ─── DELETE /sellable-items/:id — soft-delete custom items ──────────────────────
 
-describe('DELETE /gym-charges/:id', () => {
+describe('DELETE /sellable-items/:id', () => {
   let gymId: string;
   let gymOther: string;
   let systemChargeId: number | undefined;
@@ -383,7 +383,7 @@ describe('DELETE /gym-charges/:id', () => {
 
     // Create a custom item to test soft-delete
     const res = await request
-      .post('/gym-charges')
+      .post('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Deletable Item', type: 'service', amount: 5 });
@@ -393,7 +393,7 @@ describe('DELETE /gym-charges/:id', () => {
   it('returns 403 when attempting to delete a system item', async () => {
     if (!systemChargeId) return;
     const res = await request
-      .delete(`/gym-charges/${systemChargeId}`)
+      .delete(`/sellable-items/${systemChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(403);
@@ -402,7 +402,7 @@ describe('DELETE /gym-charges/:id', () => {
   it('returns 404 when charge belongs to a different gym (cross-gym isolation)', async () => {
     if (!customChargeId) return;
     const res = await request
-      .delete(`/gym-charges/${customChargeId}`)
+      .delete(`/sellable-items/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymOther);
     expect(res.status).toBe(404);
@@ -411,7 +411,7 @@ describe('DELETE /gym-charges/:id', () => {
   it('soft-deletes a custom item and returns 204', async () => {
     if (!customChargeId) return;
     const res = await request
-      .delete(`/gym-charges/${customChargeId}`)
+      .delete(`/sellable-items/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(204);
@@ -420,7 +420,7 @@ describe('DELETE /gym-charges/:id', () => {
   it('deleted item is hidden from GET / list', async () => {
     if (!customChargeId) return;
     const res = await request
-      .get('/gym-charges')
+      .get('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -431,7 +431,7 @@ describe('DELETE /gym-charges/:id', () => {
   it('deleted item is still accessible by GET /:id (Recycle Bin access)', async () => {
     if (!customChargeId) return;
     const res = await request
-      .get(`/gym-charges/${customChargeId}`)
+      .get(`/sellable-items/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -441,9 +441,44 @@ describe('DELETE /gym-charges/:id', () => {
   it('returns 404 on second delete attempt (already soft-deleted)', async () => {
     if (!customChargeId) return;
     const res = await request
-      .delete(`/gym-charges/${customChargeId}`)
+      .delete(`/sellable-items/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── Computed tax fields ───────────────────────────────────────────────────────
+
+describe('GET /sellable-items — computed price fields', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Tax Fields Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns amount_incl_tax and amount_excl_tax for inclusive tax_behavior', async () => {
+    // Create a custom item with amount=100 and inclusive tax (no explicit tax_rate_id — null → no rate)
+    const create = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Tax Test Item', type: 'fee', amount: 100, tax_behavior: 'inclusive' });
+    expect(create.status).toBe(201);
+    // With no tax_rate_id, applied_tax_rate is null → incl/excl amounts are also null
+    expect(create.body.tax_behavior).toBe('inclusive');
+    expect(create.body.applied_tax_rate).toBeNull();
+    expect(create.body.amount_incl_tax).toBeNull();
+    expect(create.body.amount_excl_tax).toBeNull();
+  });
+
+  it('returns 400 for invalid tax_behavior', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Bad Behavior', type: 'fee', tax_behavior: 'bad' });
+    expect(res.status).toBe(400);
   });
 });

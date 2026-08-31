@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
+import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
@@ -24,20 +25,16 @@ const LIST_SELECT = `
 
 userMembershipsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const status = req.query.status as string | undefined;
-  if (status && !STATUSES.includes(status as Status)) {
-    return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
-  }
-  const memberIdRaw = req.query.member_id;
-  let memberId: number | undefined;
-  if (memberIdRaw !== undefined) {
-    memberId = parseInt(memberIdRaw as string, 10);
-    if (isNaN(memberId)) return res.status(400).json({ error: 'member_id must be an integer' });
-  }
+  const q = parseQuery(req, res, z.object({
+    status: z.enum(STATUSES).optional(),
+    member_id: z.coerce.number().int().positive().optional(),
+  }));
+  if (!q) return;
+
   const params: any[] = [gymId];
   let sql = `${LIST_SELECT} WHERE um.gym_id = ?`;
-  if (status) { sql += ' AND um.status = ?'; params.push(status); }
-  if (memberId !== undefined) { sql += ' AND um.member_id = ?'; params.push(memberId); }
+  if (q.status) { sql += ' AND um.status = ?'; params.push(q.status); }
+  if (q.member_id !== undefined) { sql += ' AND um.member_id = ?'; params.push(q.member_id); }
   sql += ' ORDER BY um.starts_at DESC';
   const { rows } = await db.query(sql, params);
   res.json(rows);

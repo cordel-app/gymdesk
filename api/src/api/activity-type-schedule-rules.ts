@@ -31,8 +31,9 @@ function validateRule(body: any): string | null {
 
   if (!type || !TYPES.includes(type)) return `type must be one of: ${TYPES.join(', ')}`;
   if (!start_date || !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) return 'start_date is required (YYYY-MM-DD)';
-  if (!start_time || !/^\d{2}:\d{2}/.test(start_time)) return 'start_time is required (HH:MM)';
-  if (!end_time || !/^\d{2}:\d{2}/.test(end_time)) return 'end_time is required (HH:MM)';
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!start_time || !TIME_RE.test(start_time)) return 'start_time is required (HH:MM, 24-hour)';
+  if (!end_time || !TIME_RE.test(end_time)) return 'end_time is required (HH:MM, 24-hour)';
   if (start_time >= end_time) return 'end_time must be after start_time';
 
   if (type !== 'one_off') {
@@ -54,10 +55,19 @@ function validateRule(body: any): string | null {
   return null;
 }
 
+function fmtDate(v: any): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'string') return v.slice(0, 10);
+  return v;
+}
+
 function formatRule(row: any) {
   if (!row) return row;
   return {
     ...row,
+    start_date: fmtDate(row.start_date),
+    end_date: row.end_date != null ? fmtDate(row.end_date) : null,
     start_time: typeof row.start_time === 'string' ? row.start_time.slice(0, 5) : row.start_time,
     end_time: typeof row.end_time === 'string' ? row.end_time.slice(0, 5) : row.end_time,
   };

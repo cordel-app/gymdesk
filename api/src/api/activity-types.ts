@@ -10,9 +10,18 @@ import {
 
 const STATUSES = ['active', 'inactive'] as const;
 
+function fmtDate(v: any): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'string') return v.slice(0, 10);
+  return v;
+}
+
 function formatRule(r: any) {
   return {
     ...r,
+    start_date: fmtDate(r.start_date),
+    end_date: r.end_date != null ? fmtDate(r.end_date) : null,
     start_time: typeof r.start_time === 'string' ? r.start_time.slice(0, 5) : r.start_time,
     end_time: typeof r.end_time === 'string' ? r.end_time.slice(0, 5) : r.end_time,
   };
@@ -201,7 +210,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
       'SELECT * FROM activity_type_schedule_rules WHERE activity_type_id = ? ORDER BY created_at ASC',
       [req.params.id],
     );
-    const row = { ...rows[0], schedule_rules: rules };
+    const row = { ...rows[0], schedule_rules: rules.map(formatRule) };
     recordAudit(req, { action: 'update', entityType: 'activity_type', entityId: req.params.id, entityName: rows[0].name, next: rows[0] });
     res.json(row);
   } catch (e: any) {
@@ -283,7 +292,7 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
     [newId],
   );
   recordAudit(req, { action: 'create', entityType: 'activity_type', entityId: newId, entityName: rows[0].name });
-  res.status(201).json({ ...rows[0], schedule_rules: rules });
+  res.status(201).json({ ...rows[0], schedule_rules: rules.map(formatRule) });
 });
 
 activityTypesRouter.post('/:id/restore', requireRole('admin'), async (req, res) => {

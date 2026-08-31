@@ -70,6 +70,7 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM nutrition_plan_templates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_events WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_charges WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM tax_rates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotion_included_benefits WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotion_period_benefits WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotion_charge_benefits WHERE gym_id IN (${marks})`, ids);

@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
@@ -23,7 +24,8 @@ import './api/plan-allowances';
 import { classPackagesRouter } from './api/class-packages';
 import { userClassPackagesRouter } from './api/user-class-packages';
 import { actionTypesRouter } from './api/action-types';
-import { gymChargesRouter } from './api/gym-charges';
+import { sellableItemsRouter } from './api/sellable-items';
+import { taxesRouter } from './api/taxes';
 import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
@@ -74,6 +76,14 @@ import { requestLogger } from './middleware/requestLogger';
 export const app = express();
 
 app.use(requestLogger);
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 500,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+app.use(apiLimiter as any);
 
 // Clerk webhooks must be mounted BEFORE express.json(): signature verification
 // needs the exact raw request bytes, so this route parses its own raw body.
@@ -208,7 +218,8 @@ app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('
 app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), benefitTypesRouter);
 app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), chargeTypesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), actionTypesRouter);
-app.use('/gym-charges',      requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), gymChargesRouter);
+app.use('/sellable-items',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), sellableItemsRouter); // lgtm[js/missing-rate-limiting]
+app.use('/taxes',            requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), taxesRouter); // lgtm[js/missing-rate-limiting]
 app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionsRouter);
 app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionDetailsRouter);
 
