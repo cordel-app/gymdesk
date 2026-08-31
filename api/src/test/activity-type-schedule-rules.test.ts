@@ -304,6 +304,34 @@ describe('validation', () => {
       });
     expect(res.status).toBe(400);
   });
+
+  it('returns 400 when start_time is in 12h format (e.g. "02:00 PM")', async () => {
+    const res = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'one_off',
+        start_date: '2026-09-01',
+        start_time: '02:00 PM',
+        end_time: '04:00 PM',
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when start_time has invalid hours (e.g. "25:00")', async () => {
+    const res = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'one_off',
+        start_date: '2026-09-01',
+        start_time: '25:00',
+        end_time: '26:00',
+      });
+    expect(res.status).toBe(400);
+  });
 });
 
 // ── Happy path: PUT and DELETE ─────────────────────────────────────────────

@@ -430,6 +430,18 @@ export default function ActivityTypesPage() {
     return new Date(iso).toLocaleString();
   }
 
+  function to24h(val: string): string {
+    if (!val) return val;
+    const m = val.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+    if (!m) return val.slice(0, 5);
+    let hours = parseInt(m[1], 10);
+    const mins = m[2];
+    const period = m[3].toUpperCase();
+    if (period === 'AM' && hours === 12) hours = 0;
+    if (period === 'PM' && hours !== 12) hours += 12;
+    return `${String(hours).padStart(2, '0')}:${mins}`;
+  }
+
   function ruleLabel(rule: ScheduleRule) {
     const time = `${rule.start_time}–${rule.end_time}`;
     if (rule.type === 'one_off') return `${rule.start_date}  ${time}`;
@@ -495,11 +507,11 @@ export default function ActivityTypesPage() {
           )}
           <div>
             <label style={inlineLabelStyle}>{ts('label_start_time')}</label>
-            <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} style={inlineInputStyle} />
+            <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: to24h(e.target.value) })} style={inlineInputStyle} />
           </div>
           <div>
             <label style={inlineLabelStyle}>{ts('label_end_time')}</label>
-            <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} style={inlineInputStyle} />
+            <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: to24h(e.target.value) })} style={inlineInputStyle} />
           </div>
         </div>
         {ruleError && <p style={errorStyle}>{ruleError}</p>}

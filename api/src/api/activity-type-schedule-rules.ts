@@ -31,8 +31,9 @@ function validateRule(body: any): string | null {
 
   if (!type || !TYPES.includes(type)) return `type must be one of: ${TYPES.join(', ')}`;
   if (!start_date || !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) return 'start_date is required (YYYY-MM-DD)';
-  if (!start_time || !/^\d{2}:\d{2}/.test(start_time)) return 'start_time is required (HH:MM)';
-  if (!end_time || !/^\d{2}:\d{2}/.test(end_time)) return 'end_time is required (HH:MM)';
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!start_time || !TIME_RE.test(start_time)) return 'start_time is required (HH:MM, 24-hour)';
+  if (!end_time || !TIME_RE.test(end_time)) return 'end_time is required (HH:MM, 24-hour)';
   if (start_time >= end_time) return 'end_time must be after start_time';
 
   if (type !== 'one_off') {
