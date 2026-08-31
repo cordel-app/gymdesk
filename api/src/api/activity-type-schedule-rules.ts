@@ -55,10 +55,19 @@ function validateRule(body: any): string | null {
   return null;
 }
 
+function fmtDate(v: any): string | null {
+  if (v == null) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'string') return v.slice(0, 10);
+  return v;
+}
+
 function formatRule(row: any) {
   if (!row) return row;
   return {
     ...row,
+    start_date: fmtDate(row.start_date),
+    end_date: row.end_date != null ? fmtDate(row.end_date) : null,
     start_time: typeof row.start_time === 'string' ? row.start_time.slice(0, 5) : row.start_time,
     end_time: typeof row.end_time === 'string' ? row.end_time.slice(0, 5) : row.end_time,
   };
