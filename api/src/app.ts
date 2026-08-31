@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
@@ -75,6 +76,14 @@ import { requestLogger } from './middleware/requestLogger';
 export const app = express();
 
 app.use(requestLogger);
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 500,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+});
+app.use(apiLimiter as any);
 
 // Clerk webhooks must be mounted BEFORE express.json(): signature verification
 // needs the exact raw request bytes, so this route parses its own raw body.
