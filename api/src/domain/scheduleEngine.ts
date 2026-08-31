@@ -116,7 +116,14 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
   );
   if (ruleRows.length === 0) return;
 
-  const rule = ruleRows[0] as ScheduleRule & {
+  const raw = ruleRows[0];
+  const rule = {
+    ...raw,
+    start_date: raw.start_date instanceof Date ? raw.start_date.toISOString().slice(0, 10) : String(raw.start_date).slice(0, 10),
+    end_date: raw.end_date instanceof Date ? raw.end_date.toISOString().slice(0, 10) : (raw.end_date ? String(raw.end_date).slice(0, 10) : null),
+    start_time: typeof raw.start_time === 'string' ? raw.start_time.slice(0, 5) : raw.start_time,
+    end_time: typeof raw.end_time === 'string' ? raw.end_time.slice(0, 5) : raw.end_time,
+  } as ScheduleRule & {
     activity_type_name: string;
     default_space_id: number | null;
     default_trainer_membership_id: number | null;
