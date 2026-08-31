@@ -16,7 +16,7 @@ exports.up = async (knex) => {
       t.decimal('rate_percent', 5, 2).notNullable();
       t.tinyint('is_system').notNullable().defaultTo(0);
       t.string('status', 20).notNullable().defaultTo('active');
-      t.datetime('created_at').notNullable().defaultTo(knex.raw('UTC_TIMESTAMP()'));
+      t.datetime('created_at').notNullable().defaultTo(knex.raw('(UTC_TIMESTAMP())'));
       t.integer('created_by_membership_id').unsigned().nullable()
         .references('id').inTable('gym_memberships').onDelete('SET NULL');
       t.datetime('modified_at').nullable();
