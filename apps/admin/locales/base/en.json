@@ -133,6 +133,10 @@
     "copy_button": "Copy link",
     "copied": "Copied!",
     "error_generic": "Something went wrong.",
+    "error_no_active_membership": "This member has no active membership.",
+    "last_billed_at": "Last billed",
+    "next_billing_date": "Next billing date",
+    "badge_failed_charge": "Failed charge",
     "close": "Close"
   },
   "payment_providers": {

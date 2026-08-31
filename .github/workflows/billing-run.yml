@@ -1,0 +1,28 @@
+name: Billing Run
+
+on:
+  schedule:
+    # 06:00 UTC = 07:00 CET (08:00 CEST)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # manual trigger for testing
+
+jobs:
+  billing-run:
+    name: MIT billing run
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: POST /billing/run
+        run: |
+          curl -sf -X POST https://api.vdicube.com/billing/run \
+            -H "X-Internal-Secret: ${{ secrets.BILLING_INTERNAL_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 120
+
+      - name: POST /billing/cleanup
+        run: |
+          curl -sf -X POST https://api.vdicube.com/billing/cleanup \
+            -H "X-Internal-Secret: ${{ secrets.BILLING_INTERNAL_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 30

@@ -147,6 +147,7 @@ Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate
 | Payment page token (`payment-page`) | none | none (token auth) | No Clerk auth. `GET /payment-page/token/:token` — single-use lookup consumed immediately (page_token set to NULL on read). Used by the isolated `pay.vdicube.com` app. Rate-limited 20/min per IP. |
 | Payment webhooks (`/webhooks/payment`) | none | HMAC-SHA256 (Monei signature) | Mounted before `express.json()` with `express.raw`. Fail-fast: `parseWebhook()` verifies HMAC as first op; returns 400 on invalid sig (no DB queries). On success: updates `payment_requests`, inserts `billing_events`, upserts `payment_methods`. Idempotent. Rate-limited 60/min per IP. |
 | Internal billing cleanup (`/billing/cleanup`) | none | `X-Internal-Secret` header | POST expires stale pending payment_requests. Called by nightly billing workflow. |
+| Internal billing run (`/billing/run`) | none | `X-Internal-Secret` header | POST fires nightly MIT recurring charges. Rate-limited: rejects with 429 if last successful run was <23 h ago (enforced via `billing_run_log` singleton). Queries active memberships with `next_billing_date <= UTC_DATE()` (INNER JOIN `payment_methods`). For each: calls `getPaymentProvider().executeRecurring()`, inserts a `payment_requests` row (`source='billing_run'`) for auditability, inserts `billing_events` (`recurring_payment` on success, `failed_billing` on failure), advances `next_billing_date` (computed in JS via `advanceBillingDate()` — avoids MySQL INTERVAL unit parameterization). Called by `.github/workflows/billing-run.yml` at 06:00 UTC. |
 | Membership plans, Benefit types, Charge types, Promotions | FINANCIALS | `requireRole('admin')` | Admin-only within FINANCIALS module. |
 | Gym charges (`gym-charges`) | FINANCIALS | read: any FINANCIALS role; write: `requireRole('admin')` | Per-gym configuration of predefined charge types. Rows auto-created at gym creation. No POST or DELETE. `charge_types` extended with `name` + `is_gym_charge` flag (migration 088). |
 | Audit log (`audit-logs`) | SYSTEM | — | Read-only; `?scope=all` for superadmin. |
@@ -250,6 +251,18 @@ Invited rows use a placeholder `user_id` of the form `invited_<timestamp>` until
 ### `members` (portal-invite tracking, migration 051)
 
 `members.invitation_id` (nullable, migration 051) mirrors `gym_memberships.invitation_id` — the pending Clerk invitation id, used to revoke on removal or explicit un-invite. Unlike `gym_memberships`, there's no `status` column: a member row is always "real" (it's the billing/plan record) independent of portal access, so portal state is derived as `clerk_user_id IS NULL AND invitation_id IS NOT NULL` (invited) vs `clerk_user_id` set (linked) vs neither (never invited). See "Member invite + auto-link flow" below.
+
+### `user_memberships` — billing columns (migration 111)
+
+Two nullable columns added for recurring MIT billing:
+- `next_billing_date DATE NULL` — set by the payment webhook on the first successful charge (DATE_ADD(starts_at, INTERVAL bp.recurring_billing_interval bp.recurring_billing_unit)); advanced by the billing run after each subsequent charge.
+- `last_billed_at DATETIME NULL` — stamped by the billing run on success.
+
+### `billing_run_log` (migration 111)
+
+System-wide singleton (single row, id=1, CHECK id=1). Not a per-tenant table — intentional exception to the `gym_id` convention. Tracks `last_run_at DATETIME NULL` for the 23-hour rate limit on `POST /billing/run`.
+
+`billing_events.event_type` CHECK extended with `recurring_payment` and `failed_billing`. `payment_requests.source` CHECK extended with `billing_run`.
 
 ---
 
