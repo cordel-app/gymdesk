@@ -167,6 +167,7 @@ describe('POST schedule-rule one_off', () => {
       });
     expect(res.status).toBe(201);
     expect(res.body.type).toBe('one_off');
+    expect(res.body.start_date).toBe('2026-09-01');   // must be YYYY-MM-DD, not an ISO timestamp
     expect(res.body.start_time).toBe('09:00');
     expect(res.body.end_time).toBe('10:00');
     expect(res.body.activity_type_id).toBe(activityTypeId);
@@ -205,6 +206,8 @@ describe('POST schedule-rule weekly', () => {
       });
     expect(res.status).toBe(201);
     expect(res.body.type).toBe('weekly');
+    expect(res.body.start_date).toBe('2026-09-01');   // must be YYYY-MM-DD
+    expect(res.body.end_date).toBe('2026-12-31');     // must be YYYY-MM-DD
     expect(res.body.weekday).toBe(1);
     expect(res.body.start_time).toBe('18:00');
     expect(res.body.end_time).toBe('19:00');
