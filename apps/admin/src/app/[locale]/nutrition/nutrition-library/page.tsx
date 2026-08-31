@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 
-interface LibraryItem { id: number; name: string; category: string }
+interface LibraryItem { id: number; name: string; category: string; quality_slugs: string[] }
 
 const CATEGORIES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other'] as const;
 
@@ -36,9 +36,16 @@ export default function NutritionLibraryPage() {
             {catItems.length === 0 ? (
               <p style={{ color: '#9ca3af', fontSize: 14 }}>{t('nutrition_library.empty_section')}</p>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {catItems.map((item) => (
-                  <span key={item.id} style={itemBadgeStyle}>{item.name}</span>
+                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={itemBadgeStyle}>{item.name}</span>
+                    {item.quality_slugs.map((slug) => (
+                      <span key={slug} style={qualityBadgeStyle}>
+                        {t(`nutrition_library.quality_${slug}`, { defaultValue: slug })}
+                      </span>
+                    ))}
+                  </div>
                 ))}
               </div>
             )}
@@ -52,4 +59,9 @@ export default function NutritionLibraryPage() {
 const itemBadgeStyle: React.CSSProperties = {
   background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 20,
   padding: '5px 14px', fontSize: 14, fontWeight: 500, color: '#374151',
+};
+
+const qualityBadgeStyle: React.CSSProperties = {
+  background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 20,
+  padding: '3px 10px', fontSize: 12, fontWeight: 500, color: '#1d4ed8',
 };

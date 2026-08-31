@@ -2191,7 +2191,11 @@
     "category_sauce": "Sauces",
     "category_drink": "Drinks",
     "category_dessert": "Desserts",
-    "category_other": "Other"
+    "category_other": "Other",
+    "nutritional_qualities_label": "Nutritional Qualities",
+    "quality_protein": "Protein",
+    "quality_carbohydrate": "Carbohydrate",
+    "no_qualities": "None"
   },
   "impersonation": {
     "impersonating_label": "You are impersonating:",

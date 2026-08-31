@@ -2205,7 +2205,11 @@
     "category_sauce": "Salses",
     "category_drink": "Begudes",
     "category_dessert": "Postres",
-    "category_other": "Altres"
+    "category_other": "Altres",
+    "nutritional_qualities_label": "Qualitats Nutricionals",
+    "quality_protein": "Proteïna",
+    "quality_carbohydrate": "Carbohidrat",
+    "no_qualities": "Cap"
   },
   "impersonation": {
     "impersonating_label": "Esteu suplantant:",
