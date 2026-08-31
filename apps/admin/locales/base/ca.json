@@ -134,6 +134,10 @@
     "copy_button": "Copiar enllaç",
     "copied": "Copiat!",
     "error_generic": "Quelcom ha anat malament.",
+    "error_no_active_membership": "Aquest soci no té cap membresía activa.",
+    "last_billed_at": "Últim cobrament",
+    "next_billing_date": "Proper cobrament",
+    "badge_failed_charge": "Cobrament fallit",
     "close": "Tancar"
   },
   "payment_providers": {

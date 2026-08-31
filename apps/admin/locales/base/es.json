@@ -133,6 +133,10 @@
     "copy_button": "Copiar enlace",
     "copied": "¡Copiado!",
     "error_generic": "Algo ha ido mal.",
+    "error_no_active_membership": "Este socio no tiene una membresía activa.",
+    "last_billed_at": "Último cobro",
+    "next_billing_date": "Próximo cobro",
+    "badge_failed_charge": "Cobro fallido",
     "close": "Cerrar"
   },
   "payment_providers": {

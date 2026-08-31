@@ -20,6 +20,7 @@ const LIST_SELECT = `
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
 `;
+// Note: um.* already includes next_billing_date and last_billed_at (added in migration 111).
 
 userMembershipsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);

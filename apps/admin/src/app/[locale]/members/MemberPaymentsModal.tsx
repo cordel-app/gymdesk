@@ -16,7 +16,18 @@ interface PaymentRequest {
   completed_at: string | null;
 }
 
-interface UserMembership { id: number; status: string; }
+interface UserMembership {
+  id: number;
+  status: string;
+  next_billing_date: string | null;
+  last_billed_at: string | null;
+}
+
+interface BillingEvent {
+  id: number;
+  event_type: string;
+  created_at: string;
+}
 
 export function MemberPaymentsModal({
   memberId,
@@ -31,7 +42,8 @@ export function MemberPaymentsModal({
   const { apiFetch } = useApiClient();
 
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
-  const [activeMembershipId, setActiveMembershipId] = useState<number | null>(null);
+  const [activeMembership, setActiveMembership] = useState<UserMembership | null>(null);
+  const [hasFailedCharge, setHasFailedCharge] = useState(false);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,12 +53,14 @@ export function MemberPaymentsModal({
   async function load() {
     setLoading(true);
     try {
-      const [rows, memberships] = await Promise.all([
+      const [rows, memberships, events] = await Promise.all([
         apiFetch<PaymentRequest[]>(`/payment-requests?member_id=${memberId}`),
         apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}&status=active`).catch(() => []),
+        apiFetch<BillingEvent[]>(`/billing-events/member/${memberId}?limit=1`).catch(() => []),
       ]);
       setRequests(rows);
-      setActiveMembershipId(memberships[0]?.id ?? null);
+      setActiveMembership(memberships[0] ?? null);
+      setHasFailedCharge(events[0]?.event_type === 'failed_billing');
     } catch {
       // silently ignore — empty state handles it
     } finally {
@@ -57,8 +71,8 @@ export function MemberPaymentsModal({
   useEffect(() => { load(); }, [memberId]);
 
   async function requestPayment() {
-    if (!activeMembershipId) {
-      setError('Este socio no tiene una membresía activa.');
+    if (!activeMembership) {
+      setError(t('member_payments.error_no_active_membership'));
       return;
     }
     setRequesting(true);
@@ -67,7 +81,7 @@ export function MemberPaymentsModal({
     try {
       const result = await apiFetch<{ id: number; checkoutUrl: string }>(
         '/payment-requests',
-        { method: 'POST', body: JSON.stringify({ user_membership_id: activeMembershipId }) },
+        { method: 'POST', body: JSON.stringify({ user_membership_id: activeMembership.id }) },
       );
       setCheckoutUrl(result.checkoutUrl);
       load();
@@ -91,6 +105,27 @@ export function MemberPaymentsModal({
       <div style={{ ...modalStyle, width: 680 }} onClick={(e) => e.stopPropagation()}>
         <h2 style={{ margin: '0 0 4px' }}>{t('member_payments.title')}</h2>
         <p style={{ margin: '0 0 20px', color: '#666', fontSize: 14 }}>{memberName}</p>
+
+        {/* Billing dates from active membership */}
+        {activeMembership && (activeMembership.next_billing_date || activeMembership.last_billed_at) && (
+          <div style={{ display: 'flex', gap: 24, marginBottom: 16, fontSize: 13, color: '#555' }}>
+            {activeMembership.last_billed_at && (
+              <span>
+                <strong>{t('member_payments.last_billed_at')}:</strong>{' '}
+                {new Date(activeMembership.last_billed_at).toLocaleDateString()}
+              </span>
+            )}
+            {activeMembership.next_billing_date && (
+              <span>
+                <strong>{t('member_payments.next_billing_date')}:</strong>{' '}
+                {new Date(activeMembership.next_billing_date).toLocaleDateString()}
+              </span>
+            )}
+            {hasFailedCharge && (
+              <StatusBadge status="failed" label={t('member_payments.badge_failed_charge')} />
+            )}
+          </div>
+        )}
 
         {loading ? (
           <p style={{ color: '#666' }}>{t('member_payments.loading')}</p>
@@ -125,7 +160,7 @@ export function MemberPaymentsModal({
           <button
             onClick={requestPayment}
             style={btnStyle('#6c63ff')}
-            disabled={requesting || !activeMembershipId}
+            disabled={requesting || !activeMembership}
           >
             {requesting ? t('member_payments.requesting') : t('member_payments.request_button')}
           </button>

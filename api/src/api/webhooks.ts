@@ -164,6 +164,22 @@ paymentWebhookRouter.post(
                  card_brand    = VALUES(card_brand)`,
               [pr.gym_id, pr.member_id, payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
             );
+
+            // Stamp next_billing_date on the membership (only if not yet set).
+            // Uses billing_policies.recurring_billing_interval/unit to compute
+            // the first due date relative to starts_at.
+            await tx.query(
+              `UPDATE user_memberships um
+               JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
+               SET um.next_billing_date = CASE bp.recurring_billing_unit
+                 WHEN 'day'   THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval DAY)
+                 WHEN 'week'  THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval WEEK)
+                 WHEN 'month' THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval MONTH)
+                 WHEN 'year'  THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval YEAR)
+               END
+               WHERE um.id = ? AND um.next_billing_date IS NULL`,
+              [pr.user_membership_id],
+            );
           }
         });
 
