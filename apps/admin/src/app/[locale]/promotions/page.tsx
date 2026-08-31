@@ -161,7 +161,7 @@ export default function PromotionsPage() {
     try {
       const [pl, gc, ct] = await Promise.all([
         apiFetch<MembershipPlan[]>('/membership-plans?lifecycle_status=active'),
-        apiFetch<GymCharge[]>('/gym-charges?availability=available'),
+        apiFetch<GymCharge[]>('/sellable-items?availability=available'),
         apiFetch<ChargeType[]>('/charge-types'),
       ]);
       setPlans(pl);

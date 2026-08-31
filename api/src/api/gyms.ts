@@ -169,6 +169,11 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
        SELECT ?, id, 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
       [id],
     );
+    await db.query(
+      `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
+       VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
+      [id],
+    );
     const { rows } = await db.query(
       `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
       [id],
@@ -307,6 +312,11 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   await db.query(
     `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, created_at)
      SELECT ?, id, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+    [newId],
+  );
+  await db.query(
+    `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
+     VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
     [newId],
   );
   const { rows } = await db.query(
