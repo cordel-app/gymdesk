@@ -216,7 +216,7 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
 
     // Fetch gym's system tax rate (is_system=1); fall back to 21% if none configured
     const { rows: taxRows } = await db.query<any>(
-      'SELECT rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND active = 1 LIMIT 1',
+      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
       [gymId],
     );
     const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
@@ -305,7 +305,7 @@ paymentsRouter.get('/:id/receipt', async (req, res, next) => {
     );
     const gym = gymRows[0];
     const { rows: taxRows } = await db.query<any>(
-      'SELECT rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND active = 1 LIMIT 1',
+      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
       [gymId],
     );
     const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
