@@ -11,22 +11,24 @@
  */
 
 exports.up = async (knex) => {
-  // 1. billing_events: receipt fields
+  // 1. billing_events: receipt fields (each column guarded independently)
   if (!(await knex.schema.hasColumn('billing_events', 'receipt_number'))) {
-    await knex.schema.alterTable('billing_events', (t) => {
-      t.string('receipt_number', 20).nullable();
-      t.datetime('receipt_issued_at').nullable();
-    });
+    await knex.schema.alterTable('billing_events', (t) => t.string('receipt_number', 20).nullable());
+  }
+  if (!(await knex.schema.hasColumn('billing_events', 'receipt_issued_at'))) {
+    await knex.schema.alterTable('billing_events', (t) => t.datetime('receipt_issued_at').nullable());
   }
 
-  // 2. gyms: fiscal fields
-  if (!(await knex.schema.hasColumn('gyms', 'legal_name'))) {
-    await knex.schema.alterTable('gyms', (t) => {
-      t.string('legal_name', 255).nullable();
-      t.string('cif', 20).nullable();
-      t.string('fiscal_address', 500).nullable();
-      t.string('fiscal_phone', 50).nullable();
-    });
+  // 2. gyms: fiscal fields (each column guarded independently)
+  for (const [col, def] of [
+    ['legal_name',     (t) => t.string('legal_name', 255).nullable()],
+    ['cif',            (t) => t.string('cif', 20).nullable()],
+    ['fiscal_address', (t) => t.string('fiscal_address', 500).nullable()],
+    ['fiscal_phone',   (t) => t.string('fiscal_phone', 50).nullable()],
+  ]) {
+    if (!(await knex.schema.hasColumn('gyms', col))) {
+      await knex.schema.alterTable('gyms', def);
+    }
   }
 
   // 3. receipt_sequences
