@@ -63,13 +63,13 @@ promotionDetailsRouter.get('/charge-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const promotionId = (req.params as any).id;
   const { rows } = await db.query(
-    `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code,
-            gc.availability AS gym_charge_availability
+    `SELECT pcb.*, COALESCE(gc.name, ct.name) AS gym_charge_name, ct.code AS gym_charge_code,
+            gc.status AS gym_charge_status
      FROM promotion_charge_benefits pcb
      JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-     JOIN charge_types ct ON ct.id = gc.charge_type_id
+     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
      WHERE pcb.promotion_id = ? AND pcb.gym_id = ?
-     ORDER BY ct.name ASC`,
+     ORDER BY gym_charge_name ASC`,
     [promotionId, gymId],
   );
   res.json(rows);
@@ -95,7 +95,7 @@ promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req,
     const gymChargeIds = active.map((i: any) => i.gym_charge_id);
     const placeholders = gymChargeIds.map(() => '?').join(',');
     const { rows: owned } = await db.query(
-      `SELECT id FROM gym_charges WHERE gym_id = ? AND availability = 'available' AND id IN (${placeholders})`,
+      `SELECT id FROM gym_charges WHERE gym_id = ? AND status = 'active' AND deleted_at IS NULL AND id IN (${placeholders})`,
       [gymId, ...gymChargeIds],
     );
     if (owned.length !== gymChargeIds.length) {
@@ -116,13 +116,13 @@ promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req,
       }
     });
     const { rows } = await db.query(
-      `SELECT pcb.*, ct.name AS gym_charge_name, ct.code AS gym_charge_code,
-              gc.availability AS gym_charge_availability
+      `SELECT pcb.*, COALESCE(gc.name, ct.name) AS gym_charge_name, ct.code AS gym_charge_code,
+              gc.status AS gym_charge_status
        FROM promotion_charge_benefits pcb
        JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-       JOIN charge_types ct ON ct.id = gc.charge_type_id
+       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE pcb.promotion_id = ? AND pcb.gym_id = ?
-       ORDER BY ct.name ASC`,
+       ORDER BY gym_charge_name ASC`,
       [promotionId, gymId],
     );
     res.json(rows);
