@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { parseQuery, z } from '../infra/validate';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
@@ -33,17 +34,25 @@ export const paymentsRouter = Router();
 
 paymentsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { member_id, from, to, source } = req.query as Record<string, string | undefined>;
+  const q = parseQuery(req, res, z.object({
+    member_id: z.coerce.number().int().positive().optional(),
+    source: z.enum(SOURCES).optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+    offset: z.coerce.number().int().min(0).default(0),
+  }));
+  if (!q) return;
 
   const where: string[] = ["be.gym_id = ?", "be.event_type != 'status_changed'"];
   const params: any[] = [gymId];
-  if (member_id) { where.push('be.member_id = ?'); params.push(member_id); }
-  if (source) { where.push('be.source = ?'); params.push(source); }
-  if (from) { where.push('be.created_at >= ?'); params.push(from.length === 10 ? `${from} 00:00:00` : from); }
-  if (to) { where.push('be.created_at <= ?'); params.push(to.length === 10 ? `${to} 23:59:59` : to); }
+  if (q.member_id !== undefined) { where.push('be.member_id = ?'); params.push(q.member_id); }
+  if (q.source) { where.push('be.source = ?'); params.push(q.source); }
+  if (q.from) { where.push('be.created_at >= ?'); params.push(q.from.length === 10 ? `${q.from} 00:00:00` : q.from); }
+  if (q.to) { where.push('be.created_at <= ?'); params.push(q.to.length === 10 ? `${q.to} 23:59:59` : q.to); }
 
-  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
+  const limit = q.limit;
+  const offset = q.offset;
   const whereSql = where.join(' AND ');
 
   const { rows: countRows } = await db.query(
@@ -135,8 +144,13 @@ paymentsRouter.get('/member/:memberId', async (req, res) => {
   const { rows: memberRows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
-  const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
+  const pq = parseQuery(req, res, z.object({
+    limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+    offset: z.coerce.number().int().min(0).default(0),
+  }));
+  if (!pq) return;
+  const limit = pq.limit;
+  const offset = pq.offset;
 
   const { rows: countRows } = await db.query(
     "SELECT COUNT(*) AS total FROM billing_events be WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type != 'status_changed'",
