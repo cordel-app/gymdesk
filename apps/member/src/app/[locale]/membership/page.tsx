@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 
@@ -51,6 +52,7 @@ interface BillingEvent {
   amount: string | null;
   notes: string | null;
   created_at: string;
+  receipt_number: string | null;
 }
 
 interface PaymentRequest {
@@ -75,6 +77,7 @@ export default function MembershipPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
+  const { getToken } = useAuth();
   const { isLinked, loading: appLoading, gymName } = useApp();
 
   const [membership, setMembership] = useState<Membership | null>(null);
@@ -84,6 +87,8 @@ export default function MembershipPage() {
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [downloadingReceipt, setDownloadingReceipt] = useState<number | null>(null);
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -149,6 +154,22 @@ export default function MembershipPage() {
         setSubmitError(err.message ?? t('common.error'));
       }
       setSubmitting(false);
+    }
+  }
+
+  async function downloadReceipt(eventId: number) {
+    setDownloadingReceipt(eventId);
+    try {
+      const token = await getToken();
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(`/api/proxy/me/receipts/${eventId}`, { headers });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } finally {
+      setDownloadingReceipt(null);
     }
   }
 
@@ -321,6 +342,18 @@ export default function MembershipPage() {
                     </span>
                   )}
                   {e.notes && <span> · {e.notes}</span>}
+                  {e.event_type === 'payment_recorded' && e.receipt_number && (
+                    <span>
+                      {' · '}
+                      <button
+                        onClick={() => downloadReceipt(e.id)}
+                        disabled={downloadingReceipt === e.id}
+                        style={styles.receiptBtn}
+                      >
+                        {downloadingReceipt === e.id ? '…' : `${t('membership.download_receipt')} (${e.receipt_number})`}
+                      </button>
+                    </span>
+                  )}
                 </div>
               </li>
             ))}
@@ -416,6 +449,7 @@ const styles: Record<string, React.CSSProperties> = {
   eventLabel: { fontSize: 14, fontWeight: 500, color: '#18181b' },
   eventAmount: { fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
   eventSub: { fontSize: 12, color: '#71717a', marginTop: 4 },
+  receiptBtn: { background: 'none', border: 'none', padding: 0, color: '#1e7e40', textDecoration: 'underline', fontSize: 12, cursor: 'pointer' },
   emptyCard: { background: '#fff', borderRadius: 12, padding: '40px 24px', textAlign: 'center' },
   emptyTitle: { margin: '8px 0 12px', fontSize: 20, fontWeight: 700 },
   hint: { color: '#71717a', fontSize: 14, textAlign: 'center', margin: 0 },

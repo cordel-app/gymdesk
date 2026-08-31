@@ -10,6 +10,7 @@ import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
+import { generateReceiptPdf } from '../lib/receipt-pdf';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -964,7 +965,8 @@ meRouter.get('/billing-events', requireRole('member'), async (req: Request, res:
     );
     const { rows } = await db.query(
       `SELECT be.id, be.user_membership_id, be.event_type, be.previous_status, be.new_status,
-              be.amount, be.notes, be.created_at, ct.code AS charge_type_code
+              be.amount, be.notes, be.created_at, be.receipt_number,
+              ct.code AS charge_type_code
        FROM billing_events be
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
        WHERE be.gym_id = ? AND be.member_id = ?
@@ -972,6 +974,64 @@ meRouter.get('/billing-events', requireRole('member'), async (req: Request, res:
       [gymId, memberId],
     );
     res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Member downloads their own receipt PDF
+meRouter.get('/receipts/:billingEventId', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const billingEventId = parseInt(String(req.params.billingEventId), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const { rows: evRows } = await db.query<any>(
+      `SELECT be.id, be.event_type, be.amount, be.receipt_number, be.receipt_issued_at,
+              ct.code AS charge_type_code, m.name AS member_name
+       FROM billing_events be
+       LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
+       LEFT JOIN members m ON m.id = be.member_id
+       WHERE be.id = ? AND be.gym_id = ? AND be.member_id = ?`,
+      [billingEventId, gymId, memberId],
+    );
+    if (evRows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const ev = evRows[0];
+    if (!ev.receipt_number) return res.status(404).json({ error: 'Receipt not yet generated' });
+
+    const { rows: gymRows } = await db.query<any>(
+      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
+      [gymId],
+    );
+    const gym = gymRows[0];
+    const { rows: taxRows } = await db.query<any>(
+      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
+      [gymId],
+    );
+    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
+
+    const pdfBuffer = await generateReceiptPdf({
+      receiptNumber: ev.receipt_number,
+      issuedAt: new Date(ev.receipt_issued_at),
+      gym: {
+        name: gym.name,
+        legalName: gym.legal_name,
+        cif: gym.cif,
+        fiscalAddress: gym.fiscal_address,
+        fiscalPhone: gym.fiscal_phone,
+      },
+      memberName: ev.member_name ?? 'Socio',
+      concept: ev.charge_type_code ?? 'membership_fee',
+      totalAmount: parseFloat(ev.amount),
+      ivaRate,
+      currency: 'EUR',
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="recibo-${ev.receipt_number}.pdf"`);
+    res.send(pdfBuffer);
   } catch (err) {
     next(err);
   }

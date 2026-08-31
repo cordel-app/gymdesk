@@ -148,6 +148,7 @@
     "benefits_heading": "Included benefits",
     "history_heading": "Payment history",
     "history_empty": "No payments recorded yet.",
+    "download_receipt": "Download receipt",
     "status": {
       "active": "Active",
       "paused": "Paused",

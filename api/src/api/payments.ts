@@ -6,6 +6,7 @@ import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
+import { generateReceiptPdf } from '../lib/receipt-pdf';
 
 /**
  * #129: Payments module — operational payment actions over billing_events.
@@ -176,6 +177,160 @@ paymentsRouter.post('/apply-promotion', requireModuleWrite('PAYMENTS'), async (r
     res.status(201).json(result);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// POST /payments/:id/receipt — generate (idempotent) and return a factura simplificada PDF.
+// Only for payment_recorded events. Allocates a gapless receipt number on first call.
+paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const eventId = parseInt(String(req.params.id), 10);
+  if (!eventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const { rows: evRows } = await db.query<any>(
+      `SELECT be.id, be.event_type, be.amount, be.receipt_number, be.receipt_issued_at,
+              be.gym_id, be.charge_type_id, ct.code AS charge_type_code,
+              m.name AS member_name
+       FROM billing_events be
+       LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
+       LEFT JOIN members m ON m.id = be.member_id
+       WHERE be.id = ? AND be.gym_id = ?`,
+      [eventId, gymId],
+    );
+    if (evRows.length === 0) return res.status(404).json({ error: 'Billing event not found' });
+    const ev = evRows[0];
+    if (ev.event_type !== 'payment_recorded') {
+      return res.status(400).json({ error: 'Receipts can only be generated for payment_recorded events' });
+    }
+    if (!ev.amount || parseFloat(ev.amount) <= 0) {
+      return res.status(400).json({ error: 'Billing event has no valid amount' });
+    }
+
+    const { rows: gymRows } = await db.query<any>(
+      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
+      [gymId],
+    );
+    const gym = gymRows[0];
+
+    // Fetch gym's system tax rate (is_system=1); fall back to 21% if none configured
+    const { rows: taxRows } = await db.query<any>(
+      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
+      [gymId],
+    );
+    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
+
+    // Allocate receipt number if not yet issued
+    let receiptNumber = ev.receipt_number as string | null;
+    let issuedAt = ev.receipt_issued_at ? new Date(ev.receipt_issued_at) : null;
+
+    if (!receiptNumber) {
+      const year = new Date().getUTCFullYear();
+      const newNumber = await db.transaction(async (tx) => {
+        await tx.query(
+          'INSERT IGNORE INTO receipt_sequences (gym_id, year, last_seq) VALUES (?, ?, 0)',
+          [gymId, year],
+        );
+        await tx.query(
+          'UPDATE receipt_sequences SET last_seq = last_seq + 1 WHERE gym_id = ? AND year = ?',
+          [gymId, year],
+        );
+        const { rows } = await tx.query<{ last_seq: number }>(
+          'SELECT last_seq FROM receipt_sequences WHERE gym_id = ? AND year = ?',
+          [gymId, year],
+        );
+        const seq = rows[0].last_seq;
+        const formatted = `${year}-${String(seq).padStart(4, '0')}`;
+        const now = new Date();
+        await tx.query(
+          'UPDATE billing_events SET receipt_number = ?, receipt_issued_at = UTC_TIMESTAMP() WHERE id = ?',
+          [formatted, eventId],
+        );
+        return { formatted, now };
+      });
+      receiptNumber = newNumber.formatted;
+      issuedAt = newNumber.now;
+      recordAudit(req, { action: 'issue_receipt', entityType: 'billing_event', entityId: eventId, next: { receipt_number: receiptNumber } });
+    }
+
+    const pdfBuffer = await generateReceiptPdf({
+      receiptNumber,
+      issuedAt: issuedAt!,
+      gym: {
+        name: gym.name,
+        legalName: gym.legal_name,
+        cif: gym.cif,
+        fiscalAddress: gym.fiscal_address,
+        fiscalPhone: gym.fiscal_phone,
+      },
+      memberName: ev.member_name ?? 'Socio',
+      concept: ev.charge_type_code ?? 'membership_fee',
+      totalAmount: parseFloat(ev.amount),
+      ivaRate,
+      currency: 'EUR',
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="recibo-${receiptNumber}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /payments/:id/receipt — download existing PDF (404 if not yet generated)
+paymentsRouter.get('/:id/receipt', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const eventId = parseInt(String(req.params.id), 10);
+  if (!eventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const { rows: evRows } = await db.query<any>(
+      `SELECT be.id, be.event_type, be.amount, be.receipt_number, be.receipt_issued_at,
+              ct.code AS charge_type_code, m.name AS member_name
+       FROM billing_events be
+       LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
+       LEFT JOIN members m ON m.id = be.member_id
+       WHERE be.id = ? AND be.gym_id = ?`,
+      [eventId, gymId],
+    );
+    if (evRows.length === 0) return res.status(404).json({ error: 'Billing event not found' });
+    const ev = evRows[0];
+    if (!ev.receipt_number) return res.status(404).json({ error: 'Receipt not yet generated' });
+
+    const { rows: gymRows } = await db.query<any>(
+      'SELECT id, name, legal_name, cif, fiscal_address, fiscal_phone FROM gyms WHERE id = ?',
+      [gymId],
+    );
+    const gym = gymRows[0];
+    const { rows: taxRows } = await db.query<any>(
+      "SELECT rate_percent AS rate FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND status = 'active' LIMIT 1",
+      [gymId],
+    );
+    const ivaRate = taxRows.length > 0 ? parseFloat(taxRows[0].rate) : 21;
+
+    const pdfBuffer = await generateReceiptPdf({
+      receiptNumber: ev.receipt_number,
+      issuedAt: new Date(ev.receipt_issued_at),
+      gym: {
+        name: gym.name,
+        legalName: gym.legal_name,
+        cif: gym.cif,
+        fiscalAddress: gym.fiscal_address,
+        fiscalPhone: gym.fiscal_phone,
+      },
+      memberName: ev.member_name ?? 'Socio',
+      concept: ev.charge_type_code ?? 'membership_fee',
+      totalAmount: parseFloat(ev.amount),
+      ivaRate,
+      currency: 'EUR',
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="recibo-${ev.receipt_number}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
     next(err);
   }
 });
