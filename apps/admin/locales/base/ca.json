@@ -50,7 +50,8 @@
     "base_training_plan_templates": "Plans Base",
     "calendar": "Calendari",
     "recycle_bin": "Paperera de reciclatge",
-    "sellable_items": "Articles a la Venda"
+    "sellable_items": "Articles a la Venda",
+    "feature_flags": "Flags de funcionalitats"
   },
   "dashboard": {
     "title": "Tauler",
@@ -2446,5 +2447,18 @@
     "error_type_required": "El tipus és obligatori.",
     "error_units_positive": "Les unitats han de ser un nombre enter positiu.",
     "error_generic": "Alguna cosa ha anat malament."
+  },
+  "feature_flags": {
+    "title": "Flags de funcionalitats",
+    "description": "Controla quines seccions de navegació són visibles per als usuaris del gimnàs. Desactivar una secció també amaga tots els seus subelements.",
+    "on": "Activat",
+    "off": "Desactivat",
+    "enable": "Activar",
+    "disable": "Desactivar",
+    "empty": "No s'han trobat flags de funcionalitats.",
+    "load_error": "Error en carregar els flags.",
+    "toggle_error": "Error en actualitzar el flag.",
+    "enabled_ok": "'{key}' activat.",
+    "disabled_ok": "'{key}' desactivat."
   }
 }

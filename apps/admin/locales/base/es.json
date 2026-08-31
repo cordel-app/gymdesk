@@ -49,7 +49,8 @@
     "base_training_plan_templates": "Planes Base",
     "calendar": "Calendario",
     "recycle_bin": "Papelera de reciclaje",
-    "sellable_items": "Artículos a la Venta"
+    "sellable_items": "Artículos a la Venta",
+    "feature_flags": "Flags de características"
   },
   "dashboard": {
     "title": "Panel",
@@ -2418,5 +2419,18 @@
     "error_type_required": "El tipo es obligatorio.",
     "error_units_positive": "Las unidades deben ser un número entero positivo.",
     "error_generic": "Algo salió mal."
+  },
+  "feature_flags": {
+    "title": "Flags de características",
+    "description": "Controla qué secciones de navegación son visibles para los usuarios del gimnasio. Desactivar una sección también oculta todos sus subelementos.",
+    "on": "Activado",
+    "off": "Desactivado",
+    "enable": "Activar",
+    "disable": "Desactivar",
+    "empty": "No se encontraron flags de características.",
+    "load_error": "Error al cargar los flags.",
+    "toggle_error": "Error al actualizar el flag.",
+    "enabled_ok": "'{key}' activado.",
+    "disabled_ok": "'{key}' desactivado."
   }
 }

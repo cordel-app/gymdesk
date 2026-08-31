@@ -162,6 +162,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
     },
   },
 
+  feature_flag: { kind: 'none', label: 'Feature Flags' },
   trainer_availability: { kind: 'none', label: 'Trainer Availability' },
   workout_template_block: { kind: 'none', label: 'Workout Template Blocks' },
   workout_template_exercise: { kind: 'none', label: 'Workout Template Exercises' },
