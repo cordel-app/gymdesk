@@ -59,9 +59,25 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
          LIMIT 1`,
         [memberId],
       ));
+    } else if (isSuperadmin && isStaffImpersonation) {
+      // Staff impersonation: staff may not have a members row, so start from gym_memberships.
+      // Prefer the gym from x-gym-id if present (set by the frontend after impersonation starts).
+      const gymId = req.headers['x-gym-id'] as string | undefined;
+      ({ rows } = await db.query(
+        `SELECT g.id, g.name,
+                t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
+                t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+                t.tokens AS theme_tokens
+         FROM gym_memberships gm
+         JOIN gyms g ON g.id = gm.gym_id
+         LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
+         WHERE gm.user_id = ? AND gm.status = 'active'
+           ${gymId ? 'AND gm.gym_id = ?' : ''}
+         LIMIT 1`,
+        gymId ? [impersonateAs, gymId] : [impersonateAs],
+      ));
     } else {
-      // Normal or staff impersonation: look up by clerk_user_id
-      const lookupUserId = (isSuperadmin && isStaffImpersonation) ? impersonateAs! : callerUserId;
+      // Normal (non-impersonation): look up by clerk_user_id via members table
       ({ rows } = await db.query(
         `SELECT g.id, g.name,
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
@@ -73,7 +89,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
          LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
          WHERE m.clerk_user_id = ? AND m.deleted_at IS NULL
          LIMIT 1`,
-        [lookupUserId],
+        [callerUserId],
       ));
     }
 
