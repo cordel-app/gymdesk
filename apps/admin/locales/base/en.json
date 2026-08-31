@@ -48,7 +48,8 @@
     "base_workout_templates": "Base Workout Templates",
     "base_training_plan_templates": "Base Training Plans",
     "calendar": "Calendar",
-    "recycle_bin": "Recycle Bin"
+    "recycle_bin": "Recycle Bin",
+    "feature_flags": "Feature Flags"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -2360,5 +2361,18 @@
     "cancel": "Cancel",
     "error_generic": "Something went wrong.",
     "recover_success": "Item recovered successfully."
+  },
+  "feature_flags": {
+    "title": "Feature Flags",
+    "description": "Control which navigation sections are visible to gym users. Disabling a section also hides all its sub-items.",
+    "on": "Enabled",
+    "off": "Disabled",
+    "enable": "Enable",
+    "disable": "Disable",
+    "empty": "No feature flags found.",
+    "load_error": "Failed to load feature flags.",
+    "toggle_error": "Failed to update feature flag.",
+    "enabled_ok": "'{key}' enabled.",
+    "disabled_ok": "'{key}' disabled."
   }
 }
