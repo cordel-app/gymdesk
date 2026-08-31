@@ -293,3 +293,142 @@ describe('platform nutrition library duplicate', () => {
     createdItemIds.push(second.body.id);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Nutritional Qualities catalogue
+// ---------------------------------------------------------------------------
+
+describe('GET /platform/nutrition-library/nutritional-qualities', () => {
+  it('returns the seeded qualities', async () => {
+    const res = await request
+      .get('/platform/nutrition-library/nutritional-qualities')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    const slugs = res.body.map((q: any) => q.slug);
+    expect(slugs).toContain('protein');
+    expect(slugs).toContain('carbohydrate');
+  });
+
+  it('returns 401 without auth', async () => {
+    const res = await request.get('/platform/nutrition-library/nutritional-qualities');
+    expect(res.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Nutritional Qualities assignment
+// ---------------------------------------------------------------------------
+
+describe('nutritional qualities assignment', () => {
+  let itemId: number;
+  let proteinId: number;
+  let carbId: number;
+  const suffix = `${Date.now()}-nq`;
+
+  beforeAll(async () => {
+    // Create a fresh item for quality tests
+    const createRes = await request
+      .post('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `NQ Lentils ${suffix}`, category: 'main_dish' });
+    expect(createRes.status).toBe(201);
+    itemId = createRes.body.id;
+    createdItemIds.push(itemId);
+
+    // Resolve quality IDs from the catalogue
+    const qualRes = await request
+      .get('/platform/nutrition-library/nutritional-qualities')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(qualRes.status).toBe(200);
+    proteinId = qualRes.body.find((q: any) => q.slug === 'protein').id;
+    carbId    = qualRes.body.find((q: any) => q.slug === 'carbohydrate').id;
+  });
+
+  it('POST with quality_ids returns item with qualities', async () => {
+    const res = await request
+      .post('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `NQ Chicken ${suffix}`, category: 'main_dish', quality_ids: [proteinId] });
+    expect(res.status).toBe(201);
+    expect(res.body.qualities).toHaveLength(1);
+    expect(res.body.qualities[0].slug).toBe('protein');
+    createdItemIds.push(res.body.id);
+  });
+
+  it('PUT /:id/qualities assigns qualities and returns them', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/qualities`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ quality_ids: [proteinId, carbId] });
+    expect(res.status).toBe(200);
+    expect(res.body.qualities).toHaveLength(2);
+    const slugs = res.body.qualities.map((q: any) => q.slug).sort();
+    expect(slugs).toEqual(['carbohydrate', 'protein']);
+  });
+
+  it('GET /platform/nutrition-library includes qualities per item', async () => {
+    const res = await request
+      .get('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    const found = res.body.find((i: any) => i.id === itemId);
+    expect(found).toBeDefined();
+    expect(Array.isArray(found.qualities)).toBe(true);
+    expect(found.qualities).toHaveLength(2);
+  });
+
+  it('PUT /:id/qualities replaces (not appends) on second call', async () => {
+    // Assign only protein
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/qualities`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ quality_ids: [proteinId] });
+    expect(res.status).toBe(200);
+    expect(res.body.qualities).toHaveLength(1);
+    expect(res.body.qualities[0].slug).toBe('protein');
+  });
+
+  it('PUT /:id/qualities with empty array removes all qualities', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/qualities`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ quality_ids: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.qualities).toHaveLength(0);
+  });
+
+  it('PUT /:id/qualities returns 400 for invalid quality_ids', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/qualities`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ quality_ids: [99999] });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/qualities returns 400 when quality_ids is not an array', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/qualities`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ quality_ids: proteinId });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/qualities returns 404 for unknown item', async () => {
+    const res = await request
+      .put('/platform/nutrition-library/999999/qualities')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ quality_ids: [proteinId] });
+    expect(res.status).toBe(404);
+  });
+
+  it('PUT update with quality_ids replaces qualities', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `NQ Lentils Updated ${suffix}`, quality_ids: [carbId] });
+    expect(res.status).toBe(200);
+    expect(res.body.qualities).toHaveLength(1);
+    expect(res.body.qualities[0].slug).toBe('carbohydrate');
+  });
+});

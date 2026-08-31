@@ -9,6 +9,8 @@ import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle } from '@/components/ui';
 
+interface NutritionalQuality { id: number; slug: string }
+
 interface LibraryItem {
   id: number;
   name: string;
@@ -16,27 +18,40 @@ interface LibraryItem {
   status: 'active' | 'deleted';
   created_at: string;
   modified_at: string | null;
+  qualities: NutritionalQuality[];
 }
 
 const CATEGORIES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other'] as const;
 type Category = typeof CATEGORIES[number];
+
+const QUALITY_LABELS: Record<string, string> = {
+  protein: 'Protein',
+  carbohydrate: 'Carbohydrate',
+};
+
+function qualityLabel(slug: string) {
+  return QUALITY_LABELS[slug] ?? slug;
+}
 
 export default function CordelNutritionLibraryPage() {
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleted, setShowDeleted] = useState(false);
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState<Category>('main_dish');
+  const [newQualityIds, setNewQualityIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
 
   const [editing, setEditing] = useState<LibraryItem | null>(null);
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState<Category>('main_dish');
+  const [editQualityIds, setEditQualityIds] = useState<number[]>([]);
 
   const [deleting, setDeleting] = useState<LibraryItem | null>(null);
 
@@ -44,11 +59,20 @@ export default function CordelNutritionLibraryPage() {
     setLoading(true);
     try {
       const params = showDeleted ? '?status=deleted' : '';
-      setItems(await apiFetch<LibraryItem[]>(`/platform/nutrition-library${params}`));
+      const [itemsData, qualitiesData] = await Promise.all([
+        apiFetch<LibraryItem[]>(`/platform/nutrition-library${params}`),
+        apiFetch<NutritionalQuality[]>('/platform/nutrition-library/nutritional-qualities'),
+      ]);
+      setItems(itemsData);
+      setAllQualities(qualitiesData);
     } catch { /* ignore */ } finally { setLoading(false); }
   }, [apiFetch, showDeleted]);
 
   useEffect(() => { load(); }, [load]);
+
+  function toggleQuality(ids: number[], qualityId: number): number[] {
+    return ids.includes(qualityId) ? ids.filter((id) => id !== qualityId) : [...ids, qualityId];
+  }
 
   async function handleCreate() {
     if (!newName.trim()) return;
@@ -56,9 +80,11 @@ export default function CordelNutritionLibraryPage() {
     try {
       await apiFetch('/platform/nutrition-library', {
         method: 'POST',
-        body: JSON.stringify({ name: newName.trim(), category: newCategory }),
+        body: JSON.stringify({ name: newName.trim(), category: newCategory, quality_ids: newQualityIds }),
       });
-      setCreating(false); setNewName('');
+      setCreating(false);
+      setNewName('');
+      setNewQualityIds([]);
       toast('Item created', 'success');
       load();
     } catch (e: any) {
@@ -72,7 +98,7 @@ export default function CordelNutritionLibraryPage() {
     try {
       await apiFetch(`/platform/nutrition-library/${editing.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ name: editName.trim(), category: editCategory }),
+        body: JSON.stringify({ name: editName.trim(), category: editCategory, quality_ids: editQualityIds }),
       });
       setEditing(null);
       toast('Item updated', 'success');
@@ -103,7 +129,7 @@ export default function CordelNutritionLibraryPage() {
             <input type="checkbox" checked={showDeleted} onChange={e => setShowDeleted(e.target.checked)} />
             Show deleted
           </label>
-          <button style={btnStyle()} onClick={() => setCreating(true)}>+ New Item</button>
+          <button style={btnStyle()} onClick={() => { setCreating(true); setNewName(''); setNewCategory('main_dish'); setNewQualityIds([]); }}>+ New Item</button>
         </div>
       </div>
 
@@ -124,6 +150,17 @@ export default function CordelNutritionLibraryPage() {
                     <tr key={item.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
                       <td style={{ padding: '10px 8px', fontWeight: 500 }}>{item.name}</td>
                       <td style={{ padding: '10px 8px' }}>
+                        {item.qualities.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {item.qualities.map(q => (
+                              <span key={q.id} style={qualityChipStyle}>{qualityLabel(q.slug)}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 8px' }}>
                         <StatusBadge status={item.status} label={item.status} />
                       </td>
                       <td style={{ padding: '10px 8px', width: 40, textAlign: 'right' }}>
@@ -135,6 +172,7 @@ export default function CordelNutritionLibraryPage() {
                                 setEditing(item);
                                 setEditName(item.name);
                                 setEditCategory(item.category as Category);
+                                setEditQualityIds(item.qualities.map(q => q.id));
                               },
                             },
                             {
@@ -154,6 +192,7 @@ export default function CordelNutritionLibraryPage() {
         })
       )}
 
+      {/* Create modal */}
       <CrudModal
         open={creating}
         title="New Library Item"
@@ -175,8 +214,23 @@ export default function CordelNutritionLibraryPage() {
         <select className="form-input" value={newCategory} onChange={e => setNewCategory(e.target.value as Category)}>
           {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
         </select>
+        <FormLabel>Nutritional Qualities</FormLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {allQualities.map(q => (
+            <label key={q.id} style={qualityCheckboxLabel(newQualityIds.includes(q.id))}>
+              <input
+                type="checkbox"
+                checked={newQualityIds.includes(q.id)}
+                onChange={() => setNewQualityIds(prev => toggleQuality(prev, q.id))}
+                style={{ marginRight: 6 }}
+              />
+              {qualityLabel(q.slug)}
+            </label>
+          ))}
+        </div>
       </CrudModal>
 
+      {/* Edit modal */}
       <CrudModal
         open={editing !== null}
         title="Edit Library Item"
@@ -197,6 +251,20 @@ export default function CordelNutritionLibraryPage() {
         <select className="form-input" value={editCategory} onChange={e => setEditCategory(e.target.value as Category)}>
           {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
         </select>
+        <FormLabel>Nutritional Qualities</FormLabel>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {allQualities.map(q => (
+            <label key={q.id} style={qualityCheckboxLabel(editQualityIds.includes(q.id))}>
+              <input
+                type="checkbox"
+                checked={editQualityIds.includes(q.id)}
+                onChange={() => setEditQualityIds(prev => toggleQuality(prev, q.id))}
+                style={{ marginRight: 6 }}
+              />
+              {qualityLabel(q.slug)}
+            </label>
+          ))}
+        </div>
       </CrudModal>
 
       <ConfirmDialog
@@ -209,4 +277,30 @@ export default function CordelNutritionLibraryPage() {
       />
     </div>
   );
+}
+
+const qualityChipStyle: React.CSSProperties = {
+  background: 'var(--badge-bg, #eff6ff)',
+  border: '1px solid var(--badge-border, #bfdbfe)',
+  color: 'var(--badge-text, #1d4ed8)',
+  borderRadius: 12,
+  padding: '2px 10px',
+  fontSize: 12,
+  fontWeight: 500,
+};
+
+function qualityCheckboxLabel(checked: boolean): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    padding: '4px 12px',
+    borderRadius: 12,
+    border: `1px solid ${checked ? 'var(--badge-border, #bfdbfe)' : 'var(--card-border, #e5e7eb)'}`,
+    background: checked ? 'var(--badge-bg, #eff6ff)' : 'transparent',
+    color: checked ? 'var(--badge-text, #1d4ed8)' : 'inherit',
+    cursor: 'pointer',
+    fontSize: 13,
+    fontWeight: 500,
+    userSelect: 'none',
+  };
 }

@@ -2177,7 +2177,11 @@
     "category_sauce": "Salsas",
     "category_drink": "Bebidas",
     "category_dessert": "Postres",
-    "category_other": "Otros"
+    "category_other": "Otros",
+    "nutritional_qualities_label": "Cualidades Nutricionales",
+    "quality_protein": "Proteína",
+    "quality_carbohydrate": "Carbohidrato",
+    "no_qualities": "Ninguna"
   },
   "impersonation": {
     "impersonating_label": "Estás suplantando a:",
