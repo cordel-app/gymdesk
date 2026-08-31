@@ -148,6 +148,7 @@
     "benefits_heading": "Beneficis inclosos",
     "history_heading": "Historial de pagaments",
     "history_empty": "Encara no hi ha pagaments registrats.",
+    "download_receipt": "Descarregar rebut",
     "status": {
       "active": "Activa",
       "paused": "Pausada",
