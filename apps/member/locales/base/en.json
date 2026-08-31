@@ -178,6 +178,40 @@
       "yearly": "Yearly"
     }
   },
+  "payment_banner": {
+    "pending_heading": "You have a pending payment",
+    "pay_now": "Pay now",
+    "start_payment": "Make a payment"
+  },
+  "payment_consent": {
+    "title": "Recurring billing authorisation",
+    "body": "By continuing, you authorise {gymName} to charge {amount} {currency} every {interval} to the card you enter, until you cancel your membership.",
+    "checkbox": "I have read and accept the recurring billing terms.",
+    "cancel": "Cancel",
+    "confirm": "Continue to payment →",
+    "submitting": "Redirecting…",
+    "rate_limited": "Too many requests. Please try again later."
+  },
+  "payment_success": {
+    "processing": "Payment processing…",
+    "done": "✓ Payment complete",
+    "timeout": "Check your email for confirmation",
+    "back": "Back to my membership"
+  },
+  "payment_error": {
+    "title": "Payment was not completed",
+    "retry": "Try again"
+  },
+  "billing_unit": {
+    "day_one": "day",
+    "day_other": "days",
+    "week_one": "week",
+    "week_other": "weeks",
+    "month_one": "month",
+    "month_other": "months",
+    "year_one": "year",
+    "year_other": "years"
+  },
   "impersonation": {
     "impersonating_label": "You are impersonating:",
     "signed_in_as": "Signed in as:",
