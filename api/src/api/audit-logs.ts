@@ -53,8 +53,8 @@ auditLogsRouter.get('/', requireRole('admin'), async (req, res) => {
   if (actor_user_id){ where.push('a.actor_user_id = ?');                          params.push(actor_user_id); }
   if (action)       { where.push('a.action = ?');                                 params.push(action); }
   if (source)       { where.push('a.source = ?');                                 params.push(source); }
-  if (from) { where.push('a.created_at >= ?'); params.push(from.length === 10 ? `${from} 00:00:00` : from); }
-  if (to)   { where.push('a.created_at <= ?'); params.push(to.length === 10   ? `${to} 23:59:59`  : to); }
+  if (from) { const f = String(from); where.push('a.created_at >= ?'); params.push(f.length === 10 ? `${f} 00:00:00` : f); }
+  if (to)   { const t = String(to);   where.push('a.created_at <= ?'); params.push(t.length === 10 ? `${t} 23:59:59`  : t); }
 
   const limit  = Math.min(Math.max(parseInt(String(req.query.limit  ?? 50), 10) || 50, 1), 200);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
