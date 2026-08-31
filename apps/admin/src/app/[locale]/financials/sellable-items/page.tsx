@@ -43,6 +43,13 @@ interface SellableItem {
   notes: string | null;
   package_information: string | null;
   validity_days: number | null;
+  tax_rate_id: number | null;
+  tax_behavior: 'inclusive' | 'exclusive';
+  tax_rate_name: string | null;
+  tax_rate_percent: string | null;
+  amount_excl_tax: number | null;
+  amount_incl_tax: number | null;
+  applied_tax_rate: number | null;
   deleted_at: string | null;
   created_at: string;
   created_by_membership_id: number | null;
@@ -152,7 +159,7 @@ export default function SellableItemsPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (searchQ.trim()) params.set('q', searchQ.trim());
       const qs = params.toString();
-      setItems(await apiFetch<SellableItem[]>(`/gym-charges${qs ? `?${qs}` : ''}`));
+      setItems(await apiFetch<SellableItem[]>(`/sellable-items${qs ? `?${qs}` : ''}`));
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -201,7 +208,7 @@ export default function SellableItemsPage() {
     }
     setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
-      await apiFetch<SellableItem>('/gym-charges', {
+      await apiFetch<SellableItem>('/sellable-items', {
         method: 'POST',
         body: JSON.stringify({
           name: inlineNew.name.trim(),
@@ -241,7 +248,7 @@ export default function SellableItemsPage() {
     }
     setEditSaving(true); setEditError(null);
     try {
-      await apiFetch(`/gym-charges/${item.id}`, {
+      await apiFetch(`/sellable-items/${item.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           name: editForm.name.trim() || undefined,
@@ -270,14 +277,14 @@ export default function SellableItemsPage() {
 
   async function handleActivate(item: SellableItem) {
     try {
-      await apiFetch(`/gym-charges/${item.id}/activate`, { method: 'POST' });
+      await apiFetch(`/sellable-items/${item.id}/activate`, { method: 'POST' });
       load();
     } catch (err: any) { toast(err.message ?? t('error_generic')); }
   }
 
   async function handleDeactivate(item: SellableItem) {
     try {
-      await apiFetch(`/gym-charges/${item.id}/deactivate`, { method: 'POST' });
+      await apiFetch(`/sellable-items/${item.id}/deactivate`, { method: 'POST' });
       load();
     } catch (err: any) { toast(err.message ?? t('error_generic')); }
   }
@@ -287,7 +294,7 @@ export default function SellableItemsPage() {
   async function handleDelete() {
     if (!deleting) return;
     try {
-      await apiFetch(`/gym-charges/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`/sellable-items/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
       if (editingId === deleting.id) { setEditingId(null); setEditForm(null); }
       setExpanded((prev) => { const next = new Set(prev); next.delete(deleting.id); return next; });
@@ -402,8 +409,15 @@ export default function SellableItemsPage() {
           <div style={{ minWidth: 70, fontSize: 13, color: '#555', flexShrink: 0, textAlign: 'right' }}>
             {item.units != null ? item.units : '—'}
           </div>
-          <div style={{ minWidth: 90, fontSize: 13, flexShrink: 0 }}>
-            {fmtAmount(item.amount, item.currency)}
+          <div style={{ minWidth: 110, fontSize: 13, flexShrink: 0 }}>
+            {item.amount_incl_tax != null
+              ? `${item.currency === 'EUR' ? '€' : item.currency}${item.amount_incl_tax.toFixed(2)} ${t(item.tax_behavior === 'exclusive' ? 'taxExcluded' : 'taxIncluded')}`
+              : fmtAmount(item.amount, item.currency)}
+          </div>
+          <div style={{ minWidth: 80, fontSize: 13, color: '#666', flexShrink: 0 }}>
+            {item.applied_tax_rate != null
+              ? item.applied_tax_rate === 0 ? t('exempt') : `${item.applied_tax_rate}%`
+              : '—'}
           </div>
           <div style={{ minWidth: 90, fontSize: 13, color: '#666', flexShrink: 0 }}>
             {item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'}
@@ -624,7 +638,8 @@ export default function SellableItemsPage() {
           <div style={{ flex: 2 }}>{t('col_name')}</div>
           <div style={{ minWidth: 90 }}>{t('col_type')}</div>
           <div style={{ minWidth: 70, textAlign: 'right' }}>{t('col_units')}</div>
-          <div style={{ minWidth: 90 }}>{t('col_amount')}</div>
+          <div style={{ minWidth: 110 }}>{t('col_amount')}</div>
+          <div style={{ minWidth: 80 }}>{t('col_tax_rate')}</div>
           <div style={{ minWidth: 90 }}>{t('col_frequency')}</div>
           <div style={{ minWidth: 80 }}>{t('col_created_by')}</div>
           <div style={{ minWidth: 85 }}>{t('col_created_at')}</div>

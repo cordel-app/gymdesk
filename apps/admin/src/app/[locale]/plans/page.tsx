@@ -182,7 +182,7 @@ export default function PlansPage() {
 
   useEffect(() => {
     if (!gymLoading && activeGymId) {
-      apiFetch<GymCharge[]>('/gym-charges?availability=available').then(setGymCharges).catch(() => {});
+      apiFetch<GymCharge[]>('/sellable-items?availability=available').then(setGymCharges).catch(() => {});
     }
   }, [gymLoading, activeGymId]);
 
