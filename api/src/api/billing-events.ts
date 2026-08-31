@@ -63,8 +63,8 @@ billingEventsRouter.get('/', async (req, res) => {
   if (member_id) { where.push('be.member_id = ?'); params.push(member_id); }
   if (user_membership_id) { where.push('be.user_membership_id = ?'); params.push(user_membership_id); }
   if (event_type) { where.push('be.event_type = ?'); params.push(event_type); }
-  if (from) { where.push('be.created_at >= ?'); params.push(from.length === 10 ? `${from} 00:00:00` : from); }
-  if (to) { where.push('be.created_at <= ?'); params.push(to.length === 10 ? `${to} 23:59:59` : to); }
+  if (from) { const f = String(from); where.push('be.created_at >= ?'); params.push(f.length === 10 ? `${f} 00:00:00` : f); }
+  if (to) { const t = String(to); where.push('be.created_at <= ?'); params.push(t.length === 10 ? `${t} 23:59:59` : t); }
 
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
   const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
