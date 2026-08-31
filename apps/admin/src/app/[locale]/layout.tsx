@@ -6,6 +6,7 @@ import { getMessages } from 'next-intl/server';
 import { GymProvider } from '@/context/GymContext';
 import { CenterProvider } from '@/context/CenterContext';
 import { ImpersonationProvider } from '@/context/ImpersonationContext';
+import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 import { AppShell } from '@/components/AppShell';
 import { ToastProvider } from '@/components/Toast';
 import { ThemeProvider } from '@/components/ThemeProvider';
@@ -36,9 +37,11 @@ export default async function LocaleLayout({
               <ImpersonationProvider>
                 <GymProvider>
                   <CenterProvider>
-                    <ThemeProvider>
-                      <AppShell>{children}</AppShell>
-                    </ThemeProvider>
+                    <FeatureFlagsProvider>
+                      <ThemeProvider>
+                        <AppShell>{children}</AppShell>
+                      </ThemeProvider>
+                    </FeatureFlagsProvider>
                   </CenterProvider>
                 </GymProvider>
               </ImpersonationProvider>

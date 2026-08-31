@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { navigationGroups, filterNavGroups, NavItem as NavItemType, NavGroup as NavGroupType } from '@/config/navigationGroups';
 import { NavGroup } from './NavGroup';
 
@@ -13,6 +14,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const locale = useLocale();
   const pathname = usePathname();
   const { isSuperadmin, activeGym } = useGym();
+  const { flags } = useFeatureFlags();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Determine user role for filtering
@@ -39,7 +41,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   // Auto-expand group containing active route
   useEffect(() => {
-    const filteredGroups = filterNavGroups(navigationGroups, userRole);
+    const filteredGroups = filterNavGroups(navigationGroups, userRole, flags);
 
     for (const group of filteredGroups) {
       const hasActiveItem = group.items.some(item =>
@@ -64,7 +66,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   });
 
   // Translate all groups
-  const translatedGroups = filterNavGroups(navigationGroups, userRole).map(group => ({
+  const translatedGroups = filterNavGroups(navigationGroups, userRole, flags).map(group => ({
     ...group,
     items: group.items.map(translateItem),
   }));

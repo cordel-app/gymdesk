@@ -7,8 +7,8 @@ import { useAuth } from '@clerk/nextjs';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApp } from '@/context/AppContext';
 
-interface Candidate {
-  userId: string;
+interface Target {
+  id: string;
   name: string;
   type: 'member' | 'staff';
   role: string;
@@ -27,7 +27,7 @@ export function MemberImpersonationDialog({ onClose }: Props) {
   const { user } = useUser();
 
   const [query, setQuery] = useState('');
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,13 +38,13 @@ export function MemberImpersonationDialog({ onClose }: Props) {
     try {
       const token = await getToken();
       const res = await fetch(
-        `/api/proxy/platform/impersonation/candidates?q=${encodeURIComponent(q)}&gym_id=${gymId}`,
+        `/api/proxy/platform/impersonation/targets?q=${encodeURIComponent(q)}&gym_id=${gymId}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error();
-      setCandidates(await res.json());
+      setTargets(await res.json());
     } catch {
-      setCandidates([]);
+      setTargets([]);
     } finally {
       setLoading(false);
     }
@@ -57,16 +57,17 @@ export function MemberImpersonationDialog({ onClose }: Props) {
 
   useEffect(() => { search(''); }, [search]);
 
-  async function handleImpersonate(candidate: Candidate) {
+  async function handleImpersonate(target: Target) {
     if (starting) return;
-    setStarting(candidate.userId);
+    setStarting(target.id);
     setError(null);
     try {
       const token = await getToken();
-      const res = await fetch(`/api/proxy/platform/impersonation/${candidate.userId}`, {
+      const res = await fetch(`/api/proxy/platform/impersonation/${encodeURIComponent(target.id)}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
           ...(gymId ? { 'x-gym-id': gymId } : {}) },
+        body: JSON.stringify({ targetType: target.type }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -129,12 +130,12 @@ export function MemberImpersonationDialog({ onClose }: Props) {
           {loading && (
             <div style={{ padding: '14px 16px', color: '#6b7280', fontSize: 14 }}>{t('searching')}</div>
           )}
-          {!loading && candidates.length === 0 && (
+          {!loading && targets.length === 0 && (
             <div style={{ padding: '14px 16px', color: '#6b7280', fontSize: 14 }}>{t('search_empty')}</div>
           )}
-          {candidates.map((c) => (
+          {targets.map((c) => (
             <button
-              key={c.userId}
+              key={c.id}
               onClick={() => handleImpersonate(c)}
               disabled={!!starting}
               style={{
@@ -142,7 +143,7 @@ export function MemberImpersonationDialog({ onClose }: Props) {
                 width: '100%', padding: '10px 16px', border: 'none',
                 background: 'none', cursor: 'pointer', textAlign: 'left',
                 borderBottom: '1px solid #f0f0f0',
-                opacity: starting && starting !== c.userId ? 0.5 : 1,
+                opacity: starting && starting !== c.id ? 0.5 : 1,
               }}
             >
               <div style={{

@@ -271,7 +271,7 @@ export default function RecycleBinPage() {
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <thead>
-            <tr style={{ borderBottom: '2px solid var(--gd-border, #eee)' }}>
+            <tr style={{ borderBottom: '2px solid var(--gd-card-border, #eee)' }}>
               <SortHeader label={t('col_entity_type')} sortKey="entity_type" current={sortKey} dir={sortDir} onToggle={toggleSort} />
               <SortHeader label={t('col_name')} sortKey="name" current={sortKey} dir={sortDir} onToggle={toggleSort} />
               <th style={thStyle}>{t('col_description')}</th>
@@ -290,7 +290,7 @@ export default function RecycleBinPage() {
             {!loading && items.map((item) => (
               <tr
                 key={`${item.entity_type}-${item.id}`}
-                style={{ borderBottom: '1px solid var(--gd-border, #f0f0f0)', cursor: 'pointer' }}
+                style={{ borderBottom: '1px solid var(--gd-card-border, #f0f0f0)', cursor: 'pointer' }}
                 onClick={() => openDetail(item)}
               >
                 <td style={tdStyle}>
@@ -472,7 +472,7 @@ function EntityDetailContent({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {rows.map((row, i) =>
         row.label === '__divider__' ? (
-          <hr key={i} style={{ border: 'none', borderTop: '1px solid var(--gd-border, #eee)', margin: '4px 0' }} />
+          <hr key={i} style={{ border: 'none', borderTop: '1px solid var(--gd-card-border, #eee)', margin: '4px 0' }} />
         ) : (
           <DetailRow key={i} label={row.label} value={row.value} />
         )

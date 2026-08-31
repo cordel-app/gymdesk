@@ -16,6 +16,7 @@ import { billingEventsRouter } from './api/billing-events';
 import { spacesRouter } from './api/spaces';
 import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
+import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-rules';
 import { classSessionsRouter } from './api/class-sessions';
 // Side-effect import: registers the booking access hook for plan allowances + center validation.
 import './api/plan-allowances';
@@ -51,8 +52,16 @@ import { staffRouter } from './api/staff';
 import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
+import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
+import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
+import { platformExercisesRouter } from './api/platform-exercises';
+import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
+import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
+import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 import { calendarEventsRouter } from './api/calendar-events';
 import { recycleBinRouter } from './api/recycle-bin';
+import { platformFeatureFlagsRouter, featureFlagsPublicRouter } from './api/platform-feature-flags';
+import { requireFeatureEnabled } from './infra/featureFlags';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
 import { paymentRequestsRouter } from './api/payment-requests';
 import { paymentPageRouter } from './api/payment-page';
@@ -137,9 +146,18 @@ app.use('/gyms', requireAuth(), gymsRouter);
 
 // Platform superadmin routes
 app.use('/platform/themes', requireAuth(), themesRouter);
+app.use('/platform/nutrition-library', requireAuth(), platformNutritionLibraryRouter);
+app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);
+app.use('/platform/exercises', requireAuth(), platformExercisesRouter);
+app.use('/platform/workout-templates', requireAuth(), platformWorkoutTemplatesRouter);
+app.use('/platform/training-plan-templates', requireAuth(), platformTrainingPlanTemplatesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 app.use('/platform/impersonation', requireAuth(), impersonationRouter);
+app.use('/platform/feature-flags', requireAuth(), platformFeatureFlagsRouter);
+
+// Feature flags public read — any authenticated user (used by frontend sidebar)
+app.use('/feature-flags', requireAuth(), featureFlagsPublicRouter);
 
 // Domain routes — require auth + tenant context (gym_id from x-gym-id header)
 // /me/link + /gym-users/link must come before tenantContext (no membership row exists yet on first link)
@@ -150,60 +168,62 @@ app.use('/me/gym', requireAuth(), meGymRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE
-app.use('/gym-users',     requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), gymUsersRouter);
-app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), spacesRouter);
-app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), trainersRouter);
-app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), staffRouter);
-app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), activityTypesRouter);
-app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), classPackagesRouter);
-app.use('/centers',       requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), centersRouter);
-app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), trainerAvailabilityRouter);
+app.use('/gym-users',     requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), gymUsersRouter);
+app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.spaces'), spacesRouter);
+app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), trainersRouter);
+app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), staffRouter);
+app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypesRouter);
+app.use('/activity-types/:activityTypeId/schedule-rules', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypeScheduleRulesRouter);
+app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.class_packages'), classPackagesRouter);
+app.use('/centers',       requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.centers'), centersRouter);
+app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), trainerAvailabilityRouter);
 
 // MEMBERS module — admin/front_desk=RW, trainer*/nutritionist=R_ASSIGNED, accountant/member=NONE
-app.use('/members',       requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), membersRouter);
-app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), memberCentersRouter);
-app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), bookingsRouter);
+app.use('/members',       requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), membersRouter);
+app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), memberCentersRouter);
+app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), bookingsRouter);
 
 // TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE
-app.use('/muscles',          requireAuth(), tenantContext, requireModuleAccess('TRAINING'), musclesRouter);
-app.use('/exercises',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), exercisesRouter);
-app.use('/result-types',     requireAuth(), tenantContext, requireModuleAccess('TRAINING'), resultTypesRouter);
-app.use('/workout-templates', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), workoutTemplatesRouter);
-app.use('/training-plan-templates', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), trainingPlanTemplatesRouter);
-app.use('/training-plans',   requireAuth(), tenantContext, requireModuleAccess('TRAINING'), gymTrainingPlansRouter);
-app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), trainingPlansRouter);
-app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), memberTrainingPlansRouter);
-app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), exerciseLogsRouter);
-app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), workoutBlockLogsRouter);
-app.use('/class-sessions',    requireAuth(), tenantContext, centerContext, requireModuleAccess('TRAINING'), classSessionsRouter);
-app.use('/calendar-events',  requireAuth(), tenantContext, requireModuleAccess('TRAINING'), calendarEventsRouter);
+app.use('/muscles',          requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), musclesRouter);
+app.use('/exercises',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), exercisesRouter);
+app.use('/result-types',     requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), resultTypesRouter);
+app.use('/workout-templates', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.workout_templates'), workoutTemplatesRouter);
+app.use('/training-plan-templates', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plan_templates'), trainingPlanTemplatesRouter);
+app.use('/training-plans',   requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plans'), gymTrainingPlansRouter);
+app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plans'), trainingPlansRouter);
+app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plans'), memberTrainingPlansRouter);
+app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), exerciseLogsRouter);
+app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), workoutBlockLogsRouter);
+app.use('/class-sessions',    requireAuth(), tenantContext, centerContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), classSessionsRouter);
+app.use('/calendar-events',  requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), calendarEventsRouter);
 
 // NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
-app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionPlanTemplatesRouter);
+app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_plan_templates'), nutritionPlanTemplatesRouter);
+app.use('/member-nutrition-plans', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_plans'), memberNutritionPlansRouter);
 // Global read-only catalog — no gym_id required; only requireAuth + module gate
-app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), nutritionLibraryRouter);
+app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionLibraryRouter);
 
 // FINANCIALS module — admin=RW, front_desk/accountant=R, trainer*/nutritionist/member=NONE
-app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), membershipPlansRouter);
-app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), benefitTypesRouter);
-app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), chargeTypesRouter);
-app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), actionTypesRouter);
-app.use('/gym-charges',      requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), gymChargesRouter);
-app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), promotionsRouter);
-app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), promotionDetailsRouter);
+app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.plans'), membershipPlansRouter);
+app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), benefitTypesRouter);
+app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), chargeTypesRouter);
+app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), actionTypesRouter);
+app.use('/gym-charges',      requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), gymChargesRouter);
+app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionsRouter);
+app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionDetailsRouter);
 
 // PAYMENTS module — admin/front_desk=RW, accountant=R, member=R_OWN (via /me/*), trainer*/nutritionist=NONE
-app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), billingEventsRouter);
-app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), userMembershipsRouter);
-app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), membershipPromotionsRouter);
-app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), userClassPackagesRouter);
-app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), paymentsRouter);
-app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), paymentRequestsRouter);
+app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), billingEventsRouter);
+app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipsRouter);
+app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), membershipPromotionsRouter);
+app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('organization.class_packages'), userClassPackagesRouter);
+app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentsRouter);
+app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentRequestsRouter);
 
 // SYSTEM module — admin=RW, all others=NONE
-app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), auditLogsRouter);
-app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), gymThemesRouter);
-app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), recycleBinRouter);
+app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.audit'), auditLogsRouter);
+app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.themes'), gymThemesRouter);
+app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.recycle_bin'), recycleBinRouter);
 
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

@@ -29,6 +29,7 @@ export interface WorkoutTemplate {
   notes: string | null;
   status: 'active' | 'inactive';
   blocks_count: number;
+  gym_id: string | null;
   created_by_name: string | null;
   created_at: string;
   modified_at: string | null;
@@ -246,6 +247,18 @@ export default function WorkoutTemplatesPage() {
     }
   }
 
+  // ─── Clone base template ─────────────────────────────────────────────────
+
+  async function handleClone(wt: WorkoutTemplate) {
+    try {
+      await apiFetch(`/workout-templates/${wt.id}/clone`, { method: 'POST' });
+      toast(t('cloned'));
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
   // ─── Duplicate ────────────────────────────────────────────────────────────
 
   async function handleDuplicate(wt: WorkoutTemplate) {
@@ -431,17 +444,23 @@ export default function WorkoutTemplatesPage() {
   function renderRow(wt: WorkoutTemplate) {
     const isExpanded = expanded.has(wt.id);
     const isEditing = editingId === wt.id;
+    const isBase = wt.gym_id === null;
 
     const descText = wt.description
       ? wt.description.length > 60 ? wt.description.slice(0, 60) + '…' : wt.description
       : '—';
 
-    const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetails(wt) },
-      { label: t('edit'), onClick: () => openEdit(wt) },
-      { label: t('duplicate'), onClick: () => handleDuplicate(wt) },
-      { label: t('delete'), onClick: () => setDeleting(wt), danger: true },
-    ];
+    const menuItems: ContextMenuItem[] = isBase
+      ? [
+          { label: t('details'), onClick: () => setDetails(wt) },
+          { label: t('clone'), onClick: () => handleClone(wt) },
+        ]
+      : [
+          { label: t('details'), onClick: () => setDetails(wt) },
+          { label: t('edit'), onClick: () => openEdit(wt) },
+          { label: t('duplicate'), onClick: () => handleDuplicate(wt) },
+          { label: t('delete'), onClick: () => setDeleting(wt), danger: true },
+        ];
 
     const h = hierarchies[wt.id];
 
@@ -454,6 +473,12 @@ export default function WorkoutTemplatesPage() {
           </div>
           <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {descText}
+          </div>
+          <div style={{ minWidth: 64, flexShrink: 0 }}>
+            {isBase
+              ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
+              : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
+            }
           </div>
           <div style={{ minWidth: 90, fontSize: 13, color: '#555', flexShrink: 0 }}>
             {t('blocks_count', { n: wt.blocks_count ?? 0 })}
@@ -475,7 +500,7 @@ export default function WorkoutTemplatesPage() {
 
         {/* Inline edit form */}
         {isEditing && (
-          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
             <SectionHeader title={t('section_general')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
@@ -541,7 +566,7 @@ export default function WorkoutTemplatesPage() {
 
         {/* Read-only expanded sections */}
         {isExpanded && !isEditing && (
-          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
             <SectionHeader title={t('section_general')} />
             <DetailRow label={t('label_description')} value={wt.description ?? '—'} />
             <DetailRow label={t('label_status')} value={tStatus(wt.status)} />
@@ -601,6 +626,7 @@ export default function WorkoutTemplatesPage() {
         <div style={colHeaderStyle}>
           <div style={{ flex: 2 }}>{t('col_name')}</div>
           <div style={{ flex: 3 }}>{t('col_description')}</div>
+          <div style={{ minWidth: 64 }}>{t('col_type')}</div>
           <div style={{ minWidth: 90 }}>{t('col_workout_info')}</div>
           <div style={{ minWidth: 90 }}>{t('col_created')}</div>
           <div style={{ minWidth: 100 }}>{t('col_created_by')}</div>
@@ -712,7 +738,7 @@ export default function WorkoutTemplatesPage() {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <div style={{ borderBottom: '1px solid var(--gd-border, #eee)', margin: '16px 0 8px', paddingBottom: 4 }}>
+    <div style={{ borderBottom: '1px solid var(--gd-card-border, #eee)', margin: '16px 0 8px', paddingBottom: 4 }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
     </div>
   );

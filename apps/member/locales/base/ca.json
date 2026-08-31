@@ -178,6 +178,40 @@
       "yearly": "Anual"
     }
   },
+  "payment_banner": {
+    "pending_heading": "Tens un pagament pendent",
+    "pay_now": "Pagar ara",
+    "start_payment": "Iniciar pagament"
+  },
+  "payment_consent": {
+    "title": "Autorització de càrrec recurrent",
+    "body": "En continuar, autoritzes {gymName} a carregar {amount} {currency} cada {interval} a la targeta que introdueixis, fins que cancel·lis la teva membresía.",
+    "checkbox": "He llegit i accepto els termes del càrrec recurrent.",
+    "cancel": "Cancel·lar",
+    "confirm": "Continuar amb el pagament →",
+    "submitting": "Redirigint…",
+    "rate_limited": "Massa sol·licituds. Torna-ho a intentar més tard."
+  },
+  "payment_success": {
+    "processing": "Pagament en procés…",
+    "done": "✓ Pagament completat",
+    "timeout": "Comprova el teu correu per a confirmació",
+    "back": "Tornar a la meva quota"
+  },
+  "payment_error": {
+    "title": "El pagament no s'ha completat",
+    "retry": "Tornar-ho a intentar"
+  },
+  "billing_unit": {
+    "day_one": "dia",
+    "day_other": "dies",
+    "week_one": "setmana",
+    "week_other": "setmanes",
+    "month_one": "mes",
+    "month_other": "mesos",
+    "year_one": "any",
+    "year_other": "anys"
+  },
   "impersonation": {
     "impersonating_label": "Esteu suplantant:",
     "signed_in_as": "Connectat com:",

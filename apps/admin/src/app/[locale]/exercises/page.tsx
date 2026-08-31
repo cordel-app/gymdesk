@@ -27,6 +27,7 @@ interface Exercise {
   min_reps_default: number | null; max_reps_default: number | null;
   sets_default: number | null; rest_default_seconds: number | null; notes_default: string | null;
   status: 'active' | 'inactive';
+  gym_id: string | null;
   created_at: string; created_by_name: string | null;
   modified_at: string | null; modified_by_name: string | null;
   muscles: ExerciseMuscle[] | null;
@@ -264,6 +265,18 @@ export default function ExercisesPage() {
     }
   }
 
+  // ─── Clone base exercise ──────────────────────────────────────────────────
+
+  async function handleClone(ex: Exercise) {
+    try {
+      await apiFetch(`/exercises/${ex.id}/clone`, { method: 'POST' });
+      toast(t('cloned'));
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
   // ─── Delete ───────────────────────────────────────────────────────────────
 
   async function handleDelete() {
@@ -338,7 +351,7 @@ export default function ExercisesPage() {
 
   function renderEditSection(ex: Exercise) {
     return (
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
 
         <p style={sectionLabelSt}>{t('section_general')}</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
@@ -456,7 +469,7 @@ export default function ExercisesPage() {
     const rts = ex.allowed_result_types ?? [];
 
     return (
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
 
         {rts.length > 0 && (
           <div style={subSectionSt}>
@@ -508,14 +521,20 @@ export default function ExercisesPage() {
   function renderRow(ex: Exercise) {
     const isEditing = editingId === ex.id;
     const isExpanded = isEditing || expandedId === ex.id;
+    const isBase = ex.gym_id === null;
     const principalMuscles = (ex.muscles ?? []).filter((m) => m.role === 'principal').map((m) => muscleLabel(m.key)).join(', ') || '—';
 
-    const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetailFor(ex) },
-      { label: t('edit'), onClick: () => guardedAction('edit', ex) },
-      { label: t('duplicate'), onClick: () => handleDuplicate(ex) },
-      { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true },
-    ];
+    const menuItems: ContextMenuItem[] = isBase
+      ? [
+          { label: t('details'), onClick: () => setDetailFor(ex) },
+          { label: t('clone'), onClick: () => handleClone(ex) },
+        ]
+      : [
+          { label: t('details'), onClick: () => setDetailFor(ex) },
+          { label: t('edit'), onClick: () => guardedAction('edit', ex) },
+          { label: t('duplicate'), onClick: () => handleDuplicate(ex) },
+          { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true },
+        ];
 
     return (
       <div key={ex.id} style={cardSt}>
@@ -534,6 +553,12 @@ export default function ExercisesPage() {
           </div>
           <div style={{ minWidth: 120, flexShrink: 0, fontSize: 13, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ex.created_by_name ?? '—'}
+          </div>
+          <div style={{ minWidth: 64, flexShrink: 0 }}>
+            {isBase
+              ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
+              : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
+            }
           </div>
           <div style={{ minWidth: 80, flexShrink: 0 }}>
             <StatusBadge status={ex.status} label={tStatus(ex.status)} />
@@ -556,6 +581,7 @@ export default function ExercisesPage() {
         <span style={{ minWidth: 140, flexShrink: 0 }}>{t('col_primary_muscles')}</span>
         <span style={{ minWidth: 90, flexShrink: 0 }}>{t('col_created_at')}</span>
         <span style={{ minWidth: 120, flexShrink: 0 }}>{t('col_created_by')}</span>
+        <span style={{ minWidth: 64, flexShrink: 0 }}>{t('col_type')}</span>
         <span style={{ minWidth: 80, flexShrink: 0 }}>{t('col_status')}</span>
         <span style={{ minWidth: 13, flexShrink: 0 }} />
         <span style={{ minWidth: 32, flexShrink: 0 }} />
@@ -563,7 +589,7 @@ export default function ExercisesPage() {
     );
   }
 
-  const selectSt: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: 'var(--gd-surface, #fff)' };
+  const selectSt: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' };
 
   return (
     <div>
@@ -707,10 +733,10 @@ export default function ExercisesPage() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const cardSt: React.CSSProperties = { border: '1px solid var(--gd-border, #e2e2e6)', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--gd-surface, #fff)' };
+const cardSt: React.CSSProperties = { border: '1px solid var(--gd-card-border, #e2e2e6)', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--gd-card-bg, #fff)' };
 const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '12px 20px', gap: 12, cursor: 'pointer' };
 const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
-const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: 'var(--gd-surface, #fff)', marginBottom: 8 };
-const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-border, #eee)' };
+const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
+const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
 const sectionLabelSt: React.CSSProperties = { margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };

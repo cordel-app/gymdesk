@@ -178,6 +178,40 @@
       "yearly": "Anual"
     }
   },
+  "payment_banner": {
+    "pending_heading": "Tienes un pago pendiente",
+    "pay_now": "Pagar ahora",
+    "start_payment": "Iniciar pago"
+  },
+  "payment_consent": {
+    "title": "Autorización de cargo recurrente",
+    "body": "Al continuar, autorizas a {gymName} a cargar {amount} {currency} cada {interval} a la tarjeta que introduzcas, hasta que canceles tu membresía.",
+    "checkbox": "He leído y acepto los términos del cargo recurrente.",
+    "cancel": "Cancelar",
+    "confirm": "Continuar con el pago →",
+    "submitting": "Redirigiendo…",
+    "rate_limited": "Demasiadas solicitudes. Inténtalo más tarde."
+  },
+  "payment_success": {
+    "processing": "Pago en proceso…",
+    "done": "✓ Pago completado",
+    "timeout": "Verifica tu email para confirmación",
+    "back": "Volver a mi cuota"
+  },
+  "payment_error": {
+    "title": "El pago no se ha completado",
+    "retry": "Intentar de nuevo"
+  },
+  "billing_unit": {
+    "day_one": "día",
+    "day_other": "días",
+    "week_one": "semana",
+    "week_other": "semanas",
+    "month_one": "mes",
+    "month_other": "meses",
+    "year_one": "año",
+    "year_other": "años"
+  },
   "impersonation": {
     "impersonating_label": "Estás suplantando a:",
     "signed_in_as": "Conectado como:",
