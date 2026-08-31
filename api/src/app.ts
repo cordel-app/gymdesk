@@ -83,7 +83,7 @@ const apiLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
 });
-app.use(apiLimiter);
+app.use(apiLimiter as any);
 
 // Clerk webhooks must be mounted BEFORE express.json(): signature verification
 // needs the exact raw request bytes, so this route parses its own raw body.
