@@ -117,8 +117,10 @@ impersonationRouter.post('/:targetId', requireSuperadmin, async (req, res, next)
 
   try {
     if (targetType === 'member') {
-      const memberId = Number(targetId);
-      if (!memberId) return res.status(400).json({ error: 'Invalid member target ID' });
+      // targetId arrives as "member:<N>" from the /targets list; strip the prefix before parsing
+      const rawId = targetId.startsWith('member:') ? targetId.slice(7) : targetId;
+      const memberId = Number(rawId);
+      if (!memberId || !Number.isInteger(memberId)) return res.status(400).json({ error: 'Invalid member target ID' });
 
       // Cannot impersonate yourself (check if the caller's member row matches)
       const { rows: selfRows } = await db.query<{ id: number }>(

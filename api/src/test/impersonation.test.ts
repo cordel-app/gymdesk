@@ -276,9 +276,11 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
     });
   });
 
+  // The frontend sends the full "member:<N>" id from /targets — these tests mirror that format.
+
   it('returns 401 when no Authorization header', async () => {
     const res = await request
-      .post(`/platform/impersonation/${memberId}`)
+      .post(`/platform/impersonation/member:${memberId}`)
       .set('x-gym-id', gymId)
       .send({ targetType: 'member' });
     expect(res.status).toBe(401);
@@ -286,7 +288,7 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
 
   it('returns 400 when targetType is missing', async () => {
     const res = await request
-      .post(`/platform/impersonation/${memberId}`)
+      .post(`/platform/impersonation/member:${memberId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({});
@@ -296,16 +298,16 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
 
   it('returns 400 when x-gym-id header is missing', async () => {
     const res = await request
-      .post(`/platform/impersonation/${memberId}`)
+      .post(`/platform/impersonation/member:${memberId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .send({ targetType: 'member' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/x-gym-id/);
   });
 
-  it('succeeds for unlinked member (no clerk_user_id)', async () => {
+  it('succeeds for unlinked member using "member:<N>" format (frontend wire format)', async () => {
     const res = await request
-      .post(`/platform/impersonation/${memberId}`)
+      .post(`/platform/impersonation/member:${memberId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ targetType: 'member' });
@@ -320,6 +322,15 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
     });
   });
 
+  it('also succeeds with a plain integer id (backward compat)', async () => {
+    const res = await request
+      .post(`/platform/impersonation/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ targetType: 'member' });
+    expect(res.status).toBe(200);
+  });
+
   it('returns 400 for deleted member', async () => {
     const { insertId } = await db.query(
       `INSERT INTO members (gym_id, name, email, deleted_at)
@@ -327,7 +338,7 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
       [gymId, `frank+${gymId}@test.com`],
     );
     const res = await request
-      .post(`/platform/impersonation/${insertId}`)
+      .post(`/platform/impersonation/member:${insertId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ targetType: 'member' });
@@ -337,7 +348,7 @@ describe('POST /platform/impersonation/:targetId — member impersonation', () =
   it('returns 400 for member belonging to a different gym (tenant isolation)', async () => {
     const gymB = await createTestGym('Gym B Isolation Member');
     const res = await request
-      .post(`/platform/impersonation/${memberId}`)
+      .post(`/platform/impersonation/member:${memberId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymB)
       .send({ targetType: 'member' });
