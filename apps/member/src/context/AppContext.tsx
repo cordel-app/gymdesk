@@ -31,6 +31,7 @@ export interface MemberGymTheme {
 
 interface AppContextValue {
   gymId: string | null;
+  gymName: string | null;
   member: MemberProfile | null;
   isLinked: boolean;
   loading: boolean;
@@ -45,6 +46,7 @@ interface AppContextValue {
 
 const AppContext = createContext<AppContextValue>({
   gymId: null,
+  gymName: null,
   member: null,
   isLinked: false,
   loading: true,
@@ -65,6 +67,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
 
   const [gymId, setGymId] = useState<string | null>(null);
+  const [gymName, setGymName] = useState<string | null>(null);
   const [theme, setTheme] = useState<MemberGymTheme | null>(null);
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [isLinked, setIsLinked] = useState(false);
@@ -107,6 +110,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
         const gymData = await gymRes.json();
         const resolvedGymId: string = gymData.id;
         setGymId(resolvedGymId);
+        setGymName(gymData.name ?? null);
         setTheme(gymData.theme ?? null);
 
         const res = await fetch('/api/proxy/me/profile', {
@@ -171,7 +175,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }
 
   return (
-    <AppContext.Provider value={{ gymId, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
+    <AppContext.Provider value={{ gymId, gymName, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
       {children}
     </AppContext.Provider>
   );

@@ -672,9 +672,12 @@ meRouter.get('/membership', requireRole('member'), async (req: Request, res: Res
       `SELECT um.id, um.member_id, um.membership_plan_id,
               um.base_price, um.final_price, um.discount_reason, um.discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
-              p.name AS plan_name, p.description AS plan_description, p.base_price AS plan_base_price
+              p.name AS plan_name, p.description AS plan_description, p.base_price AS plan_base_price,
+              bp.recurring_billing_interval AS billing_interval,
+              bp.recurring_billing_unit AS billing_unit
        FROM user_memberships um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
        WHERE um.gym_id = ? AND um.member_id = ?
        ORDER BY
          FIELD(um.status, 'active','paused','expired','cancelled'),
@@ -803,10 +806,15 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT id, user_membership_id, amount, currency, status, provider, source, created_at, completed_at
-       FROM payment_requests
-       WHERE gym_id = ? AND member_id = ?
-       ORDER BY created_at DESC`,
+      `SELECT pr.id, pr.user_membership_id, pr.amount, pr.currency, pr.status,
+              pr.provider, pr.source, pr.created_at, pr.completed_at,
+              bp.recurring_billing_interval AS billing_interval,
+              bp.recurring_billing_unit AS billing_unit
+       FROM payment_requests pr
+       LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
+       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = pr.gym_id
+       WHERE pr.gym_id = ? AND pr.member_id = ?
+       ORDER BY pr.created_at DESC`,
       [gymId, memberId],
     );
     res.json(rows);
