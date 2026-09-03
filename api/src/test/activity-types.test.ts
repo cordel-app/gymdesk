@@ -314,6 +314,175 @@ describe('soft-delete and restore', () => {
   });
 });
 
+// ── Audit metadata ────────────────────────────────────────────────────────
+
+describe('audit metadata', () => {
+  let auditGymId: string;
+  let testMembershipId: number;
+  let otherMembershipId: number;
+
+  beforeAll(async () => {
+    auditGymId = await createTestGym('AT Audit Gym');
+    // Primary test user membership
+    await createTestMembership(auditGymId, 'admin');
+    const { rows: tm } = await db.query<{ id: number }>(
+      'SELECT id FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
+      ['test-user-id', auditGymId],
+    );
+    testMembershipId = tm[0].id;
+
+    // Secondary membership for the "different user" scenarios
+    await createTestMembership(auditGymId, 'admin', 'other-user-id');
+    const { rows: om } = await db.query<{ id: number }>(
+      'SELECT id FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
+      ['other-user-id', auditGymId],
+    );
+    otherMembershipId = om[0].id;
+  });
+
+  it('create sets created_by and modified_by to the authenticated user', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId)
+      .send({ name: 'Audit Create', duration_minutes: 30, max_capacity: 10 });
+    expect(res.status).toBe(201);
+    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
+      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
+      [res.body.id],
+    );
+    expect(rows[0].created_by_membership_id).toBe(testMembershipId);
+    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+  });
+
+  it('update by same user keeps created_by and updates modified_by', async () => {
+    const createRes = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId)
+      .send({ name: 'Audit Same User', duration_minutes: 30, max_capacity: 10 });
+    expect(createRes.status).toBe(201);
+    const id = createRes.body.id;
+
+    const putRes = await request
+      .put(`${BASE}/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId)
+      .send({ name: 'Audit Same User Updated' });
+    expect(putRes.status).toBe(200);
+
+    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
+      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
+      [id],
+    );
+    expect(rows[0].created_by_membership_id).toBe(testMembershipId);
+    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+  });
+
+  it('update by different user preserves created_by and sets modified_by to the new user', async () => {
+    // Insert activity directly with the other user as creator
+    const { insertId } = await db.query(
+      `INSERT INTO activity_types
+       (gym_id, name, duration_minutes, max_capacity, status,
+        created_by_membership_id, modified_at, modified_by_membership_id)
+       VALUES (?,?,?,?,'active',?,UTC_TIMESTAMP(),?)`,
+      [auditGymId, 'Audit Diff User', 30, 10, otherMembershipId, otherMembershipId],
+    );
+
+    // Update as the primary test user
+    const putRes = await request
+      .put(`${BASE}/${insertId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId)
+      .send({ name: 'Audit Diff User Updated' });
+    expect(putRes.status).toBe(200);
+
+    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
+      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
+      [insertId],
+    );
+    expect(rows[0].created_by_membership_id).toBe(otherMembershipId);
+    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+  });
+
+  it('multiple updates keep created_by stable', async () => {
+    // Insert activity with the other user as creator
+    const { insertId } = await db.query(
+      `INSERT INTO activity_types
+       (gym_id, name, duration_minutes, max_capacity, status,
+        created_by_membership_id, modified_at, modified_by_membership_id)
+       VALUES (?,?,?,?,'active',?,UTC_TIMESTAMP(),?)`,
+      [auditGymId, 'Audit Multi Update', 30, 10, otherMembershipId, otherMembershipId],
+    );
+
+    // Two sequential updates as the test user
+    for (const name of ['Round 1', 'Round 2']) {
+      const res = await request
+        .put(`${BASE}/${insertId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', auditGymId)
+        .send({ name: `Audit Multi ${name}` });
+      expect(res.status).toBe(200);
+    }
+
+    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
+      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
+      [insertId],
+    );
+    expect(rows[0].created_by_membership_id).toBe(otherMembershipId);
+    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+  });
+
+  it('failed update does not change modified_by', async () => {
+    // Insert activity with the other user as creator+modifier
+    const { insertId } = await db.query(
+      `INSERT INTO activity_types
+       (gym_id, name, duration_minutes, max_capacity, status,
+        created_by_membership_id, modified_at, modified_by_membership_id)
+       VALUES (?,?,?,?,'active',?,UTC_TIMESTAMP(),?)`,
+      [auditGymId, 'Audit Failed Update', 30, 10, otherMembershipId, otherMembershipId],
+    );
+
+    // Attempt invalid update (bad intensity_level)
+    const putRes = await request
+      .put(`${BASE}/${insertId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId)
+      .send({ intensity_level: 99 });
+    expect(putRes.status).toBe(400);
+
+    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
+      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
+      [insertId],
+    );
+    expect(rows[0].created_by_membership_id).toBe(otherMembershipId);
+    expect(rows[0].modified_by_membership_id).toBe(otherMembershipId);
+  });
+
+  it('client-supplied audit fields in request body are ignored', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId)
+      .send({
+        name: 'Audit Client Fields',
+        duration_minutes: 30,
+        max_capacity: 10,
+        created_by_membership_id: otherMembershipId,
+        modified_by_membership_id: otherMembershipId,
+      });
+    expect(res.status).toBe(201);
+
+    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
+      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
+      [res.body.id],
+    );
+    // Backend must use the authenticated user's membership, not the client-supplied value
+    expect(rows[0].created_by_membership_id).toBe(testMembershipId);
+    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+  });
+});
+
 // ── Duplicate ──────────────────────────────────────────────────────────────
 
 describe('POST /activity-types/:id/duplicate', () => {
