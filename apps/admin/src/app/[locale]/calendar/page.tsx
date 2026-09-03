@@ -14,6 +14,7 @@ import { useToast } from '@/components/Toast';
 import { btnStyle } from '@/components/ui';
 import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
 import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
+import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -58,6 +59,9 @@ export default function CalendarPage() {
   const [editingMeta, setEditingMeta] = useState<EventMeta | null>(null);
   const [initialForm, setInitialForm] = useState<CalendarEventForm>(EMPTY_FORM);
 
+  // Class session panel
+  const [sessionPanelId, setSessionPanelId] = useState<number | null>(null);
+
   const role = activeGym?.role ?? 'member';
   const canWrite = isSuperadmin || canWriteModule(role as any, 'CALENDAR');
 
@@ -86,19 +90,36 @@ export default function CalendarPage() {
       if (filterMode === 'activity_type' && filterId) params.set('activity_type_id', filterId);
       if (filterMode === 'trainer'       && filterId) params.set('trainer_membership_id', filterId);
 
-      apiFetch<any[]>(`/calendar-events?${params}`)
-        .then((events) =>
-          successCb(events.map((e) => ({
-            id: String(e.id),
+      Promise.all([
+        apiFetch<any[]>(`/calendar-events?${params}`),
+        apiFetch<any[]>(`/class-sessions?${params}`),
+      ])
+        .then(([calEvents, sessions]) => {
+          const calMapped = calEvents.map((e) => ({
+            id: `ce-${e.id}`,
             title: e.title,
             start: e.starts_at,
             end: e.ends_at,
             allDay: !!e.all_day,
             backgroundColor: e.color || e.activity_type_color || STATUS_COLORS[e.status] || '#3b82f6',
             borderColor:     e.color || e.activity_type_color || STATUS_COLORS[e.status] || '#3b82f6',
-            extendedProps: e,
-          })))
-        )
+            editable: true,
+            extendedProps: { ...e, _type: 'event' },
+          }));
+          const sessionMapped = sessions.map((s) => ({
+            id: `cs-${s.id}`,
+            title: s.class_type_name,
+            start: s.starts_at,
+            end: s.ends_at,
+            allDay: false,
+            backgroundColor: s.activity_type_color || STATUS_COLORS[s.status] || '#8b5cf6',
+            borderColor:     s.activity_type_color || STATUS_COLORS[s.status] || '#8b5cf6',
+            // Sessions use a different time-change flow; disable FC drag/resize
+            editable: false,
+            extendedProps: { ...s, _type: 'session' },
+          }));
+          successCb([...calMapped, ...sessionMapped]);
+        })
         .catch(failureCb);
     },
     [activeGymId, filterMode, filterId, apiFetch],
@@ -110,6 +131,7 @@ export default function CalendarPage() {
 
   function openCreate(start: Date, end?: Date) {
     const allDay = !end;
+    setSessionPanelId(null);
     setEditingId(null);
     setEditingMeta(null);
     setInitialForm({
@@ -121,9 +143,22 @@ export default function CalendarPage() {
     setPanelOpen(true);
   }
 
+  function handleEventClick(info: any) {
+    const e = info.event.extendedProps;
+    if (e._type === 'session') {
+      // Open instance management panel
+      setSessionPanelId(Number(e.id));
+      setPanelOpen(false);
+      setEditingId(null);
+    } else {
+      openEdit(info.event);
+    }
+  }
+
   function openEdit(event: any) {
     const e = event.extendedProps;
     const allDay = !!e.all_day;
+    setSessionPanelId(null);
     setEditingId(e.id);
     setEditingMeta({
       created_by_name:  e.created_by_name  ?? null,
@@ -154,6 +189,10 @@ export default function CalendarPage() {
     setEditingMeta(null);
   }
 
+  function closeSessionPanel() {
+    setSessionPanelId(null);
+  }
+
   async function handleSave(form: CalendarEventForm) {
     const body: Record<string, any> = {
       title:                 form.title.trim(),
@@ -168,6 +207,7 @@ export default function CalendarPage() {
       status:                form.status,
     };
     if (editingId) {
+      // editingId is the raw numeric id from extendedProps (not prefixed)
       await apiFetch(`/calendar-events/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });
     } else {
       await apiFetch('/calendar-events', { method: 'POST', body: JSON.stringify(body) });
@@ -184,8 +224,10 @@ export default function CalendarPage() {
   }
 
   async function handleDrop(info: any) {
+    // Only calendar events are draggable (sessions have editable:false)
+    const rawId = String(info.event.id).replace(/^ce-/, '');
     try {
-      await apiFetch(`/calendar-events/${info.event.id}`, {
+      await apiFetch(`/calendar-events/${rawId}`, {
         method: 'PUT',
         body: JSON.stringify({
           starts_at: info.event.startStr,
@@ -230,8 +272,9 @@ export default function CalendarPage() {
   }
 
   async function handleResize(info: any) {
+    const rawId = String(info.event.id).replace(/^ce-/, '');
     try {
-      await apiFetch(`/calendar-events/${info.event.id}`, {
+      await apiFetch(`/calendar-events/${rawId}`, {
         method: 'PUT',
         body: JSON.stringify({ ends_at: info.event.endStr }),
       });
@@ -316,26 +359,33 @@ export default function CalendarPage() {
             height="100%"
             select={(info: any) => openCreate(info.start, info.end)}
             dateClick={handleDateClick}
-            eventClick={(info: any) => openEdit(info.event)}
+            eventClick={handleEventClick}
             eventDrop={handleDrop}
             eventResize={handleResize}
             eventContent={(arg: any) => {
               const e = arg.event.extendedProps;
+              const isSession = e._type === 'session';
+              const trainerName = isSession ? e.effective_trainer_name : e.trainer_name;
               return (
                 <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
                   <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {arg.event.title}
+                    {isSession && (
+                      <span style={{ fontWeight: 400, opacity: 0.85 }}>
+                        {' '}({e.booked_count}/{e.effective_capacity})
+                      </span>
+                    )}
                   </div>
-                  {e.trainer_name && <div style={{ opacity: 0.85 }}>{e.trainer_name}</div>}
-                  {e.space_name   && <div style={{ opacity: 0.85 }}>{e.space_name}</div>}
+                  {trainerName && <div style={{ opacity: 0.85 }}>{trainerName}</div>}
+                  {e.space_name && <div style={{ opacity: 0.85 }}>{e.space_name}</div>}
                 </div>
               );
             }}
           />
         </div>
 
-        {/* Details panel */}
-        {panelOpen && (
+        {/* Calendar event details panel */}
+        {panelOpen && !sessionPanelId && (
           <div style={{ width: PANEL_WIDTH, flexShrink: 0, overflow: 'hidden' }}>
             <EventDetailsPanel
               open={panelOpen}
@@ -347,6 +397,18 @@ export default function CalendarPage() {
               onSave={handleSave}
               onDelete={handleDelete}
               onClose={closePanel}
+              canWrite={canWrite}
+            />
+          </div>
+        )}
+
+        {/* Class session instance management panel */}
+        {sessionPanelId && (
+          <div style={{ width: PANEL_WIDTH, flexShrink: 0, overflow: 'hidden' }}>
+            <ClassSessionDetailPanel
+              sessionId={sessionPanelId}
+              onClose={closeSessionPanel}
+              onMutated={refetch}
               canWrite={canWrite}
             />
           </div>

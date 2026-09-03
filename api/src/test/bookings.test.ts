@@ -168,3 +168,54 @@ describe('Bookings', () => {
     expect(res.body.status).toBe('booked'); // lifecycle status unchanged
   });
 });
+
+describe('Bookings — explicit waitlist (#326)', () => {
+  let gymId: string;
+  let sessionId: number;
+  let member1Id: number;
+  let member2Id: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Waitlist Explicit Gym');
+    await createTestMembership(gymId, 'admin');
+    const centerId = await createCenter(gymId);
+    const atId = await createActivityType(gymId, 5); // capacity 5 — plenty of room
+    sessionId = await createSession(gymId, atId, centerId);
+    member1Id = await createMember(gymId, centerId, `wl-m1-${Date.now()}@test.com`);
+    member2Id = await createMember(gymId, centerId, `wl-m2-${Date.now()}@test.com`);
+  });
+
+  it('adds member to waitlist even when capacity is available (waitlist=true)', async () => {
+    const res = await request
+      .post('/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: member1Id, class_session_id: sessionId, waitlist: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('waitlisted');
+    expect(res.body.waitlist_position).toBe(1);
+  });
+
+  it('returns 409 on duplicate waiting-list entry for same member+session', async () => {
+    const res = await request
+      .post('/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: member1Id, class_session_id: sessionId, waitlist: true });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('appends subsequent members at the correct FIFO position', async () => {
+    const res = await request
+      .post('/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: member2Id, class_session_id: sessionId, waitlist: true });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('waitlisted');
+    expect(res.body.waitlist_position).toBe(2);
+  });
+});
