@@ -81,6 +81,7 @@ export async function bookMemberOnSession(
   memberId: number,
   sessionId: number,
   force = false,
+  forceWaitlist = false,
 ) {
   return db.transaction(async (tx) => {
     const { rows: session } = await tx.query(
@@ -97,6 +98,23 @@ export async function bookMemberOnSession(
     // Run access hooks (plan-access, packages) — they can throw with .status/.message.
     for (const hook of accessHooks) {
       await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id);
+    }
+
+    const { rows: nextRows } = await tx.query(
+      `SELECT COALESCE(MAX(waitlist_position), 0) + 1 AS next
+       FROM bookings WHERE class_session_id = ? AND status = 'waitlisted'`,
+      [sessionId],
+    );
+
+    // forceWaitlist: staff explicitly chose "add to waiting list" even if capacity available.
+    if (forceWaitlist) {
+      const position = Number(nextRows[0].next);
+      const { insertId } = await tx.query(
+        `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
+         VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
+        [gymId, session[0].center_id, memberId, sessionId, position],
+      );
+      return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
     }
 
     const { rows: countRows } = await tx.query(
@@ -120,11 +138,6 @@ export async function bookMemberOnSession(
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
     }
 
-    const { rows: nextRows } = await tx.query(
-      `SELECT COALESCE(MAX(waitlist_position), 0) + 1 AS next
-       FROM bookings WHERE class_session_id = ? AND status = 'waitlisted'`,
-      [sessionId],
-    );
     const position = Number(nextRows[0].next);
     const { insertId } = await tx.query(
       `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
@@ -193,7 +206,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
 
 bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { member_id, class_session_id, force } = req.body;
+  const { member_id, class_session_id, force, waitlist } = req.body;
   if (!member_id || !class_session_id) {
     return res.status(400).json({ error: 'member_id and class_session_id are required' });
   }
@@ -204,7 +217,7 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
   try {
-    const result = await bookMemberOnSession(gymId, member_id, class_session_id, Boolean(force));
+    const result = await bookMemberOnSession(gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist));
     const { rows } = await db.query(`${SELECT} WHERE b.id = ?`, [result.id]);
     res.status(201).json({ ...rows[0], over_capacity: result.over_capacity });
   } catch (err: any) {
