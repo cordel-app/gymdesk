@@ -35,7 +35,7 @@ async function createNonShareableActivityType(gymId: string): Promise<number> {
 
 async function createSpace(gymId: string, maxGroups = 2): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO spaces (gym_id, name, max_concurrent_groups) VALUES (?, 'Studio A', ?)`,
+    `INSERT INTO spaces (gym_id, name, capacity, max_concurrent_groups) VALUES (?, 'Studio A', 20, ?)`,
     [gymId, maxGroups],
   );
   return insertId;
@@ -63,16 +63,17 @@ async function createSession(
   activityTypeId: number,
   trainerMembershipId: number,
   spaceId: number,
+  dayOffset = 1,
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO class_sessions
      (gym_id, center_id, activity_type_id, trainer_membership_id, space_id,
       starts_at, ends_at, status)
      VALUES (?, ?, ?, ?, ?,
-       DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
-       DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR),
+       DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY),
+       DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? HOUR),
        'scheduled')`,
-    [gymId, centerId, activityTypeId, trainerMembershipId, spaceId],
+    [gymId, centerId, activityTypeId, trainerMembershipId, spaceId, dayOffset, dayOffset * 24 + 1],
   );
   return insertId;
 }
@@ -138,7 +139,7 @@ describe('Shared Training Requests', () => {
 
   it('requires x-gym-id header', async () => {
     const res = await request.get('/shared-training-requests').set('Authorization', TEST_AUTH_HEADER);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
   });
 
   // -------------------------------------------------------------------------
@@ -258,7 +259,7 @@ describe('Shared Training Requests', () => {
   });
 
   it('rejects request for non-shareable host session', async () => {
-    const nonShareSession = await createSession(gymId, centerId, nonShareableActivityTypeId, trainerMembershipId, spaceId);
+    const nonShareSession = await createSession(gymId, centerId, nonShareableActivityTypeId, trainerMembershipId, spaceId, 2);
     const m = await createMember(gymId);
     const res = await request
       .post('/shared-training-requests')

@@ -26,7 +26,7 @@ exports.up = async (knex) => {
         .references('id').inTable('gym_memberships').onDelete('SET NULL');
       t.datetime('resolved_at').nullable();
       t.text('notes').nullable();
-      t.datetime('created_at').notNullable().defaultTo(knex.raw('UTC_TIMESTAMP()'));
+      t.datetime('created_at').notNullable().defaultTo(knex.fn.now());
     });
 
     await knex.raw(
