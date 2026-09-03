@@ -134,8 +134,11 @@
     "loading": "Cargando…",
     "empty": "Aún no tienes una cuota asignada. Pídelo a tu gimnasio.",
     "price": "Precio mensual",
+    "member_since": "Socio desde",
     "starts": "Inicio",
     "ends": "Fin",
+    "upcoming_heading": "Próximos pagos",
+    "upcoming_empty": "Sin pagos pendientes.",
     "ongoing": "En curso",
     "packages_heading": "Bonos de clases",
     "package_status": {
@@ -158,8 +161,13 @@
     "event": {
       "charge_created": "Cargo",
       "payment_recorded": "Pago",
+      "recurring_payment": "Pago recurrente",
+      "failed_billing": "Pago fallido",
       "status_changed": "Cambio de estado",
       "adjustment": "Ajuste"
+    },
+    "upcoming_status": {
+      "scheduled": "Programado"
     },
     "charge_type": {
       "membership_fee": "Cuota de socio",
