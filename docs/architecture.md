@@ -76,6 +76,14 @@ gymdesk/
       lib/apiClient.ts
       middleware.ts                # Public routes: /, /:locale, /classes, /sign-in, /api/proxy
       locales/base/{en,es,ca}.json
+    payment/                       # Isolated PCI payment page (#204) — vanilla HTML/JS, no npm
+      checkout.html                # Monei Card Input + MIT consent
+      error.html                   # Expired/invalid token fallback
+      js/checkout.js utils.js
+      css/style.css
+      nginx.conf                   # Static files + proxy /payment-page/* → api.vdicube.com
+      Dockerfile                   # nginx:alpine; published :8083 by #205
+      SCRIPT-INVENTORY.md          # PCI DSS 6.4.3 third-party script inventory
   shared/                          # Placeholder for future shared services (currently empty)
   docs/                            # This folder
 ```
@@ -145,7 +153,7 @@ Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate
 | Billing ledger (`billing-events`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Append-only. |
 | Payments (`payments`) | PAYMENTS | `requireModuleWrite('PAYMENTS')` | Operational view; excludes `status_changed`. |
 | Payment requests (`payment-requests`) | PAYMENTS | `requireModuleAccess('PAYMENTS')` write: `requireModuleWrite('PAYMENTS')` | Admin/staff-initiated payment requests. MONEI flow: creates `payment_requests` row + page_token (10-min TTL). Member self-service: `GET/POST /me/payment-requests` (rate-limit POST 3/hour per Clerk userId). |
-| Payment page token (`payment-page`) | none | none (token auth) | No Clerk auth. `GET /payment-page/token/:token` — single-use lookup consumed immediately (page_token set to NULL on read). Used by the isolated `pay.vdicube.com` app. Rate-limited 20/min per IP. |
+| Payment page token (`payment-page`) | none | none (token auth) | No Clerk auth. `GET /payment-page/token/:token` — single-use lookup consumed immediately (page_token set to NULL on read). Returns `{ paymentId, gymName, memberName, amount, currency, billingInterval, okUrl, koUrl }` — `paymentId` is the Monei payment id stored in `provider_ref` at create time. Used by the isolated `pay.vdicube.com` app. Rate-limited 20/min per IP. |
 | Payment webhooks (`/webhooks/payment`) | none | HMAC-SHA256 (Monei signature) | Mounted before `express.json()` with `express.raw`. Fail-fast: `parseWebhook()` verifies HMAC as first op; returns 400 on invalid sig (no DB queries). On success: updates `payment_requests`, inserts `billing_events`, upserts `payment_methods`. Idempotent. Rate-limited 60/min per IP. |
 | Internal billing cleanup (`/billing/cleanup`) | none | `X-Internal-Secret` header | POST expires stale pending payment_requests. Called by nightly billing workflow. |
 | Internal billing run (`/billing/run`) | none | `X-Internal-Secret` header | POST fires nightly MIT recurring charges. Rate-limited: rejects with 429 if last successful run was <23 h ago (enforced via `billing_run_log` singleton). Queries active memberships with `next_billing_date <= UTC_DATE()` (INNER JOIN `payment_methods`). For each: calls `getPaymentProvider().executeRecurring()`, inserts a `payment_requests` row (`source='billing_run'`) for auditability, inserts `billing_events` (`recurring_payment` on success, `failed_billing` on failure), advances `next_billing_date` (computed in JS via `advanceBillingDate()` — avoids MySQL INTERVAL unit parameterization). Called by `.github/workflows/billing-run.yml` at 06:00 UTC. |
@@ -524,6 +532,7 @@ All traffic enters through **Traefik on corfront** (`10.0.2.100`), which termina
 | API | `https://api.vdicube.com` → corback `10.0.2.101:3000` | "corback" VPS (`150.230.157.145`) | `fitness-api` / GHCR `fitness-api` |
 | Admin | `https://admin.vdicube.com` → corfront `:8081` | "corfront" VPS (`10.0.2.100`) | `fitness-admin` / GHCR `fitness-admin` |
 | Member | `https://members.vdicube.com` → corfront `:8082` | "corfront" VPS | `fitness-members` (**plural**) / GHCR `fitness-members` |
+| Payment | `https://pay.vdicube.com` → corfront `:8083` | "corfront" VPS | `fitness-payment` / GHCR `fitness-payment` (#204 app, #205 deploy). Traefik route assigned; container not live until #205. |
 
 **Ownership split (important):**
 - **Oscar owns the runtime**: rootless Podman under VPS user `podman`, one **Quadlet unit** per container at `/home/podman/.config/containers/systemd/<name>.container` defining ports, env vars, and restart policy. Containers are managed with `systemctl --user {start|stop|restart} <name>`.

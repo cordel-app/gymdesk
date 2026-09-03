@@ -328,12 +328,13 @@ describe('POST /payment-requests', () => {
     expect(res.body.checkoutUrl).toContain('/checkout?token=');
 
     // Verify the row was persisted
-    const { rows } = await db.query<{ id: number; status: string; gym_id: string }>(
-      'SELECT id, status, gym_id FROM payment_requests WHERE id = ?',
+    const { rows } = await db.query<{ id: number; status: string; gym_id: string; provider_ref: string }>(
+      'SELECT id, status, gym_id, provider_ref FROM payment_requests WHERE id = ?',
       [res.body.id],
     );
     expect(rows.length).toBe(1);
     expect(rows[0].status).toBe('pending');
     expect(rows[0].gym_id).toBe(gymId);
+    expect(rows[0].provider_ref).toBe('monei-test-order-123');
   });
 });

@@ -1076,10 +1076,10 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
          (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
-          status, provider, provider_order, page_token, page_token_expires,
+          status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source)
-       VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
-      [gymId, um.id, memberId, um.final_price, ctRows[0].id, orderId, pageToken, pageTokenExpires],
+       VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
+      [gymId, um.id, memberId, um.final_price, ctRows[0].id, orderId, result.providerOrderId, pageToken, pageTokenExpires],
     );
 
     const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;

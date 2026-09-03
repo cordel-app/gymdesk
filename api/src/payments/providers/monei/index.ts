@@ -28,15 +28,18 @@ export class MoneiProvider implements PaymentProvider {
       callbackUrl: params.notificationUrl,
       completeUrl: params.okUrl,
       cancelUrl: params.koUrl,
+      // Lets Monei return paymentToken + sequenceId on the first CIT webhook
+      // so the nightly MIT run (#184) has a token to charge.
+      generatePaymentToken: true,
     });
 
-    if (!payment.nextAction?.redirectUrl) {
-      throw new Error(`Monei payment ${payment.id} has no redirectUrl`);
+    if (!payment.id) {
+      throw new Error('Monei createPayment returned no payment id');
     }
 
     return {
       providerOrderId: payment.id,
-      checkoutUrl: payment.nextAction.redirectUrl,
+      checkoutUrl: payment.nextAction?.redirectUrl ?? '',
     };
   }
 
