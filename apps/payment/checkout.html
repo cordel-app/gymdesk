@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Pago</title>
+  <!-- SRI hash TBD — see SCRIPT-INVENTORY.md. Do not ship to production without a Monei-provided sha384. -->
+  <script src="https://js.monei.com/v3/monei.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <main class="card">
+    <p id="error" class="error" hidden></p>
+
+    <div id="checkout" hidden>
+      <p class="eyebrow" id="gym-name"></p>
+      <h1>Pago de membresía</h1>
+      <p class="member" id="member-name"></p>
+      <p class="amount"><span id="amount"></span> <span id="currency"></span></p>
+
+      <div class="consent">
+        <p id="consent-text"></p>
+        <label class="consent-row">
+          <input type="checkbox" id="consent">
+          <span>He leído y autorizo los cargos recurrentes.</span>
+        </label>
+      </div>
+
+      <form id="payment-form">
+        <div id="card-input" class="card-input is-disabled"></div>
+        <p id="card-error" class="error"></p>
+        <button type="submit" id="pay-button" disabled>Pagar ahora</button>
+      </form>
+    </div>
+  </main>
+
+  <script src="/js/utils.js"></script>
+  <script src="/js/checkout.js"></script>
+</body>
+</html>

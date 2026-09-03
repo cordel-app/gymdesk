@@ -136,7 +136,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   (hidden until a gym has >1 center). Member app: `GET /me/centers` + an optional
   center switcher, hidden for the single-center case. **Phase 7 (#39–#41) is superseded
   and closed** — its `gym_locations`/nullable-FK design was never implemented.
-- **Phase 8 — MONEI payments (active, replacing deferred Stripe plan)**: ~~provider abstraction (#179)~~, ~~DB migrations (#180)~~, ~~API routers + isolated payment page token endpoint (#181)~~, ~~admin MemberPaymentsModal (#182)~~, ~~member payment banner + success/error pages (#183)~~, isolated payment page app at `pay.vdicube.com` (#204), infra/Docker for the payment container (#205), ~~recurring MIT billing run (#184)~~, ~~cash payment recording + fiscal receipt (#185)~~, ~~nginx IP allowlist for /billing/ endpoints (#306)~~.
+- **Phase 8 — MONEI payments (active, replacing deferred Stripe plan)**: ~~provider abstraction (#179)~~, ~~DB migrations (#180)~~, ~~API routers + isolated payment page token endpoint (#181)~~, ~~admin MemberPaymentsModal (#182)~~, ~~member payment banner + success/error pages (#183)~~, ~~isolated payment page app at `pay.vdicube.com` (#204)~~, infra/Docker for the payment container (#205), ~~recurring MIT billing run (#184)~~, ~~cash payment recording + fiscal receipt (#185)~~, ~~nginx IP allowlist for /billing/ endpoints (#306)~~.
 - Platform naming migrated gymdesk → fitness (2026-07-10/11): DB schema `fitness`, containers/images
   `fitness-*`, VPS user `podman`, env vars `CORDEL_FITNESS_*`. See `docs/architecture.md` § Deployment.
 - Legacy cleanup complete: `/fares` and `/subscriptions` routers + the old
@@ -284,7 +284,7 @@ Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https:/
 | ~~P8.1 Payment provider abstraction layer (MoneiProvider)~~ | [#179](https://github.com/cordel-app/gymdesk/issues/179) | M | — | ✅ done |
 | ~~P8.2 DB migrations — payment_methods + payment_requests~~ | [#180](https://github.com/cordel-app/gymdesk/issues/180) | S | #179 | ✅ done |
 | ~~P8.3 payment-requests + payment-page token + webhooks API~~ | [#181](https://github.com/cordel-app/gymdesk/issues/181) | M | #179 #180 | ✅ done |
-| P8.4 Isolated payment page app (vanilla JS + Monei iframe) | [#204](https://github.com/cordel-app/gymdesk/issues/204) | M | #179 #181 |
+| ~~P8.4 Isolated payment page app (vanilla JS + Monei iframe)~~ | [#204](https://github.com/cordel-app/gymdesk/issues/204) | M | #179 #181 | ✅ done |
 | P8.5 Infra — Docker + deploy for fitness-payment container | [#205](https://github.com/cordel-app/gymdesk/issues/205) | S | #204 |
 | ~~P8.6 Admin app — MemberPaymentsModal + payment-providers page~~ | [#182](https://github.com/cordel-app/gymdesk/issues/182) | M | #181 | ✅ done |
 | ~~P8.7 Member app — payment banner, success and error pages~~ | [#183](https://github.com/cordel-app/gymdesk/issues/183) | M | #181 | ✅ done |

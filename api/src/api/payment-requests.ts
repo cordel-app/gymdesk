@@ -117,12 +117,12 @@ paymentRequestsRouter.post(
       const { insertId } = await db.query(
         `INSERT INTO payment_requests
            (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
-            status, provider, provider_order, page_token, page_token_expires,
+            status, provider, provider_order, provider_ref, page_token, page_token_expires,
             initiated_by, source)
-         VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, 'admin')`,
+         VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin')`,
         [
           gymId, user_membership_id, um.member_id, um.final_price, ctRows[0].id,
-          orderId, pageToken, pageTokenExpires,
+          orderId, result.providerOrderId, pageToken, pageTokenExpires,
           (req as any).auth.userId,
         ],
       );
