@@ -923,7 +923,7 @@ export default function PlansPage() {
           onCancel={() => setAllowanceForPlanId(null)}
           onSave={handleSaveAllowance}
         >
-          <FormLabel>Activity Type</FormLabel>
+          <FormLabel>Activity</FormLabel>
           <select value={allowanceForm.activity_type_id} onChange={(e) => setAllowanceForm({ ...allowanceForm, activity_type_id: e.target.value })} style={selectStyle}>
             <option value="">Select…</option>
             {activityTypes.map((at) => <option key={at.id} value={at.id}>{at.name}</option>)}
