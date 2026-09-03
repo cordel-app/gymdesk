@@ -341,13 +341,13 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               ) AS my_shared_request_status,
               (
                 SELECT COUNT(*) FROM class_type_user_memberships ctum
-                WHERE ctum.class_type_id = cs.class_type_id AND ctum.gym_id = cs.gym_id
+                WHERE ctum.activity_type_id = cs.activity_type_id AND ctum.gym_id = cs.gym_id
               ) > 0 AND NOT EXISTS (
                 SELECT 1 FROM user_memberships um
                 JOIN class_type_user_memberships ctum
                   ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
                 WHERE um.gym_id = cs.gym_id AND um.member_id = ? AND um.status = 'active'
-                  AND ctum.class_type_id = cs.class_type_id
+                  AND ctum.activity_type_id = cs.activity_type_id
               ) AS access_locked
        FROM class_sessions cs
        JOIN activity_types at ON at.id = cs.activity_type_id
