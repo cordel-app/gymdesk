@@ -527,7 +527,7 @@ describe('meal items', () => {
       .post(`/nutrition-plan-templates/${tplId}/days/${dayId}/meals/${mealId}/items`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ nutrition_library_item_id: libraryItemId, component_type: 'drink' });
+      .send({ nutrition_library_item_id: libraryItemId, component_type: 'invalid_type' });
     expect(res.status).toBe(400);
   });
 
