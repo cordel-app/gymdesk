@@ -17,7 +17,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 
-interface LibraryItem { id: number; name: string; category: string }
+interface LibraryItem { id: number; name: string; category: string; quality_slugs: string[] }
 
 export interface MealItem {
   id: number;
@@ -63,8 +63,6 @@ const MEAL_TYPES = [
   'lunch', 'snack', 'dinner', 'antes_de_dormir',
 ] as const;
 
-const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'additional'] as const;
-
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
   'weight_loss', 'weight_gain', 'muscle_gain', 'maintenance',
@@ -72,6 +70,26 @@ const NUTRITION_GOALS = [
 ] as const;
 
 const ALL_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
+
+/* ---- Quality badge colors ---- */
+
+const QUALITY_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  protein:      { bg: '#eff6ff', border: '#bfdbfe', text: '#1d4ed8' },
+  carbohydrate: { bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d' },
+};
+const DEFAULT_QUALITY_COLOR = { bg: '#faf5ff', border: '#ddd6fe', text: '#7e22ce' };
+
+function QualityBadge({ slug, t }: { slug: string; t: (k: string, opts?: any) => string }) {
+  const c = QUALITY_COLORS[slug] ?? DEFAULT_QUALITY_COLOR;
+  return (
+    <span style={{
+      background: c.bg, border: `1px solid ${c.border}`, color: c.text,
+      borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 500, flexShrink: 0,
+    }}>
+      {t(`nutrition_library.quality_${slug}`, { defaultValue: slug })}
+    </span>
+  );
+}
 
 export function NutritionPlanTree({
   templateId, hierarchy, canWrite, onChanged,
@@ -385,6 +403,7 @@ function MealRow({
   const { toast } = useToast();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: meal.id });
 
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [mealTypeVal, setMealTypeVal] = useState(meal.meal_type ?? '');
   const [displayNameVal, setDisplayNameVal] = useState(meal.display_name);
@@ -441,13 +460,21 @@ function MealRow({
 
   return (
     <div ref={setNodeRef} style={mealStyle}>
-      {/* Read-mode header (always visible) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
+      {/* Header — always visible; clicking the row toggles expand */}
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', cursor: 'pointer', userSelect: 'none' }}
+        onClick={() => { if (!editing) setExpanded((e) => !e); }}
+      >
         {canWrite && (
-          <span {...attributes} {...listeners} style={{ cursor: 'grab', color: '#bbb', fontSize: 14, userSelect: 'none', flexShrink: 0 }}>⠿</span>
+          <span
+            {...attributes} {...listeners}
+            style={{ cursor: 'grab', color: '#bbb', fontSize: 14, flexShrink: 0 }}
+            onClick={(e) => e.stopPropagation()}
+          >⠿</span>
         )}
+        <span style={{ color: '#9ca3af', fontSize: 11, flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
         <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{meal.display_name}</span>
-        {compactSummary && (
+        {!expanded && compactSummary && (
           <span style={{ fontSize: 12.5, color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {' · '}{compactSummary}
           </span>
@@ -455,21 +482,35 @@ function MealRow({
         <span style={{ flex: 1 }} />
         {canWrite && !editing && (
           <button
-            onClick={() => setEditing(true)}
+            onClick={(e) => { e.stopPropagation(); setExpanded(true); setEditing(true); }}
             style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontSize: 12, color: '#555' }}
           >
             {t('nutrition_plan_templates.edit')}
           </button>
         )}
         {canWrite && (
-          <ContextMenu
-            ariaLabel={t('nutrition_plan_templates.col_actions')}
-            items={[{ label: t('nutrition_plan_templates.tree_remove_meal'), onClick: onRemove, danger: true }]}
-          />
+          <span onClick={(e) => e.stopPropagation()}>
+            <ContextMenu
+              ariaLabel={t('nutrition_plan_templates.col_actions')}
+              items={[{ label: t('nutrition_plan_templates.tree_remove_meal'), onClick: onRemove, danger: true }]}
+            />
+          </span>
         )}
       </div>
 
-      {/* Edit mode body */}
+      {/* Expanded — food items (read-only when not editing) */}
+      {expanded && !editing && meal.items.length > 0 && (
+        <div style={{ borderTop: '1px solid #ececf0', padding: '8px 12px 10px' }}>
+          <ItemsReadView items={meal.items} libraryItems={libraryItems} t={t} />
+        </div>
+      )}
+      {expanded && !editing && meal.items.length === 0 && (
+        <div style={{ borderTop: '1px solid #ececf0', padding: '8px 12px' }}>
+          <p style={{ color: '#aaa', fontSize: 12.5, margin: 0 }}>{t('nutrition_plan_templates.tree_no_items')}</p>
+        </div>
+      )}
+
+      {/* Edit mode */}
       {editing && (
         <div style={{ borderTop: '1px solid #ececf0', padding: '12px 12px 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
@@ -527,9 +568,56 @@ function MealRow({
   );
 }
 
+/* ---- ItemsReadView — read-only food items with OR grouping and quality badges ---- */
+
+function ItemsReadView({
+  items, libraryItems, t,
+}: {
+  items: MealItem[];
+  libraryItems: LibraryItem[];
+  t: (k: string, opts?: any) => string;
+}) {
+  return (
+    <div>
+      {items.map((item, idx) => {
+        const libItem = libraryItems.find((l) => l.id === item.nutrition_library_item_id);
+        const showOr = idx > 0 && items[idx - 1].component_type === item.component_type;
+        return (
+          <React.Fragment key={item.id}>
+            {showOr && (
+              <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '1px 0', fontWeight: 700, letterSpacing: 0.5 }}>
+                {t('nutrition_plan_templates.tree_food_type_or')}
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
+              {libItem && libItem.quality_slugs.map((slug) => (
+                <QualityBadge key={slug} slug={slug} t={t} />
+              ))}
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 11.5, color: '#9ca3af' }}>
+                {t(`nutrition_plan_templates.tree_component_type_${item.component_type}`, { defaultValue: item.component_type })}
+              </span>
+              {item.quantity != null && (
+                <span style={{ fontSize: 12.5, color: '#6b7280' }}>{item.quantity}{item.unit ?? ''}</span>
+              )}
+            </div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ---- MealItemsEditor ---- */
 
-const emptyItemForm = { nutrition_library_item_id: '', component_type: '', quantity: '', unit: 'g' };
+interface ItemEditState {
+  id: number;
+  foodType: string;
+  itemId: string;
+  qty: string;
+  unit: string;
+}
 
 function MealItemsEditor({
   templateId, dayId, mealId, items, libraryItems, canWrite, onChanged,
@@ -546,14 +634,59 @@ function MealItemsEditor({
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
-  const [addForm, setAddForm] = useState(emptyItemForm);
+  // Derive available food types from library items
+  const availableFoodTypes = [...new Set(libraryItems.map((i) => i.category))].sort();
+
+  // Add form
+  const [addFoodType, setAddFoodType] = useState('');
+  const [addItemId, setAddItemId] = useState('');
+  const [addQty, setAddQty] = useState('');
+  const [addUnit, setAddUnit] = useState('g');
   const [adding, setAdding] = useState(false);
+
+  // Edit state (one item at a time)
+  const [editState, setEditState] = useState<ItemEditState | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+
   const [removingId, setRemovingId] = useState<number | null>(null);
 
   const base = `/nutrition-plan-templates/${templateId}/days/${dayId}/meals/${mealId}/items`;
 
+  // Filtered foods for add form
+  const addFilteredItems = addFoodType ? libraryItems.filter((i) => i.category === addFoodType) : [];
+  const selectedAddItem = addFilteredItems.find((i) => i.id === Number(addItemId));
+
+  // Filtered foods for edit form
+  const editFilteredItems = editState ? libraryItems.filter((i) => i.category === editState.foodType) : [];
+  const selectedEditItem = editState ? editFilteredItems.find((i) => i.id === Number(editState.itemId)) : undefined;
+
+  function handleAddFoodTypeChange(newType: string) {
+    setAddFoodType(newType);
+    setAddItemId(''); // clear food selection when type changes
+  }
+
+  function handleEditFoodTypeChange(newType: string) {
+    if (!editState) return;
+    setEditState({ ...editState, foodType: newType, itemId: '' });
+  }
+
+  function startEdit(item: MealItem) {
+    const libItem = libraryItems.find((l) => l.id === item.nutrition_library_item_id);
+    setEditState({
+      id: item.id,
+      foodType: libItem?.category ?? item.component_type,
+      itemId: String(item.nutrition_library_item_id),
+      qty: item.quantity != null ? String(item.quantity) : '',
+      unit: item.unit ?? 'g',
+    });
+  }
+
+  function cancelEdit() {
+    setEditState(null);
+  }
+
   async function addItem() {
-    if (!addForm.nutrition_library_item_id || !addForm.component_type) {
+    if (!addFoodType || !addItemId) {
       toast(t('nutrition_plan_templates.tree_item_required'));
       return;
     }
@@ -562,17 +695,42 @@ function MealItemsEditor({
       await apiFetch(base, {
         method: 'POST',
         body: JSON.stringify({
-          nutrition_library_item_id: parseInt(addForm.nutrition_library_item_id, 10),
-          component_type: addForm.component_type,
-          quantity: addForm.quantity ? parseFloat(addForm.quantity) : null,
-          unit: addForm.unit.trim() || null,
+          nutrition_library_item_id: parseInt(addItemId, 10),
+          component_type: addFoodType,
+          quantity: addQty ? parseFloat(addQty) : null,
+          unit: addUnit.trim() || null,
         }),
       });
-      setAddForm(emptyItemForm);
+      setAddItemId('');
+      setAddQty('');
+      setAddUnit('g');
       await onChanged();
     } catch (err: any) {
       toast(err.message ?? t('nutrition_plan_templates.error_generic'));
     } finally { setAdding(false); }
+  }
+
+  async function saveEdit() {
+    if (!editState || !editState.foodType || !editState.itemId) {
+      toast(t('nutrition_plan_templates.tree_item_required'));
+      return;
+    }
+    setEditSaving(true);
+    try {
+      await apiFetch(`${base}/${editState.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          nutrition_library_item_id: parseInt(editState.itemId, 10),
+          component_type: editState.foodType,
+          quantity: editState.qty ? parseFloat(editState.qty) : null,
+          unit: editState.unit.trim() || null,
+        }),
+      });
+      setEditState(null);
+      await onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('nutrition_plan_templates.error_generic'));
+    } finally { setEditSaving(false); }
   }
 
   async function removeItem() {
@@ -593,71 +751,176 @@ function MealItemsEditor({
       {items.length === 0 && (
         <p style={{ color: '#aaa', fontSize: 12.5, margin: '4px 0 8px' }}>{t('nutrition_plan_templates.tree_no_items')}</p>
       )}
-      {items.map((item) => (
-        <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
-          <span style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{item.item_name}</span>
-          <span style={{ fontSize: 11.5, color: '#9ca3af' }}>
-            {t(`nutrition_plan_templates.tree_component_type_${item.component_type}`)}
-          </span>
-          {item.quantity != null && (
-            <span style={{ fontSize: 12.5, color: '#6b7280' }}>{item.quantity}{item.unit ?? ''}</span>
-          )}
-          {canWrite && (
-            <button onClick={() => setRemovingId(item.id)} style={removeBtnStyle}>×</button>
-          )}
-        </div>
-      ))}
 
+      {/* Items list */}
+      {items.map((item, idx) => {
+        const isEditing = editState?.id === item.id;
+        const libItem = libraryItems.find((l) => l.id === item.nutrition_library_item_id);
+        const showOr = !isEditing && idx > 0 && items[idx - 1].component_type === item.component_type && editState?.id !== items[idx - 1].id;
+
+        return (
+          <React.Fragment key={item.id}>
+            {showOr && (
+              <div style={{ textAlign: 'center', fontSize: 11, color: '#9ca3af', padding: '1px 0', fontWeight: 700, letterSpacing: 0.5 }}>
+                {t('nutrition_plan_templates.tree_food_type_or')}
+              </div>
+            )}
+
+            {isEditing ? (
+              /* Inline edit row */
+              <div style={{ background: '#f8f8ff', border: '1px solid #e0e0f0', borderRadius: 4, padding: '8px', marginBottom: 4 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                  <div style={{ minWidth: 110 }}>
+                    <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food_type')}</span>
+                    <select
+                      value={editState.foodType}
+                      onChange={(e) => handleEditFoodTypeChange(e.target.value)}
+                      style={{ ...microSelect, width: '100%' }}
+                    >
+                      <option value="">—</option>
+                      {availableFoodTypes.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {t(`nutrition_plan_templates.tree_component_type_${cat}`, { defaultValue: cat })}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ flex: 2, minWidth: 130 }}>
+                    <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food')}</span>
+                    <select
+                      value={editState.itemId}
+                      onChange={(e) => setEditState({ ...editState, itemId: e.target.value })}
+                      style={{ ...microSelect, width: '100%' }}
+                      disabled={!editState.foodType}
+                    >
+                      <option value="">—</option>
+                      {editFilteredItems.map((o) => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ width: 64 }}>
+                    <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
+                    <input
+                      type="number" min="0" step="0.1"
+                      value={editState.qty}
+                      onChange={(e) => setEditState({ ...editState, qty: e.target.value })}
+                      style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+                    />
+                  </div>
+                  <div style={{ width: 52 }}>
+                    <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
+                    <input
+                      value={editState.unit}
+                      onChange={(e) => setEditState({ ...editState, unit: e.target.value })}
+                      style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+                    />
+                  </div>
+                  <button onClick={saveEdit} disabled={editSaving} style={btnSmall()}>
+                    {editSaving ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.save_changes')}
+                  </button>
+                  <button onClick={cancelEdit} style={cancelBtnStyle}>{t('nutrition_plan_templates.cancel')}</button>
+                </div>
+                {selectedEditItem && selectedEditItem.quality_slugs.length > 0 && (
+                  <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+                    {selectedEditItem.quality_slugs.map((slug) => (
+                      <QualityBadge key={slug} slug={slug} t={t as any} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Read row */
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
+                <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
+                {libItem && libItem.quality_slugs.map((slug) => (
+                  <QualityBadge key={slug} slug={slug} t={t as any} />
+                ))}
+                <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 4 }}>
+                  {t(`nutrition_plan_templates.tree_component_type_${item.component_type}`, { defaultValue: item.component_type })}
+                </span>
+                <span style={{ flex: 1 }} />
+                {item.quantity != null && (
+                  <span style={{ fontSize: 12.5, color: '#6b7280' }}>{item.quantity}{item.unit ?? ''}</span>
+                )}
+                {canWrite && (
+                  <>
+                    <button
+                      onClick={() => startEdit(item)}
+                      style={{ background: 'none', border: '1px solid #e5e7eb', borderRadius: 3, padding: '2px 7px', cursor: 'pointer', fontSize: 11.5, color: '#555' }}
+                    >
+                      {t('nutrition_plan_templates.edit')}
+                    </button>
+                    <button onClick={() => setRemovingId(item.id)} style={removeBtnStyle}>×</button>
+                  </>
+                )}
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
+
+      {/* Add form */}
       {canWrite && (
-        <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: 2, minWidth: 120 }}>
-            <span style={microLabel}>{t('nutrition_plan_templates.tree_label_library_item')}</span>
-            <select
-              value={addForm.nutrition_library_item_id}
-              onChange={(e) => setAddForm({ ...addForm, nutrition_library_item_id: e.target.value })}
-              style={{ ...microSelect, width: '100%' }}
-            >
-              <option value="">—</option>
-              {libraryItems.map((o) => (
-                <option key={o.id} value={o.id}>{o.name}</option>
+        <div style={{ marginTop: 10, background: '#f9fafb', border: '1px solid #ececf0', borderRadius: 5, padding: '8px 10px' }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ minWidth: 110 }}>
+              <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food_type')}</span>
+              <select
+                value={addFoodType}
+                onChange={(e) => handleAddFoodTypeChange(e.target.value)}
+                style={{ ...microSelect, width: '100%' }}
+              >
+                <option value="">—</option>
+                {availableFoodTypes.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {t(`nutrition_plan_templates.tree_component_type_${cat}`, { defaultValue: cat })}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 2, minWidth: 130 }}>
+              <span style={microLabel}>{t('nutrition_plan_templates.tree_label_food')}</span>
+              <select
+                value={addItemId}
+                onChange={(e) => setAddItemId(e.target.value)}
+                style={{ ...microSelect, width: '100%' }}
+                disabled={!addFoodType}
+              >
+                <option value="">—</option>
+                {addFilteredItems.map((o) => (
+                  <option key={o.id} value={o.id}>{o.name}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ width: 64 }}>
+              <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
+              <input
+                type="number" min="0" step="0.1"
+                value={addQty}
+                onChange={(e) => setAddQty(e.target.value)}
+                style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+              />
+            </div>
+            <div style={{ width: 52 }}>
+              <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
+              <input
+                value={addUnit}
+                onChange={(e) => setAddUnit(e.target.value)}
+                style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
+              />
+            </div>
+            <button onClick={addItem} disabled={adding} style={btnSmall()}>
+              {t('nutrition_plan_templates.tree_add_item')}
+            </button>
+          </div>
+          {selectedAddItem && selectedAddItem.quality_slugs.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
+              {selectedAddItem.quality_slugs.map((slug) => (
+                <QualityBadge key={slug} slug={slug} t={t as any} />
               ))}
-            </select>
-          </div>
-          <div style={{ flex: 1, minWidth: 100 }}>
-            <span style={microLabel}>{t('nutrition_plan_templates.tree_label_component_type')}</span>
-            <select
-              value={addForm.component_type}
-              onChange={(e) => setAddForm({ ...addForm, component_type: e.target.value })}
-              style={{ ...microSelect, width: '100%' }}
-            >
-              <option value="">—</option>
-              {COMPONENT_TYPES.map((ct) => (
-                <option key={ct} value={ct}>{t(`nutrition_plan_templates.tree_component_type_${ct}`)}</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ width: 70 }}>
-            <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_quantity')}</span>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={addForm.quantity}
-              onChange={(e) => setAddForm({ ...addForm, quantity: e.target.value })}
-              style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
-            />
-          </div>
-          <div style={{ width: 60 }}>
-            <span style={microLabel}>{t('nutrition_plan_templates.tree_goal_unit')}</span>
-            <input
-              value={addForm.unit}
-              onChange={(e) => setAddForm({ ...addForm, unit: e.target.value })}
-              style={{ ...microSelect, width: '100%', boxSizing: 'border-box' as const }}
-            />
-          </div>
-          <button onClick={addItem} disabled={adding} style={btnSmall()}>
-            {t('nutrition_plan_templates.tree_add_item')}
-          </button>
+            </div>
+          )}
         </div>
       )}
 
