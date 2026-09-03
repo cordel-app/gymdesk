@@ -45,6 +45,11 @@ export const navigationGroups: NavGroup[] = [
           },
         ],
       },
+      {
+        href: '/{{locale}}/memberships',
+        labelKey: 'nav.memberships',
+        featureKey: 'membership.memberships',
+      },
     ],
   },
   {
@@ -57,6 +62,11 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/calendar',
         labelKey: 'nav.calendar',
         featureKey: 'calendar.calendar',
+      },
+      {
+        href: '/{{locale}}/schedule',
+        labelKey: 'nav.schedule',
+        featureKey: 'calendar.schedule',
       },
     ],
   },
