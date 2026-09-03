@@ -8,8 +8,12 @@ import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
+import { DataTable, Column } from '@/components/DataTable';
+import { StatusBadge } from '@/components/StatusBadge';
+import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { MemberTrainingPlansModal } from './MemberTrainingPlansModal';
 import { MemberPaymentsModal } from './MemberPaymentsModal';
+import { MemberExpandedRow } from './MemberExpandedRow';
 
 interface Plan {
   id: number;
@@ -26,6 +30,8 @@ interface Member {
   fare_name: string | null;
   clerk_user_id: string | null;
   invitation_id: string | null;
+  account_status: 'active' | 'invited' | 'not_enrolled';
+  membership_status: string | null;
 }
 
 const emptyForm = { name: '', email: '', phone: '', fare_id: '' };
@@ -50,9 +56,8 @@ export default function MembersPage() {
   const [paymentsFor, setPaymentsFor] = useState<Member | null>(null);
   const [memberClerkStatus, setMemberClerkStatus] = useState<{ status: string; userId: string | null } | null>(null);
   const [memberClerkLoading, setMemberClerkLoading] = useState(false);
+  const [expandedMemberIds, setExpandedMemberIds] = useState<Set<number>>(new Set());
 
-  // #59: only shown once a gym actually has more than one center — a
-  // single-center gym behaves exactly as before this feature existed.
   const showCenters = centers.length > 1;
   const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
@@ -211,6 +216,78 @@ export default function MembersPage() {
     }
   }
 
+  function toggleExpand(m: Member) {
+    setExpandedMemberIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(m.id)) next.delete(m.id); else next.add(m.id);
+      return next;
+    });
+  }
+
+  function buildActions(m: Member): ContextMenuItem[] {
+    const linked = !!m.clerk_user_id;
+    const pendingInvite = !linked && !!m.invitation_id;
+    const items: ContextMenuItem[] = [];
+
+    items.push({ label: t('members.edit'), onClick: () => openEdit(m) });
+
+    if (!linked && !pendingInvite) {
+      items.push({ label: t('members.action_invite'), onClick: () => handleInvite(m.id) });
+    }
+    if (pendingInvite) {
+      items.push({ label: t('members.action_reinvite'), onClick: () => handleReinvite(m.id) });
+      items.push({ label: t('members.action_revoke'), onClick: () => handleRevokeInvite(m.id) });
+    }
+    if (canManageTraining) {
+      items.push({ label: t('members.training_plans'), onClick: () => setTrainingPlansFor(m) });
+    }
+    if (canManagePayments) {
+      items.push({ label: t('members.payments'), onClick: () => setPaymentsFor(m) });
+    }
+    items.push({ label: t('members.delete'), onClick: () => handleDelete(m.id), danger: true });
+
+    return items;
+  }
+
+  const columns: Column<Member>[] = [
+    {
+      header: t('members.col_name'),
+      render: (m) => (
+        <div>
+          <div style={{ fontWeight: 500 }}>{m.name}</div>
+          <div style={{ fontSize: 12, color: '#888' }}>{m.email}</div>
+        </div>
+      ),
+    },
+    {
+      header: t('members.col_account_status'),
+      width: 130,
+      render: (m) => (
+        <StatusBadge
+          status={m.account_status}
+          label={t(`members.account_status_${m.account_status}`)}
+        />
+      ),
+    },
+    {
+      header: t('members.col_membership_status'),
+      width: 130,
+      render: (m) => m.membership_status
+        ? <StatusBadge status={m.membership_status} label={t(`members.membership_status_${m.membership_status}`) || m.membership_status} />
+        : <span style={{ color: '#bbb' }}>—</span>,
+    },
+    {
+      header: t('members.col_actions'),
+      width: 60,
+      render: (m) => (
+        <ContextMenu
+          items={buildActions(m)}
+          ariaLabel={`${t('members.col_actions')} — ${m.name}`}
+        />
+      ),
+    },
+  ];
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -232,60 +309,19 @@ export default function MembersPage() {
         </div>
       </div>
 
-      {loading ? (
-        <p style={{ color: '#666' }}>{t('members.loading')}</p>
-      ) : members.length === 0 ? (
-        <p style={{ color: '#666' }}>{t('members.empty')}</p>
-      ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr style={{ background: '#f0f0f0', textAlign: 'left' }}>
-              <th style={th}>{t('members.col_name')}</th>
-              <th style={th}>{t('members.col_email')}</th>
-              <th style={th}>{t('members.col_phone')}</th>
-              <th style={th}>{t('members.col_fare')}</th>
-              <th style={th}>{t('members.col_portal')}</th>
-              <th style={{ ...th, width: 220 }}>{t('members.col_actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m) => {
-              const linked = !!m.clerk_user_id;
-              const pendingInvite = !linked && !!m.invitation_id;
-              return (
-                <tr key={m.id} style={{ borderTop: '1px solid #eee' }}>
-                  <td style={td}>{m.name}</td>
-                  <td style={td}>{m.email}</td>
-                  <td style={td}>{m.phone ?? '—'}</td>
-                  <td style={td}>{m.fare_name ?? '—'}</td>
-                  <td style={td}>
-                    {linked ? t('members.portal_linked') : pendingInvite ? t('members.portal_invited') : t('members.portal_none')}
-                  </td>
-                  <td style={{ ...td, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {canManageTraining && (
-                      <button onClick={() => setTrainingPlansFor(m)} style={btnSmall('#6c63ff')}>{t('members.training_plans')}</button>
-                    )}
-                    {canManagePayments && (
-                      <button onClick={() => setPaymentsFor(m)} style={btnSmall('#2980b9')}>💳 {t('members.payments')}</button>
-                    )}
-                    <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('members.edit')}</button>
-                    {!linked && !pendingInvite && (
-                      <button onClick={() => handleInvite(m.id)} style={btnSmall('#2980b9')}>{t('members.action_invite')}</button>
-                    )}
-                    {pendingInvite && (
-                      <>
-                        <button onClick={() => handleReinvite(m.id)} style={btnSmall('#2980b9')}>{t('members.action_reinvite')}</button>
-                        <button onClick={() => handleRevokeInvite(m.id)} style={btnSmall('#e67e22')}>{t('members.action_revoke')}</button>
-                      </>
-                    )}
-                    <button onClick={() => handleDelete(m.id)} style={btnSmall('#c0392b')}>{t('members.delete')}</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+      <DataTable
+        columns={columns}
+        rows={members}
+        rowKey={(m) => m.id}
+        loading={loading}
+        loadingText={t('members.loading')}
+        emptyText={t('members.empty')}
+        expandedRowKeys={expandedMemberIds}
+        onToggleExpand={toggleExpand}
+        renderExpanded={(m) => (
+          <MemberExpandedRow memberId={m.id} canManageTraining={canManageTraining} />
+        )}
+      />
 
       {modalOpen && (
         <div style={overlayStyle} onClick={closeModal}>
@@ -397,14 +433,8 @@ export default function MembersPage() {
   );
 }
 
-const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' };
-const th: React.CSSProperties = { padding: '12px 16px', fontWeight: 600, fontSize: 15 };
-const td: React.CSSProperties = { padding: '12px 16px', fontSize: 15 };
 function btnStyle(bg: string): React.CSSProperties {
   return { background: bg, color: '#fff', border: 'none', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
-}
-function btnSmall(bg: string): React.CSSProperties {
-  return { background: bg, color: '#fff', border: 'none', borderRadius: 4, padding: '6px 12px', cursor: 'pointer', fontSize: 13 };
 }
 const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
 const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 420, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };

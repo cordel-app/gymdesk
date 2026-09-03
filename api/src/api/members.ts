@@ -57,7 +57,16 @@ membersRouter.get('/', async (req, res) => {
   }
   const limitClause = q ? 'LIMIT 20' : '';
   const { rows } = await db.query(
-    `SELECT m.*, m.membership_plan_id AS fare_id, p.name AS fare_name
+    `SELECT m.*, m.membership_plan_id AS fare_id, p.name AS fare_name,
+            CASE
+              WHEN m.clerk_user_id IS NOT NULL THEN 'active'
+              WHEN m.invitation_id IS NOT NULL THEN 'invited'
+              ELSE 'not_enrolled'
+            END AS account_status,
+            (SELECT um.status
+             FROM user_memberships um
+             WHERE um.member_id = m.id AND um.gym_id = m.gym_id
+             ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS membership_status
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}
