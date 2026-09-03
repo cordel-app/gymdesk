@@ -6,6 +6,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { bookMemberOnSession, cancelBooking } from './bookings';
+import { validateRequest as validateSharedRequest } from './shared-training-requests';
 import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
@@ -308,6 +309,23 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               sp.name AS space_name,
               tm.name AS trainer_name,
               COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
+              CASE
+                WHEN cs.trainer_membership_id IS NOT NULL AND cs.space_id IS NOT NULL
+                THEN LEAST(COALESCE(tm.max_concurrent_groups, 1), COALESCE(sp.max_concurrent_groups, 1))
+                ELSE 1
+              END AS effective_max_groups,
+              CASE
+                WHEN cs.trainer_membership_id IS NOT NULL AND cs.space_id IS NOT NULL
+                THEN (
+                  SELECT COUNT(*) FROM class_sessions cs2
+                  WHERE cs2.gym_id = cs.gym_id
+                    AND cs2.trainer_membership_id = cs.trainer_membership_id
+                    AND cs2.space_id = cs.space_id
+                    AND cs2.starts_at = cs.starts_at AND cs2.ends_at = cs.ends_at
+                    AND cs2.status <> 'cancelled' AND cs2.deleted_at IS NULL
+                )
+                ELSE 1
+              END AS concurrent_groups_count,
               (
                 SELECT COUNT(*) FROM bookings b
                 WHERE b.class_session_id = cs.id AND b.status = 'booked'
@@ -492,42 +510,55 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
 meRouter.post('/shared-training-requests', requireRole('member'), requireFeatureEnabled('calendar.member_calendar'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
-  const { class_session_id } = req.body;
+  const { class_session_id, notes } = req.body;
   if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const { rows: sessionRows } = await db.query(
-      `SELECT cs.id, cs.activity_type_id, cs.allows_shared_booking, at.is_shareable
-       FROM class_sessions cs
-       JOIN activity_types at ON at.id = cs.activity_type_id
-       WHERE cs.id = ? AND cs.gym_id = ? AND cs.status = 'scheduled' AND cs.deleted_at IS NULL`,
+    const validationErr = await validateSharedRequest(gymId, Number(class_session_id), memberId);
+    if (validationErr) return res.status(validationErr.status).json({ error: validationErr.message, code: validationErr.code });
+
+    const { rows: sessionRows } = await db.query<{ activity_type_id: number }>(
+      'SELECT activity_type_id FROM class_sessions WHERE id = ? AND gym_id = ?',
       [class_session_id, gymId],
     );
-    if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found or not scheduled' });
-    const session = sessionRows[0];
-    if (!Number(session.is_shareable)) return res.status(409).json({ error: 'Activity type is not shareable' });
-    if (!Number(session.allows_shared_booking)) return res.status(409).json({ error: 'Shared booking is not enabled for this session' });
-
-    try {
-      const { insertId } = await db.query(
-        `INSERT INTO shared_training_requests
-           (gym_id, class_session_id, requesting_member_id, activity_type_id, status, created_at)
-         VALUES (?, ?, ?, ?, 'pending', UTC_TIMESTAMP())`,
-        [gymId, class_session_id, memberId, session.activity_type_id],
-      );
-      const { rows } = await db.query(
-        'SELECT * FROM shared_training_requests WHERE id = ?',
-        [insertId],
-      );
-      res.status(201).json(rows[0]);
-    } catch (e: any) {
-      if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'A request already exists for this session' });
-      throw e;
-    }
+    const { insertId } = await db.query(
+      `INSERT INTO shared_training_requests
+         (gym_id, class_session_id, requesting_member_id, activity_type_id, status, notes, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?, UTC_TIMESTAMP())`,
+      [gymId, class_session_id, memberId, sessionRows[0].activity_type_id, notes ?? null],
+    );
+    const { rows } = await db.query(
+      'SELECT * FROM shared_training_requests WHERE id = ?',
+      [insertId],
+    );
+    res.status(201).json(rows[0]);
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
     next(err);
   }
+});
+
+/** Member views their own shared training requests. */
+meRouter.get('/shared-training-requests', requireRole('member'), requireFeatureEnabled('calendar.member_calendar'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const { rows } = await db.query(
+      `SELECT str.*, at.name AS activity_type_name,
+              cs.starts_at AS session_starts_at, cs.ends_at AS session_ends_at,
+              sp.name AS space_name, tm.name AS trainer_name
+       FROM shared_training_requests str
+       JOIN activity_types at ON at.id = str.activity_type_id
+       JOIN class_sessions cs ON cs.id = str.class_session_id
+       LEFT JOIN spaces sp ON sp.id = cs.space_id
+       LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
+       WHERE str.gym_id = ? AND str.requesting_member_id = ?
+       ORDER BY str.created_at DESC`,
+      [gymId, memberId],
+    );
+    res.json(rows);
+  } catch (e) { next(e); }
 });
 
 /** Cancel own pending shared-training request. */

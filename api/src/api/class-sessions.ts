@@ -11,14 +11,39 @@ const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
 /**
  * Effective capacity: COALESCE(cs.max_capacity_override, ct.max_capacity).
  * This is what booking (P2.5) will compare confirmed bookings against.
+ *
+ * #323+#324: sharing fields — is_shareable, allows_shared_booking, concurrent_groups_count,
+ * effective_max_groups (min of trainer and space concurrent-group limits).
  */
 const SELECT = `
   SELECT cs.*,
          at.name AS class_type_name,
          at.max_capacity AS class_type_capacity,
          at.duration_minutes AS class_type_duration,
+         at.is_shareable,
          COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
          sp.name AS space_name,
+         COALESCE(sp.max_concurrent_groups, 1) AS space_max_concurrent_groups,
+         COALESCE(gm.max_concurrent_groups, 1) AS trainer_max_concurrent_groups,
+         CASE
+           WHEN cs.trainer_membership_id IS NOT NULL AND cs.space_id IS NOT NULL
+           THEN LEAST(COALESCE(gm.max_concurrent_groups, 1), COALESCE(sp.max_concurrent_groups, 1))
+           ELSE 1
+         END AS effective_max_groups,
+         CASE
+           WHEN cs.trainer_membership_id IS NOT NULL AND cs.space_id IS NOT NULL
+           THEN (
+             SELECT COUNT(*) FROM class_sessions cs2
+             WHERE cs2.gym_id = cs.gym_id
+               AND cs2.trainer_membership_id = cs.trainer_membership_id
+               AND cs2.space_id = cs.space_id
+               AND cs2.starts_at = cs.starts_at
+               AND cs2.ends_at = cs.ends_at
+               AND cs2.status <> 'cancelled'
+               AND cs2.deleted_at IS NULL
+           )
+           ELSE 1
+         END AS concurrent_groups_count,
          etm.name AS effective_trainer_name,
          (SELECT COUNT(*) FROM bookings b WHERE b.class_session_id = cs.id AND b.status = 'booked') AS booked_count,
          (SELECT COUNT(*) FROM bookings b WHERE b.class_session_id = cs.id AND b.status = 'booked' AND b.attendance_status = 'present')  AS attendance_present,
@@ -27,6 +52,7 @@ const SELECT = `
   FROM class_sessions cs
   JOIN activity_types at ON at.id = cs.activity_type_id
   LEFT JOIN spaces sp ON sp.id = cs.space_id
+  LEFT JOIN gym_memberships gm  ON gm.id  = cs.trainer_membership_id
   LEFT JOIN gym_memberships etm ON etm.id = cs.effective_trainer_membership_id
 `;
 
@@ -106,42 +132,200 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
     const err = await validateRefs(gymId, req.body, resolvedCenterId);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
 
+    const trainerId = trainer_membership_id ?? null;
+    const spaceIdVal = space_id ?? null;
+    const startsAtDate = new Date(starts_at);
+    const endsAtDate = new Date(ends_at);
+
+    // When both trainer and space are set, validate concurrent-group capacity atomically.
+    if (trainerId && spaceIdVal) {
+      const { rows: atRows } = await db.query(
+        'SELECT is_shareable FROM activity_types WHERE id = ? AND gym_id = ?',
+        [activity_type_id, gymId],
+      );
+      const newShareable = !!atRows[0]?.is_shareable;
+
+      const row = await db.transaction(async (tx) => {
+        const { rows: existing } = await tx.query(
+          `SELECT cs.id, at.is_shareable AS act_shareable, cs.allows_shared_booking,
+                  COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
+                  COALESCE(sp.max_concurrent_groups, 1) AS space_max
+           FROM class_sessions cs
+           JOIN activity_types at ON at.id = cs.activity_type_id
+           JOIN gym_memberships gm ON gm.id = cs.trainer_membership_id
+           JOIN spaces sp ON sp.id = cs.space_id
+           WHERE cs.gym_id = ? AND cs.trainer_membership_id = ? AND cs.space_id = ?
+             AND cs.starts_at = ? AND cs.ends_at = ?
+             AND cs.status <> 'cancelled' AND cs.deleted_at IS NULL
+           FOR UPDATE`,
+          [gymId, trainerId, spaceIdVal, startsAtDate, endsAtDate],
+        );
+
+        if (existing.length > 0) {
+          const effectiveMax = Math.min(
+            Number(existing[0].trainer_max),
+            Number(existing[0].space_max),
+          );
+          if (existing.length >= effectiveMax) {
+            throw Object.assign(new Error('Slot is fully occupied'), { status: 409, code: 'slot_fully_occupied' });
+          }
+          const nonShareable = existing.find((r: any) => !r.act_shareable);
+          if (nonShareable) {
+            throw Object.assign(new Error('An existing session at this slot is not eligible for shared training'), { status: 409, code: 'slot_not_shareable' });
+          }
+          if (!newShareable) {
+            throw Object.assign(new Error('This activity is not eligible for shared training'), { status: 409, code: 'activity_not_shareable' });
+          }
+          const sharingAuthorized = existing.some((r: any) => r.allows_shared_booking);
+          if (!sharingAuthorized) {
+            throw Object.assign(new Error('Sharing is not authorized for this slot'), {
+              status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
+            });
+          }
+        }
+
+        const { insertId } = await tx.query(
+          `INSERT INTO class_sessions
+           (gym_id, center_id, activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, created_by, modified_by_membership_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, resolvedCenterId, activity_type_id, trainerId, spaceIdVal,
+           startsAtDate, endsAtDate, cap, userId, gymMembershipId],
+        );
+        const { rows } = await tx.query(`${SELECT} WHERE cs.id = ?`, [insertId]);
+        return rows[0];
+      });
+
+      recordAudit(req, { action: 'create', entityType: 'class_session', entityId: row.id, next: row });
+      return res.status(201).json(row);
+    }
+
+    // No concurrent-group check needed when trainer or space is absent.
     const row = await insertAndFetch(
       `INSERT INTO class_sessions
        (gym_id, center_id, activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, created_by, modified_by_membership_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, resolvedCenterId, activity_type_id, trainer_membership_id ?? null, space_id ?? null,
-       new Date(starts_at), new Date(ends_at), cap, userId, gymMembershipId],
+      [gymId, resolvedCenterId, activity_type_id, trainerId, spaceIdVal,
+       startsAtDate, endsAtDate, cap, userId, gymMembershipId],
       `${SELECT} WHERE cs.id = ?`,
       (id) => [id],
     );
     recordAudit(req, { action: 'create', entityType: 'class_session', entityId: row.id, next: row });
     res.status(201).json(row);
   } catch (e: any) {
-    if (e.status) return res.status(e.status).json({ error: e.message });
+    if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
     next(e);
   }
 });
 
 classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, allows_shared_booking } = req.body;
+  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
   }
 
   try {
     const { rows: existingRows } = await db.query(
-      'SELECT center_id FROM class_sessions WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      `SELECT cs.center_id, cs.trainer_membership_id AS cur_trainer, cs.space_id AS cur_space,
+              cs.starts_at AS cur_starts, cs.ends_at AS cur_ends, cs.activity_type_id AS cur_activity
+       FROM class_sessions cs WHERE cs.id = ? AND cs.gym_id = ? AND cs.deleted_at IS NULL`,
       [req.params.id, gymId],
     );
     if (existingRows.length === 0) return res.status(404).json({ error: 'Session not found' });
+    const cur = existingRows[0];
 
-    const err = await validateRefs(gymId, req.body, existingRows[0].center_id);
+    const err = await validateRefs(gymId, req.body, cur.center_id);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
+
+    // Resolve effective post-update slot values for sharing revalidation.
+    const effTrainer = 'trainer_membership_id' in req.body ? (trainer_membership_id ?? null) : cur.cur_trainer;
+    const effSpace   = 'space_id'               in req.body ? (space_id ?? null)               : cur.cur_space;
+    const effStarts  = starts_at ? new Date(starts_at) : cur.cur_starts;
+    const effEnds    = ends_at   ? new Date(ends_at)   : cur.cur_ends;
+    const effActivity = 'activity_type_id' in req.body ? activity_type_id : cur.cur_activity;
+
+    // When the effective slot (trainer + space + time) changes and both trainer+space are set,
+    // revalidate concurrent-group capacity atomically.
+    const slotChanged = effTrainer !== cur.cur_trainer || effSpace !== cur.cur_space ||
+      String(effStarts) !== String(cur.cur_starts) || String(effEnds) !== String(cur.cur_ends) ||
+      effActivity !== cur.cur_activity;
+
+    if (slotChanged && effTrainer && effSpace) {
+      const { rows: atRows } = await db.query(
+        'SELECT is_shareable FROM activity_types WHERE id = ? AND gym_id = ?',
+        [effActivity, gymId],
+      );
+      const newShareable = !!atRows[0]?.is_shareable;
+
+      await db.transaction(async (tx) => {
+        // Lock other sessions at the target slot (excluding this session).
+        const { rows: existing } = await tx.query(
+          `SELECT cs.id, at.is_shareable AS act_shareable, cs.allows_shared_booking,
+                  COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
+                  COALESCE(sp.max_concurrent_groups, 1) AS space_max
+           FROM class_sessions cs
+           JOIN activity_types at ON at.id = cs.activity_type_id
+           JOIN gym_memberships gm ON gm.id = cs.trainer_membership_id
+           JOIN spaces sp ON sp.id = cs.space_id
+           WHERE cs.gym_id = ? AND cs.trainer_membership_id = ? AND cs.space_id = ?
+             AND cs.starts_at = ? AND cs.ends_at = ?
+             AND cs.status <> 'cancelled' AND cs.deleted_at IS NULL
+             AND cs.id <> ?
+           FOR UPDATE`,
+          [gymId, effTrainer, effSpace, effStarts, effEnds, req.params.id],
+        );
+
+        if (existing.length > 0) {
+          const effectiveMax = Math.min(Number(existing[0].trainer_max), Number(existing[0].space_max));
+          if (existing.length >= effectiveMax) {
+            throw Object.assign(new Error('Slot is fully occupied'), { status: 409, code: 'slot_fully_occupied' });
+          }
+          const nonShareable = existing.find((r: any) => !r.act_shareable);
+          if (nonShareable) {
+            throw Object.assign(new Error('An existing session at this slot is not eligible for shared training'), { status: 409, code: 'slot_not_shareable' });
+          }
+          if (!newShareable) {
+            throw Object.assign(new Error('This activity is not eligible for shared training'), { status: 409, code: 'activity_not_shareable' });
+          }
+          const sharingAuthorized = existing.some((r: any) => r.allows_shared_booking);
+          if (!sharingAuthorized) {
+            throw Object.assign(new Error('Sharing is not authorized for this slot'), {
+              status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
+            });
+          }
+        }
+
+        await tx.query(
+          `UPDATE class_sessions SET
+            activity_type_id      = COALESCE(?, activity_type_id),
+            trainer_membership_id = IF(?, ?, trainer_membership_id),
+            space_id              = IF(?, ?, space_id),
+            starts_at             = COALESCE(?, starts_at),
+            ends_at               = COALESCE(?, ends_at),
+            max_capacity_override = IF(?, ?, max_capacity_override),
+            modified_by_membership_id = ?
+           WHERE id = ? AND gym_id = ?`,
+          [
+            activity_type_id ?? null,
+            'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
+            'space_id'              in req.body ? 1 : 0, space_id ?? null,
+            starts_at ? new Date(starts_at) : null,
+            ends_at   ? new Date(ends_at)   : null,
+            'max_capacity_override' in req.body ? 1 : 0,
+            max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
+            gymMembershipId,
+            req.params.id, gymId,
+          ],
+        );
+      });
+
+      const { rows } = await db.query(`${SELECT} WHERE cs.id = ? AND cs.gym_id = ?`, [req.params.id, gymId]);
+      return res.json(rows[0]);
+    }
 
     const { rowCount } = await db.query(
       `UPDATE class_sessions SET
+        activity_type_id       = COALESCE(?, activity_type_id),
         trainer_membership_id  = IF(?, ?, trainer_membership_id),
         space_id               = IF(?, ?, space_id),
         starts_at              = COALESCE(?, starts_at),
@@ -151,10 +335,11 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
         modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ?`,
       [
+        activity_type_id ?? null,
         'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
-        'space_id' in req.body ? 1 : 0, space_id ?? null,
+        'space_id'              in req.body ? 1 : 0, space_id ?? null,
         starts_at ? new Date(starts_at) : null,
-        ends_at ? new Date(ends_at) : null,
+        ends_at   ? new Date(ends_at)   : null,
         'max_capacity_override' in req.body ? 1 : 0,
         max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
         'allows_shared_booking' in req.body ? 1 : 0, allows_shared_booking ? 1 : 0,
@@ -163,6 +348,53 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Session not found' });
+    const { rows } = await db.query(`${SELECT} WHERE cs.id = ? AND cs.gym_id = ?`, [req.params.id, gymId]);
+    res.json(rows[0]);
+  } catch (e: any) {
+    if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
+    next(e);
+  }
+});
+
+/** #323: Toggle sharing authorization for a slot.
+ *  Enabling allows a second eligible group to book directly.
+ *  Disabling while concurrent sessions exist returns 409 — existing bookings are never cancelled. */
+classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { authorized } = req.body;
+  if (typeof authorized !== 'boolean') return res.status(400).json({ error: 'authorized (boolean) is required' });
+
+  try {
+    const { rows: sessionRows } = await db.query(
+      `SELECT cs.id, cs.trainer_membership_id, cs.space_id, cs.starts_at, cs.ends_at
+       FROM class_sessions cs WHERE cs.id = ? AND cs.gym_id = ? AND cs.deleted_at IS NULL`,
+      [req.params.id, gymId],
+    );
+    if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
+    const session = sessionRows[0];
+
+    if (!authorized && session.trainer_membership_id && session.space_id) {
+      const { rows: concurrent } = await db.query(
+        `SELECT COUNT(*) AS cnt FROM class_sessions cs
+         WHERE cs.gym_id = ? AND cs.trainer_membership_id = ? AND cs.space_id = ?
+           AND cs.starts_at = ? AND cs.ends_at = ?
+           AND cs.status <> 'cancelled' AND cs.deleted_at IS NULL AND cs.id <> ?`,
+        [gymId, session.trainer_membership_id, session.space_id, session.starts_at, session.ends_at, req.params.id],
+      );
+      if (Number(concurrent[0].cnt) > 0) {
+        return res.status(409).json({
+          error: 'Cannot disable sharing while concurrent sessions exist for this slot. Resolve the concurrent sessions first.',
+          code: 'concurrent_sessions_exist',
+        });
+      }
+    }
+
+    await db.query(
+      'UPDATE class_sessions SET allows_shared_booking = ?, modified_by_membership_id = ? WHERE id = ? AND gym_id = ?',
+      [authorized ? 1 : 0, gymMembershipId, req.params.id, gymId],
+    );
+
+    recordAudit(req, { action: 'update', entityType: 'class_session', entityId: req.params.id, next: { allows_shared_booking: authorized } });
     const { rows } = await db.query(`${SELECT} WHERE cs.id = ? AND cs.gym_id = ?`, [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (e) { next(e); }
