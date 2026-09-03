@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/fitness-payment
+  IMAGE_NAME: ${{ github.repository_owner }}/fitness-pay
 
 jobs:
   build-and-deploy:
@@ -63,21 +63,21 @@ jobs:
 
             podman pull ghcr.io/${{ env.IMAGE_NAME }}:latest
 
-            UNIT="$HOME/.config/containers/systemd/fitness-payment.container"
+            UNIT="$HOME/.config/containers/systemd/fitness-pay.container"
             if [ ! -f "$UNIT" ]; then
               echo "ERROR: Oscar's quadlet is missing at $UNIT"
               echo "Create it with Image=ghcr.io/${{ env.IMAGE_NAME }}:latest and PublishPort=8083:80"
-              echo "then: systemctl --user daemon-reload && systemctl --user start fitness-payment"
+              echo "then: systemctl --user daemon-reload && systemctl --user start fitness-pay"
               exit 1
             fi
 
             # Oscar owns the systemd unit (ports, restart policy);
             # we just refresh the image and restart it.
-            if ! systemctl --user restart fitness-payment.service; then
+            if ! systemctl --user restart fitness-pay.service; then
               echo "ERROR: systemctl restart failed"
-              systemctl --user status fitness-payment.service --no-pager --lines=40 || true
-              journalctl --user -xeu fitness-payment.service --no-pager -n 60 || true
-              podman ps -a --filter name=fitness-payment || true
+              systemctl --user status fitness-pay.service --no-pager --lines=40 || true
+              journalctl --user -xeu fitness-pay.service --no-pager -n 60 || true
+              podman ps -a --filter name=fitness-pay || true
               echo "--- image inspection ---"
               podman image inspect ghcr.io/${{ env.IMAGE_NAME }}:latest --format '{{.Architecture}} / {{.Os}} / cmd={{.Config.Cmd}} / entrypoint={{.Config.Entrypoint}}' || true
               echo "--- html probe ---"
@@ -87,5 +87,5 @@ jobs:
 
             sleep 3
             curl -sf --max-time 10 -o /dev/null http://localhost:8083/ || \
-              { echo "ERROR: payment page not responding on :8083"; systemctl --user status fitness-payment.service --no-pager || true; podman logs fitness-payment 2>/dev/null || true; exit 1; }
+              { echo "ERROR: payment page not responding on :8083"; systemctl --user status fitness-pay.service --no-pager || true; podman logs fitness-pay 2>/dev/null || true; exit 1; }
             echo "Health check OK"

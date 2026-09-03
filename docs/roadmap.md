@@ -154,7 +154,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
 - **Multi-location (updated 2026-07-15)**: shipped as **Phase 9 — Centers (#59)**, superseding
   the deferred Phase 7 `gym_locations` design (never built). `Center` is the single location
   concept; `Gym` remains the tenant boundary.
-- **Payments**: internal `billing_events` ledger first (staff-recorded); MONEI is the active PSP for Phase 8 (replaced Stripe/Paycomet). Gymdesk owns all subscription logic; MONEI only tokenizes and charges. PCI scope minimized via isolated `fitness-payment` container at `pay.vdicube.com`.
+- **Payments**: internal `billing_events` ledger first (staff-recorded); MONEI is the active PSP for Phase 8 (replaced Stripe/Paycomet). Gymdesk owns all subscription logic; MONEI only tokenizes and charges. PCI scope minimized via isolated `fitness-pay` container at `pay.vdicube.com`.
 - `fares` → `membership_plans` and `subscriptions` → `user_memberships` **evolve in place**
   with data-carrying migrations; old routes/pages are replaced.
 - Trainers are existing `coach`-role rows in `gym_memberships`; trainer data (specialities)
@@ -285,7 +285,7 @@ Grafana Cloud: Loki instance `xavieregea-logs`, user `969010`, push URL `https:/
 | ~~P8.2 DB migrations — payment_methods + payment_requests~~ | [#180](https://github.com/cordel-app/gymdesk/issues/180) | S | #179 | ✅ done |
 | ~~P8.3 payment-requests + payment-page token + webhooks API~~ | [#181](https://github.com/cordel-app/gymdesk/issues/181) | M | #179 #180 | ✅ done |
 | ~~P8.4 Isolated payment page app (vanilla JS + Monei iframe)~~ | [#204](https://github.com/cordel-app/gymdesk/issues/204) | M | #179 #181 | ✅ done |
-| ~~P8.5 Infra — Docker + deploy for fitness-payment container~~ | [#205](https://github.com/cordel-app/gymdesk/issues/205) | S | #204 | ✅ done |
+| ~~P8.5 Infra — Docker + deploy for fitness-pay container~~ | [#205](https://github.com/cordel-app/gymdesk/issues/205) | S | #204 | ✅ done |
 | ~~P8.6 Admin app — MemberPaymentsModal + payment-providers page~~ | [#182](https://github.com/cordel-app/gymdesk/issues/182) | M | #181 | ✅ done |
 | ~~P8.7 Member app — payment banner, success and error pages~~ | [#183](https://github.com/cordel-app/gymdesk/issues/183) | M | #181 | ✅ done |
 | ~~P8.8 Recurring billing run — MIT charges~~ | [#184](https://github.com/cordel-app/gymdesk/issues/184) | M | #179 #180 #181 | ✅ done |

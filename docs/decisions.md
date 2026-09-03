@@ -99,18 +99,18 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ## 8. PCI scope isolation — isolated payment page container
 
-**Decision**: card entry happens exclusively on a separate container (`fitness-payment`, `pay.vdicube.com`) that is completely isolated from the main API, admin app, and member app.
+**Decision**: card entry happens exclusively on a separate container (`fitness-pay`, `pay.vdicube.com`) that is completely isolated from the main API, admin app, and member app.
 
 **Why**: by hosting the Monei Card Input iframe on a dedicated origin with no server-side business logic, we reduce PCI DSS scope to SAQ A (the simplest tier). Card data never touches Gymdesk servers.
 
 **Consequences**:
 - `apps/payment/` is a new app in the monorepo: static HTML/JS/CSS only, served by nginx, no Node.js runtime.
 - **No JavaScript frameworks** in `apps/payment/` — vanilla only. No React, no Angular, no jQuery. The only external script is `https://js.monei.com/v2/monei.js`.
-- `fitness-payment` is the fourth Podman container on corfront, alongside `fitness-admin` and `fitness-members`.
+- `fitness-pay` is the fourth Podman container on corfront, alongside `fitness-admin` and `fitness-members`.
 - The only bridge to the main API is `GET /payment-page/token/:token` — a read-only, unauthenticated, rate-limited endpoint that returns display fields only (amount, gymName, memberName). The token is a UUID v4, single-use, 10-minute TTL.
 - `MONEI_ACCOUNT_ID` (public key) is the only Monei config baked into the payment page. `MONEI_API_KEY` and `MONEI_WEBHOOK_SECRET` never leave the API container.
 - **PCI DSS v4.0 Req 6.4.3**: every third-party script on the payment page must have an SRI hash and be in a maintained inventory (`apps/payment/SCRIPT-INVENTORY.md`). Contact Monei for a versioned URL + `sha384` hash before go-live. If unavailable, a real-time page-integrity monitoring service (e.g. c/side, Reflectiz) is the compensating control.
 - **Monei AoC**: Monei's current Attestation of Compliance must be obtained before production go-live. SAQ A eligibility is void without it.
 - **MIT consent**: the member must explicitly acknowledge recurring billing terms before the first CIT (captured in `payment_requests.consent_given_at`). Required by Visa/Mastercard card scheme rules.
-- **Dedicated VPS (recommended, deferred)**: for full PCI network isolation `fitness-payment` should run on its own VPS, not on the same host as `fitness-members`. The shared corfront deployment is an accepted risk with compensating controls (separate container, distinct port, no shared secrets). Migration to a dedicated VPS should be done before any formal QSA assessment.
+- **Dedicated VPS (recommended, deferred)**: for full PCI network isolation `fitness-pay` should run on its own VPS, not on the same host as `fitness-members`. The shared corfront deployment is an accepted risk with compensating controls (separate container, distinct port, no shared secrets). Migration to a dedicated VPS should be done before any formal QSA assessment.
 

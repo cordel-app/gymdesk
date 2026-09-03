@@ -97,4 +97,4 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build nginx image
-        run: docker build -f apps/payment/Dockerfile -t fitness-payment:ci apps/payment
+        run: docker build -f apps/payment/Dockerfile -t fitness-pay:ci apps/payment
