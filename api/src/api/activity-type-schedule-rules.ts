@@ -5,7 +5,7 @@ import { materializeScheduleRule, cancelFutureOccurrences } from '../domain/sche
 import { DateTime } from 'luxon';
 
 const TYPES = ['one_off', 'weekly', 'monthly'] as const;
-const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6]; // 0=Sun…6=Sat
+const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6]; // 0=Sun…6=Sat
 const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'last'] as const;
 
 export const activityTypeScheduleRulesRouter = Router({ mergeParams: true });
@@ -24,6 +24,26 @@ async function resolveActivityType(activityTypeId: string, gymId: string) {
 async function getGymTimezone(gymId: string): Promise<string> {
   const { rows } = await db.query('SELECT timezone FROM gyms WHERE id = ?', [gymId]);
   return rows[0]?.timezone ?? 'Europe/Madrid';
+}
+
+/**
+ * Normalise the weekdays for a weekly rule.
+ * Accepts either the new `weekdays: number[]` field or the legacy `weekday: number` field
+ * and always returns a sorted, deduplicated array. Returns null for non-weekly types.
+ */
+function resolveWeekdays(body: any): number[] | null {
+  if (body.type !== 'weekly') return null;
+
+  // New multi-day field takes precedence
+  if (Array.isArray(body.weekdays)) {
+    const nums: number[] = body.weekdays.map(Number);
+    return [...new Set(nums)].sort((a, b) => a - b);
+  }
+  // Legacy single-weekday backward compat
+  if (body.weekday != null) {
+    return [Number(body.weekday)];
+  }
+  return [];
 }
 
 function validateRule(body: any): string | null {
@@ -45,7 +65,14 @@ function validateRule(body: any): string | null {
     const end = DateTime.fromISO(end_date);
     if (end > start.plus({ years: 1 })) return 'end_date cannot be more than one year after start_date';
 
-    if (weekday == null || !WEEKDAYS.includes(Number(weekday))) return 'weekday is required for recurring rules (0=Sun…6=Sat)';
+    if (type === 'weekly') {
+      const weekdays = resolveWeekdays(body);
+      if (!weekdays || weekdays.length === 0) return 'weekdays must contain at least one day (0=Sun…6=Sat)';
+      if (weekdays.some((d) => !VALID_WEEKDAYS.includes(d))) return 'each weekday must be 0–6 (0=Sun…6=Sat)';
+    } else {
+      // monthly
+      if (weekday == null || !VALID_WEEKDAYS.includes(Number(weekday))) return 'weekday is required for monthly rules (0=Sun…6=Sat)';
+    }
   }
 
   if (type === 'monthly') {
@@ -62,10 +89,20 @@ function fmtDate(v: any): string | null {
   return v;
 }
 
+function parseWeekdays(raw: any): number[] | null {
+  if (raw == null) return null;
+  if (Array.isArray(raw)) return raw.map(Number);
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw).map(Number); } catch { return null; }
+  }
+  return null;
+}
+
 function formatRule(row: any) {
   if (!row) return row;
   return {
     ...row,
+    weekdays: parseWeekdays(row.weekdays),
     start_date: fmtDate(row.start_date),
     end_date: row.end_date != null ? fmtDate(row.end_date) : null,
     start_time: typeof row.start_time === 'string' ? row.start_time.slice(0, 5) : row.start_time,
@@ -98,16 +135,18 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
   const err = validateRule(req.body); if (err) return res.status(400).json({ error: err });
 
   const { type, start_date, end_date, weekday, ordinal, start_time, end_time } = req.body;
+  const weekdays = resolveWeekdays(req.body);
 
   const { insertId } = await db.query(
     `INSERT INTO activity_type_schedule_rules
-     (gym_id, activity_type_id, type, start_date, end_date, weekday, ordinal, start_time, end_time)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+     (gym_id, activity_type_id, type, start_date, end_date, weekday, weekdays, ordinal, start_time, end_time)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [
       gymId, activityTypeId, type,
       start_date,
       type === 'one_off' ? null : end_date,
-      type !== 'one_off' ? Number(weekday) : null,
+      type === 'monthly' ? Number(weekday) : null,
+      type === 'weekly' ? JSON.stringify(weekdays) : null,
       type === 'monthly' ? ordinal : null,
       start_time.slice(0, 5),
       end_time.slice(0, 5),
@@ -139,17 +178,19 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   const err = validateRule(req.body); if (err) return res.status(400).json({ error: err });
 
   const { type, start_date, end_date, weekday, ordinal, start_time, end_time } = req.body;
+  const weekdays = resolveWeekdays(req.body);
 
   await db.query(
     `UPDATE activity_type_schedule_rules SET
-       type = ?, start_date = ?, end_date = ?, weekday = ?, ordinal = ?,
+       type = ?, start_date = ?, end_date = ?, weekday = ?, weekdays = ?, ordinal = ?,
        start_time = ?, end_time = ?
      WHERE id = ?`,
     [
       type,
       start_date,
       type === 'one_off' ? null : end_date,
-      type !== 'one_off' ? Number(weekday) : null,
+      type === 'monthly' ? Number(weekday) : null,
+      type === 'weekly' ? JSON.stringify(weekdays) : null,
       type === 'monthly' ? ordinal : null,
       start_time.slice(0, 5),
       end_time.slice(0, 5),

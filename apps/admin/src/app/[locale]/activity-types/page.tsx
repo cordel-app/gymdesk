@@ -49,7 +49,8 @@ interface ScheduleRule {
   type: 'one_off' | 'weekly' | 'monthly';
   start_date: string;
   end_date: string | null;
-  weekday: number | null;
+  weekday: number | null;   // monthly only
+  weekdays: number[] | null; // weekly only
   ordinal: 'first' | 'second' | 'third' | 'fourth' | 'fifth' | 'last' | null;
   start_time: string;
   end_time: string;
@@ -61,15 +62,7 @@ interface Trainer { gym_membership_id: number; name: string; }
 
 const STATUSES = ['active', 'inactive'] as const;
 const RULE_TYPES = ['one_off', 'weekly', 'monthly'] as const;
-const WEEKDAYS = [
-  { value: 0, label: 'Sunday' },
-  { value: 1, label: 'Monday' },
-  { value: 2, label: 'Tuesday' },
-  { value: 3, label: 'Wednesday' },
-  { value: 4, label: 'Thursday' },
-  { value: 5, label: 'Friday' },
-  { value: 6, label: 'Saturday' },
-];
+const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6].map((value) => ({ value })); // labels via tWeekday(String(value))
 const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'last'] as const;
 
 const emptyEditForm = {
@@ -90,7 +83,8 @@ const emptyRuleForm = {
   type: 'one_off' as ScheduleRule['type'],
   start_date: '',
   end_date: '',
-  weekday: '',
+  weekday: '',     // monthly only
+  weekdays: [] as number[], // weekly only
   ordinal: '',
   start_time: '',
   end_time: '',
@@ -111,6 +105,7 @@ export default function ActivityTypesPage() {
   const t = useTranslations('activity_types');
   const ts = useTranslations('activity_types.schedule');
   const tStatus = useTranslations('status');
+  const tWeekday = useTranslations('weekday');
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
@@ -339,6 +334,10 @@ export default function ActivityTypesPage() {
   }
 
   async function saveAddRule(actId: number) {
+    if (addRuleForm.type === 'weekly' && addRuleForm.weekdays.length === 0) {
+      setRuleError(ts('error_weekday_required'));
+      return;
+    }
     setRuleSaving(true); setRuleError(null);
     try {
       await apiFetch(`/activity-types/${actId}/schedule-rules`, {
@@ -347,7 +346,9 @@ export default function ActivityTypesPage() {
           type: addRuleForm.type,
           start_date: addRuleForm.start_date,
           end_date: addRuleForm.end_date || null,
-          weekday: addRuleForm.weekday !== '' ? parseInt(addRuleForm.weekday, 10) : null,
+          ...(addRuleForm.type === 'weekly'
+            ? { weekdays: addRuleForm.weekdays }
+            : { weekday: addRuleForm.weekday !== '' ? parseInt(addRuleForm.weekday, 10) : null }),
           ordinal: addRuleForm.ordinal || null,
           start_time: addRuleForm.start_time,
           end_time: addRuleForm.end_time,
@@ -370,6 +371,7 @@ export default function ActivityTypesPage() {
       start_date: rule.start_date,
       end_date: rule.end_date ?? '',
       weekday: rule.weekday != null ? String(rule.weekday) : '',
+      weekdays: rule.type === 'weekly' ? (rule.weekdays ?? []) : [],
       ordinal: rule.ordinal ?? '',
       start_time: rule.start_time,
       end_time: rule.end_time,
@@ -383,6 +385,10 @@ export default function ActivityTypesPage() {
   }
 
   async function saveEditRule(actId: number, ruleId: number) {
+    if (editRuleForm.type === 'weekly' && editRuleForm.weekdays.length === 0) {
+      setRuleError(ts('error_weekday_required'));
+      return;
+    }
     setRuleSaving(true); setRuleError(null);
     try {
       await apiFetch(`/activity-types/${actId}/schedule-rules/${ruleId}`, {
@@ -391,7 +397,9 @@ export default function ActivityTypesPage() {
           type: editRuleForm.type,
           start_date: editRuleForm.start_date,
           end_date: editRuleForm.end_date || null,
-          weekday: editRuleForm.weekday !== '' ? parseInt(editRuleForm.weekday, 10) : null,
+          ...(editRuleForm.type === 'weekly'
+            ? { weekdays: editRuleForm.weekdays }
+            : { weekday: editRuleForm.weekday !== '' ? parseInt(editRuleForm.weekday, 10) : null }),
           ordinal: editRuleForm.ordinal || null,
           start_time: editRuleForm.start_time,
           end_time: editRuleForm.end_time,
@@ -445,8 +453,15 @@ export default function ActivityTypesPage() {
   function ruleLabel(rule: ScheduleRule) {
     const time = `${rule.start_time}–${rule.end_time}`;
     if (rule.type === 'one_off') return `${rule.start_date}  ${time}`;
-    const day = WEEKDAYS.find((w) => w.value === rule.weekday)?.label ?? '—';
-    if (rule.type === 'weekly') return `Every ${day}  ${time}  (until ${rule.end_date})`;
+    if (rule.type === 'weekly') {
+      const days = (rule.weekdays ?? [])
+        .slice()
+        .sort((a, b) => a - b)
+        .map((n) => tWeekday(String(n)))
+        .join(', ');
+      return `Every ${days || '—'}  ${time}  (until ${rule.end_date})`;
+    }
+    const day = tWeekday(String(rule.weekday));
     const ord = rule.ordinal ? rule.ordinal.charAt(0).toUpperCase() + rule.ordinal.slice(1) : '';
     return `${ord} ${day} of every month  ${time}  (until ${rule.end_date})`;
   }
@@ -467,7 +482,7 @@ export default function ActivityTypesPage() {
             <label style={inlineLabelStyle}>{ts('label_type')}</label>
             <select
               value={form.type}
-              onChange={(e) => setForm({ ...form, type: e.target.value as ScheduleRule['type'], end_date: '', weekday: '', ordinal: '' })}
+              onChange={(e) => setForm({ ...form, type: e.target.value as ScheduleRule['type'], end_date: '', weekday: '', weekdays: [], ordinal: '' })}
               style={inlineSelectStyle}
             >
               {RULE_TYPES.map((rt) => (
@@ -486,13 +501,44 @@ export default function ActivityTypesPage() {
             </div>
           )}
         </div>
+        {form.type === 'weekly' && (
+          <div style={{ marginBottom: 10 }}>
+            <label style={inlineLabelStyle}>{ts('days_label')}</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {WEEKDAYS.map((w) => {
+                const selected = form.weekdays.includes(w.value);
+                return (
+                  <button
+                    key={w.value}
+                    type="button"
+                    onClick={() => {
+                      const next = selected
+                        ? form.weekdays.filter((d) => d !== w.value)
+                        : [...form.weekdays, w.value].sort((a, b) => a - b);
+                      setForm({ ...form, weekdays: next });
+                    }}
+                    style={{
+                      padding: '5px 10px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+                      border: `1px solid ${selected ? '#6c63ff' : '#ccc'}`,
+                      background: selected ? '#6c63ff' : '#fff',
+                      color: selected ? '#fff' : '#444',
+                      fontWeight: selected ? 600 : 400,
+                    }}
+                  >
+                    {tWeekday(String(w.value))}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
-          {form.type !== 'one_off' && (
+          {form.type === 'monthly' && (
             <div>
               <label style={inlineLabelStyle}>{ts('label_weekday')}</label>
               <select value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })} style={inlineSelectStyle}>
                 <option value="">—</option>
-                {WEEKDAYS.map((w) => <option key={w.value} value={w.value}>{w.label}</option>)}
+                {WEEKDAYS.map((w) => <option key={w.value} value={w.value}>{tWeekday(String(w.value))}</option>)}
               </select>
             </div>
           )}
