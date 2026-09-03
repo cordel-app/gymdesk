@@ -29,17 +29,21 @@ async function createCenter(gid: string): Promise<number> {
 }
 
 async function createActivityType(gid: string, isShareable: 0 | 1, capacity = 10): Promise<number> {
+  // Use a unique name so the (gym_id, name) UNIQUE constraint on class_types
+  // never causes INSERT IGNORE to silently skip on repeated calls.
+  const name = `AT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const { insertId } = await db.query(
     `INSERT INTO activity_types (gym_id, name, max_capacity, status, is_shareable)
      VALUES (?, ?, ?, 'active', ?)`,
-    [gid, `Activity-${Date.now()}`, capacity, isShareable],
+    [gid, name, capacity, isShareable],
   );
   // Mirror into class_types if the legacy table still exists (pre-059 migration state).
+  // Use the same unique name to avoid (gym_id, name) collisions.
   await db.query(
     `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status)
-     VALUES (?, ?, 'Test Class', ?, 'active')`,
-    [insertId, gid, capacity],
-  ).catch(() => { /* class_types may not exist on fully-migrated DBs */ });
+     VALUES (?, ?, ?, ?, 'active')`,
+    [insertId, gid, name, capacity],
+  ).catch(() => { /* class_types table was dropped on fully-migrated DBs */ });
   return insertId;
 }
 

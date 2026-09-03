@@ -18,6 +18,54 @@ let sessionId: number;
 let memberId: number;
 let pendingRequestId: number;
 
+async function createActivityType(gid: string, capacity = 10): Promise<number> {
+  // Use a unique name so the (gym_id, name) UNIQUE constraint on class_types
+  // never causes INSERT IGNORE to silently skip on repeated calls.
+  const name = `AT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const { insertId } = await db.query(
+    `INSERT INTO activity_types (gym_id, name, max_capacity, status, is_shareable)
+     VALUES (?, ?, ?, 'active', 1)`,
+    [gid, name, capacity],
+  );
+  // Mirror into class_types if the legacy table still exists (pre-059 migration state).
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status)
+     VALUES (?, ?, ?, ?, 'active')`,
+    [insertId, gid, name, capacity],
+  ).catch(() => { /* class_types table was dropped on fully-migrated DBs */ });
+  return insertId;
+}
+
+async function createSession(
+  gid: string,
+  atId: number,
+  cid: number,
+  allowsShared: 0 | 1 = 1,
+): Promise<number> {
+  // class_type_id is a legacy NOT NULL column present in older DB states (pre-059 drop).
+  // Try with it first; if the column no longer exists, fall back without it.
+  try {
+    const { insertId } = await db.query(
+      `INSERT INTO class_sessions
+         (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status, allows_shared_booking)
+       VALUES (?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+      [gid, atId, atId, cid, allowsShared],
+    );
+    return insertId;
+  } catch (err: any) {
+    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+    const { insertId } = await db.query(
+      `INSERT INTO class_sessions
+         (gym_id, activity_type_id, center_id, starts_at, ends_at, status, allows_shared_booking)
+       VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+      [gid, atId, cid, allowsShared],
+    );
+    return insertId;
+  }
+}
+
 async function createSharedRequest(gid: string, sessionId: number, membId: number, atId: number): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO shared_training_requests
@@ -41,22 +89,11 @@ beforeAll(async () => {
   );
   centerId = cid;
 
-  const { insertId: atId } = await db.query(
-    `INSERT INTO activity_types (gym_id, name, max_capacity, status, is_shareable)
-     VALUES (?, 'Shared AT', 10, 'active', 1)`,
-    [gymId],
-  );
-  activityTypeId = atId;
-
-  const { insertId: sid } = await db.query(
-    `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status, allows_shared_booking)
-     VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', 1)`,
-    [gymId, activityTypeId, centerId],
-  );
-  sessionId = sid;
+  activityTypeId = await createActivityType(gymId);
+  sessionId = await createSession(gymId, activityTypeId, centerId);
 
   const email = `str-member-${Date.now()}@test.com`;
-  const { insertId: mid } = await db.query(
+  await db.query(
     `INSERT INTO members (gym_id, name, email, clerk_user_id)
      VALUES (?, 'STR Member', ?, ?)
      ON DUPLICATE KEY UPDATE gym_id = VALUES(gym_id), email = VALUES(email)`,
@@ -141,16 +178,8 @@ describe('POST /shared-training-requests/:id/reject', () => {
   let rejectTargetId: number;
 
   beforeAll(async () => {
-    const { insertId: atId2 } = await db.query(
-      `INSERT INTO activity_types (gym_id, name, max_capacity, status, is_shareable)
-       VALUES (?, 'Reject AT', 5, 'active', 1)`,
-      [gymId],
-    );
-    const { insertId: sid2 } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status, allows_shared_booking)
-       VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 3 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 75 HOUR), 'scheduled', 1)`,
-      [gymId, atId2, centerId],
-    );
+    const atId2 = await createActivityType(gymId, 5);
+    const sid2 = await createSession(gymId, atId2, centerId);
     rejectTargetId = await createSharedRequest(gymId, sid2, memberId, atId2);
   });
 
@@ -197,17 +226,8 @@ describe('POST /shared-training-requests/:id/approve', () => {
   let approveSessionId: number;
 
   beforeAll(async () => {
-    const { insertId: atId3 } = await db.query(
-      `INSERT INTO activity_types (gym_id, name, max_capacity, status, is_shareable)
-       VALUES (?, 'Approve AT', 1, 'active', 1)`,
-      [gymId],
-    );
-    const { insertId: sid3 } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status, allows_shared_booking)
-       VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 5 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 121 HOUR), 'scheduled', 1)`,
-      [gymId, atId3, centerId],
-    );
-    approveSessionId = sid3;
+    const atId3 = await createActivityType(gymId, 1);
+    approveSessionId = await createSession(gymId, atId3, centerId);
 
     // Fill the one regular spot with another member
     const { insertId: otherMid } = await db.query(
