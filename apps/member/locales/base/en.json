@@ -20,6 +20,7 @@
   "nav": {
     "home": "Home",
     "schedule": "Schedule",
+    "calendar": "Calendar",
     "membership": "Membership",
     "packages": "Packages",
     "training": "Training",
@@ -117,6 +118,28 @@
     "status_waitlisted": "Waitlisted",
     "leave_waitlist": "Leave waiting list"
   },
+  "member_calendar": {
+    "filter_all": "All",
+    "state_unavailable": "Not available",
+    "state_booked_by_member": "You're booked",
+    "state_available": "Available",
+    "state_waitlisted_by_member": "Waitlisted",
+    "state_shared_requested_by_member": "Shared request sent",
+    "state_shared_request_available": "Shared training available",
+    "state_waitlist_available": "Join waitlist",
+    "state_full": "Full",
+    "action_book": "Book",
+    "action_join_waitlist": "Join waitlist",
+    "action_cancel_booking": "Cancel booking",
+    "action_leave_waitlist": "Leave waitlist",
+    "action_request_shared": "Request shared training",
+    "action_cancel_shared_request": "Cancel request",
+    "action_close": "Close",
+    "shared_request_status": "Request status: {status}",
+    "error_generic": "Something went wrong. Please try again.",
+    "type_shared_training_approved": "Shared training approved",
+    "type_shared_training_rejected": "Shared training declined"
+  },
   "notifications": {
     "title": "Notifications",
     "loading": "Loading…",
@@ -127,7 +150,9 @@
     "type_waitlist_joined": "Added to waitlist",
     "type_promoted_from_waitlist": "Promoted from waitlist",
     "type_booking_reminder_24h": "Reminder: tomorrow",
-    "type_booking_reminder_1h": "Reminder: starting soon"
+    "type_booking_reminder_1h": "Reminder: starting soon",
+    "type_shared_training_approved": "Shared training approved",
+    "type_shared_training_rejected": "Shared training declined"
   },
   "membership": {
     "title": "My membership",

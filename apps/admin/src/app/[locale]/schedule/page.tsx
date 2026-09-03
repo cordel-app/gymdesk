@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { SessionRosterPanel } from './SessionRosterPanel';
+import { SharedTrainingPanel } from './SharedTrainingPanel';
 
 interface Session {
   id: number;
@@ -26,6 +27,7 @@ interface Session {
   starts_at: string;
   ends_at: string;
   max_capacity_override: number | null;
+  allows_shared_booking: number;
   status: 'scheduled' | 'cancelled' | 'completed';
   cancellation_reason: string | null;
   booked_count: number;
@@ -88,6 +90,7 @@ export default function SchedulePage() {
   const [cancelling, setCancelling] = useState<Session | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [rosterFor, setRosterFor] = useState<Session | null>(null);
+  const [sharedPanelFor, setSharedPanelFor] = useState<Session | null>(null);
 
   const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
 
@@ -170,6 +173,16 @@ export default function SchedulePage() {
     } catch (err: any) { toast(err.message ?? t('schedule.error_generic')); }
   }
 
+  async function toggleSharing(s: Session) {
+    try {
+      const updated = await apiFetch<Session>(`/class-sessions/${s.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ allows_shared_booking: !Number(s.allows_shared_booking) }),
+      });
+      setSessions((prev) => prev.map((x) => x.id === s.id ? { ...x, allows_shared_booking: updated.allows_shared_booking } : x));
+    } catch (err: any) { toast(err.message ?? t('schedule.error_generic')); }
+  }
+
   const grouped = useMemo(() => {
     const groups = new Map<string, Session[]>();
     for (const s of sessions) {
@@ -226,9 +239,17 @@ export default function SchedulePage() {
                     </div>
                   )}
                   <StatusBadge status={s.status === 'scheduled' ? 'active' : s.status === 'cancelled' ? 'cancelled' : 'expired'} label={t(`schedule.status.${s.status}`)} />
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <button onClick={() => setRosterFor(s)} style={btnSmall('#6c63ff')}>{t('schedule.roster')}</button>
                     {canWrite && s.status === 'scheduled' && <button onClick={() => openEdit(s)} style={btnSmall('#444')}>{t('schedule.edit')}</button>}
+                    {canWrite && s.status === 'scheduled' && (
+                      <button onClick={() => toggleSharing(s)} style={btnSmall(Number(s.allows_shared_booking) ? '#16a34a' : '#9ca3af')} title={t('schedule.toggle_sharing')}>
+                        {Number(s.allows_shared_booking) ? '⇌' : '⇌'}
+                      </button>
+                    )}
+                    {s.status === 'scheduled' && (
+                      <button onClick={() => setSharedPanelFor(s)} style={btnSmall('#8b5cf6')}>{t('schedule.shared_requests')}</button>
+                    )}
                     {canWrite && s.status === 'scheduled' && <button onClick={() => { setCancelling(s); setCancelReason(''); }} style={btnSmall('#c0392b')}>{t('schedule.cancel')}</button>}
                   </div>
                 </div>
@@ -300,6 +321,14 @@ export default function SchedulePage() {
             setSessions((prev) => prev.map((s) => s.id === updated.id ? { ...s, ...updated } : s));
             setRosterFor((prev) => prev?.id === updated.id ? { ...prev, ...updated } : prev);
           }}
+        />
+      )}
+
+      {sharedPanelFor && (
+        <SharedTrainingPanel
+          sessionId={sharedPanelFor.id}
+          canWrite={canWrite}
+          onClose={() => setSharedPanelFor(null)}
         />
       )}
     </div>

@@ -20,6 +20,7 @@
   "nav": {
     "home": "Inicio",
     "schedule": "Horario",
+    "calendar": "Calendario",
     "membership": "Cuota",
     "packages": "Bonos",
     "training": "Entreno",
@@ -117,6 +118,28 @@
     "status_waitlisted": "En lista de espera",
     "leave_waitlist": "Salir de la lista de espera"
   },
+  "member_calendar": {
+    "filter_all": "Todos",
+    "state_unavailable": "No disponible",
+    "state_booked_by_member": "Tienes reserva",
+    "state_available": "Disponible",
+    "state_waitlisted_by_member": "En lista de espera",
+    "state_shared_requested_by_member": "Solicitud enviada",
+    "state_shared_request_available": "Entreno compartido disponible",
+    "state_waitlist_available": "Unirse a la lista de espera",
+    "state_full": "Completo",
+    "action_book": "Reservar",
+    "action_join_waitlist": "Unirse a lista de espera",
+    "action_cancel_booking": "Cancelar reserva",
+    "action_leave_waitlist": "Salir de lista de espera",
+    "action_request_shared": "Solicitar entreno compartido",
+    "action_cancel_shared_request": "Cancelar solicitud",
+    "action_close": "Cerrar",
+    "shared_request_status": "Estado de la solicitud: {status}",
+    "error_generic": "Algo ha ido mal. Inténtalo de nuevo.",
+    "type_shared_training_approved": "Entreno compartido aprobado",
+    "type_shared_training_rejected": "Entreno compartido rechazado"
+  },
   "notifications": {
     "title": "Notificaciones",
     "loading": "Cargando…",
@@ -127,7 +150,9 @@
     "type_waitlist_joined": "Añadido a lista de espera",
     "type_promoted_from_waitlist": "Promovido de lista de espera",
     "type_booking_reminder_24h": "Recordatorio: mañana",
-    "type_booking_reminder_1h": "Recordatorio: empieza pronto"
+    "type_booking_reminder_1h": "Recordatorio: empieza pronto",
+    "type_shared_training_approved": "Entreno compartido aprobado",
+    "type_shared_training_rejected": "Entreno compartido rechazado"
   },
   "membership": {
     "title": "Mi cuota",
