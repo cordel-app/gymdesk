@@ -89,3 +89,12 @@ jobs:
       - name: Build
         working-directory: apps/admin
         run: npm run build
+
+  payment:
+    name: Payment page
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build nginx image
+        run: docker build -f apps/payment/Dockerfile -t fitness-payment:ci apps/payment

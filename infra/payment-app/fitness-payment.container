@@ -1,0 +1,21 @@
+# Reference Quadlet for Oscar — copy to:
+#   /home/podman/.config/containers/systemd/fitness-payment.container
+# then:
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now fitness-payment
+#
+# Do not apply this file from CI. Workflows only podman pull + systemctl restart.
+# Traefik on corfront already routes pay.vdicube.com → localhost:8083.
+# PCI: do not log query strings on this host (page_token lives in ?token=).
+
+[Unit]
+Description=Gymdesk Payment Page (fitness-payment)
+After=network-online.target
+
+[Container]
+Image=ghcr.io/cordel-app/fitness-payment:latest
+PublishPort=8083:80
+Restart=always
+
+[Install]
+WantedBy=default.target

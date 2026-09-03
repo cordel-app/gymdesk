@@ -28,7 +28,7 @@ jobs:
           podman@${{ secrets.CORFRONT_SSH_HOST }} \
           "hostname && echo \"arch: \$(uname -m)\" && \
            echo '--- identity ---' && whoami && id && \
-           echo '--- listeners on 3000/8081/8082 ---' && (ss -tln | grep -E ':(3000|8081|8082) ' || echo '(none)') && \
+           echo '--- listeners on 3000/8081/8082/8083 ---' && (ss -tln | grep -E ':(3000|8081|8082|8083) ' || echo '(none)') && \
            echo '--- podman ps -a as user podman ---' && podman ps -a --format 'table {{.Names}} {{.Ports}} {{.Status}}' && \
            echo ' - ✅ CORFRONT SSH OK'"
 
