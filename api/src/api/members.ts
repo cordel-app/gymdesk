@@ -66,7 +66,7 @@ membersRouter.get('/', async (req, res) => {
             (SELECT um.status
              FROM user_memberships um
              WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-             ORDER BY um.created_at DESC LIMIT 1) AS membership_status
+             ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS membership_status
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}
