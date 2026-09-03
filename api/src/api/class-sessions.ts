@@ -60,13 +60,16 @@ export const classSessionsRouter = Router();
 
 classSessionsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { from, to, status, center_id } = req.query as Record<string, string | undefined>;
+  const { from, to, status, center_id, activity_type_id, space_id, trainer_membership_id } = req.query as Record<string, string | undefined>;
   const where: string[] = ['cs.gym_id = ?', 'cs.deleted_at IS NULL'];
   const params: any[] = [gymId];
   if (from) { where.push('cs.starts_at >= ?'); params.push(from); }
   if (to)   { where.push('cs.starts_at <= ?'); params.push(to); }
   if (status && STATUSES.includes(status as any)) { where.push('cs.status = ?'); params.push(status); }
-  if (center_id) { where.push('cs.center_id = ?'); params.push(center_id); }
+  if (center_id)              { where.push('cs.center_id = ?');              params.push(center_id); }
+  if (activity_type_id)       { where.push('cs.activity_type_id = ?');       params.push(activity_type_id); }
+  if (space_id)               { where.push('cs.space_id = ?');               params.push(space_id); }
+  if (trainer_membership_id)  { where.push('cs.trainer_membership_id = ?');  params.push(trainer_membership_id); }
   const { rows } = await db.query(
     `${SELECT} WHERE ${where.join(' AND ')} ORDER BY cs.starts_at ASC`,
     params,

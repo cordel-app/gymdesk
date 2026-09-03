@@ -134,8 +134,11 @@
     "loading": "Loading…",
     "empty": "You don't have a membership yet. Ask your gym to set one up.",
     "price": "Monthly price",
+    "member_since": "Member since",
     "starts": "Starts",
     "ends": "Ends",
+    "upcoming_heading": "Upcoming payments",
+    "upcoming_empty": "No upcoming payments.",
     "ongoing": "Ongoing",
     "packages_heading": "Class packages",
     "package_status": {
@@ -158,8 +161,13 @@
     "event": {
       "charge_created": "Charge",
       "payment_recorded": "Payment",
+      "recurring_payment": "Recurring payment",
+      "failed_billing": "Payment failed",
       "status_changed": "Status change",
       "adjustment": "Adjustment"
+    },
+    "upcoming_status": {
+      "scheduled": "Scheduled"
     },
     "charge_type": {
       "membership_fee": "Membership fee",

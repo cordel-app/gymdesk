@@ -12,7 +12,7 @@ const MEAL_TYPES = [
   'recien_levantado', 'breakfast', 'media_manana',
   'lunch', 'snack', 'dinner', 'antes_de_dormir',
 ] as const;
-const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'additional'] as const;
+const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other', 'additional'] as const;
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
   'weight_loss', 'weight_gain', 'muscle_gain', 'maintenance',

@@ -16,6 +16,12 @@ interface Benefit {
   valid_to: string | null;
 }
 
+interface UpcomingPayment {
+  date: string;
+  amount: string;
+  status: string;
+}
+
 interface Membership {
   id: number;
   membership_plan_id: number | null;
@@ -24,12 +30,14 @@ interface Membership {
   discount_reason: string | null;
   starts_at: string;
   ends_at: string | null;
+  next_billing_date: string | null;
   status: 'active' | 'paused' | 'cancelled' | 'expired';
   plan_name: string | null;
   plan_description: string | null;
   billing_interval: number | null;
   billing_unit: 'day' | 'week' | 'month' | 'year' | null;
   benefits: Benefit[];
+  upcoming_payments: UpcomingPayment[];
 }
 
 interface Promotion { id: number; name: string; description: string | null }
@@ -238,7 +246,7 @@ export default function MembershipPage() {
             </dd>
           </div>
           <div style={styles.row}>
-            <dt style={styles.dt}>{t('membership.starts')}</dt>
+            <dt style={styles.dt}>{t('membership.member_since')}</dt>
             <dd style={styles.dd}>{day(membership.starts_at) ?? '—'}</dd>
           </div>
           <div style={styles.row}>
@@ -313,6 +321,27 @@ export default function MembershipPage() {
           </ul>
         </section>
       )}
+
+      <section style={styles.section}>
+        <h2 style={styles.h2}>{t('membership.upcoming_heading')}</h2>
+        {membership.upcoming_payments.length === 0 ? (
+          <p style={styles.hint}>{t('membership.upcoming_empty')}</p>
+        ) : (
+          <ul style={styles.eventList}>
+            {membership.upcoming_payments.map((p, i) => (
+              <li key={i} style={styles.eventItem}>
+                <div style={styles.eventLine}>
+                  <span style={styles.eventLabel}>{p.date}</span>
+                  <span style={styles.eventAmount}>{p.amount}</span>
+                </div>
+                <div style={styles.eventSub}>
+                  <EventStatusPill status={p.status} label={t(`membership.upcoming_status.${p.status}` as any)} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section style={styles.section}>
         <h2 style={styles.h2}>{t('membership.history_heading')}</h2>
@@ -407,6 +436,21 @@ export default function MembershipPage() {
         </div>
       )}
     </main>
+  );
+}
+
+function EventStatusPill({ status, label }: { status: string; label: string }) {
+  const COLORS: Record<string, { bg: string; fg: string }> = {
+    scheduled: { bg: '#e8f4fd', fg: '#1565c0' },
+    paid:      { bg: '#e6f6ec', fg: '#1e7e40' },
+    failed:    { bg: '#fdeaea', fg: '#c0392b' },
+    pending:   { bg: '#fff4e0', fg: '#b26a00' },
+  };
+  const c = COLORS[status] ?? { bg: '#f0f0f0', fg: '#666' };
+  return (
+    <span style={{ background: c.bg, color: c.fg, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+      {label}
+    </span>
   );
 }
 

@@ -150,7 +150,7 @@ sharedTrainingRequestsRouter.post('/:id/approve',
         );
 
         // Book the requesting member into the new session atomically.
-        await bookMemberOnSession(gymId, request.requesting_member_id, newSessionId, false, tx);
+        await bookMemberOnSession(gymId, request.requesting_member_id, newSessionId, false, false, tx);
 
         // Stamp the request as approved.
         await tx.query(
