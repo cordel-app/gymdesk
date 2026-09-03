@@ -125,7 +125,7 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
 
 classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override } = req.body;
+  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, allows_shared_booking } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
   }
@@ -142,11 +142,12 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
 
     const { rowCount } = await db.query(
       `UPDATE class_sessions SET
-        trainer_membership_id = IF(?, ?, trainer_membership_id),
-        space_id              = IF(?, ?, space_id),
-        starts_at             = COALESCE(?, starts_at),
+        trainer_membership_id  = IF(?, ?, trainer_membership_id),
+        space_id               = IF(?, ?, space_id),
+        starts_at              = COALESCE(?, starts_at),
         ends_at                = COALESCE(?, ends_at),
-        max_capacity_override = IF(?, ?, max_capacity_override),
+        max_capacity_override  = IF(?, ?, max_capacity_override),
+        allows_shared_booking  = IF(?, ?, allows_shared_booking),
         modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ?`,
       [
@@ -156,6 +157,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
         ends_at ? new Date(ends_at) : null,
         'max_capacity_override' in req.body ? 1 : 0,
         max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
+        'allows_shared_booking' in req.body ? 1 : 0, allows_shared_booking ? 1 : 0,
         gymMembershipId,
         req.params.id, gymId,
       ],

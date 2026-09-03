@@ -61,6 +61,7 @@ import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 import { calendarEventsRouter } from './api/calendar-events';
+import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
 import { recycleBinRouter } from './api/recycle-bin';
 import { platformFeatureFlagsRouter, featureFlagsPublicRouter } from './api/platform-feature-flags';
 import { requireFeatureEnabled } from './infra/featureFlags';
@@ -204,8 +205,9 @@ app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, requi
 app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plans'), memberTrainingPlansRouter);
 app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), exerciseLogsRouter);
 app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), workoutBlockLogsRouter);
-app.use('/class-sessions',    requireAuth(), tenantContext, centerContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), classSessionsRouter);
-app.use('/calendar-events',  requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), calendarEventsRouter);
+app.use('/class-sessions',         requireAuth(), tenantContext, centerContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), classSessionsRouter);
+app.use('/calendar-events',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), calendarEventsRouter);
+app.use('/shared-training-requests', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.member_calendar'), sharedTrainingRequestsRouter);
 
 // NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
 app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_plan_templates'), nutritionPlanTemplatesRouter);
