@@ -3,17 +3,20 @@
 import React from 'react';
 
 const COLORS: Record<string, { bg: string; fg: string }> = {
-  active:    { bg: '#e6f6ec', fg: '#1e7e40' },
-  inactive:  { bg: '#f0f0f0', fg: '#666666' },
-  paused:    { bg: '#fff4e0', fg: '#b26a00' },
-  cancelled: { bg: '#fdeaea', fg: '#c0392b' },
-  expired:   { bg: '#f3eafd', fg: '#7d3cbd' },
-  draft:     { bg: '#eef2f7', fg: '#5a6b7b' },
-  deleted:   { bg: '#fdeaea', fg: '#c0392b' },
+  active:       { bg: '#e6f6ec', fg: '#1e7e40' },
+  inactive:     { bg: '#f0f0f0', fg: '#666666' },
+  paused:       { bg: '#fff4e0', fg: '#b26a00' },
+  cancelled:    { bg: '#fdeaea', fg: '#c0392b' },
+  expired:      { bg: '#f3eafd', fg: '#7d3cbd' },
+  draft:        { bg: '#eef2f7', fg: '#5a6b7b' },
+  deleted:      { bg: '#fdeaea', fg: '#c0392b' },
+  invited:      { bg: '#e8f0fe', fg: '#1a56a8' },
+  not_enrolled: { bg: '#f0f0f0', fg: '#666666' },
+  suspended:    { bg: '#fdeaea', fg: '#c0392b' },
   // Payment request statuses
-  pending:   { bg: '#fff4e0', fg: '#b26a00' },
-  completed: { bg: '#e6f6ec', fg: '#1e7e40' },
-  failed:    { bg: '#fdeaea', fg: '#c0392b' },
+  pending:      { bg: '#fff4e0', fg: '#b26a00' },
+  completed:    { bg: '#e6f6ec', fg: '#1e7e40' },
+  failed:       { bg: '#fdeaea', fg: '#c0392b' },
 };
 
 const DEFAULT = { bg: '#f0f0f0', fg: '#666666' };
