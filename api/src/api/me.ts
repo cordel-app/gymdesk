@@ -6,7 +6,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { bookMemberOnSession, cancelBooking } from './bookings';
-import { validateAndInsertRequest } from './shared-training-requests';
+import { validateRequest as validateSharedRequest } from './shared-training-requests';
 import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
@@ -295,15 +295,17 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
 
     const from = (req.query.from as string) || new Date().toISOString();
     const to = req.query.to as string | undefined;
+    const activityTypeId = req.query.activity_type_id as string | undefined;
     const where: string[] = ["cs.gym_id = ?", "cs.status = 'scheduled'", "cs.starts_at >= ?"];
     const params: any[] = [gymId, from];
     if (to) { where.push('cs.starts_at <= ?'); params.push(to); }
+    if (activityTypeId) { where.push('cs.activity_type_id = ?'); params.push(activityTypeId); }
 
     const { rows } = await db.query(
       `SELECT cs.id, cs.activity_type_id, cs.starts_at, cs.ends_at,
-              cs.sharing_authorized,
+              cs.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
-              at.shareable,
+              at.is_shareable,
               sp.name AS space_name,
               tm.name AS trainer_name,
               COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
@@ -344,14 +346,26 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 LIMIT 1
               ) AS my_booking_id,
               (
+                SELECT str.id FROM shared_training_requests str
+                WHERE str.class_session_id = cs.id AND str.requesting_member_id = ?
+                  AND str.status IN ('pending','approved')
+                LIMIT 1
+              ) AS my_shared_request_id,
+              (
+                SELECT str.status FROM shared_training_requests str
+                WHERE str.class_session_id = cs.id AND str.requesting_member_id = ?
+                  AND str.status IN ('pending','approved')
+                LIMIT 1
+              ) AS my_shared_request_status,
+              (
                 SELECT COUNT(*) FROM class_type_user_memberships ctum
-                WHERE ctum.class_type_id = cs.class_type_id AND ctum.gym_id = cs.gym_id
+                WHERE ctum.activity_type_id = cs.activity_type_id AND ctum.gym_id = cs.gym_id
               ) > 0 AND NOT EXISTS (
                 SELECT 1 FROM user_memberships um
                 JOIN class_type_user_memberships ctum
                   ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
                 WHERE um.gym_id = cs.gym_id AND um.member_id = ? AND um.status = 'active'
-                  AND ctum.class_type_id = cs.class_type_id
+                  AND ctum.activity_type_id = cs.activity_type_id
               ) AS access_locked
        FROM class_sessions cs
        JOIN activity_types at ON at.id = cs.activity_type_id
@@ -359,20 +373,46 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
        LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at ASC`,
-      [memberId, memberId, memberId, memberId, ...params],
+      [memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
-    const shaped = rows.map((r: any) => ({
-      ...r,
-      spots_left: Math.max(0, Number(r.effective_capacity) - Number(r.booked_count)),
-      access_locked: !!Number(r.access_locked),
-      shareable: !!Number(r.shareable),
-      sharing_authorized: !!Number(r.sharing_authorized),
-      can_request_sharing: !!Number(r.shareable) &&
-        !Number(r.sharing_authorized) &&
-        Number(r.concurrent_groups_count) < Number(r.effective_max_groups),
-      can_cancel: new Date(r.starts_at) > now,
-    }));
+    const shaped = rows.map((r: any) => {
+      const booked = Number(r.booked_count);
+      const cap = Number(r.effective_capacity);
+      const isShareable = !!Number(r.is_shareable);
+      const allowsShared = !!Number(r.allows_shared_booking);
+      const accessLocked = !!Number(r.access_locked);
+      const extraBooked = Math.max(0, booked - cap);
+
+      let availability_state: string;
+      if (accessLocked) {
+        availability_state = 'UNAVAILABLE';
+      } else if (r.my_booking_status === 'booked') {
+        availability_state = 'BOOKED_BY_MEMBER';
+      } else if (booked < cap) {
+        availability_state = 'AVAILABLE';
+      } else if (r.my_booking_status === 'waitlisted') {
+        availability_state = 'WAITLISTED_BY_MEMBER';
+      } else if (r.my_shared_request_id) {
+        availability_state = 'SHARED_REQUESTED_BY_MEMBER';
+      } else if (isShareable && allowsShared && extraBooked < 1) {
+        availability_state = 'SHARED_REQUEST_AVAILABLE';
+      } else if (isShareable && allowsShared && extraBooked >= 1) {
+        availability_state = 'FULL';
+      } else {
+        availability_state = 'WAITLIST_AVAILABLE';
+      }
+
+      return {
+        ...r,
+        allows_shared_booking: allowsShared,
+        is_shareable: isShareable,
+        access_locked: accessLocked,
+        spots_left: Math.max(0, cap - booked),
+        can_cancel: new Date(r.starts_at) > now,
+        availability_state,
+      };
+    });
     res.json(shaped);
   } catch (err) { next(err); }
 });
@@ -466,60 +506,80 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
   }
 });
 
-/** #323: Create a shared training request from a member. */
-meRouter.post('/shared-training-requests', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+/** Submit a shared-training request for a session the member wants to join. */
+meRouter.post('/shared-training-requests', requireRole('member'), requireFeatureEnabled('calendar.member_calendar'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
-  const { host_session_id, requested_activity_type_id, notes } = req.body;
-  if (!host_session_id || !requested_activity_type_id) {
-    return res.status(400).json({ error: 'host_session_id and requested_activity_type_id are required' });
-  }
+  const { class_session_id, notes } = req.body;
+  if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    await validateAndInsertRequest(gymId, {
-      host_session_id: Number(host_session_id),
-      requested_activity_type_id: Number(requested_activity_type_id),
-      requesting_member_id: memberId,
-      notes,
-      gymMembershipId: ctx.gymMembershipId,
-    });
+    const validationErr = await validateSharedRequest(gymId, Number(class_session_id), memberId);
+    if (validationErr) return res.status(validationErr.status).json({ error: validationErr.message, code: validationErr.code });
+
+    const { rows: sessionRows } = await db.query<{ activity_type_id: number }>(
+      'SELECT activity_type_id FROM class_sessions WHERE id = ? AND gym_id = ?',
+      [class_session_id, gymId],
+    );
+    const { insertId } = await db.query(
+      `INSERT INTO shared_training_requests
+         (gym_id, class_session_id, requesting_member_id, activity_type_id, status, notes, created_at)
+       VALUES (?, ?, ?, ?, 'pending', ?, UTC_TIMESTAMP())`,
+      [gymId, class_session_id, memberId, sessionRows[0].activity_type_id, notes ?? null],
+    );
     const { rows } = await db.query(
-      `SELECT str.*, at_req.name AS requested_activity_name, cs.starts_at AS session_starts_at, cs.ends_at AS session_ends_at
-       FROM shared_training_requests str
-       JOIN activity_types at_req ON at_req.id = str.requested_activity_type_id
-       JOIN class_sessions cs ON cs.id = str.host_session_id
-       WHERE str.gym_id = ? AND str.requesting_member_id = ? ORDER BY str.id DESC LIMIT 1`,
-      [gymId, memberId],
+      'SELECT * FROM shared_training_requests WHERE id = ?',
+      [insertId],
     );
     res.status(201).json(rows[0]);
-  } catch (e: any) {
-    if (e.status) return res.status(e.status).json({ error: e.message, code: e.code });
-    next(e);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    next(err);
   }
 });
 
-/** #323: Member views their own shared training requests. */
-meRouter.get('/shared-training-requests', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+/** Member views their own shared training requests. */
+meRouter.get('/shared-training-requests', requireRole('member'), requireFeatureEnabled('calendar.member_calendar'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT str.*, at_req.name AS requested_activity_name, at_host.name AS host_activity_name,
+      `SELECT str.*, at.name AS activity_type_name,
               cs.starts_at AS session_starts_at, cs.ends_at AS session_ends_at,
-              sp.name AS space_name, gm_t.name AS trainer_name
+              sp.name AS space_name, tm.name AS trainer_name
        FROM shared_training_requests str
-       JOIN activity_types at_req ON at_req.id = str.requested_activity_type_id
-       JOIN class_sessions cs     ON cs.id = str.host_session_id
-       JOIN activity_types at_host ON at_host.id = cs.activity_type_id
-       LEFT JOIN spaces sp         ON sp.id = cs.space_id
-       LEFT JOIN gym_memberships gm_t ON gm_t.id = cs.trainer_membership_id
+       JOIN activity_types at ON at.id = str.activity_type_id
+       JOIN class_sessions cs ON cs.id = str.class_session_id
+       LEFT JOIN spaces sp ON sp.id = cs.space_id
+       LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
        WHERE str.gym_id = ? AND str.requesting_member_id = ?
        ORDER BY str.created_at DESC`,
       [gymId, memberId],
     );
     res.json(rows);
   } catch (e) { next(e); }
+});
+
+/** Cancel own pending shared-training request. */
+meRouter.delete('/shared-training-requests/:id', requireRole('member'), requireFeatureEnabled('calendar.member_calendar'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const { rows } = await db.query(
+      `SELECT id, status FROM shared_training_requests
+       WHERE id = ? AND gym_id = ? AND requesting_member_id = ?`,
+      [req.params.id, gymId, memberId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Request not found' });
+    if (rows[0].status !== 'pending') return res.status(409).json({ error: `Cannot cancel a ${rows[0].status} request` });
+    await db.query(
+      "UPDATE shared_training_requests SET status = 'cancelled' WHERE id = ?",
+      [req.params.id],
+    );
+    res.status(204).send();
+  } catch (err) { next(err); }
 });
 
 /**

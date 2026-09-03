@@ -12,7 +12,7 @@ const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
  * Effective capacity: COALESCE(cs.max_capacity_override, ct.max_capacity).
  * This is what booking (P2.5) will compare confirmed bookings against.
  *
- * #323: sharing fields — shareable, sharing_authorized, concurrent_groups_count,
+ * #323+#324: sharing fields — is_shareable, allows_shared_booking, concurrent_groups_count,
  * effective_max_groups (min of trainer and space concurrent-group limits).
  */
 const SELECT = `
@@ -20,7 +20,7 @@ const SELECT = `
          at.name AS class_type_name,
          at.max_capacity AS class_type_capacity,
          at.duration_minutes AS class_type_duration,
-         at.shareable,
+         at.is_shareable,
          COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
          sp.name AS space_name,
          COALESCE(sp.max_concurrent_groups, 1) AS space_max_concurrent_groups,
@@ -140,14 +140,14 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
     // When both trainer and space are set, validate concurrent-group capacity atomically.
     if (trainerId && spaceIdVal) {
       const { rows: atRows } = await db.query(
-        'SELECT shareable FROM activity_types WHERE id = ? AND gym_id = ?',
+        'SELECT is_shareable FROM activity_types WHERE id = ? AND gym_id = ?',
         [activity_type_id, gymId],
       );
-      const newShareable = !!atRows[0]?.shareable;
+      const newShareable = !!atRows[0]?.is_shareable;
 
       const row = await db.transaction(async (tx) => {
         const { rows: existing } = await tx.query(
-          `SELECT cs.id, at.shareable AS act_shareable, cs.sharing_authorized,
+          `SELECT cs.id, at.is_shareable AS act_shareable, cs.allows_shared_booking,
                   COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
                   COALESCE(sp.max_concurrent_groups, 1) AS space_max
            FROM class_sessions cs
@@ -176,7 +176,7 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
           if (!newShareable) {
             throw Object.assign(new Error('This activity is not eligible for shared training'), { status: 409, code: 'activity_not_shareable' });
           }
-          const sharingAuthorized = existing.some((r: any) => r.sharing_authorized);
+          const sharingAuthorized = existing.some((r: any) => r.allows_shared_booking);
           if (!sharingAuthorized) {
             throw Object.assign(new Error('Sharing is not authorized for this slot'), {
               status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
@@ -219,7 +219,7 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
 
 classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id } = req.body;
+  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
   }
@@ -252,15 +252,15 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
 
     if (slotChanged && effTrainer && effSpace) {
       const { rows: atRows } = await db.query(
-        'SELECT shareable FROM activity_types WHERE id = ? AND gym_id = ?',
+        'SELECT is_shareable FROM activity_types WHERE id = ? AND gym_id = ?',
         [effActivity, gymId],
       );
-      const newShareable = !!atRows[0]?.shareable;
+      const newShareable = !!atRows[0]?.is_shareable;
 
       await db.transaction(async (tx) => {
         // Lock other sessions at the target slot (excluding this session).
         const { rows: existing } = await tx.query(
-          `SELECT cs.id, at.shareable AS act_shareable, cs.sharing_authorized,
+          `SELECT cs.id, at.is_shareable AS act_shareable, cs.allows_shared_booking,
                   COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
                   COALESCE(sp.max_concurrent_groups, 1) AS space_max
            FROM class_sessions cs
@@ -287,7 +287,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
           if (!newShareable) {
             throw Object.assign(new Error('This activity is not eligible for shared training'), { status: 409, code: 'activity_not_shareable' });
           }
-          const sharingAuthorized = existing.some((r: any) => r.sharing_authorized);
+          const sharingAuthorized = existing.some((r: any) => r.allows_shared_booking);
           if (!sharingAuthorized) {
             throw Object.assign(new Error('Sharing is not authorized for this slot'), {
               status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
@@ -325,12 +325,13 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
 
     const { rowCount } = await db.query(
       `UPDATE class_sessions SET
-        activity_type_id      = COALESCE(?, activity_type_id),
-        trainer_membership_id = IF(?, ?, trainer_membership_id),
-        space_id              = IF(?, ?, space_id),
-        starts_at             = COALESCE(?, starts_at),
-        ends_at               = COALESCE(?, ends_at),
-        max_capacity_override = IF(?, ?, max_capacity_override),
+        activity_type_id       = COALESCE(?, activity_type_id),
+        trainer_membership_id  = IF(?, ?, trainer_membership_id),
+        space_id               = IF(?, ?, space_id),
+        starts_at              = COALESCE(?, starts_at),
+        ends_at                = COALESCE(?, ends_at),
+        max_capacity_override  = IF(?, ?, max_capacity_override),
+        allows_shared_booking  = IF(?, ?, allows_shared_booking),
         modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ?`,
       [
@@ -341,6 +342,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
         ends_at   ? new Date(ends_at)   : null,
         'max_capacity_override' in req.body ? 1 : 0,
         max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
+        'allows_shared_booking' in req.body ? 1 : 0, allows_shared_booking ? 1 : 0,
         gymMembershipId,
         req.params.id, gymId,
       ],
@@ -388,11 +390,11 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'
     }
 
     await db.query(
-      'UPDATE class_sessions SET sharing_authorized = ?, modified_by_membership_id = ? WHERE id = ? AND gym_id = ?',
+      'UPDATE class_sessions SET allows_shared_booking = ?, modified_by_membership_id = ? WHERE id = ? AND gym_id = ?',
       [authorized ? 1 : 0, gymMembershipId, req.params.id, gymId],
     );
 
-    recordAudit(req, { action: 'update', entityType: 'class_session', entityId: req.params.id, next: { sharing_authorized: authorized } });
+    recordAudit(req, { action: 'update', entityType: 'class_session', entityId: req.params.id, next: { allows_shared_booking: authorized } });
     const { rows } = await db.query(`${SELECT} WHERE cs.id = ? AND cs.gym_id = ?`, [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (e) { next(e); }

@@ -1,12 +1,128 @@
+// Tests for #323+#324: /shared-training-requests admin router
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
+  TEST_USER_ID,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
   request,
 } from './helpers';
+
+let gymId: string;
+let gymBId: string;
+let centerId: number;
+let activityTypeId: number;
+let sessionId: number;
+let memberId: number;
+let pendingRequestId: number;
+
+async function createActivityType(gid: string, shareable = true, capacity = 10): Promise<number> {
+  const name = `AT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const { insertId } = await db.query(
+    `INSERT INTO activity_types (gym_id, name, max_capacity, status, is_shareable)
+     VALUES (?, ?, ?, 'active', ?)`,
+    [gid, name, capacity, shareable ? 1 : 0],
+  );
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status)
+     VALUES (?, ?, ?, ?, 'active')`,
+    [insertId, gid, name, capacity],
+  ).catch(() => { /* class_types dropped on fully-migrated DBs */ });
+  return insertId;
+}
+
+async function createSession(
+  gid: string,
+  atId: number,
+  cid: number,
+  allowsShared: 0 | 1 = 1,
+  spaceId?: number,
+  trainerMembershipId?: number,
+): Promise<number> {
+  try {
+    const { insertId } = await db.query(
+      `INSERT INTO class_sessions
+         (gym_id, activity_type_id, class_type_id, center_id, space_id, trainer_membership_id,
+          starts_at, ends_at, status, allows_shared_booking)
+       VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+      [gid, atId, atId, cid, spaceId ?? null, trainerMembershipId ?? null, allowsShared],
+    );
+    return insertId;
+  } catch (err: any) {
+    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+    const { insertId } = await db.query(
+      `INSERT INTO class_sessions
+         (gym_id, activity_type_id, center_id, space_id, trainer_membership_id,
+          starts_at, ends_at, status, allows_shared_booking)
+       VALUES (?, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+      [gid, atId, cid, spaceId ?? null, trainerMembershipId ?? null, allowsShared],
+    );
+    return insertId;
+  }
+}
+
+async function createSharedRequest(gid: string, csId: number, membId: number, atId: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO shared_training_requests
+       (gym_id, class_session_id, requesting_member_id, activity_type_id, status, created_at)
+     VALUES (?, ?, ?, ?, 'pending', UTC_TIMESTAMP())`,
+    [gid, csId, membId, atId],
+  );
+  return insertId;
+}
+
+async function createSpace(gid: string, maxGroups = 2): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO spaces (gym_id, name, capacity, max_concurrent_groups) VALUES (?, 'Studio', 20, ?)`,
+    [gid, maxGroups],
+  );
+  return insertId;
+}
+
+async function createTrainerMembership(gid: string, maxGroups = 2): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO gym_memberships (user_id, gym_id, role, status, max_concurrent_groups)
+     VALUES (?, ?, 'trainer_performance', 'active', ?)`,
+    [`trainer-${Date.now()}`, gid, maxGroups],
+  );
+  return insertId;
+}
+
+beforeAll(async () => {
+  gymId = await createTestGym('STR Admin Gym');
+  await createTestMembership(gymId, 'admin');
+
+  gymBId = await createTestGym('STR Other Gym');
+  await createTestMembership(gymBId, 'admin');
+
+  const { insertId: cid } = await db.query(
+    `INSERT INTO centers (gym_id, name) VALUES (?, 'Main')`,
+    [gymId],
+  );
+  centerId = cid;
+
+  activityTypeId = await createActivityType(gymId);
+  sessionId = await createSession(gymId, activityTypeId, centerId, 1);
+
+  const email = `str-member-${Date.now()}@test.com`;
+  await db.query(
+    `INSERT INTO members (gym_id, name, email, clerk_user_id)
+     VALUES (?, 'STR Member', ?, ?)
+     ON DUPLICATE KEY UPDATE gym_id = VALUES(gym_id), email = VALUES(email)`,
+    [gymId, email, TEST_USER_ID],
+  );
+  const { rows: mRows } = await db.query<{ id: number }>(
+    'SELECT id FROM members WHERE clerk_user_id = ?',
+    [TEST_USER_ID],
+  );
+  memberId = mRows[0].id;
+
+  pendingRequestId = await createSharedRequest(gymId, sessionId, memberId, activityTypeId);
+});
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -14,407 +130,279 @@ afterAll(async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Setup helpers
+// Auth & tenant isolation
 // ---------------------------------------------------------------------------
 
-async function createShareableActivityType(gymId: string, name: string): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO activity_types (gym_id, name, max_capacity, status, shareable) VALUES (?, ?, 20, 'active', 1)`,
-    [gymId, name],
-  );
-  return insertId;
-}
-
-async function createNonShareableActivityType(gymId: string): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO activity_types (gym_id, name, max_capacity, status, shareable) VALUES (?, 'NonShare', 20, 'active', 0)`,
-    [gymId],
-  );
-  return insertId;
-}
-
-async function createSpace(gymId: string, maxGroups = 2): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO spaces (gym_id, name, capacity, max_concurrent_groups) VALUES (?, 'Studio A', 20, ?)`,
-    [gymId, maxGroups],
-  );
-  return insertId;
-}
-
-async function createCenter(gymId: string): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO centers (gym_id, name) VALUES (?, 'Main Center')`,
-    [gymId],
-  );
-  return insertId;
-}
-
-async function createTrainerMembership(gymId: string, maxGroups = 2): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO gym_memberships (user_id, gym_id, role, status, max_concurrent_groups) VALUES (?, ?, 'trainer_performance', 'active', ?)`,
-    [`trainer-${Date.now()}`, gymId, maxGroups],
-  );
-  return insertId;
-}
-
-async function createSession(
-  gymId: string,
-  centerId: number,
-  activityTypeId: number,
-  trainerMembershipId: number,
-  spaceId: number,
-  dayOffset = 1,
-): Promise<number> {
-  // class_type_id is a legacy NOT NULL column present in older DB states; try without it first.
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions
-       (gym_id, center_id, activity_type_id, trainer_membership_id, space_id,
-        starts_at, ends_at, status)
-       VALUES (?, ?, ?, ?, ?,
-         DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY),
-         DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? HOUR),
-         'scheduled')`,
-      [gymId, centerId, activityTypeId, trainerMembershipId, spaceId, dayOffset, dayOffset * 24 + 1],
-    );
-    return insertId;
-  } catch (err: any) {
-    if (err.code !== 'ER_NO_DEFAULT_FOR_FIELD') throw err;
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions
-       (gym_id, center_id, activity_type_id, class_type_id, trainer_membership_id, space_id,
-        starts_at, ends_at, status)
-       VALUES (?, ?, ?, ?, ?, ?,
-         DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? DAY),
-         DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? HOUR),
-         'scheduled')`,
-      [gymId, centerId, activityTypeId, activityTypeId, trainerMembershipId, spaceId, dayOffset, dayOffset * 24 + 1],
-    );
-    return insertId;
-  }
-}
-
-async function createMember(gymId: string): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO members (gym_id, name, email) VALUES (?, 'Test Member', ?)`,
-    [gymId, `member-${Date.now()}@test.com`],
-  );
-  return insertId;
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('Shared Training Requests', () => {
-  let gymId: string;
-  let gymId2: string;
-  let centerId: number;
-  let spaceId: number;
-  let trainerMembershipId: number;
-  let hostActivityTypeId: number;
-  let requestedActivityTypeId: number;
-  let nonShareableActivityTypeId: number;
-  let hostSessionId: number;
-  let memberId: number;
-  let requestId: number;
-
-  beforeAll(async () => {
-    gymId = await createTestGym('STR Gym');
-    gymId2 = await createTestGym('STR Gym 2');
-    await createTestMembership(gymId, 'admin');
-    await createTestMembership(gymId2, 'admin');
-
-    centerId = await createCenter(gymId);
-    spaceId = await createSpace(gymId, 2);
-    trainerMembershipId = await createTrainerMembership(gymId, 2);
-    hostActivityTypeId = await createShareableActivityType(gymId, 'Yoga');
-    requestedActivityTypeId = await createShareableActivityType(gymId, 'Pilates');
-    nonShareableActivityTypeId = await createNonShareableActivityType(gymId);
-    hostSessionId = await createSession(gymId, centerId, hostActivityTypeId, trainerMembershipId, spaceId);
-    memberId = await createMember(gymId);
-
-    // Pre-create one pending request for read/approve/reject tests.
-    const { insertId } = await db.query(
-      `INSERT INTO shared_training_requests
-       (gym_id, host_session_id, requested_activity_type_id, requesting_member_id)
-       VALUES (?, ?, ?, ?)`,
-      [gymId, hostSessionId, requestedActivityTypeId, memberId],
-    );
-    requestId = insertId;
-  });
-
-  // -------------------------------------------------------------------------
-  // Auth
-  // -------------------------------------------------------------------------
-
-  it('returns 401 without auth token', async () => {
-    const res = await request.get('/shared-training-requests').set('x-gym-id', gymId);
+describe('GET /shared-training-requests — auth', () => {
+  it('requires x-gym-id', async () => {
+    const res = await request.get('/shared-training-requests').set(TEST_AUTH_HEADER);
     expect(res.status).toBe(401);
   });
 
-  it('requires x-gym-id header', async () => {
-    const res = await request.get('/shared-training-requests').set('Authorization', TEST_AUTH_HEADER);
-    expect(res.status).toBe(401);
+  it('returns 200 for admin', async () => {
+    const res = await request
+      .get('/shared-training-requests')
+      .set(TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
+});
 
-  // -------------------------------------------------------------------------
-  // GET / — list
-  // -------------------------------------------------------------------------
+describe('GET /shared-training-requests — tenant isolation', () => {
+  it('returns 404 when accessing request from another gym', async () => {
+    const res = await request
+      .get(`/shared-training-requests/${pendingRequestId}`)
+      .set(TEST_AUTH_HEADER)
+      .set('x-gym-id', gymBId);
+    expect(res.status).toBe(404);
+  });
+});
 
+// ---------------------------------------------------------------------------
+// GET list
+// ---------------------------------------------------------------------------
+
+describe('GET /shared-training-requests', () => {
   it('lists requests for the gym', async () => {
     const res = await request
       .get('/shared-training-requests')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    const found = res.body.find((r: any) => r.id === requestId);
-    expect(found).toBeDefined();
-    expect(found.status).toBe('pending');
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(pendingRequestId);
   });
 
-  it('filters by status', async () => {
+  it('filters by status=pending', async () => {
     const res = await request
       .get('/shared-training-requests?status=pending')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-
     expect(res.status).toBe(200);
     expect(res.body.every((r: any) => r.status === 'pending')).toBe(true);
   });
 
-  it('rejects invalid status filter', async () => {
+  it('rejects invalid status', async () => {
     const res = await request
-      .get('/shared-training-requests?status=nonsense')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .get('/shared-training-requests?status=bogus')
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-
     expect(res.status).toBe(400);
   });
+});
 
-  it('filters by host_session_id', async () => {
+// ---------------------------------------------------------------------------
+// GET single
+// ---------------------------------------------------------------------------
+
+describe('GET /shared-training-requests/:id', () => {
+  it('returns a single request with joined fields', async () => {
     const res = await request
-      .get(`/shared-training-requests?host_session_id=${hostSessionId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
+      .get(`/shared-training-requests/${pendingRequestId}`)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-
     expect(res.status).toBe(200);
-    expect(res.body.every((r: any) => r.host_session_id === hostSessionId)).toBe(true);
-  });
-
-  // -------------------------------------------------------------------------
-  // GET /:id — single
-  // -------------------------------------------------------------------------
-
-  it('returns a single request by id', async () => {
-    const res = await request
-      .get(`/shared-training-requests/${requestId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
-    expect(res.status).toBe(200);
-    expect(res.body.id).toBe(requestId);
-    expect(res.body.host_activity_name).toBe('Yoga');
-    expect(res.body.requested_activity_name).toBe('Pilates');
+    expect(res.body.id).toBe(pendingRequestId);
+    expect(res.body).toHaveProperty('requesting_member_name');
+    expect(res.body).toHaveProperty('activity_type_name');
+    expect(res.body).toHaveProperty('starts_at');
   });
 
   it('returns 404 for unknown id', async () => {
     const res = await request
       .get('/shared-training-requests/999999')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-
     expect(res.status).toBe(404);
   });
+});
 
-  // -------------------------------------------------------------------------
-  // Tenant isolation
-  // -------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// POST / (staff create)
+// ---------------------------------------------------------------------------
 
-  it('returns 404 when fetching a request from another gym', async () => {
-    const res = await request
-      .get(`/shared-training-requests/${requestId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId2);
+describe('POST /shared-training-requests', () => {
+  it('creates a request for a valid session', async () => {
+    const at = await createActivityType(gymId);
+    const cs = await createSession(gymId, at, centerId, 1);
+    const { insertId: newMember } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'New Member', ?)`,
+      [gymId, `staff-create-${Date.now()}@test.com`],
+    );
 
-    expect(res.status).toBe(404);
-  });
-
-  // -------------------------------------------------------------------------
-  // POST / — create
-  // -------------------------------------------------------------------------
-
-  it('creates a shared training request (staff)', async () => {
-    const member2 = await createMember(gymId);
     const res = await request
       .post('/shared-training-requests')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({
-        host_session_id: hostSessionId,
-        requested_activity_type_id: requestedActivityTypeId,
-        requesting_member_id: member2,
-        notes: 'Please accommodate',
-      });
-
+      .send({ class_session_id: cs, requesting_member_id: newMember });
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('pending');
-    expect(res.body.host_activity_name).toBe('Yoga');
   });
 
   it('rejects missing required fields', async () => {
     const res = await request
       .post('/shared-training-requests')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ host_session_id: hostSessionId });
-
+      .send({ class_session_id: sessionId });
     expect(res.status).toBe(400);
   });
 
-  it('rejects request for non-shareable host session', async () => {
-    const nonShareSession = await createSession(gymId, centerId, nonShareableActivityTypeId, trainerMembershipId, spaceId, 2);
-    const m = await createMember(gymId);
+  it('rejects when activity type is not shareable', async () => {
+    const nonShareAt = await createActivityType(gymId, false);
+    const nonShareCs = await createSession(gymId, nonShareAt, centerId, 0);
+    const { insertId: m2 } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'M2', ?)`,
+      [gymId, `ns-member-${Date.now()}@test.com`],
+    );
     const res = await request
       .post('/shared-training-requests')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({
-        host_session_id: nonShareSession,
-        requested_activity_type_id: requestedActivityTypeId,
-        requesting_member_id: m,
-      });
-
+      .send({ class_session_id: nonShareCs, requesting_member_id: m2 });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('host_not_shareable');
+    expect(res.body.code).toBe('not_shareable');
   });
 
-  it('rejects request for non-shareable requested activity', async () => {
-    const m = await createMember(gymId);
+  it('rejects when allows_shared_booking = false', async () => {
+    const at2 = await createActivityType(gymId);
+    const noSharedCs = await createSession(gymId, at2, centerId, 0);
+    const { insertId: m3 } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'M3', ?)`,
+      [gymId, `noshared-${Date.now()}@test.com`],
+    );
     const res = await request
       .post('/shared-training-requests')
-      .set('Authorization', TEST_AUTH_HEADER)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({
-        host_session_id: hostSessionId,
-        requested_activity_type_id: nonShareableActivityTypeId,
-        requesting_member_id: m,
-      });
-
+      .send({ class_session_id: noSharedCs, requesting_member_id: m3 });
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe('activity_not_shareable');
+    expect(res.body.code).toBe('sharing_not_allowed');
   });
+});
 
-  it('rejects duplicate pending request for same slot+member', async () => {
-    // requestId is already pending for memberId / hostSessionId / requestedActivityTypeId
-    const res = await request
-      .post('/shared-training-requests')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({
-        host_session_id: hostSessionId,
-        requested_activity_type_id: requestedActivityTypeId,
-        requesting_member_id: memberId,
-      });
+// ---------------------------------------------------------------------------
+// POST /:id/approve
+// ---------------------------------------------------------------------------
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('duplicate_request');
-  });
-
-  // -------------------------------------------------------------------------
-  // POST /:id/reject
-  // -------------------------------------------------------------------------
-
-  it('rejects a pending request', async () => {
-    const m = await createMember(gymId);
-    const { insertId } = await db.query(
-      `INSERT INTO shared_training_requests
-       (gym_id, host_session_id, requested_activity_type_id, requesting_member_id)
-       VALUES (?, ?, ?, ?)`,
-      [gymId, hostSessionId, requestedActivityTypeId, m],
+describe('POST /shared-training-requests/:id/approve', () => {
+  it('approves a pending request and books the member', async () => {
+    const at = await createActivityType(gymId);
+    const cs = await createSession(gymId, at, centerId, 1);
+    const { insertId: m } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Approve Me', ?)`,
+      [gymId, `approve-${Date.now()}@test.com`],
     );
+    const reqId = await createSharedRequest(gymId, cs, m, at);
 
     const res = await request
-      .post(`/shared-training-requests/${insertId}/reject`)
-      .set('Authorization', TEST_AUTH_HEADER)
+      .post(`/shared-training-requests/${reqId}/approve`)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('rejected');
-    expect(res.body.resolved_at).not.toBeNull();
-  });
-
-  it('returns 409 when rejecting an already-rejected request', async () => {
-    const m = await createMember(gymId);
-    const { insertId } = await db.query(
-      `INSERT INTO shared_training_requests
-       (gym_id, host_session_id, requested_activity_type_id, requesting_member_id, status)
-       VALUES (?, ?, ?, ?, 'rejected')`,
-      [gymId, hostSessionId, requestedActivityTypeId, m],
-    );
-
-    const res = await request
-      .post(`/shared-training-requests/${insertId}/reject`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
-    expect(res.status).toBe(409);
-  });
-
-  // -------------------------------------------------------------------------
-  // POST /:id/approve
-  // -------------------------------------------------------------------------
-
-  it('approves a pending request and creates a concurrent session + booking', async () => {
-    const m = await createMember(gymId);
-    const { insertId } = await db.query(
-      `INSERT INTO shared_training_requests
-       (gym_id, host_session_id, requested_activity_type_id, requesting_member_id)
-       VALUES (?, ?, ?, ?)`,
-      [gymId, hostSessionId, requestedActivityTypeId, m],
-    );
-
-    const res = await request
-      .post(`/shared-training-requests/${insertId}/approve`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('approved');
-    expect(res.body.resolved_class_session_id).not.toBeNull();
-    expect(res.body.resolved_at).not.toBeNull();
 
-    // The host session should now have sharing_authorized = true.
-    const { rows } = await db.query<{ sharing_authorized: number }>(
-      'SELECT sharing_authorized FROM class_sessions WHERE id = ?',
-      [hostSessionId],
-    );
-    expect(rows[0].sharing_authorized).toBe(1);
-
-    // The member should have a booking for the new concurrent session.
     const { rows: bookings } = await db.query(
-      'SELECT * FROM bookings WHERE member_id = ? AND class_session_id = ?',
-      [m, res.body.resolved_class_session_id],
+      'SELECT id FROM bookings WHERE member_id = ? AND class_session_id = ? AND status = ?',
+      [m, cs, 'booked'],
     );
-    expect(bookings.length).toBeGreaterThan(0);
-    expect(bookings[0].status).toBe('booked');
+    expect(bookings.length).toBe(1);
   });
 
-  it('returns 409 when approving an already-approved request', async () => {
-    // Find the most-recently-approved one from the previous test.
-    const { rows } = await db.query<{ id: number }>(
-      `SELECT id FROM shared_training_requests WHERE gym_id = ? AND status = 'approved' ORDER BY id DESC LIMIT 1`,
-      [gymId],
+  it('rejects approval of an already approved request', async () => {
+    const at = await createActivityType(gymId);
+    const cs = await createSession(gymId, at, centerId, 1);
+    const { insertId: m } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Double Approve', ?)`,
+      [gymId, `dbl-approve-${Date.now()}@test.com`],
     );
-    const approvedId = rows[0].id;
+    const reqId = await createSharedRequest(gymId, cs, m, at);
+
+    await request.post(`/shared-training-requests/${reqId}/approve`).set(TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    const res = await request
+      .post(`/shared-training-requests/${reqId}/approve`)
+      .set(TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(409);
+  });
+
+  it('enforces max_concurrent_groups from space (slot_fully_occupied)', async () => {
+    const spaceId = await createSpace(gymId, 1);
+    const trainerId = await createTrainerMembership(gymId, 1);
+    const at = await createActivityType(gymId, true, 1); // capacity=1 so extra starts at 0
+    const cs = await createSession(gymId, at, centerId, 1, spaceId, trainerId);
+
+    // Fill to capacity
+    const { insertId: bm } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Filler', ?)`,
+      [gymId, `filler-cap-${Date.now()}@test.com`],
+    );
+    await db.query(
+      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at)
+       VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
+      [gymId, centerId, bm, cs],
+    );
+
+    const { insertId: m } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Over Cap', ?)`,
+      [gymId, `over-cap-${Date.now()}@test.com`],
+    );
+    const reqId = await createSharedRequest(gymId, cs, m, at);
 
     const res = await request
-      .post(`/shared-training-requests/${approvedId}/approve`)
-      .set('Authorization', TEST_AUTH_HEADER)
+      .post(`/shared-training-requests/${reqId}/approve`)
+      .set(TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('slot_fully_occupied');
+  });
 
+  it('returns 404 for unknown request', async () => {
+    const res = await request
+      .post('/shared-training-requests/999999/approve')
+      .set(TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /:id/reject
+// ---------------------------------------------------------------------------
+
+describe('POST /shared-training-requests/:id/reject', () => {
+  it('rejects a pending request', async () => {
+    const at = await createActivityType(gymId);
+    const cs = await createSession(gymId, at, centerId, 1);
+    const { insertId: m } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Reject Me', ?)`,
+      [gymId, `reject-${Date.now()}@test.com`],
+    );
+    const reqId = await createSharedRequest(gymId, cs, m, at);
+
+    const res = await request
+      .post(`/shared-training-requests/${reqId}/reject`)
+      .set(TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('rejected');
+  });
+
+  it('rejects double-rejection', async () => {
+    const at = await createActivityType(gymId);
+    const cs = await createSession(gymId, at, centerId, 1);
+    const { insertId: m } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Reject2', ?)`,
+      [gymId, `reject2-${Date.now()}@test.com`],
+    );
+    const reqId = await createSharedRequest(gymId, cs, m, at);
+
+    await request.post(`/shared-training-requests/${reqId}/reject`).set(TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    const res = await request
+      .post(`/shared-training-requests/${reqId}/reject`)
+      .set(TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
     expect(res.status).toBe(409);
   });
 });

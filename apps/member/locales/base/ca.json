@@ -20,6 +20,7 @@
   "nav": {
     "home": "Inici",
     "schedule": "Horari",
+    "calendar": "Calendari",
     "membership": "Quota",
     "packages": "Bons",
     "training": "Entreno",
@@ -117,6 +118,28 @@
     "status_waitlisted": "A la llista d'espera",
     "leave_waitlist": "Sortir de la llista d'espera"
   },
+  "member_calendar": {
+    "filter_all": "Tots",
+    "state_unavailable": "No disponible",
+    "state_booked_by_member": "Tens reserva",
+    "state_available": "Disponible",
+    "state_waitlisted_by_member": "A la llista d'espera",
+    "state_shared_requested_by_member": "Sol·licitud enviada",
+    "state_shared_request_available": "Entrenament compartit disponible",
+    "state_waitlist_available": "Afegir-se a la llista d'espera",
+    "state_full": "Complet",
+    "action_book": "Reservar",
+    "action_join_waitlist": "Afegir-se a la llista d'espera",
+    "action_cancel_booking": "Cancel·lar reserva",
+    "action_leave_waitlist": "Sortir de la llista d'espera",
+    "action_request_shared": "Sol·licitar entrenament compartit",
+    "action_cancel_shared_request": "Cancel·lar sol·licitud",
+    "action_close": "Tancar",
+    "shared_request_status": "Estat de la sol·licitud: {status}",
+    "error_generic": "Alguna cosa ha anat malament. Torna-ho a intentar.",
+    "type_shared_training_approved": "Entrenament compartit aprovat",
+    "type_shared_training_rejected": "Entrenament compartit rebutjat"
+  },
   "notifications": {
     "title": "Notificacions",
     "loading": "Carregant…",
@@ -127,7 +150,9 @@
     "type_waitlist_joined": "Afegit a la llista d'espera",
     "type_promoted_from_waitlist": "Promogut de la llista d'espera",
     "type_booking_reminder_24h": "Recordatori: demà",
-    "type_booking_reminder_1h": "Recordatori: comença aviat"
+    "type_booking_reminder_1h": "Recordatori: comença aviat",
+    "type_shared_training_approved": "Entrenament compartit aprovat",
+    "type_shared_training_rejected": "Entrenament compartit rebutjat"
   },
   "membership": {
     "title": "La meva quota",

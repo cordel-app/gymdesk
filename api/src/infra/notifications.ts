@@ -7,7 +7,9 @@ export type NotificationType =
   | 'event_cancelled'
   | 'event_updated'
   | 'booking_reminder_24h'
-  | 'booking_reminder_1h';
+  | 'booking_reminder_1h'
+  | 'shared_training_approved'
+  | 'shared_training_rejected';
 
 export interface NotificationPayload {
   title: string;
