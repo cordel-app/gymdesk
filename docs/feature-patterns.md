@@ -87,6 +87,9 @@ Three separate deploy workflows in `.github/workflows/` — all follow the same 
 | `deploy.yml` | `api/**` | `fitness-api` container on corback (`api.vdicube.com`) |
 | `deploy-admin.yml` | `apps/admin/**` | `fitness-admin` container on corfront `:8081` (`admin.vdicube.com`) |
 | `deploy-member.yml` | `apps/member/**` | `fitness-members` container on corfront `:8082` (`members.vdicube.com`) |
+| `deploy-payment.yml` | `apps/payment/**` | `fitness-payment` container on corfront `:8083` (`pay.vdicube.com`) |
+
+`apps/payment/` is a vanilla HTML/JS + nginx image. No npm, no Next.js. Oscar owns the quadlet (`infra/payment-app/fitness-payment.container` is the reference unit — copy onto the VPS, do not apply from CI). Traefik on corfront routes `pay.vdicube.com` → `:8083` (already assigned). First deploy fails until that unit exists.
 
 `apps/payment/` is a vanilla HTML/JS + nginx image (`fitness-payment`, corfront `:8083`, `pay.vdicube.com`). No npm, no Next.js. The deploy workflow is ticket #205 — do not add it here until that ticket lands. Traefik on corfront already routes the host; Oscar owns the quadlet.
 

@@ -532,7 +532,7 @@ All traffic enters through **Traefik on corfront** (`10.0.2.100`), which termina
 | API | `https://api.vdicube.com` → corback `10.0.2.101:3000` | "corback" VPS (`150.230.157.145`) | `fitness-api` / GHCR `fitness-api` |
 | Admin | `https://admin.vdicube.com` → corfront `:8081` | "corfront" VPS (`10.0.2.100`) | `fitness-admin` / GHCR `fitness-admin` |
 | Member | `https://members.vdicube.com` → corfront `:8082` | "corfront" VPS | `fitness-members` (**plural**) / GHCR `fitness-members` |
-| Payment | `https://pay.vdicube.com` → corfront `:8083` | "corfront" VPS | `fitness-payment` / GHCR `fitness-payment` (#204 app, #205 deploy). Traefik route assigned; container not live until #205. |
+| Payment | `https://pay.vdicube.com` → corfront `:8083` | "corfront" VPS | `fitness-payment` / GHCR `fitness-payment`. Traefik route assigned. Oscar copies `infra/payment-app/fitness-payment.container` onto the VPS; `deploy-payment.yml` pulls + restarts. |
 
 **Ownership split (important):**
 - **Oscar owns the runtime**: rootless Podman under VPS user `podman`, one **Quadlet unit** per container at `/home/podman/.config/containers/systemd/<name>.container` defining ports, env vars, and restart policy. Containers are managed with `systemctl --user {start|stop|restart} <name>`.
@@ -544,7 +544,7 @@ Notes:
 - Frontends reach the API via `CORDEL_FITNESS_API_URL=https://api.vdicube.com`. API invite emails use `CORDEL_FITNESS_MEMBERS_URL=https://members.vdicube.com`; team invites use `CORDEL_FITNESS_ADMIN_URL`.
 - corfront also runs Oscar's `traefik` (:80/:443) and `wordpress_eforge` (:8080) under the same `podman` user — visible in `podman ps`, don't touch.
 - Inbound ports are controlled by the **OCI VCN Security List** (cloud console); OS firewalls are disabled. If a port times out from outside but works on localhost, it's the Security List.
-- Traefik config lives on corfront at `/srv/containers/traefik/config/dynamic/backend.yml` (managed by Oscar).
+- Traefik config lives on corfront at `/srv/containers/traefik/config/dynamic/backend.yml` (managed by Oscar). `pay.vdicube.com` → `:8083`. PCI: strip query strings from access logs on that host so `page_token` is never stored.
 - Diagnostics: `test-ssh.yml` / `test_ssh_corfront.yml` (workflow_dispatch) print identity/ports/`podman ps`; `debug-vps.yml` does deeper corback checks.
 - Legacy names are fully retired: `gymdesk-*` containers/images, VPS user `github`, Vercel, `backend-dev.gymdesk.uk` — do not reference them.
 
@@ -579,10 +579,11 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 
 | Workflow | Purpose |
 |----------|---------|
-| `ci.yml` | Lint/build + migrations against a throwaway MySQL 8.4 service |
+| `ci.yml` | API tests + admin typecheck/build + `apps/payment` Docker smoke build |
 | `deploy.yml` | Build/push `fitness-api`, run migrations on the VPS, restart |
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
+| `deploy-payment.yml` | Build/push/restart `fitness-payment` (corfront `:8083`) |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
 
 ---
@@ -609,7 +610,7 @@ Grafana Alloy ships journald entries from both VPS to Grafana Cloud Loki.
 
 **Architecture**:
 ```
-corback (fitness-api)          corfront (fitness-admin, fitness-members)
+corback (fitness-api)          corfront (fitness-admin, fitness-members, fitness-payment)
     journald                          journald
        ↓                                 ↓
   alloy (systemd)               alloy (systemd)
