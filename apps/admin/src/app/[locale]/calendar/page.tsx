@@ -43,6 +43,8 @@ export default function CalendarPage() {
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
+  const dblClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastClickDateStrRef = useRef<string | null>(null);
 
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -198,6 +200,35 @@ export default function CalendarPage() {
     }
   }
 
+  function handleDateClick(info: any) {
+    const api = calendarRef.current?.getApi();
+    const viewType = api?.view.type;
+
+    if (viewType === 'dayGridMonth' || viewType === 'timeGridWeek') {
+      const dateStr = info.dateStr.slice(0, 10);
+
+      if (lastClickDateStrRef.current === dateStr && dblClickTimerRef.current !== null) {
+        // Double-click: navigate to Day view for the clicked date
+        clearTimeout(dblClickTimerRef.current);
+        dblClickTimerRef.current = null;
+        lastClickDateStrRef.current = null;
+        api?.changeView('timeGridDay', info.date);
+      } else {
+        // First click: start 300ms timer before executing single-click action
+        if (dblClickTimerRef.current !== null) clearTimeout(dblClickTimerRef.current);
+        lastClickDateStrRef.current = dateStr;
+        const clickedDate = info.date;
+        dblClickTimerRef.current = setTimeout(() => {
+          dblClickTimerRef.current = null;
+          lastClickDateStrRef.current = null;
+          openCreate(clickedDate);
+        }, 300);
+      }
+    } else {
+      openCreate(info.date);
+    }
+  }
+
   async function handleResize(info: any) {
     try {
       await apiFetch(`/calendar-events/${info.event.id}`, {
@@ -284,7 +315,7 @@ export default function CalendarPage() {
             eventResizableFromStart={canWrite}
             height="100%"
             select={(info: any) => openCreate(info.start, info.end)}
-            dateClick={(info: any) => openCreate(info.date)}
+            dateClick={handleDateClick}
             eventClick={(info: any) => openEdit(info.event)}
             eventDrop={handleDrop}
             eventResize={handleResize}
