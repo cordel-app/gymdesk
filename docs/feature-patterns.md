@@ -91,6 +91,8 @@ Three separate deploy workflows in `.github/workflows/` — all follow the same 
 
 `apps/payment/` is a vanilla HTML/JS + nginx image. No npm, no Next.js. Oscar owns the quadlet (`infra/payment-app/fitness-payment.container` is the reference unit — copy onto the VPS, do not apply from CI). Traefik on corfront routes `pay.vdicube.com` → `:8083` (already assigned). First deploy fails until that unit exists.
 
+`apps/payment/` is a vanilla HTML/JS + nginx image (`fitness-payment`, corfront `:8083`, `pay.vdicube.com`). No npm, no Next.js. The deploy workflow is ticket #205 — do not add it here until that ticket lands. Traefik on corfront already routes the host; Oscar owns the quadlet.
+
 ### API deploy order
 
 1. Build and push Docker image
