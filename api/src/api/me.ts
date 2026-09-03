@@ -14,6 +14,44 @@ import { generateReceiptPdf } from '../lib/receipt-pdf';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
+export type UpcomingPayment = { date: string; amount: string; status: 'scheduled' };
+
+export function computeUpcomingPayments(
+  nextBillingDate: Date | string | null,
+  billingInterval: number | null,
+  billingUnit: 'day' | 'week' | 'month' | 'year' | null,
+  amount: string | null,
+): UpcomingPayment[] {
+  if (!nextBillingDate || !billingInterval || !billingUnit || !amount) return [];
+  const dateStr = nextBillingDate instanceof Date
+    ? nextBillingDate.toISOString().slice(0, 10)
+    : String(nextBillingDate).slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  const amountStr = parseFloat(amount).toFixed(2);
+  const payments: UpcomingPayment[] = [];
+  // Advance from next_billing_date until we reach a future date (safety cap: 5000 iterations)
+  let cursor = dateStr;
+  let iterations = 0;
+  while (cursor < today && iterations++ < 5000) {
+    cursor = advanceDate(cursor, billingInterval, billingUnit);
+  }
+  // Collect the next 2 upcoming payments
+  while (payments.length < 2) {
+    payments.push({ date: cursor, amount: amountStr, status: 'scheduled' });
+    cursor = advanceDate(cursor, billingInterval, billingUnit);
+  }
+  return payments;
+}
+
+export function advanceDate(date: string, interval: number, unit: 'day' | 'week' | 'month' | 'year'): string {
+  const d = new Date(date + 'T00:00:00Z');
+  if (unit === 'day') d.setUTCDate(d.getUTCDate() + interval);
+  else if (unit === 'week') d.setUTCDate(d.getUTCDate() + interval * 7);
+  else if (unit === 'month') d.setUTCMonth(d.getUTCMonth() + interval);
+  else d.setUTCFullYear(d.getUTCFullYear() + interval);
+  return d.toISOString().slice(0, 10);
+}
+
 export const meRouter = Router();
 
 // Called once on first sign-in: links Clerk user to members row and creates gym_memberships entry.
@@ -799,6 +837,7 @@ meRouter.get('/membership', requireRole('member'), async (req: Request, res: Res
       `SELECT um.id, um.member_id, um.membership_plan_id,
               um.base_price, um.final_price, um.discount_reason, um.discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
+              um.next_billing_date,
               p.name AS plan_name, p.description AS plan_description, p.base_price AS plan_base_price,
               bp.recurring_billing_interval AS billing_interval,
               bp.recurring_billing_unit AS billing_unit
@@ -828,7 +867,15 @@ meRouter.get('/membership', requireRole('member'), async (req: Request, res: Res
       );
       benefits = rows;
     }
-    res.json({ membership: { ...um, benefits } });
+
+    const upcoming_payments = computeUpcomingPayments(
+      um.next_billing_date,
+      um.billing_interval,
+      um.billing_unit,
+      um.final_price,
+    );
+
+    res.json({ membership: { ...um, benefits, upcoming_payments } });
   } catch (err) {
     next(err);
   }

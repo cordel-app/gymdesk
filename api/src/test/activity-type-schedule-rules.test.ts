@@ -188,10 +188,10 @@ describe('POST schedule-rule one_off', () => {
   });
 });
 
-// ── Happy path: POST weekly ────────────────────────────────────────────────
+// ── Happy path: POST weekly (single day) ──────────────────────────────────
 
-describe('POST schedule-rule weekly', () => {
-  it('creates a weekly rule with weekday, start_date, end_date and returns 201', async () => {
+describe('POST schedule-rule weekly single-day', () => {
+  it('creates a weekly rule with weekdays:[1] and returns 201 with weekdays array', async () => {
     const res = await request
       .post(rulesBase(activityTypeId))
       .set('Authorization', TEST_AUTH_HEADER)
@@ -199,19 +199,123 @@ describe('POST schedule-rule weekly', () => {
       .send({
         type: 'weekly',
         start_date: '2026-09-01',
-        end_date: '2026-12-31',   // within 1 year of start_date
-        weekday: 1,               // Monday
+        end_date: '2026-12-31',
+        weekdays: [1],            // Monday
         start_time: '18:00',
         end_time: '19:00',
       });
     expect(res.status).toBe(201);
     expect(res.body.type).toBe('weekly');
-    expect(res.body.start_date).toBe('2026-09-01');   // must be YYYY-MM-DD
-    expect(res.body.end_date).toBe('2026-12-31');     // must be YYYY-MM-DD
-    expect(res.body.weekday).toBe(1);
+    expect(res.body.start_date).toBe('2026-09-01');
+    expect(res.body.end_date).toBe('2026-12-31');
+    expect(res.body.weekdays).toEqual([1]);
     expect(res.body.start_time).toBe('18:00');
     expect(res.body.end_time).toBe('19:00');
     expect(res.body.activity_type_id).toBe(activityTypeId);
+  });
+
+  it('backward-compat: accepts legacy weekday (integer) for weekly and promotes to weekdays array', async () => {
+    const res = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: '2026-09-01',
+        end_date: '2026-12-31',
+        weekday: 3,               // legacy single-field
+        start_time: '10:00',
+        end_time: '11:00',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.weekdays).toEqual([3]);
+  });
+});
+
+// ── Happy path: POST weekly (multi-day) ───────────────────────────────────
+
+describe('POST schedule-rule weekly multi-day', () => {
+  let multiRuleId: number;
+
+  it('creates a weekly rule with weekdays:[1,3,5] (Mon/Wed/Fri) and returns 201', async () => {
+    const res = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: '2026-09-01',
+        end_date: '2026-09-30',
+        weekdays: [1, 3, 5],     // Mon, Wed, Fri
+        start_time: '09:00',
+        end_time: '10:00',
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.weekdays).toEqual([1, 3, 5]);
+    multiRuleId = res.body.id;
+  });
+
+  it('GET returns the rule with weekdays array', async () => {
+    const res = await request
+      .get(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const rule = res.body.find((r: any) => r.id === multiRuleId);
+    expect(rule).toBeDefined();
+    expect(rule.weekdays).toEqual([1, 3, 5]);
+  });
+
+  it('PUT updates weekdays (remove Wednesday, keep Mon+Fri)', async () => {
+    const res = await request
+      .put(`/activity-types/${activityTypeId}/schedule-rules/${multiRuleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: '2026-09-01',
+        end_date: '2026-09-30',
+        weekdays: [1, 5],         // Mon, Fri only
+        start_time: '09:00',
+        end_time: '10:00',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.weekdays).toEqual([1, 5]);
+  });
+
+  it('schedule generation: Mon+Wed+Fri rule produces occurrences only on those days', async () => {
+    // Create a fresh rule for a specific week
+    const createRes = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: '2026-09-07', // week of 7–13 Sep 2026
+        end_date: '2026-09-13',
+        weekdays: [1, 3, 5],      // Mon=8 Sep, Wed=10 Sep, Fri=12 Sep
+        start_time: '07:00',
+        end_time: '08:00',
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    // Verify materialized calendar_events for this rule
+    const { rows } = await db.query(
+      'SELECT DATE(starts_at) AS d FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL ORDER BY starts_at',
+      [ruleId],
+    );
+    const dates = rows.map((r: any) => (r.d instanceof Date ? r.d.toISOString().slice(0, 10) : String(r.d).slice(0, 10)));
+
+    // Must include Mon/Wed/Fri
+    expect(dates).toContain('2026-09-07'); // Mon
+    expect(dates).toContain('2026-09-09'); // Wed
+    expect(dates).toContain('2026-09-11'); // Fri
+    // Must not include other days
+    expect(dates).not.toContain('2026-09-08'); // Tue
+    expect(dates).not.toContain('2026-09-10'); // Thu
+    expect(dates).not.toContain('2026-09-12'); // Sat
+    expect(dates).not.toContain('2026-09-13'); // Sun
   });
 });
 
@@ -226,7 +330,7 @@ describe('validation', () => {
       .send({
         type: 'weekly',
         start_date: '2026-09-01',
-        weekday: 2,
+        weekdays: [2],
         start_time: '09:00',
         end_time: '10:00',
         // end_date intentionally omitted
@@ -243,14 +347,30 @@ describe('validation', () => {
         type: 'weekly',
         start_date: '2026-09-01',
         end_date: '2027-10-01',   // > 1 year after start_date (2027-09-01 limit)
-        weekday: 3,
+        weekdays: [3],
         start_time: '09:00',
         end_time: '10:00',
       });
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when weekday is missing for a weekly rule', async () => {
+  it('returns 400 when weekdays is empty for a weekly rule', async () => {
+    const res = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: '2026-09-01',
+        end_date: '2026-12-31',
+        weekdays: [],             // empty — must be rejected
+        start_time: '09:00',
+        end_time: '10:00',
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when neither weekday nor weekdays is provided for a weekly rule', async () => {
     const res = await request
       .post(rulesBase(activityTypeId))
       .set('Authorization', TEST_AUTH_HEADER)
@@ -261,7 +381,7 @@ describe('validation', () => {
         end_date: '2026-12-31',
         start_time: '09:00',
         end_time: '10:00',
-        // weekday intentionally omitted
+        // no weekday or weekdays
       });
     expect(res.status).toBe(400);
   });

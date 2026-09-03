@@ -8,7 +8,8 @@ export interface ScheduleRule {
   type: 'one_off' | 'weekly' | 'monthly';
   start_date: string; // YYYY-MM-DD
   end_date: string | null;
-  weekday: number | null; // 0=Sun … 6=Sat
+  weekday: number | null; // 0=Sun … 6=Sat — used by monthly rules
+  weekdays: number[] | null; // used by weekly rules (multi-day support)
   ordinal: 'first' | 'second' | 'third' | 'fourth' | 'fifth' | 'last' | null;
   start_time: string; // HH:MM or HH:MM:SS
   end_time: string;
@@ -55,18 +56,20 @@ function occurrenceDatesForRule(rule: ScheduleRule): Array<{ date: string }> {
   const dates: Array<{ date: string }> = [];
 
   if (rule.type === 'weekly') {
-    if (rule.weekday == null) return [];
-    // Iterate days from `from` to `endDate`, collect matching weekdays
-    // Luxon weekday: 1=Mon…7=Sun; JS Date: 0=Sun…6=Sat
-    const luxonWd = rule.weekday === 0 ? 7 : rule.weekday;
-    // Jump to the first matching weekday >= from
-    const daysUntilFirst = (luxonWd - from.weekday + 7) % 7;
-    let cur = from.plus({ days: daysUntilFirst });
-    while (cur <= endDate) {
-      dates.push({ date: cur.toISODate()! });
-      cur = cur.plus({ weeks: 1 });
+    if (!rule.weekdays || rule.weekdays.length === 0) return [];
+    // Collect occurrences for each selected weekday, then merge + sort
+    const allDates = new Set<string>();
+    for (const wd of rule.weekdays) {
+      // Luxon weekday: 1=Mon…7=Sun; JS/rule convention: 0=Sun…6=Sat
+      const luxonWd = wd === 0 ? 7 : wd;
+      const daysUntilFirst = (luxonWd - from.weekday + 7) % 7;
+      let cur = from.plus({ days: daysUntilFirst });
+      while (cur <= endDate) {
+        allDates.add(cur.toISODate()!);
+        cur = cur.plus({ weeks: 1 });
+      }
     }
-    return dates;
+    return [...allDates].sort().map((date) => ({ date }));
   }
 
   if (rule.type === 'monthly') {
@@ -123,6 +126,9 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     end_date: raw.end_date instanceof Date ? raw.end_date.toISOString().slice(0, 10) : (raw.end_date ? String(raw.end_date).slice(0, 10) : null),
     start_time: typeof raw.start_time === 'string' ? raw.start_time.slice(0, 5) : raw.start_time,
     end_time: typeof raw.end_time === 'string' ? raw.end_time.slice(0, 5) : raw.end_time,
+    weekdays: raw.weekdays == null ? null
+      : Array.isArray(raw.weekdays) ? raw.weekdays.map(Number)
+      : ((): number[] => { try { return JSON.parse(raw.weekdays).map(Number); } catch { return []; } })(),
   } as ScheduleRule & {
     activity_type_name: string;
     default_space_id: number | null;

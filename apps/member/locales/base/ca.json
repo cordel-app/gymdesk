@@ -159,8 +159,11 @@
     "loading": "Carregant…",
     "empty": "Encara no tens cap quota assignada. Demana-la al teu gimnàs.",
     "price": "Preu mensual",
+    "member_since": "Soci des de",
     "starts": "Inici",
     "ends": "Fi",
+    "upcoming_heading": "Propers pagaments",
+    "upcoming_empty": "Sense pagaments pendents.",
     "ongoing": "En curs",
     "packages_heading": "Bons de classes",
     "package_status": {
@@ -183,8 +186,13 @@
     "event": {
       "charge_created": "Càrrec",
       "payment_recorded": "Pagament",
+      "recurring_payment": "Pagament recurrent",
+      "failed_billing": "Pagament fallit",
       "status_changed": "Canvi d'estat",
       "adjustment": "Ajust"
+    },
+    "upcoming_status": {
+      "scheduled": "Programat"
     },
     "charge_type": {
       "membership_fee": "Quota de soci",
