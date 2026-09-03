@@ -137,10 +137,9 @@ sharedTrainingRequestsRouter.post('/:id/approve',
         const { rows: sessionRows } = await tx.query(
           `SELECT cs.id, cs.status, cs.allows_shared_booking, cs.center_id,
                   cs.trainer_membership_id, cs.space_id, cs.starts_at, cs.ends_at,
-                  COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
                   at.is_shareable,
-                  COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
-                  COALESCE(sp.max_concurrent_groups, 1) AS space_max,
+                  gm.max_concurrent_groups AS trainer_max,
+                  sp.max_concurrent_groups AS space_max,
                   (SELECT COUNT(*) FROM bookings b WHERE b.class_session_id = cs.id AND b.status = 'booked') AS booked_count
            FROM class_sessions cs
            JOIN activity_types at ON at.id = cs.activity_type_id
@@ -163,10 +162,11 @@ sharedTrainingRequestsRouter.post('/:id/approve',
           throw Object.assign(new Error('Shared booking is no longer enabled for this session'), { status: 409 });
         }
 
-        // Check concurrent-group capacity (trainer and space limits from #323).
-        const effectiveMax = Math.min(Number(session.trainer_max), Number(session.space_max));
-        const extraBooked = Math.max(0, Number(session.booked_count) - Number(session.effective_capacity));
-        if (extraBooked >= effectiveMax) {
+        // max_concurrent_groups = total booked limit including shared bookings; null = unconstrained.
+        const trainerMax = session.trainer_max != null ? Number(session.trainer_max) : Infinity;
+        const spaceMax = session.space_max != null ? Number(session.space_max) : Infinity;
+        const effectiveMax = Math.min(trainerMax, spaceMax);
+        if (isFinite(effectiveMax) && Number(session.booked_count) >= effectiveMax) {
           throw Object.assign(
             new Error('Slot capacity has been reached since the request was created'),
             { status: 409, code: 'slot_fully_occupied' },

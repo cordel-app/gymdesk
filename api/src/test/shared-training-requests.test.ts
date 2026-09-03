@@ -135,14 +135,14 @@ afterAll(async () => {
 
 describe('GET /shared-training-requests — auth', () => {
   it('requires x-gym-id', async () => {
-    const res = await request.get('/shared-training-requests').set(TEST_AUTH_HEADER);
+    const res = await request.get('/shared-training-requests').set("Authorization", TEST_AUTH_HEADER);
     expect(res.status).toBe(401);
   });
 
   it('returns 200 for admin', async () => {
     const res = await request
       .get('/shared-training-requests')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -153,7 +153,7 @@ describe('GET /shared-training-requests — tenant isolation', () => {
   it('returns 404 when accessing request from another gym', async () => {
     const res = await request
       .get(`/shared-training-requests/${pendingRequestId}`)
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymBId);
     expect(res.status).toBe(404);
   });
@@ -167,7 +167,7 @@ describe('GET /shared-training-requests', () => {
   it('lists requests for the gym', async () => {
     const res = await request
       .get('/shared-training-requests')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     const ids = res.body.map((r: any) => r.id);
@@ -177,7 +177,7 @@ describe('GET /shared-training-requests', () => {
   it('filters by status=pending', async () => {
     const res = await request
       .get('/shared-training-requests?status=pending')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.every((r: any) => r.status === 'pending')).toBe(true);
@@ -186,7 +186,7 @@ describe('GET /shared-training-requests', () => {
   it('rejects invalid status', async () => {
     const res = await request
       .get('/shared-training-requests?status=bogus')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
   });
@@ -200,7 +200,7 @@ describe('GET /shared-training-requests/:id', () => {
   it('returns a single request with joined fields', async () => {
     const res = await request
       .get(`/shared-training-requests/${pendingRequestId}`)
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(pendingRequestId);
@@ -212,7 +212,7 @@ describe('GET /shared-training-requests/:id', () => {
   it('returns 404 for unknown id', async () => {
     const res = await request
       .get('/shared-training-requests/999999')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
   });
@@ -233,7 +233,7 @@ describe('POST /shared-training-requests', () => {
 
     const res = await request
       .post('/shared-training-requests')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ class_session_id: cs, requesting_member_id: newMember });
     expect(res.status).toBe(201);
@@ -243,7 +243,7 @@ describe('POST /shared-training-requests', () => {
   it('rejects missing required fields', async () => {
     const res = await request
       .post('/shared-training-requests')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ class_session_id: sessionId });
     expect(res.status).toBe(400);
@@ -258,7 +258,7 @@ describe('POST /shared-training-requests', () => {
     );
     const res = await request
       .post('/shared-training-requests')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ class_session_id: nonShareCs, requesting_member_id: m2 });
     expect(res.status).toBe(409);
@@ -274,7 +274,7 @@ describe('POST /shared-training-requests', () => {
     );
     const res = await request
       .post('/shared-training-requests')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ class_session_id: noSharedCs, requesting_member_id: m3 });
     expect(res.status).toBe(409);
@@ -298,7 +298,7 @@ describe('POST /shared-training-requests/:id/approve', () => {
 
     const res = await request
       .post(`/shared-training-requests/${reqId}/approve`)
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('approved');
@@ -319,10 +319,10 @@ describe('POST /shared-training-requests/:id/approve', () => {
     );
     const reqId = await createSharedRequest(gymId, cs, m, at);
 
-    await request.post(`/shared-training-requests/${reqId}/approve`).set(TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    await request.post(`/shared-training-requests/${reqId}/approve`).set("Authorization", TEST_AUTH_HEADER).set('x-gym-id', gymId);
     const res = await request
       .post(`/shared-training-requests/${reqId}/approve`)
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(409);
   });
@@ -352,7 +352,7 @@ describe('POST /shared-training-requests/:id/approve', () => {
 
     const res = await request
       .post(`/shared-training-requests/${reqId}/approve`)
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('slot_fully_occupied');
@@ -361,7 +361,7 @@ describe('POST /shared-training-requests/:id/approve', () => {
   it('returns 404 for unknown request', async () => {
     const res = await request
       .post('/shared-training-requests/999999/approve')
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
   });
@@ -383,7 +383,7 @@ describe('POST /shared-training-requests/:id/reject', () => {
 
     const res = await request
       .post(`/shared-training-requests/${reqId}/reject`)
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('rejected');
@@ -398,10 +398,10 @@ describe('POST /shared-training-requests/:id/reject', () => {
     );
     const reqId = await createSharedRequest(gymId, cs, m, at);
 
-    await request.post(`/shared-training-requests/${reqId}/reject`).set(TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    await request.post(`/shared-training-requests/${reqId}/reject`).set("Authorization", TEST_AUTH_HEADER).set('x-gym-id', gymId);
     const res = await request
       .post(`/shared-training-requests/${reqId}/reject`)
-      .set(TEST_AUTH_HEADER)
+      .set("Authorization", TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(409);
   });
