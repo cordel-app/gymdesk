@@ -82,22 +82,24 @@ spacesRouter.get('/:id/activity-types', async (req, res) => {
 
 spacesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { name, description, capacity, status, center_id, notes, opening_time, closing_time } = req.body;
+  const { name, description, capacity, status, center_id, notes, opening_time, closing_time, max_concurrent_groups } = req.body;
   if (!name || capacity == null) return res.status(400).json({ error: 'name and capacity are required' });
   const cap = parseInt(capacity, 10);
   if (isNaN(cap) || cap <= 0) return res.status(400).json({ error: 'capacity must be a positive integer' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const maxGroups = max_concurrent_groups != null ? parseInt(max_concurrent_groups, 10) : 1;
+  if (isNaN(maxGroups) || maxGroups < 1) return res.status(400).json({ error: 'max_concurrent_groups must be a positive integer' });
   try {
     const resolvedCenterId = await resolveCenterId(gymId, req, center_id);
     const row = await insertAndFetch(
       `INSERT INTO spaces
         (name, description, capacity, status, gym_id, center_id, notes, opening_time, closing_time,
-         created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         max_concurrent_groups, created_by_membership_id, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name.trim(), description ?? null, cap, status ?? 'active', gymId, resolvedCenterId,
         notes ?? null, opening_time ?? null, closing_time ?? null,
-        gymMembershipId, gymMembershipId,
+        maxGroups, gymMembershipId, gymMembershipId,
       ],
       `${SELECT} WHERE s.id = ?`,
       (id) => [id],
@@ -112,22 +114,25 @@ spacesRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
 spacesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { name, description, capacity, status, center_id, notes, opening_time, closing_time } = req.body;
+  const { name, description, capacity, status, center_id, notes, opening_time, closing_time, max_concurrent_groups } = req.body;
   const cap = capacity != null ? parseInt(capacity, 10) : null;
   if (cap !== null && (isNaN(cap) || cap <= 0)) return res.status(400).json({ error: 'capacity must be a positive integer' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
+  const maxGroups = max_concurrent_groups != null ? parseInt(max_concurrent_groups, 10) : null;
+  if (maxGroups !== null && (isNaN(maxGroups) || maxGroups < 1)) return res.status(400).json({ error: 'max_concurrent_groups must be a positive integer' });
   try {
     const { rowCount } = await db.query(
       `UPDATE spaces SET
-        name         = COALESCE(?, name),
-        description  = IF(?, ?, description),
-        capacity     = COALESCE(?, capacity),
-        status       = COALESCE(?, status),
-        center_id    = IF(?, ?, center_id),
-        notes        = IF(?, ?, notes),
-        opening_time = IF(?, ?, opening_time),
-        closing_time = IF(?, ?, closing_time),
-        modified_at  = UTC_TIMESTAMP(),
+        name                 = COALESCE(?, name),
+        description          = IF(?, ?, description),
+        capacity             = COALESCE(?, capacity),
+        status               = COALESCE(?, status),
+        center_id            = IF(?, ?, center_id),
+        notes                = IF(?, ?, notes),
+        opening_time         = IF(?, ?, opening_time),
+        closing_time         = IF(?, ?, closing_time),
+        max_concurrent_groups = COALESCE(?, max_concurrent_groups),
+        modified_at          = UTC_TIMESTAMP(),
         modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
@@ -139,6 +144,7 @@ spacesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         'notes' in req.body ? 1 : 0, notes ?? null,
         'opening_time' in req.body ? 1 : 0, opening_time ?? null,
         'closing_time' in req.body ? 1 : 0, closing_time ?? null,
+        maxGroups,
         gymMembershipId,
         req.params.id, gymId,
       ],

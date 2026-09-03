@@ -81,8 +81,9 @@ export async function bookMemberOnSession(
   memberId: number,
   sessionId: number,
   force = false,
+  existingTx?: Tx,
 ) {
-  return db.transaction(async (tx) => {
+  const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
       `SELECT cs.id, cs.activity_type_id, cs.status, cs.center_id,
               COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity
@@ -132,7 +133,8 @@ export async function bookMemberOnSession(
       [gymId, session[0].center_id, memberId, sessionId, position],
     );
     return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
-  });
+  };
+  return existingTx ? run(existingTx) : db.transaction(run);
 }
 
 /** Cancel + promote the next waitlist row inside one transaction. */

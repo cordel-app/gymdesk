@@ -83,6 +83,7 @@ function validate(body: any) {
   if (capacity !== null && (isNaN(capacity) || capacity <= 0)) return 'max_capacity must be a positive integer';
   if (intensity !== null && (isNaN(intensity) || intensity < 1 || intensity > 5)) return 'intensity_level must be between 1 and 5';
   if (body.status && !STATUSES.includes(body.status)) return `status must be one of: ${STATUSES.join(', ')}`;
+  if ('shareable' in body && body.shareable !== undefined && typeof body.shareable !== 'boolean' && body.shareable !== 0 && body.shareable !== 1) return 'shareable must be a boolean';
   return null;
 }
 
@@ -109,7 +110,7 @@ async function validateSpace(gymId: string, spaceId: number | null, centerId: nu
 activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
-          default_space_id, default_trainer_membership_id, default_center_id, color } = req.body;
+          default_space_id, default_trainer_membership_id, default_center_id, color, shareable } = req.body;
   if (!name?.trim() || duration_minutes == null || max_capacity == null) {
     return res.status(400).json({ error: 'name, duration_minutes and max_capacity are required' });
   }
@@ -125,15 +126,16 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const { insertId } = await db.query(
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
-        default_space_id, default_trainer_membership_id, default_center_id, color,
+        default_space_id, default_trainer_membership_id, default_center_id, color, shareable,
         created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
       [gymId, name.trim(), description ?? null,
        parseInt(duration_minutes, 10),
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
        parseInt(max_capacity, 10),
        status ?? 'active',
        spaceId, default_trainer_membership_id ?? null, centerId, color ?? null,
+       shareable ? 1 : 0,
        gymMembershipId ?? null, gymMembershipId ?? null],
     );
     const { rows } = await db.query(`${SELECT} WHERE at.id = ?`, [insertId]);
@@ -149,7 +151,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   const { gymId, gymMembershipId } = getTenantContext(req);
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
-          default_space_id, default_trainer_membership_id, default_center_id, color } = req.body;
+          default_space_id, default_trainer_membership_id, default_center_id, color, shareable } = req.body;
 
   const centerId = 'default_center_id' in req.body
     ? (default_center_id ? parseInt(default_center_id, 10) : null)
@@ -186,6 +188,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         default_trainer_membership_id  = IF(?, ?, default_trainer_membership_id),
         default_center_id              = IF(?, ?, default_center_id),
         color                          = IF(?, ?, color),
+        shareable                      = IF(?, ?, shareable),
         modified_at                    = UTC_TIMESTAMP(),
         modified_by_membership_id      = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -200,6 +203,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         'default_trainer_membership_id' in req.body ? 1 : 0, default_trainer_membership_id ?? null,
         'default_center_id' in req.body ? 1 : 0, centerId ?? null,
         'color' in req.body ? 1 : 0, color ?? null,
+        'shareable' in req.body ? 1 : 0, shareable ? 1 : 0,
         gymMembershipId ?? null,
         req.params.id, gymId,
       ],
