@@ -532,7 +532,7 @@ All traffic enters through **Traefik on corfront** (`10.0.2.100`), which termina
 | API | `https://api.vdicube.com` → corback `10.0.2.101:3000` | "corback" VPS (`150.230.157.145`) | `fitness-api` / GHCR `fitness-api` |
 | Admin | `https://admin.vdicube.com` → corfront `:8081` | "corfront" VPS (`10.0.2.100`) | `fitness-admin` / GHCR `fitness-admin` |
 | Member | `https://members.vdicube.com` → corfront `:8082` | "corfront" VPS | `fitness-members` (**plural**) / GHCR `fitness-members` |
-| Payment | `https://pay.vdicube.com` → corfront `:8083` | "corfront" VPS | `fitness-payment` / GHCR `fitness-payment`. Traefik route assigned. Oscar copies `infra/payment-app/fitness-payment.container` onto the VPS; `deploy-payment.yml` pulls + restarts. |
+| Payment | `https://pay.vdicube.com` → corfront `:8083` | "corfront" VPS | `fitness-pay` / GHCR `fitness-pay`. Traefik route assigned. Oscar owns `fitness-pay.container`; `deploy-payment.yml` pulls + restarts. |
 
 **Ownership split (important):**
 - **Oscar owns the runtime**: rootless Podman under VPS user `podman`, one **Quadlet unit** per container at `/home/podman/.config/containers/systemd/<name>.container` defining ports, env vars, and restart policy. Containers are managed with `systemctl --user {start|stop|restart} <name>`.
@@ -583,7 +583,7 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | `deploy.yml` | Build/push `fitness-api`, run migrations on the VPS, restart |
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
-| `deploy-payment.yml` | Build/push/restart `fitness-payment` (corfront `:8083`) |
+| `deploy-payment.yml` | Build/push/restart `fitness-pay` (corfront `:8083`) |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
 
 ---
@@ -610,7 +610,7 @@ Grafana Alloy ships journald entries from both VPS to Grafana Cloud Loki.
 
 **Architecture**:
 ```
-corback (fitness-api)          corfront (fitness-admin, fitness-members, fitness-payment)
+corback (fitness-api)          corfront (fitness-admin, fitness-members, fitness-pay)
     journald                          journald
        ↓                                 ↓
   alloy (systemd)               alloy (systemd)

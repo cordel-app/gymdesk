@@ -1,0 +1,23 @@
+# Reference Quadlet — Oscar's live unit on corfront.
+# Path: /home/podman/.config/containers/systemd/fitness-pay.container
+# CI never writes this file. Workflows only podman pull + systemctl restart.
+# Traefik: pay.vdicube.com → localhost:8083.
+# PCI: do not log query strings on this host (page_token lives in ?token=).
+
+[Unit]
+Description=Cordel Fitness Pay
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=ghcr.io/cordel-app/fitness-pay:latest
+ContainerName=fitness-pay
+LogDriver=journald
+PublishPort=8083:80
+Environment=CORDEL_FITNESS_API_URL="https://api.vdicube.com"
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
