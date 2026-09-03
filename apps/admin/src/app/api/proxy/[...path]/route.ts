@@ -35,7 +35,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
       headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
     });
   } catch (err) {
-    console.error(`Proxy error for ${url}:`, err);
+    console.error('Proxy error for %s:', url, err);
     return NextResponse.json({ error: 'Backend unreachable' }, { status: 502 });
   }
 }

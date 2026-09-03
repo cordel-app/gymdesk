@@ -12,7 +12,7 @@ async function seed() {
   await clerkClient.users.updateUserMetadata(seedUserId, {
     publicMetadata: { platform_role: 'superadmin' },
   });
-  console.log(`✓ Set platform_role=superadmin for user ${seedUserId}`);
+  console.log('✓ Set platform_role=superadmin for seed user');
 
   // Create a default gym
   await db.query(
@@ -28,7 +28,7 @@ async function seed() {
      ON DUPLICATE KEY UPDATE role = new.role`,
     [seedUserId, gym.id],
   );
-  console.log(`✓ User ${seedUserId} is admin of gym ${gym.id}`);
+  console.log('✓ Seed user is admin of gym', gym.id);
 
   await db.end();
 }
