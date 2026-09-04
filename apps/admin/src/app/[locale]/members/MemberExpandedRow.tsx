@@ -235,7 +235,7 @@ export function MemberExpandedRow({
                     status={p.status}
                     validFrom={p.valid_from}
                     validTo={p.valid_to}
-                    onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans`) : undefined}
+                    onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans?open=${p.training_plan_id}&member_id=${memberId}`) : undefined}
                     editLabel={t('members.edit')}
                   />
                 ))}
@@ -251,7 +251,7 @@ export function MemberExpandedRow({
                     status={p.status}
                     validFrom={p.valid_from}
                     validTo={p.valid_to}
-                    onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans`) : undefined}
+                    onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans?open=${p.training_plan_id}&member_id=${memberId}`) : undefined}
                     editLabel={t('members.edit')}
                     dim
                   />
