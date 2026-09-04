@@ -21,34 +21,41 @@ const tokenRateLimit = rateLimit({
 paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Request, res: Response) => {
   const { token } = req.params;
   try {
-    const { rows } = await db.query(
-      `SELECT pr.id, pr.amount, pr.currency, pr.provider_ref,
-              g.name AS gym_name,
-              m.name AS member_name,
-              bp.recurring_billing_interval,
-              bp.recurring_billing_unit
-       FROM payment_requests pr
-       JOIN gyms g ON g.id = pr.gym_id
-       JOIN members m ON m.id = pr.member_id
-       JOIN user_memberships um ON um.id = pr.user_membership_id
-       LEFT JOIN billing_policies bp
-         ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-       WHERE pr.page_token = ?
-         AND pr.page_token_expires > UTC_TIMESTAMP()
-         AND pr.status = 'pending'`,
-      [token],
-    );
+    const row = await db.transaction(async (tx) => {
+      // FOR UPDATE serializes concurrent requests on the same token so only
+      // one caller can consume it — the loser sees no row after the winner commits.
+      const { rows } = await tx.query(
+        `SELECT pr.id, pr.amount, pr.currency, pr.provider_ref,
+                g.name AS gym_name,
+                m.name AS member_name,
+                bp.recurring_billing_interval,
+                bp.recurring_billing_unit
+         FROM payment_requests pr
+         JOIN gyms g ON g.id = pr.gym_id
+         JOIN members m ON m.id = pr.member_id
+         JOIN user_memberships um ON um.id = pr.user_membership_id
+         LEFT JOIN billing_policies bp
+           ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
+         WHERE pr.page_token = ?
+           AND pr.page_token_expires > UTC_TIMESTAMP()
+           AND pr.status = 'pending'
+         FOR UPDATE`,
+        [token],
+      );
 
-    if (!rows[0] || !rows[0].provider_ref) {
+      if (!rows[0] || !rows[0].provider_ref) return null;
+
+      await tx.query(
+        `UPDATE payment_requests SET page_token = NULL WHERE id = ?`,
+        [rows[0].id],
+      );
+
+      return rows[0];
+    });
+
+    if (!row) {
       return res.status(404).json({ error: 'Token not found or expired' });
     }
-    const row = rows[0];
-
-    // Mark consumed — second request with same token returns 404
-    await db.query(
-      `UPDATE payment_requests SET page_token = NULL WHERE id = ?`,
-      [row.id],
-    );
 
     const billingInterval =
       row.recurring_billing_interval != null && row.recurring_billing_unit != null
