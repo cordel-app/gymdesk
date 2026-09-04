@@ -29,7 +29,9 @@
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
-    "center_switcher_label": "Selecciona centre"
+    "center_switcher_label": "Selecciona centre",
+    "gym_switcher_label": "Selecciona gimnàs",
+    "no_gym_available": "No hi ha cap gimnàs disponible"
   },
   "training": {
     "title": "Entrenament",

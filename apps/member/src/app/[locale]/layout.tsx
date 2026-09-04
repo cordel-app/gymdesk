@@ -6,6 +6,7 @@ import { getMessages } from 'next-intl/server';
 import { AppProvider } from '@/context/AppContext';
 import { ImpersonationProvider } from '@/context/ImpersonationContext';
 import { BottomNav } from '@/components/BottomNav';
+import { GymSwitcher } from '@/components/GymSwitcher';
 import { CenterSwitcher } from '@/components/CenterSwitcher';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { AdminBar } from '@/components/AdminBar';
@@ -45,6 +46,7 @@ export default async function LocaleLayout({
               <ImpersonationProvider>
                 <ThemeProvider>
                   <AdminBar />
+                  <GymSwitcher />
                   <CenterSwitcher />
                   <div style={{ paddingBottom: 72 }}>
                     {children}

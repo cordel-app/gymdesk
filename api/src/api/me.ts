@@ -63,6 +63,30 @@ export const meLinkRouter = Router();
 // Used by the member app on first load to bootstrap gymId and apply theming.
 export const meGymRouter = Router();
 
+// #341: returns all gyms accessible to the caller, sorted alphabetically.
+// Members see only their own gyms; superadmins see all active gyms.
+// Mounted without tenantContext (gymId not yet known).
+export const meGymsRouter = Router();
+
+const GYM_THEME_SELECT = `
+  g.id, g.name,
+  t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
+  t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+  t.tokens AS theme_tokens
+`;
+
+function mapGymRow(row: any) {
+  const theme = row.theme_id_val ? {
+    id: row.theme_id_val,
+    name: row.theme_name,
+    status: row.theme_status,
+    has_logo: !!row.theme_logo_mime,
+    logo_updated_at: row.theme_logo_updated_at,
+    tokens: typeof row.theme_tokens === 'string' ? JSON.parse(row.theme_tokens) : (row.theme_tokens ?? null),
+  } : null;
+  return { id: row.id, name: row.name, theme };
+}
+
 meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
   const callerUserId = req.auth?.userId;
   if (!callerUserId) return res.status(401).json({ error: 'Unauthorized' });
@@ -133,16 +157,78 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
     }
 
     if (rows.length === 0) return res.status(404).json({ error: 'No gym found for this user' });
-    const row = rows[0];
-    const theme = row.theme_id_val ? {
-      id: row.theme_id_val,
-      name: row.theme_name,
-      status: row.theme_status,
-      has_logo: !!row.theme_logo_mime,
-      logo_updated_at: row.theme_logo_updated_at,
-      tokens: typeof row.theme_tokens === 'string' ? JSON.parse(row.theme_tokens) : (row.theme_tokens ?? null),
-    } : null;
-    res.json({ id: row.id, name: row.name, theme });
+    res.json(mapGymRow(rows[0]));
+  } catch (err) { next(err); }
+});
+
+meGymsRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  const callerUserId = req.auth?.userId;
+  if (!callerUserId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const impersonateAs = req.headers['x-impersonate-as'] as string | undefined;
+  const isMemberImpersonation = !!impersonateAs && impersonateAs.startsWith('member:');
+  const isStaffImpersonation = !!impersonateAs && !isMemberImpersonation && impersonateAs !== callerUserId;
+
+  let isSuperadmin = false;
+  let callerMeta: any = null;
+  if (impersonateAs && impersonateAs !== callerUserId) {
+    try {
+      const caller = await clerkClient.users.getUser(callerUserId);
+      callerMeta = caller.publicMetadata;
+      isSuperadmin = (callerMeta as any)?.platform_role === 'superadmin';
+    } catch {}
+  } else {
+    try {
+      const caller = await clerkClient.users.getUser(callerUserId);
+      isSuperadmin = (caller.publicMetadata as any)?.platform_role === 'superadmin';
+    } catch {}
+  }
+
+  try {
+    let rows: any[];
+
+    if (isSuperadmin && isMemberImpersonation) {
+      const memberId = Number(impersonateAs!.slice(7));
+      ({ rows } = await db.query(
+        `SELECT ${GYM_THEME_SELECT}
+         FROM members m
+         JOIN gyms g ON g.id = m.gym_id
+         LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
+         WHERE m.id = ? AND m.deleted_at IS NULL
+         ORDER BY g.name ASC`,
+        [memberId],
+      ));
+    } else if (isSuperadmin && isStaffImpersonation) {
+      ({ rows } = await db.query(
+        `SELECT ${GYM_THEME_SELECT}
+         FROM gym_memberships gm
+         JOIN gyms g ON g.id = gm.gym_id
+         LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
+         WHERE gm.user_id = ? AND gm.status = 'active' AND g.deleted_at IS NULL
+         ORDER BY g.name ASC`,
+        [impersonateAs],
+      ));
+    } else if (isSuperadmin) {
+      ({ rows } = await db.query(
+        `SELECT ${GYM_THEME_SELECT}
+         FROM gyms g
+         LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
+         WHERE g.deleted_at IS NULL
+         ORDER BY g.name ASC`,
+      ));
+    } else {
+      ({ rows } = await db.query(
+        `SELECT ${GYM_THEME_SELECT}
+         FROM gym_memberships gm
+         JOIN gyms g ON g.id = gm.gym_id
+         LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
+         WHERE gm.user_id = ? AND gm.status = 'active' AND g.deleted_at IS NULL
+         ORDER BY g.name ASC`,
+        [callerUserId],
+      ));
+    }
+
+    res.json(rows.map(mapGymRow));
   } catch (err) { next(err); }
 });
 

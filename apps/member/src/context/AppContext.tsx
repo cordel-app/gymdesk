@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { useAuth, useUser } from '@clerk/nextjs';
 
 const IMPERSONATION_KEY = 'impersonation_session';
+const ACTIVE_GYM_KEY = 'activeGymId';
 
 export interface MemberProfile {
   id: number;
@@ -29,9 +30,17 @@ export interface MemberGymTheme {
   tokens: Record<string, any> | null;
 }
 
+export interface GymOption {
+  id: string;
+  name: string;
+  theme: MemberGymTheme | null;
+}
+
 interface AppContextValue {
   gymId: string | null;
   gymName: string | null;
+  gyms: GymOption[];
+  switchGym: (id: string) => Promise<void>;
   member: MemberProfile | null;
   isLinked: boolean;
   loading: boolean;
@@ -47,6 +56,8 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue>({
   gymId: null,
   gymName: null,
+  gyms: [],
+  switchGym: async () => {},
   member: null,
   isLinked: false,
   loading: true,
@@ -59,13 +70,12 @@ const AppContext = createContext<AppContextValue>({
   refreshUnreadCount: () => {},
 });
 
-// gymId prop is kept for backward compat but is ignored — the provider
-// resolves it via GET /me/gym so the layout doesn't need to know it.
 export function AppProvider({ children }: { children: ReactNode; gymId?: string | null }) {
   const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
   const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
 
+  const [gyms, setGyms] = useState<GymOption[]>([]);
   const [gymId, setGymId] = useState<string | null>(null);
   const [gymName, setGymName] = useState<string | null>(null);
   const [theme, setTheme] = useState<MemberGymTheme | null>(null);
@@ -75,6 +85,39 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  const loadCenters = useCallback(async (token: string, resolvedGymId: string) => {
+    const centersRes = await fetch('/api/proxy/me/centers', {
+      headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
+    });
+    if (!centersRes.ok) return;
+    const data: MemberCenter[] = await centersRes.json();
+    setCenters(data);
+    const stored = typeof window !== 'undefined' ? localStorage.getItem(`activeCenterId:${resolvedGymId}`) : null;
+    const storedId = stored ? Number(stored) : null;
+    const fallback = data.find((c) => c.is_default)?.id ?? data[0]?.id ?? null;
+    setActiveCenterIdState(storedId && data.find((c) => c.id === storedId) ? storedId : fallback);
+  }, []);
+
+  const loadMemberData = useCallback(async (token: string, resolvedGymId: string) => {
+    const res = await fetch('/api/proxy/me/profile', {
+      headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
+    });
+    if (!res.ok) return false;
+    setMember(await res.json());
+    setIsLinked(true);
+
+    await loadCenters(token, resolvedGymId);
+
+    const notifRes = await fetch('/api/proxy/me/notifications/count', {
+      headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
+    });
+    if (notifRes.ok) {
+      const { unread } = await notifRes.json();
+      setUnreadNotifications(unread ?? 0);
+    }
+    return true;
+  }, [loadCenters]);
 
   useEffect(() => {
     if (!isSignedIn || !user) {
@@ -86,7 +129,6 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
       try {
         const token = await getToken();
 
-        // Read impersonation session so we can pass x-impersonate-as to GET /me/gym.
         let impersonateAs: string | null = null;
         try {
           const stored = typeof window !== 'undefined' ? sessionStorage.getItem(IMPERSONATION_KEY) : null;
@@ -96,57 +138,32 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
           }
         } catch {}
 
-        const gymHeaders: Record<string, string> = { Authorization: `Bearer ${token}` };
-        if (impersonateAs) gymHeaders['x-impersonate-as'] = impersonateAs;
+        const authHeaders: Record<string, string> = { Authorization: `Bearer ${token}` };
+        if (impersonateAs) authHeaders['x-impersonate-as'] = impersonateAs;
 
-        // #68: resolve gym + theme without knowing gymId upfront.
-        const gymRes = await fetch('/api/proxy/me/gym', {
-          headers: gymHeaders,
-        });
-        if (!gymRes.ok) {
+        // #341: load all accessible gyms, sorted alphabetically
+        const gymsRes = await fetch('/api/proxy/me/gyms', { headers: authHeaders });
+        if (!gymsRes.ok) {
           setLoading(false);
           return;
         }
-        const gymData = await gymRes.json();
-        const resolvedGymId: string = gymData.id;
-        setGymId(resolvedGymId);
-        setGymName(gymData.name ?? null);
-        setTheme(gymData.theme ?? null);
+        const gymList: GymOption[] = await gymsRes.json();
+        setGyms(gymList);
 
-        const res = await fetch('/api/proxy/me/profile', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'x-gym-id': resolvedGymId,
-          },
-        });
-        if (res.ok) {
-          setMember(await res.json());
-          setIsLinked(true);
-
-          // #59: only shown/used once the member has more than one center —
-          // a single-center gym behaves exactly as before this feature existed.
-          const centersRes = await fetch('/api/proxy/me/centers', {
-            headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
-          });
-          if (centersRes.ok) {
-            const data: MemberCenter[] = await centersRes.json();
-            setCenters(data);
-            const stored = typeof window !== 'undefined' ? localStorage.getItem(`activeCenterId:${resolvedGymId}`) : null;
-            const storedId = stored ? Number(stored) : null;
-            const fallback = data.find((c) => c.is_default)?.id ?? data[0]?.id ?? null;
-            setActiveCenterIdState(storedId && data.find((c) => c.id === storedId) ? storedId : fallback);
-          }
-
-          // Fetch unread notification count
-          const notifRes = await fetch('/api/proxy/me/notifications/count', {
-            headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
-          });
-          if (notifRes.ok) {
-            const { unread } = await notifRes.json();
-            setUnreadNotifications(unread ?? 0);
-          }
+        if (gymList.length === 0) {
+          setLoading(false);
+          return;
         }
-        // 403/404 means not linked yet — redirect handled by link/page.tsx
+
+        // Pick the active gym: last saved choice (if still valid) or alphabetically first
+        const savedId = typeof window !== 'undefined' ? localStorage.getItem(ACTIVE_GYM_KEY) : null;
+        const defaultGym = gymList.find((g) => g.id === savedId) ?? gymList[0];
+
+        setGymId(defaultGym.id);
+        setGymName(defaultGym.name);
+        setTheme(defaultGym.theme ?? null);
+
+        await loadMemberData(token!, defaultGym.id);
       } finally {
         setLoading(false);
       }
@@ -154,6 +171,24 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
 
     loadAll();
   }, [isSignedIn, user?.id]);
+
+  const switchGym = useCallback(async (id: string) => {
+    const gym = gyms.find((g) => g.id === id);
+    if (!gym) return;
+
+    setGymId(gym.id);
+    setGymName(gym.name);
+    setTheme(gym.theme ?? null);
+    setCenters([]);
+    setActiveCenterIdState(null);
+    setMember(null);
+    setIsLinked(false);
+
+    if (typeof window !== 'undefined') localStorage.setItem(ACTIVE_GYM_KEY, id);
+
+    const token = await getToken();
+    if (token) await loadMemberData(token, id);
+  }, [gyms, getToken, loadMemberData]);
 
   const fetchUnreadCount = useCallback(async () => {
     if (!gymId) return;
@@ -175,7 +210,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }
 
   return (
-    <AppContext.Provider value={{ gymId, gymName, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
+    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
       {children}
     </AppContext.Provider>
   );

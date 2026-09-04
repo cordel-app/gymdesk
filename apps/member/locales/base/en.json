@@ -29,7 +29,9 @@
   },
   "common": {
     "error": "Something went wrong.",
-    "center_switcher_label": "Select center"
+    "center_switcher_label": "Select center",
+    "gym_switcher_label": "Select gym",
+    "no_gym_available": "No gym available"
   },
   "training": {
     "title": "Training",
