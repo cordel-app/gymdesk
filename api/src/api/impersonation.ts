@@ -23,15 +23,14 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
   try {
     const like = `%${q}%`;
 
-    // Staff: active gym_memberships rows with non-member roles
+    // Staff: all gym_memberships rows with non-member roles (no status filter — status is informational only)
     const { rows: staffRows } = await db.query<{
-      user_id: string; name: string; role: string; gym_id: string;
+      user_id: string; name: string; role: string; gym_id: string; status: string;
     }>(
-      `SELECT gm.user_id, gm.name, gm.role, gm.gym_id
+      `SELECT gm.user_id, gm.name, gm.role, gm.gym_id, gm.status
        FROM gym_memberships gm
        WHERE gm.gym_id = ?
          AND gm.user_id != ?
-         AND gm.status = 'active'
          AND gm.role != 'member'
          AND gm.name LIKE ?
        ORDER BY gm.name ASC
@@ -59,7 +58,7 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
       try {
         const u = await clerkClient.users.getUser(s.user_id);
         if ((u.publicMetadata as any)?.platform_role === 'superadmin') continue;
-        staffFiltered.push({ id: s.user_id, name: s.name, type: 'staff', role: s.role, gymId: s.gym_id });
+        staffFiltered.push({ id: s.user_id, name: s.name, type: 'staff', role: s.role, status: s.status, gymId: s.gym_id });
       } catch { /* skip users that no longer exist in Clerk */ }
     }
 
@@ -149,23 +148,23 @@ impersonationRouter.post('/:targetId', requireSuperadmin, async (req, res, next)
     // Staff impersonation
     if (targetId === adminId) return res.status(400).json({ error: 'Cannot impersonate yourself' });
 
+    // Best-effort Clerk check to block superadmin impersonation. If the user no longer
+    // exists in Clerk the check is skipped — the DB membership is the authoritative source.
     const targetUser = await clerkClient.users.getUser(targetId).catch(() => null);
-    if (!targetUser) return res.status(404).json({ error: 'User not found' });
-
-    if ((targetUser.publicMetadata as any)?.platform_role === 'superadmin') {
+    if (targetUser && (targetUser.publicMetadata as any)?.platform_role === 'superadmin') {
       return res.status(400).json({ error: 'Cannot impersonate another superadmin' });
     }
 
     const { rows } = await db.query<{ id: number; role: string; name: string }>(
       `SELECT gm.id, gm.role, gm.name FROM gym_memberships gm
-       WHERE gm.user_id = ? AND gm.gym_id = ? AND gm.status = 'active'`,
+       WHERE gm.user_id = ? AND gm.gym_id = ?`,
       [targetId, gymId],
     );
 
-    if (!rows[0]) return res.status(400).json({ error: 'Target user has no active membership in this gym' });
+    if (!rows[0]) return res.status(400).json({ error: 'Target user has no membership in this gym' });
 
     const { rows: gymRows } = await db.query<{ gym_id: string }>(
-      `SELECT gym_id FROM gym_memberships WHERE user_id = ? AND status = 'active'`,
+      `SELECT gym_id FROM gym_memberships WHERE user_id = ?`,
       [targetId],
     );
 
