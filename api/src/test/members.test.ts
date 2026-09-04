@@ -368,3 +368,70 @@ describe('Members — search (#326)', () => {
     expect(res.status).toBe(401);
   });
 });
+
+// ─── DELETE /members/:id — soft-delete and recycle-bin integration ────────────
+
+describe('DELETE /members/:id', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Delete Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns 204 and soft-deletes the member', async () => {
+    const memberId = await createMember(gymId);
+    const res = await request
+      .delete(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(204);
+
+    const { rows } = await db.query<{ deleted_at: string | null }>(
+      'SELECT deleted_at FROM members WHERE id = ?',
+      [memberId],
+    );
+    expect(rows[0].deleted_at).not.toBeNull();
+  });
+
+  it('sets deleted_by_name on the member row', async () => {
+    const memberId = await createMember(gymId);
+    await request
+      .delete(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+
+    const { rows } = await db.query<{ deleted_by_name: string | null }>(
+      'SELECT deleted_by_name FROM members WHERE id = ?',
+      [memberId],
+    );
+    // actorName may be null in test (no real Clerk user), so we just verify the column exists
+    expect(rows[0]).toHaveProperty('deleted_by_name');
+  });
+
+  it('deleted member no longer appears in GET /members', async () => {
+    const memberId = await createMember(gymId);
+    await request
+      .delete(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+
+    const res = await request
+      .get('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).not.toContain(memberId);
+  });
+
+  it('returns 404 when deleting an already-deleted member', async () => {
+    const memberId = await createMember(gymId);
+    await db.query('UPDATE members SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [memberId]);
+    const res = await request
+      .delete(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});

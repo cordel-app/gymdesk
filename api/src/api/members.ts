@@ -87,26 +87,6 @@ membersRouter.get('/count', async (req, res) => {
   res.json({ count: Number(rows[0].count) });
 });
 
-membersRouter.get('/deleted', async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    'SELECT * FROM members WHERE deleted_at IS NOT NULL AND gym_id = ? ORDER BY deleted_at DESC',
-    [gymId],
-  );
-  res.json(rows);
-});
-
-membersRouter.post('/:id/restore', requireModuleWrite('MEMBERS'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const { rowCount } = await db.query(
-    'UPDATE members SET deleted_at = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL',
-    [req.params.id, gymId],
-  );
-  if (rowCount === 0) return res.status(404).json({ error: 'Member not found or not deleted' });
-  const { rows } = await db.query('SELECT * FROM members WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-  res.json(rows[0]);
-});
-
 membersRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const row = await gymFetchOne('members', req.params.id, gymId, { softDelete: true });
@@ -270,7 +250,7 @@ membersRouter.post('/:id/revoke-invite', requireModuleWrite('MEMBERS'), async (r
 });
 
 membersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, actorName } = getTenantContext(req);
   try {
     const { rows } = await db.query(
       'SELECT clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -290,8 +270,8 @@ membersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
     }
 
     const { rowCount } = await db.query(
-      'UPDATE members SET deleted_at = UTC_TIMESTAMP(), invitation_id = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-      [req.params.id, gymId],
+      'UPDATE members SET deleted_at = UTC_TIMESTAMP(), invitation_id = NULL, deleted_by_name = ? WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [actorName, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Member not found' });
     recordAudit(req, { action: 'soft_delete', entityType: 'member', entityId: req.params.id });
