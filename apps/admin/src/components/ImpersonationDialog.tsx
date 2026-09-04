@@ -13,6 +13,7 @@ interface Target {
   name: string;
   type: 'member' | 'staff';
   role: string;
+  status?: string;
   gymId: string;
 }
 
@@ -162,7 +163,9 @@ export function ImpersonationDialog({ onClose }: Props) {
                   {c.name}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)', marginTop: 2 }}>
-                  {c.type === 'member' ? t('type_member') : `${t('type_staff')} · ${c.role}`}
+                  {c.type === 'member'
+                    ? t('type_member')
+                    : [t('type_staff'), c.role, c.status].filter(Boolean).join(' · ')}
                 </div>
               </div>
               <div style={{
