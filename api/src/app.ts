@@ -46,7 +46,7 @@ import { trainerAvailabilityRouter } from './api/trainer-availability';
 // (plan-access checks getPackageIntent to know whether to bail on 403).
 import './api/package-credits';
 import { publicRouter } from './api/public';
-import { meRouter, meLinkRouter, meGymRouter } from './api/me';
+import { meRouter, meLinkRouter, meGymRouter, meGymsRouter } from './api/me';
 import { themesRouter, themesPublicRouter } from './api/themes';
 import { gymThemesRouter } from './api/gym-themes';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
@@ -174,8 +174,9 @@ app.use('/feature-flags', requireAuth(), featureFlagsPublicRouter);
 // /me/link + /gym-users/link must come before tenantContext (no membership row exists yet on first link)
 app.use('/me/link', requireAuth(), meLinkRouter);
 app.use('/gym-users/link', requireAuth(), gymUsersLinkRouter);
-// /me/gym must come BEFORE /me to avoid being swallowed by tenantContext
-app.use('/me/gym', requireAuth(), meGymRouter);
+// /me/gym and /me/gyms must come BEFORE /me to avoid being swallowed by tenantContext
+app.use('/me/gym',  requireAuth(), meGymRouter);
+app.use('/me/gyms', requireAuth(), meGymsRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE

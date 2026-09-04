@@ -29,7 +29,9 @@
   },
   "common": {
     "error": "Algo ha ido mal.",
-    "center_switcher_label": "Selecciona centro"
+    "center_switcher_label": "Selecciona centro",
+    "gym_switcher_label": "Selecciona gimnasio",
+    "no_gym_available": "No hay ningún gimnasio disponible"
   },
   "training": {
     "title": "Entrenamiento",
