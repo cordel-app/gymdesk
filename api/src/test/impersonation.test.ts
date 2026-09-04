@@ -186,6 +186,38 @@ describe('GET /platform/impersonation/targets', () => {
     expect(ids).not.toContain(STAFF_ID);
   });
 
+  it('returns status field on staff targets', async () => {
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: 'Alice' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].status).toBeDefined();
+  });
+
+  it('includes invited (non-active) staff in results', async () => {
+    const invitedStaffId = 'impersonation-invited-staff-id';
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES (?, ?, 'trainer_performance', 'invited', 'Invited Trainer')`,
+      [invitedStaffId, gymId],
+    );
+
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: 'Invited' });
+
+    expect(res.status).toBe(200);
+    const match = res.body.find((u: any) => u.id === invitedStaffId);
+    expect(match).toBeDefined();
+    expect(match.status).toBe('invited');
+
+    await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [invitedStaffId]);
+  });
+
   it('does not include deleted members', async () => {
     const { insertId } = await db.query(
       `INSERT INTO members (gym_id, name, email, deleted_at)
@@ -412,7 +444,7 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
     expect(res.body.error).toMatch(/superadmin/);
   });
 
-  it('returns 400 when target has no active membership in the gym', async () => {
+  it('returns 400 when target has no membership in the gym', async () => {
     const res = await request
       .post(`/platform/impersonation/no-membership-user-id`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -437,6 +469,26 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
       gym_id: gymId,
       gymIds: expect.arrayContaining([gymId]),
     });
+  });
+
+  it('succeeds for invited (non-active) staff', async () => {
+    const invitedId = 'impersonation-invited-post-staff-id';
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES (?, ?, 'trainer_performance', 'invited', 'Invited Post Trainer')`,
+      [invitedId, gymId],
+    );
+
+    const res = await request
+      .post(`/platform/impersonation/${invitedId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ targetType: 'staff' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(invitedId);
+
+    await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [invitedId]);
   });
 
   it('returns 400 for tenant isolation (target in wrong gym)', async () => {

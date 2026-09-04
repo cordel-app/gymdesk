@@ -81,25 +81,24 @@ describe('Soft-delete: Members', () => {
     expect(res.status).toBe(404);
   });
 
-  it('shows the deleted member in GET /members/deleted', async () => {
+  it('shows the deleted member in GET /recycle-bin?entity_type=member', async () => {
     const res = await request
-      .get('/members/deleted')
+      .get('/recycle-bin?entity_type=member')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
 
     expect(res.status).toBe(200);
-    const ids = res.body.map((m: any) => m.id);
+    const ids = res.body.items.map((m: any) => m.id);
     expect(ids).toContain(memberId);
   });
 
-  it('restores the soft-deleted member', async () => {
+  it('restores the soft-deleted member via Recycle Bin', async () => {
     const res = await request
-      .post(`/members/${memberId}/restore`)
+      .post(`/recycle-bin/member/${memberId}/recover`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
 
-    expect(res.status).toBe(200);
-    expect(res.body.deleted_at).toBeNull();
+    expect(res.status).toBe(204);
   });
 
   it('returns the restored member in GET /members', async () => {
