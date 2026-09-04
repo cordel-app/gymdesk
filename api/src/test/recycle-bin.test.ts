@@ -281,3 +281,168 @@ describe('POST /recycle-bin/:entityType/:id/recover', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── Member entity in Recycle Bin ─────────────────────────────────────────────
+
+async function createMember(gymId: string): Promise<number> {
+  const email = `rb-member-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.com`;
+  const { insertId } = await db.query(
+    `INSERT INTO members (gym_id, name, email) VALUES (?, 'Recycle Test Member', ?)`,
+    [gymId, email],
+  );
+  return insertId as number;
+}
+
+async function softDeleteMember(id: number, gymId: string): Promise<void> {
+  await db.query(
+    'UPDATE members SET deleted_at = NOW(), deleted_by_name = ? WHERE id = ? AND gym_id = ?',
+    ['Test Admin', id, gymId],
+  );
+}
+
+describe('Member in GET /recycle-bin', () => {
+  let gymId: string;
+  let deletedMemberId: number;
+  let activeMemberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Recycle Bin Member List Gym');
+    await createTestMembership(gymId, 'admin');
+    deletedMemberId = await createMember(gymId);
+    await softDeleteMember(deletedMemberId, gymId);
+    activeMemberId = await createMember(gymId);
+  });
+
+  it('includes the deleted member in the full list', async () => {
+    const res = await request
+      .get('/recycle-bin')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.items.map((item: any) => Number(item.id));
+    expect(ids).toContain(deletedMemberId);
+  });
+
+  it('filters correctly by entity_type=member', async () => {
+    const res = await request
+      .get('/recycle-bin?entity_type=member')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.items.every((item: any) => item.entity_type === 'member')).toBe(true);
+    const ids = res.body.items.map((item: any) => Number(item.id));
+    expect(ids).toContain(deletedMemberId);
+  });
+
+  it('does not include active (non-deleted) members', async () => {
+    const res = await request
+      .get('/recycle-bin?entity_type=member')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.items.map((item: any) => Number(item.id));
+    expect(ids).not.toContain(activeMemberId);
+  });
+
+  it('exposes deleted_by_name on the member list item', async () => {
+    const res = await request
+      .get('/recycle-bin?entity_type=member')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((i: any) => Number(i.id) === deletedMemberId);
+    expect(item).toBeDefined();
+    expect(item.deleted_by_name).toBe('Test Admin');
+  });
+});
+
+describe('Member in GET /recycle-bin/:entityType/:id', () => {
+  let gymId: string;
+  let deletedMemberId: number;
+  let activeMemberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Recycle Bin Member Detail Gym');
+    await createTestMembership(gymId, 'admin');
+    deletedMemberId = await createMember(gymId);
+    await softDeleteMember(deletedMemberId, gymId);
+    activeMemberId = await createMember(gymId);
+  });
+
+  it('returns 200 with member detail fields', async () => {
+    const res = await request
+      .get(`/recycle-bin/member/${deletedMemberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Number(res.body.id)).toBe(deletedMemberId);
+    expect(res.body).toHaveProperty('name');
+    expect(res.body).toHaveProperty('email');
+    expect(res.body).toHaveProperty('deleted_at');
+    expect(res.body.deleted_at).not.toBeNull();
+    expect(res.body.deleted_by_name).toBe('Test Admin');
+  });
+
+  it('returns 404 for an active (non-deleted) member', async () => {
+    const res = await request
+      .get(`/recycle-bin/member/${activeMemberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('Member in POST /recycle-bin/member/:id/recover', () => {
+  let gymId: string;
+  let deletedMemberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Recycle Bin Member Recover Gym');
+    await createTestMembership(gymId, 'admin');
+    deletedMemberId = await createMember(gymId);
+    await softDeleteMember(deletedMemberId, gymId);
+  });
+
+  it('returns 204 and clears deleted_at on the member', async () => {
+    const res = await request
+      .post(`/recycle-bin/member/${deletedMemberId}/recover`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(204);
+
+    const { rows } = await db.query<{ deleted_at: string | null }>(
+      'SELECT deleted_at FROM members WHERE id = ?',
+      [deletedMemberId],
+    );
+    expect(rows[0].deleted_at).toBeNull();
+  });
+
+  it('recovered member no longer appears in the recycle bin', async () => {
+    const res = await request
+      .get('/recycle-bin?entity_type=member')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.items.map((item: any) => Number(item.id));
+    expect(ids).not.toContain(deletedMemberId);
+  });
+
+  it('recovered member appears again in GET /members', async () => {
+    const res = await request
+      .get('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).toContain(deletedMemberId);
+  });
+
+  it('returns 404 when recovering a member that is not deleted', async () => {
+    const activeMemberId = await createMember(gymId);
+    const res = await request
+      .post(`/recycle-bin/member/${activeMemberId}/recover`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});
