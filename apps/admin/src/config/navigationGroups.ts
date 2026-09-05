@@ -149,6 +149,12 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.nutrition_plan_templates',
         featureKey: 'nutrition.nutrition_plan_templates',
       },
+      {
+        href: '/{{locale}}/nutrition/nutrition-plans',
+        labelKey: 'nav.nutrition_plans',
+        featureKey: 'nutrition.nutrition_plans',
+        separatorAbove: true,
+      },
     ],
   },
   {

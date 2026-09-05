@@ -14,6 +14,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle } from '@/components/ui';
 import { NutritionPlanTree, Hierarchy } from './NutritionPlanTree';
+import { AssignNutritionPlanDialog, AssignedNutritionPlan } from '../AssignNutritionPlanDialog';
 
 export interface NutritionPlanTemplate {
   id: number;
@@ -85,6 +86,9 @@ export default function NutritionPlanTemplatesPage() {
 
   // Delete confirm
   const [deleting, setDeleting] = useState<NutritionPlanTemplate | null>(null);
+
+  // Assign to member
+  const [assigning, setAssigning] = useState<NutritionPlanTemplate | null>(null);
 
   // Row expansion + lazy hierarchy cache
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -207,6 +211,12 @@ export default function NutritionPlanTemplatesPage() {
       setDeleting(null);
       toast(err.message ?? t('nutrition_plan_templates.error_generic'));
     }
+  }
+
+  function handleAssigned(_plan: AssignedNutritionPlan) {
+    setAssigning(null);
+    toast(t('nutrition_plans.assigned'));
+    router.push(`/${locale}/nutrition/nutrition-plans`);
   }
 
   async function loadHierarchy(id: number) {
@@ -335,6 +345,7 @@ export default function NutritionPlanTemplatesPage() {
               onEdit={() => guardUnsaved(() => startEdit(row))}
               onDetails={() => guardUnsaved(() => setDetailsTemplate(row))}
               onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
+              onAssign={() => guardUnsaved(() => setAssigning(row))}
               onDelete={() => guardUnsaved(() => setDeleting(row))}
               onEditFormChange={(f) => setEditForm(f)}
               onSave={saveEdit}
@@ -353,6 +364,14 @@ export default function NutritionPlanTemplatesPage() {
           <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={pagerStyle(pageEnd >= total)}>›</button>
         </div>
       )}
+
+      {/* Assign to member dialog */}
+      <AssignNutritionPlanDialog
+        open={assigning !== null}
+        template={assigning}
+        onClose={() => setAssigning(null)}
+        onAssigned={handleAssigned}
+      />
 
       {/* Details dialog */}
       <DetailsDialog template={detailsTemplate} locale={locale} t={t} onClose={() => setDetailsTemplate(null)} />
@@ -393,7 +412,7 @@ interface EditForm { name: string; description: string; status: string }
 function TemplateCard({
   template, expanded, editing, editForm, editError, editSaving,
   hierarchy, hierLoading, canWrite, locale, t,
-  onToggleExpand, onEdit, onDetails, onDuplicate, onDelete,
+  onToggleExpand, onEdit, onDetails, onDuplicate, onAssign, onDelete,
   onEditFormChange, onSave, onCancel, onChanged,
 }: {
   template: NutritionPlanTemplate;
@@ -411,6 +430,7 @@ function TemplateCard({
   onEdit: () => void;
   onDetails: () => void;
   onDuplicate: () => void;
+  onAssign: () => void;
   onDelete: () => void;
   onEditFormChange: (f: EditForm) => void;
   onSave: () => void;
@@ -421,6 +441,7 @@ function TemplateCard({
     ...(canWrite ? [{ label: t('nutrition_plan_templates.edit'), onClick: onEdit }] : []),
     { label: t('nutrition_plan_templates.details'), onClick: onDetails },
     ...(canWrite ? [{ label: t('nutrition_plan_templates.duplicate'), onClick: onDuplicate }] : []),
+    ...(canWrite && template.status === 'active' ? [{ label: t('nutrition_plan_templates.assign_to_member'), onClick: onAssign }] : []),
     ...(canWrite ? [{ label: t('nutrition_plan_templates.delete'), onClick: onDelete, danger: true }] : []),
   ];
 
