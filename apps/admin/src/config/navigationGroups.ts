@@ -168,6 +168,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.transactions',
         featureKey: 'payments.transactions',
       },
+      {
+        href: '/{{locale}}/payments/billing-events',
+        labelKey: 'nav.billing_events',
+        featureKey: 'payments.billing_events',
+      },
     ],
   },
   {

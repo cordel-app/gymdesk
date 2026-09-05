@@ -145,11 +145,17 @@ paymentWebhookRouter.post(
             [payload.providerRef, pr.id],
           );
 
-          await tx.query(
+          const { rows: beRows } = await tx.query<{ id: number }>(
             `INSERT INTO billing_events
                (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
              VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
             [pr.gym_id, pr.user_membership_id, pr.member_id, pr.amount, pr.charge_type_id],
+          );
+          const billingEventId = (beRows as any).insertId as number;
+
+          await tx.query(
+            `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
+            [billingEventId, pr.id],
           );
 
           if (payload.paymentToken && payload.sequenceId) {
