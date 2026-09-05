@@ -60,6 +60,18 @@ function validateUnits(units: any): string | null {
   return null;
 }
 
+async function validateTaxRateId(gymId: string, taxRateId: any): Promise<string | null> {
+  if (taxRateId === undefined || taxRateId === null || taxRateId === '') return null;
+  const n = Number(taxRateId);
+  if (!Number.isInteger(n)) return 'tax_rate_id must be an integer';
+  const { rows } = await db.query(
+    'SELECT id FROM tax_rates WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [n, gymId],
+  );
+  if (rows.length === 0) return 'tax_rate_id does not reference a valid tax rate for this gym';
+  return null;
+}
+
 function computePriceFields(row: any) {
   const amount = row.amount != null ? parseFloat(row.amount) : null;
   const rate = row.tax_rate_percent != null ? parseFloat(row.tax_rate_percent) : null;
@@ -152,6 +164,9 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (unitsErr) return res.status(400).json({ error: unitsErr });
 
   try {
+    const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
+    if (taxRateErr) return res.status(400).json({ error: taxRateErr });
+
     const { insertId } = await db.query(
       `INSERT INTO gym_charges
          (gym_id, name, type, units, description, amount, currency, billing_frequency, status,
@@ -212,6 +227,9 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   if (unitsErr) return res.status(400).json({ error: unitsErr });
 
   try {
+    const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
+    if (taxRateErr) return res.status(400).json({ error: taxRateErr });
+
     const { rows: existing } = await db.query(
       'SELECT id, is_system, name AS current_name FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],

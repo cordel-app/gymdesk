@@ -2575,6 +2575,7 @@
     "error_generic": "Something went wrong.",
     "col_tax_rate": "Tax Rate",
     "label_tax_rate": "Tax / VAT",
+    "option_no_tax": "No tax",
     "label_tax_behavior": "Tax Behavior",
     "tax_behavior_inclusive": "Inclusive (price includes tax)",
     "tax_behavior_exclusive": "Exclusive (tax added on top)",
