@@ -691,6 +691,64 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
 });
 
 /**
+ * #361: caller's own active nutrition plan with full hierarchy (days -> meals ->
+ * items, restrictions, goals). Used by the Home "Today's Nutrition Plan" card
+ * (client-side filtered to today's weekday) and the My Nutrition page (full view).
+ * Mirrors member-nutrition-plans.ts's staff-facing `/:id/hierarchy`, scoped to
+ * the caller instead of an arbitrary member_id.
+ */
+meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nutrition.nutrition_plans'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    let memberId: number;
+    try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json({ plan: null }); }
+
+    const { rows: planRows } = await db.query(
+      `SELECT id, name, description, start_date
+       FROM member_nutrition_plans
+       WHERE gym_id = ? AND member_id = ? AND status = 'active'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [gymId, memberId],
+    );
+    if (planRows.length === 0) return res.json({ plan: null });
+    const plan = planRows[0];
+
+    const { rows: dayRows } = await db.query(
+      'SELECT id, weekday, position FROM member_nutrition_plan_days WHERE member_nutrition_plan_id = ? AND gym_id = ? ORDER BY position ASC',
+      [plan.id, gymId],
+    );
+    const days = await Promise.all(dayRows.map(async (day: any) => {
+      const { rows: mealRows } = await db.query(
+        'SELECT id, meal_type, display_name, notes, position FROM member_nutrition_plan_meals WHERE member_nutrition_plan_day_id = ? AND gym_id = ? ORDER BY position ASC',
+        [day.id, gymId],
+      );
+      const meals = await Promise.all(mealRows.map(async (meal: any) => {
+        const { rows: items } = await db.query(
+          `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+                  i.component_type, i.quantity, i.unit, i.position
+           FROM member_nutrition_plan_meal_items i
+           JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
+           WHERE i.meal_id = ?
+           ORDER BY i.position ASC`,
+          [meal.id],
+        );
+        return { ...meal, items };
+      }));
+      return { ...day, meals };
+    }));
+
+    const { rows: goalRows } = await db.query(
+      'SELECT id, item_name, quantity, unit, frequency, applies_all_days FROM member_nutrition_plan_goals WHERE member_nutrition_plan_id = ? AND gym_id = ? ORDER BY position ASC',
+      [plan.id, gymId],
+    );
+
+    res.json({ plan: { ...plan, days, goals: goalRows } });
+  } catch (err) { next(err); }
+});
+
+/**
  * Resolves members.id from TenantContext.
  * For member impersonation (effectiveType === 'member'), effectiveUserId is already members.id.
  * For all other cases, resolves via clerk_user_id.

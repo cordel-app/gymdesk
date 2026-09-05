@@ -151,7 +151,9 @@
     "col_created_by": "Creat per",
     "col_created_at": "Creat el",
     "col_modified_by": "Modificat per",
-    "col_modified_at": "Modificat el"
+    "col_modified_at": "Modificat el",
+    "unsaved_changes": "Tens canvis sense desar. Descartar-los?",
+    "unsaved_discard": "Descartar canvis"
   },
   "member_payments": {
     "title": "Pagaments del soci",
@@ -500,7 +502,9 @@
     "scheduled": "Programat",
     "archived": "Arxivat",
     "open": "Obert",
-    "closed": "Tancat"
+    "closed": "Tancat",
+    "public": "Públic",
+    "staff_only": "Només Personal"
   },
   "plans": {
     "title": "Quotes",
@@ -2498,6 +2502,7 @@
     "col_created_by": "Creat per",
     "col_created_at": "Creat el",
     "col_status": "Estat",
+    "col_enrollment_status": "Inscripció",
     "type_fee": "Tarifa",
     "type_service": "Servei",
     "type_sessions": "Sessions",
@@ -2519,6 +2524,7 @@
     "label_description": "Descripció",
     "label_units": "Unitats",
     "label_status": "Estat",
+    "label_enrollment_status": "Estat d'Inscripció",
     "label_amount": "Import",
     "label_frequency": "Freqüència de cobrament",
     "label_validity_days": "Validesa (dies)",

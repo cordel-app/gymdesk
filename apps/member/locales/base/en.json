@@ -9,23 +9,30 @@
     "loading": "Loading…",
     "next_booking": "Next booking",
     "no_upcoming_booking": "No upcoming bookings.",
-    "browse_schedule": "Browse schedule",
     "waitlisted": "Waitlisted",
     "membership_status": "Membership",
     "no_membership": "No active membership.",
     "expires_on": "Expires {date}",
     "class_credits": "Class credits",
-    "credits_remaining": "sessions remaining"
+    "credits_remaining": "sessions remaining",
+    "greeting_morning": "Good morning, {name}",
+    "greeting_afternoon": "Good afternoon, {name}",
+    "greeting_evening": "Good evening, {name}",
+    "view_booking": "View booking",
+    "browse_calendar": "Browse calendar",
+    "alerts_view_all": "View alerts",
+    "nutrition_today": "Today's Nutrition Plan",
+    "goals": "Goals",
+    "no_nutrition_today": "No nutrition plan for today."
   },
   "nav": {
-    "home": "Home",
-    "schedule": "Schedule",
     "calendar": "Calendar",
-    "membership": "Membership",
-    "packages": "Packages",
-    "training": "Training",
+    "training": "My Training Plan",
+    "bookings": "My Bookings",
+    "nutrition": "My Nutrition",
+    "membership": "My Membership",
     "profile": "Profile",
-    "notifications": "Alerts"
+    "alerts": "Alerts"
   },
   "common": {
     "error": "Something went wrong.",
@@ -34,7 +41,7 @@
     "no_gym_available": "No gym available"
   },
   "training": {
-    "title": "Training",
+    "title": "My Training Plan",
     "loading": "Loading…",
     "empty": "No training plan assigned yet.",
     "no_plan_today": "No plan for this day.",
@@ -85,7 +92,15 @@
     "edit": "Edit",
     "save": "Save",
     "cancel": "Cancel",
-    "saved": "Profile updated."
+    "saved": "Profile updated.",
+    "default_gym": "Default gym",
+    "default_center": "Default center",
+    "enrollment": "Enrollment",
+    "payment_status": "Payment status",
+    "payment_status_ok": "Up to date",
+    "payment_status_pending": "Payment pending",
+    "payment_status_failed": "Payment failed",
+    "no_center": "No center set"
   },
   "packages": {
     "title": "My packages",
@@ -102,7 +117,7 @@
     "status_cancelled": "Cancelled"
   },
   "member_schedule": {
-    "title": "Schedule",
+    "title": "My Bookings",
     "loading": "Loading…",
     "empty": "No upcoming sessions.",
     "book": "Book",
@@ -143,7 +158,7 @@
     "type_shared_training_rejected": "Shared training declined"
   },
   "notifications": {
-    "title": "Notifications",
+    "title": "Alerts",
     "loading": "Loading…",
     "empty": "No notifications yet.",
     "mark_all_read": "Mark all read",
@@ -262,5 +277,22 @@
     "type_staff": "Staff",
     "cancel": "Cancel",
     "error_start": "Could not start impersonation."
+  },
+  "nutrition": {
+    "title": "My Nutrition",
+    "loading": "Loading…",
+    "error": "Something went wrong.",
+    "empty": "No nutrition plan assigned yet.",
+    "all_days": "Every day",
+    "goals": "Goals",
+    "meal_type": {
+      "recien_levantado": "Upon waking",
+      "breakfast": "Breakfast",
+      "media_manana": "Mid-morning snack",
+      "lunch": "Lunch",
+      "snack": "Snack",
+      "dinner": "Dinner",
+      "antes_de_dormir": "Before bed"
+    }
   }
 }
