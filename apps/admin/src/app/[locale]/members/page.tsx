@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
@@ -10,10 +10,10 @@ import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
+import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { MemberTrainingPlansModal } from './MemberTrainingPlansModal';
-import { MemberPaymentsModal } from './MemberPaymentsModal';
 import { MemberExpandedRow } from './MemberExpandedRow';
+import { MemberDetailModal } from './MemberDetailModal';
 
 interface Plan {
   id: number;
@@ -26,19 +26,40 @@ interface Member {
   name: string;
   email: string;
   phone: string | null;
+  date_of_birth: string | null;
+  gender: string | null;
+  address: string | null;
+  emergency_contact: string | null;
+  notes: string | null;
   fare_id: number | null;
   fare_name: string | null;
   clerk_user_id: string | null;
   invitation_id: string | null;
   account_status: 'active' | 'invited' | 'not_enrolled';
-  membership_status: string | null;
+  enrollment_status: string | null;
+  payment_status: string | null;
 }
 
-const emptyForm = { name: '', email: '', phone: '', fare_id: '' };
+const emptyForm = {
+  name: '',
+  email: '',
+  phone: '',
+  fare_id: '',
+  date_of_birth: '',
+  gender: '',
+  address: '',
+  emergency_contact: '',
+  notes: '',
+};
+
+const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired'] as const;
+const ENROLLMENT_STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 
 export default function MembersPage() {
   const t = useTranslations();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, isSuperadmin, loading: gymLoading } = useGym();
   const { centers } = useCenter();
@@ -46,16 +67,16 @@ export default function MembersPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [centerFilter, setCenterFilter] = useState<string>(searchParams.get('centerId') ?? '');
+  const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('q') ?? '');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>(searchParams.get('payment_status') ?? '');
+  const [enrollmentStatusFilter, setEnrollmentStatusFilter] = useState<string>(searchParams.get('enrollment_status') ?? '');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [trainingPlansFor, setTrainingPlansFor] = useState<Member | null>(null);
-  const [paymentsFor, setPaymentsFor] = useState<Member | null>(null);
-  const [memberClerkStatus, setMemberClerkStatus] = useState<{ status: string; userId: string | null } | null>(null);
-  const [memberClerkLoading, setMemberClerkLoading] = useState(false);
+  const [detailFor, setDetailFor] = useState<Member | null>(null);
   const [expandedMemberIds, setExpandedMemberIds] = useState<Set<number>>(new Set());
 
   const showCenters = centers.length > 1;
@@ -63,7 +84,15 @@ export default function MembersPage() {
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
 
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
-  const canManagePayments = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
+
+  const buildParams = useCallback(() => {
+    const p = new URLSearchParams();
+    if (centerFilter) p.set('centerId', centerFilter);
+    if (searchQuery.trim()) p.set('q', searchQuery.trim());
+    if (paymentStatusFilter) p.set('payment_status', paymentStatusFilter);
+    if (enrollmentStatusFilter) p.set('enrollment_status', enrollmentStatusFilter);
+    return p;
+  }, [centerFilter, searchQuery, paymentStatusFilter, enrollmentStatusFilter]);
 
   async function load() {
     if (!activeGymId) {
@@ -72,8 +101,9 @@ export default function MembersPage() {
     }
     setLoading(true);
     try {
+      const params = buildParams();
       const [membersData, plansData] = await Promise.all([
-        apiFetch<Member[]>(`/members${centerFilter ? `?centerId=${centerFilter}` : ''}`),
+        apiFetch<Member[]>(`/members${params.toString() ? `?${params}` : ''}`),
         apiFetch<Plan[]>('/membership-plans?status=active').catch(() => []),
       ]);
       setMembers(membersData);
@@ -86,7 +116,38 @@ export default function MembersPage() {
     }
   }
 
-  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading, centerFilter]);
+  useEffect(() => {
+    if (!gymLoading) load();
+  }, [activeGymId, gymLoading, centerFilter, searchQuery, paymentStatusFilter, enrollmentStatusFilter]);
+
+  function syncUrl(updates: { centerId?: string; q?: string; payment_status?: string; enrollment_status?: string }) {
+    const p = new URLSearchParams(searchParams.toString());
+    for (const [k, v] of Object.entries(updates)) {
+      if (v) p.set(k, v); else p.delete(k);
+    }
+    const qs = p.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function handleCenterFilter(v: string) {
+    setCenterFilter(v);
+    syncUrl({ centerId: v });
+  }
+
+  function handleSearch(v: string) {
+    setSearchQuery(v);
+    syncUrl({ q: v });
+  }
+
+  function handlePaymentFilter(v: string) {
+    setPaymentStatusFilter(v);
+    syncUrl({ payment_status: v });
+  }
+
+  function handleEnrollmentFilter(v: string) {
+    setEnrollmentStatusFilter(v);
+    syncUrl({ enrollment_status: v });
+  }
 
   function openAdd() {
     setEditing(null);
@@ -99,15 +160,19 @@ export default function MembersPage() {
 
   async function openEdit(m: Member) {
     setEditing(m);
-    setForm({ name: m.name, email: m.email, phone: m.phone ?? '', fare_id: m.fare_id ? String(m.fare_id) : '' });
+    setForm({
+      name: m.name,
+      email: m.email,
+      phone: m.phone ?? '',
+      fare_id: m.fare_id ? String(m.fare_id) : '',
+      date_of_birth: m.date_of_birth?.slice(0, 10) ?? '',
+      gender: m.gender ?? '',
+      address: m.address ?? '',
+      emergency_contact: m.emergency_contact ?? '',
+      notes: m.notes ?? '',
+    });
     setError(null);
     setModalOpen(true);
-    setMemberClerkStatus(null);
-    setMemberClerkLoading(true);
-    apiFetch<{ status: string; userId: string | null }>(`/members/${m.id}/clerk-status`)
-      .then(setMemberClerkStatus)
-      .catch(() => setMemberClerkStatus({ status: 'error', userId: null }))
-      .finally(() => setMemberClerkLoading(false));
     if (showCenters) {
       try {
         const rows = await apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`);
@@ -127,7 +192,6 @@ export default function MembersPage() {
     setError(null);
     setAssignedCenterIds(new Set());
     setDefaultCenterId(null);
-    setMemberClerkStatus(null);
   }
 
   function toggleCenter(id: number, checked: boolean) {
@@ -139,9 +203,16 @@ export default function MembersPage() {
   }
 
   async function handleSave() {
-    if (!form.name.trim() || !form.email.trim()) {
-      setError(t('members.error_required'));
-      return;
+    if (editing) {
+      if (!form.name.trim()) {
+        setError(t('members.error_required'));
+        return;
+      }
+    } else {
+      if (!form.name.trim() || !form.email.trim()) {
+        setError(t('members.error_required'));
+        return;
+      }
     }
     if (showCenters) {
       if (assignedCenterIds.size === 0) { setError(t('members.error_no_center')); return; }
@@ -149,13 +220,18 @@ export default function MembersPage() {
     }
     setSaving(true);
     setError(null);
-    const body: Record<string, unknown> = { name: form.name.trim(), email: form.email.trim(), phone: form.phone.trim() || null, fare_id: form.fare_id ? parseInt(form.fare_id) : null };
-    if (showCenters) {
-      body.center_ids = Array.from(assignedCenterIds);
-      body.default_center_id = defaultCenterId;
-    }
+
     try {
       if (editing) {
+        const body: Record<string, unknown> = {
+          name: form.name.trim(),
+          phone: form.phone.trim() || null,
+          date_of_birth: form.date_of_birth || null,
+          gender: form.gender || null,
+          address: form.address.trim() || null,
+          emergency_contact: form.emergency_contact.trim() || null,
+          notes: form.notes.trim() || null,
+        };
         await apiFetch(`/members/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
         if (showCenters) {
           await apiFetch(`/members/${editing.id}/centers`, {
@@ -164,6 +240,16 @@ export default function MembersPage() {
           });
         }
       } else {
+        const body: Record<string, unknown> = {
+          name: form.name.trim(),
+          email: form.email.trim(),
+          phone: form.phone.trim() || null,
+          fare_id: form.fare_id ? parseInt(form.fare_id) : null,
+        };
+        if (showCenters) {
+          body.center_ids = Array.from(assignedCenterIds);
+          body.default_center_id = defaultCenterId;
+        }
         await apiFetch('/members', { method: 'POST', body: JSON.stringify(body) });
       }
       closeModal();
@@ -229,8 +315,6 @@ export default function MembersPage() {
     const pendingInvite = !linked && !!m.invitation_id;
     const items: ContextMenuItem[] = [];
 
-    items.push({ label: t('members.edit'), onClick: () => openEdit(m) });
-
     if (!linked && !pendingInvite) {
       items.push({ label: t('members.action_invite'), onClick: () => handleInvite(m.id) });
     }
@@ -238,12 +322,8 @@ export default function MembersPage() {
       items.push({ label: t('members.action_reinvite'), onClick: () => handleReinvite(m.id) });
       items.push({ label: t('members.action_revoke'), onClick: () => handleRevokeInvite(m.id) });
     }
-    if (canManageTraining) {
-      items.push({ label: t('members.training_plans'), onClick: () => setTrainingPlansFor(m) });
-    }
-    if (canManagePayments) {
-      items.push({ label: t('members.payments'), onClick: () => setPaymentsFor(m) });
-    }
+    items.push({ label: t('members.edit'), onClick: () => openEdit(m) });
+    items.push({ label: t('members.action_details'), onClick: () => setDetailFor(m) });
     items.push({ label: t('members.delete'), onClick: () => handleDelete(m.id), danger: true });
 
     return items;
@@ -253,28 +333,22 @@ export default function MembersPage() {
     {
       header: t('members.col_name'),
       render: (m) => (
-        <div>
-          <div style={{ fontWeight: 500 }}>{m.name}</div>
-          <div style={{ fontSize: 12, color: '#888' }}>{m.email}</div>
-        </div>
+        <div style={{ fontWeight: 500 }}>{m.name}</div>
       ),
     },
     {
-      header: t('members.col_account_status'),
-      width: 130,
-      render: (m) => (
-        <StatusBadge
-          status={m.account_status}
-          label={t(`members.account_status_${m.account_status}`)}
-        />
-      ),
+      header: t('members.col_payment_status'),
+      width: 120,
+      render: (m) => m.payment_status
+        ? <StatusBadge status={m.payment_status} label={t(`members.payment_status_${m.payment_status}`) || m.payment_status} />
+        : <span style={{ color: '#bbb' }}>{t('members.payment_status_none')}</span>,
     },
     {
-      header: t('members.col_membership_status'),
-      width: 130,
-      render: (m) => m.membership_status
-        ? <StatusBadge status={m.membership_status} label={t(`members.membership_status_${m.membership_status}`) || m.membership_status} />
-        : <span style={{ color: '#bbb' }}>—</span>,
+      header: t('members.col_enrollment_status'),
+      width: 120,
+      render: (m) => m.enrollment_status
+        ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
+        : <span style={{ color: '#bbb' }}>{t('members.enrollment_status_none')}</span>,
     },
     {
       header: t('members.col_actions'),
@@ -290,23 +364,44 @@ export default function MembersPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>{t('members.title')}</h1>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {showCenters && (
-            <select
-              value={centerFilter}
-              onChange={(e) => setCenterFilter(e.target.value)}
-              style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff' }}
-            >
-              <option value="">{t('members.all_centers')}</option>
-              {centers.map((c) => (
-                <option key={c.id} value={String(c.id)}>{c.name}</option>
-              ))}
-            </select>
-          )}
-          <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('members.add')}</button>
-        </div>
+        <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('members.add')}</button>
+      </div>
+
+      {/* Toolbar: search + filters */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => handleSearch(e.target.value)}
+          placeholder={t('members.placeholder_search')}
+          style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 200 }}
+        />
+        {showCenters && (
+          <select
+            value={centerFilter}
+            onChange={(e) => handleCenterFilter(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff' }}
+          >
+            <option value="">{t('members.all_centers')}</option>
+            {centers.map((c) => (
+              <option key={c.id} value={String(c.id)}>{c.name}</option>
+            ))}
+          </select>
+        )}
+        <StatusFilter
+          value={paymentStatusFilter}
+          onChange={handlePaymentFilter}
+          allLabel={t('members.all_payment_statuses')}
+          options={PAYMENT_STATUSES.map((s) => ({ value: s, label: t(`members.payment_status_${s}`) }))}
+        />
+        <StatusFilter
+          value={enrollmentStatusFilter}
+          onChange={handleEnrollmentFilter}
+          allLabel={t('members.all_enrollment_statuses')}
+          options={ENROLLMENT_STATUSES.map((s) => ({ value: s, label: t(`members.enrollment_status_${s}`) }))}
+        />
       </div>
 
       <DataTable
@@ -323,6 +418,7 @@ export default function MembersPage() {
         )}
       />
 
+      {/* Add / Edit modal */}
       {modalOpen && (
         <div style={overlayStyle} onClick={closeModal}>
           <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
@@ -331,13 +427,46 @@ export default function MembersPage() {
             <label style={labelStyle}>{t('members.label_name')}</label>
             <input style={inputStyle} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t('members.placeholder_name')} autoFocus />
 
-            <label style={labelStyle}>{t('members.label_email')}</label>
-            <input style={inputStyle} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t('members.placeholder_email')} />
+            {editing ? (
+              <>
+                <label style={labelStyle}>{t('members.label_email')}</label>
+                <input style={{ ...inputStyle, background: '#f7f7f7', color: '#888' }} value={form.email} readOnly />
+              </>
+            ) : (
+              <>
+                <label style={labelStyle}>{t('members.label_email')}</label>
+                <input style={inputStyle} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t('members.placeholder_email')} />
+              </>
+            )}
 
             <label style={labelStyle}>{t('members.label_phone')}</label>
             <input style={inputStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
 
-            {plans.length > 0 && (
+            {editing && (
+              <>
+                <label style={labelStyle}>{t('members.label_date_of_birth')}</label>
+                <input style={inputStyle} type="date" value={form.date_of_birth} onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })} />
+
+                <label style={labelStyle}>{t('members.label_gender')}</label>
+                <input style={inputStyle} value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })} />
+
+                <label style={labelStyle}>{t('members.label_address')}</label>
+                <input style={inputStyle} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={t('members.placeholder_address')} />
+
+                <label style={labelStyle}>{t('members.label_emergency_contact')}</label>
+                <input style={inputStyle} value={form.emergency_contact} onChange={(e) => setForm({ ...form, emergency_contact: e.target.value })} placeholder={t('members.placeholder_emergency_contact')} />
+
+                <label style={labelStyle}>{t('members.label_notes')}</label>
+                <textarea
+                  style={{ ...inputStyle, height: 80, resize: 'vertical' }}
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder={t('members.placeholder_notes')}
+                />
+              </>
+            )}
+
+            {!editing && plans.length > 0 && (
               <>
                 <label style={labelStyle}>{t('members.label_fare')}</label>
                 <select style={inputStyle} value={form.fare_id} onChange={(e) => setForm({ ...form, fare_id: e.target.value })}>
@@ -372,44 +501,6 @@ export default function MembersPage() {
               </>
             )}
 
-            {editing && (
-              <>
-                <hr style={{ border: 'none', borderTop: '1px solid #e8e8ed', margin: '20px 0 16px' }} />
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-                  {t('members.clerk_section_title')}
-                </div>
-                {memberClerkLoading ? (
-                  <p style={{ fontSize: 14, color: '#888', margin: 0 }}>{t('members.clerk_loading')}</p>
-                ) : memberClerkStatus ? (
-                  <div>
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{t('members.clerk_status_label')}</div>
-                      <div style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{
-                          display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                          background: memberClerkStatus.status === 'active' ? '#2ecc71'
-                            : memberClerkStatus.status === 'suspended' ? '#e74c3c'
-                            : memberClerkStatus.status === 'invited' ? '#3498db'
-                            : '#999',
-                        }} />
-                        {memberClerkStatus.status === 'not_enrolled' ? t('members.clerk_not_enrolled')
-                          : memberClerkStatus.status === 'invited' ? t('members.clerk_invited')
-                          : memberClerkStatus.status === 'active' ? t('members.clerk_active')
-                          : memberClerkStatus.status === 'suspended' ? t('members.clerk_suspended')
-                          : t('members.clerk_error')}
-                      </div>
-                    </div>
-                    {memberClerkStatus.userId && (
-                      <div>
-                        <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>{t('members.clerk_user_id_label')}</div>
-                        <div style={{ fontSize: 13, fontFamily: 'monospace', color: '#555' }}>{memberClerkStatus.userId}</div>
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-              </>
-            )}
-
             {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
@@ -422,12 +513,8 @@ export default function MembersPage() {
         </div>
       )}
 
-      {trainingPlansFor && (
-        <MemberTrainingPlansModal memberId={trainingPlansFor.id} memberName={trainingPlansFor.name} onClose={() => setTrainingPlansFor(null)} />
-      )}
-
-      {paymentsFor && (
-        <MemberPaymentsModal memberId={paymentsFor.id} memberName={paymentsFor.name} onClose={() => setPaymentsFor(null)} />
+      {detailFor && (
+        <MemberDetailModal memberId={detailFor.id} memberName={detailFor.name} onClose={() => setDetailFor(null)} />
       )}
     </div>
   );
@@ -437,6 +524,6 @@ function btnStyle(bg: string): React.CSSProperties {
   return { background: bg, color: '#fff', border: 'none', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
 }
 const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
-const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 420, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };
+const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 460, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 4, marginTop: 14, color: '#333' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' };

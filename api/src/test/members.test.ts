@@ -138,7 +138,7 @@ describe('GET /members', () => {
     expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it('includes account_status and membership_status fields in each row', async () => {
+  it('includes account_status, enrollment_status and payment_status fields in each row', async () => {
     await createMember(gymId);
     const res = await request
       .get('/members')
@@ -148,7 +148,8 @@ describe('GET /members', () => {
     expect(res.body.length).toBeGreaterThan(0);
     for (const member of res.body) {
       expect(member).toHaveProperty('account_status');
-      expect(member).toHaveProperty('membership_status');
+      expect(member).toHaveProperty('enrollment_status');
+      expect(member).toHaveProperty('payment_status');
     }
   });
 
@@ -218,17 +219,17 @@ describe('account_status derivation', () => {
   });
 });
 
-// ─── membership_status derivation ────────────────────────────────────────────
+// ─── enrollment_status derivation ────────────────────────────────────────────
 
-describe('membership_status derivation', () => {
+describe('enrollment_status derivation', () => {
   let gymId: string;
 
   beforeAll(async () => {
-    gymId = await createTestGym('Members Membership Status Gym');
+    gymId = await createTestGym('Members Enrollment Status Gym');
     await createTestMembership(gymId, 'admin');
   });
 
-  it('returns membership_status null when the member has no user_memberships', async () => {
+  it('returns enrollment_status null when the member has no user_memberships', async () => {
     const memberId = await createMember(gymId);
     const res = await request
       .get('/members')
@@ -237,7 +238,7 @@ describe('membership_status derivation', () => {
     expect(res.status).toBe(200);
     const member = res.body.find((m: any) => m.id === memberId);
     expect(member).toBeDefined();
-    expect(member.membership_status).toBeNull();
+    expect(member.enrollment_status).toBeNull();
   });
 
   it('returns the most recent user_membership status for a member who has one', async () => {
@@ -250,7 +251,7 @@ describe('membership_status derivation', () => {
     expect(res.status).toBe(200);
     const member = res.body.find((m: any) => m.id === memberId);
     expect(member).toBeDefined();
-    expect(member.membership_status).toBe('active');
+    expect(member.enrollment_status).toBe('active');
   });
 
   it('returns the most recent user_membership status when the member has multiple memberships', async () => {
@@ -268,7 +269,7 @@ describe('membership_status derivation', () => {
     expect(res.status).toBe(200);
     const member = res.body.find((m: any) => m.id === memberId);
     expect(member).toBeDefined();
-    expect(member.membership_status).toBe('cancelled');
+    expect(member.enrollment_status).toBe('cancelled');
   });
 });
 
@@ -432,6 +433,296 @@ describe('DELETE /members/:id', () => {
       .delete(`/members/${memberId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── enrollment_status filter (#346) ─────────────────────────────────────────
+
+describe('enrollment_status filter (#346)', () => {
+  let gymId: string;
+  let activeMemberId: number;
+  let pausedMemberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Enrollment Filter Gym');
+    await createTestMembership(gymId, 'admin');
+    activeMemberId = await createMember(gymId);
+    pausedMemberId = await createMember(gymId);
+    await createUserMembership(gymId, activeMemberId, 'active');
+    await createUserMembership(gymId, pausedMemberId, 'paused');
+  });
+
+  it('returns only active-enrollment members when filtered', async () => {
+    const res = await request
+      .get('/members?enrollment_status=active')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).toContain(activeMemberId);
+    expect(ids).not.toContain(pausedMemberId);
+    for (const m of res.body) expect(m.enrollment_status).toBe('active');
+  });
+
+  it('returns only paused-enrollment members when filtered', async () => {
+    const res = await request
+      .get('/members?enrollment_status=paused')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).toContain(pausedMemberId);
+    expect(ids).not.toContain(activeMemberId);
+  });
+
+  it('returns empty array when no members match the filter', async () => {
+    const res = await request
+      .get('/members?enrollment_status=expired')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).not.toContain(activeMemberId);
+    expect(ids).not.toContain(pausedMemberId);
+  });
+});
+
+// ─── payment_status filter (#346) ────────────────────────────────────────────
+
+async function getChargeTypeId(): Promise<number> {
+  const { rows } = await db.query<{ id: number }>(
+    'SELECT id FROM charge_types WHERE code = ? LIMIT 1',
+    ['membership_fee'],
+  );
+  return rows[0].id;
+}
+
+async function createUserMembershipForPayment(gymId: string, memberId: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'active', CURDATE())`,
+    [gymId, memberId],
+  );
+  return insertId as number;
+}
+
+async function insertPaymentRequest(
+  gymId: string,
+  userMembershipId: number,
+  memberId: number,
+  chargeTypeId: number,
+  status: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO payment_requests
+       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+        status, provider, provider_order, page_token, page_token_expires, initiated_by, source)
+     VALUES (?, ?, ?, '10.00', 'EUR', ?,
+             ?, 'monei', UUID(), UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'test', 'admin')`,
+    [gymId, userMembershipId, memberId, chargeTypeId, status],
+  );
+}
+
+describe('payment_status (#346)', () => {
+  let gymId: string;
+  let completedMemberId: number;
+  let pendingMemberId: number;
+  let noPaymentMemberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Payment Status Gym');
+    await createTestMembership(gymId, 'admin');
+
+    completedMemberId = await createMember(gymId);
+    pendingMemberId   = await createMember(gymId);
+    noPaymentMemberId = await createMember(gymId);
+
+    const chargeTypeId = await getChargeTypeId();
+    const completedUmId = await createUserMembershipForPayment(gymId, completedMemberId);
+    const pendingUmId   = await createUserMembershipForPayment(gymId, pendingMemberId);
+
+    await insertPaymentRequest(gymId, completedUmId, completedMemberId, chargeTypeId, 'completed');
+    await insertPaymentRequest(gymId, pendingUmId,   pendingMemberId,   chargeTypeId, 'pending');
+  });
+
+  it('returns payment_status null when member has no payment requests', async () => {
+    const res = await request
+      .get('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const member = res.body.find((m: any) => m.id === noPaymentMemberId);
+    expect(member).toBeDefined();
+    expect(member.payment_status).toBeNull();
+  });
+
+  it('returns the most recent payment_status when member has payments', async () => {
+    const res = await request
+      .get('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const member = res.body.find((m: any) => m.id === completedMemberId);
+    expect(member).toBeDefined();
+    expect(member.payment_status).toBe('completed');
+  });
+
+  it('filters by payment_status=completed', async () => {
+    const res = await request
+      .get('/members?payment_status=completed')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).toContain(completedMemberId);
+    expect(ids).not.toContain(pendingMemberId);
+    expect(ids).not.toContain(noPaymentMemberId);
+  });
+
+  it('filters by payment_status=pending', async () => {
+    const res = await request
+      .get('/members?payment_status=pending')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).toContain(pendingMemberId);
+    expect(ids).not.toContain(completedMemberId);
+  });
+
+  it('combined enrollment + payment filter returns intersection', async () => {
+    // completedMemberId has a user_membership (active) and payment_status=completed
+    const res = await request
+      .get('/members?enrollment_status=active&payment_status=completed')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((m: any) => m.id);
+    expect(ids).toContain(completedMemberId);
+    expect(ids).not.toContain(pendingMemberId);
+    expect(ids).not.toContain(noPaymentMemberId);
+  });
+});
+
+// ─── GET /:id — audit fields (#346) ──────────────────────────────────────────
+
+describe('GET /members/:id — audit fields (#346)', () => {
+  let gymId: string;
+  let memberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Detail Gym');
+    await createTestMembership(gymId, 'admin');
+    memberId = await createMember(gymId);
+  });
+
+  it('returns 200 with the member record', async () => {
+    const res = await request
+      .get(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(memberId);
+  });
+
+  it('includes created_by_name and modified_by_name fields', async () => {
+    const res = await request
+      .get(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('created_by_name');
+    expect(res.body).toHaveProperty('modified_by_name');
+  });
+
+  it('returns 404 for a member from another gym', async () => {
+    const otherGym = await createTestGym('Members Detail Other Gym');
+    await createTestMembership(otherGym, 'admin');
+    const otherMemberId = await createMember(otherGym);
+    const res = await request
+      .get(`/members/${otherMemberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── PUT /:id — profile fields (#346) ────────────────────────────────────────
+
+describe('PUT /members/:id — profile fields (#346)', () => {
+  let gymId: string;
+  let memberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Profile Update Gym');
+    await createTestMembership(gymId, 'admin');
+    memberId = await createMember(gymId);
+  });
+
+  it('updates profile fields and returns the updated member', async () => {
+    const res = await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        name: 'Updated Name',
+        phone: '+34600000001',
+        date_of_birth: '1990-05-15',
+        gender: 'female',
+        address: '123 Main St, Barcelona',
+        emergency_contact: 'Contact Person +34600000002',
+        notes: 'Internal note for this member',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Updated Name');
+    expect(res.body.phone).toBe('+34600000001');
+    expect(res.body.date_of_birth).toMatch(/1990-05-15/);
+    expect(res.body.gender).toBe('female');
+    expect(res.body.address).toBe('123 Main St, Barcelona');
+    expect(res.body.emergency_contact).toBe('Contact Person +34600000002');
+    expect(res.body.notes).toBe('Internal note for this member');
+  });
+
+  it('sets modified_at on update', async () => {
+    await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Modified Name' });
+
+    const { rows } = await db.query<{ modified_at: string | null }>(
+      'SELECT modified_at FROM members WHERE id = ?',
+      [memberId],
+    );
+    expect(rows[0].modified_at).not.toBeNull();
+  });
+
+  it('does not update email', async () => {
+    const { rows: before } = await db.query<{ email: string }>(
+      'SELECT email FROM members WHERE id = ?',
+      [memberId],
+    );
+    const originalEmail = before[0].email;
+
+    await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Name Only', email: 'newemail@test.com' });
+
+    const { rows: after } = await db.query<{ email: string }>(
+      'SELECT email FROM members WHERE id = ?',
+      [memberId],
+    );
+    expect(after[0].email).toBe(originalEmail);
+  });
+
+  it('returns 404 for a non-existent member', async () => {
+    const res = await request
+      .put('/members/999999')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Ghost' });
     expect(res.status).toBe(404);
   });
 });
