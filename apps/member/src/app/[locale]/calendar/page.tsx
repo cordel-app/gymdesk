@@ -193,7 +193,7 @@ export default function MemberCalendarPage() {
   if (appLoading) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 60px)', paddingBottom: 60, boxSizing: 'border-box' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box' }}>
       {/* Filter bar */}
       <div style={{ padding: '8px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', gap: 8, overflowX: 'auto', flexShrink: 0 }}>
         <button
@@ -230,7 +230,7 @@ export default function MemberCalendarPage() {
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-          initialView="dayGridMonth"
+          initialView="timeGridDay"
           headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }}
           height="100%"
           events={fetchEvents}

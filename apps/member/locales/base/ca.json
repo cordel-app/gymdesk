@@ -9,23 +9,30 @@
     "loading": "Carregant…",
     "next_booking": "Propera reserva",
     "no_upcoming_booking": "No tens reserves properes.",
-    "browse_schedule": "Veure horari",
     "waitlisted": "En llista d'espera",
     "membership_status": "Quota",
     "no_membership": "Sense quota activa.",
     "expires_on": "Venç el {date}",
     "class_credits": "Crèdits de classes",
-    "credits_remaining": "sessions disponibles"
+    "credits_remaining": "sessions disponibles",
+    "greeting_morning": "Bon dia, {name}",
+    "greeting_afternoon": "Bona tarda, {name}",
+    "greeting_evening": "Bona nit, {name}",
+    "view_booking": "Veure reserva",
+    "browse_calendar": "Veure calendari",
+    "alerts_view_all": "Veure alertes",
+    "nutrition_today": "Nutrició d'avui",
+    "goals": "Objectius",
+    "no_nutrition_today": "Sense pla de nutrició per avui."
   },
   "nav": {
-    "home": "Inici",
-    "schedule": "Horari",
     "calendar": "Calendari",
-    "membership": "Quota",
-    "packages": "Bons",
-    "training": "Entreno",
+    "training": "El Meu Pla d'Entrenament",
+    "bookings": "Les Meves Reserves",
+    "nutrition": "La Meva Nutrició",
+    "membership": "La Meva Quota",
     "profile": "Perfil",
-    "notifications": "Alertes"
+    "alerts": "Alertes"
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
@@ -34,7 +41,7 @@
     "no_gym_available": "No hi ha cap gimnàs disponible"
   },
   "training": {
-    "title": "Entrenament",
+    "title": "El Meu Pla d'Entrenament",
     "loading": "Carregant…",
     "empty": "Encara no tens un pla assignat.",
     "no_plan_today": "No hi ha pla per aquest dia.",
@@ -85,7 +92,15 @@
     "edit": "Editar",
     "save": "Desar",
     "cancel": "Cancel·lar",
-    "saved": "Perfil actualitzat."
+    "saved": "Perfil actualitzat.",
+    "default_gym": "Gimnàs per defecte",
+    "default_center": "Centre per defecte",
+    "enrollment": "Inscripció",
+    "payment_status": "Estat de pagament",
+    "payment_status_ok": "Al dia",
+    "payment_status_pending": "Pagament pendent",
+    "payment_status_failed": "Pagament fallit",
+    "no_center": "Sense centre assignat"
   },
   "packages": {
     "title": "Els meus bons",
@@ -102,7 +117,7 @@
     "status_cancelled": "Cancel·lat"
   },
   "member_schedule": {
-    "title": "Horari",
+    "title": "Les Meves Reserves",
     "loading": "Carregant…",
     "empty": "No hi ha properes sessions.",
     "book": "Reservar",
@@ -143,7 +158,7 @@
     "type_shared_training_rejected": "Entrenament compartit rebutjat"
   },
   "notifications": {
-    "title": "Notificacions",
+    "title": "Alertes",
     "loading": "Carregant…",
     "empty": "Sense notificacions encara.",
     "mark_all_read": "Marcar tot com llegit",
@@ -262,5 +277,22 @@
     "type_staff": "Personal",
     "cancel": "Cancel·lar",
     "error_start": "No s'ha pogut iniciar la suplantació."
+  },
+  "nutrition": {
+    "title": "La Meva Nutrició",
+    "loading": "Carregant…",
+    "error": "Alguna cosa ha fallat.",
+    "empty": "Encara no tens cap pla de nutrició assignat.",
+    "all_days": "Tots els dies",
+    "goals": "Objectius",
+    "meal_type": {
+      "recien_levantado": "Just llevat-se",
+      "breakfast": "Esmorzar",
+      "media_manana": "Mig matí",
+      "lunch": "Dinar",
+      "snack": "Berenar",
+      "dinner": "Sopar",
+      "antes_de_dormir": "Abans de dormir"
+    }
   }
 }
