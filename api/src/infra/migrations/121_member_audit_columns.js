@@ -11,14 +11,16 @@ exports.up = async (knex) => {
   await knex.schema.alterTable('members', (t) => {
     if (!hasCreatedBy) {
       t.integer('created_by').unsigned().nullable()
-        .references('id').inTable('gym_memberships').onDelete('SET NULL');
+        .references('id').inTable('gym_memberships').onDelete('SET NULL')
+        .withKeyName('fk_members_created_by');
     }
     if (!hasModifiedAt) {
       t.datetime('modified_at').nullable();
     }
     if (!hasModifiedBy) {
       t.integer('modified_by').unsigned().nullable()
-        .references('id').inTable('gym_memberships').onDelete('SET NULL');
+        .references('id').inTable('gym_memberships').onDelete('SET NULL')
+        .withKeyName('fk_members_modified_by');
     }
   });
 };
@@ -29,8 +31,8 @@ exports.down = async (knex) => {
   const hasModifiedBy = await knex.schema.hasColumn('members', 'modified_by');
 
   await knex.schema.alterTable('members', (t) => {
-    if (hasModifiedBy) { t.dropForeign(['modified_by']); t.dropColumn('modified_by'); }
+    if (hasModifiedBy) { t.dropForeign('fk_members_modified_by'); t.dropColumn('modified_by'); }
     if (hasModifiedAt) { t.dropColumn('modified_at'); }
-    if (hasCreatedBy) { t.dropForeign(['created_by']); t.dropColumn('created_by'); }
+    if (hasCreatedBy)  { t.dropForeign('fk_members_created_by');  t.dropColumn('created_by');  }
   });
 };
