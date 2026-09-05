@@ -20,7 +20,7 @@ const THEME_SELECT = `
 `;
 
 // #371: system Sellable Item seeded for every gym (existing gyms backfilled
-// by migration 123; this keeps gyms created afterwards in sync).
+// by migration 124; this keeps gyms created afterwards in sync).
 const SYSTEM_PT_PACKAGE_NAME = 'Personal Training Class Package (10 Sessions)';
 
 async function seedSystemPtPackage(gymId: string) {

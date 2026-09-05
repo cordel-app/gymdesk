@@ -19,7 +19,7 @@ import { btnStyle, btnSmall } from '@/components/ui';
 const TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const STATUSES = ['active', 'inactive'] as const;
 const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
-const FREQUENCIES = ['once', 'per_session', 'week', 'month', 'year'] as const;
+const FREQUENCIES = ['once', 'per_session', 'four_weeks', 'week', 'month', 'year'] as const;
 
 type ItemType = typeof TYPES[number];
 type ItemStatus = typeof STATUSES[number];
@@ -74,6 +74,7 @@ type EditForm = {
   notes: string;
   package_information: string;
   validity_days: string;
+  tax_rate_id: string;
 };
 
 type InlineNew = {
@@ -82,9 +83,17 @@ type InlineNew = {
   units: string;
   amount: string;
   billing_frequency: string;
+  tax_rate_id: string;
   saving: boolean;
   error: string | null;
 };
+
+interface TaxRate {
+  id: number;
+  name: string;
+  rate_percent: string;
+  status: 'active' | 'inactive';
+}
 
 function emptyEditForm(item: SellableItem): EditForm {
   return {
@@ -99,6 +108,7 @@ function emptyEditForm(item: SellableItem): EditForm {
     notes: item.notes ?? '',
     package_information: item.package_information ?? '',
     validity_days: item.validity_days != null ? String(item.validity_days) : '',
+    tax_rate_id: item.tax_rate_id != null ? String(item.tax_rate_id) : '',
   };
 }
 
@@ -129,6 +139,7 @@ export default function SellableItemsPage() {
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   const [items, setItems] = useState<SellableItem[]>([]);
+  const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -154,6 +165,20 @@ export default function SellableItemsPage() {
   useEffect(() => {
     if (!gymLoading && isAdmin) load();
   }, [activeGymId, gymLoading, typeFilter, statusFilter]);
+
+  useEffect(() => {
+    if (gymLoading || !isAdmin || !activeGymId) return;
+    apiFetch<TaxRate[]>('/taxes').then(setTaxRates).catch(() => setTaxRates([]));
+  }, [activeGymId, gymLoading, isAdmin]);
+
+  function taxRateOptions(currentId: string) {
+    const options = taxRates.filter((tr) => tr.status === 'active');
+    if (currentId && !options.some((tr) => String(tr.id) === currentId)) {
+      const current = taxRates.find((tr) => String(tr.id) === currentId);
+      if (current) options.push(current);
+    }
+    return options;
+  }
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
@@ -191,7 +216,7 @@ export default function SellableItemsPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', type: 'fee', units: '', amount: '', billing_frequency: '', saving: false, error: null });
+    setInlineNew({ name: '', type: 'fee', units: '', amount: '', billing_frequency: '', tax_rate_id: '', saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -221,6 +246,7 @@ export default function SellableItemsPage() {
           units: inlineNew.units !== '' ? parseInt(inlineNew.units, 10) : null,
           amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,
           billing_frequency: inlineNew.billing_frequency || null,
+          tax_rate_id: inlineNew.tax_rate_id !== '' ? parseInt(inlineNew.tax_rate_id, 10) : null,
         }),
       });
       setInlineNew(null);
@@ -267,6 +293,7 @@ export default function SellableItemsPage() {
           notes: editForm.notes.trim() || null,
           package_information: editForm.package_information.trim() || null,
           validity_days: editForm.validity_days !== '' ? parseInt(editForm.validity_days, 10) : null,
+          tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
         }),
       });
       setEditingId(null);
@@ -318,7 +345,7 @@ export default function SellableItemsPage() {
     return (
       <div style={cardStyle}>
         <div style={{ padding: '16px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
               <label style={inlineLabelStyle}>{t('label_name')} *</label>
               <input
@@ -368,6 +395,19 @@ export default function SellableItemsPage() {
               >
                 <option value="">—</option>
                 {FREQUENCIES.map((f) => <option key={f} value={f}>{t(`frequency_${f}`)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('label_tax_rate')}</label>
+              <select
+                value={inlineNew.tax_rate_id}
+                onChange={(e) => setInlineNew({ ...inlineNew, tax_rate_id: e.target.value })}
+                style={inlineSelectStyle}
+              >
+                <option value="">{t('option_no_tax')}</option>
+                {taxRateOptions(inlineNew.tax_rate_id).map((tr) => (
+                  <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+                ))}
               </select>
             </div>
           </div>
@@ -555,6 +595,19 @@ export default function SellableItemsPage() {
                   />
                 </div>
               )}
+              <div>
+                <label style={inlineLabelStyle}>{t('label_tax_rate')}</label>
+                <select
+                  value={editForm.tax_rate_id}
+                  onChange={(e) => setEditForm({ ...editForm, tax_rate_id: e.target.value })}
+                  style={inlineSelectStyle}
+                >
+                  <option value="">{t('option_no_tax')}</option>
+                  {taxRateOptions(editForm.tax_rate_id).map((tr) => (
+                    <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {!isSystem && (
@@ -602,6 +655,10 @@ export default function SellableItemsPage() {
             <DetailRow label={t('label_amount')} value={fmtAmount(item.amount, item.currency)} />
             <DetailRow label={t('label_frequency')} value={item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'} />
             {!isSystem && <DetailRow label={t('label_validity_days')} value={item.validity_days != null ? String(item.validity_days) : '—'} />}
+            <DetailRow
+              label={t('label_tax_rate')}
+              value={item.tax_rate_name ? `${item.tax_rate_name} (${item.tax_rate_percent}%)` : t('option_no_tax')}
+            />
 
             {!isSystem && item.package_information && (
               <>
@@ -716,6 +773,10 @@ export default function SellableItemsPage() {
               <ModalField label={t('label_amount')} value={fmtAmount(details.amount, details.currency)} />
               <ModalField label={t('label_frequency')} value={details.billing_frequency ? t(`frequency_${details.billing_frequency}`) : '—'} />
               <ModalField label={t('label_validity_days')} value={details.validity_days != null ? String(details.validity_days) : '—'} />
+              <ModalField
+                label={t('label_tax_rate')}
+                value={details.tax_rate_name ? `${details.tax_rate_name} (${details.tax_rate_percent}%)` : t('option_no_tax')}
+              />
             </div>
 
             {details.package_information && (
