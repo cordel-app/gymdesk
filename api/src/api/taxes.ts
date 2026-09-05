@@ -11,19 +11,20 @@ const SELECT = `
     tr.id,
     tr.gym_id,
     tr.name,
+    tr.description,
     tr.rate_percent,
     tr.is_system,
     tr.status,
     tr.deleted_at,
     tr.created_at,
+    tr.created_by_membership_id,
+    tr.created_by_name,
+    tr.created_by_type,
     tr.modified_at,
-    cb.id   AS created_by_membership_id,
-    cb.name AS created_by_name,
-    mb.id   AS modified_by_membership_id,
-    mb.name AS modified_by_name
+    tr.modified_by_membership_id,
+    tr.modified_by_name,
+    tr.modified_by_type
   FROM tax_rates tr
-  LEFT JOIN gym_memberships cb ON cb.id = tr.created_by_membership_id
-  LEFT JOIN gym_memberships mb ON mb.id = tr.modified_by_membership_id
 `;
 
 const VALID_STATUSES = ['active', 'inactive'] as const;
@@ -63,8 +64,8 @@ taxesRouter.get('/:id', async (req, res, next) => {
 // ─── POST / — create custom tax rate ─────────────────────────────────────────
 
 taxesRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
-  const { name, rate_percent, status } = req.body;
+  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
+  const { name, rate_percent, status, description } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   const rate = parseFloat(rate_percent);
@@ -75,12 +76,19 @@ taxesRouter.post('/', requireRole('admin'), async (req, res, next) => {
     return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 
+  const actorType = isSuperadmin ? 'superadmin' : 'staff';
   try {
     const { insertId } = await db.query(
       `INSERT INTO tax_rates
-         (gym_id, name, rate_percent, is_system, status, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, 0, ?, ?, ?)`,
-      [gymId, name.trim(), rate, status || 'active', gymMembershipId, gymMembershipId],
+         (gym_id, name, description, rate_percent, is_system, status,
+          created_by_membership_id, created_by_name, created_by_type,
+          modified_by_membership_id, modified_by_name, modified_by_type)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        gymId, name.trim(), description?.trim() || null, rate, status || 'active',
+        gymMembershipId, actorName, actorType,
+        gymMembershipId, actorName, actorType,
+      ],
     );
     const { rows } = await db.query(`${SELECT} WHERE tr.id = ?`, [insertId]);
     recordAudit(req, {
@@ -88,7 +96,7 @@ taxesRouter.post('/', requireRole('admin'), async (req, res, next) => {
       entityType: 'tax_rate',
       entityId: String(insertId),
       entityName: name.trim(),
-      next: { name: name.trim(), rate_percent: rate, status: status || 'active' },
+      next: { name: name.trim(), rate_percent: rate, status: status || 'active', description: description ?? null },
     });
     res.status(201).json(rows[0]);
   } catch (err: any) {
@@ -98,9 +106,25 @@ taxesRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 
+// Sellable Items and Membership Plans currently referencing this tax rate. Taxes are never
+// snapshotted onto a Membership at instantiation time, so this is the full set of entities an
+// edit can affect — Membership instances are deliberately not counted (see #388).
+async function getTaxImpact(gymId: string, taxRateId: string) {
+  const { rows } = await db.query<{ sellable_items: number; membership_plans: number }>(
+    `SELECT
+       (SELECT COUNT(*) FROM gym_charges      WHERE tax_rate_id = ? AND gym_id = ? AND deleted_at IS NULL) AS sellable_items,
+       (SELECT COUNT(*) FROM membership_plans WHERE tax_rate_id = ? AND gym_id = ? AND deleted_at IS NULL) AS membership_plans`,
+    [taxRateId, gymId, taxRateId, gymId],
+  );
+  return {
+    sellable_items: Number(rows[0].sellable_items),
+    membership_plans: Number(rows[0].membership_plans),
+  };
+}
+
 taxesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
-  const { name, rate_percent, status } = req.body;
+  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
+  const { name, rate_percent, status, description, confirmImpact } = req.body;
 
   if (rate_percent !== undefined) {
     const rate = parseFloat(rate_percent);
@@ -119,19 +143,36 @@ taxesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
 
+    // Determine the impact before persisting anything. A caller must explicitly confirm
+    // (confirmImpact: true) once the count is non-zero — this can't be bypassed by only
+    // sending the update fields, since the check runs unconditionally on every PUT.
+    if (!confirmImpact) {
+      const impact = await getTaxImpact(gymId, String(req.params.id));
+      if (impact.sellable_items > 0 || impact.membership_plans > 0) {
+        return res.status(409).json({ error: 'confirmation_required', impact });
+      }
+    }
+
+    const actorType = isSuperadmin ? 'superadmin' : 'staff';
     const { rowCount } = await db.query(
       `UPDATE tax_rates SET
          name                      = COALESCE(?, name),
+         description               = COALESCE(?, description),
          rate_percent              = COALESCE(?, rate_percent),
          status                    = COALESCE(?, status),
          modified_at               = UTC_TIMESTAMP(),
-         modified_by_membership_id = ?
+         modified_by_membership_id = ?,
+         modified_by_name          = ?,
+         modified_by_type          = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         name?.trim() ?? null,
+        description ?? null,
         rate_percent != null ? parseFloat(rate_percent) : null,
         status ?? null,
         gymMembershipId,
+        actorName,
+        actorType,
         req.params.id,
         gymId,
       ],
@@ -144,7 +185,7 @@ taxesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       entityType: 'tax_rate',
       entityId: String(req.params.id),
       entityName: rows[0]?.name,
-      next: { name, rate_percent, status },
+      next: { name, rate_percent, status, description },
     });
     res.json(rows[0]);
   } catch (err: any) {
@@ -155,12 +196,13 @@ taxesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 // ─── POST /:id/activate ───────────────────────────────────────────────────────
 
 taxesRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
-      `UPDATE tax_rates SET status = 'active', modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+      `UPDATE tax_rates SET status = 'active', modified_at = UTC_TIMESTAMP(),
+         modified_by_membership_id = ?, modified_by_name = ?, modified_by_type = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId],
+      [gymMembershipId, actorName, isSuperadmin ? 'superadmin' : 'staff', req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE tr.id = ? AND tr.gym_id = ?`, [req.params.id, gymId]);
@@ -172,12 +214,13 @@ taxesRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) =
 // ─── POST /:id/deactivate ─────────────────────────────────────────────────────
 
 taxesRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
-      `UPDATE tax_rates SET status = 'inactive', modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+      `UPDATE tax_rates SET status = 'inactive', modified_at = UTC_TIMESTAMP(),
+         modified_by_membership_id = ?, modified_by_name = ?, modified_by_type = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId],
+      [gymMembershipId, actorName, isSuperadmin ? 'superadmin' : 'staff', req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE tr.id = ? AND tr.gym_id = ?`, [req.params.id, gymId]);
