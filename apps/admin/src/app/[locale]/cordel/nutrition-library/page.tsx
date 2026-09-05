@@ -7,6 +7,8 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
+import { MultiSelectFilter } from '@/components/MultiSelectFilter';
+import { DataTable, Column } from '@/components/DataTable';
 import { btnStyle } from '@/components/ui';
 
 interface NutritionalQuality { id: number; slug: string }
@@ -21,6 +23,13 @@ interface LibraryItem {
   qualities: NutritionalQuality[];
 }
 
+interface ListResponse {
+  items: LibraryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 const CATEGORIES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other'] as const;
 type Category = typeof CATEGORIES[number];
 
@@ -29,18 +38,33 @@ const QUALITY_LABELS: Record<string, string> = {
   carbohydrate: 'Carbohydrate',
 };
 
+function categoryLabel(cat: string) {
+  return cat.replace('_', ' ').replace(/^\w/, (c) => c.toUpperCase());
+}
+
 function qualityLabel(slug: string) {
   return QUALITY_LABELS[slug] ?? slug;
 }
+
+const LIMIT = 20;
 
 export default function CordelNutritionLibraryPage() {
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleted, setShowDeleted] = useState(false);
+
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
+  const [qualityFilter, setQualityFilter] = useState<string[]>([]);
+
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -55,23 +79,52 @@ export default function CordelNutritionLibraryPage() {
 
   const [deleting, setDeleting] = useState<LibraryItem | null>(null);
 
+  useEffect(() => {
+    const id = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(id);
+  }, [searchInput]);
+
+  useEffect(() => { setOffset(0); }, [search, categoryFilter, qualityFilter, showDeleted]);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = showDeleted ? '?status=deleted' : '';
-      const [itemsData, qualitiesData] = await Promise.all([
-        apiFetch<LibraryItem[]>(`/platform/nutrition-library${params}`),
-        apiFetch<NutritionalQuality[]>('/platform/nutrition-library/nutritional-qualities'),
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      for (const c of categoryFilter) params.append('category', c);
+      for (const q of qualityFilter) params.append('quality_id', q);
+      params.set('status', showDeleted ? 'deleted' : 'active');
+      params.set('limit', String(LIMIT));
+      params.set('offset', String(offset));
+      const [data, qualitiesData] = await Promise.all([
+        apiFetch<ListResponse>(`/platform/nutrition-library?${params.toString()}`),
+        allQualities.length ? Promise.resolve(allQualities) : apiFetch<NutritionalQuality[]>('/platform/nutrition-library/nutritional-qualities'),
       ]);
-      setItems(itemsData);
+      setItems(data.items);
+      setTotal(data.total);
       setAllQualities(qualitiesData);
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, [apiFetch, showDeleted]);
+  }, [apiFetch, search, categoryFilter, qualityFilter, showDeleted, offset]);
 
   useEffect(() => { load(); }, [load]);
 
   function toggleQuality(ids: number[], qualityId: number): number[] {
     return ids.includes(qualityId) ? ids.filter((id) => id !== qualityId) : [...ids, qualityId];
+  }
+
+  function toggleExpand(id: number) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function clearFilters() {
+    setSearchInput('');
+    setSearch('');
+    setCategoryFilter([]);
+    setQualityFilter([]);
   }
 
   async function handleCreate() {
@@ -120,76 +173,102 @@ export default function CordelNutritionLibraryPage() {
     }
   }
 
+  const pageStart = total === 0 ? 0 : offset + 1;
+  const pageEnd = Math.min(offset + LIMIT, total);
+  const activeFilterCount = categoryFilter.length + qualityFilter.length + (search ? 1 : 0);
+
+  const columns: Column<LibraryItem>[] = [
+    { header: 'Name', render: (item) => <strong>{item.name}</strong> },
+    { header: 'Category', width: 140, render: (item) => categoryLabel(item.category) },
+    {
+      header: 'Qualities',
+      render: (item) => item.qualities.length > 0 ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {item.qualities.map((q) => <span key={q.id} style={qualityChipStyle}>{qualityLabel(q.slug)}</span>)}
+        </div>
+      ) : <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>,
+    },
+    { header: 'Status', width: 100, render: (item) => <StatusBadge status={item.status} label={item.status} /> },
+    {
+      header: '', width: 40,
+      render: (item) => item.status !== 'deleted' ? (
+        <ContextMenu items={[
+          { label: 'Details', onClick: () => toggleExpand(item.id) },
+          {
+            label: 'Edit',
+            onClick: () => {
+              setEditing(item);
+              setEditName(item.name);
+              setEditCategory(item.category as Category);
+              setEditQualityIds(item.qualities.map((q) => q.id));
+            },
+          },
+          { label: 'Delete', danger: true, onClick: () => setDeleting(item) },
+        ]} />
+      ) : null,
+    },
+  ];
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1>Base Nutrition Library</h1>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
-            <input type="checkbox" checked={showDeleted} onChange={e => setShowDeleted(e.target.checked)} />
-            Show deleted
-          </label>
-          <button style={btnStyle()} onClick={() => { setCreating(true); setNewName(''); setNewCategory('main_dish'); setNewQualityIds([]); }}>+ New Item</button>
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <h1 style={{ margin: 0 }}>Base Nutrition Library</h1>
+        <button style={btnStyle()} onClick={() => { setCreating(true); setNewName(''); setNewCategory('main_dish'); setNewQualityIds([]); }}>+ New Item</button>
       </div>
 
-      {loading ? (
-        <p>Loading…</p>
-      ) : (
-        CATEGORIES.map(cat => {
-          const catItems = items.filter(i => i.category === cat);
-          if (catItems.length === 0) return null;
-          return (
-            <section key={cat} style={{ marginBottom: 32 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12, textTransform: 'capitalize' }}>
-                {cat.replace('_', ' ')}
-              </h2>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                <tbody>
-                  {catItems.map(item => (
-                    <tr key={item.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                      <td style={{ padding: '10px 8px', fontWeight: 500 }}>{item.name}</td>
-                      <td style={{ padding: '10px 8px' }}>
-                        {item.qualities.length > 0 ? (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                            {item.qualities.map(q => (
-                              <span key={q.id} style={qualityChipStyle}>{qualityLabel(q.slug)}</span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '10px 8px' }}>
-                        <StatusBadge status={item.status} label={item.status} />
-                      </td>
-                      <td style={{ padding: '10px 8px', width: 40, textAlign: 'right' }}>
-                        {item.status !== 'deleted' && (
-                          <ContextMenu items={[
-                            {
-                              label: 'Edit',
-                              onClick: () => {
-                                setEditing(item);
-                                setEditName(item.name);
-                                setEditCategory(item.category as Category);
-                                setEditQualityIds(item.qualities.map(q => q.id));
-                              },
-                            },
-                            {
-                              label: 'Delete',
-                              danger: true,
-                              onClick: () => setDeleting(item),
-                            },
-                          ]} />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          );
-        })
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+        <input
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search by name…"
+          style={searchInputStyle}
+        />
+        <MultiSelectFilter
+          label="Category"
+          options={CATEGORIES.map((c) => ({ value: c, label: categoryLabel(c) }))}
+          selected={categoryFilter}
+          onChange={setCategoryFilter}
+        />
+        <MultiSelectFilter
+          label="Nutrition Properties"
+          options={allQualities.map((q) => ({ value: String(q.id), label: qualityLabel(q.slug) }))}
+          selected={qualityFilter}
+          onChange={setQualityFilter}
+        />
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
+          <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+          Show deleted
+        </label>
+        {activeFilterCount > 0 && (
+          <button onClick={clearFilters} style={{ ...btnStyle('#888'), padding: '8px 14px' }}>Clear filters</button>
+        )}
+      </div>
+
+      <DataTable
+        columns={columns}
+        rows={items}
+        rowKey={(item) => item.id}
+        loading={loading}
+        loadingText="Loading…"
+        emptyText="No food items match your filters."
+        renderExpanded={(item) => (
+          <div style={{ padding: '12px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <DetailRow label="Category" value={categoryLabel(item.category)} />
+            <DetailRow label="Status" value={item.status} />
+            <DetailRow label="Created At" value={new Date(item.created_at).toLocaleString()} />
+            <DetailRow label="Modified At" value={item.modified_at ? new Date(item.modified_at).toLocaleString() : '—'} />
+          </div>
+        )}
+        expandedRowKeys={expanded}
+        onToggleExpand={(item) => toggleExpand(item.id)}
+      />
+
+      {total > 0 && (
+        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13, color: '#666' }}>{pageStart}–{pageEnd} of {total}</span>
+          <button onClick={() => setOffset(Math.max(0, offset - LIMIT))} disabled={offset === 0} style={btnStyle('#888')}>‹</button>
+          <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={btnStyle('#888')}>›</button>
+        </div>
       )}
 
       {/* Create modal */}
@@ -206,22 +285,22 @@ export default function CordelNutritionLibraryPage() {
         <input
           className="form-input"
           value={newName}
-          onChange={e => setNewName(e.target.value)}
+          onChange={(e) => setNewName(e.target.value)}
           placeholder="e.g. Chicken"
           autoFocus
         />
         <FormLabel>Category</FormLabel>
-        <select className="form-input" value={newCategory} onChange={e => setNewCategory(e.target.value as Category)}>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+        <select className="form-input" value={newCategory} onChange={(e) => setNewCategory(e.target.value as Category)}>
+          {CATEGORIES.map((c) => <option key={c} value={c}>{categoryLabel(c)}</option>)}
         </select>
         <FormLabel>Nutritional Qualities</FormLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {allQualities.map(q => (
+          {allQualities.map((q) => (
             <label key={q.id} style={qualityCheckboxLabel(newQualityIds.includes(q.id))}>
               <input
                 type="checkbox"
                 checked={newQualityIds.includes(q.id)}
-                onChange={() => setNewQualityIds(prev => toggleQuality(prev, q.id))}
+                onChange={() => setNewQualityIds((prev) => toggleQuality(prev, q.id))}
                 style={{ marginRight: 6 }}
               />
               {qualityLabel(q.slug)}
@@ -244,21 +323,21 @@ export default function CordelNutritionLibraryPage() {
         <input
           className="form-input"
           value={editName}
-          onChange={e => setEditName(e.target.value)}
+          onChange={(e) => setEditName(e.target.value)}
           autoFocus
         />
         <FormLabel>Category</FormLabel>
-        <select className="form-input" value={editCategory} onChange={e => setEditCategory(e.target.value as Category)}>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+        <select className="form-input" value={editCategory} onChange={(e) => setEditCategory(e.target.value as Category)}>
+          {CATEGORIES.map((c) => <option key={c} value={c}>{categoryLabel(c)}</option>)}
         </select>
         <FormLabel>Nutritional Qualities</FormLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {allQualities.map(q => (
+          {allQualities.map((q) => (
             <label key={q.id} style={qualityCheckboxLabel(editQualityIds.includes(q.id))}>
               <input
                 type="checkbox"
                 checked={editQualityIds.includes(q.id)}
-                onChange={() => setEditQualityIds(prev => toggleQuality(prev, q.id))}
+                onChange={() => setEditQualityIds((prev) => toggleQuality(prev, q.id))}
                 style={{ marginRight: 6 }}
               />
               {qualityLabel(q.slug)}
@@ -278,6 +357,19 @@ export default function CordelNutritionLibraryPage() {
     </div>
   );
 }
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', gap: 10 }}>
+      <span style={{ width: 120, flexShrink: 0, color: '#888' }}>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+const searchInputStyle: React.CSSProperties = {
+  padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 220,
+};
 
 const qualityChipStyle: React.CSSProperties = {
   background: 'var(--badge-bg, #eff6ff)',
