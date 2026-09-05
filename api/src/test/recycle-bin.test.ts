@@ -20,7 +20,7 @@ afterAll(async () => {
 async function createPlan(gymId: string, name: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status)
-     VALUES (?, ?, 'draft', 'closed')`,
+     VALUES (?, ?, 'draft', 'staff_only')`,
     [gymId, name],
   );
   return insertId;

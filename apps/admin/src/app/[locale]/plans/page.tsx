@@ -49,7 +49,7 @@ interface Plan {
   name: string;
   description: string | null;
   lifecycle_status: 'draft' | 'active' | 'paused' | 'inactive';
-  enrollment_status: 'public' | 'staff_only' | 'closed';
+  enrollment_status: 'public' | 'staff_only';
   current_price: string | null;
   member_count: number;
   billing_policy: BillingPolicy | null;
@@ -65,7 +65,7 @@ interface Plan {
 }
 
 const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
-const ENROLLMENT_STATUSES = ['public', 'staff_only', 'closed'] as const;
+const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
@@ -74,7 +74,7 @@ const emptyAddForm = {
   name: '',
   description: '',
   lifecycle_status: 'draft' as Plan['lifecycle_status'],
-  enrollment_status: 'closed' as Plan['enrollment_status'],
+  enrollment_status: 'staff_only' as Plan['enrollment_status'],
 };
 
 const emptyBillingPolicy = {
@@ -93,7 +93,7 @@ const emptyEditForm = {
   name: '',
   description: '',
   lifecycle_status: 'draft' as Plan['lifecycle_status'],
-  enrollment_status: 'closed' as Plan['enrollment_status'],
+  enrollment_status: 'staff_only' as Plan['enrollment_status'],
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

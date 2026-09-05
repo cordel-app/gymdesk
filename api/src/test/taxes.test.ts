@@ -108,7 +108,7 @@ async function createGymCharge(gymId: string, chargeTypeId: number, taxRateId: n
 async function createMembershipPlan(gymId: string, taxRateId: number | null): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, tax_rate_id)
-     VALUES (?, ?, 'draft', 'closed', ?)`,
+     VALUES (?, ?, 'draft', 'staff_only', ?)`,
     [gymId, uniqueName('Plan'), taxRateId],
   );
   return insertId;
