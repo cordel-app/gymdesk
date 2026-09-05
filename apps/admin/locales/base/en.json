@@ -51,7 +51,8 @@
     "recycle_bin": "Recycle Bin",
     "sellable_items": "Sellable Items",
     "taxes": "Taxes",
-    "feature_flags": "Feature Flags"
+    "feature_flags": "Feature Flags",
+    "nutrition_plans": "Nutrition Plans"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -2253,7 +2254,8 @@
     "tree_goal_name_maintenance": "Maintenance",
     "tree_goal_name_performance": "Performance",
     "tree_goal_name_recovery": "Recovery",
-    "tree_goal_name_energy": "Energy"
+    "tree_goal_name_energy": "Energy",
+    "assign_to_member": "Assign plan to member"
   },
   "nutrition_library": {
     "title": "Nutrition Library",
@@ -2562,5 +2564,27 @@
     "toggle_error": "Failed to update feature flag.",
     "enabled_ok": "'{key}' enabled.",
     "disabled_ok": "'{key}' disabled."
+  },
+  "nutrition_plans": {
+    "title": "Nutrition Plans",
+    "assign_title": "Assign Nutrition Plan",
+    "label_template": "Template",
+    "label_member": "Member",
+    "label_name": "Nutrition Plan name",
+    "assign": "Assign",
+    "assign_from_template": "Assign from template",
+    "cancel": "Cancel",
+    "saving": "Saving…",
+    "assigned": "Nutrition plan assigned successfully",
+    "loading": "Loading…",
+    "empty": "No nutrition plans assigned yet.",
+    "delete": "Delete",
+    "confirm_delete": "Are you sure you want to delete this nutrition plan?",
+    "filter_all_members": "All members",
+    "day_count": "{count, plural, one {# day} other {# days}}",
+    "col_actions": "Actions",
+    "error_member_required": "Please select a member.",
+    "error_name_required": "Please enter a plan name.",
+    "error_generic": "An error occurred. Please try again."
   }
 }
