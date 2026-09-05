@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
+import { useImpersonation } from '@/context/ImpersonationContext';
 
-const IMPERSONATION_KEY = 'impersonation_session';
 const ACTIVE_GYM_KEY = 'activeGymId';
 
 export interface MemberProfile {
@@ -73,6 +73,8 @@ const AppContext = createContext<AppContextValue>({
 export function AppProvider({ children }: { children: ReactNode; gymId?: string | null }) {
   const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
+  const { session: impersonationSession } = useImpersonation();
+  const impersonateAs = impersonationSession?.effectiveUserId ?? null;
   const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
 
   const [gyms, setGyms] = useState<GymOption[]>([]);
@@ -86,9 +88,16 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
+  // Effective identity headers: carries the impersonated member/staff id (if any) to every /me/* call.
+  const buildHeaders = useCallback((token: string, resolvedGymId: string) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId };
+    if (impersonateAs) headers['x-impersonate-as'] = impersonateAs;
+    return headers;
+  }, [impersonateAs]);
+
   const loadCenters = useCallback(async (token: string, resolvedGymId: string) => {
     const centersRes = await fetch('/api/proxy/me/centers', {
-      headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
+      headers: buildHeaders(token, resolvedGymId),
     });
     if (!centersRes.ok) return;
     const data: MemberCenter[] = await centersRes.json();
@@ -97,11 +106,11 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     const storedId = stored ? Number(stored) : null;
     const fallback = data.find((c) => c.is_default)?.id ?? data[0]?.id ?? null;
     setActiveCenterIdState(storedId && data.find((c) => c.id === storedId) ? storedId : fallback);
-  }, []);
+  }, [buildHeaders]);
 
   const loadMemberData = useCallback(async (token: string, resolvedGymId: string) => {
     const res = await fetch('/api/proxy/me/profile', {
-      headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
+      headers: buildHeaders(token, resolvedGymId),
     });
     if (!res.ok) return false;
     setMember(await res.json());
@@ -110,14 +119,14 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     await loadCenters(token, resolvedGymId);
 
     const notifRes = await fetch('/api/proxy/me/notifications/count', {
-      headers: { Authorization: `Bearer ${token}`, 'x-gym-id': resolvedGymId },
+      headers: buildHeaders(token, resolvedGymId),
     });
     if (notifRes.ok) {
       const { unread } = await notifRes.json();
       setUnreadNotifications(unread ?? 0);
     }
     return true;
-  }, [loadCenters]);
+  }, [loadCenters, buildHeaders]);
 
   useEffect(() => {
     if (!isSignedIn || !user) {
@@ -125,29 +134,32 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
       return;
     }
 
+    // Recompute the effective member context whenever impersonation starts, stops, or switches
+    // target — otherwise Home stays permanently stuck on the previous identity's Loading state.
+    let cancelled = false;
+    setLoading(true);
+    setIsLinked(false);
+
     async function loadAll() {
       try {
         const token = await getToken();
-
-        let impersonateAs: string | null = null;
-        try {
-          const stored = typeof window !== 'undefined' ? sessionStorage.getItem(IMPERSONATION_KEY) : null;
-          if (stored) {
-            const session = JSON.parse(stored);
-            impersonateAs = session?.effectiveUserId ?? null;
-          }
-        } catch {}
+        if (!token) {
+          setLoading(false);
+          return;
+        }
 
         const authHeaders: Record<string, string> = { Authorization: `Bearer ${token}` };
         if (impersonateAs) authHeaders['x-impersonate-as'] = impersonateAs;
 
         // #341: load all accessible gyms, sorted alphabetically
         const gymsRes = await fetch('/api/proxy/me/gyms', { headers: authHeaders });
+        if (cancelled) return;
         if (!gymsRes.ok) {
           setLoading(false);
           return;
         }
         const gymList: GymOption[] = await gymsRes.json();
+        if (cancelled) return;
         setGyms(gymList);
 
         if (gymList.length === 0) {
@@ -163,14 +175,17 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
         setGymName(defaultGym.name);
         setTheme(defaultGym.theme ?? null);
 
-        await loadMemberData(token!, defaultGym.id);
+        await loadMemberData(token, defaultGym.id);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     loadAll();
-  }, [isSignedIn, user?.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn, user?.id, impersonateAs]);
 
   const switchGym = useCallback(async (id: string) => {
     const gym = gyms.find((g) => g.id === id);
@@ -194,15 +209,16 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     if (!gymId) return;
     try {
       const token = await getToken();
+      if (!token) return;
       const res = await fetch('/api/proxy/me/notifications/count', {
-        headers: { Authorization: `Bearer ${token}`, 'x-gym-id': gymId },
+        headers: buildHeaders(token, gymId),
       });
       if (res.ok) {
         const { unread } = await res.json();
         setUnreadNotifications(unread ?? 0);
       }
     } catch {}
-  }, [gymId, getToken]);
+  }, [gymId, getToken, buildHeaders]);
 
   function setActiveCenterId(id: number) {
     setActiveCenterIdState(id);
