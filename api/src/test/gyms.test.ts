@@ -162,6 +162,34 @@ describe('POST /platform/gyms', () => {
       .send({ name: 'Second Dup Gym', slug });
     expect(second.status).toBe(409);
   });
+
+  it('seeds the system Personal Training 10-session package as active/staff_only, priced with the gym system tax rate', async () => {
+    const res = await platformCreateGym({ name: 'PT Package Seed Test Gym' });
+    expect(res.status).toBe(201);
+
+    const { rows: taxRows } = await db.query(
+      `SELECT id FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND deleted_at IS NULL`,
+      [res.body.id],
+    );
+    expect(taxRows).toHaveLength(1);
+
+    const { rows } = await db.query(
+      `SELECT type, units, status, enrollment_status, is_system, validity_days, tax_rate_id, amount
+       FROM gym_charges WHERE gym_id = ? AND name = ?`,
+      [res.body.id, 'Personal Training Class Package (10 Sessions)'],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      type: 'sessions',
+      units: 10,
+      status: 'active',
+      enrollment_status: 'staff_only',
+      is_system: 1,
+      validity_days: 182,
+      tax_rate_id: taxRows[0].id,
+      amount: null,
+    });
+  });
 });
 
 // ─── GET /platform/gyms ───────────────────────────────────────────────────────
@@ -388,5 +416,21 @@ describe('POST /platform/gyms/:id/duplicate', () => {
       .post(`/platform/gyms/${id}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(404);
+  });
+
+  it('also seeds the system Personal Training 10-session package on the duplicate', async () => {
+    const sourceRes = await platformCreateGym({ name: 'Source For PT Package Dup' });
+    const res = await request
+      .post(`/platform/gyms/${sourceRes.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(201);
+    if (res.body?.id) extraGymIds.push(res.body.id);
+
+    const { rows } = await db.query(
+      `SELECT is_system, status, enrollment_status FROM gym_charges WHERE gym_id = ? AND name = ?`,
+      [res.body.id, 'Personal Training Class Package (10 Sessions)'],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ is_system: 1, status: 'active', enrollment_status: 'staff_only' });
   });
 });
