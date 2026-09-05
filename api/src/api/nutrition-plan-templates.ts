@@ -514,7 +514,7 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
 nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { id } = req.params as { id: string };
-  const { member_id, start_date } = req.body;
+  const { member_id, name, start_date } = req.body;
   if (!member_id) return res.status(400).json({ error: 'member_id is required' });
 
   try {
@@ -536,7 +536,7 @@ nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION')
     const newPlanId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         'INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [gymId, Number(member_id), src.id, src.name, src.description ?? null, start_date ?? null, 'active', gymMembershipId],
+        [gymId, Number(member_id), src.id, (name ?? src.name), src.description ?? null, start_date ?? null, 'active', gymMembershipId],
       );
 
       const { rows: days } = await tx.query(

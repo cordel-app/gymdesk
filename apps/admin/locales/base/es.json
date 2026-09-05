@@ -51,7 +51,8 @@
     "recycle_bin": "Papelera de reciclaje",
     "sellable_items": "Artículos a la Venta",
     "taxes": "Impuestos",
-    "feature_flags": "Flags de características"
+    "feature_flags": "Flags de características",
+    "nutrition_plans": "Planes de nutrición"
   },
   "dashboard": {
     "title": "Panel",
@@ -2199,7 +2200,8 @@
     "tree_goal_name_maintenance": "Mantenimiento",
     "tree_goal_name_performance": "Rendimiento",
     "tree_goal_name_recovery": "Recuperación",
-    "tree_goal_name_energy": "Energía"
+    "tree_goal_name_energy": "Energía",
+    "assign_to_member": "Asignar plan a miembro"
   },
   "nutrition_library": {
     "title": "Biblioteca Nutricional",
@@ -2508,5 +2510,27 @@
     "toggle_error": "Error al actualizar el flag.",
     "enabled_ok": "'{key}' activado.",
     "disabled_ok": "'{key}' desactivado."
+  },
+  "nutrition_plans": {
+    "title": "Planes de nutrición",
+    "assign_title": "Asignar plan de nutrición",
+    "label_template": "Plantilla",
+    "label_member": "Miembro",
+    "label_name": "Nombre del plan de nutrición",
+    "assign": "Asignar",
+    "assign_from_template": "Asignar desde plantilla",
+    "cancel": "Cancelar",
+    "saving": "Guardando…",
+    "assigned": "Plan de nutrición asignado correctamente",
+    "loading": "Cargando…",
+    "empty": "Todavía no hay planes de nutrición asignados.",
+    "delete": "Eliminar",
+    "confirm_delete": "¿Seguro que quieres eliminar este plan de nutrición?",
+    "filter_all_members": "Todos los miembros",
+    "day_count": "{count, plural, one {# día} other {# días}}",
+    "col_actions": "Acciones",
+    "error_member_required": "Por favor, selecciona un miembro.",
+    "error_name_required": "Por favor, introduce un nombre para el plan.",
+    "error_generic": "Se ha producido un error. Inténtalo de nuevo."
   }
 }
