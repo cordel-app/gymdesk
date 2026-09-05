@@ -37,6 +37,16 @@ async function firstChargeId(gymId: string): Promise<number | undefined> {
   return rows[0]?.id;
 }
 
+/** Inserts a custom tax rate directly and returns its id (mirrors createTestGym-style direct seeding). */
+async function createTaxRate(gymId: string, name: string, ratePercent: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
+     VALUES (?, ?, ?, 0, 'active', UTC_TIMESTAMP())`,
+    [gymId, name, ratePercent],
+  );
+  return insertId;
+}
+
 // ─── GET /sellable-items ─────────────────────────────────────────────────────────
 
 describe('GET /sellable-items', () => {
@@ -602,6 +612,115 @@ describe('GET /sellable-items — computed price fields', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bad Behavior', type: 'fee', tax_behavior: 'bad' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── Editing tax_rate_id (#368) ─────────────────────────────────────────────────
+
+describe('POST /sellable-items — tax_rate_id validation', () => {
+  let gymId: string;
+  let otherGymId: string;
+  let taxRateId: number;
+  let otherGymTaxRateId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Tax Rate Create Gym');
+    await createTestMembership(gymId, 'admin');
+    taxRateId = await createTaxRate(gymId, 'VAT 21%', 21);
+
+    otherGymId = await createTestGym('Tax Rate Other Gym');
+    await createTestMembership(otherGymId, 'admin');
+    otherGymTaxRateId = await createTaxRate(otherGymId, 'VAT 10%', 10);
+  });
+
+  it('creates an item with a valid tax_rate_id and computes tax fields', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Taxed Item', type: 'fee', amount: 121, tax_behavior: 'inclusive', tax_rate_id: taxRateId });
+    expect(res.status).toBe(201);
+    expect(res.body.tax_rate_id).toBe(taxRateId);
+    expect(res.body.applied_tax_rate).toBe(21);
+    expect(res.body.amount_excl_tax).toBeCloseTo(100, 2);
+    expect(res.body.amount_incl_tax).toBeCloseTo(121, 2);
+  });
+
+  it('returns 400 for a tax_rate_id that does not exist', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Bad Tax Item', type: 'fee', amount: 10, tax_rate_id: 999999 });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for a tax_rate_id belonging to another gym (tenant isolation)', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Cross Gym Tax Item', type: 'fee', amount: 10, tax_rate_id: otherGymTaxRateId });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
+  let gymId: string;
+  let otherGymId: string;
+  let itemId: number;
+  let taxRateId: number;
+  let otherGymTaxRateId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Tax Rate Edit Gym');
+    await createTestMembership(gymId, 'admin');
+    taxRateId = await createTaxRate(gymId, 'VAT 21%', 21);
+
+    otherGymId = await createTestGym('Tax Rate Edit Other Gym');
+    await createTestMembership(otherGymId, 'admin');
+    otherGymTaxRateId = await createTaxRate(otherGymId, 'VAT 10%', 10);
+
+    const create = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Editable Tax Item', type: 'fee', amount: 100 });
+    itemId = create.body.id;
+  });
+
+  it('updates the tax_rate_id and returns the recomputed tax fields', async () => {
+    // PUT overwrites amount unconditionally when the field is omitted (matches
+    // real frontend usage, which always submits the full form), so it must be
+    // resent here alongside the fields under test.
+    const res = await request
+      .put(`/sellable-items/${itemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ amount: 100, tax_rate_id: taxRateId, tax_behavior: 'exclusive' });
+    expect(res.status).toBe(200);
+    expect(res.body.tax_rate_id).toBe(taxRateId);
+    expect(res.body.applied_tax_rate).toBe(21);
+    expect(res.body.amount_excl_tax).toBeCloseTo(100, 2);
+    expect(res.body.amount_incl_tax).toBeCloseTo(121, 2);
+  });
+
+  it('returns 400 when updating to a tax_rate_id that does not exist', async () => {
+    const res = await request
+      .put(`/sellable-items/${itemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tax_rate_id: 999999 });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when updating to a tax_rate_id belonging to another gym', async () => {
+    const res = await request
+      .put(`/sellable-items/${itemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tax_rate_id: otherGymTaxRateId });
     expect(res.status).toBe(400);
   });
 });

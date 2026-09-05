@@ -2555,6 +2555,7 @@
     "error_generic": "Alguna cosa ha anat malament.",
     "col_tax_rate": "Tipus IVA",
     "label_tax_rate": "IVA / Impost",
+    "option_no_tax": "Sense impost",
     "label_tax_behavior": "Comportament fiscal",
     "tax_behavior_inclusive": "Inclusiu (el preu inclou l'impost)",
     "tax_behavior_exclusive": "Exclusiu (l'impost s'afegeix al preu)",

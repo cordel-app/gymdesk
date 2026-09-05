@@ -2527,6 +2527,7 @@
     "error_generic": "Algo salió mal.",
     "col_tax_rate": "Tipo IVA",
     "label_tax_rate": "IVA / Impuesto",
+    "option_no_tax": "Sin impuesto",
     "label_tax_behavior": "Comportamiento fiscal",
     "tax_behavior_inclusive": "Inclusivo (el precio incluye el impuesto)",
     "tax_behavior_exclusive": "Exclusivo (el impuesto se suma al precio)",
