@@ -184,6 +184,14 @@ describe('GET /sellable-items filters', () => {
     expect(res.status).toBe(400);
   });
 
+  it('returns 400 for an invalid enrollment_status query value', async () => {
+    const res = await request
+      .get('/sellable-items?enrollment_status=bad')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
   it('returns only active charges when ?status=active', async () => {
     const res = await request
       .get('/sellable-items?status=active')
@@ -306,6 +314,121 @@ describe('PUT /sellable-items/:id', () => {
       .set('x-gym-id', gymAdmin)
       .send({ amount: 1.0 });
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── enrollment_status ────────────────────────────────────────────────────────
+
+describe('Sellable Item enrollment_status', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Charges Enrollment Gym');
+    await createTestMembership(gymId, 'admin');
+    await seedGymCharges(gymId);
+  });
+
+  it('defaults new custom items to enrollment_status = public', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Public By Default', type: 'fee', amount: 10 });
+    expect(res.status).toBe(201);
+    expect(res.body.enrollment_status).toBe('public');
+  });
+
+  it('creates a custom item with an explicit enrollment_status = staff_only', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Internal Only Item', type: 'fee', amount: 10, enrollment_status: 'staff_only' });
+    expect(res.status).toBe(201);
+    expect(res.body.enrollment_status).toBe('staff_only');
+  });
+
+  it('returns 400 for an invalid enrollment_status on create', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Bad Enrollment', type: 'fee', enrollment_status: 'members_only' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for an invalid enrollment_status on update', async () => {
+    const chargeId = await firstChargeId(gymId);
+    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+
+    const res = await request
+      .put(`/sellable-items/${chargeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ enrollment_status: 'members_only' });
+    expect(res.status).toBe(400);
+  });
+
+  it('updates enrollment_status to staff_only and back to public independently of status', async () => {
+    const chargeId = await firstChargeId(gymId);
+    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+
+    const toStaffOnly = await request
+      .put(`/sellable-items/${chargeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ status: 'active', enrollment_status: 'staff_only' });
+    expect(toStaffOnly.status).toBe(200);
+    expect(toStaffOnly.body.status).toBe('active');
+    expect(toStaffOnly.body.enrollment_status).toBe('staff_only');
+
+    const backToPublic = await request
+      .put(`/sellable-items/${chargeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ enrollment_status: 'public' });
+    expect(backToPublic.status).toBe(200);
+    expect(backToPublic.body.enrollment_status).toBe('public');
+    // status is left untouched by the enrollment_status-only update
+    expect(backToPublic.body.status).toBe('active');
+  });
+
+  it('filters by ?enrollment_status=staff_only', async () => {
+    const chargeId = await firstChargeId(gymId);
+    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+
+    await request
+      .put(`/sellable-items/${chargeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ enrollment_status: 'staff_only' });
+
+    const res = await request
+      .get('/sellable-items?enrollment_status=staff_only')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.every((c: { enrollment_status: string }) => c.enrollment_status === 'staff_only')).toBe(true);
+    expect((res.body as Array<{ id: number }>).map((c) => c.id)).toContain(chargeId);
+  });
+
+  it('deactivating an item does not change its enrollment_status', async () => {
+    const chargeId = await firstChargeId(gymId);
+    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+
+    await request
+      .put(`/sellable-items/${chargeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ status: 'active', enrollment_status: 'public' });
+
+    const deactivate = await request
+      .post(`/sellable-items/${chargeId}/deactivate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(deactivate.status).toBe(200);
+    expect(deactivate.body.status).toBe('inactive');
+    expect(deactivate.body.enrollment_status).toBe('public');
   });
 });
 

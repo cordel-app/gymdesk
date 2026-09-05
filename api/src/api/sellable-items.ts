@@ -17,6 +17,7 @@ const SELECT = `
     gc.type,
     gc.units,
     gc.status,
+    gc.enrollment_status,
     gc.is_system,
     gc.description,
     gc.amount,
@@ -50,6 +51,7 @@ const SELECT = `
 
 const VALID_TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const VALID_STATUSES = ['active', 'inactive'] as const;
+const VALID_ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 const VALID_FREQUENCIES = ['once', 'per_session', 'four_weeks', 'week', 'month', 'year'] as const;
 const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
 
@@ -90,6 +92,7 @@ sellableItemsRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const type = typeof req.query.type === 'string' ? req.query.type : null;
   const status = typeof req.query.status === 'string' ? req.query.status : null;
+  const enrollmentStatus = typeof req.query.enrollment_status === 'string' ? req.query.enrollment_status : null;
   // legacy filter kept for backward compat
   const availability = typeof req.query.availability === 'string' ? req.query.availability : null;
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : null;
@@ -100,12 +103,16 @@ sellableItemsRouter.get('/', async (req, res, next) => {
   if (status && !VALID_STATUSES.includes(status as any)) {
     return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
   }
+  if (enrollmentStatus && !VALID_ENROLLMENT_STATUSES.includes(enrollmentStatus as any)) {
+    return res.status(400).json({ error: `enrollment_status must be one of: ${VALID_ENROLLMENT_STATUSES.join(', ')}` });
+  }
 
   try {
     const params: unknown[] = [gymId];
     let sql = `${SELECT} WHERE gc.gym_id = ? AND gc.deleted_at IS NULL`;
     if (type) { sql += ' AND gc.type = ?'; params.push(type); }
     if (status) { sql += ' AND gc.status = ?'; params.push(status); }
+    if (enrollmentStatus) { sql += ' AND gc.enrollment_status = ?'; params.push(enrollmentStatus); }
     if (availability) {
       const mapped = availability === 'available' ? 'active' : 'inactive';
       sql += ' AND gc.status = ?'; params.push(mapped);
@@ -136,7 +143,7 @@ sellableItemsRouter.get('/:id', async (req, res, next) => {
 sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
-    name, type, units, description, amount, billing_frequency, status, notes,
+    name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
     package_information, validity_days, tax_rate_id, tax_behavior,
   } = req.body;
 
@@ -144,6 +151,9 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (!type || !VALID_TYPES.includes(type)) return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
   if (billing_frequency && !VALID_FREQUENCIES.includes(billing_frequency)) {
     return res.status(400).json({ error: `billing_frequency must be one of: ${VALID_FREQUENCIES.join(', ')}` });
+  }
+  if (enrollment_status && !VALID_ENROLLMENT_STATUSES.includes(enrollment_status)) {
+    return res.status(400).json({ error: `enrollment_status must be one of: ${VALID_ENROLLMENT_STATUSES.join(', ')}` });
   }
   if (tax_behavior && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
     return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
@@ -154,10 +164,10 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   try {
     const { insertId } = await db.query(
       `INSERT INTO gym_charges
-         (gym_id, name, type, units, description, amount, currency, billing_frequency, status,
+         (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
           is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
           created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
       [
         gymId,
         name.trim(),
@@ -167,6 +177,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
         amount != null ? parseFloat(amount) : null,
         billing_frequency || null,
         status || 'active',
+        enrollment_status || 'public',
         notes?.trim() || null,
         package_information?.trim() || null,
         validity_days != null ? parseInt(validity_days, 10) : null,
@@ -182,7 +193,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       entityType: 'gym_charge',
       entityId: String(insertId),
       entityName: name.trim(),
-      next: { name: name.trim(), type, units, amount, billing_frequency, status, tax_rate_id, tax_behavior },
+      next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior },
     });
     res.status(201).json(attachPriceFields(rows[0]));
   } catch (err: any) {
@@ -195,7 +206,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
 sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
-    description, amount, billing_frequency, notes, name, type, units, status,
+    description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
     package_information, validity_days, tax_rate_id, tax_behavior,
   } = req.body;
 
@@ -204,6 +215,12 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   }
   if (type && !VALID_TYPES.includes(type)) {
     return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
+  }
+  if (status && !VALID_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
+  }
+  if (enrollment_status && !VALID_ENROLLMENT_STATUSES.includes(enrollment_status)) {
+    return res.status(400).json({ error: `enrollment_status must be one of: ${VALID_ENROLLMENT_STATUSES.join(', ')}` });
   }
   if (tax_behavior && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
     return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
@@ -229,6 +246,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
            availability
          ),
          status                    = COALESCE(?, status),
+         enrollment_status         = COALESCE(?, enrollment_status),
          notes                     = ?,
          name                      = COALESCE(IF(? = 0, ?, NULL), name),
          type                      = COALESCE(IF(? = 0, ?, NULL), type),
@@ -246,6 +264,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         billing_frequency ?? null,
         status ?? null, status ?? null,
         status ?? null,
+        enrollment_status ?? null,
         notes ?? null,
         isSystem, name?.trim() ?? null,
         isSystem, type ?? null,
@@ -267,7 +286,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
       entityType: 'gym_charge',
       entityId: String(req.params.id),
       entityName: rows[0]?.name ?? rows[0]?.charge_type_name,
-      next: { description, amount, billing_frequency, notes, name, type, units, status, tax_rate_id, tax_behavior },
+      next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior },
     });
     res.json(attachPriceFields(rows[0]));
   } catch (err: any) {
