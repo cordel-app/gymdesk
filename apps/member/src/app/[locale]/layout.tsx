@@ -42,8 +42,8 @@ export default async function LocaleLayout({
         </head>
         <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', color: 'var(--gd-text, #111827)', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
-            <AppProvider>
-              <ImpersonationProvider>
+            <ImpersonationProvider>
+              <AppProvider>
                 <ThemeProvider>
                   <AdminBar />
                   <TopBar />
@@ -51,8 +51,8 @@ export default async function LocaleLayout({
                   <CenterSwitcher />
                   {children}
                 </ThemeProvider>
-              </ImpersonationProvider>
-            </AppProvider>
+              </AppProvider>
+            </ImpersonationProvider>
           </NextIntlClientProvider>
         </body>
       </html>
