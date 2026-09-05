@@ -19,6 +19,28 @@ const THEME_SELECT = `
     t.tokens AS theme_tokens
 `;
 
+// #371: system Sellable Item seeded for every gym (existing gyms backfilled
+// by migration 124; this keeps gyms created afterwards in sync).
+const SYSTEM_PT_PACKAGE_NAME = 'Personal Training Class Package (10 Sessions)';
+
+async function seedSystemPtPackage(gymId: string) {
+  await db.query(
+    `INSERT INTO gym_charges
+       (gym_id, name, type, units, status, enrollment_status, is_system,
+        validity_days, tax_rate_id, currency, tax_behavior, created_at, modified_at)
+     SELECT ?, ?, 'sessions', 10, 'active', 'staff_only', 1, 182,
+       (SELECT tr.id FROM tax_rates tr
+        WHERE tr.gym_id = ? AND tr.is_system = 1 AND tr.deleted_at IS NULL
+        ORDER BY tr.id LIMIT 1),
+       'EUR', 'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP()
+     FROM DUAL
+     WHERE NOT EXISTS (
+       SELECT 1 FROM gym_charges gc WHERE gc.gym_id = ? AND gc.is_system = 1 AND gc.name = ?
+     )`,
+    [gymId, SYSTEM_PT_PACKAGE_NAME, gymId, gymId, SYSTEM_PT_PACKAGE_NAME],
+  );
+}
+
 function attachTheme(row: any) {
   const { theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at, theme_tokens, ...rest } = row;
   const theme = theme_id_val ? {
@@ -174,6 +196,7 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
        VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
       [id],
     );
+    await seedSystemPtPackage(id);
     const { rows } = await db.query(
       `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
       [id],
@@ -319,6 +342,7 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
      VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
     [newId],
   );
+  await seedSystemPtPackage(newId);
   const { rows } = await db.query(
     `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
     [newId],
