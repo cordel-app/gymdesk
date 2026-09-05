@@ -150,7 +150,9 @@
     "col_created_by": "Creado por",
     "col_created_at": "Creado el",
     "col_modified_by": "Modificado por",
-    "col_modified_at": "Modificado el"
+    "col_modified_at": "Modificado el",
+    "unsaved_changes": "Tienes cambios sin guardar. ¿Descartarlos?",
+    "unsaved_discard": "Descartar cambios"
   },
   "member_payments": {
     "title": "Pagos del socio",

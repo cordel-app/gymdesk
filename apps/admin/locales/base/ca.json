@@ -151,7 +151,9 @@
     "col_created_by": "Creat per",
     "col_created_at": "Creat el",
     "col_modified_by": "Modificat per",
-    "col_modified_at": "Modificat el"
+    "col_modified_at": "Modificat el",
+    "unsaved_changes": "Tens canvis sense desar. Descartar-los?",
+    "unsaved_discard": "Descartar canvis"
   },
   "member_payments": {
     "title": "Pagaments del soci",

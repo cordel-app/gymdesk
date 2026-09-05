@@ -190,7 +190,9 @@
     "col_created_by": "Created by",
     "col_created_at": "Created at",
     "col_modified_by": "Modified by",
-    "col_modified_at": "Modified at"
+    "col_modified_at": "Modified at",
+    "unsaved_changes": "You have unsaved changes. Discard them?",
+    "unsaved_discard": "Discard changes"
   },
   "member_payments": {
     "title": "Member Payments",
