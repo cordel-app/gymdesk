@@ -4,6 +4,10 @@ Use the **Plans** module (`api/src/api/membership-plans.ts` + `apps/admin/src/ap
 
 Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `DependencyDialog`, `StatusBadge`, `StatusFilter`, `Toast` (plus `ui.tsx` primitives) — never hand-roll tables, modals, or status chips. The sidebar is config-driven from `config/navigationGroups.ts` (grouped, role-gated), so nav changes are data, not JSX.
 
+Two list/edit shapes are both in active use — pick per-module, don't mix within one page:
+- **Modal CRUD** (`CrudModal` for Create/Edit/Details) — the Plans module above; use for simpler entities with few fields.
+- **Inline row CRUD** (Sellable Items `apps/admin/src/app/[locale]/financials/sellable-items/page.tsx`, Taxes `.../financials/taxes/page.tsx`) — no modal for Create or Edit: a "+ Add" button opens an inline creation row at the top of the list (`inlineNew` state, `renderInlineNewRow()`), each row expands/collapses in place (`expanded: Set<id>`, click header to toggle) showing read-only detail below the header when collapsed-detail is needed, and `Edit` from the row's `ContextMenu` swaps the row into an inline form (`editingId`/`editForm`) with Save/Cancel — `Details` may still open a `CrudModal` (read-only, `hideSave`) since that's a single lookup, not a create/edit surface. Prefer this shape when the entity benefits from at-a-glance scanning of many rows, has a truncatable long-text field (e.g. `description`) that should show a preview inline, or the module already has a sibling page using it (keep a module's pages visually consistent with each other).
+
 ---
 
 ## Standard Error Response
