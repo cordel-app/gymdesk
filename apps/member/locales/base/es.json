@@ -9,23 +9,30 @@
     "loading": "Cargando…",
     "next_booking": "Próxima reserva",
     "no_upcoming_booking": "No tienes reservas próximas.",
-    "browse_schedule": "Ver horario",
     "waitlisted": "En lista de espera",
     "membership_status": "Cuota",
     "no_membership": "Sin cuota activa.",
     "expires_on": "Vence el {date}",
     "class_credits": "Créditos de clases",
-    "credits_remaining": "sesiones disponibles"
+    "credits_remaining": "sesiones disponibles",
+    "greeting_morning": "Buenos días, {name}",
+    "greeting_afternoon": "Buenas tardes, {name}",
+    "greeting_evening": "Buenas noches, {name}",
+    "view_booking": "Ver reserva",
+    "browse_calendar": "Ver calendario",
+    "alerts_view_all": "Ver alertas",
+    "nutrition_today": "Nutrición de hoy",
+    "goals": "Objetivos",
+    "no_nutrition_today": "Sin plan de nutrición para hoy."
   },
   "nav": {
-    "home": "Inicio",
-    "schedule": "Horario",
     "calendar": "Calendario",
-    "membership": "Cuota",
-    "packages": "Bonos",
-    "training": "Entreno",
+    "training": "Mi Plan de Entrenamiento",
+    "bookings": "Mis Reservas",
+    "nutrition": "Mi Nutrición",
+    "membership": "Mi Cuota",
     "profile": "Perfil",
-    "notifications": "Alertas"
+    "alerts": "Alertas"
   },
   "common": {
     "error": "Algo ha ido mal.",
@@ -34,7 +41,7 @@
     "no_gym_available": "No hay ningún gimnasio disponible"
   },
   "training": {
-    "title": "Entrenamiento",
+    "title": "Mi Plan de Entrenamiento",
     "loading": "Cargando…",
     "empty": "Aún no tienes un plan asignado.",
     "no_plan_today": "No hay plan para este día.",
@@ -85,7 +92,15 @@
     "edit": "Editar",
     "save": "Guardar",
     "cancel": "Cancelar",
-    "saved": "Perfil actualizado."
+    "saved": "Perfil actualizado.",
+    "default_gym": "Gimnasio por defecto",
+    "default_center": "Centro por defecto",
+    "enrollment": "Inscripción",
+    "payment_status": "Estado de pago",
+    "payment_status_ok": "Al día",
+    "payment_status_pending": "Pago pendiente",
+    "payment_status_failed": "Pago fallido",
+    "no_center": "Sin centro asignado"
   },
   "packages": {
     "title": "Mis bonos",
@@ -102,7 +117,7 @@
     "status_cancelled": "Cancelado"
   },
   "member_schedule": {
-    "title": "Horario",
+    "title": "Mis Reservas",
     "loading": "Cargando…",
     "empty": "No hay próximas sesiones.",
     "book": "Reservar",
@@ -143,7 +158,7 @@
     "type_shared_training_rejected": "Entreno compartido rechazado"
   },
   "notifications": {
-    "title": "Notificaciones",
+    "title": "Alertas",
     "loading": "Cargando…",
     "empty": "Sin notificaciones aún.",
     "mark_all_read": "Marcar todo como leído",
@@ -262,5 +277,22 @@
     "type_staff": "Personal",
     "cancel": "Cancelar",
     "error_start": "No se pudo iniciar la suplantación."
+  },
+  "nutrition": {
+    "title": "Mi Nutrición",
+    "loading": "Cargando…",
+    "error": "Algo salió mal.",
+    "empty": "Aún no tienes un plan de nutrición asignado.",
+    "all_days": "Todos los días",
+    "goals": "Objetivos",
+    "meal_type": {
+      "recien_levantado": "Recién levantado",
+      "breakfast": "Desayuno",
+      "media_manana": "Media mañana",
+      "lunch": "Comida",
+      "snack": "Merienda",
+      "dinner": "Cena",
+      "antes_de_dormir": "Antes de dormir"
+    }
   }
 }

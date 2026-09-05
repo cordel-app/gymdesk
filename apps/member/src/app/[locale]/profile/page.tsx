@@ -13,16 +13,30 @@ interface Profile {
   phone: string | null;
 }
 
+interface Membership {
+  status: 'active' | 'paused' | 'cancelled' | 'expired';
+}
+
+interface PaymentRequest {
+  status: 'pending' | 'completed' | 'failed' | 'expired';
+}
+
 export default function ProfilePage() {
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { isLinked, loading: appLoading } = useApp();
+  const {
+    isLinked, loading: appLoading,
+    gyms, gymId, switchGym,
+    centers, activeCenterId, setActiveCenterId,
+  } = useApp();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [membership, setMembership] = useState<Membership | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'ok' | 'pending' | 'failed' | null>(null);
 
   // edit state
   const [editing, setEditing] = useState(false);
@@ -37,11 +51,18 @@ export default function ProfilePage() {
     let cancelled = false;
     (async () => {
       try {
-        const data = await apiFetch<Profile>('/me/profile');
-        if (!cancelled) {
-          setProfile(data);
-          setPhone(data.phone ?? '');
-        }
+        const [data, mship, prs] = await Promise.all([
+          apiFetch<Profile>('/me/profile'),
+          apiFetch<{ membership: Membership | null }>('/me/membership').catch(() => ({ membership: null })),
+          apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
+        ]);
+        if (cancelled) return;
+        setProfile(data);
+        setPhone(data.phone ?? '');
+        setMembership(mship.membership);
+        if (prs.some((p) => p.status === 'failed')) setPaymentStatus('failed');
+        else if (prs.some((p) => p.status === 'pending')) setPaymentStatus('pending');
+        else setPaymentStatus('ok');
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -130,6 +151,57 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      {/* #361: default gym / center + enrollment / payment status summary */}
+      <div style={{ ...styles.card, marginTop: 16 }}>
+        {gyms.length > 1 && (
+          <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+            <p style={styles.label}>{t('profile.default_gym')}</p>
+            <select
+              value={gymId ?? ''}
+              onChange={(e) => switchGym(e.target.value)}
+              style={styles.select}
+              aria-label={t('common.gym_switcher_label')}
+            >
+              {gyms.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+          <p style={styles.label}>{t('profile.default_center')}</p>
+          {centers.length > 0 ? (
+            <select
+              value={activeCenterId ?? ''}
+              onChange={(e) => setActiveCenterId(Number(e.target.value))}
+              style={styles.select}
+              aria-label={t('common.center_switcher_label')}
+            >
+              {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <p style={styles.value}><span style={styles.empty}>{t('profile.no_center')}</span></p>
+          )}
+        </div>
+
+        <div style={styles.fieldRow}>
+          <div>
+            <p style={styles.label}>{t('profile.enrollment')}</p>
+            <p style={styles.value}>
+              {membership ? t(`membership.status.${membership.status}`) : <span style={styles.empty}>{t('home.no_membership')}</span>}
+            </p>
+          </div>
+        </div>
+
+        <div style={{ padding: '12px 0' }}>
+          <p style={styles.label}>{t('profile.payment_status')}</p>
+          <p style={styles.value}>
+            {paymentStatus === 'failed' && t('profile.payment_status_failed')}
+            {paymentStatus === 'pending' && t('profile.payment_status_pending')}
+            {paymentStatus === 'ok' && t('profile.payment_status_ok')}
+          </p>
+        </div>
+      </div>
     </main>
   );
 }
@@ -155,6 +227,7 @@ const styles: Record<string, React.CSSProperties> = {
   editBtn:     { background: 'none', border: '1px solid #e4e4e7', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#18181b', flexShrink: 0 },
   editRow:     { padding: '12px 0', borderBottom: '1px solid #f0f0f0' },
   input:       { display: 'block', width: '100%', padding: '10px 12px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 16, marginTop: 6, boxSizing: 'border-box' as const, outline: 'none' },
+  select:      { display: 'block', width: '100%', padding: '10px 12px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 15, marginTop: 6, boxSizing: 'border-box' as const, background: '#fff', color: '#18181b' },
   fieldError:  { margin: '6px 0 0', fontSize: 13, color: '#c0392b' },
   editActions: { display: 'flex', gap: 8, marginTop: 10 },
   btnSave:     { flex: 1, padding: '10px 0', background: '#18181b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
