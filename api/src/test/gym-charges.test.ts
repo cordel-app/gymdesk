@@ -568,11 +568,14 @@ describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
   });
 
   it('updates the tax_rate_id and returns the recomputed tax fields', async () => {
+    // PUT overwrites amount unconditionally when the field is omitted (matches
+    // real frontend usage, which always submits the full form), so it must be
+    // resent here alongside the fields under test.
     const res = await request
       .put(`/sellable-items/${itemId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ tax_rate_id: taxRateId, tax_behavior: 'exclusive' });
+      .send({ amount: 100, tax_rate_id: taxRateId, tax_behavior: 'exclusive' });
     expect(res.status).toBe(200);
     expect(res.body.tax_rate_id).toBe(taxRateId);
     expect(res.body.applied_tax_rate).toBe(21);
