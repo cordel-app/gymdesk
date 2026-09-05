@@ -567,7 +567,9 @@
     "deleted": "Deleted",
     "completed": "Completed",
     "scheduled": "Scheduled",
-    "under_maintenance": "Under Maintenance"
+    "under_maintenance": "Under Maintenance",
+    "public": "Public",
+    "staff_only": "Staff Only"
   },
   "plans": {
     "title": "Membership Plans",
@@ -2526,6 +2528,7 @@
     "col_created_by": "Created By",
     "col_created_at": "Created At",
     "col_status": "Status",
+    "col_enrollment_status": "Enrollment",
     "type_fee": "Fee",
     "type_service": "Service",
     "type_sessions": "Sessions",
@@ -2547,6 +2550,7 @@
     "label_description": "Description",
     "label_units": "Units",
     "label_status": "Status",
+    "label_enrollment_status": "Enrollment Status",
     "label_amount": "Amount",
     "label_frequency": "Billing Frequency",
     "label_validity_days": "Validity (days)",

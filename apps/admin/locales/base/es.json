@@ -502,7 +502,9 @@
     "archived": "Archivado",
     "open": "Abierto",
     "closed": "Cerrado",
-    "under_maintenance": "En mantenimiento"
+    "under_maintenance": "En mantenimiento",
+    "public": "Público",
+    "staff_only": "Solo Personal"
   },
   "plans": {
     "title": "Cuotas",
@@ -2472,6 +2474,7 @@
     "col_created_by": "Creado por",
     "col_created_at": "Creado el",
     "col_status": "Estado",
+    "col_enrollment_status": "Inscripción",
     "type_fee": "Tarifa",
     "type_service": "Servicio",
     "type_sessions": "Sesiones",
@@ -2493,6 +2496,7 @@
     "label_description": "Descripción",
     "label_units": "Unidades",
     "label_status": "Estado",
+    "label_enrollment_status": "Estado de Inscripción",
     "label_amount": "Importe",
     "label_frequency": "Frecuencia de cobro",
     "label_validity_days": "Validez (días)",

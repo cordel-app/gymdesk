@@ -18,10 +18,12 @@ import { btnStyle, btnSmall } from '@/components/ui';
 
 const TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const STATUSES = ['active', 'inactive'] as const;
+const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 const FREQUENCIES = ['once', 'per_session', 'week', 'month', 'year'] as const;
 
 type ItemType = typeof TYPES[number];
 type ItemStatus = typeof STATUSES[number];
+type EnrollmentStatus = typeof ENROLLMENT_STATUSES[number];
 type Frequency = typeof FREQUENCIES[number];
 
 interface SellableItem {
@@ -34,6 +36,7 @@ interface SellableItem {
   type: ItemType;
   units: number | null;
   status: ItemStatus;
+  enrollment_status: EnrollmentStatus;
   is_system: number;
   description: string | null;
   amount: string | null;
@@ -67,6 +70,7 @@ type EditForm = {
   amount: string;
   billing_frequency: string;
   status: ItemStatus;
+  enrollment_status: EnrollmentStatus;
   notes: string;
   package_information: string;
   validity_days: string;
@@ -91,6 +95,7 @@ function emptyEditForm(item: SellableItem): EditForm {
     amount: item.amount != null ? parseFloat(item.amount).toString() : '',
     billing_frequency: item.billing_frequency ?? '',
     status: item.status,
+    enrollment_status: item.enrollment_status,
     notes: item.notes ?? '',
     package_information: item.package_information ?? '',
     validity_days: item.validity_days != null ? String(item.validity_days) : '',
@@ -258,6 +263,7 @@ export default function SellableItemsPage() {
           amount: editForm.amount !== '' ? parseFloat(editForm.amount) : null,
           billing_frequency: editForm.billing_frequency || null,
           status: editForm.status,
+          enrollment_status: editForm.enrollment_status,
           notes: editForm.notes.trim() || null,
           package_information: editForm.package_information.trim() || null,
           validity_days: editForm.validity_days !== '' ? parseInt(editForm.validity_days, 10) : null,
@@ -431,6 +437,12 @@ export default function SellableItemsPage() {
           <div style={{ minWidth: 80, flexShrink: 0 }}>
             <StatusBadge status={item.status} label={tStatus(item.status)} />
           </div>
+          <div style={{ minWidth: 90, flexShrink: 0 }}>
+            <StatusBadge
+              status={item.enrollment_status === 'public' ? 'active' : 'paused'}
+              label={tStatus(item.enrollment_status)}
+            />
+          </div>
           <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
           <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
@@ -494,6 +506,16 @@ export default function SellableItemsPage() {
                   style={inlineSelectStyle}
                 >
                   {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={inlineLabelStyle}>{t('label_enrollment_status')}</label>
+                <select
+                  value={editForm.enrollment_status}
+                  onChange={(e) => setEditForm({ ...editForm, enrollment_status: e.target.value as EnrollmentStatus })}
+                  style={inlineSelectStyle}
+                >
+                  {ENROLLMENT_STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
                 </select>
               </div>
             </div>
@@ -574,6 +596,7 @@ export default function SellableItemsPage() {
             <DetailRow label={t('label_type')} value={t(`type_${item.type}`)} />
             <DetailRow label={t('label_units')} value={item.units != null ? String(item.units) : '—'} />
             <DetailRow label={t('label_status')} value={tStatus(item.status)} />
+            <DetailRow label={t('label_enrollment_status')} value={tStatus(item.enrollment_status)} />
 
             <SectionHeader title={t('section_billing')} />
             <DetailRow label={t('label_amount')} value={fmtAmount(item.amount, item.currency)} />
@@ -644,6 +667,7 @@ export default function SellableItemsPage() {
           <div style={{ minWidth: 80 }}>{t('col_created_by')}</div>
           <div style={{ minWidth: 85 }}>{t('col_created_at')}</div>
           <div style={{ minWidth: 80 }}>{t('col_status')}</div>
+          <div style={{ minWidth: 90 }}>{t('col_enrollment_status')}</div>
           <div style={{ minWidth: 68 }} />
         </div>
       )}
@@ -683,6 +707,7 @@ export default function SellableItemsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <ModalField label={t('label_units')} value={details.units != null ? String(details.units) : '—'} />
               <ModalField label={t('label_status')} value={tStatus(details.status)} />
+              <ModalField label={t('label_enrollment_status')} value={tStatus(details.enrollment_status)} />
             </div>
 
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
