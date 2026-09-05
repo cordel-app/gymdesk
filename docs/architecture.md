@@ -214,7 +214,7 @@ Superadmins can impersonate any active gym user for support and debugging withou
 - `AdminBar.tsx` — superadmin-only top strip rendered above `CenterSwitcher` in the layout; shows "Impersonate" button (via `MemberImpersonationDialog`) when not impersonating, or `ImpersonationBanner` when impersonating.
 - `MemberImpersonationDialog.tsx` — uses raw `fetch` (not `apiFetch`) since `gymId` may not yet be resolved in `AppContext` when impersonation starts; calls `GET /targets` and `POST /:targetId` with `{ targetType }` body.
 - `ImpersonationBanner.tsx` — amber top bar with stop button; calls `POST /platform/impersonation/stop`.
-- `AppContext.tsx` — exposes `isSuperadmin` (via `useUser()` + Clerk `publicMetadata`); reads sessionStorage on mount and adds `x-impersonate-as` to the initial `GET /me/gym` call.
+- `AppContext.tsx` — exposes `isSuperadmin` (via `useUser()` + Clerk `publicMetadata`); consumes `useImpersonation()` reactively (`ImpersonationProvider` wraps `AppProvider` in `layout.tsx`, not the other way around) so its data-loading effect re-runs — and resets `loading`/`isLinked` — whenever impersonation starts, stops, or switches target. Adds `x-impersonate-as` to every `/me/*` call it makes (`/me/gyms`, `/me/profile`, `/me/centers`, `/me/notifications/count`), not just the initial gyms call (#362 fix — previously only `/me/gyms` carried the header and the effect never re-ran on impersonation change, leaving Home's Next Booking/Membership stuck on `Loading...` under impersonation).
 - `apiClient.ts` — appends `x-impersonate-as` header to all API calls when an impersonation session is stored.
 
 **Restrictions**: cannot impersonate disabled users, other superadmins, or yourself. No new DB tables.
@@ -388,6 +388,8 @@ All requests go through `apiFetch()` (from `useApiClient()`), which:
 2. Attaches `Authorization: Bearer <token>`.
 3. Attaches `x-gym-id: <activeGymId>`.
 4. Hits `/api/proxy/<path>` → Next.js proxy route → backend. The proxy MUST stay on the Node runtime (no `runtime = 'edge'`). The API has no CORS — it is reachable only through these proxies. The proxy target is `CORDEL_FITNESS_API_URL` (deployed: `https://api.vdicube.com`; local dev: `http://localhost:3000`).
+
+**Header allow-list gotcha (#362)**: the proxy route (`app/api/proxy/[...path]/route.ts` in both `apps/admin` and `apps/member`) only forwards headers on an explicit allow-list (`authorization`, `x-gym-id`, `x-center-id`, `x-impersonate-as`, `content-type`). Any new request header the frontend needs the backend to see (e.g. a future context header) must be added to this allow-list in **both** apps' proxy routes, or it is silently dropped and the backend never sees it — this is exactly what broke impersonation end-to-end until #362 fixed the member app's proxy.
 
 ### Backoffice: GymContext
 Available via `useGym()`. Key fields:

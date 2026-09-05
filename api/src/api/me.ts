@@ -1013,7 +1013,7 @@ meRouter.get('/membership', requireRole('member'), async (req: Request, res: Res
               um.base_price, um.final_price, um.discount_reason, um.discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
               um.next_billing_date,
-              p.name AS plan_name, p.description AS plan_description, p.base_price AS plan_base_price,
+              p.name AS plan_name, p.description AS plan_description,
               bp.recurring_billing_interval AS billing_interval,
               bp.recurring_billing_unit AS billing_unit
        FROM user_memberships um

@@ -9,7 +9,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
 
   const headers: Record<string, string> = {};
   req.headers.forEach((value, key) => {
-    if (['authorization', 'x-gym-id', 'content-type'].includes(key.toLowerCase())) {
+    if (['authorization', 'x-gym-id', 'x-center-id', 'x-impersonate-as', 'content-type'].includes(key.toLowerCase())) {
       headers[key] = value;
     }
   });
