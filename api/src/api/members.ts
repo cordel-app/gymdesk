@@ -44,6 +44,8 @@ membersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const centerId = req.query.centerId ? Number(req.query.centerId) : null;
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : null;
+  const paymentStatusFilter = typeof req.query.payment_status === 'string' ? req.query.payment_status : null;
+  const enrollmentStatusFilter = typeof req.query.enrollment_status === 'string' ? req.query.enrollment_status : null;
   const joins: string[] = [];
   const where: string[] = ['m.deleted_at IS NULL', 'm.gym_id = ?'];
   const params: any[] = [gymId];
@@ -55,7 +57,18 @@ membersRouter.get('/', async (req, res) => {
     where.push('(m.name LIKE ? OR m.email LIKE ?)');
     params.push(`%${q}%`, `%${q}%`);
   }
+  // enrollment_status filter: applied as HAVING since it's a subquery alias
+  const having: string[] = [];
+  if (paymentStatusFilter) {
+    having.push('payment_status = ?');
+    params.push(paymentStatusFilter);
+  }
+  if (enrollmentStatusFilter) {
+    having.push('enrollment_status = ?');
+    params.push(enrollmentStatusFilter);
+  }
   const limitClause = q ? 'LIMIT 20' : '';
+  const havingClause = having.length ? `HAVING ${having.join(' AND ')}` : '';
   const { rows } = await db.query(
     `SELECT m.*, m.membership_plan_id AS fare_id, p.name AS fare_name,
             CASE
@@ -66,11 +79,16 @@ membersRouter.get('/', async (req, res) => {
             (SELECT um.status
              FROM user_memberships um
              WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-             ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS membership_status
+             ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS enrollment_status,
+            (SELECT pr.status
+             FROM payment_requests pr
+             WHERE pr.member_id = m.id AND pr.gym_id = m.gym_id
+             ORDER BY pr.created_at DESC LIMIT 1) AS payment_status
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}
      WHERE ${where.join(' AND ')}
+     ${havingClause}
      ORDER BY m.name ASC
      ${limitClause}`,
     params,
@@ -109,9 +127,18 @@ membersRouter.post('/:id/restore', requireModuleWrite('MEMBERS'), async (req, re
 
 membersRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const row = await gymFetchOne('members', req.params.id, gymId, { softDelete: true });
-  if (!row) return res.status(404).json({ error: 'Member not found' });
-  res.json(row);
+  const { rows } = await db.query(
+    `SELECT m.*,
+            cb.name AS created_by_name,
+            mb.name AS modified_by_name
+     FROM members m
+     LEFT JOIN gym_memberships cb ON cb.id = m.created_by
+     LEFT JOIN gym_memberships mb ON mb.id = m.modified_by
+     WHERE m.id = ? AND m.gym_id = ? AND m.deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+  res.json(rows[0]);
 });
 
 membersRouter.get('/:id/clerk-status', async (req, res, next) => {
@@ -149,8 +176,8 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO members (name, email, phone, membership_plan_id, gym_id) VALUES (?, ?, ?, ?, ?)',
-        [name, email, phone ?? null, fare_id ?? null, gymId],
+        'INSERT INTO members (name, email, phone, membership_plan_id, gym_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
+        [name, email, phone ?? null, fare_id ?? null, gymId, gymMembershipId ?? null],
       );
       for (const centerId of centers.ids) {
         await tx.query(
@@ -170,23 +197,40 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
 });
 
 membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const { name, email, phone, fare_id } = req.body;
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  // email is intentionally excluded — Clerk sync is out of scope (#346 §5.1)
+  const { name, phone, date_of_birth, gender, address, emergency_contact, notes } = req.body;
   try {
     const { rowCount } = await db.query(
       `UPDATE members SET
-        name               = COALESCE(?, name),
-        email              = COALESCE(?, email),
-        phone              = COALESCE(?, phone),
-        membership_plan_id = IF(?, ?, membership_plan_id)
+        name              = COALESCE(?, name),
+        phone             = ?,
+        date_of_birth     = ?,
+        gender            = ?,
+        address           = ?,
+        emergency_contact = ?,
+        notes             = ?,
+        modified_at       = UTC_TIMESTAMP(),
+        modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [name ?? null, email ?? null, phone ?? null, 'fare_id' in req.body ? 1 : 0, fare_id ?? null, req.params.id, gymId],
+      [
+        name ?? null,
+        phone ?? null,
+        date_of_birth ?? null,
+        gender ?? null,
+        address ?? null,
+        emergency_contact ?? null,
+        notes ?? null,
+        gymMembershipId ?? null,
+        req.params.id, gymId,
+      ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Member not found' });
     const { rows } = await db.query(
       'SELECT * FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
+    recordAudit(req, { action: 'update', entityType: 'member', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A member with this email already exists.');
