@@ -1157,4 +1157,22 @@ describe('assign', () => {
       .send({ member_id: testMemberId });
     expect(res.status).toBe(404);
   });
+
+  it('uses a custom name when provided in the body', async () => {
+    const tplRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT Assign CustomName ${Date.now()}` });
+    expect(tplRes.status).toBe(201);
+
+    const customName = 'My Custom Nutrition Plan';
+    const assignRes = await request
+      .post(`/nutrition-plan-templates/${tplRes.body.id}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: testMemberId, name: customName });
+    expect(assignRes.status).toBe(201);
+    expect(assignRes.body.name).toBe(customName);
+  });
 });

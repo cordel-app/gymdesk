@@ -52,7 +52,8 @@
     "recycle_bin": "Paperera de reciclatge",
     "sellable_items": "Articles a la Venda",
     "taxes": "Impostos",
-    "feature_flags": "Flags de funcionalitats"
+    "feature_flags": "Flags de funcionalitats",
+    "nutrition_plans": "Plans de nutrició"
   },
   "dashboard": {
     "title": "Tauler",
@@ -2227,7 +2228,8 @@
     "tree_goal_name_maintenance": "Manteniment",
     "tree_goal_name_performance": "Rendiment",
     "tree_goal_name_recovery": "Recuperació",
-    "tree_goal_name_energy": "Energia"
+    "tree_goal_name_energy": "Energia",
+    "assign_to_member": "Assignar pla a membre"
   },
   "nutrition_library": {
     "title": "Biblioteca Nutricional",
@@ -2537,5 +2539,27 @@
     "toggle_error": "Error en actualitzar el flag.",
     "enabled_ok": "'{key}' activat.",
     "disabled_ok": "'{key}' desactivat."
+  },
+  "nutrition_plans": {
+    "title": "Plans de nutrició",
+    "assign_title": "Assignar pla de nutrició",
+    "label_template": "Plantilla",
+    "label_member": "Membre",
+    "label_name": "Nom del pla de nutrició",
+    "assign": "Assignar",
+    "assign_from_template": "Assignar des de plantilla",
+    "cancel": "Cancel·lar",
+    "saving": "Desant…",
+    "assigned": "Pla de nutrició assignat correctament",
+    "loading": "Carregant…",
+    "empty": "Encara no hi ha plans de nutrició assignats.",
+    "delete": "Eliminar",
+    "confirm_delete": "Segur que vols eliminar aquest pla de nutrició?",
+    "filter_all_members": "Tots els membres",
+    "day_count": "{count, plural, one {# dia} other {# dies}}",
+    "col_actions": "Accions",
+    "error_member_required": "Si us plau, selecciona un membre.",
+    "error_name_required": "Si us plau, introdueix un nom per al pla.",
+    "error_generic": "S'ha produït un error. Torna-ho a intentar."
   }
 }
