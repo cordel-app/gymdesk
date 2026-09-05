@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
@@ -68,9 +68,13 @@ export default function TrainingPlansPage() {
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
+
+  const openPlanId = searchParams.get('open');
+  const autoExpandRef = useRef<number | null>(null);
 
   const [rows, setRows] = useState<TrainingPlanRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -80,7 +84,7 @@ export default function TrainingPlansPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [nameQuery, setNameQuery] = useState('');
-  const [memberFilter, setMemberFilter] = useState('');
+  const [memberFilter, setMemberFilter] = useState(searchParams.get('member_id') ?? '');
   const [templateFilter, setTemplateFilter] = useState('');
   const [createdByFilter, setCreatedByFilter] = useState('');
   const [createdByOptions, setCreatedByOptions] = useState<CreatedByOption[]>([]);
@@ -157,6 +161,25 @@ export default function TrainingPlansPage() {
     apiFetch<{ items: TemplateOption[] }>('/training-plan-templates?limit=100')
       .then((r) => setTemplateOptions(r.items)).catch(() => {});
   }, [activeGymId, gymLoading]);
+
+  useEffect(() => {
+    if (!openPlanId || loading || rows.length === 0) return;
+    const id = parseInt(openPlanId, 10);
+    if (isNaN(id) || autoExpandRef.current === id) return;
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    autoExpandRef.current = id;
+    if (row.status !== 'completed') {
+      startEdit(row);
+    } else if (!expanded.has(row.id)) {
+      setExpanded((prev) => { const next = new Set(prev); next.add(row.id); return next; });
+      loadHierarchy(row.id);
+    }
+    setTimeout(() => {
+      document.querySelector(`[data-plan-id="${id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, openPlanId, loading]);
 
   function guardUnsaved(action: () => void) {
     if (editingId !== null) setPendingAction(() => action);
@@ -481,7 +504,7 @@ function PlanCard({
   ];
 
   return (
-    <div style={cardStyle(editing)}>
+    <div data-plan-id={row.id} style={cardStyle(editing)}>
       {/* Editing mode header */}
       {editing ? (
         <div style={{ padding: '16px 16px 0' }}>
