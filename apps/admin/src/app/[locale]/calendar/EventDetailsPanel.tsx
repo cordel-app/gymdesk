@@ -8,6 +8,7 @@ import { toDateTimeLocal, type CalendarEventForm } from './CalendarEventModal';
 interface ActivityType {
   id: number; name: string; color: string | null;
   duration_minutes: number;
+  max_capacity: number | null;
   default_space_id: number | null;
   default_trainer_membership_id: number | null;
 }
@@ -84,6 +85,10 @@ export function EventDetailsPanel({
   function field(key: keyof CalendarEventForm, value: any) {
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  const selectedActivityType = form.activity_type_id
+    ? activityTypes.find((at) => String(at.id) === form.activity_type_id) ?? null
+    : null;
 
   function onActivityTypeChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const id = e.target.value;
@@ -191,6 +196,11 @@ export function EventDetailsPanel({
           <option value="">—</option>
           {activityTypes.map((at) => <option key={at.id} value={at.id}>{at.name}</option>)}
         </select>
+        {selectedActivityType?.max_capacity != null && (
+          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+            {t('event_capacity')}: <strong>{selectedActivityType.max_capacity}</strong>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
           <div style={{ flex: 1 }}>

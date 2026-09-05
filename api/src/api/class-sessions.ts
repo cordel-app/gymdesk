@@ -24,6 +24,7 @@ const SELECT = `
          at.is_shareable,
          COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
          sp.name AS space_name,
+         gm.name AS trainer_name,
          COALESCE(sp.max_concurrent_groups, 1) AS space_max_concurrent_groups,
          COALESCE(gm.max_concurrent_groups, 1) AS trainer_max_concurrent_groups,
          CASE

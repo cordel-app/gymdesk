@@ -2324,6 +2324,7 @@
     "event_space": "Espacio",
     "event_trainer": "Entrenador",
     "event_status": "Estado",
+    "event_capacity": "Aforo",
     "event_color": "Color",
     "event_description": "Descripción",
     "status_draft": "Borrador",

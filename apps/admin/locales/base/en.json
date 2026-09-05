@@ -2378,6 +2378,7 @@
     "event_space": "Space",
     "event_trainer": "Trainer",
     "event_status": "Status",
+    "event_capacity": "Capacity",
     "event_color": "Colour",
     "event_description": "Description",
     "status_draft": "Draft",

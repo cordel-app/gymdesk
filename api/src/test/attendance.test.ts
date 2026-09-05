@@ -310,6 +310,9 @@ describe('Attendance Management (#193)', () => {
       expect(res.status).toBe(200);
       expect(res.body.effective_trainer_membership_id).toBe(trainerMembershipId);
       expect(res.body.effective_trainer_confirmed_at).not.toBeNull();
+      // #352: assigned trainer_name must be returned alongside effective_trainer_name
+      // so the calendar can fall back to it when no effective trainer is confirmed yet.
+      expect(res.body.trainer_name).toBeTruthy();
     });
 
     it('returns 404 for a non-trainer membership id', async () => {

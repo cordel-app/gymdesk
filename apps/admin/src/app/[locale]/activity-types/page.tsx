@@ -95,6 +95,7 @@ type InlineNew = {
   name: string;
   duration_minutes: string;
   max_capacity: string;
+  color: string;
   saving: boolean;
   error: string | null;
 };
@@ -208,7 +209,7 @@ export default function ActivityTypesPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', duration_minutes: '', max_capacity: '', saving: false, error: null });
+    setInlineNew({ name: '', duration_minutes: '', max_capacity: '', color: '', saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -226,6 +227,7 @@ export default function ActivityTypesPage() {
           name: inlineNew.name.trim(),
           duration_minutes: parseInt(inlineNew.duration_minutes, 10),
           max_capacity: parseInt(inlineNew.max_capacity, 10),
+          color: inlineNew.color || null,
         }),
       });
       setInlineNew(null);
@@ -789,7 +791,7 @@ export default function ActivityTypesPage() {
     return (
       <div style={cardStyle}>
         <div style={{ padding: '14px 20px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px', gap: 12, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 120px 90px', gap: 12, marginBottom: 10 }}>
             <div>
               <label style={inlineLabelStyle}>{t('label_name')} *</label>
               <input
@@ -807,6 +809,22 @@ export default function ActivityTypesPage() {
             <div>
               <label style={inlineLabelStyle}>{t('label_capacity')} *</label>
               <input type="number" min="1" step="1" value={inlineNew.max_capacity} onChange={(e) => setInlineNew({ ...inlineNew, max_capacity: e.target.value })} style={inlineInputStyle} />
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('label_color')}</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="color"
+                  value={inlineNew.color || '#3b82f6'}
+                  onChange={(e) => setInlineNew({ ...inlineNew, color: e.target.value })}
+                  style={{ width: 36, height: 34, border: 'none', cursor: 'pointer', padding: 0 }}
+                />
+                {inlineNew.color && (
+                  <button onClick={() => setInlineNew({ ...inlineNew, color: '' })} style={{ fontSize: 12, color: '#888', background: 'none', border: 'none', cursor: 'pointer' }}>
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
