@@ -2310,7 +2310,8 @@
     "metadata_updated_by": "Actualitzat per",
     "metadata_updated_at": "Actualitzat el",
     "metadata_deleted_by": "Eliminat per",
-    "metadata_deleted_at": "Eliminat el"
+    "metadata_deleted_at": "Eliminat el",
+    "panel_resize_handle": "Redimensiona el panell"
   },
   "gym_charges": {
     "title": "Càrrecs del Gimnàs",

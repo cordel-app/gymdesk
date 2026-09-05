@@ -30,7 +30,21 @@ type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 const DEFAULT_EVENT_COLOR = '#6c63ff';
 const DEFAULT_SESSION_COLOR = '#8b5cf6';
 
-const PANEL_WIDTH = 380;
+const MIN_PANEL_WIDTH = 280;
+const MAX_PANEL_WIDTH = 800;
+const DEFAULT_PANEL_WIDTH = 380;
+const STORAGE_KEY = 'calendar-panel-width';
+
+function readStoredWidth(): number {
+  try {
+    const v = sessionStorage.getItem(STORAGE_KEY);
+    if (v) {
+      const n = parseInt(v, 10);
+      if (n >= MIN_PANEL_WIDTH && n <= MAX_PANEL_WIDTH) return n;
+    }
+  } catch {}
+  return DEFAULT_PANEL_WIDTH;
+}
 
 export default function CalendarPage() {
   const t = useTranslations('calendar');
@@ -42,6 +56,13 @@ export default function CalendarPage() {
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
   const dblClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickDateStrRef = useRef<string | null>(null);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  const [panelWidth, setPanelWidth] = useState<number>(DEFAULT_PANEL_WIDTH);
+
+  useEffect(() => {
+    setPanelWidth(readStoredWidth());
+  }, []);
 
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -281,6 +302,49 @@ export default function CalendarPage() {
     }
   }
 
+  function startPanelDrag(e: React.MouseEvent) {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startWidth: panelWidth };
+
+    function onMove(ev: MouseEvent) {
+      if (!dragRef.current) return;
+      const delta = dragRef.current.startX - ev.clientX;
+      const next = Math.min(MAX_PANEL_WIDTH, Math.max(MIN_PANEL_WIDTH, dragRef.current.startWidth + delta));
+      setPanelWidth(next);
+    }
+
+    function onUp() {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setPanelWidth((w) => {
+        try { sessionStorage.setItem(STORAGE_KEY, String(w)); } catch {}
+        return w;
+      });
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  function handleResizeKey(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      setPanelWidth((w) => {
+        const next = Math.min(MAX_PANEL_WIDTH, w + 20);
+        try { sessionStorage.setItem(STORAGE_KEY, String(next)); } catch {}
+        return next;
+      });
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      setPanelWidth((w) => {
+        const next = Math.max(MIN_PANEL_WIDTH, w - 20);
+        try { sessionStorage.setItem(STORAGE_KEY, String(next)); } catch {}
+        return next;
+      });
+    }
+  }
+
   const filterOptions =
     filterMode === 'space'         ? spaces.map((s) => ({ id: String(s.id), label: s.name }))
     : filterMode === 'activity_type' ? activityTypes.map((a) => ({ id: String(a.id), label: a.name }))
@@ -430,32 +494,74 @@ export default function CalendarPage() {
 
         {/* Calendar event details panel */}
         {panelOpen && !sessionPanelId && (
-          <div style={{ width: PANEL_WIDTH, flexShrink: 0, overflow: 'hidden' }}>
-            <EventDetailsPanel
-              open={panelOpen}
-              editing={editingId && editingMeta ? { id: editingId, meta: editingMeta } : null}
-              initialForm={initialForm}
-              activityTypes={activityTypes}
-              spaces={spaces}
-              trainers={trainers}
-              onSave={handleSave}
-              onDelete={handleDelete}
-              onClose={closePanel}
-              canWrite={canWrite}
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('panel_resize_handle')}
+              aria-valuenow={panelWidth}
+              aria-valuemin={MIN_PANEL_WIDTH}
+              aria-valuemax={MAX_PANEL_WIDTH}
+              tabIndex={0}
+              onMouseDown={startPanelDrag}
+              onKeyDown={handleResizeKey}
+              style={{
+                width: 6, flexShrink: 0, cursor: 'col-resize',
+                background: '#e5e7eb', transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#c7d2fe'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#e5e7eb'; }}
+              onFocus={(e)       => { (e.currentTarget as HTMLDivElement).style.background = '#c7d2fe'; }}
+              onBlur={(e)        => { (e.currentTarget as HTMLDivElement).style.background = '#e5e7eb'; }}
             />
-          </div>
+            <div style={{ width: panelWidth, flexShrink: 0, overflow: 'hidden' }}>
+              <EventDetailsPanel
+                open={panelOpen}
+                editing={editingId && editingMeta ? { id: editingId, meta: editingMeta } : null}
+                initialForm={initialForm}
+                activityTypes={activityTypes}
+                spaces={spaces}
+                trainers={trainers}
+                onSave={handleSave}
+                onDelete={handleDelete}
+                onClose={closePanel}
+                canWrite={canWrite}
+              />
+            </div>
+          </>
         )}
 
         {/* Class session instance management panel */}
         {sessionPanelId && (
-          <div style={{ width: PANEL_WIDTH, flexShrink: 0, overflow: 'hidden' }}>
-            <ClassSessionDetailPanel
-              sessionId={sessionPanelId}
-              onClose={closeSessionPanel}
-              onMutated={refetch}
-              canWrite={canWrite}
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('panel_resize_handle')}
+              aria-valuenow={panelWidth}
+              aria-valuemin={MIN_PANEL_WIDTH}
+              aria-valuemax={MAX_PANEL_WIDTH}
+              tabIndex={0}
+              onMouseDown={startPanelDrag}
+              onKeyDown={handleResizeKey}
+              style={{
+                width: 6, flexShrink: 0, cursor: 'col-resize',
+                background: '#e5e7eb', transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#c7d2fe'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#e5e7eb'; }}
+              onFocus={(e)       => { (e.currentTarget as HTMLDivElement).style.background = '#c7d2fe'; }}
+              onBlur={(e)        => { (e.currentTarget as HTMLDivElement).style.background = '#e5e7eb'; }}
             />
-          </div>
+            <div style={{ width: panelWidth, flexShrink: 0, overflow: 'hidden' }}>
+              <ClassSessionDetailPanel
+                sessionId={sessionPanelId}
+                onClose={closeSessionPanel}
+                onMutated={refetch}
+                canWrite={canWrite}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>

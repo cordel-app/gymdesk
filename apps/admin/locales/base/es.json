@@ -2282,7 +2282,8 @@
     "metadata_updated_by": "Actualizado por",
     "metadata_updated_at": "Actualizado el",
     "metadata_deleted_by": "Eliminado por",
-    "metadata_deleted_at": "Eliminado el"
+    "metadata_deleted_at": "Eliminado el",
+    "panel_resize_handle": "Redimensionar panel"
   },
   "gym_charges": {
     "title": "Cargos del Gimnasio",

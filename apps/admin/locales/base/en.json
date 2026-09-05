@@ -2336,7 +2336,8 @@
     "metadata_updated_by": "Updated by",
     "metadata_updated_at": "Updated at",
     "metadata_deleted_by": "Deleted by",
-    "metadata_deleted_at": "Deleted at"
+    "metadata_deleted_at": "Deleted at",
+    "panel_resize_handle": "Resize panel"
   },
   "gym_charges": {
     "title": "Gym Charges",
