@@ -101,16 +101,19 @@ describe('GET /me/nutrition-plan', () => {
   });
 
   it('returns { plan: null } when the member has no active plan', async () => {
+    // A distinct clerk id — must NOT reuse TEST_USER_ID here: clerk_user_id is
+    // globally unique on `members`, so upserting TEST_USER_ID into another gym
+    // would move the shared test member (and its plan) out of `gymId`, breaking
+    // every later test in this file that still expects it there.
+    const noPlanClerkId = `no-plan-clerk-${Date.now()}`;
     const emptyGymId = await createTestGym('No Plan Gym');
-    await createTestMembership(emptyGymId, 'member');
-    const email = `no-plan-${Date.now()}@test.com`;
+    await createTestMembership(emptyGymId, 'member', noPlanClerkId);
     await db.query(
-      `INSERT INTO members (gym_id, name, email, clerk_user_id)
-       VALUES (?, 'No Plan Member', ?, ?)
-       ON DUPLICATE KEY UPDATE gym_id = VALUES(gym_id), email = VALUES(email)`,
-      [emptyGymId, email, TEST_USER_ID],
+      `INSERT INTO members (gym_id, name, email, clerk_user_id) VALUES (?, 'No Plan Member', ?, ?)`,
+      [emptyGymId, `no-plan-${Date.now()}@test.com`, noPlanClerkId],
     );
 
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: noPlanClerkId } as any);
     const res = await request
       .get('/me/nutrition-plan')
       .set('Authorization', TEST_AUTH_HEADER)
