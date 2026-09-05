@@ -89,7 +89,7 @@ async function insertPaymentRequest(
     `INSERT INTO payment_requests
        (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
         status, provider, provider_order, page_token, page_token_expires, source, billing_event_id)
-     VALUES (?, ?, ?, '99.00', 'EUR', ?, 'succeeded', 'monei',
+     VALUES (?, ?, ?, '99.00', 'EUR', ?, 'completed', 'monei',
              UUID(), UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), 'admin', ?)`,
     [gymId, userMembershipId, memberId, chargeTypeId, billingEventId],
   );
