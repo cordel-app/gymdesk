@@ -19,6 +19,7 @@ import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 interface ActivityType {
   id: number; name: string; color: string | null;
   duration_minutes: number;
+  max_capacity: number | null;
   default_space_id: number | null;
   default_trainer_membership_id: number | null;
 }
@@ -29,6 +30,10 @@ type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 
 const DEFAULT_EVENT_COLOR = '#6c63ff';
 const DEFAULT_SESSION_COLOR = '#8b5cf6';
+
+function formatHM(d: Date): string {
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
 
 const MIN_PANEL_WIDTH = 280;
 const MAX_PANEL_WIDTH = 800;
@@ -416,6 +421,10 @@ export default function CalendarPage() {
             selectable={canWrite}
             editable={canWrite}
             eventResizableFromStart={canWrite}
+            // Force block rendering (colour fill) in every view — FullCalendar's default
+            // 'list-item' display for timed events in dayGridMonth only tints a small dot,
+            // not the event itself, so month-view events looked uncoloured.
+            eventDisplay="block"
             height="100%"
             select={(info: any) => openCreate(info.start, info.end)}
             dateClick={handleDateClick}
@@ -427,7 +436,7 @@ export default function CalendarPage() {
               const isSession = e._type === 'session';
               const viewType: string = arg.view.type;
 
-              const trainerName: string | null = isSession ? (e.effective_trainer_name ?? null) : (e.trainer_name ?? null);
+              const trainerName: string | null = isSession ? (e.effective_trainer_name ?? e.trainer_name ?? null) : (e.trainer_name ?? null);
               const spaceName: string | null = e.space_name ?? null;
               const bookingCount: string | null = isSession ? `${e.booked_count}/${e.effective_capacity}` : null;
 
@@ -451,11 +460,19 @@ export default function CalendarPage() {
               }
 
               if (viewType === 'timeGridWeek') {
+                const timeRange = !e.all_day && arg.event.start && arg.event.end
+                  ? `${formatHM(arg.event.start)} – ${formatHM(arg.event.end)}`
+                  : null;
                 const line2Parts: string[] = [];
                 if (bookingCount) line2Parts.push(bookingCount);
                 if (displayStatus) line2Parts.push(displayStatus);
                 return (
                   <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
+                    {timeRange && (
+                      <div style={{ opacity: 0.9, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {timeRange}
+                      </div>
+                    )}
                     <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {arg.event.title}
                     </div>
