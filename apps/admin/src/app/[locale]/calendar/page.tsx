@@ -27,12 +27,8 @@ interface Trainer { gym_membership_id: number; name: string }
 
 type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 
-const STATUS_COLORS: Record<string, string> = {
-  draft: '#6b7280',
-  scheduled: '#3b82f6',
-  completed: '#22c55e',
-  cancelled: '#ef4444',
-};
+const DEFAULT_EVENT_COLOR = '#6c63ff';
+const DEFAULT_SESSION_COLOR = '#8b5cf6';
 
 const PANEL_WIDTH = 380;
 
@@ -101,8 +97,8 @@ export default function CalendarPage() {
             start: e.starts_at,
             end: e.ends_at,
             allDay: !!e.all_day,
-            backgroundColor: e.color || e.activity_type_color || STATUS_COLORS[e.status] || '#3b82f6',
-            borderColor:     e.color || e.activity_type_color || STATUS_COLORS[e.status] || '#3b82f6',
+            backgroundColor: e.activity_type_color || e.color || DEFAULT_EVENT_COLOR,
+            borderColor:     e.activity_type_color || e.color || DEFAULT_EVENT_COLOR,
             editable: true,
             extendedProps: { ...e, _type: 'event' },
           }));
@@ -112,8 +108,8 @@ export default function CalendarPage() {
             start: s.starts_at,
             end: s.ends_at,
             allDay: false,
-            backgroundColor: s.activity_type_color || STATUS_COLORS[s.status] || '#8b5cf6',
-            borderColor:     s.activity_type_color || STATUS_COLORS[s.status] || '#8b5cf6',
+            backgroundColor: s.activity_type_color || DEFAULT_SESSION_COLOR,
+            borderColor:     s.activity_type_color || DEFAULT_SESSION_COLOR,
             // Sessions use a different time-change flow; disable FC drag/resize
             editable: false,
             extendedProps: { ...s, _type: 'session' },
@@ -365,19 +361,67 @@ export default function CalendarPage() {
             eventContent={(arg: any) => {
               const e = arg.event.extendedProps;
               const isSession = e._type === 'session';
-              const trainerName = isSession ? e.effective_trainer_name : e.trainer_name;
+              const viewType: string = arg.view.type;
+
+              const trainerName: string | null = isSession ? (e.effective_trainer_name ?? null) : (e.trainer_name ?? null);
+              const spaceName: string | null = e.space_name ?? null;
+              const bookingCount: string | null = isSession ? `${e.booked_count}/${e.effective_capacity}` : null;
+
+              const isFull = isSession && Number(e.booked_count) >= Number(e.effective_capacity) && e.status === 'scheduled';
+              const displayStatus: string = isFull ? 'FULL' : (e.status ?? '').toUpperCase();
+
+              if (viewType === 'dayGridMonth') {
+                return (
+                  <div style={{ padding: '1px 4px', fontSize: 11, overflow: 'hidden', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {arg.timeText && (
+                      <span style={{ flexShrink: 0, opacity: 0.9 }}>{arg.timeText}</span>
+                    )}
+                    <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                      {arg.event.title}
+                    </span>
+                    {displayStatus && (
+                      <span style={{ flexShrink: 0, opacity: 0.85, fontSize: 10 }}>{displayStatus}</span>
+                    )}
+                  </div>
+                );
+              }
+
+              if (viewType === 'timeGridWeek') {
+                const line2Parts: string[] = [];
+                if (bookingCount) line2Parts.push(bookingCount);
+                if (displayStatus) line2Parts.push(displayStatus);
+                return (
+                  <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
+                    <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {arg.event.title}
+                    </div>
+                    {line2Parts.length > 0 && (
+                      <div style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {line2Parts.join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
+              // Day view — two-line max
+              const line2Parts: string[] = [];
+              if (trainerName) line2Parts.push(trainerName);
+              if (spaceName) line2Parts.push(spaceName);
+              if (bookingCount) line2Parts.push(bookingCount);
               return (
                 <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
                   <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {arg.event.title}
-                    {isSession && (
-                      <span style={{ fontWeight: 400, opacity: 0.85 }}>
-                        {' '}({e.booked_count}/{e.effective_capacity})
-                      </span>
+                    {arg.timeText ? `${arg.timeText} ` : ''}{arg.event.title}
+                    {displayStatus && (
+                      <span style={{ fontWeight: 400, opacity: 0.85 }}> · {displayStatus}</span>
                     )}
                   </div>
-                  {trainerName && <div style={{ opacity: 0.85 }}>{trainerName}</div>}
-                  {e.space_name && <div style={{ opacity: 0.85 }}>{e.space_name}</div>}
+                  {line2Parts.length > 0 && (
+                    <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {line2Parts.join(' · ')}
+                    </div>
+                  )}
                 </div>
               );
             }}

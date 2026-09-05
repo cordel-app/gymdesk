@@ -38,12 +38,6 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/members',
         labelKey: 'nav.members',
         featureKey: 'membership.members',
-        children: [
-          {
-            href: '/{{locale}}/members/deleted',
-            labelKey: 'nav.members_deleted',
-          },
-        ],
       },
       {
         href: '/{{locale}}/memberships',

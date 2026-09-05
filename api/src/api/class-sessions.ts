@@ -18,6 +18,7 @@ const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
 const SELECT = `
   SELECT cs.*,
          at.name AS class_type_name,
+         at.color AS activity_type_color,
          at.max_capacity AS class_type_capacity,
          at.duration_minutes AS class_type_duration,
          at.is_shareable,

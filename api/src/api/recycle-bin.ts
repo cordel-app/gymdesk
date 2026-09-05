@@ -6,6 +6,7 @@ import { recordAudit } from '../infra/audit';
 export const recycleBinRouter = Router();
 
 type EntityType =
+  | 'member'
   | 'membership_plan'
   | 'promotion'
   | 'center'
@@ -19,6 +20,7 @@ type EntityType =
   | 'activity_type';
 
 const VALID_ENTITY_TYPES: EntityType[] = [
+  'member',
   'membership_plan',
   'promotion',
   'center',
@@ -45,6 +47,15 @@ interface UnionBranch {
 
 function branchFor(type: EntityType, gymId: string): UnionBranch {
   switch (type) {
+    case 'member':
+      return {
+        sql: `SELECT 'member' AS entity_type, m.id, m.name, NULL AS description,
+               m.deleted_by_name, m.deleted_at,
+               m.created_at, NULL AS created_by_name
+             FROM members m
+             WHERE m.gym_id = ? AND m.deleted_at IS NOT NULL`,
+        params: [gymId],
+      };
     case 'membership_plan':
       return {
         sql: `SELECT 'membership_plan' AS entity_type, mp.id, mp.name, mp.description,
@@ -249,6 +260,12 @@ recycleBinRouter.get('/:entityType/:id', async (req, res) => {
 async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): Promise<Record<string, unknown> | null> {
   let sql: string;
   switch (type) {
+    case 'member':
+      sql = `SELECT m.id, m.name, m.email, m.phone,
+                    m.created_at, m.deleted_at, m.deleted_by_name
+             FROM members m
+             WHERE m.id = ? AND m.gym_id = ? AND m.deleted_at IS NOT NULL`;
+      break;
     case 'membership_plan':
       sql = `SELECT mp.id, mp.name, mp.description, mp.lifecycle_status, mp.enrollment_status,
                     mp.created_at, mp.modified_at, mp.deleted_at,
@@ -385,6 +402,10 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
   let sql: string;
   let checkDeletedCondition: string;
   switch (type) {
+    case 'member':
+      sql = `UPDATE members SET deleted_at = NULL, deleted_by_name = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
+      checkDeletedCondition = 'deleted_at IS NOT NULL';
+      break;
     case 'membership_plan':
       sql = `UPDATE membership_plans SET deleted_at = NULL, deleted_by = NULL, lifecycle_status = 'active' WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
       checkDeletedCondition = 'deleted_at IS NOT NULL';

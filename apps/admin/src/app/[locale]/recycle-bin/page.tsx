@@ -13,6 +13,7 @@ import { canWriteModule } from '@/config/permissions';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type EntityType =
+  | 'member'
   | 'membership_plan'
   | 'promotion'
   | 'center'
@@ -25,6 +26,7 @@ type EntityType =
   | 'theme';
 
 const ENTITY_TYPES: EntityType[] = [
+  'member',
   'membership_plan',
   'promotion',
   'center',
@@ -401,6 +403,10 @@ function EntityDetailContent({
   }
 
   switch (entityType) {
+    case 'member':
+      if (detail.email) rows.push({ label: t('details_email'), value: detail.email as string });
+      if (detail.phone) rows.push({ label: t('details_phone'), value: detail.phone as string });
+      break;
     case 'membership_plan':
       if (detail.lifecycle_status) rows.push({ label: t('details_lifecycle_status'), value: <StatusBadge status={detail.lifecycle_status as string} label={tStatus(detail.lifecycle_status as string)} /> });
       if (detail.enrollment_status) rows.push({ label: t('details_enrollment_status'), value: tStatus(detail.enrollment_status as string) });
@@ -506,6 +512,7 @@ function SortHeader({
 }
 
 const ENTITY_COLORS: Record<EntityType, string> = {
+  member: '#fdf0e8',
   membership_plan: '#e8f4fd',
   promotion: '#fdf3e8',
   center: '#e8fdf0',
@@ -519,6 +526,7 @@ const ENTITY_COLORS: Record<EntityType, string> = {
 };
 
 const ENTITY_TEXT_COLORS: Record<EntityType, string> = {
+  member: '#a8531a',
   membership_plan: '#1a6ea8',
   promotion: '#a8721a',
   center: '#1a8a4a',
