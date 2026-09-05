@@ -31,7 +31,7 @@ async function createPlan(
       gymId,
       name,
       (overrides.lifecycle_status as string | undefined) ?? 'draft',
-      (overrides.enrollment_status as string | undefined) ?? 'closed',
+      (overrides.enrollment_status as string | undefined) ?? 'staff_only',
     ],
   );
   return insertId;
@@ -291,18 +291,18 @@ describe('POST /membership-plans', () => {
         name: 'New Plan',
         description: 'A test plan',
         lifecycle_status: 'draft',
-        enrollment_status: 'closed',
+        enrollment_status: 'staff_only',
       });
     expect(res.status).toBe(201);
     expect(res.body.name).toBe('New Plan');
     expect(res.body.description).toBe('A test plan');
     expect(res.body.lifecycle_status).toBe('draft');
-    expect(res.body.enrollment_status).toBe('closed');
+    expect(res.body.enrollment_status).toBe('staff_only');
     expect(res.body).toHaveProperty('price_history');
     expect(res.body).toHaveProperty('member_count');
   });
 
-  it('defaults lifecycle_status to draft and enrollment_status to closed', async () => {
+  it('defaults lifecycle_status to draft and enrollment_status to staff_only', async () => {
     const res = await request
       .post('/membership-plans')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -310,7 +310,7 @@ describe('POST /membership-plans', () => {
       .send({ name: 'Defaults Plan' });
     expect(res.status).toBe(201);
     expect(res.body.lifecycle_status).toBe('draft');
-    expect(res.body.enrollment_status).toBe('closed');
+    expect(res.body.enrollment_status).toBe('staff_only');
   });
 
   it('returns 400 when name is missing', async () => {
@@ -393,6 +393,16 @@ describe('PUT /membership-plans/:id', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ enrollment_status: 'open' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/enrollment_status/i);
+  });
+
+  it('returns 400 for enrollment_status closed (removed from the model)', async () => {
+    const res = await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ enrollment_status: 'closed' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/enrollment_status/i);
   });
@@ -535,7 +545,7 @@ describe('POST /membership-plans/:id/archive', () => {
     await createTestMembership(gymId, 'admin');
   });
 
-  it('archives an active plan (lifecycle → inactive, enrollment → closed)', async () => {
+  it('archives an active plan (lifecycle → inactive, enrollment → staff_only)', async () => {
     const planId = await createPlan(gymId, {
       name: 'Archive Me Plan',
       lifecycle_status: 'active',
@@ -547,7 +557,7 @@ describe('POST /membership-plans/:id/archive', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.lifecycle_status).toBe('inactive');
-    expect(res.body.enrollment_status).toBe('closed');
+    expect(res.body.enrollment_status).toBe('staff_only');
   });
 
   it('returns 404 when plan is not active (draft)', async () => {
@@ -642,20 +652,6 @@ describe('PUT /membership-plans/:id/enrollment', () => {
     expect(res.body.enrollment_status).toBe('staff_only');
   });
 
-  it('allows setting enrollment to closed on a non-active plan', async () => {
-    const planId = await createPlan(gymId, {
-      name: 'Enrollment Closed Draft Plan',
-      lifecycle_status: 'draft',
-    });
-    const res = await request
-      .put(`/membership-plans/${planId}/enrollment`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ enrollment_status: 'closed' });
-    expect(res.status).toBe(200);
-    expect(res.body.enrollment_status).toBe('closed');
-  });
-
   it('returns 400 for an invalid enrollment_status value', async () => {
     const planId = await createPlan(gymId, { name: 'Enrollment Invalid Plan' });
     const res = await request
@@ -663,6 +659,16 @@ describe('PUT /membership-plans/:id/enrollment', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ enrollment_status: 'open' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for enrollment_status closed (removed from the model)', async () => {
+    const planId = await createPlan(gymId, { name: 'Enrollment Closed Removed Plan' });
+    const res = await request
+      .put(`/membership-plans/${planId}/enrollment`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ enrollment_status: 'closed' });
     expect(res.status).toBe(400);
   });
 
@@ -698,7 +704,7 @@ describe('PUT /membership-plans/:id/enrollment', () => {
       .put('/membership-plans/9999999/enrollment')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ enrollment_status: 'closed' });
+      .send({ enrollment_status: 'public' });
     expect(res.status).toBe(404);
   });
 
