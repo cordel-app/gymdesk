@@ -126,31 +126,8 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
           sequenceId: row.sequence_id,
         });
 
-        // Insert a minimal payment_requests row for auditability so MIT charges
-        // appear in the Transactions admin page alongside manual ones.
-        await db.query(
-          `INSERT INTO payment_requests
-             (gym_id, user_membership_id, member_id, amount, currency,
-              charge_type_id, status, provider, provider_order, provider_ref,
-              source, created_at, completed_at)
-           VALUES (?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?,
-                   'billing_run', UTC_TIMESTAMP(), ?)`,
-          [
-            row.gym_id,
-            row.id,
-            row.member_id,
-            amount,
-            membershipFeeChargeTypeId,
-            result.success ? 'completed' : 'failed',
-            row.provider,
-            orderId,
-            result.providerRef,
-            result.success ? new Date() : null,
-          ],
-        );
-
         if (result.success) {
-          // Insert success billing_event and advance next_billing_date.
+          // Billing event first so payment_requests can reference it.
           const nextBillingDate = advanceBillingDate(
             row.next_billing_date,
             row.recurring_billing_interval,
@@ -158,12 +135,27 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
           );
 
           await db.transaction(async (tx) => {
-            await tx.query(
+            const { rows: beRows } = await tx.query<{ id: number }>(
               `INSERT INTO billing_events
                  (gym_id, user_membership_id, member_id, event_type, amount,
                   charge_type_id, source, actor_user_id)
                VALUES (?, ?, ?, 'recurring_payment', ?, ?, 'system', NULL)`,
               [row.gym_id, row.id, row.member_id, amount, membershipFeeChargeTypeId],
+            );
+            const billingEventId = (beRows as any).insertId as number;
+
+            await tx.query(
+              `INSERT INTO payment_requests
+                 (gym_id, user_membership_id, member_id, amount, currency,
+                  charge_type_id, billing_event_id, status, provider,
+                  provider_order, provider_ref, source, created_at, completed_at)
+               VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'completed', ?, ?, ?,
+                       'billing_run', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+              [
+                row.gym_id, row.id, row.member_id, amount,
+                membershipFeeChargeTypeId, billingEventId,
+                row.provider, orderId, result.providerRef,
+              ],
             );
 
             await tx.query(
@@ -180,14 +172,29 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
           );
           succeeded++;
         } else {
-          // Failed charge — emit event; do NOT cancel the membership.
+          // Failed charge — billing event first, then payment_requests.
           const failNote = [result.errorCode, result.errorMessage].filter(Boolean).join(': ');
-          await db.query(
+          const { rows: beRows } = await db.query<{ id: number }>(
             `INSERT INTO billing_events
                (gym_id, user_membership_id, member_id, event_type, amount,
                 charge_type_id, source, actor_user_id, notes)
              VALUES (?, ?, ?, 'failed_billing', ?, ?, 'system', NULL, ?)`,
             [row.gym_id, row.id, row.member_id, amount, membershipFeeChargeTypeId, failNote || null],
+          );
+          const billingEventId = (beRows as any).insertId as number;
+
+          await db.query(
+            `INSERT INTO payment_requests
+               (gym_id, user_membership_id, member_id, amount, currency,
+                charge_type_id, billing_event_id, status, provider,
+                provider_order, provider_ref, source, created_at)
+             VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'failed', ?, ?, ?,
+                     'billing_run', UTC_TIMESTAMP())`,
+            [
+              row.gym_id, row.id, row.member_id, amount,
+              membershipFeeChargeTypeId, billingEventId,
+              row.provider, orderId, result.providerRef,
+            ],
           );
 
           req.log.warn(
@@ -197,7 +204,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
           failed++;
         }
       } catch (chargeErr) {
-        // Provider API error — emit failed_billing event and continue.
+        // Provider API error — emit failed_billing event and continue; no payment_requests row.
         req.log.error(
           { orderId, memberId: row.member_id, err: (chargeErr as Error).message },
           'billing/run: provider error',

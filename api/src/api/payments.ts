@@ -164,6 +164,196 @@ paymentsRouter.get('/member/:memberId', async (req, res) => {
   res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
 });
 
+// ── Billing Events (admin view) ───────────────────────────────────────────────
+// Billing Event = billing_events row (parent); Payment Transaction = payment_requests row (child).
+// Past rows come from DB; future rows are projected from user_memberships.next_billing_date.
+
+function advanceBillingDate(
+  current: string,
+  interval: number,
+  unit: 'day' | 'week' | 'month' | 'year',
+): string {
+  const d = new Date(current);
+  switch (unit) {
+    case 'day':   d.setUTCDate(d.getUTCDate() + interval); break;
+    case 'week':  d.setUTCDate(d.getUTCDate() + interval * 7); break;
+    case 'month': d.setUTCMonth(d.getUTCMonth() + interval); break;
+    case 'year':  d.setUTCFullYear(d.getUTCFullYear() + interval); break;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+paymentsRouter.get('/billing-events', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const q = parseQuery(req, res, z.object({
+    member_id: z.coerce.number().int().positive().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+    offset: z.coerce.number().int().min(0).default(0),
+  }));
+  if (!q) return;
+
+  try {
+    // ── Real (past) billing events ──
+    const where: string[] = ['be.gym_id = ?'];
+    const params: any[] = [gymId];
+    if (q.member_id !== undefined) { where.push('be.member_id = ?'); params.push(q.member_id); }
+    if (q.from) { where.push('DATE(be.created_at) >= ?'); params.push(q.from.slice(0, 10)); }
+    if (q.to)   { where.push('DATE(be.created_at) <= ?'); params.push(q.to.slice(0, 10)); }
+    const whereSql = where.join(' AND ');
+
+    const { rows: realRows } = await db.query<{
+      id: number; member_id: number; member_name: string | null;
+      user_membership_id: number | null; plan_name: string | null;
+      created_at: Date; amount: string | null; event_type: string;
+      currency: string | null;
+    }>(
+      `SELECT be.id, be.member_id, m.name AS member_name,
+              be.user_membership_id, mp.name AS plan_name,
+              be.created_at, be.amount, be.event_type, NULL AS currency
+       FROM billing_events be
+       LEFT JOIN members m ON m.id = be.member_id
+       LEFT JOIN user_memberships um ON um.id = be.user_membership_id
+       LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+       WHERE ${whereSql}
+       ORDER BY be.created_at DESC, be.id DESC
+       LIMIT 10000`,
+      params,
+    );
+
+    type BillingEventRow = {
+      id: number | null; type: 'real' | 'virtual';
+      member_id: number; member_name: string | null;
+      user_membership_id: number | null; plan_name: string | null;
+      billing_date: string; amount: string | null;
+      event_type: string; status: string; currency: string | null;
+    };
+
+    const past: BillingEventRow[] = realRows.map((r) => ({
+      id: r.id,
+      type: 'real' as const,
+      member_id: r.member_id,
+      member_name: r.member_name,
+      user_membership_id: r.user_membership_id,
+      plan_name: r.plan_name,
+      billing_date: new Date(r.created_at).toISOString().slice(0, 10),
+      amount: r.amount,
+      event_type: r.event_type,
+      status: (
+        r.event_type === 'recurring_payment' || r.event_type === 'payment_recorded'
+          ? 'paid'
+          : r.event_type === 'failed_billing'
+            ? 'failed'
+            : 'recorded'
+      ) as string,
+      currency: r.currency,
+    }));
+
+    // ── Future (virtual) billing events — rolling 5-date window per active membership ──
+    const futureWhere: string[] = [
+      'um.gym_id = ?',
+      "um.status = 'active'",
+      'um.next_billing_date IS NOT NULL',
+      'bp.recurring_billing_interval IS NOT NULL',
+    ];
+    const futureParams: any[] = [gymId];
+    if (q.member_id !== undefined) { futureWhere.push('um.member_id = ?'); futureParams.push(q.member_id); }
+
+    const { rows: activeRows } = await db.query<{
+      user_membership_id: number; member_id: number; member_name: string | null;
+      plan_name: string | null; next_billing_date: string;
+      recurring_billing_interval: number; recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
+      final_price: string; currency: string | null;
+    }>(
+      `SELECT um.id AS user_membership_id, um.member_id, m.name AS member_name,
+              mp.name AS plan_name, um.next_billing_date,
+              bp.recurring_billing_interval, bp.recurring_billing_unit,
+              um.final_price, NULL AS currency
+       FROM user_memberships um
+       JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
+       LEFT JOIN members m ON m.id = um.member_id
+       LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+       WHERE ${futureWhere.join(' AND ')}`,
+      futureParams,
+    );
+
+    const today = new Date().toISOString().slice(0, 10);
+    const future: BillingEventRow[] = [];
+
+    for (const um of activeRows) {
+      let date = String(um.next_billing_date).slice(0, 10);
+      for (let i = 0; i < 5; i++) {
+        if (date < today) {
+          date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
+          continue;
+        }
+        if (q.from && date < q.from.slice(0, 10)) { date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit); continue; }
+        if (q.to   && date > q.to.slice(0, 10))   break;
+
+        future.push({
+          id: null as any,
+          type: 'virtual',
+          member_id: um.member_id,
+          member_name: um.member_name,
+          user_membership_id: um.user_membership_id,
+          plan_name: um.plan_name,
+          billing_date: date,
+          amount: um.final_price,
+          event_type: 'upcoming',
+          status: 'scheduled',
+          currency: um.currency,
+        });
+        date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
+      }
+    }
+
+    // Merge, sort DESC by billing_date
+    const all = [...past, ...future].sort((a, b) => {
+      if (b.billing_date !== a.billing_date) return b.billing_date < a.billing_date ? -1 : 1;
+      return (b.id ?? 0) - (a.id ?? 0);
+    });
+
+    const total = all.length;
+    const items = all.slice(q.offset, q.offset + q.limit);
+    res.json({ items, total, limit: q.limit, offset: q.offset });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /payments/billing-events/:id/transactions
+// Returns payment_requests rows linked to a billing_events row.
+paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const { rows: evRows } = await db.query('SELECT id FROM billing_events WHERE id = ? AND gym_id = ?', [billingEventId, gymId]);
+    if (evRows.length === 0) return res.status(404).json({ error: 'Billing event not found' });
+
+    const { rows } = await db.query<any>(
+      `SELECT pr.id, pr.status, pr.amount, pr.currency, pr.provider, pr.provider_order,
+              pr.provider_ref, pr.source, pr.created_at, pr.completed_at,
+              m.name AS member_name,
+              mp.name AS plan_name,
+              pm.card_brand, pm.card_last4
+       FROM payment_requests pr
+       LEFT JOIN members m ON m.id = pr.member_id
+       LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
+       LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+       LEFT JOIN payment_methods pm ON pm.member_id = pr.member_id AND pm.gym_id = pr.gym_id
+       WHERE pr.billing_event_id = ? AND pr.gym_id = ?
+       ORDER BY pr.created_at DESC`,
+      [billingEventId, gymId],
+    );
+    res.json({ items: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
 paymentsRouter.post('/apply-promotion', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const { user_membership_id, promotion_id } = req.body;
