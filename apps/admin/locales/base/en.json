@@ -2536,6 +2536,7 @@
     "type_other": "Other",
     "frequency_once": "Once",
     "frequency_per_session": "Per Session",
+    "frequency_four_weeks": "4 Weeks",
     "frequency_week": "Week",
     "frequency_month": "Month",
     "frequency_year": "Year",

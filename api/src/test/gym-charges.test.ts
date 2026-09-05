@@ -300,6 +300,19 @@ describe('PUT /sellable-items/:id', () => {
     expect(res.body.notes).toBe('Updated by test');
   });
 
+  it('accepts billing_frequency = four_weeks on update', async () => {
+    const chargeId = await firstChargeId(gymAdmin);
+    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+
+    const res = await request
+      .put(`/sellable-items/${chargeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymAdmin)
+      .send({ billing_frequency: 'four_weeks' });
+    expect(res.status).toBe(200);
+    expect(res.body.billing_frequency).toBe('four_weeks');
+  });
+
   it('returns 404 when the charge belongs to a different gym (cross-gym isolation on write)', async () => {
     // chargeId comes from gymOther; request scoped to gymAdmin → WHERE id = ? AND gym_id = ? → 0 rows
     const chargeId = await firstChargeId(gymOther);
@@ -494,6 +507,25 @@ describe('POST /sellable-items', () => {
     expect(res.status).toBe(201);
     expect(res.body.units).toBe(10);
     expect(res.body.type).toBe('sessions');
+  });
+
+  it('creates an item with billing_frequency = four_weeks', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: '4-Week Package', type: 'sessions', units: 10, amount: 90, billing_frequency: 'four_weeks' });
+    expect(res.status).toBe(201);
+    expect(res.body.billing_frequency).toBe('four_weeks');
+  });
+
+  it('returns 400 for an invalid billing_frequency', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Bad Frequency', type: 'fee', amount: 10, billing_frequency: 'fortnight' });
+    expect(res.status).toBe(400);
   });
 });
 
