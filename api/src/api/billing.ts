@@ -3,7 +3,7 @@ import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 
-function advanceBillingDate(
+export function advanceBillingDate(
   current: Date | string,
   interval: number,
   unit: 'day' | 'week' | 'month' | 'year',

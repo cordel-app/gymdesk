@@ -50,7 +50,7 @@ const SELECT = `
 
 const VALID_TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const VALID_STATUSES = ['active', 'inactive'] as const;
-const VALID_FREQUENCIES = ['once', 'per_session', 'week', 'month', 'year'] as const;
+const VALID_FREQUENCIES = ['once', 'per_session', 'four_weeks', 'week', 'month', 'year'] as const;
 const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
 
 function validateUnits(units: any): string | null {

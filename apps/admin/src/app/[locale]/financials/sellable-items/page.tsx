@@ -18,7 +18,7 @@ import { btnStyle, btnSmall } from '@/components/ui';
 
 const TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const STATUSES = ['active', 'inactive'] as const;
-const FREQUENCIES = ['once', 'per_session', 'week', 'month', 'year'] as const;
+const FREQUENCIES = ['once', 'per_session', 'four_weeks', 'week', 'month', 'year'] as const;
 
 type ItemType = typeof TYPES[number];
 type ItemStatus = typeof STATUSES[number];
