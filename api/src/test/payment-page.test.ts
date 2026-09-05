@@ -19,7 +19,7 @@ async function createMember(gymId: string, name = 'Token Test Member'): Promise<
 async function createMembershipPlan(gymId: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status)
-     VALUES (?, ?, 'active', 'closed')`,
+     VALUES (?, ?, 'active', 'staff_only')`,
     [gymId, `Token-Plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`],
   );
   return insertId;

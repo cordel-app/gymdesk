@@ -184,7 +184,7 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
        (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null,
-       lifecycle_status ?? 'draft', enrollment_status ?? 'closed', callerMemberId],
+       lifecycle_status ?? 'draft', enrollment_status ?? 'staff_only', callerMemberId],
       'SELECT * FROM membership_plans WHERE id = ?',
       (id) => [id],
     );
@@ -200,7 +200,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   const { name, description, lifecycle_status, enrollment_status } = req.body;
 
   const VALID_LIFECYCLE = ['draft', 'active', 'paused', 'inactive'];
-  const VALID_ENROLLMENT = ['public', 'staff_only', 'closed'];
+  const VALID_ENROLLMENT = ['public', 'staff_only'];
   if (lifecycle_status && !VALID_LIFECYCLE.includes(lifecycle_status)) {
     return res.status(400).json({ error: 'Invalid lifecycle_status' });
   }
@@ -252,7 +252,7 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   }
   const callerMemberId = await getCallerMembershipId(req);
   const { rowCount } = await db.query(
-    `UPDATE membership_plans SET deleted_at = NOW(), deleted_by = ?, deleted_by_name = ?, enrollment_status = 'closed'
+    `UPDATE membership_plans SET deleted_at = NOW(), deleted_by = ?, deleted_by_name = ?, enrollment_status = 'staff_only'
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
     [callerMemberId, actorName, req.params.id, gymId],
   );
@@ -278,7 +278,7 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       const { insertId } = await tx.query(
         `INSERT INTO membership_plans
          (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
-         VALUES (?, ?, ?, 'draft', 'closed', ?)`,
+         VALUES (?, ?, ?, 'draft', 'staff_only', ?)`,
         [gymId, `${orig.name} (Copy)`, orig.description ?? null, callerMemberId],
       );
 
@@ -378,7 +378,7 @@ membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res
   const callerMemberId = await getCallerMembershipId(req);
   const { rowCount } = await db.query(
     `UPDATE membership_plans
-     SET lifecycle_status = 'inactive', enrollment_status = 'closed', modified_at = NOW(), modified_by = ?
+     SET lifecycle_status = 'inactive', enrollment_status = 'staff_only', modified_at = NOW(), modified_by = ?
      WHERE id = ? AND gym_id = ? AND lifecycle_status = 'active' AND deleted_at IS NULL`,
     [callerMemberId, req.params.id, gymId],
   );
@@ -392,8 +392,8 @@ membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res
 membershipPlansRouter.put('/:id/enrollment', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { enrollment_status } = req.body;
-  if (!['public', 'staff_only', 'closed'].includes(enrollment_status)) {
-    return res.status(400).json({ error: 'enrollment_status must be public, staff_only, or closed' });
+  if (!['public', 'staff_only'].includes(enrollment_status)) {
+    return res.status(400).json({ error: 'enrollment_status must be public or staff_only' });
   }
   const { rows: plan } = await db.query(
     'SELECT lifecycle_status FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',

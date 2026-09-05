@@ -43,7 +43,7 @@ async function insertBillingEvent(gymId: string, memberId: number): Promise<numb
 async function createMembershipPlan(gymId: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status)
-     VALUES (?, ?, 'active', 'closed')`,
+     VALUES (?, ?, 'active', 'staff_only')`,
     [gymId, `BE-Plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`],
   );
   return insertId;
