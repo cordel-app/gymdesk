@@ -538,6 +538,49 @@ Extends the `feature_flags` infrastructure (migration 110, see "Feature Flags" b
 
 ---
 
+## Planned: CalendarEvent Unification (#360, design phase)
+
+**Status: design only — no schema or code changes yet.** This section documents the target shape agreed for #360; see [decisions.md](decisions.md) #10 for the settled open questions. Tracked as a 5-PR staged rollout (design → schema+booking support → API consolidation → frontend consolidation → cleanup); this design section is stage 1. Until later stages land, `class_sessions`/`bookings` and `calendar_events` continue to work exactly as described in the Domain Modules table above — the dual-fetch admin Calendar page (#326) is unaffected.
+
+**Why unify**: today `class_sessions`+`bookings` (capacity, waitlist, attendance, package-credit debiting, shared-training approvals) and `calendar_events` (space/trainer conflict-checking, soft delete, audit) are two asymmetric scheduling entities. Every bookable calendar occurrence should resolve to one entity instead of the frontend/backend branching on `_type: 'session' | 'event'`.
+
+**Target `calendar_events` shape** — absorbs the fields currently split across `class_sessions`/`bookings`:
+
+```text
+calendar_events
+├── (existing) id, gym_id, center_id, space_id, trainer_membership_id,
+│              title, starts_at, ends_at, status, schedule_rule_id,
+│              audit columns, soft-delete columns
+├── activity_type_id FK→activity_types            (from class_sessions)
+├── capacity INT UNSIGNED                          (from class_sessions)
+├── allows_shared_booking TINYINT DEFAULT 0         (from class_sessions, #324)
+├── sharing_authorized / concurrent-group fields    (from class_sessions, #323)
+└── effective_trainer_membership_id                 (from class_sessions)
+
+calendar_event_bookings (new — replaces `bookings`)
+├── id, gym_id, calendar_event_id FK→calendar_events
+├── member_id FK→members
+├── status ('booked'|'waitlisted'|'cancelled')
+├── attendance_status ('pending'|'present'|'absent')
+├── user_class_package_id FK (credit debit/refund — see Class packages row)
+└── audit columns
+
+calendar_event_shared_training_requests               (replaces shared_training_requests)
+└── same shape, FK renamed calendar_event_id
+```
+
+**Recurrence**: `activity_type_schedule_rules` remains the one recurrence mechanism (materializes `calendar_events` via `domain/scheduleEngine.ts`, unchanged). `calendar_event_series` (#191) is dropped — see decisions.md #10.
+
+**Booking/capacity/attendance logic**: `bookMemberOnSession`, waitlist auto-promote, the #372 cancellation-timing refund rule, and the shared-training approval transaction (currently in `bookings.ts`/`class-sessions.ts`/`shared-training-requests.ts`) move onto `calendar_event_id` with no behavior change — these are the parts of `class_sessions` that `calendar_events` needs to gain, not redesign.
+
+**API surface (post-consolidation)**: `class-sessions.ts` and `calendar-events.ts` merge into a single router exposing `calendar_events` with the fields above; `GET` responses keep the existing field names consumers already read (`booked_count`, `attendance_present/absent/pending`, `availability_state`, etc.) so `/me/schedule`, the admin Calendar page, and `ClassSessionDetailPanel`/`EventDetailsPanel` need only point at the unified endpoint, not be rewritten. `calendar-event-series.ts` is removed.
+
+**Frontend**: the admin Calendar page's `_type`-branching (#326) and the separate `[locale]/schedule/` page collapse into one detail panel; the member `/calendar` and `/schedule` ("My Bookings") pages keep their current UX, backed by the unified endpoint.
+
+**Migration**: hard cutover (no dual-write/backfill — see decisions.md #10). Stage 2 (schema+booking support) adds the columns/tables above to `calendar_events` and builds booking/waitlist/attendance/capacity logic on them; stage 5 (cleanup) drops `class_sessions`, `bookings`, `shared_training_requests`, and `calendar_event_series`.
+
+---
+
 ## Deployment (dev)
 
 All traffic enters through **Traefik on corfront** (`10.0.2.100`), which terminates TLS (Let's Encrypt) for the `vdicube.com` subdomains. Both VPSs are **Oracle Ampere aarch64** — images are built `linux/arm64`-only on GitHub's native ARM runner (`ubuntu-24.04-arm`; never add amd64 back — QEMU emulation times builds out).

@@ -4,6 +4,23 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 10. CalendarEvent unification — design decisions (#360, 2026-09-06)
+
+**Decision**: `class_sessions` (with its `bookings`, waitlist, attendance, and package-credit integration) will be unified onto `calendar_events` as the single canonical scheduled/bookable entity — see [architecture.md](architecture.md)'s "Planned: CalendarEvent Unification" section for the target shape. This entry settles the three open questions from the #360 clarification thread; it does not itself implement the migration.
+
+- `calendar_event_series` (added in #191, migrations 083–085) will be dropped. It has zero references in application code — recurrence already runs through the separately-built `activity_type_schedule_rules` mechanism — so it never became the source of truth it was designed to be.
+- `activity_type_schedule_rules` remains the one recurrence mechanism going forward; `calendar_events` continues to be materialized from it via `domain/scheduleEngine.ts`.
+- The cutover will be a hard cutover, not a dual-write/backfill migration: there is no production data in the scheduling/booking tables that needs to be preserved, so schema and code can move directly to the unified model and any existing non-production rows can be cleared as part of the migration.
+
+**Why**: gym scheduling currently has two asymmetric implementations — `class_sessions`+`bookings` is the feature-rich booking engine (waitlist, attendance, package credits, shared-training approvals; ~13 backend files), while `calendar_events` is a thin scheduling entity with no booking/attendance/capacity support (`event_bookings` was built once and fully dropped in migration 095, see #9 below). The admin Calendar page's dual-fetch-and-merge of both tables (#326) is documented as intentional but is a stopgap, not a target state.
+
+**Consequences**:
+- Do not build new booking/attendance/capacity features on `class_sessions` — new work in this area should target the design in architecture.md's CalendarEvent Unification section instead.
+- The unification is staged as 5 PRs (design → schema+booking support on `calendar_events` → API consolidation → frontend consolidation → cleanup); see #360 for tracking. This decision + the architecture.md design section is stage 1 (design only — no schema or runtime changes).
+- Existing `class_sessions`/`bookings` endpoints and the admin Calendar page's dual-fetch behavior are unaffected until the schema+API stages land.
+
+---
+
 ## 9. No standalone Event entity (#221, 2026-08-05)
 
 **Decision**: the `events` and `event_bookings` tables, all related API endpoints, and all frontend surfaces were permanently removed. Any scheduled occurrence must be represented as a Calendar item (using `calendar_events`) with an appropriate type — not as a new standalone entity.
