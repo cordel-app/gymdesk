@@ -72,7 +72,8 @@ const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
 
-const emptyBillingPolicy = {
+// Applied automatically to every new plan; staff can adjust it afterwards via the Billing Policy section.
+const DEFAULT_BILLING_POLICY = {
   initial_billing_interval: 1,
   initial_billing_unit: 'month',
   recurring_billing_interval: 1,
@@ -83,6 +84,8 @@ const emptyBillingPolicy = {
   recurring_service_unit: 'month',
   auto_renew: true,
 };
+
+const BILLING_POLICY_FIELDS = ['initial_billing', 'recurring_billing', 'initial_service', 'recurring_service'] as const;
 
 const emptyEditForm = {
   name: '',
@@ -172,7 +175,7 @@ export default function PlansPage() {
 
   // Billing policy sub-form (inline, per plan)
   const [billingEditForPlanId, setBillingEditForPlanId] = useState<number | null>(null);
-  const [billingForm, setBillingForm] = useState(emptyBillingPolicy);
+  const [billingForm, setBillingForm] = useState(DEFAULT_BILLING_POLICY);
   const [billingSaving, setBillingSaving] = useState(false);
 
   // Charge benefits
@@ -294,7 +297,7 @@ export default function PlansPage() {
       });
       await apiFetch(`/membership-plans/${created.id}/billing-policy`, {
         method: 'PUT',
-        body: JSON.stringify(emptyBillingPolicy),
+        body: JSON.stringify(DEFAULT_BILLING_POLICY),
       });
       setInlineNew(null);
       load();
@@ -342,7 +345,7 @@ export default function PlansPage() {
       recurring_service_interval: bp.recurring_service_interval,
       recurring_service_unit: bp.recurring_service_unit,
       auto_renew: !!bp.auto_renew,
-    } : emptyBillingPolicy);
+    } : DEFAULT_BILLING_POLICY);
     setBillingEditForPlanId(plan.id);
   }
 
@@ -572,6 +575,12 @@ export default function PlansPage() {
               </select>
             </div>
           </div>
+          <p style={{ ...fieldDescStyle, margin: '0 0 12px' }}>
+            {t('plans.default_billing_notice', {
+              billing: fmtBillingInterval(DEFAULT_BILLING_POLICY.recurring_billing_interval, DEFAULT_BILLING_POLICY.recurring_billing_unit),
+              service: fmtBillingInterval(DEFAULT_BILLING_POLICY.recurring_service_interval, DEFAULT_BILLING_POLICY.recurring_service_unit),
+            })}
+          </p>
           {inlineNew.error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('plans.cancel')}</button>
@@ -748,32 +757,38 @@ export default function PlansPage() {
                     />
                     {billingEditForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
-                        {(['initial_billing', 'recurring_billing', 'initial_service', 'recurring_service'] as const).map((key) => (
-                          <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                            <div style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t(`plans.label_${key}_interval`)}</div>
-                            <input
-                              type="number" min="1"
-                              value={(billingForm as any)[`${key}_interval`]}
-                              onChange={(e) => setBillingForm({ ...billingForm, [`${key}_interval`]: parseInt(e.target.value) || 1 })}
-                              style={{ ...inlineInputStyle, width: 70 }}
-                            />
-                            <select
-                              value={(billingForm as any)[`${key}_unit`]}
-                              onChange={(e) => setBillingForm({ ...billingForm, [`${key}_unit`]: e.target.value })}
-                              style={{ ...inlineSelectStyle, flex: 1 }}
-                            >
-                              {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                            </select>
+                        {BILLING_POLICY_FIELDS.map((key) => (
+                          <div key={key} style={{ marginBottom: 8 }}>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <div style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t(`plans.label_${key}_interval`)}</div>
+                              <input
+                                type="number" min="1"
+                                value={(billingForm as any)[`${key}_interval`]}
+                                onChange={(e) => setBillingForm({ ...billingForm, [`${key}_interval`]: parseInt(e.target.value) || 1 })}
+                                style={{ ...inlineInputStyle, width: 70 }}
+                              />
+                              <select
+                                value={(billingForm as any)[`${key}_unit`]}
+                                onChange={(e) => setBillingForm({ ...billingForm, [`${key}_unit`]: e.target.value })}
+                                style={{ ...inlineSelectStyle, flex: 1 }}
+                              >
+                                {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                            </div>
+                            <div style={{ ...fieldDescStyle, marginLeft: 168 }}>{t(`plans.desc_${key}`)}</div>
                           </div>
                         ))}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                          <input
-                            type="checkbox"
-                            id={`auto_renew_${plan.id}`}
-                            checked={!!billingForm.auto_renew}
-                            onChange={(e) => setBillingForm({ ...billingForm, auto_renew: e.target.checked })}
-                          />
-                          <label htmlFor={`auto_renew_${plan.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{t('plans.label_auto_renew')}</label>
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <input
+                              type="checkbox"
+                              id={`auto_renew_${plan.id}`}
+                              checked={!!billingForm.auto_renew}
+                              onChange={(e) => setBillingForm({ ...billingForm, auto_renew: e.target.checked })}
+                            />
+                            <label htmlFor={`auto_renew_${plan.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{t('plans.label_auto_renew')}</label>
+                          </div>
+                          <div style={{ ...fieldDescStyle, marginLeft: 26 }}>{t('plans.desc_auto_renew')}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                           <button onClick={cancelBillingEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
@@ -784,11 +799,11 @@ export default function PlansPage() {
                       </div>
                     ) : plan.billing_policy ? (
                       <>
-                        <DetailRow label={t('plans.billing_initial')} value={fmtBillingInterval(plan.billing_policy.initial_billing_interval, plan.billing_policy.initial_billing_unit)} />
-                        <DetailRow label={t('plans.billing_recurring')} value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`} />
-                        <DetailRow label={t('plans.service_initial')} value={fmtBillingInterval(plan.billing_policy.initial_service_interval, plan.billing_policy.initial_service_unit)} />
-                        <DetailRow label={t('plans.service_recurring')} value={fmtBillingInterval(plan.billing_policy.recurring_service_interval, plan.billing_policy.recurring_service_unit)} />
-                        <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} />
+                        <DetailRow label={t('plans.billing_initial')} value={fmtBillingInterval(plan.billing_policy.initial_billing_interval, plan.billing_policy.initial_billing_unit)} description={t('plans.desc_initial_billing')} />
+                        <DetailRow label={t('plans.billing_recurring')} value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`} description={t('plans.desc_recurring_billing')} />
+                        <DetailRow label={t('plans.service_initial')} value={fmtBillingInterval(plan.billing_policy.initial_service_interval, plan.billing_policy.initial_service_unit)} description={t('plans.desc_initial_service')} />
+                        <DetailRow label={t('plans.service_recurring')} value={fmtBillingInterval(plan.billing_policy.recurring_service_interval, plan.billing_policy.recurring_service_unit)} description={t('plans.desc_recurring_service')} />
+                        <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} description={t('plans.desc_auto_renew')} />
                       </>
                     ) : (
                       <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_billing')}</p>
@@ -1076,11 +1091,14 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, description }: { label: string; value: string; description?: string }) {
   return (
-    <div style={detailRowStyle}>
-      {label && <span style={labelStyle}>{label}</span>}
-      <span style={valueStyle}>{value}</span>
+    <div>
+      <div style={detailRowStyle}>
+        {label && <span style={labelStyle}>{label}</span>}
+        <span style={valueStyle}>{value}</span>
+      </div>
+      {description && <div style={{ ...fieldDescStyle, marginLeft: 208 }}>{description}</div>}
     </div>
   );
 }
@@ -1116,6 +1134,10 @@ const valueStyle: React.CSSProperties = {
 
 const inlineLabelStyle: React.CSSProperties = {
   display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4,
+};
+
+const fieldDescStyle: React.CSSProperties = {
+  fontSize: 12, color: '#888', marginTop: 2, marginBottom: 6,
 };
 
 const inlineInputStyle: React.CSSProperties = {
