@@ -223,6 +223,28 @@ describe('GET /platform/impersonation/targets', () => {
     await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [invitedStaffId]);
   });
 
+  it('includes staff with no name/email (granted via existing Clerk user — regression #364)', async () => {
+    // Mirrors gym-users.ts POST / for an existing Clerk user: only user_id/gym_id/role are set,
+    // so both name and email are NULL. A plain `name LIKE ?` filter used to silently drop this row.
+    const namelessStaffId = 'impersonation-nameless-staff-id';
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'trainer_performance')`,
+      [namelessStaffId, gymId],
+    );
+
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: '' });
+
+    expect(res.status).toBe(200);
+    const match = res.body.find((u: any) => u.id === namelessStaffId);
+    expect(match).toBeDefined();
+    expect(match.name).toBe(namelessStaffId);
+
+    await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [namelessStaffId]);
+  });
+
   it('does not include deleted members', async () => {
     const { insertId } = await db.query(
       `INSERT INTO members (gym_id, name, email, deleted_at)
