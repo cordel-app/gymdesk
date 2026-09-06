@@ -16,8 +16,8 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 **Consequences**:
 - Do not build new booking/attendance/capacity features on `class_sessions` — new work in this area should target the design in architecture.md's CalendarEvent Unification section instead.
-- The unification is staged as 5 PRs (design → schema+booking support on `calendar_events` → API consolidation → frontend consolidation → cleanup); see #360 for tracking. This decision + the architecture.md design section is stage 1 (design only — no schema or runtime changes).
-- Existing `class_sessions`/`bookings` endpoints and the admin Calendar page's dual-fetch behavior are unaffected until the schema+API stages land.
+- The unification is staged as 5 PRs (design → schema+booking support on `calendar_events` → API consolidation → frontend consolidation → cleanup); see #360 for tracking. Stage 1 (design, this decision + the architecture.md design section) and stage 2 (schema — `capacity`/`allows_shared_booking`/`cancellation_reason`/`effective_trainer_membership_id`/`effective_trainer_confirmed_at` on `calendar_events`, plus the new `calendar_event_bookings` and `calendar_event_shared_training_requests` tables, migrations 131–133) have landed. No application code reads or writes the new columns/tables yet.
+- Existing `class_sessions`/`bookings` endpoints and the admin Calendar page's dual-fetch behavior are unaffected until the API consolidation stage lands.
 
 ---
 

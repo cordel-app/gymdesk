@@ -538,36 +538,44 @@ Extends the `feature_flags` infrastructure (migration 110, see "Feature Flags" b
 
 ---
 
-## Planned: CalendarEvent Unification (#360, design phase)
+## Planned: CalendarEvent Unification (#360, schema landed)
 
-**Status: design only — no schema or code changes yet.** This section documents the target shape agreed for #360; see [decisions.md](decisions.md) #10 for the settled open questions. Tracked as a 5-PR staged rollout (design → schema+booking support → API consolidation → frontend consolidation → cleanup); this design section is stage 1. Until later stages land, `class_sessions`/`bookings` and `calendar_events` continue to work exactly as described in the Domain Modules table above — the dual-fetch admin Calendar page (#326) is unaffected.
+**Status: stage 2 (schema) landed — no runtime behavior change yet.** This section documents the target shape agreed for #360; see [decisions.md](decisions.md) #10 for the settled open questions. Tracked as a 5-PR staged rollout (design → schema+booking support → API consolidation → frontend consolidation → cleanup). Stage 1 (this design section) and stage 2 (the schema below — migrations 131–133) have landed; no application code reads or writes the new columns/tables yet. `class_sessions`/`bookings` and `calendar_events` continue to work exactly as described in the Domain Modules table above — the dual-fetch admin Calendar page (#326) is unaffected until the API consolidation stage.
 
 **Why unify**: today `class_sessions`+`bookings` (capacity, waitlist, attendance, package-credit debiting, shared-training approvals) and `calendar_events` (space/trainer conflict-checking, soft delete, audit) are two asymmetric scheduling entities. Every bookable calendar occurrence should resolve to one entity instead of the frontend/backend branching on `_type: 'session' | 'event'`.
 
 **Target `calendar_events` shape** — absorbs the fields currently split across `class_sessions`/`bookings`:
 
 ```text
-calendar_events
+calendar_events                                        (landed — migration 131)
 ├── (existing) id, gym_id, center_id, space_id, trainer_membership_id,
-│              title, starts_at, ends_at, status, schedule_rule_id,
-│              audit columns, soft-delete columns
-├── activity_type_id FK→activity_types            (from class_sessions)
-├── capacity INT UNSIGNED                          (from class_sessions)
+│              activity_type_id, title, starts_at, ends_at, status,
+│              schedule_rule_id, audit columns, soft-delete columns
+├── capacity INT UNSIGNED                          (from class_sessions.max_capacity_override)
 ├── allows_shared_booking TINYINT DEFAULT 0         (from class_sessions, #324)
-├── sharing_authorized / concurrent-group fields    (from class_sessions, #323)
-└── effective_trainer_membership_id                 (from class_sessions)
+├── cancellation_reason TEXT                        (from class_sessions)
+└── effective_trainer_membership_id / _confirmed_at (from class_sessions, #193)
+    — concurrent-group limits stay on spaces.max_concurrent_groups /
+      gym_memberships.max_concurrent_groups (#323), unchanged — calendar_events
+      already FKs both.
 
-calendar_event_bookings (new — replaces `bookings`)
+calendar_event_bookings (new — replaces `bookings`; landed — migration 132)
 ├── id, gym_id, calendar_event_id FK→calendar_events
 ├── member_id FK→members
-├── status ('booked'|'waitlisted'|'cancelled')
-├── attendance_status ('pending'|'present'|'absent')
+├── status ('booked'|'waitlisted'|'cancelled'), waitlist_position,
+│   booked_at/waitlisted_at/cancelled_at
+├── attendance_status ('pending'|'present'|'absent'), attendance_recorded_at/by
 ├── user_class_package_id FK (credit debit/refund — see Class packages row)
+├── active_booking_key generated column + unique(calendar_event_id, active_booking_key)
+│   — one non-cancelled booking per member per occurrence (mirrors bookings' pattern)
 └── audit columns
 
-calendar_event_shared_training_requests               (replaces shared_training_requests)
+calendar_event_shared_training_requests               (replaces shared_training_requests;
+                                                         landed — migration 133)
 └── same shape, FK renamed calendar_event_id
 ```
+
+Booking/waitlist/attendance logic does not read or write these tables yet — that's the API consolidation stage. `bookings`/`class_sessions`/`shared_training_requests` remain the live tables until then.
 
 **Recurrence**: `activity_type_schedule_rules` remains the one recurrence mechanism (materializes `calendar_events` via `domain/scheduleEngine.ts`, unchanged). `calendar_event_series` (#191) is dropped — see decisions.md #10.
 
@@ -577,7 +585,7 @@ calendar_event_shared_training_requests               (replaces shared_training_
 
 **Frontend**: the admin Calendar page's `_type`-branching (#326) and the separate `[locale]/schedule/` page collapse into one detail panel; the member `/calendar` and `/schedule` ("My Bookings") pages keep their current UX, backed by the unified endpoint.
 
-**Migration**: hard cutover (no dual-write/backfill — see decisions.md #10). Stage 2 (schema+booking support) adds the columns/tables above to `calendar_events` and builds booking/waitlist/attendance/capacity logic on them; stage 5 (cleanup) drops `class_sessions`, `bookings`, `shared_training_requests`, and `calendar_event_series`.
+**Migration**: hard cutover (no dual-write/backfill — see decisions.md #10). Stage 2 (schema — landed) added the columns/tables above to `calendar_events`; a following stage builds the booking/waitlist/attendance/capacity logic on them; stage 5 (cleanup) drops `class_sessions`, `bookings`, `shared_training_requests`, and `calendar_event_series`.
 
 ---
 
