@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
 interface UpcomingBooking {
   id: number;
@@ -55,7 +56,9 @@ export default function HomePage() {
   const locale = useLocale();
   const t = useTranslations();
   const { apiFetch } = useApiClient();
-  const { isLinked, loading: appLoading, member } = useApp();
+  const { isLinked, loading: appLoading, member, isSuperadmin } = useApp();
+  const { flags: featureFlags } = useFeatureFlags();
+  const featureEnabled = (key: string) => isSuperadmin || isFeatureEnabled(featureFlags, key);
 
   const [nextBooking, setNextBooking] = useState<UpcomingBooking | null | undefined>(undefined);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
@@ -73,7 +76,7 @@ export default function HomePage() {
 
       const [sessions, mship, notifs, nutrition] = await Promise.all([
         apiFetch<UpcomingBooking[]>(`/me/schedule?to=${to.toISOString()}`),
-        apiFetch<{ membership: Membership | null }>('/me/membership'),
+        apiFetch<{ membership: Membership | null }>('/me/membership').catch(() => ({ membership: null })),
         apiFetch<{ items: NotificationItem[] }>('/me/notifications?limit=5').catch(() => ({ items: [] })),
         apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan').catch(() => ({ plan: null })),
       ]);
@@ -229,29 +232,37 @@ export default function HomePage() {
       {/* Main navigation */}
       <section style={styles.tileGrid}>
         <NavTile icon="📅" label={t('nav.calendar')} onClick={() => router.push(`/${locale}/calendar`)} />
-        <NavTile icon="🏋️" label={t('nav.training')} onClick={() => router.push(`/${locale}/training`)} />
-        <NavTile icon="🎟️" label={t('nav.bookings')} onClick={() => router.push(`/${locale}/schedule`)} />
-        <NavTile icon="🥗" label={t('nav.nutrition')} onClick={() => router.push(`/${locale}/nutrition`)} />
+        {featureEnabled('member_web.my_training_plan') && (
+          <NavTile icon="🏋️" label={t('nav.training')} onClick={() => router.push(`/${locale}/training`)} />
+        )}
+        {featureEnabled('member_web.my_bookings') && (
+          <NavTile icon="🎟️" label={t('nav.bookings')} onClick={() => router.push(`/${locale}/schedule`)} />
+        )}
+        {featureEnabled('member_web.my_nutrition') && (
+          <NavTile icon="🥗" label={t('nav.nutrition')} onClick={() => router.push(`/${locale}/nutrition`)} />
+        )}
       </section>
 
       {/* My Membership */}
-      <section style={styles.section}>
-        <div style={styles.card} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
-          <div style={styles.membershipRow}>
-            <p style={styles.planName}>{t('membership.title')}</p>
-            {!loading && membership && (
-              <StatusPill status={membership.status} label={t(`membership.status.${membership.status}`)} />
-            )}
+      {featureEnabled('member_web.my_membership') && (
+        <section style={styles.section}>
+          <div style={styles.card} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
+            <div style={styles.membershipRow}>
+              <p style={styles.planName}>{t('membership.title')}</p>
+              {!loading && membership && (
+                <StatusPill status={membership.status} label={t(`membership.status.${membership.status}`)} />
+              )}
+            </div>
+            <p style={styles.bookingSub}>
+              {loading
+                ? t('home.loading')
+                : membership
+                  ? (membership.plan_name ?? '—') + (membership.ends_at ? ` · ${t('home.expires_on', { date: dateOnly(membership.ends_at) })}` : ` · ${t('membership.ongoing')}`)
+                  : t('home.no_membership')}
+            </p>
           </div>
-          <p style={styles.bookingSub}>
-            {loading
-              ? t('home.loading')
-              : membership
-                ? (membership.plan_name ?? '—') + (membership.ends_at ? ` · ${t('home.expires_on', { date: dateOnly(membership.ends_at) })}` : ` · ${t('membership.ongoing')}`)
-                : t('home.no_membership')}
-          </p>
-        </div>
-      </section>
+        </section>
+      )}
     </main>
   );
 }

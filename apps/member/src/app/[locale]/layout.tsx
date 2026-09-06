@@ -5,6 +5,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { AppProvider } from '@/context/AppContext';
 import { ImpersonationProvider } from '@/context/ImpersonationContext';
+import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 import { TopBar } from '@/components/TopBar';
 import { GymSwitcher } from '@/components/GymSwitcher';
 import { CenterSwitcher } from '@/components/CenterSwitcher';
@@ -44,13 +45,15 @@ export default async function LocaleLayout({
           <NextIntlClientProvider messages={messages}>
             <ImpersonationProvider>
               <AppProvider>
-                <ThemeProvider>
-                  <AdminBar />
-                  <TopBar />
-                  <GymSwitcher />
-                  <CenterSwitcher />
-                  {children}
-                </ThemeProvider>
+                <FeatureFlagsProvider>
+                  <ThemeProvider>
+                    <AdminBar />
+                    <TopBar />
+                    <GymSwitcher />
+                    <CenterSwitcher />
+                    {children}
+                  </ThemeProvider>
+                </FeatureFlagsProvider>
               </AppProvider>
             </ImpersonationProvider>
           </NextIntlClientProvider>

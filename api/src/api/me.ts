@@ -341,7 +341,7 @@ meRouter.get('/centers', requireRole('member'), async (req: Request, res: Respon
   }
 });
 
-meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -515,7 +515,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
 });
 
 /** Book self on a session. Returns the booking with booked/waitlisted status. */
-meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { class_session_id } = req.body;
@@ -548,7 +548,7 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
  * P3.4: caller's class packages with lazy status flip so the client can
  * render "expired" without duplicating the rule.
  */
-meRouter.get('/class-packages', requireRole('member'), requireFeatureEnabled('organization.class_packages'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/class-packages', requireRole('member'), requireFeatureEnabled('organization.class_packages'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -573,7 +573,7 @@ meRouter.get('/class-packages', requireRole('member'), requireFeatureEnabled('or
 });
 
 /** Cancel own booking. Rejected once the session has already started. */
-meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId, gymMembershipId } = ctx;
   try {
@@ -684,7 +684,7 @@ meRouter.delete('/shared-training-requests/:id', requireRole('member'), requireF
  * active plans at once), each with its full clone tree (workouts -> blocks
  * -> exercises).
  */
-meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('training.training_plans'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('training.training_plans'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -708,7 +708,7 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
  * Mirrors member-nutrition-plans.ts's staff-facing `/:id/hierarchy`, scoped to
  * the caller instead of an arbitrary member_id.
  */
-meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nutrition.nutrition_plans'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nutrition.nutrition_plans'), requireFeatureEnabled('member_web.my_nutrition'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -786,7 +786,7 @@ async function resolveMemberId(gymId: string, ctx: TenantContext): Promise<numbe
  * #55: log a performed exercise + its sets. Member can only log against a
  * WorkoutExercise that belongs to one of their own (non-deleted) TrainingPlans.
  */
-meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { workout_exercise_id, logged_date, notes, duration_seconds, skipped, sets } = req.body;
@@ -841,7 +841,7 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
 });
 
 /** #55: member edits their own log (ownership-checked). No DELETE route. */
-meRouter.put('/exercise-logs/:id', requireRole('member'), requireFeatureEnabled('training'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.put('/exercise-logs/:id', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { notes, duration_seconds, skipped, sets } = req.body;
@@ -885,7 +885,7 @@ meRouter.put('/exercise-logs/:id', requireRole('member'), requireFeatureEnabled(
 });
 
 /** #55: history for progress charts — filter by exercise id. */
-meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const exerciseId = req.query.exercise as string | undefined;
@@ -913,7 +913,7 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
  * #55: log completion of a workout block. result_type is read server-side
  * from the block's own configuration — never trusted from the client.
  */
-meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { workout_block_id, logged_date, started_at, finished_at, result_value, notes } = req.body;
@@ -947,7 +947,7 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
 });
 
 /** #55: member edits their own block log (ownership-checked). No DELETE route. */
-meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEnabled('training'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { started_at, finished_at, result_value, notes } = req.body;
@@ -975,7 +975,7 @@ meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEna
 });
 
 /** #55: history list. */
-meRouter.get('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -992,7 +992,7 @@ meRouter.get('/workout-block-logs', requireRole('member'), requireFeatureEnabled
 });
 
 /** P4.5: names of promotions applied to the caller's current membership, if any. */
-meRouter.get('/promotions', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -1014,7 +1014,7 @@ meRouter.get('/promotions', requireRole('member'), async (req: Request, res: Res
 // P1.8: current membership (single record) with plan + benefits inline. Returns
 // { membership: {...} | null } — null when the member has none, so the client
 // can render an empty state without treating 404 as an error.
-meRouter.get('/membership', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -1247,7 +1247,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
 });
 
 /** #194: upcoming confirmed bookings (sessions + events) within the next 30 days. */
-meRouter.get('/upcoming', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   try {
@@ -1279,7 +1279,7 @@ meRouter.get('/upcoming', requireRole('member'), async (req: Request, res: Respo
 });
 
 /** #194: past booking history (sessions + events), paginated. */
-meRouter.get('/activity-history', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 20), 10) || 20, 1), 100);
@@ -1311,7 +1311,7 @@ meRouter.get('/activity-history', requireRole('member'), async (req: Request, re
 });
 
 // P1.8: read-only paginated ledger for the caller's own member row.
-meRouter.get('/billing-events', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 50), 10) || 50, 1), 200);
@@ -1339,7 +1339,7 @@ meRouter.get('/billing-events', requireRole('member'), async (req: Request, res:
 });
 
 // Member downloads their own receipt PDF
-meRouter.get('/receipts/:billingEventId', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const billingEventId = parseInt(String(req.params.billingEventId), 10);
