@@ -21,17 +21,22 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
   try {
     const like = `%${q}%`;
 
-    // Staff: all gym_memberships rows with non-member roles (no status filter — status is informational only)
+    // Staff: all gym_memberships rows with non-member roles (no status filter — status is informational only).
+    // gym_memberships.name is nullable — staff granted via an existing Clerk user (as opposed to
+    // invited by email) are inserted without a name (see gym-users.ts POST /). A plain `name LIKE ?`
+    // filter excludes those rows entirely, since `NULL LIKE anything` is NULL, not true — so they
+    // never appeared in this list even for an empty search. Fall back to email, then user_id, for
+    // both matching and display so every staff row is always findable.
     const { rows: staffRows } = await db.query<{
       user_id: string; name: string; role: string; gym_id: string; status: string;
     }>(
-      `SELECT gm.user_id, gm.name, gm.role, gm.gym_id, gm.status
+      `SELECT gm.user_id, COALESCE(gm.name, gm.email, gm.user_id) AS name, gm.role, gm.gym_id, gm.status
        FROM gym_memberships gm
        WHERE gm.gym_id = ?
          AND gm.user_id != ?
          AND gm.role != 'member'
-         AND gm.name LIKE ?
-       ORDER BY gm.name ASC
+         AND COALESCE(gm.name, gm.email, gm.user_id) LIKE ?
+       ORDER BY name ASC
        LIMIT 50`,
       [gymId, adminId, like],
     );
