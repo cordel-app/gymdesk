@@ -105,6 +105,17 @@ async function addPlanChargeBenefit(
   );
 }
 
+// #409: a custom (non-system) sellable item, created the same way POST
+// /sellable-items does — no charge_type_id (only system items backed by a
+// charge_types row have one).
+async function createCustomGymCharge(gymId: string, name: string, status = 'active'): Promise<number> {
+  const { insertId } = await db.query(
+    'INSERT INTO gym_charges (gym_id, name, type, status) VALUES (?, ?, ?, ?)',
+    [gymId, name, 'fee', status],
+  );
+  return insertId;
+}
+
 // ─── Auth and access guards ───────────────────────────────────────────────────
 
 describe('Auth and access guards', () => {
@@ -901,6 +912,95 @@ describe('PUT /membership-plans/:id/enrollment', () => {
       .set('x-gym-id', gymRO)
       .send({ enrollment_status: 'public' });
     expect(res.status).toBe(403);
+  });
+});
+
+// ─── #409: sellable items catalog + charge benefits in plan enrichment ───────
+
+describe('sellable_items in enriched plan response', () => {
+  let gymId: string;
+  let planId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Sellable Items Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, { name: 'Sellable Items Plan' });
+  });
+
+  it('includes the full catalog of active sellable items for the gym', async () => {
+    const activeId = await createCustomGymCharge(gymId, 'Active Custom Item');
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.sellable_items)).toBe(true);
+    const ids = res.body.sellable_items.map((si: any) => si.id);
+    expect(ids).toContain(activeId);
+  });
+
+  it('excludes inactive sellable items from the catalog', async () => {
+    const inactiveId = await createCustomGymCharge(gymId, 'Inactive Custom Item', 'inactive');
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.sellable_items.map((si: any) => si.id);
+    expect(ids).not.toContain(inactiveId);
+  });
+
+  it('is scoped to the requesting gym (tenant isolation)', async () => {
+    const otherGym = await createTestGym('Sellable Items Other Gym');
+    const otherItemId = await createCustomGymCharge(otherGym, 'Other Gym Item');
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.sellable_items.map((si: any) => si.id);
+    expect(ids).not.toContain(otherItemId);
+  });
+});
+
+// #409: GET /:id/charge-benefits used to INNER JOIN charge_types, which
+// silently dropped any benefit whose gym_charge is a custom sellable item
+// (charge_type_id is NULL for those — only system items have one).
+describe('GET /membership-plans/:id/charge-benefits', () => {
+  let gymId: string;
+  let planId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Charge Benefits Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, { name: 'Charge Benefits Plan' });
+  });
+
+  it('includes a benefit assigned to a custom sellable item (no charge_type_id)', async () => {
+    const customChargeId = await createCustomGymCharge(gymId, 'Custom Discount Item');
+    await addPlanChargeBenefit(gymId, planId, customChargeId, 'percentage_discount', 10);
+
+    const res = await request
+      .get(`/membership-plans/${planId}/charge-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const benefit = res.body.find((b: any) => b.gym_charge_id === customChargeId);
+    expect(benefit).toBeDefined();
+    expect(benefit.gym_charge_name).toBe('Custom Discount Item');
+  });
+
+  it('includes a benefit assigned to a system sellable item (has charge_type_id)', async () => {
+    const systemChargeId = await createGymCharge(gymId);
+    await addPlanChargeBenefit(gymId, planId, systemChargeId, 'waive', null);
+
+    const res = await request
+      .get(`/membership-plans/${planId}/charge-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const benefit = res.body.find((b: any) => b.gym_charge_id === systemChargeId);
+    expect(benefit).toBeDefined();
   });
 });
 

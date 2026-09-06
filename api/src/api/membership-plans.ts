@@ -61,6 +61,22 @@ interface ChargeBenefitRow {
   value: string | null;
 }
 
+interface SellableItemRow {
+  id: number;
+  gym_id: string;
+  name: string;
+  type: string;
+  charge_type_code: string | null;
+  charge_type_name: string | null;
+  amount: string | null;
+  currency: string | null;
+  billing_frequency: string | null;
+  status: string;
+  availability: string | null;
+  enrollment_status: string;
+  is_system: boolean | number;
+}
+
 export const membershipPlansRouter = Router();
 
 const VALID_MEMBER_LIMIT = ['1', '2', 'family'];
@@ -79,7 +95,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits] = await Promise.all([
+  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
       [plan.id, gymId],
@@ -111,10 +127,22 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
               gc.status AS gym_charge_status
        FROM plan_charge_benefits pcb
-       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id AND gc.deleted_at IS NULL
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
       [plan.id, gymId],
+    ).then(r => r.rows),
+    // Full catalog of active sellable items for this gym, so the admin UI can
+    // populate the charge-benefits selector without a separate round trip.
+    db.query<SellableItemRow>(
+      `SELECT gc.id, gc.gym_id, gc.name, gc.type, gc.amount, gc.currency, gc.billing_frequency,
+              gc.status, gc.availability, gc.enrollment_status, gc.is_system,
+              ct.code AS charge_type_code, ct.name AS charge_type_name
+       FROM gym_charges gc
+       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+       WHERE gc.gym_id = ? AND gc.deleted_at IS NULL AND gc.status = 'active'
+       ORDER BY gc.is_system DESC, gc.name ASC`,
+      [gymId],
     ).then(r => r.rows),
   ]);
 
@@ -132,6 +160,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     centers,
     member_count: memberCount,
     charge_benefits: chargeBenefits,
+    sellable_items: sellableItems,
   };
 }
 
@@ -820,11 +849,11 @@ membershipPlansRouter.get('/:id/charge-benefits', async (req, res) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
   const { rows } = await db.query<ChargeBenefitRow>(
-    `SELECT pcb.*, ct.code AS gym_charge_code, ct.name AS gym_charge_name,
+    `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
             gc.availability AS gym_charge_availability
      FROM plan_charge_benefits pcb
-     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-     JOIN charge_types ct ON ct.id = gc.charge_type_id
+     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id AND gc.deleted_at IS NULL
+     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
      WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
     [req.params.id, gymId],
   );
@@ -876,7 +905,7 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
       `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
               gc.status AS gym_charge_status
        FROM plan_charge_benefits pcb
-       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id AND gc.deleted_at IS NULL
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
       [req.params.id, gymId],
