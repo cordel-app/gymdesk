@@ -106,6 +106,7 @@ export default function MembersPage() {
   }, [editingId]);
 
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  const canManagePackages = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
 
   const buildParams = useCallback(() => {
     const p = new URLSearchParams();
@@ -483,7 +484,7 @@ export default function MembersPage() {
                 onCancel={cancelEdit}
               />
             )}
-            <MemberExpandedRow memberId={m.id} canManageTraining={canManageTraining} />
+            <MemberExpandedRow memberId={m.id} canManageTraining={canManageTraining} canManagePackages={canManagePackages} />
           </>
         )}
       />

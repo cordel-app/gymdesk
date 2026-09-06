@@ -119,10 +119,19 @@ export async function debitPackageIfClaimed(tx: any, bookingId: number, gymId: s
 }
 
 /**
- * Refund a package credit inside cancelBooking's transaction. Called with the
- * cancelled booking's user_class_package_id (if any).
+ * Refund a package credit inside a transaction. Called with the cancelled
+ * booking's user_class_package_id (if any) — either automatically (P3.3,
+ * cancellation >= 1 day before the session) or via an explicit staff/trainer
+ * action (#372, manual refund of a same-day cancellation).
  */
-export async function refundPackageCredit(tx: any, bookingId: number, userClassPackageId: number, gymId: string) {
+export async function refundPackageCredit(
+  tx: any,
+  bookingId: number,
+  userClassPackageId: number,
+  gymId: string,
+  reason = 'Booking cancellation refund',
+  actorUserId: string | null = null,
+) {
   await tx.query(
     "UPDATE user_class_packages SET sessions_remaining = sessions_remaining + 1, status = IF(status = 'consumed', 'active', status) WHERE id = ?",
     [userClassPackageId],
@@ -132,7 +141,7 @@ export async function refundPackageCredit(tx: any, bookingId: number, userClassP
     [bookingId],
   );
   await tx.query(
-    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, amount, reason) VALUES (?, ?, ?, 1, ?)',
-    [gymId, userClassPackageId, bookingId, 'Booking cancellation refund'],
+    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, amount, reason, actor_user_id) VALUES (?, ?, ?, 1, ?, ?)',
+    [gymId, userClassPackageId, bookingId, reason, actorUserId],
   );
 }

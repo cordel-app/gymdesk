@@ -41,6 +41,16 @@ interface NutritionPlan {
   status: string;
 }
 
+interface SessionPackage {
+  id: number;
+  package_name: string;
+  package_sessions: number;
+  sessions_remaining: number;
+  purchased_at: string;
+  expires_at: string;
+  status: 'active' | 'consumed' | 'expired' | 'cancelled';
+}
+
 interface BillingEvent {
   id: number;
   event_type: string;
@@ -57,9 +67,11 @@ interface BillingEvent {
 export function MemberExpandedRow({
   memberId,
   canManageTraining,
+  canManagePackages,
 }: {
   memberId: number;
   canManageTraining: boolean;
+  canManagePackages: boolean;
 }) {
   const t = useTranslations();
   const locale = useLocale();
@@ -79,6 +91,11 @@ export function MemberExpandedRow({
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>([]);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
+  const [sessionPackages, setSessionPackages] = useState<SessionPackage[]>([]);
+  const [extendingId, setExtendingId] = useState<number | null>(null);
+  const [extendValue, setExtendValue] = useState('');
+  const [extendSaving, setExtendSaving] = useState(false);
+  const [extendError, setExtendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -90,7 +107,7 @@ export function MemberExpandedRow({
     setLoading(true);
     setError(null);
     try {
-      const [memberships, plans, nutrition, events, clerk] = await Promise.all([
+      const [memberships, plans, nutrition, events, clerk, packages] = await Promise.all([
         apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}`).catch(() => []),
         canManageTraining
           ? apiFetch<TrainingPlanAssignment[]>(`/members/${memberId}/member-training-plans`).catch(() => [])
@@ -98,6 +115,7 @@ export function MemberExpandedRow({
         apiFetch<NutritionPlan[]>(`/member-nutrition-plans?member_id=${memberId}`).catch(() => []),
         apiFetch<{ items: BillingEvent[] }>(`/billing-events/member/${memberId}?limit=50`).catch(() => ({ items: [] })),
         apiFetch<{ status: string }>(`/members/${memberId}/clerk-status`).catch(() => null),
+        apiFetch<SessionPackage[]>(`/members/${memberId}/class-packages`).catch(() => []),
       ]);
 
       const current = memberships[0] ?? null;
@@ -107,6 +125,7 @@ export function MemberExpandedRow({
       setTrainingPlans(plans);
       setNutritionPlans(nutrition);
       setBillingEvents(events.items ?? []);
+      setSessionPackages(packages);
 
       if (current?.membership_plan_id) {
         apiFetch<Allowance[]>(`/membership-plans/${current.membership_plan_id}/allowances`)
@@ -126,6 +145,37 @@ export function MemberExpandedRow({
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  function startExtend(pkg: SessionPackage) {
+    setExtendingId(pkg.id);
+    setExtendValue(pkg.expires_at.slice(0, 10));
+    setExtendError(null);
+  }
+
+  function cancelExtend() {
+    setExtendingId(null);
+    setExtendValue('');
+    setExtendError(null);
+  }
+
+  async function saveExtend(pkg: SessionPackage) {
+    if (!extendValue) return;
+    setExtendSaving(true);
+    setExtendError(null);
+    try {
+      const updated = await apiFetch<SessionPackage>(
+        `/members/${memberId}/class-packages/${pkg.id}/extend-expiration`,
+        { method: 'PUT', body: JSON.stringify({ expires_at: extendValue }) },
+      );
+      setSessionPackages((prev) => prev.map((p) => (p.id === pkg.id ? updated : p)));
+      setExtendingId(null);
+      setExtendValue('');
+    } catch (err: any) {
+      setExtendError(err?.status === 400 ? t('members.extend_expiration_error') : t('members.extend_expiration_generic_error'));
+    } finally {
+      setExtendSaving(false);
+    }
   }
 
   if (loading) {
@@ -278,6 +328,68 @@ export function MemberExpandedRow({
                 )}
               </div>
             ))}
+          </div>
+        )}
+      </Section>
+
+      {/* Session Packages */}
+      <Section label={t('members.section_session_packages')}>
+        {sessionPackages.length === 0 ? (
+          <p style={dim}>{t('members.no_session_packages')}</p>
+        ) : (
+          <div>
+            {sessionPackages.map((pkg) => {
+              const used = pkg.package_sessions - pkg.sessions_remaining;
+              const isExpired = pkg.status === 'expired';
+              return (
+                <div key={pkg.id} style={card}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, fontSize: 14 }}>{pkg.package_name}</div>
+                      <Field label={t('members.package_purchased')}>{fmtDate(pkg.purchased_at)}</Field>
+                      <Field label={t('members.package_sessions_total')}>{pkg.package_sessions}</Field>
+                      <Field label={t('members.package_sessions_used')}>{used}</Field>
+                      <Field label={t('members.package_sessions_remaining')}>{pkg.sessions_remaining}</Field>
+                      <Field label={isExpired ? t('members.package_expired_label') : t('members.package_expires')}>
+                        {fmtDate(pkg.expires_at)}
+                      </Field>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                      <StatusBadge status={pkg.status} label={pkg.status} />
+                      {canManagePackages && extendingId !== pkg.id && (
+                        <button onClick={() => startExtend(pkg)} style={editBtnStyle}>{t('members.extend_expiration')}</button>
+                      )}
+                    </div>
+                  </div>
+                  {extendingId === pkg.id && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0f0' }}>
+                      <div style={fieldLabelStyle}>{t('members.extend_expiration_title')}</div>
+                      <Field label={t('members.extend_expiration_current')}>{fmtDate(pkg.expires_at)}</Field>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+                        <span style={{ color: '#888', minWidth: 120, fontSize: 13 }}>{t('members.extend_expiration_new')}</span>
+                        <input
+                          type="date"
+                          value={extendValue}
+                          onChange={(e) => setExtendValue(e.target.value)}
+                          style={{ padding: '4px 8px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 4 }}
+                        />
+                      </div>
+                      {extendError && <p style={{ color: '#c0392b', fontSize: 12, margin: '6px 0 0' }}>{extendError}</p>}
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <button onClick={cancelExtend} disabled={extendSaving} style={editBtnStyle}>{t('members.cancel')}</button>
+                        <button
+                          onClick={() => saveExtend(pkg)}
+                          disabled={extendSaving || !extendValue}
+                          style={{ ...editBtnStyle, background: '#111', color: '#fff', borderColor: '#111' }}
+                        >
+                          {extendSaving ? t('members.saving') : t('members.save_changes')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Section>
