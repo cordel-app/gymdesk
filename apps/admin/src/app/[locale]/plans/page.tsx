@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
-import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -70,13 +69,6 @@ const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
 
-const emptyAddForm = {
-  name: '',
-  description: '',
-  lifecycle_status: 'draft' as Plan['lifecycle_status'],
-  enrollment_status: 'staff_only' as Plan['enrollment_status'],
-};
-
 const emptyBillingPolicy = {
   initial_billing_interval: 1,
   initial_billing_unit: 'month',
@@ -96,12 +88,20 @@ const emptyEditForm = {
   enrollment_status: 'staff_only' as Plan['enrollment_status'],
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+type InlineNew = {
+  name: string;
+  description: string;
+  lifecycle_status: Plan['lifecycle_status'];
+  enrollment_status: Plan['enrollment_status'];
+  saving: boolean;
+  error: string | null;
+};
 
-function fmtPrice(price: string | null) {
-  if (price == null) return '—';
-  return `€${parseFloat(price).toFixed(2)}`;
+function emptyInlineNew(): InlineNew {
+  return { name: '', description: '', lifecycle_status: 'draft', enrollment_status: 'staff_only', saving: false, error: null };
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtBillingInterval(interval: number, unit: string) {
   if (interval === 1) return unit;
@@ -134,25 +134,19 @@ export default function PlansPage() {
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
-  // Details modal
-  const [detailsPlan, setDetailsPlan] = useState<Plan | null>(null);
-
-  // Add Plan modal
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [addForm, setAddForm] = useState(emptyAddForm);
-  const [billingForm, setBillingForm] = useState(emptyBillingPolicy);
-  const [addSaving, setAddSaving] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
+  // Inline create
+  const [inlineNew, setInlineNew] = useState<InlineNew | null>(null);
+  const newNameRef = useRef<HTMLInputElement>(null);
 
   // Confirm delete
   const [deleting, setDeleting] = useState<Plan | null>(null);
 
-  // Price sub-form
+  // Price sub-form (inline, per plan)
   const [priceForm, setPriceForm] = useState({ price: '', valid_from: '', valid_to: '' });
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceForPlanId, setPriceForPlanId] = useState<number | null>(null);
 
-  // Allowance sub-form
+  // Allowance sub-form (inline, per plan)
   const [allowanceForPlanId, setAllowanceForPlanId] = useState<number | null>(null);
   const [allowanceForm, setAllowanceForm] = useState({
     activity_type_id: '',
@@ -163,10 +157,15 @@ export default function PlansPage() {
   });
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
 
-  // Centers sub-form
+  // Centers sub-form (inline, per plan)
   const [centersForPlanId, setCentersForPlanId] = useState<number | null>(null);
   const [allCenters, setAllCenters] = useState<Center[]>([]);
   const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
+
+  // Billing policy sub-form (inline, per plan)
+  const [billingEditForPlanId, setBillingEditForPlanId] = useState<number | null>(null);
+  const [billingForm, setBillingForm] = useState(emptyBillingPolicy);
+  const [billingSaving, setBillingSaving] = useState(false);
 
   // Charge benefits
   const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
@@ -213,6 +212,10 @@ export default function PlansPage() {
     });
   }
 
+  function showDetails(id: number) {
+    setExpanded((prev) => new Set([...prev, id]));
+  }
+
   // ─── Inline edit ────────────────────────────────────────────────────────────
 
   function openInlineEdit(plan: Plan) {
@@ -253,51 +256,39 @@ export default function PlansPage() {
     }
   }
 
-  // ─── Add Plan modal ─────────────────────────────────────────────────────────
+  // ─── Inline create ──────────────────────────────────────────────────────────
 
-  function openAdd() {
-    setAddForm(emptyAddForm);
-    setBillingForm(emptyBillingPolicy);
-    setAddError(null);
-    setAddModalOpen(true);
+  function openInlineNew() {
+    setInlineNew(emptyInlineNew());
+    setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
-  function closeAdd() {
-    setAddModalOpen(false);
-    setAddForm(emptyAddForm);
-    setBillingForm(emptyBillingPolicy);
-    setAddError(null);
+  function cancelInlineNew() {
+    setInlineNew(null);
   }
 
-  async function handleAdd() {
-    if (!addForm.name.trim()) { setAddError(t('plans.error_required')); return; }
-    setAddSaving(true); setAddError(null);
+  async function saveInlineNew() {
+    if (!inlineNew) return;
+    if (!inlineNew.name.trim()) { setInlineNew({ ...inlineNew, error: t('plans.error_required') }); return; }
+    setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
       const created = await apiFetch<Plan>('/membership-plans', {
         method: 'POST',
         body: JSON.stringify({
-          name: addForm.name.trim(),
-          description: addForm.description.trim() || null,
-          lifecycle_status: addForm.lifecycle_status,
-          enrollment_status: addForm.enrollment_status,
+          name: inlineNew.name.trim(),
+          description: inlineNew.description.trim() || null,
+          lifecycle_status: inlineNew.lifecycle_status,
+          enrollment_status: inlineNew.enrollment_status,
         }),
       });
       await apiFetch(`/membership-plans/${created.id}/billing-policy`, {
         method: 'PUT',
-        body: JSON.stringify({
-          ...billingForm,
-          initial_billing_interval: Number(billingForm.initial_billing_interval),
-          recurring_billing_interval: Number(billingForm.recurring_billing_interval),
-          initial_service_interval: Number(billingForm.initial_service_interval),
-          recurring_service_interval: Number(billingForm.recurring_service_interval),
-        }),
+        body: JSON.stringify(emptyBillingPolicy),
       });
-      closeAdd();
+      setInlineNew(null);
       load();
     } catch (err: any) {
-      setAddError(err.message ?? t('plans.error_generic'));
-    } finally {
-      setAddSaving(false);
+      setInlineNew({ ...inlineNew, saving: false, error: err.message ?? t('plans.error_generic') });
     }
   }
 
@@ -323,6 +314,50 @@ export default function PlansPage() {
       load();
     } catch (err: any) {
       toast(err.message ?? t('plans.error_generic'));
+    }
+  }
+
+  // ─── Billing policy sub-form ────────────────────────────────────────────────
+
+  function openBillingEdit(plan: Plan) {
+    const bp = plan.billing_policy;
+    setBillingForm(bp ? {
+      initial_billing_interval: bp.initial_billing_interval,
+      initial_billing_unit: bp.initial_billing_unit,
+      recurring_billing_interval: bp.recurring_billing_interval,
+      recurring_billing_unit: bp.recurring_billing_unit,
+      initial_service_interval: bp.initial_service_interval,
+      initial_service_unit: bp.initial_service_unit,
+      recurring_service_interval: bp.recurring_service_interval,
+      recurring_service_unit: bp.recurring_service_unit,
+      auto_renew: !!bp.auto_renew,
+    } : emptyBillingPolicy);
+    setBillingEditForPlanId(plan.id);
+  }
+
+  function cancelBillingEdit() {
+    setBillingEditForPlanId(null);
+  }
+
+  async function handleSaveBilling(planId: number) {
+    setBillingSaving(true);
+    try {
+      await apiFetch(`/membership-plans/${planId}/billing-policy`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...billingForm,
+          initial_billing_interval: Number(billingForm.initial_billing_interval),
+          recurring_billing_interval: Number(billingForm.recurring_billing_interval),
+          initial_service_interval: Number(billingForm.initial_service_interval),
+          recurring_service_interval: Number(billingForm.recurring_service_interval),
+        }),
+      });
+      setBillingEditForPlanId(null);
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('plans.error_generic'));
+    } finally {
+      setBillingSaving(false);
     }
   }
 
@@ -478,6 +513,66 @@ export default function PlansPage() {
     }
   }
 
+  // ─── Render helpers ─────────────────────────────────────────────────────────
+
+  function renderInlineNewRow() {
+    if (!inlineNew) return null;
+    return (
+      <div style={cardStyle}>
+        <div style={{ padding: '16px 20px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.5fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={inlineLabelStyle}>{t('plans.label_name')} *</label>
+              <input
+                ref={newNameRef}
+                value={inlineNew.name}
+                onChange={(e) => setInlineNew({ ...inlineNew, name: e.target.value })}
+                placeholder={t('plans.placeholder_name')}
+                style={inlineInputStyle}
+              />
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('plans.label_description')}</label>
+              <input
+                value={inlineNew.description}
+                onChange={(e) => setInlineNew({ ...inlineNew, description: e.target.value })}
+                placeholder={t('plans.placeholder_description')}
+                style={inlineInputStyle}
+              />
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('plans.label_lifecycle_status')}</label>
+              <select
+                value={inlineNew.lifecycle_status}
+                onChange={(e) => setInlineNew({ ...inlineNew, lifecycle_status: e.target.value as Plan['lifecycle_status'] })}
+                style={inlineSelectStyle}
+              >
+                {LIFECYCLE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('plans.label_enrollment_status')}</label>
+              <select
+                value={inlineNew.enrollment_status}
+                onChange={(e) => setInlineNew({ ...inlineNew, enrollment_status: e.target.value as Plan['enrollment_status'] })}
+                style={inlineSelectStyle}
+              >
+                {ENROLLMENT_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
+              </select>
+            </div>
+          </div>
+          {inlineNew.error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{inlineNew.error}</p>}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+              {inlineNew.saving ? t('plans.saving') : t('plans.save_changes')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   if (gymLoading || !isAdmin) return null;
@@ -487,11 +582,11 @@ export default function PlansPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('plans.title')}</h1>
-        <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('plans.modal_add')}</button>
+        <button onClick={openInlineNew} style={btnStyle('#6c63ff')} disabled={inlineNew !== null}>{t('plans.add')}</button>
       </div>
 
       {/* Column headers */}
-      {!loading && plans.length > 0 && (
+      {!loading && (plans.length > 0 || inlineNew) && (
         <div style={colHeaderStyle}>
           <div style={{ flex: 2 }}>{t('plans.col_name')}</div>
           <div style={{ flex: 3 }}>{t('plans.col_description')}</div>
@@ -503,10 +598,13 @@ export default function PlansPage() {
         </div>
       )}
 
+      {/* Inline create */}
+      {renderInlineNewRow()}
+
       {/* Plan list */}
       {loading ? (
         <p style={{ color: '#888' }}>{t('plans.loading')}</p>
-      ) : plans.length === 0 ? (
+      ) : plans.length === 0 && !inlineNew ? (
         <p style={{ color: '#888' }}>{t('plans.empty')}</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -518,7 +616,7 @@ export default function PlansPage() {
               : '—';
 
             const menuItems: ContextMenuItem[] = [
-              { label: t('plans.details'), onClick: () => setDetailsPlan(plan) },
+              { label: t('plans.details'), onClick: () => showDetails(plan.id) },
               { label: t('plans.edit'), onClick: () => openInlineEdit(plan) },
               { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan) },
               { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true },
@@ -619,8 +717,47 @@ export default function PlansPage() {
                     <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
                     <DetailRow label="Members" value={String(plan.member_count)} />
 
-                    <SectionHeader title={t('plans.section_billing')} />
-                    {plan.billing_policy ? (
+                    <SectionHeader
+                      title={t('plans.section_billing')}
+                      action={billingEditForPlanId === plan.id ? null : <button onClick={() => openBillingEdit(plan)} style={linkBtn}>{t('plans.edit')}</button>}
+                    />
+                    {billingEditForPlanId === plan.id ? (
+                      <div style={{ margin: '6px 0 10px' }}>
+                        {(['initial_billing', 'recurring_billing', 'initial_service', 'recurring_service'] as const).map((key) => (
+                          <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                            <div style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t(`plans.label_${key}_interval`)}</div>
+                            <input
+                              type="number" min="1"
+                              value={(billingForm as any)[`${key}_interval`]}
+                              onChange={(e) => setBillingForm({ ...billingForm, [`${key}_interval`]: parseInt(e.target.value) || 1 })}
+                              style={{ ...inlineInputStyle, width: 70 }}
+                            />
+                            <select
+                              value={(billingForm as any)[`${key}_unit`]}
+                              onChange={(e) => setBillingForm({ ...billingForm, [`${key}_unit`]: e.target.value })}
+                              style={{ ...inlineSelectStyle, flex: 1 }}
+                            >
+                              {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                          <input
+                            type="checkbox"
+                            id={`auto_renew_${plan.id}`}
+                            checked={!!billingForm.auto_renew}
+                            onChange={(e) => setBillingForm({ ...billingForm, auto_renew: e.target.checked })}
+                          />
+                          <label htmlFor={`auto_renew_${plan.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{t('plans.label_auto_renew')}</label>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button onClick={cancelBillingEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={() => handleSaveBilling(plan.id)} disabled={billingSaving} style={btnSmall('#6c63ff')}>
+                            {billingSaving ? t('plans.saving') : t('plans.save_changes')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : plan.billing_policy ? (
                       <>
                         <DetailRow label={t('plans.billing_initial')} value={fmtBillingInterval(plan.billing_policy.initial_billing_interval, plan.billing_policy.initial_billing_unit)} />
                         <DetailRow label={t('plans.billing_recurring')} value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`} />
@@ -632,14 +769,107 @@ export default function PlansPage() {
                       <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_billing')}</p>
                     )}
 
-                    <SectionHeader title={t('plans.section_centers')} action={<button onClick={() => openCenters(plan)} style={linkBtn}>Edit</button>} />
-                    {(plan.centers ?? []).length === 0 ? (
+                    <SectionHeader
+                      title={t('plans.section_centers')}
+                      action={centersForPlanId === plan.id ? null : <button onClick={() => openCenters(plan)} style={linkBtn}>{t('plans.edit')}</button>}
+                    />
+                    {centersForPlanId === plan.id ? (
+                      <div style={{ margin: '6px 0 10px' }}>
+                        {allCenters.map((c) => (
+                          <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                            <input
+                              type="checkbox"
+                              id={`center_${plan.id}_${c.id}`}
+                              checked={selectedCenterIds.includes(c.id)}
+                              onChange={(e) => {
+                                setSelectedCenterIds((prev) =>
+                                  e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id),
+                                );
+                              }}
+                            />
+                            <label htmlFor={`center_${plan.id}_${c.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{c.name}</label>
+                          </div>
+                        ))}
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                          <button onClick={() => setCentersForPlanId(null)} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={handleSaveCenters} style={btnSmall('#6c63ff')}>{t('plans.save_changes')}</button>
+                        </div>
+                      </div>
+                    ) : (plan.centers ?? []).length === 0 ? (
                       <DetailRow label="" value={t('plans.all_centers')} />
                     ) : (
                       (plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)
                     )}
 
-                    <SectionHeader title={t('plans.section_services')} action={<button onClick={() => openAddAllowance(plan.id)} style={linkBtn}>+ Add</button>} />
+                    <SectionHeader
+                      title={t('plans.section_services')}
+                      action={allowanceForPlanId === plan.id ? null : <button onClick={() => openAddAllowance(plan.id)} style={linkBtn}>+ Add</button>}
+                    />
+                    {allowanceForPlanId === plan.id && (
+                      <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                          <div>
+                            <label style={inlineLabelStyle}>Activity</label>
+                            <select
+                              value={allowanceForm.activity_type_id}
+                              onChange={(e) => setAllowanceForm({ ...allowanceForm, activity_type_id: e.target.value })}
+                              style={inlineSelectStyle}
+                            >
+                              <option value="">Select…</option>
+                              {activityTypes.map((at) => <option key={at.id} value={at.id}>{at.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={inlineLabelStyle}>{t('plans.allowance_type')}</label>
+                            <select
+                              value={allowanceForm.allowance_type}
+                              onChange={(e) => setAllowanceForm({ ...allowanceForm, allowance_type: e.target.value })}
+                              style={inlineSelectStyle}
+                            >
+                              {ALLOWANCE_TYPES.map((a) => <option key={a} value={a}>{t(`plans.allowance_${a}`)}</option>)}
+                            </select>
+                          </div>
+                          {allowanceForm.allowance_type === 'session_count' && (
+                            <>
+                              <div>
+                                <label style={inlineLabelStyle}>{t('plans.session_count')}</label>
+                                <input
+                                  type="number" min="1"
+                                  value={allowanceForm.session_count}
+                                  onChange={(e) => setAllowanceForm({ ...allowanceForm, session_count: e.target.value })}
+                                  style={inlineInputStyle}
+                                />
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                  <label style={inlineLabelStyle}>{t('plans.recurrence')}</label>
+                                  <input
+                                    type="number" min="1"
+                                    value={allowanceForm.recurrence_interval}
+                                    onChange={(e) => setAllowanceForm({ ...allowanceForm, recurrence_interval: e.target.value })}
+                                    style={inlineInputStyle}
+                                  />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <label style={inlineLabelStyle}>&nbsp;</label>
+                                  <select
+                                    value={allowanceForm.recurrence_unit}
+                                    onChange={(e) => setAllowanceForm({ ...allowanceForm, recurrence_unit: e.target.value })}
+                                    style={inlineSelectStyle}
+                                  >
+                                    {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                                  </select>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button onClick={() => setAllowanceForPlanId(null)} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={handleSaveAllowance} style={btnSmall('#6c63ff')}>{t('plans.save_changes')}</button>
+                        </div>
+                      </div>
+                    )}
                     {(plan.allowances ?? []).length === 0 ? (
                       <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_allowances')}</p>
                     ) : (
@@ -662,7 +892,7 @@ export default function PlansPage() {
                           title={t('plans.section_charge_benefits')}
                           action={
                             cbEditForPlanId === plan.id ? null :
-                            <button onClick={() => openCbEdit(plan)} style={linkBtn}>Edit</button>
+                            <button onClick={() => openCbEdit(plan)} style={linkBtn}>{t('plans.edit')}</button>
                           }
                         />
                         {cbEditForPlanId === plan.id ? (
@@ -720,7 +950,48 @@ export default function PlansPage() {
                       </>
                     )}
 
-                    <SectionHeader title={t('plans.section_prices')} action={<button onClick={() => openAddPrice(plan.id)} style={linkBtn}>+ Add</button>} />
+                    <SectionHeader
+                      title={t('plans.section_prices')}
+                      action={priceForPlanId === plan.id ? null : <button onClick={() => openAddPrice(plan.id)} style={linkBtn}>+ Add</button>}
+                    />
+                    {priceForPlanId === plan.id && (
+                      <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                          <div>
+                            <label style={inlineLabelStyle}>{t('prices.col_price')}</label>
+                            <input
+                              type="number" min="0" step="0.01"
+                              value={priceForm.price}
+                              onChange={(e) => setPriceForm({ ...priceForm, price: e.target.value })}
+                              placeholder="0.00"
+                              style={inlineInputStyle}
+                            />
+                          </div>
+                          <div>
+                            <label style={inlineLabelStyle}>{t('prices.col_from')}</label>
+                            <input
+                              type="date"
+                              value={priceForm.valid_from}
+                              onChange={(e) => setPriceForm({ ...priceForm, valid_from: e.target.value })}
+                              style={inlineInputStyle}
+                            />
+                          </div>
+                          <div>
+                            <label style={inlineLabelStyle}>{t('prices.col_to')}</label>
+                            <input
+                              type="date"
+                              value={priceForm.valid_to}
+                              onChange={(e) => setPriceForm({ ...priceForm, valid_to: e.target.value })}
+                              style={inlineInputStyle}
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button onClick={closePriceForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={handleSavePrice} style={btnSmall('#6c63ff')}>{t('plans.save_changes')}</button>
+                        </div>
+                      </div>
+                    )}
                     {(plan.price_history ?? []).length === 0 ? (
                       <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_prices')}</p>
                     ) : (
@@ -729,7 +1000,7 @@ export default function PlansPage() {
                           <span style={labelStyle}>{String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}</span>
                           <span style={valueStyle}>€{parseFloat(row.price).toFixed(2)}</span>
                           <div style={{ display: 'flex', gap: 4 }}>
-                            <button onClick={() => openEditPrice(plan.id, row)} style={linkBtn}>Edit</button>
+                            <button onClick={() => openEditPrice(plan.id, row)} style={linkBtn}>{t('plans.edit')}</button>
                             <button onClick={() => handleDeletePrice(plan.id, row.id)} style={dangerLinkBtn}>✕</button>
                           </div>
                         </div>
@@ -741,242 +1012,6 @@ export default function PlansPage() {
             );
           })}
         </div>
-      )}
-
-      {/* Details modal */}
-      <CrudModal
-        open={detailsPlan !== null}
-        title={t('plans.details_title')}
-        error={null}
-        saving={false}
-        hideSave
-        cancelLabel={t('plans.details_close')}
-        saveLabel=""
-        onCancel={() => setDetailsPlan(null)}
-        onSave={() => setDetailsPlan(null)}
-      >
-        {detailsPlan && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
-              {t('plans.details_section_general')}
-            </div>
-            <div>
-              <span style={detailLabelStyle}>{t('plans.details_name')}</span>
-              <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 500 }}>{detailsPlan.name}</p>
-            </div>
-            <div>
-              <span style={detailLabelStyle}>{t('plans.details_description')}</span>
-              <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>{detailsPlan.description ?? '—'}</p>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <span style={detailLabelStyle}>{t('plans.details_status')}</span>
-                <div style={{ marginTop: 4 }}>
-                  <StatusBadge status={detailsPlan.lifecycle_status} label={t(`status.${detailsPlan.lifecycle_status}`)} />
-                </div>
-              </div>
-              <div>
-                <span style={detailLabelStyle}>{t('plans.details_enrollment_status')}</span>
-                <div style={{ marginTop: 4 }}>
-                  <StatusBadge
-                    status={detailsPlan.enrollment_status === 'public' ? 'active' : detailsPlan.enrollment_status === 'staff_only' ? 'paused' : 'inactive'}
-                    label={t(`status.${detailsPlan.enrollment_status}`)}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
-              {t('plans.details_section_audit')}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <span style={detailLabelStyle}>{t('plans.details_created_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(detailsPlan.created_at).toLocaleString()}</p>
-              </div>
-              <div>
-                <span style={detailLabelStyle}>{t('plans.details_created_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.created_by_name ?? '—'}</p>
-              </div>
-              <div>
-                <span style={detailLabelStyle}>{t('plans.details_modified_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.modified_at ? new Date(detailsPlan.modified_at).toLocaleString() : '—'}</p>
-              </div>
-              <div>
-                <span style={detailLabelStyle}>{t('plans.details_modified_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{detailsPlan.modified_by_name ?? '—'}</p>
-              </div>
-              {detailsPlan.deleted_at && (
-                <div>
-                  <span style={detailLabelStyle}>{t('plans.details_deleted_at')}</span>
-                  <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(detailsPlan.deleted_at).toLocaleString()}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </CrudModal>
-
-      {/* Add Plan modal */}
-      <CrudModal
-        open={addModalOpen}
-        title={t('plans.modal_add')}
-        error={addError}
-        saving={addSaving}
-        cancelLabel={t('plans.cancel')}
-        saveLabel={addSaving ? t('plans.saving') : t('plans.modal_add')}
-        onCancel={closeAdd}
-        onSave={handleAdd}
-      >
-        <FormLabel>{t('plans.label_name')}</FormLabel>
-        <FormInput
-          value={addForm.name}
-          onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-          placeholder={t('plans.placeholder_name')}
-          autoFocus
-        />
-
-        <FormLabel>{t('plans.label_description')}</FormLabel>
-        <FormInput
-          value={addForm.description}
-          onChange={(e) => setAddForm({ ...addForm, description: e.target.value })}
-          placeholder={t('plans.placeholder_description')}
-        />
-
-        <FormLabel>{t('plans.label_lifecycle_status')}</FormLabel>
-        <select value={addForm.lifecycle_status} onChange={(e) => setAddForm({ ...addForm, lifecycle_status: e.target.value as any })} style={selectStyle}>
-          {LIFECYCLE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
-        </select>
-
-        <FormLabel>{t('plans.label_enrollment_status')}</FormLabel>
-        <select value={addForm.enrollment_status} onChange={(e) => setAddForm({ ...addForm, enrollment_status: e.target.value as any })} style={selectStyle}>
-          {ENROLLMENT_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
-        </select>
-
-        <div style={{ marginTop: 16, marginBottom: 4 }}>
-          <strong style={{ fontSize: 13, color: '#555', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {t('plans.section_billing')}
-          </strong>
-        </div>
-
-        {(['initial_billing', 'recurring_billing', 'initial_service', 'recurring_service'] as const).map((key) => (
-          <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ width: 160, flexShrink: 0, fontSize: 14, color: '#555' }}>{t(`plans.label_${key}_interval`)}</div>
-            <FormInput
-              type="number" min="1"
-              value={(billingForm as any)[`${key}_interval`]}
-              onChange={(e) => setBillingForm({ ...billingForm, [`${key}_interval`]: parseInt(e.target.value) || 1 })}
-              style={{ width: 70 }}
-            />
-            <select
-              value={(billingForm as any)[`${key}_unit`]}
-              onChange={(e) => setBillingForm({ ...billingForm, [`${key}_unit`]: e.target.value })}
-              style={{ ...selectStyle, flex: 1 }}
-            >
-              {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </div>
-        ))}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-          <input
-            type="checkbox"
-            id="auto_renew"
-            checked={!!billingForm.auto_renew}
-            onChange={(e) => setBillingForm({ ...billingForm, auto_renew: e.target.checked })}
-          />
-          <label htmlFor="auto_renew" style={{ fontSize: 14, cursor: 'pointer' }}>{t('plans.label_auto_renew')}</label>
-        </div>
-      </CrudModal>
-
-      {/* Price sub-form modal */}
-      {priceForPlanId != null && (
-        <CrudModal
-          open
-          title={priceEditId ? t('prices.edit_heading') : t('prices.add_heading')}
-          error={null}
-          saving={false}
-          cancelLabel={t('plans.cancel')}
-          saveLabel={t('plans.save_changes')}
-          onCancel={closePriceForm}
-          onSave={handleSavePrice}
-        >
-          <FormLabel>{t('prices.col_price')}</FormLabel>
-          <FormInput type="number" min="0" step="0.01" value={priceForm.price} onChange={(e) => setPriceForm({ ...priceForm, price: e.target.value })} placeholder="0.00" />
-          <FormLabel>{t('prices.col_from')}</FormLabel>
-          <FormInput type="date" value={priceForm.valid_from} onChange={(e) => setPriceForm({ ...priceForm, valid_from: e.target.value })} />
-          <FormLabel>{t('prices.col_to')} (optional)</FormLabel>
-          <FormInput type="date" value={priceForm.valid_to} onChange={(e) => setPriceForm({ ...priceForm, valid_to: e.target.value })} />
-        </CrudModal>
-      )}
-
-      {/* Allowance sub-form modal */}
-      {allowanceForPlanId != null && (
-        <CrudModal
-          open
-          title={t('plans.add_allowance')}
-          error={null}
-          saving={false}
-          cancelLabel={t('plans.cancel')}
-          saveLabel={t('plans.save_changes')}
-          onCancel={() => setAllowanceForPlanId(null)}
-          onSave={handleSaveAllowance}
-        >
-          <FormLabel>Activity</FormLabel>
-          <select value={allowanceForm.activity_type_id} onChange={(e) => setAllowanceForm({ ...allowanceForm, activity_type_id: e.target.value })} style={selectStyle}>
-            <option value="">Select…</option>
-            {activityTypes.map((at) => <option key={at.id} value={at.id}>{at.name}</option>)}
-          </select>
-
-          <FormLabel>{t('plans.allowance_type')}</FormLabel>
-          <select value={allowanceForm.allowance_type} onChange={(e) => setAllowanceForm({ ...allowanceForm, allowance_type: e.target.value })} style={selectStyle}>
-            {ALLOWANCE_TYPES.map((a) => <option key={a} value={a}>{t(`plans.allowance_${a}`)}</option>)}
-          </select>
-
-          {allowanceForm.allowance_type === 'session_count' && (
-            <>
-              <FormLabel>{t('plans.session_count')}</FormLabel>
-              <FormInput type="number" min="1" value={allowanceForm.session_count} onChange={(e) => setAllowanceForm({ ...allowanceForm, session_count: e.target.value })} />
-              <FormLabel>{t('plans.recurrence')} (interval)</FormLabel>
-              <FormInput type="number" min="1" value={allowanceForm.recurrence_interval} onChange={(e) => setAllowanceForm({ ...allowanceForm, recurrence_interval: e.target.value })} />
-              <FormLabel>{t('plans.recurrence')} (unit)</FormLabel>
-              <select value={allowanceForm.recurrence_unit} onChange={(e) => setAllowanceForm({ ...allowanceForm, recurrence_unit: e.target.value })} style={selectStyle}>
-                {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-              </select>
-            </>
-          )}
-        </CrudModal>
-      )}
-
-      {/* Centers sub-form modal */}
-      {centersForPlanId != null && (
-        <CrudModal
-          open
-          title={t('plans.section_centers')}
-          error={null}
-          saving={false}
-          cancelLabel={t('plans.cancel')}
-          saveLabel={t('plans.save_changes')}
-          onCancel={() => setCentersForPlanId(null)}
-          onSave={handleSaveCenters}
-        >
-          {allCenters.map((c) => (
-            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
-              <input
-                type="checkbox"
-                id={`center_${c.id}`}
-                checked={selectedCenterIds.includes(c.id)}
-                onChange={(e) => {
-                  setSelectedCenterIds((prev) =>
-                    e.target.checked ? [...prev, c.id] : prev.filter((id) => id !== c.id),
-                  );
-                }}
-              />
-              <label htmlFor={`center_${c.id}`} style={{ fontSize: 14, cursor: 'pointer' }}>{c.name}</label>
-            </div>
-          ))}
-        </CrudModal>
       )}
 
       {/* Confirm delete */}
@@ -1013,11 +1048,6 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
-
-const selectStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc',
-  fontSize: 15, boxSizing: 'border-box', background: '#fff', marginBottom: 8,
-};
 
 const cardStyle: React.CSSProperties = {
   border: '1px solid #e2e2e6', borderRadius: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)',
@@ -1058,10 +1088,6 @@ const inlineInputStyle: React.CSSProperties = {
 const inlineSelectStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
   fontSize: 14, boxSizing: 'border-box', background: '#fff',
-};
-
-const detailLabelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
 };
 
 const linkBtn: React.CSSProperties = {
