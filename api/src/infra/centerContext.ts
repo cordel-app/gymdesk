@@ -25,19 +25,28 @@ declare global {
  * their gym by default.
  */
 export async function centerContext(req: Request, res: Response, next: NextFunction) {
-  const { gymId, role, userId } = getTenantContext(req);
+  const { gymId, role, effectiveType, effectiveUserId } = getTenantContext(req);
   const headerRaw = req.headers['x-center-id'] as string | undefined;
   const headerCenterId = headerRaw ? Number(headerRaw) : null;
 
   let allowedCenterIds: number[] | null = null;
 
   if (role === 'member') {
-    const { rows } = await db.query<{ center_id: number }>(
-      `SELECT mc.center_id FROM member_centers mc
-       JOIN members m ON m.id = mc.member_id
-       WHERE m.clerk_user_id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL`,
-      [userId, gymId],
-    );
+    // Under member impersonation, effectiveUserId is members.id, not a Clerk user id —
+    // match on it directly rather than clerk_user_id (which is the impersonating staffer's).
+    const { rows } = effectiveType === 'member'
+      ? await db.query<{ center_id: number }>(
+          `SELECT mc.center_id FROM member_centers mc
+           JOIN members m ON m.id = mc.member_id
+           WHERE m.id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL`,
+          [Number(effectiveUserId), gymId],
+        )
+      : await db.query<{ center_id: number }>(
+          `SELECT mc.center_id FROM member_centers mc
+           JOIN members m ON m.id = mc.member_id
+           WHERE m.clerk_user_id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL`,
+          [effectiveUserId, gymId],
+        );
     allowedCenterIds = rows.map((r) => r.center_id);
     if (headerCenterId != null && !allowedCenterIds.includes(headerCenterId)) {
       return res.status(403).json({ error: 'You are not assigned to this center' });
