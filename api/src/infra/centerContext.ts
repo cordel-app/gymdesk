@@ -25,15 +25,16 @@ declare global {
  * their gym by default.
  */
 export async function centerContext(req: Request, res: Response, next: NextFunction) {
-  const { gymId, role, effectiveType, effectiveUserId } = getTenantContext(req);
+  const { gymId, role, userId, effectiveUserId, effectiveType } = getTenantContext(req);
   const headerRaw = req.headers['x-center-id'] as string | undefined;
   const headerCenterId = headerRaw ? Number(headerRaw) : null;
 
   let allowedCenterIds: number[] | null = null;
 
   if (role === 'member') {
-    // Under member impersonation, effectiveUserId is members.id, not a Clerk user id —
-    // match on it directly rather than clerk_user_id (which is the impersonating staffer's).
+    // Under member impersonation, effectiveUserId is members.id, not a Clerk
+    // user id — match on the member row directly rather than the (superadmin's)
+    // raw userId, or an impersonated member's centers would resolve to none.
     const { rows } = effectiveType === 'member'
       ? await db.query<{ center_id: number }>(
           `SELECT mc.center_id FROM member_centers mc
@@ -45,7 +46,7 @@ export async function centerContext(req: Request, res: Response, next: NextFunct
           `SELECT mc.center_id FROM member_centers mc
            JOIN members m ON m.id = mc.member_id
            WHERE m.clerk_user_id = ? AND m.gym_id = ? AND mc.deleted_at IS NULL`,
-          [effectiveUserId, gymId],
+          [userId, gymId],
         );
     allowedCenterIds = rows.map((r) => r.center_id);
     if (headerCenterId != null && !allowedCenterIds.includes(headerCenterId)) {

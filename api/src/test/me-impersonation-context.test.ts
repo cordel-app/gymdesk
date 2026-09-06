@@ -174,6 +174,40 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
       .set('x-impersonate-as', `member:${memberId}`);
     expect(res.status).toBe(400);
   });
+
+  it('GET /me/schedule with x-center-id under impersonation resolves the impersonated member\'s own centers, not the superadmin\'s', async () => {
+    await db.query(
+      `INSERT INTO member_centers (gym_id, member_id, center_id, is_default) VALUES (?, ?, ?, true)`,
+      [gymId, memberId, centerId],
+    );
+
+    const res = await request
+      .get('/me/schedule')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-center-id', String(centerId))
+      .set('x-impersonate-as', `member:${memberId}`);
+
+    expect(res.status).toBe(200);
+    const booking = (res.body as any[]).find((s) => s.id === sessionId);
+    expect(booking).toBeDefined();
+  });
+
+  it('GET /me/schedule with an x-center-id the impersonated member is not assigned to is 403', async () => {
+    const { insertId: otherCenterId } = await db.query(
+      `INSERT INTO centers (gym_id, name) VALUES (?, 'Other Center')`,
+      [gymId],
+    );
+
+    const res = await request
+      .get('/me/schedule')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-center-id', String(otherCenterId))
+      .set('x-impersonate-as', `member:${memberId}`);
+
+    expect(res.status).toBe(403);
+  });
 });
 
 // Regression coverage for the center-scoping bug found alongside #362 slice 2:

@@ -168,12 +168,14 @@ describe('GET /platform/impersonation/targets', () => {
     expect(res.body[0].type).toBe('staff');
   });
 
-  it('excludes staff users who are superadmins', async () => {
+  it('includes staff even when their Clerk user cannot be resolved (staff discovery is DB-only)', async () => {
+    mockGetUser.mockClear();
     mockGetUser.mockImplementation(async (userId: string) => {
-      if (userId === TEST_USER_ID || userId === STAFF_ID) {
+      if (userId === TEST_USER_ID) {
         return { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Super', firstName: 'Super', lastName: 'Admin', emailAddresses: [], primaryEmailAddressId: null };
       }
-      return { publicMetadata: {}, fullName: 'Regular', firstName: 'Regular', lastName: 'User', emailAddresses: [], primaryEmailAddressId: null };
+      // Any other lookup (e.g. for STAFF_ID) fails, as it would for a user with no Clerk account.
+      throw new Error('user not found in Clerk');
     });
 
     const res = await request
@@ -183,7 +185,10 @@ describe('GET /platform/impersonation/targets', () => {
 
     expect(res.status).toBe(200);
     const ids = res.body.map((u: any) => u.id);
-    expect(ids).not.toContain(STAFF_ID);
+    expect(ids).toContain(STAFF_ID);
+    // Only requireSuperadmin's own Clerk lookup for the caller should have happened —
+    // staff discovery must never call getUser for staff rows.
+    expect(mockGetUser).not.toHaveBeenCalledWith(STAFF_ID);
   });
 
   it('returns status field on staff targets', async () => {
@@ -426,22 +431,17 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
     expect(res.body.error).toMatch(/yourself/);
   });
 
-  it('returns 400 when target is another superadmin', async () => {
-    mockGetUser.mockImplementation(async () => ({
-      publicMetadata: { platform_role: 'superadmin' },
-      fullName: 'Other Super Admin',
-      firstName: 'Other',
-      lastName: 'Admin',
-      emailAddresses: [],
-      primaryEmailAddressId: null,
-    }));
+  it('returns 400 for a superadmin target — superadmins carry no gym_memberships row', async () => {
+    // Superadmin status is Clerk-only and irrelevant here: staff validation never
+    // calls Clerk, so a superadmin target is rejected the same way as any other
+    // user with no gym_memberships row for this gym.
     const res = await request
       .post(`/platform/impersonation/other-superadmin-id`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ targetType: 'staff' });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/superadmin/);
+    expect(res.body.error).toMatch(/membership/);
   });
 
   it('returns 400 when target has no membership in the gym', async () => {
@@ -452,6 +452,26 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
       .send({ targetType: 'staff' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/membership/);
+  });
+
+  it('succeeds for staff even when Clerk lookup fails for the target (staff validation is DB-only)', async () => {
+    mockGetUser.mockClear();
+    mockGetUser.mockImplementation(async (userId: string) => {
+      if (userId === TEST_USER_ID) {
+        return { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Super Admin', firstName: 'Super', lastName: 'Admin', emailAddresses: [], primaryEmailAddressId: null };
+      }
+      throw new Error('user not found in Clerk');
+    });
+
+    const res = await request
+      .post(`/platform/impersonation/${LINKED_MEMBER_CLERK_ID}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ targetType: 'staff' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(LINKED_MEMBER_CLERK_ID);
+    expect(mockGetUser).not.toHaveBeenCalledWith(LINKED_MEMBER_CLERK_ID);
   });
 
   it('returns target data with gymIds on success', async () => {
