@@ -14,7 +14,7 @@ Read these files first — they contain the full context needed to implement cor
 - `docs/decisions.md` — settled architectural choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate these
 
 Use **Members** as the reference implementation for staff-level CRUD with soft-delete.
-Use **Plans** (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the reference implementation for admin-only CRUD.
+Use **Plans** (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the reference implementation for an admin-only CRUD API and its Inline row CRUD frontend (expandable rows, no modals — see `docs/feature-patterns.md`). For the Modal CRUD frontend shape, see Class Types.
 
 Use `/plan` to generate a structured implementation plan before coding. Use the `db-reviewer` agent to check migration files. Use the `test-writer` agent to generate test files.
 
