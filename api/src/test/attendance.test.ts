@@ -102,7 +102,7 @@ describe('Attendance Management (#193)', () => {
 
     // Trainer
     await db.query(
-      `INSERT INTO gym_memberships (user_id, gym_id, role, status) VALUES (?, ?, 'trainer_performance', 'active')`,
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name) VALUES (?, ?, 'trainer_performance', 'active', 'Test Trainer')`,
       [TRAINER_USER_ID, gymId],
     );
     const { rows: trRows } = await db.query<{ id: number }>(
