@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
 interface Session {
   id: number;
@@ -46,7 +47,8 @@ export default function MemberSchedulePage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { isLinked, loading: appLoading } = useApp();
+  const { isLinked, loading: appLoading, isSuperadmin } = useApp();
+  const { flags: featureFlags } = useFeatureFlags();
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,9 +88,10 @@ export default function MemberSchedulePage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
+    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.my_bookings')) { router.replace(`/${locale}`); return; }
     load();
     loadPast();
-  }, [appLoading, isLinked, locale]);
+  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
 
   async function bookSession(sessionId: number) {
     setPendingSession(sessionId); setMessage(null);

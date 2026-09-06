@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
 interface Profile {
   id: number;
@@ -30,7 +31,9 @@ export default function ProfilePage() {
     isLinked, loading: appLoading,
     gyms, gymId, switchGym,
     centers, activeCenterId, setActiveCenterId,
+    isSuperadmin,
   } = useApp();
+  const { flags: featureFlags } = useFeatureFlags();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +51,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
+    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.profile')) { router.replace(`/${locale}`); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -70,7 +74,7 @@ export default function ProfilePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [appLoading, isLinked, locale]);
+  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
 
   function startEdit() {
     setPhone(profile?.phone ?? '');

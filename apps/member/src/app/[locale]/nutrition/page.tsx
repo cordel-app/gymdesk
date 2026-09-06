@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
 interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
 interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: MealItem[] }
@@ -19,7 +20,8 @@ export default function NutritionPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { isLinked, loading: appLoading } = useApp();
+  const { isLinked, loading: appLoading, isSuperadmin } = useApp();
+  const { flags: featureFlags } = useFeatureFlags();
 
   const [plan, setPlan] = useState<NutritionPlan | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -28,6 +30,7 @@ export default function NutritionPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
+    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.my_nutrition')) { router.replace(`/${locale}`); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -40,7 +43,7 @@ export default function NutritionPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [appLoading, isLinked, locale]);
+  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
 
   function weekdayLabel(weekday: number): string {
     if (weekday === ALL_DAYS_WEEKDAY) return t('nutrition.all_days');
