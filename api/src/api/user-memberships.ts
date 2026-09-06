@@ -12,12 +12,24 @@ type Status = (typeof STATUSES)[number];
 export const userMembershipsRouter = Router();
 
 // List joined to member + plan for display (rows returned by SELECT * plus display names).
+//
+// lifecycle_status (#410) is a read-only, date-aware projection of the stored
+// `status` column for reporting/display — it never overrides `status` in the
+// database or in the business logic elsewhere in this file. A future start
+// date reads as 'pending' and a past end date on an otherwise-active row
+// reads as 'expired', without requiring a cron job to flip `status` itself.
 export const LIST_SELECT = `
   SELECT um.*,
          m.name AS member_name,
          m.email AS member_email,
          p.name AS plan_name,
-         p.member_limit AS plan_member_limit
+         p.member_limit AS plan_member_limit,
+         CASE
+           WHEN um.status IN ('paused', 'cancelled', 'expired') THEN um.status
+           WHEN um.starts_at > CURDATE() THEN 'pending'
+           WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
+           ELSE 'active'
+         END AS lifecycle_status
   FROM user_memberships um
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
