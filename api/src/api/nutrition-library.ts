@@ -42,13 +42,16 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
     );
     const total = countRows[0]?.total ?? 0;
 
+    // LIMIT/OFFSET must be literals, not `?` parameters: MySQL 8's prepared-statement
+    // protocol rejects a parameterised LIMIT (ER_WRONG_ARGUMENTS). limit/offset are
+    // already validated integers (clampLimit/clampOffset), so direct interpolation is safe.
     const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; category: string; status: string; created_at: string; modified_at: string | null }>(
       `SELECT id, gym_id, name, category, status, created_at, modified_at
        FROM nutrition_library_items
        WHERE ${where}
        ORDER BY name ASC
-       LIMIT ? OFFSET ?`,
-      [...params, limit, offset],
+       LIMIT ${limit} OFFSET ${offset}`,
+      params,
     );
 
     const qualitiesMap = await loadQualitiesMap(rows.map((r) => r.id));
