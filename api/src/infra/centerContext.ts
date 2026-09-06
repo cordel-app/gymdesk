@@ -49,6 +49,20 @@ export async function centerContext(req: Request, res: Response, next: NextFunct
           [userId, gymId],
         );
     allowedCenterIds = rows.map((r) => r.center_id);
+
+    // No member_centers row doesn't necessarily mean "assigned to zero centers" —
+    // gyms with only one center commonly never populate member_centers at all.
+    // Fall back to the gym's sole center, mirroring resolveCenterId()'s existing
+    // single-center fallback for writes, so such members keep seeing their gym's
+    // schedule instead of nothing.
+    if (allowedCenterIds.length === 0) {
+      const { rows: gymCenters } = await db.query<{ id: number }>(
+        'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
+        [gymId],
+      );
+      if (gymCenters.length === 1) allowedCenterIds = [gymCenters[0].id];
+    }
+
     if (headerCenterId != null && !allowedCenterIds.includes(headerCenterId)) {
       return res.status(403).json({ error: 'You are not assigned to this center' });
     }
