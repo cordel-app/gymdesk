@@ -133,7 +133,16 @@
     "waitlisted_at": "A la llista d'espera — posició {pos}.",
     "cancelled": "Reserva cancel·lada.",
     "status_waitlisted": "A la llista d'espera",
-    "leave_waitlist": "Sortir de la llista d'espera"
+    "leave_waitlist": "Sortir de la llista d'espera",
+    "upcoming_section": "Properes",
+    "past_section": "Reserves passades",
+    "past_empty": "Encara no hi ha reserves passades.",
+    "past_status_present": "Vas assistir",
+    "past_status_absent": "No vas assistir",
+    "past_status_pending": "Reservada",
+    "past_status_cancelled": "Cancel·lada",
+    "capacity_detail": "{booked} / {capacity} reservades",
+    "cancelled_at_detail": "Cancel·lada el {date}"
   },
   "member_calendar": {
     "filter_all": "Tots",

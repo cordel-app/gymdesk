@@ -346,17 +346,28 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
   const { gymId } = ctx;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const where: string[] = ['b.gym_id = ?', 'b.member_id = ?'];
+    const params: any[] = [gymId, memberId];
+    if (centerId != null) {
+      where.push('cs.center_id = ?');
+      params.push(centerId);
+    } else if (allowedCenterIds) {
+      if (allowedCenterIds.length === 0) return res.json([]);
+      where.push(`cs.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      params.push(...allowedCenterIds);
+    }
     const { rows } = await db.query(
       `SELECT b.id, b.status, b.waitlist_position, b.booked_at, b.cancelled_at,
               b.class_session_id,
               cs.starts_at, cs.ends_at, cs.status AS session_status,
-              ct.name AS class_name, ct.description
+              at.name AS class_name, at.description
        FROM bookings b
        JOIN class_sessions cs ON cs.id = b.class_session_id
-       JOIN class_types ct ON ct.id = cs.class_type_id
-       WHERE b.gym_id = ? AND b.member_id = ?
+       JOIN activity_types at ON at.id = cs.activity_type_id
+       WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at ASC`,
-      [gymId, memberId],
+      params,
     );
     res.json(rows);
   } catch (err) {
@@ -1255,6 +1266,21 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
     const now = new Date().toISOString();
     const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
+    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const where: string[] = [
+      'b.gym_id = ?', 'b.member_id = ?', "b.status = 'booked'",
+      "cs.status = 'scheduled'", 'cs.starts_at >= ?', 'cs.starts_at <= ?',
+    ];
+    const params: any[] = [gymId, memberId, now, future];
+    if (centerId != null) {
+      where.push('cs.center_id = ?');
+      params.push(centerId);
+    } else if (allowedCenterIds) {
+      if (allowedCenterIds.length === 0) return res.json([]);
+      where.push(`cs.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      params.push(...allowedCenterIds);
+    }
+
     const { rows: sessionRows } = await db.query(
       `SELECT b.id AS booking_id, 'session' AS kind,
               cs.id AS entity_id, at.name AS title, sp.name AS space_name,
@@ -1264,11 +1290,9 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
        JOIN activity_types at ON at.id = cs.activity_type_id
        LEFT JOIN spaces sp ON sp.id = cs.space_id
        LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
-       WHERE b.gym_id = ? AND b.member_id = ? AND b.status = 'booked'
-         AND cs.status = 'scheduled'
-         AND cs.starts_at >= ? AND cs.starts_at <= ?
+       WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at ASC`,
-      [gymId, memberId, now, future],
+      params,
     );
 
     res.json(sessionRows);
@@ -1288,6 +1312,18 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     const memberId = await resolveMemberId(gymId, ctx);
     const cutoff = new Date().toISOString();
 
+    const { centerId, allowedCenterIds } = getCenterContext(req);
+    const where: string[] = ['b.gym_id = ?', 'b.member_id = ?', 'cs.starts_at < ?'];
+    const params: any[] = [gymId, memberId, cutoff];
+    if (centerId != null) {
+      where.push('cs.center_id = ?');
+      params.push(centerId);
+    } else if (allowedCenterIds) {
+      if (allowedCenterIds.length === 0) return res.json({ items: [], limit, offset });
+      where.push(`cs.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      params.push(...allowedCenterIds);
+    }
+
     const { rows: sessionRows } = await db.query(
       `SELECT b.id AS booking_id, 'session' AS kind,
               cs.id AS entity_id, at.name AS title,
@@ -1296,10 +1332,9 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
        FROM bookings b
        JOIN class_sessions cs ON cs.id = b.class_session_id
        JOIN activity_types at ON at.id = cs.activity_type_id
-       WHERE b.gym_id = ? AND b.member_id = ?
-         AND cs.starts_at < ?
+       WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at DESC`,
-      [gymId, memberId, cutoff],
+      params,
     );
 
     const items = sessionRows.slice(offset, offset + limit);
