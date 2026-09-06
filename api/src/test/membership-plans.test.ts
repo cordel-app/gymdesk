@@ -72,10 +72,18 @@ async function addCoveredMember(
   );
 }
 
-// #376: creates a gym-scoped charge (borrowing any existing gym-charge charge_type,
-// seeded by migration 090) so a plan_charge_benefits row can reference it.
+// #376: creates a gym-scoped charge (borrowing an existing gym-charge charge_type,
+// seeded by migration 090) so a plan_charge_benefits row can reference it. Picks a
+// charge_type not yet used by this gym, since gym_charges has a unique constraint
+// on (gym_id, charge_type_id) and this helper may be called more than once per gym.
 async function createGymCharge(gymId: string): Promise<number> {
-  const { rows } = await db.query('SELECT id FROM charge_types WHERE is_gym_charge = 1 LIMIT 1');
+  const { rows } = await db.query(
+    `SELECT ct.id FROM charge_types ct
+     WHERE ct.is_gym_charge = 1
+     AND NOT EXISTS (SELECT 1 FROM gym_charges gc WHERE gc.gym_id = ? AND gc.charge_type_id = ct.id)
+     LIMIT 1`,
+    [gymId],
+  );
   const chargeTypeId = rows[0].id;
   const { insertId } = await db.query(
     `INSERT INTO gym_charges (gym_id, charge_type_id, availability) VALUES (?, ?, 'available')`,
