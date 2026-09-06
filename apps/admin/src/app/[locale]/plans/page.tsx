@@ -49,6 +49,7 @@ interface Plan {
   description: string | null;
   lifecycle_status: 'draft' | 'active' | 'paused' | 'inactive';
   enrollment_status: 'public' | 'staff_only';
+  member_limit: '1' | '2' | 'family';
   current_price: string | null;
   member_count: number;
   billing_policy: BillingPolicy | null;
@@ -65,6 +66,7 @@ interface Plan {
 
 const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
 const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
+const MEMBER_LIMITS = ['1', '2', 'family'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
@@ -86,6 +88,7 @@ const emptyEditForm = {
   description: '',
   lifecycle_status: 'draft' as Plan['lifecycle_status'],
   enrollment_status: 'staff_only' as Plan['enrollment_status'],
+  member_limit: '1' as Plan['member_limit'],
 };
 
 type InlineNew = {
@@ -93,12 +96,13 @@ type InlineNew = {
   description: string;
   lifecycle_status: Plan['lifecycle_status'];
   enrollment_status: Plan['enrollment_status'];
+  member_limit: Plan['member_limit'];
   saving: boolean;
   error: string | null;
 };
 
 function emptyInlineNew(): InlineNew {
-  return { name: '', description: '', lifecycle_status: 'draft', enrollment_status: 'staff_only', saving: false, error: null };
+  return { name: '', description: '', lifecycle_status: 'draft', enrollment_status: 'staff_only', member_limit: '1', saving: false, error: null };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -225,6 +229,7 @@ export default function PlansPage() {
       description: plan.description ?? '',
       lifecycle_status: plan.lifecycle_status,
       enrollment_status: plan.enrollment_status,
+      member_limit: plan.member_limit,
     });
     setEditError(null);
   }
@@ -245,6 +250,7 @@ export default function PlansPage() {
           description: editForm.description.trim() || null,
           lifecycle_status: editForm.lifecycle_status,
           enrollment_status: editForm.enrollment_status,
+          member_limit: editForm.member_limit,
         }),
       });
       setEditingId(null);
@@ -279,6 +285,7 @@ export default function PlansPage() {
           description: inlineNew.description.trim() || null,
           lifecycle_status: inlineNew.lifecycle_status,
           enrollment_status: inlineNew.enrollment_status,
+          member_limit: inlineNew.member_limit,
         }),
       });
       await apiFetch(`/membership-plans/${created.id}/billing-policy`, {
@@ -698,6 +705,18 @@ export default function PlansPage() {
                           ))}
                         </select>
                       </div>
+                      <div>
+                        <label style={inlineLabelStyle}>{t('plans.label_member_limit')}</label>
+                        <select
+                          value={editForm.member_limit}
+                          onChange={(e) => setEditForm({ ...editForm, member_limit: e.target.value as Plan['member_limit'] })}
+                          style={inlineSelectStyle}
+                        >
+                          {MEMBER_LIMITS.map((m) => (
+                            <option key={m} value={m}>{t(`plans.member_limit_${m}`)}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                     {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
                     <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
@@ -715,6 +734,7 @@ export default function PlansPage() {
                     <SectionHeader title={t('plans.section_status')} />
                     <DetailRow label={t('plans.label_lifecycle_status')} value={t(`status.${plan.lifecycle_status}`)} />
                     <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
+                    <DetailRow label={t('plans.label_member_limit')} value={t(`plans.member_limit_${plan.member_limit}`)} />
                     <DetailRow label="Members" value={String(plan.member_count)} />
 
                     <SectionHeader

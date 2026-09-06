@@ -612,7 +612,11 @@
     "no_charge_benefits": "No hay beneficios de cargos configurados.",
     "cb_col_charge": "Cargo",
     "cb_col_action": "Acción",
-    "save_charge_benefits": "Guardar beneficios de cargos"
+    "save_charge_benefits": "Guardar beneficios de cargos",
+    "label_member_limit": "Miembros por Membresía",
+    "member_limit_1": "Individual (1 miembro)",
+    "member_limit_2": "Pareja (2 miembros)",
+    "member_limit_family": "Familiar (miembros ilimitados)"
   },
   "prices": {
     "title": "Precios",
@@ -1584,7 +1588,14 @@
       "status_changed": "Cambio de estado",
       "adjustment": "Ajuste"
     },
-    "status_transition": "{from} → {to}"
+    "status_transition": "{from} → {to}",
+    "members": "Miembros",
+    "members_title": "Miembros Cubiertos",
+    "members_limit_hint": "Este plan cubre hasta: {limit}",
+    "members_limit_reached": "Esta membresía ha alcanzado su límite de miembros.",
+    "owner_badge": "Titular",
+    "remove": "Quitar",
+    "add_member": "Añadir"
   },
   "team": {
     "title": "Equipo",

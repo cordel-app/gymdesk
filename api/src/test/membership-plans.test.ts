@@ -25,13 +25,14 @@ async function createPlan(
     (overrides.name as string | undefined) ??
     `Plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const { insertId } = await db.query(
-    `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status)
-     VALUES (?, ?, ?, ?)`,
+    `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit)
+     VALUES (?, ?, ?, ?, ?)`,
     [
       gymId,
       name,
       (overrides.lifecycle_status as string | undefined) ?? 'draft',
       (overrides.enrollment_status as string | undefined) ?? 'staff_only',
+      (overrides.member_limit as string | undefined) ?? '1',
     ],
   );
   return insertId;
@@ -49,11 +50,25 @@ async function createActiveUserMembership(
   gymId: string,
   memberId: number,
   planId: number,
-): Promise<void> {
-  await db.query(
+): Promise<number> {
+  const { insertId } = await db.query(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at)
      VALUES (?, ?, ?, 'active', CURDATE())`,
     [gymId, memberId, planId],
+  );
+  return insertId;
+}
+
+// #374: records a Member as covered by a Membership (owner or additional).
+async function addCoveredMember(
+  gymId: string,
+  userMembershipId: number,
+  memberId: number,
+  isOwner = false,
+): Promise<void> {
+  await db.query(
+    'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, ?)',
+    [gymId, userMembershipId, memberId, isOwner ? 1 : 0],
   );
 }
 
@@ -465,6 +480,138 @@ describe('PUT /membership-plans/:id', () => {
       .set('x-gym-id', gymId)
       .send({ name: 'Updated Plan Name' }); // already used above
     expect(res.status).toBe(409);
+  });
+});
+
+// ─── member_limit (#374 — multi-member Membership Plans) ─────────────────────
+
+describe('member_limit on create and update', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans MemberLimit Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('defaults member_limit to "1" when omitted on create', async () => {
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Default Limit Plan' });
+    expect(res.status).toBe(201);
+    expect(res.body.member_limit).toBe('1');
+  });
+
+  it('accepts member_limit "2" on create', async () => {
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Couple Limit Plan', member_limit: '2' });
+    expect(res.status).toBe(201);
+    expect(res.body.member_limit).toBe('2');
+  });
+
+  it('accepts member_limit "family" on create', async () => {
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Family Limit Plan', member_limit: 'family' });
+    expect(res.status).toBe(201);
+    expect(res.body.member_limit).toBe('family');
+  });
+
+  it('returns 400 for an invalid member_limit value on create', async () => {
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Bad Limit Create Plan', member_limit: '3' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/member_limit/i);
+  });
+
+  it('updates member_limit to "2" via PUT', async () => {
+    const planId = await createPlan(gymId, { name: 'Update Limit Plan' });
+    const res = await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_limit: '2' });
+    expect(res.status).toBe(200);
+    expect(res.body.member_limit).toBe('2');
+  });
+
+  it('returns 400 for an invalid member_limit value on update', async () => {
+    const planId = await createPlan(gymId, { name: 'Update Bad Limit Plan' });
+    const res = await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_limit: 'couple' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/member_limit/i);
+  });
+
+  it('copies member_limit when duplicating a plan', async () => {
+    const planId = await createPlan(gymId, { name: 'Duplicate Source Plan', member_limit: 'family' });
+    const res = await request
+      .post(`/membership-plans/${planId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(201);
+    expect(res.body.member_limit).toBe('family');
+  });
+
+  it('rejects shrinking member_limit below the covered Members of an existing active Membership', async () => {
+    const planId = await createPlan(gymId, { name: 'Shrink Guard Plan', member_limit: '2' });
+    const owner = await createMember(gymId);
+    const partner = await createMember(gymId);
+    const umId = await createActiveUserMembership(gymId, owner, planId);
+    await addCoveredMember(gymId, umId, owner, true);
+    await addCoveredMember(gymId, umId, partner, false);
+
+    const res = await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_limit: '1' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/member limit/i);
+  });
+
+  it('allows shrinking member_limit when covered Members already fit within the new cap', async () => {
+    const planId = await createPlan(gymId, { name: 'Shrink OK Plan', member_limit: '2' });
+    const owner = await createMember(gymId);
+    const umId = await createActiveUserMembership(gymId, owner, planId);
+    await addCoveredMember(gymId, umId, owner, true);
+
+    const res = await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_limit: '1' });
+    expect(res.status).toBe(200);
+    expect(res.body.member_limit).toBe('1');
+  });
+
+  it('allows setting member_limit to "family" regardless of covered Members', async () => {
+    const planId = await createPlan(gymId, { name: 'Shrink To Family Plan', member_limit: '2' });
+    const owner = await createMember(gymId);
+    const partner = await createMember(gymId);
+    const umId = await createActiveUserMembership(gymId, owner, planId);
+    await addCoveredMember(gymId, umId, owner, true);
+    await addCoveredMember(gymId, umId, partner, false);
+
+    const res = await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_limit: 'family' });
+    expect(res.status).toBe(200);
+    expect(res.body.member_limit).toBe('family');
   });
 });
 

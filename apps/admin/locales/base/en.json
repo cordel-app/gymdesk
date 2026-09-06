@@ -680,7 +680,11 @@
     "no_charge_benefits": "No charge benefits configured.",
     "cb_col_charge": "Charge",
     "cb_col_action": "Action",
-    "save_charge_benefits": "Save charge benefits"
+    "save_charge_benefits": "Save charge benefits",
+    "label_member_limit": "Members per Membership",
+    "member_limit_1": "Individual (1 member)",
+    "member_limit_2": "Couple (2 members)",
+    "member_limit_family": "Family (unlimited members)"
   },
   "prices": {
     "title": "Prices",
@@ -1652,7 +1656,14 @@
       "status_changed": "Status changed",
       "adjustment": "Adjustment"
     },
-    "status_transition": "{from} → {to}"
+    "status_transition": "{from} → {to}",
+    "members": "Members",
+    "members_title": "Covered Members",
+    "members_limit_hint": "This plan covers up to: {limit}",
+    "members_limit_reached": "This membership has reached its member limit.",
+    "owner_badge": "Owner",
+    "remove": "Remove",
+    "add_member": "Add"
   },
   "team": {
     "title": "Team",

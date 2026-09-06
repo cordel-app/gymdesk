@@ -11,6 +11,7 @@ interface PlanRow {
   description: string | null;
   lifecycle_status: string;
   enrollment_status: string;
+  member_limit: '1' | '2' | 'family';
   created_by: number | null;
   created_by_name?: string | null;
   modified_at: string | null;
@@ -58,6 +59,8 @@ interface ChargeBenefitRow {
 }
 
 export const membershipPlansRouter = Router();
+
+const VALID_MEMBER_LIMIT = ['1', '2', 'family'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -175,16 +178,19 @@ membershipPlansRouter.get('/:id', async (req, res) => {
 
 membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, lifecycle_status, enrollment_status } = req.body;
+  const { name, description, lifecycle_status, enrollment_status, member_limit } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
+  if (member_limit !== undefined && !VALID_MEMBER_LIMIT.includes(member_limit)) {
+    return res.status(400).json({ error: 'member_limit must be one of: 1, 2, family' });
+  }
   const callerMemberId = await getCallerMembershipId(req);
   try {
     const row = await insertAndFetch(
       `INSERT INTO membership_plans
-       (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null,
-       lifecycle_status ?? 'draft', enrollment_status ?? 'staff_only', callerMemberId],
+       lifecycle_status ?? 'draft', enrollment_status ?? 'staff_only', member_limit ?? '1', callerMemberId],
       'SELECT * FROM membership_plans WHERE id = ?',
       (id) => [id],
     );
@@ -197,7 +203,7 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
 
 membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, lifecycle_status, enrollment_status } = req.body;
+  const { name, description, lifecycle_status, enrollment_status, member_limit } = req.body;
 
   const VALID_LIFECYCLE = ['draft', 'active', 'paused', 'inactive'];
   const VALID_ENROLLMENT = ['public', 'staff_only'];
@@ -210,6 +216,28 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   if (['public', 'staff_only'].includes(enrollment_status) && lifecycle_status && lifecycle_status !== 'active') {
     return res.status(400).json({ error: 'enrollment can only be public or staff_only when lifecycle_status is active' });
   }
+  if (member_limit !== undefined && !VALID_MEMBER_LIMIT.includes(member_limit)) {
+    return res.status(400).json({ error: 'member_limit must be one of: 1, 2, family' });
+  }
+  // Shrinking the cap must not orphan Members already covered by an active
+  // Membership on this plan (#374 — the limit is enforced server-side).
+  if (member_limit && member_limit !== 'family') {
+    const cap = parseInt(member_limit, 10);
+    const { rows: over } = await db.query(
+      `SELECT COUNT(*) AS n FROM (
+         SELECT umm.user_membership_id
+         FROM user_membership_members umm
+         JOIN user_memberships um ON um.id = umm.user_membership_id AND um.status = 'active'
+         WHERE um.membership_plan_id = ? AND um.gym_id = ?
+         GROUP BY umm.user_membership_id
+         HAVING COUNT(*) > ?
+       ) over_limit`,
+      [req.params.id, gymId, cap],
+    );
+    if (Number(over[0].n) > 0) {
+      return res.status(400).json({ error: 'Cannot reduce the member limit below the covered Members of an existing active Membership.' });
+    }
+  }
 
   const callerMemberId = await getCallerMembershipId(req);
   try {
@@ -219,6 +247,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         description       = IF(?, ?, description),
         lifecycle_status  = COALESCE(?, lifecycle_status),
         enrollment_status = COALESCE(?, enrollment_status),
+        member_limit      = COALESCE(?, member_limit),
         modified_at       = NOW(),
         modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -227,6 +256,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         'description' in req.body ? 1 : 0, description ?? null,
         lifecycle_status ?? null,
         enrollment_status ?? null,
+        member_limit ?? null,
         callerMemberId,
         req.params.id, gymId,
       ],
@@ -277,9 +307,9 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
     const newPlanId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO membership_plans
-         (gym_id, name, description, lifecycle_status, enrollment_status, created_by)
-         VALUES (?, ?, ?, 'draft', 'staff_only', ?)`,
-        [gymId, `${orig.name} (Copy)`, orig.description ?? null, callerMemberId],
+         (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, created_by)
+         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?)`,
+        [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, callerMemberId],
       );
 
       // Copy billing policy
