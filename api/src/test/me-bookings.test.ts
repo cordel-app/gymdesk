@@ -1,13 +1,19 @@
 // Regression coverage for #362 ("Make Members App Fully Functional") — Bookings slice.
 //
 // GET /me/bookings previously joined the legacy `class_types`/`cs.class_type_id`
-// columns, which no longer exist on a fully-migrated DB (class_sessions only
-// carries `activity_type_id` post-migration 059) — every call 500'd. It also,
-// along with GET /me/upcoming and GET /me/activity-history, never applied any
-// center scoping, unlike GET /me/schedule. This file proves all three now
-// resolve the effective member correctly, apply center scoping, and (for
-// /me/bookings and /me/activity-history) no longer reference the dropped
-// legacy columns.
+// columns instead of `activity_types`/`cs.activity_type_id` — every call 500'd,
+// since bookings-worthy sessions in this suite (and in production, post-#70) are
+// only ever given an activity type. It also, along with GET /me/upcoming and
+// GET /me/activity-history, never applied any center scoping, unlike GET
+// /me/schedule. This file proves all three now resolve the effective member
+// correctly, apply center scoping, and (for /me/bookings and
+// /me/activity-history) join `activity_types` instead of the legacy table.
+//
+// `class_sessions.class_type_id` itself is still a legacy NOT NULL column
+// (migration 059 added `activity_type_id` alongside it but never dropped or
+// relaxed it), so test setup mirrors each activity type into `class_types`
+// under the same id and supplies both columns, matching the pattern used by
+// bookings.test.ts / member-calendar.test.ts / me-impersonation-context.test.ts.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
@@ -53,14 +59,20 @@ async function createActivityType(gymId: string, maxCapacity: number): Promise<n
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Test Class', ?, 'active')`,
     [gymId, maxCapacity],
   );
+  // class_sessions.class_type_id FKs into class_types and is still NOT NULL;
+  // mirror the row there under the same id so createSession can satisfy it.
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, 'Test Class', ?, 'active')`,
+    [insertId, gymId, maxCapacity],
+  ).catch(() => { /* class_types may not exist on a fully-migrated DB */ });
   return insertId;
 }
 
 async function createSession(gymId: string, activityTypeId: number, centerId: number, whenSql: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status)
-     VALUES (?, ?, ?, ${whenSql}, DATE_ADD(${whenSql}, INTERVAL 1 HOUR), 'scheduled')`,
-    [gymId, activityTypeId, centerId],
+    `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status)
+     VALUES (?, ?, ?, ?, ${whenSql}, DATE_ADD(${whenSql}, INTERVAL 1 HOUR), 'scheduled')`,
+    [gymId, activityTypeId, activityTypeId, centerId],
   );
   return insertId;
 }
