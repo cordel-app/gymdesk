@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
+import { getCenterContext } from '../infra/centerContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { bookMemberOnSession, cancelBooking } from './bookings';
 import { validateRequest as validateSharedRequest } from './shared-training-requests';
@@ -386,6 +387,16 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const params: any[] = [gymId, from];
     if (to) { where.push('cs.starts_at <= ?'); params.push(to); }
     if (activityTypeId) { where.push('cs.activity_type_id = ?'); params.push(activityTypeId); }
+
+    const { centerId, allowedCenterIds } = getCenterContext(req);
+    if (centerId != null) {
+      where.push('cs.center_id = ?');
+      params.push(centerId);
+    } else if (allowedCenterIds) {
+      if (allowedCenterIds.length === 0) return res.json([]);
+      where.push(`cs.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      params.push(...allowedCenterIds);
+    }
 
     const { rows } = await db.query(
       `SELECT cs.id, cs.activity_type_id, cs.starts_at, cs.ends_at,

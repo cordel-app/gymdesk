@@ -209,3 +209,77 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
     expect(res.status).toBe(403);
   });
 });
+
+// Regression coverage for the center-scoping bug found alongside #362 slice 2:
+// centerContext.ts resolved a member's allowedCenterIds via `clerk_user_id = ctx.userId`,
+// which under member impersonation is the impersonating superadmin's own Clerk id — never
+// the impersonated member's — silently collapsing allowedCenterIds to []. /me/schedule also
+// never applied the center restriction at all, so a member could see every center's sessions.
+describe('/me/schedule — center scoping under member impersonation (#362)', () => {
+  let gymId: string;
+  let centerAId: number;
+  let centerBId: number;
+  let activityTypeId: number;
+  let sessionInCenterA: number;
+  let sessionInCenterB: number;
+  let memberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Center Scoping Impersonation Gym');
+
+    const { insertId: aId } = await db.query(`INSERT INTO centers (gym_id, name) VALUES (?, 'Center A')`, [gymId]);
+    centerAId = aId;
+    const { insertId: bId } = await db.query(`INSERT INTO centers (gym_id, name) VALUES (?, 'Center B')`, [gymId]);
+    centerBId = bId;
+
+    activityTypeId = await createActivityType(gymId, 10);
+    sessionInCenterA = await createSession(gymId, activityTypeId, centerAId);
+    sessionInCenterB = await createSession(gymId, activityTypeId, centerBId);
+
+    const { insertId: mId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Scoped Member', ?)`,
+      [gymId, `scoped-member-${Date.now()}@test.com`],
+    );
+    memberId = mId;
+
+    // Member is assigned only to Center A.
+    await db.query(
+      `INSERT INTO member_centers (gym_id, member_id, center_id, is_default) VALUES (?, ?, ?, 1)`,
+      [gymId, memberId, centerAId],
+    );
+  });
+
+  beforeEach(() => {
+    mockGetUser.mockClear();
+    mockGetUser.mockResolvedValue({
+      publicMetadata: { platform_role: 'superadmin' },
+      fullName: 'Super Admin',
+      firstName: 'Super',
+      lastName: 'Admin',
+    });
+  });
+
+  it('under impersonation, only returns sessions from the member\'s assigned center', async () => {
+    const res = await request
+      .get('/me/schedule')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-impersonate-as', `member:${memberId}`);
+
+    expect(res.status).toBe(200);
+    const ids = (res.body as any[]).map((s) => s.id);
+    expect(ids).toContain(sessionInCenterA);
+    expect(ids).not.toContain(sessionInCenterB);
+  });
+
+  it('rejects an explicit x-center-id the impersonated member is not assigned to', async () => {
+    const res = await request
+      .get('/me/schedule')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-impersonate-as', `member:${memberId}`)
+      .set('x-center-id', String(centerBId));
+
+    expect(res.status).toBe(403);
+  });
+});
