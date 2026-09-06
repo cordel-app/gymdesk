@@ -2,7 +2,9 @@
 
 Use the **Plans** module (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the canonical reference for an admin-only feature, and **Members** for a full-staff feature with soft-delete.
 
-Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `DependencyDialog`, `StatusBadge`, `StatusFilter`, `Toast` (plus `ui.tsx` primitives) — never hand-roll tables, modals, or status chips. The sidebar is config-driven from `config/navigationGroups.ts` (grouped, role-gated), so nav changes are data, not JSX.
+Always build pages from the shared components in `apps/admin/src/components/`: `DataTable`, `CrudModal`, `ConfirmDialog`, `DependencyDialog`, `StatusBadge`, `StatusFilter`, `MultiSelectFilter`, `Toast` (plus `ui.tsx` primitives) — never hand-roll tables, modals, or status chips. The sidebar is config-driven from `config/navigationGroups.ts` (grouped, role-gated), so nav changes are data, not JSX.
+
+`MultiSelectFilter` (`label`, `options: {value,label}[]`, `selected: string[]`, `onChange`) is the Excel-like checkbox-dropdown filter — an "N selected" badge, a checkbox list, and a Clear action — for filters where more than one value can be active at once (e.g. Category, or a set of tags). It only tracks which values are checked; the caller decides OR/AND semantics when building the API query. Use it instead of multiple `StatusFilter`-style single-selects when a field can have more than one active value. Reference implementation: Nutrition Library (`[locale]/cordel/nutrition-library/page.tsx`, `[locale]/nutrition/nutrition-library/page.tsx`, #350) — a debounced (300ms) search `<input>` plus a `MultiSelectFilter` per filterable field, combined server-side (see below).
 
 Two list/edit shapes are both in active use — pick per-module, don't mix within one page:
 - **Modal CRUD** (`CrudModal` for Create/Edit/Details) — the Plans module above; use for simpler entities with few fields.

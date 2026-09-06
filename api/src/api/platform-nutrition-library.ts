@@ -2,62 +2,13 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import {
+  CATEGORIES, Category,
+  loadQualitiesMap, replaceQualities, validateQualityIds,
+  buildListWhere, clampLimit, clampOffset,
+} from '../domain/nutritionLibrary';
 
 export const platformNutritionLibraryRouter = Router();
-
-const CATEGORIES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other'] as const;
-type Category = typeof CATEGORIES[number];
-
-/* ── Helpers ──────────────────────────────────────────────────────────────── */
-
-/** Return qualities assigned to a set of item IDs as a map: item_id → [{id, slug}] */
-async function loadQualitiesMap(itemIds: number[]): Promise<Record<number, { id: number; slug: string }[]>> {
-  if (itemIds.length === 0) return {};
-  const marks = itemIds.map(() => '?').join(',');
-  const { rows } = await db.query<{ item_id: number; quality_id: number; slug: string }>(
-    `SELECT nliq.item_id, nq.id AS quality_id, nq.slug
-     FROM nutrition_library_item_qualities nliq
-     JOIN nutritional_qualities nq ON nq.id = nliq.quality_id
-     WHERE nliq.item_id IN (${marks})
-     ORDER BY nq.id`,
-    itemIds,
-  );
-  const map: Record<number, { id: number; slug: string }[]> = {};
-  for (const row of rows) {
-    if (!map[row.item_id]) map[row.item_id] = [];
-    map[row.item_id].push({ id: row.quality_id, slug: row.slug });
-  }
-  return map;
-}
-
-/** Replace all quality assignments for an item inside a transaction. */
-async function replaceQualities(itemId: number, qualityIds: number[]): Promise<void> {
-  await db.transaction(async (conn) => {
-    await conn.query('DELETE FROM nutrition_library_item_qualities WHERE item_id = ?', [itemId]);
-    for (const qid of qualityIds) {
-      await conn.query(
-        'INSERT INTO nutrition_library_item_qualities (item_id, quality_id) VALUES (?, ?)',
-        [itemId, qid],
-      );
-    }
-  });
-}
-
-/** Validate that all given quality IDs exist. Returns 400 error message or null. */
-async function validateQualityIds(ids: unknown): Promise<{ error: string } | null> {
-  if (!Array.isArray(ids)) return { error: 'quality_ids must be an array' };
-  if (ids.some((id) => typeof id !== 'number' || !Number.isInteger(id) || id <= 0)) {
-    return { error: 'quality_ids must be positive integers' };
-  }
-  if (ids.length === 0) return null;
-  const marks = ids.map(() => '?').join(',');
-  const { rows } = await db.query<{ id: number }>(
-    `SELECT id FROM nutritional_qualities WHERE id IN (${marks})`,
-    ids,
-  );
-  if (rows.length !== ids.length) return { error: 'One or more quality_ids are invalid' };
-  return null;
-}
 
 /* ── Nutritional Qualities catalogue (read-only for now) ─────────────────── */
 
@@ -71,28 +22,40 @@ platformNutritionLibraryRouter.get('/nutritional-qualities', requireSuperadmin, 
 /* ── List ─────────────────────────────────────────────────────────────────── */
 
 platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next) => {
-  const category = req.query.category as string | undefined;
-  const status   = req.query.status   as string | undefined;
-  if (category && !CATEGORIES.includes(category as Category)) {
-    return res.status(400).json({ error: `category must be one of: ${CATEGORIES.join(', ')}` });
-  }
+  const status = req.query.status as string | undefined;
+  const base = ['gym_id IS NULL', status ? 'status = ?' : "status != 'deleted'"];
+  const baseParams = status ? [status] : [];
+
+  const built = buildListWhere(req, base, baseParams);
+  if ('error' in built) return res.status(400).json(built);
+  const { where, params } = built;
+
+  const limit = clampLimit(req.query.limit);
+  const offset = clampOffset(req.query.offset);
+
   try {
-    const where: string[] = ['gym_id IS NULL'];
-    const params: any[] = [];
-    if (category) { where.push('category = ?'); params.push(category); }
-    if (status)   { where.push('status = ?');   params.push(status); }
-    else          { where.push("status != 'deleted'"); }
+    const { rows: countRows } = await db.query<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM nutrition_library_items WHERE ${where}`,
+      params,
+    );
+    const total = countRows[0]?.total ?? 0;
 
     const { rows } = await db.query<{ id: number; name: string; category: string; status: string; created_at: string; modified_at: string | null }>(
       `SELECT id, name, category, status, created_at, modified_at
        FROM nutrition_library_items
-       WHERE ${where.join(' AND ')}
-       ORDER BY category ASC, name ASC`,
-      params,
+       WHERE ${where}
+       ORDER BY name ASC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
     );
 
     const qualitiesMap = await loadQualitiesMap(rows.map((r) => r.id));
-    res.json(rows.map((r) => ({ ...r, qualities: qualitiesMap[r.id] ?? [] })));
+    res.json({
+      items: rows.map((r) => ({ ...r, qualities: qualitiesMap[r.id] ?? [] })),
+      total,
+      limit,
+      offset,
+    });
   } catch (err) { next(err); }
 });
 
