@@ -78,16 +78,22 @@ registerBookingAccessHook(async (tx, gymId, memberId, classTypeId) => {
   );
   if (Number(reqRows[0].n) === 0) return;
 
-  // The type IS restricted — does the member hold an active membership on one of the mapped plans?
+  // The type IS restricted — does the member hold an active membership on one of the
+  // mapped plans, either as the owner or as a Member covered by a multi-member
+  // Membership (#374)?
   const { rows: matchRows } = await tx.query(
     `SELECT um.id
      FROM user_memberships um
      JOIN class_type_user_memberships ctum
        ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
-     WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'
+     WHERE um.gym_id = ? AND um.status = 'active'
+       AND (um.member_id = ? OR EXISTS (
+         SELECT 1 FROM user_membership_members umm
+         WHERE umm.user_membership_id = um.id AND umm.member_id = ?
+       ))
        AND ctum.class_type_id = ?
      LIMIT 1`,
-    [gymId, memberId, classTypeId],
+    [gymId, memberId, memberId, classTypeId],
   );
   if (matchRows.length === 0) {
     // P3.3: if the package hook has already claimed responsibility for this

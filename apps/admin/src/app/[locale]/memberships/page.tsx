@@ -14,6 +14,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { MembershipLedgerModal } from './MembershipLedgerModal';
 import { PromotionApplyModal } from './PromotionApplyModal';
+import { MembershipMembersModal } from './MembershipMembersModal';
 
 interface Membership {
   id: number;
@@ -86,6 +87,7 @@ export default function MembershipsPage() {
   const [cancelling, setCancelling] = useState<Membership | null>(null);
   const [ledgerFor, setLedgerFor] = useState<Membership | null>(null);
   const [promotionsFor, setPromotionsFor] = useState<Membership | null>(null);
+  const [membersFor, setMembersFor] = useState<Membership | null>(null);
 
   const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
   const isAdmin  = isSuperadmin || activeGym?.role === 'admin';
@@ -256,10 +258,11 @@ export default function MembershipsPage() {
     { header: t('memberships.col_ends'),   width: 130, render: (m) => day(m.ends_at) || <em style={{ color: '#888' }}>{t('memberships.ongoing')}</em> },
     {
       header: t('memberships.col_actions'),
-      width: 240,
+      width: 320,
       render: (m) => (
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button onClick={() => setLedgerFor(m)} style={btnSmall('#6c63ff')}>{t('memberships.ledger')}</button>
+          <button onClick={() => setMembersFor(m)} style={btnSmall('#2f8f6f')}>{t('memberships.members')}</button>
           {canWrite && <button onClick={() => setPromotionsFor(m)} style={btnSmall('#7d3cbd')}>{t('memberships.promotions')}</button>}
           {canWrite && <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('memberships.edit')}</button>}
           {isAdmin && m.status !== 'cancelled' && (
@@ -422,6 +425,15 @@ export default function MembershipsPage() {
         <PromotionApplyModal
           membership={promotionsFor}
           onClose={() => { setPromotionsFor(null); load(); }}
+        />
+      )}
+
+      {membersFor && (
+        <MembershipMembersModal
+          membership={membersFor}
+          canWrite={canWrite}
+          allMembers={members}
+          onClose={() => setMembersFor(null)}
         />
       )}
     </div>

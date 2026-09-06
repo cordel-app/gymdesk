@@ -472,7 +472,11 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 SELECT 1 FROM user_memberships um
                 JOIN class_type_user_memberships ctum
                   ON ctum.membership_plan_id = um.membership_plan_id AND ctum.gym_id = um.gym_id
-                WHERE um.gym_id = cs.gym_id AND um.member_id = ? AND um.status = 'active'
+                WHERE um.gym_id = cs.gym_id AND um.status = 'active'
+                  AND (um.member_id = ? OR EXISTS (
+                    SELECT 1 FROM user_membership_members umm
+                    WHERE umm.user_membership_id = um.id AND umm.member_id = ?
+                  ))
                   AND ctum.activity_type_id = cs.activity_type_id
               ) AS access_locked
        FROM class_sessions cs
@@ -481,7 +485,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
        LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at ASC`,
-      [memberId, memberId, memberId, memberId, memberId, memberId, ...params],
+      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
     const shaped = rows.map((r: any) => {
