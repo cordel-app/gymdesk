@@ -176,11 +176,15 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     // credit consumed by default — a trainer can still refund it explicitly
     // afterwards via POST /bookings/:id/refund-credit.
     if (b.user_class_package_id) {
+      // Compare actual elapsed time, not calendar dates: DATEDIFF would count
+      // a session 2 hours away as "1 day before" whenever "now" and the
+      // session fall on different calendar dates (e.g. cancelling just after
+      // UTC midnight for a session later that same UTC day).
       const { rows: dayRows } = await tx.query(
-        'SELECT DATEDIFF(?, UTC_TIMESTAMP()) AS days_before',
+        'SELECT (? >= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY)) AS cancelled_in_advance',
         [b.session_starts_at],
       );
-      const cancelledInAdvance = Number(dayRows[0].days_before) >= 1;
+      const cancelledInAdvance = Number(dayRows[0].cancelled_in_advance) === 1;
       if (cancelledInAdvance) {
         const pc = await packageCredits();
         await pc.refundPackageCredit(tx, bookingId, b.user_class_package_id, gymId);
