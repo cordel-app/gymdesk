@@ -1,16 +1,14 @@
 import { Router } from 'express';
-import { createClerkClient } from '@clerk/backend';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { db } from '../infra/db';
 
 export const impersonationRouter = Router();
 
-const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
-
 /**
  * GET /platform/impersonation/targets?q=<search>&gym_id=<id>
  * Superadmin-only. Returns active members + staff for the given gym, excluding
- * the caller and other superadmins. Used by the Impersonate dialog.
+ * the caller. Staff discovery is entirely database-driven (gym_memberships) —
+ * no Clerk lookup. Used by the Impersonate dialog.
  * Members are eligible regardless of whether they have a Clerk account.
  */
 impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) => {
@@ -52,15 +50,12 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
       [gymId, like],
     );
 
-    // Filter out other superadmins from staff list (requires Clerk lookup)
-    const staffFiltered: any[] = [];
-    for (const s of staffRows) {
-      try {
-        const u = await clerkClient.users.getUser(s.user_id);
-        if ((u.publicMetadata as any)?.platform_role === 'superadmin') continue;
-        staffFiltered.push({ id: s.user_id, name: s.name, type: 'staff', role: s.role, status: s.status, gymId: s.gym_id });
-      } catch { /* skip users that no longer exist in Clerk */ }
-    }
+    // Staff targets come straight from gym_memberships — no Clerk lookup. Superadmins
+    // are excluded because they carry no gym_memberships row (see tenantContext.ts:
+    // "gymMembershipId: null for superadmins with no membership row").
+    const staffFiltered = staffRows.map((s) => (
+      { id: s.user_id, name: s.name, type: 'staff', role: s.role, status: s.status, gymId: s.gym_id }
+    ));
 
     // Exclude caller from members list (if the superadmin also has a member row)
     // and exclude members whose clerk_user_id matches a staff row (already included above)
@@ -148,13 +143,9 @@ impersonationRouter.post('/:targetId', requireSuperadmin, async (req, res, next)
     // Staff impersonation
     if (targetId === adminId) return res.status(400).json({ error: 'Cannot impersonate yourself' });
 
-    // Best-effort Clerk check to block superadmin impersonation. If the user no longer
-    // exists in Clerk the check is skipped — the DB membership is the authoritative source.
-    const targetUser = await clerkClient.users.getUser(targetId).catch(() => null);
-    if (targetUser && (targetUser.publicMetadata as any)?.platform_role === 'superadmin') {
-      return res.status(400).json({ error: 'Cannot impersonate another superadmin' });
-    }
-
+    // No Clerk lookup: gym_memberships is the sole source of truth. Superadmins carry
+    // no gym_memberships row, so a superadmin target simply fails the lookup below with
+    // "no membership in this gym" rather than needing an explicit superadmin check.
     const { rows } = await db.query<{ id: number; role: string; name: string }>(
       `SELECT gm.id, gm.role, gm.name FROM gym_memberships gm
        WHERE gm.user_id = ? AND gm.gym_id = ?`,
