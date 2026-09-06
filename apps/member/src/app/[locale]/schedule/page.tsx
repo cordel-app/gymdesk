@@ -26,6 +26,18 @@ interface Session {
   kind: 'session';
 }
 
+interface PastBooking {
+  booking_id: number;
+  kind: 'session';
+  entity_id: number;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  booking_status: 'booked' | 'waitlisted' | 'cancelled';
+  attendance_status: 'pending' | 'present' | 'absent';
+  cancelled_at: string | null;
+}
+
 function dayKey(iso: string) { return iso.slice(0, 10); }
 function timeOnly(iso: string) { return iso.slice(11, 16); }
 
@@ -38,25 +50,44 @@ export default function MemberSchedulePage() {
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingSession, setPendingSession] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [expandedSession, setExpandedSession] = useState<number | null>(null);
+
+  const [pastBookings, setPastBookings] = useState<PastBooking[]>([]);
+  const [pastLoading, setPastLoading] = useState(true);
+  const [pastError, setPastError] = useState<string | null>(null);
+  const [expandedPast, setExpandedPast] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
+    setLoadError(null);
     const to = new Date();
     to.setDate(to.getDate() + 14);
     const toStr = to.toISOString();
     try {
       const sessionData = await apiFetch<Session[]>(`/me/schedule?to=${toStr}`);
       setSessions(sessionData.map((s) => ({ ...s, kind: 'session' as const })));
-    } catch (err: any) { setMessage(err.message ?? t('common.error')); }
+    } catch (err: any) { setLoadError(err.message ?? t('common.error')); }
     finally { setLoading(false); }
+  }
+
+  async function loadPast() {
+    setPastLoading(true);
+    setPastError(null);
+    try {
+      const result = await apiFetch<{ items: PastBooking[] }>('/me/activity-history?limit=20');
+      setPastBookings(result.items);
+    } catch (err: any) { setPastError(err.message ?? t('common.error')); }
+    finally { setPastLoading(false); }
   }
 
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
     load();
+    loadPast();
   }, [appLoading, isLinked, locale]);
 
   async function bookSession(sessionId: number) {
@@ -80,6 +111,7 @@ export default function MemberSchedulePage() {
       await apiFetch(`/me/bookings/${bookingId}`, { method: 'DELETE' });
       setMessage(t('member_schedule.cancelled'));
       load();
+      loadPast();
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setPendingSession(null); }
   }
@@ -96,26 +128,44 @@ export default function MemberSchedulePage() {
     return Array.from(g.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [sessions]);
 
+  function pastStatusLabel(item: PastBooking): string {
+    if (item.booking_status === 'cancelled') return t('member_schedule.past_status_cancelled');
+    if (item.attendance_status === 'present') return t('member_schedule.past_status_present');
+    if (item.attendance_status === 'absent') return t('member_schedule.past_status_absent');
+    return t('member_schedule.past_status_pending');
+  }
+
   return (
     <main style={styles.container}>
       <h1 style={styles.title}>{t('member_schedule.title')}</h1>
 
       {message && <div style={styles.message}>{message}</div>}
 
+      <h2 style={styles.sectionHead}>{t('member_schedule.upcoming_section')}</h2>
+
       {loading ? (
         <p style={styles.hint}>{t('member_schedule.loading')}</p>
+      ) : loadError ? (
+        <p style={styles.errorHint}>{loadError}</p>
       ) : grouped.length === 0 ? (
         <p style={styles.hint}>{t('member_schedule.empty')}</p>
       ) : (
         grouped.map(([day, list]) => (
           <section key={day} style={{ marginTop: 20 }}>
-            <h2 style={styles.dayHead}>{day}</h2>
+            <h3 style={styles.dayHead}>{day}</h3>
             {list.map((s) => {
               const isBusy = pendingSession === s.id;
               const myStatus = s.my_booking_status;
               const spots = s.spots_left;
+              const isExpanded = expandedSession === s.id;
               return (
-                <div key={`s-${s.id}`} style={styles.card}>
+                <div
+                  key={`s-${s.id}`}
+                  style={styles.card}
+                  onClick={() => setExpandedSession(isExpanded ? null : s.id)}
+                  role="button"
+                  tabIndex={0}
+                >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={styles.time}>{timeOnly(s.starts_at)} – {timeOnly(s.ends_at)}</span>
                     {s.access_locked ? (
@@ -133,7 +183,15 @@ export default function MemberSchedulePage() {
                   <div style={styles.name}>{s.class_type_name}</div>
                   {s.space_name && <div style={styles.sub}>{s.space_name}</div>}
                   {s.trainer_name && <div style={styles.sub}>{s.trainer_name}</div>}
-                  <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                  {isExpanded && (
+                    <div style={styles.details}>
+                      {s.class_type_description && <div style={styles.sub}>{s.class_type_description}</div>}
+                      <div style={styles.sub}>
+                        {t('member_schedule.capacity_detail', { booked: s.booked_count, capacity: s.effective_capacity })}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ marginTop: 10, display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                     {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
                       <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelSession(s.my_booking_id!, s.id)}>
                         {isBusy ? '…' : t('member_schedule.cancel_booking')}
@@ -154,6 +212,47 @@ export default function MemberSchedulePage() {
           </section>
         ))
       )}
+
+      <h2 style={{ ...styles.sectionHead, marginTop: 28 }}>{t('member_schedule.past_section')}</h2>
+
+      {pastLoading ? (
+        <p style={styles.hint}>{t('member_schedule.loading')}</p>
+      ) : pastError ? (
+        <p style={styles.errorHint}>{pastError}</p>
+      ) : pastBookings.length === 0 ? (
+        <p style={styles.hint}>{t('member_schedule.past_empty')}</p>
+      ) : (
+        <section style={{ marginTop: 12 }}>
+          {pastBookings.map((item) => {
+            const isExpanded = expandedPast === item.booking_id;
+            return (
+              <div
+                key={`p-${item.booking_id}`}
+                style={styles.card}
+                onClick={() => setExpandedPast(isExpanded ? null : item.booking_id)}
+                role="button"
+                tabIndex={0}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <span style={styles.time}>{dayKey(item.starts_at)} · {timeOnly(item.starts_at)}</span>
+                  <span style={item.booking_status === 'cancelled' ? styles.pillFull : styles.pillBooked}>
+                    {pastStatusLabel(item)}
+                  </span>
+                </div>
+                <div style={styles.name}>{item.title}</div>
+                {isExpanded && (
+                  <div style={styles.details}>
+                    <div style={styles.sub}>{timeOnly(item.starts_at)} – {timeOnly(item.ends_at)}</div>
+                    {item.cancelled_at && (
+                      <div style={styles.sub}>{t('member_schedule.cancelled_at_detail', { date: dayKey(item.cancelled_at) })}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
     </main>
   );
 }
@@ -162,8 +261,10 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
   title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: '#18181b' },
   message: { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 14 },
+  sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#18181b' },
   dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  card: { background: '#fff', borderRadius: 10, padding: 14, marginBottom: 10 },
+  card: { background: '#fff', borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' },
+  details: { marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0' },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: '#18181b' },
   name: { fontSize: 16, fontWeight: 600, color: '#18181b' },
   sub: { fontSize: 13, color: '#71717a', marginTop: 2 },
@@ -176,4 +277,5 @@ const styles: Record<string, React.CSSProperties> = {
   btnCancel: { flex: 1, padding: '10px 0', background: 'transparent', color: '#c0392b', border: '1px solid #c0392b', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
   btnWait: { flex: 1, padding: '10px 0', background: '#b26a00', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
   hint: { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '20px 0' },
+  errorHint: { color: '#c0392b', fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

@@ -133,7 +133,16 @@
     "waitlisted_at": "Added to waitlist — position {pos}.",
     "cancelled": "Booking cancelled.",
     "status_waitlisted": "Waitlisted",
-    "leave_waitlist": "Leave waiting list"
+    "leave_waitlist": "Leave waiting list",
+    "upcoming_section": "Upcoming",
+    "past_section": "Past bookings",
+    "past_empty": "No past bookings yet.",
+    "past_status_present": "Attended",
+    "past_status_absent": "No-show",
+    "past_status_pending": "Booked",
+    "past_status_cancelled": "Cancelled",
+    "capacity_detail": "{booked} / {capacity} booked",
+    "cancelled_at_detail": "Cancelled on {date}"
   },
   "member_calendar": {
     "filter_all": "All",
