@@ -72,6 +72,39 @@ async function addCoveredMember(
   );
 }
 
+// #376: creates a gym-scoped charge (borrowing an existing gym-charge charge_type,
+// seeded by migration 090) so a plan_charge_benefits row can reference it. Picks a
+// charge_type not yet used by this gym, since gym_charges has a unique constraint
+// on (gym_id, charge_type_id) and this helper may be called more than once per gym.
+async function createGymCharge(gymId: string): Promise<number> {
+  const { rows } = await db.query(
+    `SELECT ct.id FROM charge_types ct
+     WHERE ct.is_gym_charge = 1
+     AND NOT EXISTS (SELECT 1 FROM gym_charges gc WHERE gc.gym_id = ? AND gc.charge_type_id = ct.id)
+     LIMIT 1`,
+    [gymId],
+  );
+  const chargeTypeId = rows[0].id;
+  const { insertId } = await db.query(
+    `INSERT INTO gym_charges (gym_id, charge_type_id, availability) VALUES (?, ?, 'available')`,
+    [gymId, chargeTypeId],
+  );
+  return insertId;
+}
+
+async function addPlanChargeBenefit(
+  gymId: string,
+  planId: number,
+  gymChargeId: number,
+  action: string,
+  value: number | null,
+): Promise<void> {
+  await db.query(
+    'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
+    [gymId, planId, gymChargeId, action, value],
+  );
+}
+
 // ─── Auth and access guards ───────────────────────────────────────────────────
 
 describe('Auth and access guards', () => {
@@ -868,5 +901,345 @@ describe('PUT /membership-plans/:id/enrollment', () => {
       .set('x-gym-id', gymRO)
       .send({ enrollment_status: 'public' });
     expect(res.status).toBe(403);
+  });
+});
+
+// ─── POST /membership-plans/:id/assign (#376 — instantiate a Plan into a Membership) ──
+
+describe('POST /membership-plans/:id/assign', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Assign Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  // ── Auth / role / tenant guards ──
+
+  it('returns 401 without auth', async () => {
+    const res = await request
+      .post('/membership-plans/1/assign')
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when user has no membership in this gym', async () => {
+    const otherGym = await createTestGym('Assign No Membership Gym');
+    const res = await request
+      .post('/membership-plans/1/assign')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', otherGym)
+      .send({ member_ids: [1], owner_member_id: 1, starts_at: '2026-01-01' });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when called by a non-admin role', async () => {
+    const gymRO = await createTestGym('Assign Role Guard Gym');
+    await createTestMembership(gymRO, 'front_desk');
+    const planId = await createPlan(gymRO, { name: 'Assign Role Guard Plan', member_limit: '1' });
+    const memberId = await createMember(gymRO);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymRO)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 for a non-existent plan', async () => {
+    const res = await request
+      .post('/membership-plans/9999999/assign')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [1], owner_member_id: 1, starts_at: '2026-01-01' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a soft-deleted plan', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Soft Deleted Plan', member_limit: '1' });
+    await db.query('UPDATE membership_plans SET deleted_at = NOW() WHERE id = ?', [planId]);
+    const memberId = await createMember(gymId);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when the plan belongs to another gym (cross-gym tenant isolation)', async () => {
+    const gymOther = await createTestGym('Assign Cross Gym Plan Owner');
+    const planInOtherGym = await createPlan(gymOther, { name: 'Cross Gym Assign Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+    const res = await request
+      // caller has admin access to gymId; the plan itself lives in gymOther.
+      .post(`/membership-plans/${planInOtherGym}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(404);
+  });
+
+  // ── Body validation ──
+
+  it('returns 400 when member_ids is missing', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Missing MemberIds Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/member_ids/i);
+  });
+
+  it('returns 400 when member_ids is an empty array', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Empty MemberIds Plan', member_limit: '1' });
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [], owner_member_id: 1, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/member_ids/i);
+  });
+
+  it('returns 400 when starts_at is missing', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Missing StartsAt Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/starts_at/i);
+  });
+
+  it('returns 400 when owner_member_id is not one of member_ids', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Bad Owner Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+    const otherMemberId = await createMember(gymId);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: otherMemberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/owner_member_id/i);
+  });
+
+  it('returns 400 when a member_limit="1" plan is submitted with 2 members', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Limit1 Overflow Plan', member_limit: '1' });
+    const m1 = await createMember(gymId);
+    const m2 = await createMember(gymId);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [m1, m2], owner_member_id: m1, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/exactly 1 member/i);
+  });
+
+  it('returns 400 when a member_limit="2" plan is submitted with only 1 member', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Limit2 Underflow Plan', member_limit: '2' });
+    const m1 = await createMember(gymId);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [m1], owner_member_id: m1, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/exactly 2 member/i);
+  });
+
+  it('returns 400 when a submitted member_id does not exist', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Nonexistent Member Plan', member_limit: '1' });
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [9999999], owner_member_id: 9999999, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it('returns 400 when a submitted member_id is soft-deleted', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Deleted Member Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+    await db.query('UPDATE members SET deleted_at = NOW() WHERE id = ?', [memberId]);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  it('returns 400 when a submitted member_id belongs to another gym', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Cross Gym Member Plan', member_limit: '1' });
+    const otherGym = await createTestGym('Assign Foreign Member Gym');
+    const foreignMemberId = await createMember(otherGym);
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [foreignMemberId], owner_member_id: foreignMemberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not found/i);
+  });
+
+  // ── Happy path: member_limit = '1' ──
+
+  it('assigns a member_limit="1" plan: creates the membership, the covered member, and a billing event', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Single Happy Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('active');
+    expect(res.body.member_id).toBe(memberId);
+    expect(res.body.membership_plan_id).toBe(planId);
+    expect(Array.isArray(res.body.members)).toBe(true);
+    expect(res.body.members).toHaveLength(1);
+    expect(res.body.members[0].member_id).toBe(memberId);
+    expect(Number(res.body.members[0].is_owner)).toBe(1);
+
+    const userMembershipId = res.body.id;
+
+    const { rows: umRows } = await db.query(
+      'SELECT * FROM user_memberships WHERE id = ?',
+      [userMembershipId],
+    );
+    expect(umRows).toHaveLength(1);
+    expect(umRows[0].status).toBe('active');
+    expect(umRows[0].member_id).toBe(memberId);
+
+    const { rows: ummRows } = await db.query(
+      'SELECT * FROM user_membership_members WHERE user_membership_id = ?',
+      [userMembershipId],
+    );
+    expect(ummRows).toHaveLength(1);
+    expect(ummRows[0].member_id).toBe(memberId);
+    expect(Number(ummRows[0].is_owner)).toBe(1);
+
+    const { rows: beRows } = await db.query(
+      `SELECT * FROM billing_events WHERE user_membership_id = ? AND event_type = 'status_changed'`,
+      [userMembershipId],
+    );
+    expect(beRows).toHaveLength(1);
+    expect(beRows[0].new_status).toBe('active');
+    expect(beRows[0].previous_status).toBeNull();
+    expect(beRows[0].member_id).toBe(memberId);
+  });
+
+  // ── Happy path: member_limit = '2' ──
+
+  it('assigns a member_limit="2" plan with two members and an explicit owner', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Couple Happy Plan', member_limit: '2' });
+    const owner = await createMember(gymId);
+    const partner = await createMember(gymId);
+
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [owner, partner], owner_member_id: owner, starts_at: '2026-01-01' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.member_id).toBe(owner);
+    expect(res.body.members).toHaveLength(2);
+
+    const userMembershipId = res.body.id;
+
+    const { rows: umRows } = await db.query(
+      'SELECT member_id FROM user_memberships WHERE id = ?',
+      [userMembershipId],
+    );
+    expect(umRows[0].member_id).toBe(owner);
+
+    const { rows: ummRows } = await db.query(
+      'SELECT member_id, is_owner FROM user_membership_members WHERE user_membership_id = ?',
+      [userMembershipId],
+    );
+    expect(ummRows).toHaveLength(2);
+    const ownerRow = ummRows.find((r: any) => r.member_id === owner);
+    const partnerRow = ummRows.find((r: any) => r.member_id === partner);
+    expect(ownerRow).toBeDefined();
+    expect(partnerRow).toBeDefined();
+    expect(Number(ownerRow.is_owner)).toBe(1);
+    expect(Number(partnerRow.is_owner)).toBe(0);
+  });
+
+  // ── Charge benefit snapshot (#376 item 6/9) ──
+
+  it("snapshots the plan's current charge benefits onto the new membership", async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Benefit Snapshot Plan', member_limit: '1' });
+    const gymChargeId = await createGymCharge(gymId);
+    await addPlanChargeBenefit(gymId, planId, gymChargeId, 'percentage_discount', 25);
+    const memberId = await createMember(gymId);
+
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(201);
+    const userMembershipId = res.body.id;
+
+    const { rows: benefitRows } = await db.query(
+      'SELECT * FROM user_membership_charge_benefits WHERE user_membership_id = ?',
+      [userMembershipId],
+    );
+    expect(benefitRows).toHaveLength(1);
+    expect(benefitRows[0].gym_charge_id).toBe(gymChargeId);
+    expect(benefitRows[0].action).toBe('percentage_discount');
+    expect(Number(benefitRows[0].value)).toBe(25);
+  });
+
+  it('does not snapshot a "no_benefit" charge benefit row', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign No Benefit Snapshot Plan', member_limit: '1' });
+    const gymChargeId = await createGymCharge(gymId);
+    await addPlanChargeBenefit(gymId, planId, gymChargeId, 'no_benefit', null);
+    const memberId = await createMember(gymId);
+
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(201);
+    const userMembershipId = res.body.id;
+
+    const { rows: benefitRows } = await db.query(
+      'SELECT * FROM user_membership_charge_benefits WHERE user_membership_id = ?',
+      [userMembershipId],
+    );
+    expect(benefitRows).toHaveLength(0);
+  });
+
+  // ── Duplicate active membership (409) ──
+
+  it('returns 409 when the member already has an active membership on any plan', async () => {
+    const existingPlanId = await createPlan(gymId, { name: 'Assign Existing Active Plan', member_limit: '1' });
+    const newPlanId = await createPlan(gymId, { name: 'Assign Duplicate Target Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+    await createActiveUserMembership(gymId, memberId, existingPlanId);
+
+    const res = await request
+      .post(`/membership-plans/${newPlanId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(409);
   });
 });

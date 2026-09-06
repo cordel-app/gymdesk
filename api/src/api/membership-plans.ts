@@ -3,6 +3,9 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
+import { effectivePrice, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
+import { recordStatusChange, sourceForRole } from './billing-events';
+import { applyPromotionToMembership } from './membership-promotions';
 
 interface PlanRow {
   id: number;
@@ -289,6 +292,108 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Plan not found' });
   recordAudit(req, { action: 'delete', entityType: 'membership_plan', entityId: req.params.id });
   res.status(204).send();
+});
+
+// ─── Assign to Member(s) (#376) ────────────────────────────────────────────────
+// Instantiates the Plan into a new Membership for one or more existing
+// Members, snapshotting the Plan's current charge benefits onto the
+// Membership (so later Plan edits never retroactively change it), applying
+// any Promotions currently targeting the Plan, and emitting the same
+// creation billing event as POST /user-memberships (P1.6 ledger).
+
+membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res, next) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const { member_ids, owner_member_id, starts_at } = req.body;
+
+  const { rows: planRows } = await db.query(
+    'SELECT id, member_limit FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (planRows.length === 0) return res.status(404).json({ error: 'Plan not found' });
+  const plan = planRows[0];
+
+  if (!Array.isArray(member_ids) || member_ids.length === 0) {
+    return res.status(400).json({ error: 'member_ids must be a non-empty array' });
+  }
+  if (!starts_at) return res.status(400).json({ error: 'starts_at is required' });
+  const uniqueMemberIds = [...new Set(member_ids.map((id: any) => Number(id)))];
+  const ownerId = Number(owner_member_id);
+  if (!owner_member_id || !uniqueMemberIds.includes(ownerId)) {
+    return res.status(400).json({ error: 'owner_member_id must be one of the selected member_ids' });
+  }
+  if (plan.member_limit !== 'family' && uniqueMemberIds.length !== parseInt(plan.member_limit, 10)) {
+    return res.status(400).json({ error: `This plan requires exactly ${plan.member_limit} member(s).` });
+  }
+
+  const placeholders = uniqueMemberIds.map(() => '?').join(',');
+  const { rows: memberRows } = await db.query(
+    `SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
+    [gymId, ...uniqueMemberIds],
+  );
+  if (memberRows.length !== uniqueMemberIds.length) {
+    return res.status(400).json({ error: 'One or more selected members were not found.' });
+  }
+
+  const eff = await effectivePrice(Number(req.params.id), gymId, starts_at);
+  if (!eff) return res.status(404).json({ error: 'Plan not found' });
+
+  try {
+    const insertId: number = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO user_memberships
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, final_price, starts_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
+        [ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, eff.price, starts_at],
+      );
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: insertId, memberId: ownerId,
+        previousStatus: null, newStatus: 'active',
+        source: sourceForRole(role), actorUserId: userId,
+      });
+      for (const memberId of uniqueMemberIds) {
+        await tx.query(
+          'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, ?)',
+          [gymId, insertId, memberId, memberId === ownerId ? 1 : 0],
+        );
+      }
+      // Snapshot the Plan's current charge benefits onto the Membership (#376 item 6/9).
+      const { rows: benefits } = await tx.query(
+        "SELECT gym_charge_id, action, value FROM plan_charge_benefits WHERE membership_plan_id = ? AND gym_id = ? AND action <> 'no_benefit'",
+        [req.params.id, gymId],
+      );
+      for (const b of benefits) {
+        await tx.query(
+          'INSERT INTO user_membership_charge_benefits (gym_id, user_membership_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
+          [gymId, insertId, b.gym_charge_id, b.action, b.value],
+        );
+      }
+      return insertId;
+    });
+
+    // Auto-apply any Promotion currently targeting this Plan (#376 item 7/8) — best
+    // effort per promotion: a non-stackable conflict must not fail the assignment.
+    const { rows: promoRows } = await db.query(
+      `SELECT p.id FROM promotions p
+       JOIN promotion_membership_plans pmp ON pmp.promotion_id = p.id
+       WHERE pmp.membership_plan_id = ? AND p.gym_id = ? AND p.lifecycle_status = 'active'
+         AND p.starts_at <= UTC_TIMESTAMP() AND p.ends_at >= UTC_TIMESTAMP()`,
+      [req.params.id, gymId],
+    );
+    for (const promo of promoRows) {
+      try {
+        await applyPromotionToMembership(gymId, userId, sourceForRole(role), insertId, promo.id);
+      } catch {
+        // Not stackable with one already applied, or otherwise inapplicable — skip it.
+      }
+    }
+
+    const { rows } = await db.query(`${MEMBERSHIP_LIST_SELECT} WHERE um.id = ?`, [insertId]);
+    const { rows: coveredMembers } = await db.query(MEMBERSHIP_MEMBERS_SELECT, [insertId, gymId]);
+    recordAudit(req, { action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0] });
+    res.status(201).json({ ...rows[0], members: coveredMembers });
+  } catch (err: any) {
+    handleDupEntry(err, res, next, 'One of the selected members already has an active membership.');
+  }
 });
 
 // ─── Duplicate ────────────────────────────────────────────────────────────────

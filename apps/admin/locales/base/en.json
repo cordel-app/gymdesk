@@ -684,7 +684,22 @@
     "label_member_limit": "Members per Membership",
     "member_limit_1": "Individual (1 member)",
     "member_limit_2": "Couple (2 members)",
-    "member_limit_family": "Family (unlimited members)"
+    "member_limit_family": "Family (unlimited members)",
+    "assign_to_member": "Assign Plan to Member",
+    "assign_title": "Assign Plan to Member",
+    "assign_capacity_label": "Members ({limit})",
+    "assign_family": "family",
+    "assign_search_placeholder": "Search existing members…",
+    "assign_no_members_selected": "No members selected yet.",
+    "assign_owner_badge": "Owner",
+    "assign_over_capacity": "{count} members assigned — capacity is {limit}",
+    "assign_starts_at_label": "Starts on",
+    "assign_submit": "Assign Plan",
+    "assign_success": "Plan assigned.",
+    "assign_error_no_members": "Select at least one member.",
+    "assign_error_exact_count": "This plan requires exactly {count} member(s).",
+    "assign_error_no_owner": "Select which member is the owner.",
+    "assign_error_no_start": "Starts on is required."
   },
   "prices": {
     "title": "Prices",
