@@ -22,7 +22,7 @@ exports.up = async (knex) => {
       // knex's default <table>_<column>_foreign pattern exceeds MySQL's
       // 64-character identifier limit here.
       t.string('gym_id', 36).notNullable().references('id').inTable('gyms')
-        .withKeyName('fk_cestr_gym');
+        .onDelete('CASCADE').withKeyName('fk_cestr_gym');
       t.integer('calendar_event_id').unsigned().notNullable().references('id').inTable('calendar_events')
         .withKeyName('fk_cestr_event');
       t.integer('requesting_member_id').unsigned().notNullable().references('id').inTable('members')
