@@ -117,12 +117,45 @@ describe('platform nutrition library CRUD', () => {
       .get('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    const found = res.body.find((i: any) => i.id === itemId);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(typeof res.body.total).toBe('number');
+    const found = res.body.items.find((i: any) => i.id === itemId);
     expect(found).toBeDefined();
-    for (const item of res.body) {
+    for (const item of res.body.items) {
       expect(item.status).not.toBe('deleted');
     }
+  });
+
+  it('filters by ?search= (case-insensitive partial match)', async () => {
+    const res = await request
+      .get(`/platform/nutrition-library?search=${encodeURIComponent(`chicken ${uniqueSuffix}`.toLowerCase())}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    const found = res.body.items.find((i: any) => i.id === itemId);
+    expect(found).toBeDefined();
+  });
+
+  it('filters by ?category= and returns only matching items', async () => {
+    const res = await request
+      .get('/platform/nutrition-library?category=main_dish')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    for (const item of res.body.items) {
+      expect(item.category).toBe('main_dish');
+    }
+    const found = res.body.items.find((i: any) => i.id === itemId);
+    expect(found).toBeDefined();
+  });
+
+  it('paginates with ?limit= and ?offset=', async () => {
+    const res = await request
+      .get('/platform/nutrition-library?limit=1&offset=0')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBeLessThanOrEqual(1);
+    expect(res.body.limit).toBe(1);
+    expect(res.body.offset).toBe(0);
+    expect(res.body.total).toBeGreaterThan(0);
   });
 
   it('updates the item name and returns 200', async () => {
@@ -154,7 +187,7 @@ describe('platform nutrition library CRUD', () => {
       .get('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER);
     expect(listRes.status).toBe(200);
-    const found = listRes.body.find((i: any) => i.id === itemId);
+    const found = listRes.body.items.find((i: any) => i.id === itemId);
     expect(found).toBeUndefined();
   });
 
@@ -163,8 +196,8 @@ describe('platform nutrition library CRUD', () => {
       .get('/platform/nutrition-library?status=deleted')
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    const found = res.body.find((i: any) => i.id === itemId);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    const found = res.body.items.find((i: any) => i.id === itemId);
     expect(found).toBeDefined();
     expect(found.status).toBe('deleted');
   });
@@ -372,10 +405,26 @@ describe('nutritional qualities assignment', () => {
       .get('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
-    const found = res.body.find((i: any) => i.id === itemId);
+    const found = res.body.items.find((i: any) => i.id === itemId);
     expect(found).toBeDefined();
     expect(Array.isArray(found.qualities)).toBe(true);
     expect(found.qualities).toHaveLength(2);
+  });
+
+  it('filters by ?quality_id= (AND semantics across multiple values)', async () => {
+    const res = await request
+      .get(`/platform/nutrition-library?quality_id=${proteinId}&quality_id=${carbId}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    const found = res.body.items.find((i: any) => i.id === itemId);
+    expect(found).toBeDefined();
+
+    const onlyProtein = await request
+      .get(`/platform/nutrition-library?quality_id=${proteinId}&quality_id=${carbId}&search=${encodeURIComponent(`Chicken ${suffix}`)}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(onlyProtein.status).toBe(200);
+    // The "NQ Chicken" item only has 'protein' assigned, so requiring both must exclude it.
+    expect(onlyProtein.body.items.find((i: any) => i.name === `NQ Chicken ${suffix}`)).toBeUndefined();
   });
 
   it('PUT /:id/qualities replaces (not appends) on second call', async () => {
