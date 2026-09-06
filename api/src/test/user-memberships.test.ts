@@ -308,6 +308,66 @@ describe('GET /user-memberships', () => {
   });
 });
 
+// ─── GET /user-memberships — lifecycle_status (#410) ──────────────────────────
+
+describe('GET /user-memberships — lifecycle_status', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Lifecycle Status Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  async function listLifecycleStatus(umId: number): Promise<string> {
+    const res = await request
+      .get('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.id === umId);
+    expect(row).toBeDefined();
+    return row.lifecycle_status;
+  }
+
+  it("reports 'pending' for a row whose starts_at is in the future", async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const { insertId: umId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
+       VALUES (?, ?, ?, 'active', DATE_ADD(CURDATE(), INTERVAL 7 DAY), 29.99)`,
+      [gymId, memberId, planId],
+    );
+    expect(await listLifecycleStatus(umId)).toBe('pending');
+  });
+
+  it("reports 'active' for an ongoing, open-ended row", async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    expect(await listLifecycleStatus(umId)).toBe('active');
+  });
+
+  it("reports 'expired' for an active row whose ends_at has passed", async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const { insertId: umId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, final_price)
+       VALUES (?, ?, ?, 'active', DATE_SUB(CURDATE(), INTERVAL 60 DAY), DATE_SUB(CURDATE(), INTERVAL 1 DAY), 29.99)`,
+      [gymId, memberId, planId],
+    );
+    expect(await listLifecycleStatus(umId)).toBe('expired');
+  });
+
+  it("passes through the stored status for 'paused', 'cancelled' and 'expired' rows", async () => {
+    for (const status of ['paused', 'cancelled', 'expired'] as const) {
+      const memberId = await createMember(gymId);
+      const planId = await createPlan(gymId);
+      const umId = await createUserMembershipDirect(gymId, memberId, planId, status);
+      expect(await listLifecycleStatus(umId)).toBe(status);
+    }
+  });
+});
+
 // ─── GET /user-memberships/:id ────────────────────────────────────────────────
 
 describe('GET /user-memberships/:id', () => {

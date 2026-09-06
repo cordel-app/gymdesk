@@ -52,6 +52,7 @@
     "calendar": "Calendari",
     "recycle_bin": "Paperera de reciclatge",
     "sellable_items": "Articles a la Venda",
+    "assigned_plans": "Plans Assignats",
     "taxes": "Impostos",
     "feature_flags": "Flags de funcionalitats",
     "nutrition_plans": "Plans de nutrició"
@@ -496,6 +497,7 @@
     "paused": "Pausat",
     "cancelled": "Cancel·lat",
     "expired": "Caducat",
+    "pending": "Pendent",
     "draft": "Esborrany",
     "deleted": "Eliminat",
     "completed": "Completat",
@@ -2620,6 +2622,17 @@
     "taxIncluded": "(IVA inclòs)",
     "taxExcluded": "(IVA no inclòs)",
     "exempt": "Exempt"
+  },
+  "assigned_plans_page": {
+    "title": "Plans Assignats",
+    "loading": "Carregant…",
+    "empty": "Encara no hi ha plans assignats.",
+    "col_member": "Nom del Soci",
+    "col_plan": "Nom del Pla",
+    "col_starts_at": "Data d'Inici",
+    "col_ends_at": "Data de Fi",
+    "col_status": "Estat",
+    "open_ended": "Sense data de fi"
   },
   "taxes": {
     "title": "Impostos",

@@ -51,6 +51,7 @@
     "calendar": "Calendar",
     "recycle_bin": "Recycle Bin",
     "sellable_items": "Sellable Items",
+    "assigned_plans": "Assigned Plans",
     "taxes": "Taxes",
     "feature_flags": "Feature Flags",
     "nutrition_plans": "Nutrition Plans"
@@ -574,6 +575,7 @@
     "paused": "Paused",
     "cancelled": "Cancelled",
     "expired": "Expired",
+    "pending": "Pending",
     "draft": "Draft",
     "archived": "Archived",
     "open": "Open",
@@ -2660,6 +2662,17 @@
     "taxIncluded": "(tax included)",
     "taxExcluded": "(tax excluded)",
     "exempt": "Exempt"
+  },
+  "assigned_plans_page": {
+    "title": "Assigned Plans",
+    "loading": "Loading…",
+    "empty": "No plans assigned yet.",
+    "col_member": "Member Name",
+    "col_plan": "Plan Name",
+    "col_starts_at": "Start Date",
+    "col_ends_at": "End Date",
+    "col_status": "Status",
+    "open_ended": "Open-ended"
   },
   "taxes": {
     "title": "Taxes",

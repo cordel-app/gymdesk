@@ -51,6 +51,7 @@
     "calendar": "Calendario",
     "recycle_bin": "Papelera de reciclaje",
     "sellable_items": "Artículos a la Venta",
+    "assigned_plans": "Planes Asignados",
     "taxes": "Impuestos",
     "feature_flags": "Flags de características",
     "nutrition_plans": "Planes de nutrición"
@@ -495,6 +496,7 @@
     "paused": "Pausado",
     "cancelled": "Cancelado",
     "expired": "Caducado",
+    "pending": "Pendiente",
     "draft": "Borrador",
     "deleted": "Eliminado",
     "completed": "Completado",
@@ -2592,6 +2594,17 @@
     "taxIncluded": "(IVA incluido)",
     "taxExcluded": "(IVA no incluido)",
     "exempt": "Exento"
+  },
+  "assigned_plans_page": {
+    "title": "Planes Asignados",
+    "loading": "Cargando…",
+    "empty": "Todavía no hay planes asignados.",
+    "col_member": "Nombre del Socio",
+    "col_plan": "Nombre del Plan",
+    "col_starts_at": "Fecha de Inicio",
+    "col_ends_at": "Fecha de Fin",
+    "col_status": "Estado",
+    "open_ended": "Sin fecha de fin"
   },
   "taxes": {
     "title": "Impuestos",
