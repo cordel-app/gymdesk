@@ -612,7 +612,11 @@
     "no_charge_benefits": "No hi ha beneficis de càrrecs configurats.",
     "cb_col_charge": "Càrrec",
     "cb_col_action": "Acció",
-    "save_charge_benefits": "Desar beneficis de càrrecs"
+    "save_charge_benefits": "Desar beneficis de càrrecs",
+    "label_member_limit": "Membres per Membresia",
+    "member_limit_1": "Individual (1 membre)",
+    "member_limit_2": "Parella (2 membres)",
+    "member_limit_family": "Familiar (membres il·limitats)"
   },
   "prices": {
     "title": "Preus",
@@ -1612,7 +1616,14 @@
       "status_changed": "Canvi d'estat",
       "adjustment": "Ajust"
     },
-    "status_transition": "{from} → {to}"
+    "status_transition": "{from} → {to}",
+    "members": "Membres",
+    "members_title": "Membres Coberts",
+    "members_limit_hint": "Aquest pla cobreix fins a: {limit}",
+    "members_limit_reached": "Aquesta membresia ha arribat al seu límit de membres.",
+    "owner_badge": "Titular",
+    "remove": "Eliminar",
+    "add_member": "Afegir"
   },
   "team": {
     "title": "Equip",

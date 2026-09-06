@@ -16,12 +16,19 @@ const LIST_SELECT = `
   SELECT um.*,
          m.name AS member_name,
          m.email AS member_email,
-         p.name AS plan_name
+         p.name AS plan_name,
+         p.member_limit AS plan_member_limit
   FROM user_memberships um
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
 `;
 // Note: um.* already includes next_billing_date and last_billed_at (added in migration 111).
+
+// '1' | '2' -> that many covered Members; 'family' -> unlimited (#374).
+function memberLimitCount(limit: string | null | undefined): number {
+  if (limit === 'family') return Infinity;
+  return parseInt(limit ?? '1', 10);
+}
 
 userMembershipsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -53,7 +60,7 @@ async function effectivePrice(planId: number, gymId: string, date: string):
   Promise<{ price: number; plan_price_id: number | null; base_price: number } | null>
 {
   const { rows: planRows } = await db.query(
-    'SELECT id, base_price FROM membership_plans WHERE id = ? AND gym_id = ?',
+    'SELECT id FROM membership_plans WHERE id = ? AND gym_id = ?',
     [planId, gymId],
   );
   if (planRows.length === 0) return null;
@@ -65,7 +72,9 @@ async function effectivePrice(planId: number, gymId: string, date: string):
      ORDER BY valid_from DESC LIMIT 1`,
     [planId, gymId, date, date],
   );
-  const base_price = Number(planRows[0].base_price);
+  // membership_plans.base_price was dropped in migration 058 — membership_plan_prices
+  // is the sole source of truth for pricing now. Fall back to 0 when no price window matches.
+  const base_price = 0;
   if (priceRows.length > 0) {
     return { price: Number(priceRows[0].price), plan_price_id: priceRows[0].id, base_price };
   }
@@ -119,6 +128,11 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         previousStatus: null, newStatus: 'active',
         source: sourceForRole(role), actorUserId: userId,
       });
+      // The paying Member is always the Membership's owner and its first covered Member (#374).
+      await tx.query(
+        'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
+        [gymId, insertId, member_id],
+      );
       return insertId;
     });
     const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ?`, [insertId]);
@@ -216,5 +230,87 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   });
   if (!found) return res.status(404).json({ error: 'Membership not found or already cancelled' });
   recordAudit(req, { action: 'cancel', entityType: 'user_membership', entityId: req.params.id });
+  res.status(204).send();
+});
+
+// ─── Covered Members (#374 — multi-member Membership Plans) ───────────────────
+// A Membership's covered Members receive the plan's benefits/entitlements
+// alongside its owner. The owner (inserted on POST /) can never be removed;
+// additional Members are capped by the plan's member_limit ('1' | '2' | 'family').
+
+const MEMBERS_SELECT = `
+  SELECT umm.member_id, umm.is_owner, m.name, m.email
+  FROM user_membership_members umm
+  JOIN members m ON m.id = umm.member_id
+  WHERE umm.user_membership_id = ? AND umm.gym_id = ?
+  ORDER BY umm.is_owner DESC, m.name ASC
+`;
+
+async function findMembershipWithPlanLimit(id: string | string[], gymId: string) {
+  const { rows } = await db.query(
+    `SELECT um.id, p.member_limit FROM user_memberships um
+     LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+     WHERE um.id = ? AND um.gym_id = ?`,
+    [id, gymId],
+  );
+  return rows[0] ?? null;
+}
+
+userMembershipsRouter.get('/:id/members', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const membership = await findMembershipWithPlanLimit(req.params.id, gymId);
+  if (!membership) return res.status(404).json({ error: 'Membership not found' });
+  const { rows } = await db.query(MEMBERS_SELECT, [req.params.id, gymId]);
+  res.json({ member_limit: membership.member_limit ?? '1', members: rows });
+});
+
+userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { member_id } = req.body;
+  if (!member_id) return res.status(400).json({ error: 'member_id is required' });
+
+  const membership = await findMembershipWithPlanLimit(req.params.id, gymId);
+  if (!membership) return res.status(404).json({ error: 'Membership not found' });
+
+  const { rows: memberRows } = await db.query(
+    'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [member_id, gymId],
+  );
+  if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+  const { rows: countRows } = await db.query(
+    'SELECT COUNT(*) AS n FROM user_membership_members WHERE user_membership_id = ? AND gym_id = ?',
+    [req.params.id, gymId],
+  );
+  if (Number(countRows[0].n) >= memberLimitCount(membership.member_limit)) {
+    return res.status(400).json({ error: 'This membership has reached its member limit.' });
+  }
+
+  try {
+    await db.query(
+      'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
+      [gymId, req.params.id, member_id],
+    );
+    const { rows } = await db.query(MEMBERS_SELECT, [req.params.id, gymId]);
+    recordAudit(req, { action: 'add_member', entityType: 'user_membership', entityId: req.params.id, next: { member_id } });
+    res.status(201).json(rows);
+  } catch (err: any) {
+    handleDupEntry(err, res, next, 'This Member is already covered by this Membership.');
+  }
+});
+
+userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYMENTS'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    'SELECT is_owner FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
+    [req.params.id, req.params.memberId, gymId],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'This Member is not covered by this Membership.' });
+  if (rows[0].is_owner) return res.status(400).json({ error: 'Cannot remove the Membership owner.' });
+  await db.query(
+    'DELETE FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
+    [req.params.id, req.params.memberId, gymId],
+  );
+  recordAudit(req, { action: 'remove_member', entityType: 'user_membership', entityId: req.params.id, previous: { member_id: req.params.memberId } });
   res.status(204).send();
 });

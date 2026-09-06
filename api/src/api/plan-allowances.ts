@@ -15,12 +15,17 @@ import { getPackageIntent } from './package-credits';
  * for the plan, the booking's center must be in that set.
  */
 registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, centerId) => {
-  // Resolve the member's active membership plan
+  // Resolve the member's active membership plan — either as the Membership's
+  // owner or as a Member covered by a multi-member Membership (#374).
   const { rows: memberships } = await tx.query(
     `SELECT um.membership_plan_id FROM user_memberships um
-     WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'
+     WHERE um.gym_id = ? AND um.status = 'active'
+       AND (um.member_id = ? OR EXISTS (
+         SELECT 1 FROM user_membership_members umm
+         WHERE umm.user_membership_id = um.id AND umm.member_id = ?
+       ))
      LIMIT 1`,
-    [gymId, memberId],
+    [gymId, memberId, memberId],
   );
   if (memberships.length === 0) return; // No membership — other guards handle
 
