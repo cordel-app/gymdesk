@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
+import { AssignPlanModal } from './AssignPlanModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,6 +145,9 @@ export default function PlansPage() {
 
   // Confirm delete
   const [deleting, setDeleting] = useState<Plan | null>(null);
+
+  // Assign Plan to Member(s) (#376)
+  const [assigningPlan, setAssigningPlan] = useState<Plan | null>(null);
 
   // Price sub-form (inline, per plan)
   const [priceForm, setPriceForm] = useState({ price: '', valid_from: '', valid_to: '' });
@@ -625,6 +629,7 @@ export default function PlansPage() {
             const menuItems: ContextMenuItem[] = [
               { label: t('plans.details'), onClick: () => showDetails(plan.id) },
               { label: t('plans.edit'), onClick: () => openInlineEdit(plan) },
+              { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan) },
               { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan) },
               { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true },
             ];
@@ -1043,6 +1048,19 @@ export default function PlansPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />
+
+      {/* Assign Plan to Member(s) (#376) */}
+      {assigningPlan && (
+        <AssignPlanModal
+          plan={assigningPlan}
+          onClose={() => setAssigningPlan(null)}
+          onAssigned={() => {
+            setAssigningPlan(null);
+            toast(t('plans.assign_success'));
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

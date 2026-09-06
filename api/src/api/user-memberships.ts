@@ -12,7 +12,7 @@ type Status = (typeof STATUSES)[number];
 export const userMembershipsRouter = Router();
 
 // List joined to member + plan for display (rows returned by SELECT * plus display names).
-const LIST_SELECT = `
+export const LIST_SELECT = `
   SELECT um.*,
          m.name AS member_name,
          m.email AS member_email,
@@ -56,7 +56,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
 
 // Returns the price + plan_price_id that applies to `date` for a plan; falls
 // back to the plan's base_price (with plan_price_id NULL) if no window matches.
-async function effectivePrice(planId: number, gymId: string, date: string):
+export async function effectivePrice(planId: number, gymId: string, date: string):
   Promise<{ price: number; plan_price_id: number | null; base_price: number } | null>
 {
   const { rows: planRows } = await db.query(
@@ -238,7 +238,7 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 // alongside its owner. The owner (inserted on POST /) can never be removed;
 // additional Members are capped by the plan's member_limit ('1' | '2' | 'family').
 
-const MEMBERS_SELECT = `
+export const MEMBERS_SELECT = `
   SELECT umm.member_id, umm.is_owner, m.name, m.email
   FROM user_membership_members umm
   JOIN members m ON m.id = umm.member_id

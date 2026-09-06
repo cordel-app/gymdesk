@@ -616,7 +616,22 @@
     "label_member_limit": "Miembros por Membresía",
     "member_limit_1": "Individual (1 miembro)",
     "member_limit_2": "Pareja (2 miembros)",
-    "member_limit_family": "Familiar (miembros ilimitados)"
+    "member_limit_family": "Familiar (miembros ilimitados)",
+    "assign_to_member": "Asignar Plan a Miembro",
+    "assign_title": "Asignar Plan a Miembro",
+    "assign_capacity_label": "Miembros ({limit})",
+    "assign_family": "familiar",
+    "assign_search_placeholder": "Buscar miembros existentes…",
+    "assign_no_members_selected": "Aún no se han seleccionado miembros.",
+    "assign_owner_badge": "Titular",
+    "assign_over_capacity": "{count} miembros asignados — la capacidad es {limit}",
+    "assign_starts_at_label": "Fecha de inicio",
+    "assign_submit": "Asignar Plan",
+    "assign_success": "Plan asignado.",
+    "assign_error_no_members": "Selecciona al menos un miembro.",
+    "assign_error_exact_count": "Este plan requiere exactamente {count} miembro(s).",
+    "assign_error_no_owner": "Selecciona quién es el titular.",
+    "assign_error_no_start": "La fecha de inicio es obligatoria."
   },
   "prices": {
     "title": "Precios",

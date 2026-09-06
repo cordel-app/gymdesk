@@ -616,7 +616,22 @@
     "label_member_limit": "Membres per Membresia",
     "member_limit_1": "Individual (1 membre)",
     "member_limit_2": "Parella (2 membres)",
-    "member_limit_family": "Familiar (membres il·limitats)"
+    "member_limit_family": "Familiar (membres il·limitats)",
+    "assign_to_member": "Assignar Pla a Membre",
+    "assign_title": "Assignar Pla a Membre",
+    "assign_capacity_label": "Membres ({limit})",
+    "assign_family": "familiar",
+    "assign_search_placeholder": "Cerca membres existents…",
+    "assign_no_members_selected": "Encara no s'ha seleccionat cap membre.",
+    "assign_owner_badge": "Titular",
+    "assign_over_capacity": "{count} membres assignats — la capacitat és {limit}",
+    "assign_starts_at_label": "Data d'inici",
+    "assign_submit": "Assignar Pla",
+    "assign_success": "Pla assignat.",
+    "assign_error_no_members": "Selecciona almenys un membre.",
+    "assign_error_exact_count": "Aquest pla requereix exactament {count} membre(s).",
+    "assign_error_no_owner": "Selecciona qui és el titular.",
+    "assign_error_no_start": "La data d'inici és obligatòria."
   },
   "prices": {
     "title": "Preus",
