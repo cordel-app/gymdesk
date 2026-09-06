@@ -5,6 +5,7 @@ import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendBulkNotification } from '../infra/notifications';
+import { bookMemberOnSession } from './bookings';
 
 const STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
 
@@ -464,6 +465,61 @@ classSessionsRouter.post('/:id/bulk-present',
       [gymMembershipId, gymMembershipId, req.params.id, gymId],
     );
     res.json({ updated: rowCount });
+  },
+);
+
+/**
+ * #372: a Member attends a session without having booked ahead of time (e.g.
+ * capacity opened up at the door). Books them ('force' — capacity is
+ * advisory for staff, same as the normal over-capacity add flow) and marks
+ * attendance present in one step, so a package credit is consumed exactly
+ * like any other booked+attended session (P3.3's debitPackageIfClaimed,
+ * triggered by bookMemberOnSession). A member who already has an active
+ * booking for this session should use the normal attendance endpoint instead.
+ */
+classSessionsRouter.post('/:id/walk-in',
+  requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'),
+  async (req, res, next) => {
+    const { gymId, gymMembershipId } = getTenantContext(req);
+    const { member_id } = req.body;
+    if (!member_id) return res.status(400).json({ error: 'member_id is required' });
+
+    try {
+      const { rows: memberRows } = await db.query(
+        'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+        [member_id, gymId],
+      );
+      if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+      const bookingId = await db.transaction(async (tx) => {
+        const { rows: existing } = await tx.query(
+          "SELECT id FROM bookings WHERE class_session_id = ? AND member_id = ? AND status <> 'cancelled' FOR UPDATE",
+          [req.params.id, member_id],
+        );
+        if (existing.length > 0) {
+          throw Object.assign(new Error('Member already has an active booking for this session — use the attendance endpoint instead'), { status: 409 });
+        }
+
+        const booking = await bookMemberOnSession(gymId, member_id, Number(req.params.id), true, false, tx);
+        await tx.query(
+          `UPDATE bookings
+           SET attendance_status = 'present',
+               attendance_recorded_at = UTC_TIMESTAMP(),
+               attendance_recorded_by_membership_id = ?,
+               modified_at = UTC_TIMESTAMP(),
+               modified_by_membership_id = ?
+           WHERE id = ?`,
+          [gymMembershipId, gymMembershipId, booking.id],
+        );
+        return booking.id;
+      });
+
+      const { rows } = await db.query(`${SELECT} WHERE cs.id = ? AND cs.gym_id = ?`, [req.params.id, gymId]);
+      res.status(201).json({ booking_id: bookingId, session: rows[0] });
+    } catch (err: any) {
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      next(err);
+    }
   },
 );
 

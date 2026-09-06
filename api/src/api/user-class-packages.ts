@@ -36,6 +36,49 @@ userClassPackagesRouter.get('/', async (req, res) => {
   res.json(rows.map(applyLazyStatus));
 });
 
+/**
+ * #372: manually extend a package's expiration date. Only ever moves the
+ * date forward — the ticket's other manual adjustment (refunding a
+ * same-day-cancellation credit) lives on bookings, not here, since this
+ * table has no notion of consumption itself (sessions_remaining/status
+ * stay driven entirely by the booking/attendance lifecycle via
+ * package-credits.ts).
+ */
+userClassPackagesRouter.put('/:id/extend-expiration', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const memberId = (req.params as any).memberId;
+  const { expires_at } = req.body;
+  if (!expires_at) return res.status(400).json({ error: 'expires_at is required' });
+
+  try {
+    const { rows: pkgRows } = await db.query(
+      'SELECT id, expires_at FROM user_class_packages WHERE id = ? AND gym_id = ? AND member_id = ?',
+      [req.params.id, gymId, memberId],
+    );
+    if (pkgRows.length === 0) return res.status(404).json({ error: 'Package not found' });
+    const previousExpiresAt = pkgRows[0].expires_at;
+
+    if (new Date(expires_at) <= new Date(previousExpiresAt)) {
+      return res.status(400).json({ error: 'New expiration date must be later than the current expiration date' });
+    }
+
+    await db.query(
+      'UPDATE user_class_packages SET expires_at = ?, modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ? WHERE id = ?',
+      [expires_at, gymMembershipId, req.params.id],
+    );
+
+    const { rows } = await db.query(`${SELECT} WHERE ucp.id = ?`, [req.params.id]);
+    recordAudit(req, {
+      action: 'extend_expiration',
+      entityType: 'user_class_package',
+      entityId: req.params.id,
+      previous: { expires_at: previousExpiresAt },
+      next: { expires_at },
+    });
+    res.json(applyLazyStatus(rows[0]));
+  } catch (err) { next(err); }
+});
+
 userClassPackagesRouter.get('/:id/transactions', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const memberId = (req.params as any).memberId;

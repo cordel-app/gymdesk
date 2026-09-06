@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { handleDupEntry } from '../infra/db-helpers';
+import { recordAudit } from '../infra/audit';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
 let packageCreditsModule: typeof import('./package-credits') | null = null;
 async function packageCredits() {
@@ -154,7 +155,11 @@ export async function bookMemberOnSession(
 export async function cancelBooking(gymId: string, bookingId: number, actorMembershipId?: number | null) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
-      "SELECT id, member_id, class_session_id, status, user_class_package_id FROM bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
+      `SELECT b.id, b.member_id, b.class_session_id, b.status, b.user_class_package_id,
+              cs.starts_at AS session_starts_at
+       FROM bookings b
+       JOIN class_sessions cs ON cs.id = b.class_session_id
+       WHERE b.id = ? AND b.gym_id = ? FOR UPDATE`,
       [bookingId, gymId],
     );
     if (bookingRows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
@@ -166,10 +171,20 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       [actorMembershipId ?? null, bookingId],
     );
 
-    // P3.3: refund the credit if this booking spent one.
+    // #372: a package credit only auto-refunds when the member cancels at
+    // least one day before the session. A same-day cancellation keeps the
+    // credit consumed by default — a trainer can still refund it explicitly
+    // afterwards via POST /bookings/:id/refund-credit.
     if (b.user_class_package_id) {
-      const pc = await packageCredits();
-      await pc.refundPackageCredit(tx, bookingId, b.user_class_package_id, gymId);
+      const { rows: dayRows } = await tx.query(
+        'SELECT DATEDIFF(?, UTC_TIMESTAMP()) AS days_before',
+        [b.session_starts_at],
+      );
+      const cancelledInAdvance = Number(dayRows[0].days_before) >= 1;
+      if (cancelledInAdvance) {
+        const pc = await packageCredits();
+        await pc.refundPackageCredit(tx, bookingId, b.user_class_package_id, gymId);
+      }
     }
 
     // Only a freed 'booked' slot promotes someone; cancelling a 'waitlisted'
@@ -269,4 +284,45 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
 
   const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
   res.json(rows[0]);
+});
+
+/**
+ * #372: explicit trainer/staff refund of a package credit that was kept
+ * consumed by a same-day cancellation (cancelBooking only auto-refunds when
+ * the member cancelled >= 1 day before the session). Only cancelled bookings
+ * that still hold a package link are eligible — an advance cancellation
+ * already auto-refunded and cleared user_class_package_id, so re-running this
+ * on it (or calling it twice) 404s instead of double-refunding.
+ */
+bookingsRouter.post('/:id/refund-credit', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res, next) => {
+  const { gymId, gymMembershipId, userId } = getTenantContext(req);
+  try {
+    const result = await db.transaction(async (tx) => {
+      const { rows: bookingRows } = await tx.query(
+        "SELECT id, status, user_class_package_id FROM bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
+        [req.params.id, gymId],
+      );
+      if (bookingRows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
+      const b = bookingRows[0];
+      if (b.status !== 'cancelled' || !b.user_class_package_id) {
+        throw Object.assign(new Error('Booking has no consumed package credit available to refund'), { status: 400 });
+      }
+      const pc = await packageCredits();
+      await pc.refundPackageCredit(tx, b.id, b.user_class_package_id, gymId, 'Manual refund (same-day cancellation)', userId);
+      return { userClassPackageId: b.user_class_package_id };
+    });
+
+    recordAudit(req, {
+      action: 'refund_credit',
+      entityType: 'booking',
+      entityId: req.params.id,
+      next: { user_class_package_id: result.userClassPackageId, actor_membership_id: gymMembershipId },
+    });
+
+    const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
