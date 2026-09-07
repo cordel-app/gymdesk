@@ -10,25 +10,30 @@ const STATUSES = ['active', 'inactive'] as const;
 export const centersRouter = Router();
 
 // Tables that reference centers.id — checked before a delete is allowed.
-// [table, column, softDeleted] — softDeleted tables are only "dependent" via
-// their non-deleted rows; bookings has no soft delete, so every row counts.
-const DEPENDENT_TABLES: Array<[string, string, boolean]> = [
-  ['member_centers', 'center_id', true],
-  ['rooms', 'center_id', true],
-  ['class_sessions', 'center_id', true],
-  ['bookings', 'center_id', false],
-  ['trainer_availability', 'center_id', true],
-  ['events', 'center_id', true],
+// [table, column, softDeleted, label, extraWhere?] — softDeleted tables are
+// only "dependent" via their non-deleted rows; calendar_event_bookings (like
+// the legacy `bookings` table it replaced, see #360 stage 3) has no soft
+// delete — cancellation is tracked via `status`, not `deleted_at` — so every
+// row counts. calendar_events also holds one-off Activities/CalendarEvents
+// (`kind = 'event'`); only the session occurrences (`kind = 'session'`) that
+// used to live in the now-merged `class_sessions` table are a dependency here.
+const DEPENDENT_TABLES: Array<[string, string, boolean, string, string?]> = [
+  ['member_centers', 'center_id', true, 'member centers'],
+  ['rooms', 'center_id', true, 'rooms'],
+  ['calendar_events', 'center_id', true, 'class sessions', "kind = 'session'"],
+  ['calendar_event_bookings', 'center_id', false, 'bookings'],
+  ['trainer_availability', 'center_id', true, 'trainer availability'],
 ];
 
 async function firstDependentTable(centerId: number, gymId: string): Promise<string | null> {
-  for (const [table, column, softDeleted] of DEPENDENT_TABLES) {
+  for (const [table, column, softDeleted, label, extraWhere] of DEPENDENT_TABLES) {
     const clause = softDeleted ? 'AND deleted_at IS NULL' : '';
+    const extra = extraWhere ? `AND ${extraWhere}` : '';
     const { rows } = await db.query(
-      `SELECT 1 FROM ${table} WHERE ${column} = ? AND gym_id = ? ${clause} LIMIT 1`,
+      `SELECT 1 FROM ${table} WHERE ${column} = ? AND gym_id = ? ${clause} ${extra} LIMIT 1`,
       [centerId, gymId],
     );
-    if (rows.length > 0) return table;
+    if (rows.length > 0) return label;
   }
   return null;
 }
@@ -181,7 +186,7 @@ centersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const dependent = await firstDependentTable(Number(req.params.id), gymId);
     if (dependent) {
-      return res.status(409).json({ error: `Cannot delete center: it still has ${dependent.replace(/_/g, ' ')}.` });
+      return res.status(409).json({ error: `Cannot delete center: it still has ${dependent}.` });
     }
     const { rowCount } = await db.query(
       `UPDATE centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?, deleted_by_membership_id = ?, deleted_by_name = ?
