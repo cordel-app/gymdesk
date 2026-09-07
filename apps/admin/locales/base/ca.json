@@ -2627,12 +2627,18 @@
     "title": "Plans Assignats",
     "loading": "Carregant…",
     "empty": "Encara no hi ha plans assignats.",
+    "no_matches": "Cap pla coincideix amb els filtres seleccionats.",
     "col_member": "Nom del Soci",
     "col_plan": "Nom del Pla",
     "col_starts_at": "Data d'Inici",
     "col_ends_at": "Data de Fi",
     "col_status": "Estat",
-    "open_ended": "Sense data de fi"
+    "open_ended": "Sense data de fi",
+    "filter_status": "Estat",
+    "filter_member": "Soci",
+    "filter_from": "Des de",
+    "filter_to": "Fins a",
+    "filter_clear": "Esborra filtres"
   },
   "taxes": {
     "title": "Impostos",
