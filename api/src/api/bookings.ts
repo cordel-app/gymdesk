@@ -11,28 +11,23 @@ async function packageCredits() {
 }
 
 /**
- * P2.5 bookings: waitlist + attendance.
- * Booking creation is transactional:
- *   1. SELECT ... FOR UPDATE on the session to serialise concurrent inserts.
- *   2. Count non-cancelled bookings on that session.
- *   3. If under effective capacity → status='booked', booked_at=UTC_TIMESTAMP().
- *      Else → status='waitlisted' with next waitlist_position.
- * Duplicate active bookings (same member × same session, non-cancelled) hit
- * the unique index and return 409.
+ * P2.5 bookings: waitlist + attendance — now backed by calendar_event_bookings.
  *
- * #193: attendance_status ('pending'|'present'|'absent') is now separate from
- * booking lifecycle status ('booked'|'waitlisted'|'cancelled').
+ * API shapes are preserved: `class_session_id` in requests/responses maps to
+ * `ceb.calendar_event_id`; stage-4 frontend migration will rename the field.
  */
 const SELECT = `
-  SELECT b.*, m.name AS member_name, m.email AS member_email,
-         cs.starts_at AS session_starts_at, cs.ends_at AS session_ends_at,
-         cs.status AS session_status,
+  SELECT ceb.*,
+         ceb.calendar_event_id AS class_session_id,
+         m.name AS member_name, m.email AS member_email,
+         ce.starts_at AS session_starts_at, ce.ends_at AS session_ends_at,
+         ce.status AS session_status,
          at.name AS class_type_name,
-         COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity
-  FROM bookings b
-  JOIN members m ON m.id = b.member_id
-  JOIN class_sessions cs ON cs.id = b.class_session_id
-  JOIN activity_types at ON at.id = cs.activity_type_id
+         COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
+  FROM calendar_event_bookings ceb
+  JOIN members m ON m.id = ceb.member_id
+  JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+  JOIN activity_types at ON at.id = ce.activity_type_id
 `;
 
 // Hook point for P2.7 (plan-access) and P3.3 (packages). Called inside the
@@ -49,16 +44,16 @@ export const bookingsRouter = Router();
 bookingsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { session_id, status } = req.query as Record<string, string | undefined>;
-  const where: string[] = ['b.gym_id = ?'];
+  const where: string[] = ['ceb.gym_id = ?'];
   const params: (string | number)[] = [gymId];
-  if (session_id) { where.push('b.class_session_id = ?'); params.push(session_id); }
-  if (status)     { where.push('b.status = ?'); params.push(status); }
+  if (session_id) { where.push('ceb.calendar_event_id = ?'); params.push(session_id); }
+  if (status)     { where.push('ceb.status = ?'); params.push(status); }
   const { rows } = await db.query(
     `${SELECT} WHERE ${where.join(' AND ')}
      ORDER BY
-       FIELD(b.status, 'booked','attended','no_show','waitlisted','cancelled'),
-       b.waitlist_position IS NULL, b.waitlist_position ASC,
-       b.booked_at ASC`,
+       FIELD(ceb.status, 'booked','attended','no_show','waitlisted','cancelled'),
+       ceb.waitlist_position IS NULL, ceb.waitlist_position ASC,
+       ceb.booked_at ASC`,
     params,
   );
   res.json(rows);
@@ -66,7 +61,7 @@ bookingsRouter.get('/', async (req, res) => {
 
 bookingsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
+  const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
   if (rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
   res.json(rows[0]);
 });
@@ -74,8 +69,7 @@ bookingsRouter.get('/:id', async (req, res) => {
 /**
  * Runs the booking flow inside a transaction; exported so /me/bookings can share it.
  * Pass force=true to allow adding a member even when the session is at capacity
- * (always inserts as 'booked', never waitlisted). Only staff-facing — the member
- * app should never send force=true.
+ * (always inserts as 'booked', never waitlisted). Only staff-facing.
  */
 export async function bookMemberOnSession(
   gymId: string,
@@ -87,32 +81,30 @@ export async function bookMemberOnSession(
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
-      `SELECT cs.id, cs.activity_type_id, cs.status, cs.center_id,
-              COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity
-       FROM class_sessions cs
-       JOIN activity_types at ON at.id = cs.activity_type_id
-       WHERE cs.id = ? AND cs.gym_id = ? AND cs.deleted_at IS NULL FOR UPDATE`,
+      `SELECT ce.id, ce.activity_type_id, ce.status, ce.center_id,
+              COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
+       FROM calendar_events ce
+       JOIN activity_types at ON at.id = ce.activity_type_id
+       WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL FOR UPDATE`,
       [sessionId, gymId],
     );
     if (session.length === 0) throw Object.assign(new Error('Session not found'), { status: 404 });
     if (session[0].status !== 'scheduled') throw Object.assign(new Error('Session is not open for bookings'), { status: 400 });
 
-    // Run access hooks (plan-access, packages) — they can throw with .status/.message.
     for (const hook of accessHooks) {
       await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id);
     }
 
     const { rows: nextRows } = await tx.query(
       `SELECT COALESCE(MAX(waitlist_position), 0) + 1 AS next
-       FROM bookings WHERE class_session_id = ? AND status = 'waitlisted'`,
+       FROM calendar_event_bookings WHERE calendar_event_id = ? AND status = 'waitlisted'`,
       [sessionId],
     );
 
-    // forceWaitlist: staff explicitly chose "add to waiting list" even if capacity available.
     if (forceWaitlist) {
       const position = Number(nextRows[0].next);
       const { insertId } = await tx.query(
-        `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at)
          VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
         [gymId, session[0].center_id, memberId, sessionId, position],
       );
@@ -120,9 +112,7 @@ export async function bookMemberOnSession(
     }
 
     const { rows: countRows } = await tx.query(
-      `SELECT COUNT(*) AS booked
-       FROM bookings
-       WHERE class_session_id = ? AND status = 'booked'`,
+      `SELECT COUNT(*) AS booked FROM calendar_event_bookings WHERE calendar_event_id = ? AND status = 'booked'`,
       [sessionId],
     );
     const booked = Number(countRows[0].booked);
@@ -130,11 +120,10 @@ export async function bookMemberOnSession(
 
     if (!overCapacity || force) {
       const { insertId } = await tx.query(
-        `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at)
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
          VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
         [gymId, session[0].center_id, memberId, sessionId],
       );
-      // P3.3: settle a package debit if one was claimed by the access hook.
       const pc = await packageCredits();
       await pc.debitPackageIfClaimed(tx, insertId, gymId);
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
@@ -142,7 +131,7 @@ export async function bookMemberOnSession(
 
     const position = Number(nextRows[0].next);
     const { insertId } = await tx.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at)
        VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
       [gymId, session[0].center_id, memberId, sessionId, position],
     );
@@ -155,11 +144,11 @@ export async function bookMemberOnSession(
 export async function cancelBooking(gymId: string, bookingId: number, actorMembershipId?: number | null) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
-      `SELECT b.id, b.member_id, b.class_session_id, b.status, b.user_class_package_id,
-              cs.starts_at AS session_starts_at
-       FROM bookings b
-       JOIN class_sessions cs ON cs.id = b.class_session_id
-       WHERE b.id = ? AND b.gym_id = ? FOR UPDATE`,
+      `SELECT ceb.id, ceb.member_id, ceb.calendar_event_id, ceb.status, ceb.user_class_package_id,
+              ce.starts_at AS session_starts_at
+       FROM calendar_event_bookings ceb
+       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+       WHERE ceb.id = ? AND ceb.gym_id = ? FOR UPDATE`,
       [bookingId, gymId],
     );
     if (bookingRows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
@@ -167,19 +156,11 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     if (b.status === 'cancelled') throw Object.assign(new Error('Already cancelled'), { status: 400 });
 
     await tx.query(
-      "UPDATE bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by_membership_id=? WHERE id = ?",
+      "UPDATE calendar_event_bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by_membership_id=? WHERE id = ?",
       [actorMembershipId ?? null, bookingId],
     );
 
-    // #372: a package credit only auto-refunds when the member cancels at
-    // least one day before the session. A same-day cancellation keeps the
-    // credit consumed by default — a trainer can still refund it explicitly
-    // afterwards via POST /bookings/:id/refund-credit.
     if (b.user_class_package_id) {
-      // Compare actual elapsed time, not calendar dates: DATEDIFF would count
-      // a session 2 hours away as "1 day before" whenever "now" and the
-      // session fall on different calendar dates (e.g. cancelling just after
-      // UTC midnight for a session later that same UTC day).
       const { rows: dayRows } = await tx.query(
         'SELECT (? >= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY)) AS cancelled_in_advance',
         [b.session_starts_at],
@@ -191,32 +172,28 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       }
     }
 
-    // Only a freed 'booked' slot promotes someone; cancelling a 'waitlisted'
-    // booking doesn't create a new spot.
     if (b.status !== 'booked') return { promoted: null, promotedMemberId: null };
 
     const { rows: waitRows } = await tx.query(
-      `SELECT id, member_id, waitlist_position FROM bookings
-       WHERE class_session_id = ? AND status = 'waitlisted'
+      `SELECT id, member_id, waitlist_position FROM calendar_event_bookings
+       WHERE calendar_event_id = ? AND status = 'waitlisted'
        ORDER BY waitlist_position ASC LIMIT 1 FOR UPDATE`,
-      [b.class_session_id],
+      [b.calendar_event_id],
     );
     if (waitRows.length === 0) return { promoted: null, promotedMemberId: null };
     await tx.query(
-      "UPDATE bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
+      "UPDATE calendar_event_bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
       [waitRows[0].id],
     );
 
-    // Promoted member may now need to debit a package. Re-run the access
-    // hooks against the promoted member to establish intent, then debit.
     const promotedMemberId = waitRows[0].member_id;
     const { rows: sessionRow } = await tx.query(
-      'SELECT activity_type_id, center_id FROM class_sessions WHERE id = ?',
-      [b.class_session_id],
+      'SELECT activity_type_id, center_id FROM calendar_events WHERE id = ?',
+      [b.calendar_event_id],
     );
     for (const hook of accessHooks) {
       try { await hook(tx, gymId, promotedMemberId, sessionRow[0].activity_type_id, sessionRow[0].center_id); }
-      catch { /* promotion never fails; if hook throws, the promoted member just doesn't get a package debit */ }
+      catch { /* promotion never fails */ }
     }
     const pc = await packageCredits();
     await pc.debitPackageIfClaimed(tx, waitRows[0].id, gymId);
@@ -239,7 +216,7 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
 
   try {
     const result = await bookMemberOnSession(gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist));
-    const { rows } = await db.query(`${SELECT} WHERE b.id = ?`, [result.id]);
+    const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     res.status(201).json({ ...rows[0], over_capacity: result.over_capacity });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -258,7 +235,6 @@ bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, ne
   }
 });
 
-/** Mark attendance — staff-level. Accepts 'present' or 'absent'. */
 bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { status } = req.body;
@@ -266,9 +242,8 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
     return res.status(400).json({ error: "status must be 'present' or 'absent'" });
   }
 
-  // Fetch current state for audit.
   const { rows: current } = await db.query(
-    `SELECT attendance_status FROM bookings WHERE id = ? AND gym_id = ? AND status = 'booked'`,
+    `SELECT attendance_status FROM calendar_event_bookings WHERE id = ? AND gym_id = ? AND status = 'booked'`,
     [req.params.id, gymId],
   );
   if (current.length === 0) {
@@ -276,7 +251,7 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
   }
 
   await db.query(
-    `UPDATE bookings
+    `UPDATE calendar_event_bookings
      SET attendance_status = ?,
          attendance_recorded_at = UTC_TIMESTAMP(),
          attendance_recorded_by_membership_id = ?,
@@ -286,24 +261,21 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
     [status, gymMembershipId, gymMembershipId, req.params.id, gymId],
   );
 
-  const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
+  const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
   res.json(rows[0]);
 });
 
 /**
- * #372: explicit trainer/staff refund of a package credit that was kept
- * consumed by a same-day cancellation (cancelBooking only auto-refunds when
- * the member cancelled >= 1 day before the session). Only cancelled bookings
- * that still hold a package link are eligible — an advance cancellation
- * already auto-refunded and cleared user_class_package_id, so re-running this
- * on it (or calling it twice) 404s instead of double-refunding.
+ * #372: explicit trainer/staff refund of a package credit kept consumed by a
+ * same-day cancellation. Only cancelled bookings that still hold a package link
+ * are eligible.
  */
 bookingsRouter.post('/:id/refund-credit', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res, next) => {
   const { gymId, gymMembershipId, userId } = getTenantContext(req);
   try {
     const result = await db.transaction(async (tx) => {
       const { rows: bookingRows } = await tx.query(
-        "SELECT id, status, user_class_package_id FROM bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
+        "SELECT id, status, user_class_package_id FROM calendar_event_bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
         [req.params.id, gymId],
       );
       if (bookingRows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
@@ -323,7 +295,7 @@ bookingsRouter.post('/:id/refund-credit', requireRole('admin', 'front_desk', 'tr
       next: { user_class_package_id: result.userClassPackageId, actor_membership_id: gymMembershipId },
     });
 
-    const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
+    const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });

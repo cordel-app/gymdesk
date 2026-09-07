@@ -111,7 +111,7 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
   const { rows: ruleRows } = await db.query(
     `SELECT r.*, at.name AS activity_type_name,
             at.default_space_id, at.default_trainer_membership_id, at.color, at.max_capacity,
-            at.gym_id
+            at.default_center_id, at.gym_id
      FROM activity_type_schedule_rules r
      JOIN activity_types at ON at.id = r.activity_type_id
      WHERE r.id = ?`,
@@ -133,6 +133,7 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     activity_type_name: string;
     default_space_id: number | null;
     default_trainer_membership_id: number | null;
+    default_center_id: number | null;
     color: string | null;
     max_capacity: number;
     gym_id: string;
@@ -144,11 +145,14 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
   const nowStr = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss');
   const rows = occurrences.map(({ date }) => ({
     gym_id: rule.gym_id,
+    center_id: rule.default_center_id ?? null,
+    kind: 'session',
     title: rule.activity_type_name,
     activity_type_id: rule.activity_type_id,
     space_id: rule.default_space_id ?? null,
     trainer_membership_id: rule.default_trainer_membership_id ?? null,
     color: rule.color ?? null,
+    capacity: rule.max_capacity,
     starts_at: toUtcDatetime(date, rule.start_time, gymTimezone),
     ends_at: toUtcDatetime(date, rule.end_time, gymTimezone),
     all_day: 0,
@@ -164,11 +168,12 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     const chunk = rows.slice(i, i + CHUNK);
     await db.query(
       `INSERT INTO calendar_events
-         (gym_id, title, activity_type_id, space_id, trainer_membership_id, color,
-          starts_at, ends_at, all_day, status, schedule_rule_id, created_at, updated_at)
-       VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`,
+         (gym_id, center_id, kind, title, activity_type_id, space_id, trainer_membership_id, color,
+          capacity, starts_at, ends_at, all_day, status, schedule_rule_id, created_at, updated_at)
+       VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`,
       chunk.flatMap((r) => [
-        r.gym_id, r.title, r.activity_type_id, r.space_id, r.trainer_membership_id, r.color,
+        r.gym_id, r.center_id, r.kind, r.title, r.activity_type_id, r.space_id,
+        r.trainer_membership_id, r.color, r.capacity,
         r.starts_at, r.ends_at, r.all_day, r.status, r.schedule_rule_id, r.created_at, r.updated_at,
       ]),
     );
