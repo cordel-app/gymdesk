@@ -336,6 +336,35 @@ describe('POST schedule-rule weekly multi-day', () => {
     expect(dates).not.toContain('2026-09-12'); // Sat
     expect(dates).not.toContain('2026-09-13'); // Sun
   });
+
+  // #360 stage 3: materialized occurrences are bookable CalendarEvents —
+  // kind='session' and capacity backfilled from the activity type.
+  it('materialized occurrences carry kind=session and the activity type\'s capacity', async () => {
+    const createRes = await request
+      .post(rulesBase(activityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: '2026-10-05',
+        end_date: '2026-10-11',
+        weekdays: [1],
+        start_time: '07:00',
+        end_time: '08:00',
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows } = await db.query(
+      "SELECT kind, capacity FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL",
+      [ruleId],
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.kind).toBe('session');
+      expect(row.capacity).toBe(15); // activityTypeId's max_capacity, set in beforeAll
+    }
+  });
 });
 
 // ── Validation ─────────────────────────────────────────────────────────────

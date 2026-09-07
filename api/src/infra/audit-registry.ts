@@ -67,10 +67,10 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
     kind: 'composed', label: 'Class Sessions',
     resolve: async (id) => {
       const { rows } = await db.query<{ class_type_name: string; starts_at: string }>(
-        `SELECT ct.name AS class_type_name, cs.starts_at
-         FROM class_sessions cs
-         JOIN class_types ct ON ct.id = cs.class_type_id
-         WHERE cs.id = ?`,
+        `SELECT at.name AS class_type_name, ce.starts_at
+         FROM calendar_events ce
+         JOIN activity_types at ON at.id = ce.activity_type_id
+         WHERE ce.id = ? AND ce.kind = 'session'`,
         [id],
       );
       if (!rows[0]) return null;

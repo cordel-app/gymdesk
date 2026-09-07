@@ -660,6 +660,7 @@ meRouter.post('/shared-training-requests', requireRole('member'), requireFeature
       'SELECT activity_type_id FROM calendar_events WHERE id = ? AND gym_id = ?',
       [class_session_id, gymId],
     );
+    if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
     const { insertId } = await db.query(
       `INSERT INTO calendar_event_shared_training_requests
          (gym_id, calendar_event_id, requesting_member_id, activity_type_id, status, notes, created_at)
