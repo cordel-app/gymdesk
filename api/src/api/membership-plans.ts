@@ -243,7 +243,7 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
   if (member_limit !== undefined && !VALID_MEMBER_LIMIT.includes(member_limit)) {
     return res.status(400).json({ error: 'member_limit must be one of: 1, 2, family' });
   }
-  if (tax_behavior && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+  if (tax_behavior !== undefined && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
     return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
   }
   const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
@@ -281,7 +281,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   if (enrollment_status && !VALID_ENROLLMENT.includes(enrollment_status)) {
     return res.status(400).json({ error: 'Invalid enrollment_status' });
   }
-  if (tax_behavior && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+  if (tax_behavior !== undefined && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
     return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
   }
   const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
