@@ -40,22 +40,12 @@ async function createCenter(gymId: string): Promise<number> {
 }
 
 async function createSession(gymId: string, activityTypeId: number, centerId: number, trainerId: number | null = null): Promise<number> {
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, trainer_membership_id, starts_at, ends_at, status)
-       VALUES (?, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
-      [gymId, activityTypeId, activityTypeId, centerId, trainerId],
-    );
-    return insertId;
-  } catch (err: any) {
-    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, trainer_membership_id, starts_at, ends_at, status)
-       VALUES (?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
-      [gymId, activityTypeId, centerId, trainerId],
-    );
-    return insertId;
-  }
+  const { insertId } = await db.query(
+    `INSERT INTO calendar_events (gym_id, center_id, kind, activity_type_id, trainer_membership_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
+    [gymId, centerId, activityTypeId, trainerId],
+  );
+  return insertId;
 }
 
 async function createMember(gymId: string, centerId: number): Promise<number> {
@@ -73,7 +63,7 @@ async function createMember(gymId: string, centerId: number): Promise<number> {
 
 async function createBooking(gymId: string, centerId: number, memberId: number, sessionId: number, status: 'booked' | 'waitlisted' | 'cancelled' = 'booked'): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at)
+    `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
      VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP())`,
     [gymId, centerId, memberId, sessionId, status],
   );
@@ -271,7 +261,7 @@ describe('Attendance Management (#193)', () => {
 
       // Verify waitlisted booking attendance_status is still pending
       const { rows } = await db.query(
-        `SELECT attendance_status FROM bookings WHERE class_session_id = ? AND status = 'waitlisted'`,
+        `SELECT attendance_status FROM calendar_event_bookings WHERE calendar_event_id = ? AND status = 'waitlisted'`,
         [bulkSessionId],
       );
       expect(rows[0].attendance_status).toBe('pending');
@@ -285,7 +275,7 @@ describe('Attendance Management (#193)', () => {
       await createBooking(gymId, centerId, m2, bulkSessionId, 'booked');
 
       // Mark b1 as present first
-      await db.query(`UPDATE bookings SET attendance_status = 'present' WHERE id = ?`, [b1]);
+      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'present' WHERE id = ?`, [b1]);
 
       const res = await request
         .post(`/class-sessions/${bulkSessionId}/bulk-present`)
@@ -367,7 +357,7 @@ describe('Attendance Management (#193)', () => {
       const complSessionId = await createSession(gymId, activityTypeId, centerId, null);
       const mid = await createMember(gymId, centerId);
       const bookingId = await createBooking(gymId, centerId, mid, complSessionId, 'booked');
-      await db.query(`UPDATE bookings SET attendance_status = 'present' WHERE id = ?`, [bookingId]);
+      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'present' WHERE id = ?`, [bookingId]);
 
       const res = await request
         .post(`/class-sessions/${complSessionId}/complete`)
@@ -388,8 +378,8 @@ describe('Attendance Management (#193)', () => {
       const m3 = await createMember(gymId, centerId);
       await createBooking(gymId, centerId, m3, complSessionId, 'waitlisted');
 
-      await db.query(`UPDATE bookings SET attendance_status = 'present' WHERE id = ?`, [b1]);
-      await db.query(`UPDATE bookings SET attendance_status = 'absent'  WHERE id = ?`, [b2]);
+      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'present' WHERE id = ?`, [b1]);
+      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'absent'  WHERE id = ?`, [b2]);
 
       const res = await request
         .post(`/class-sessions/${complSessionId}/complete`)
@@ -402,7 +392,7 @@ describe('Attendance Management (#193)', () => {
 
     it('returns 400 if session is already completed', async () => {
       const complSessionId = await createSession(gymId, activityTypeId, centerId, trainerMembershipId);
-      await db.query(`UPDATE class_sessions SET status = 'completed' WHERE id = ?`, [complSessionId]);
+      await db.query(`UPDATE calendar_events SET status = 'completed' WHERE id = ?`, [complSessionId]);
 
       const res = await request
         .post(`/class-sessions/${complSessionId}/complete`)

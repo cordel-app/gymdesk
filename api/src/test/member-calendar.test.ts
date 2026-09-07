@@ -53,28 +53,14 @@ async function createSession(
   cid: number,
   allowsShared: 0 | 1,
 ): Promise<number> {
-  // class_type_id is a legacy NOT NULL column (pre-059 migration state).
-  // Try with it first; fall back without it if the column no longer exists.
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions
-         (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status, allows_shared_booking)
-       VALUES (?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
-               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-      [gid, actTypeId, actTypeId, cid, allowsShared],
-    );
-    return insertId;
-  } catch (err: any) {
-    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions
-         (gym_id, activity_type_id, center_id, starts_at, ends_at, status, allows_shared_booking)
-       VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
-               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-      [gid, actTypeId, cid, allowsShared],
-    );
-    return insertId;
-  }
+  const { insertId } = await db.query(
+    `INSERT INTO calendar_events
+       (gym_id, center_id, kind, activity_type_id, starts_at, ends_at, status, allows_shared_booking)
+     VALUES (?, ?, 'session', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+             DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+    [gid, cid, actTypeId, allowsShared],
+  );
+  return insertId;
 }
 
 beforeAll(async () => {
@@ -304,8 +290,8 @@ describe('DELETE /me/shared-training-requests/:id', () => {
     // Insert an approved request directly; noSharedBookingSessionId + memberId is unused by any
     // prior API call so it doesn't violate the unique constraint.
     const { insertId } = await db.query(
-      `INSERT INTO shared_training_requests
-         (gym_id, class_session_id, requesting_member_id, activity_type_id, status, created_at)
+      `INSERT INTO calendar_event_shared_training_requests
+         (gym_id, calendar_event_id, requesting_member_id, activity_type_id, status, created_at)
        VALUES (?, ?, ?, ?, 'approved', UTC_TIMESTAMP())`,
       [gymId, noSharedBookingSessionId, memberId, shareableActivityTypeId],
     );
@@ -320,8 +306,8 @@ describe('DELETE /me/shared-training-requests/:id', () => {
     // Create a fresh session so the unique constraint is not violated.
     const freshSessionId = await createSession(gymId, shareableActivityTypeId, centerId, 1);
     const { insertId } = await db.query(
-      `INSERT INTO shared_training_requests
-         (gym_id, class_session_id, requesting_member_id, activity_type_id, status, created_at)
+      `INSERT INTO calendar_event_shared_training_requests
+         (gym_id, calendar_event_id, requesting_member_id, activity_type_id, status, created_at)
        VALUES (?, ?, ?, ?, 'pending', UTC_TIMESTAMP())`,
       [gymId, freshSessionId, memberId, shareableActivityTypeId],
     );
@@ -334,7 +320,7 @@ describe('DELETE /me/shared-training-requests/:id', () => {
 
     // The row must be soft-cancelled, not hard-deleted.
     const { rows } = await db.query<{ status: string }>(
-      'SELECT status FROM shared_training_requests WHERE id = ?',
+      'SELECT status FROM calendar_event_shared_training_requests WHERE id = ?',
       [insertId],
     );
     expect(rows[0].status).toBe('cancelled');

@@ -54,22 +54,12 @@ async function createActivityType(gymId: string, maxCapacity: number): Promise<n
 }
 
 async function createSession(gymId: string, activityTypeId: number, centerId: number): Promise<number> {
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status)
-       VALUES (?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
-      [gymId, activityTypeId, activityTypeId, centerId],
-    );
-    return insertId;
-  } catch (err: any) {
-    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status)
-       VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
-      [gymId, activityTypeId, centerId],
-    );
-    return insertId;
-  }
+  const { insertId } = await db.query(
+    `INSERT INTO calendar_events (gym_id, center_id, kind, activity_type_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
+    [gymId, centerId, activityTypeId],
+  );
+  return insertId;
 }
 
 afterAll(async () => {
@@ -102,7 +92,7 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
     memberId = mId;
 
     await db.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
        VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
       [gymId, centerId, memberId, sessionId],
     );

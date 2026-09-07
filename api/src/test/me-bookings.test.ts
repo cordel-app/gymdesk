@@ -70,9 +70,9 @@ async function createActivityType(gymId: string, maxCapacity: number): Promise<n
 
 async function createSession(gymId: string, activityTypeId: number, centerId: number, whenSql: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status)
-     VALUES (?, ?, ?, ?, ${whenSql}, DATE_ADD(${whenSql}, INTERVAL 1 HOUR), 'scheduled')`,
-    [gymId, activityTypeId, activityTypeId, centerId],
+    `INSERT INTO calendar_events (gym_id, center_id, kind, activity_type_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', ?, ${whenSql}, DATE_ADD(${whenSql}, INTERVAL 1 HOUR), 'scheduled')`,
+    [gymId, centerId, activityTypeId],
   );
   return insertId;
 }
@@ -118,12 +118,12 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
     );
 
     await db.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at, attendance_status)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, attendance_status)
        VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), 'pending')`,
       [gymId, centerAId, memberId, futureSessionInCenterA],
     );
     await db.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at, attendance_status)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, attendance_status)
        VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), 'present')`,
       [gymId, centerAId, memberId, pastSessionInCenterA],
     );
