@@ -668,7 +668,8 @@ meRouter.post('/shared-training-requests', requireRole('member'), requireFeature
       [gymId, class_session_id, memberId, sessionRows[0].activity_type_id, notes ?? null],
     );
     const { rows } = await db.query(
-      'SELECT * FROM calendar_event_shared_training_requests WHERE id = ?',
+      `SELECT *, calendar_event_id AS class_session_id
+       FROM calendar_event_shared_training_requests WHERE id = ?`,
       [insertId],
     );
     res.status(201).json(rows[0]);

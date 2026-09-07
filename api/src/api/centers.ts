@@ -17,9 +17,10 @@ export const centersRouter = Router();
 // row counts. calendar_events also holds one-off Activities/CalendarEvents
 // (`kind = 'event'`); only the session occurrences (`kind = 'session'`) that
 // used to live in the now-merged `class_sessions` table are a dependency here.
+// `rooms` was renamed to `spaces` in migration 067.
 const DEPENDENT_TABLES: Array<[string, string, boolean, string, string?]> = [
   ['member_centers', 'center_id', true, 'member centers'],
-  ['rooms', 'center_id', true, 'rooms'],
+  ['spaces', 'center_id', true, 'spaces'],
   ['calendar_events', 'center_id', true, 'class sessions', "kind = 'session'"],
   ['calendar_event_bookings', 'center_id', false, 'bookings'],
   ['trainer_availability', 'center_id', true, 'trainer availability'],

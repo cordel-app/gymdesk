@@ -38,8 +38,8 @@ async function createActivityType(gymId: string, maxCapacity = 5): Promise<numbe
 
 async function createSessionStarting(gymId: string, activityTypeId: number, centerId: number, intervalSql: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO calendar_events (gym_id, center_id, kind, activity_type_id, starts_at, ends_at, status)
-     VALUES (?, ?, 'session', ?, ${intervalSql}, DATE_ADD(${intervalSql}, INTERVAL 1 HOUR), 'scheduled')`,
+    `INSERT INTO calendar_events (gym_id, center_id, kind, title, activity_type_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', 'Test Session', ?, ${intervalSql}, DATE_ADD(${intervalSql}, INTERVAL 1 HOUR), 'scheduled')`,
     [gymId, centerId, activityTypeId],
   );
   return insertId;
