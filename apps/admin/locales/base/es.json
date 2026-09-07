@@ -2599,12 +2599,18 @@
     "title": "Planes Asignados",
     "loading": "Cargando…",
     "empty": "Todavía no hay planes asignados.",
+    "no_matches": "Ningún plan coincide con los filtros seleccionados.",
     "col_member": "Nombre del Socio",
     "col_plan": "Nombre del Plan",
     "col_starts_at": "Fecha de Inicio",
     "col_ends_at": "Fecha de Fin",
     "col_status": "Estado",
-    "open_ended": "Sin fecha de fin"
+    "open_ended": "Sin fecha de fin",
+    "filter_status": "Estado",
+    "filter_member": "Socio",
+    "filter_from": "Desde",
+    "filter_to": "Hasta",
+    "filter_clear": "Borrar filtros"
   },
   "taxes": {
     "title": "Impuestos",

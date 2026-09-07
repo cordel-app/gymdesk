@@ -9,6 +9,18 @@ import { handleDupEntry } from '../infra/db-helpers';
 const STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
 
+// Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
+// as opposed to STATUSES which is the raw stored `status` column.
+const LIFECYCLE_STATUSES = ['pending', 'active', 'paused', 'expired', 'cancelled'] as const;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
+const lifecycleStatusParam = z.preprocess((v) => {
+  if (v === undefined) return undefined;
+  const arr = Array.isArray(v) ? v : [v];
+  return arr.flatMap((s) => String(s).split(',').map((x) => x.trim())).filter(Boolean);
+}, z.array(z.enum(LIFECYCLE_STATUSES)).optional());
+
 export const userMembershipsRouter = Router();
 
 // List joined to member + plan for display (rows returned by SELECT * plus display names).
@@ -42,19 +54,39 @@ function memberLimitCount(limit: string | null | undefined): number {
   return parseInt(limit ?? '1', 10);
 }
 
+// Filters (#411 — Assigned Plans advanced filtering):
+//   - status: raw stored `status` column (unchanged, backward-compatible single value).
+//   - lifecycle_status: the computed lifecycle_status column, multi-select (includes 'pending',
+//     which has no equivalent in the raw `status` column — hence the separate param).
+//   - member_id: unchanged.
+//   - start_date/end_date: date-range overlap against starts_at/ends_at.
 userMembershipsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const q = parseQuery(req, res, z.object({
     status: z.enum(STATUSES).optional(),
+    lifecycle_status: lifecycleStatusParam,
     member_id: z.coerce.number().int().positive().optional(),
+    start_date: z.string().regex(DATE_RE, 'start_date must be YYYY-MM-DD').optional(),
+    end_date: z.string().regex(DATE_RE, 'end_date must be YYYY-MM-DD').optional(),
   }));
   if (!q) return;
 
   const params: any[] = [gymId];
-  let sql = `${LIST_SELECT} WHERE um.gym_id = ?`;
-  if (q.status) { sql += ' AND um.status = ?'; params.push(q.status); }
-  if (q.member_id !== undefined) { sql += ' AND um.member_id = ?'; params.push(q.member_id); }
-  sql += ' ORDER BY um.starts_at DESC';
+  let inner = `${LIST_SELECT} WHERE um.gym_id = ?`;
+  if (q.status) { inner += ' AND um.status = ?'; params.push(q.status); }
+  if (q.member_id !== undefined) { inner += ' AND um.member_id = ?'; params.push(q.member_id); }
+  if (q.start_date) { inner += ' AND (um.ends_at IS NULL OR um.ends_at >= ?)'; params.push(q.start_date); }
+  if (q.end_date) { inner += ' AND um.starts_at <= ?'; params.push(q.end_date); }
+
+  // lifecycle_status is a SELECT-list alias (a CASE expression), so it's filtered via an
+  // outer query over a derived table rather than reusing it directly in the inner WHERE.
+  let sql = `SELECT * FROM (${inner}) ap`;
+  if (q.lifecycle_status && q.lifecycle_status.length > 0) {
+    sql += ` WHERE ap.lifecycle_status IN (${q.lifecycle_status.map(() => '?').join(',')})`;
+    params.push(...q.lifecycle_status);
+  }
+  sql += ' ORDER BY ap.starts_at DESC';
+
   const { rows } = await db.query(sql, params);
   res.json(rows);
 });

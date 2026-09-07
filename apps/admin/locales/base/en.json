@@ -2667,12 +2667,18 @@
     "title": "Assigned Plans",
     "loading": "Loading…",
     "empty": "No plans assigned yet.",
+    "no_matches": "No plans match the selected filters.",
     "col_member": "Member Name",
     "col_plan": "Plan Name",
     "col_starts_at": "Start Date",
     "col_ends_at": "End Date",
     "col_status": "Status",
-    "open_ended": "Open-ended"
+    "open_ended": "Open-ended",
+    "filter_status": "Status",
+    "filter_member": "Member",
+    "filter_from": "From",
+    "filter_to": "To",
+    "filter_clear": "Clear filters"
   },
   "taxes": {
     "title": "Taxes",

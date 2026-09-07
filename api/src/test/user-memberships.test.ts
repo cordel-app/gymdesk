@@ -368,6 +368,133 @@ describe('GET /user-memberships — lifecycle_status', () => {
   });
 });
 
+// ─── GET /user-memberships — advanced filtering (#411) ─────────────────────────
+
+describe('GET /user-memberships — advanced filtering', () => {
+  let gymId: string;
+  let pendingId: number;
+  let activeId: number;
+  let expiredId: number;
+  let pausedId: number;
+  let memberIdForActive: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Advanced Filters Gym');
+    await createTestMembership(gymId, 'admin');
+
+    const planId = await createPlan(gymId);
+
+    const pendingMemberId = await createMember(gymId, 'UM Filter Pending');
+    ({ insertId: pendingId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
+       VALUES (?, ?, ?, 'active', DATE_ADD(CURDATE(), INTERVAL 7 DAY), 29.99)`,
+      [gymId, pendingMemberId, planId],
+    ));
+
+    memberIdForActive = await createMember(gymId, 'UM Filter Active');
+    activeId = await createUserMembershipDirect(gymId, memberIdForActive, planId, 'active');
+
+    const expiredMemberId = await createMember(gymId, 'UM Filter Expired');
+    ({ insertId: expiredId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, final_price)
+       VALUES (?, ?, ?, 'active', DATE_SUB(CURDATE(), INTERVAL 60 DAY), DATE_SUB(CURDATE(), INTERVAL 1 DAY), 29.99)`,
+      [gymId, expiredMemberId, planId],
+    ));
+
+    const pausedMemberId = await createMember(gymId, 'UM Filter Paused');
+    pausedId = await createUserMembershipDirect(gymId, pausedMemberId, planId, 'paused');
+  });
+
+  it('filters by a single lifecycle_status value', async () => {
+    const res = await request
+      .get('/user-memberships?lifecycle_status=pending')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(pendingId);
+    expect(ids).not.toContain(activeId);
+    expect(ids).not.toContain(expiredId);
+    expect(ids).not.toContain(pausedId);
+  });
+
+  it('filters by multiple lifecycle_status values (repeated query param)', async () => {
+    const res = await request
+      .get('/user-memberships?lifecycle_status=pending&lifecycle_status=paused')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(pendingId);
+    expect(ids).toContain(pausedId);
+    expect(ids).not.toContain(activeId);
+    expect(ids).not.toContain(expiredId);
+  });
+
+  it('filters by multiple lifecycle_status values (comma-separated)', async () => {
+    const res = await request
+      .get('/user-memberships?lifecycle_status=expired,paused')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(expiredId);
+    expect(ids).toContain(pausedId);
+    expect(ids).not.toContain(pendingId);
+    expect(ids).not.toContain(activeId);
+  });
+
+  it('returns 400 for an invalid lifecycle_status value', async () => {
+    const res = await request
+      .get('/user-memberships?lifecycle_status=bogus')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('filters by member_id together with lifecycle_status', async () => {
+    const res = await request
+      .get(`/user-memberships?member_id=${memberIdForActive}&lifecycle_status=active`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].id).toBe(activeId);
+  });
+
+  it('filters by a start_date/end_date range overlapping starts_at/ends_at', async () => {
+    // The expired row's window is [-60d, -1d]; a range entirely before it should exclude it.
+    const before = await request
+      .get('/user-memberships?end_date=' + isoDate(-90))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(before.status).toBe(200);
+    expect(before.body.map((r: any) => r.id)).not.toContain(expiredId);
+
+    // A range overlapping [-60d, -1d] should include it.
+    const overlapping = await request
+      .get(`/user-memberships?start_date=${isoDate(-30)}&end_date=${isoDate(-10)}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(overlapping.status).toBe(200);
+    expect(overlapping.body.map((r: any) => r.id)).toContain(expiredId);
+  });
+
+  it('returns 400 for a malformed date filter', async () => {
+    const res = await request
+      .get('/user-memberships?start_date=not-a-date')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+});
+
+function isoDate(offsetDays: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+
 // ─── GET /user-memberships/:id ────────────────────────────────────────────────
 
 describe('GET /user-memberships/:id', () => {
