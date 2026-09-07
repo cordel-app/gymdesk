@@ -19,7 +19,7 @@ beforeAll(async () => {
   await createTestMembership(gymId, 'admin');
 
   otherGymId = await createTestGym('Other Operating Hours Gym');
-  await createTestMembership(otherGymId, 'admin', 'other-user');
+  await createTestMembership(otherGymId, 'admin');
 });
 
 afterAll(async () => {
