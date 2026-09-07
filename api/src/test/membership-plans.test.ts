@@ -963,6 +963,131 @@ describe('sellable_items in enriched plan response', () => {
   });
 });
 
+// #413: Plans align with Sellable Items' financial config — applicable tax
+// (tax_rate_id + tax_behavior) and computed price-incl/excl-tax fields.
+describe('Applicable tax on membership plans', () => {
+  let gymId: string;
+
+  async function createTaxRate(
+    gId: string,
+    ratePercent: number,
+    isSystem = false,
+  ): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO tax_rates (gym_id, name, rate_percent, is_system, status) VALUES (?, ?, ?, ?, 'active')`,
+      [gId, `Tax ${ratePercent}%`, ratePercent, isSystem ? 1 : 0],
+    );
+    return insertId;
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Tax Rate Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('defaults tax_behavior to inclusive and tax_rate_id to the gym system tax rate on create', async () => {
+    const systemTaxRateId = await createTaxRate(gymId, 21, true);
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Tax Default Plan' });
+    expect(res.status).toBe(201);
+    expect(res.body.tax_behavior).toBe('inclusive');
+    expect(res.body.tax_rate_id).toBe(systemTaxRateId);
+  });
+
+  it('accepts an explicit tax_rate_id and tax_behavior on create, and returns tax_rate_name/percent', async () => {
+    const customTaxRateId = await createTaxRate(gymId, 10);
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Tax Custom Plan', tax_rate_id: customTaxRateId, tax_behavior: 'exclusive' });
+    expect(res.status).toBe(201);
+    expect(res.body.tax_rate_id).toBe(customTaxRateId);
+    expect(res.body.tax_behavior).toBe('exclusive');
+    expect(res.body.tax_rate_name).toBe('Tax 10%');
+    expect(res.body.tax_rate_percent).toBe('10.00');
+  });
+
+  it('returns 400 for a tax_rate_id belonging to another gym', async () => {
+    const otherGym = await createTestGym('Tax Rate Other Gym');
+    const otherTaxRateId = await createTaxRate(otherGym, 5);
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Cross Gym Tax Plan', tax_rate_id: otherTaxRateId });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for an invalid tax_behavior value', async () => {
+    const res = await request
+      .post('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Invalid Tax Behavior Plan', tax_behavior: 'both' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/tax_behavior/i);
+  });
+
+  it('updates tax_rate_id and tax_behavior via PUT', async () => {
+    const planId = await createPlan(gymId, { name: 'Tax Update Plan' });
+    const newTaxRateId = await createTaxRate(gymId, 15);
+    const res = await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tax_rate_id: newTaxRateId, tax_behavior: 'exclusive' });
+    expect(res.status).toBe(200);
+    expect(res.body.tax_rate_id).toBe(newTaxRateId);
+    expect(res.body.tax_behavior).toBe('exclusive');
+  });
+
+  it('computes amount_excl_tax/amount_incl_tax from the current price and tax rate', async () => {
+    const taxRateId = await createTaxRate(gymId, 20);
+    const planId = await createPlan(gymId, { name: 'Tax Price Plan' });
+    await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tax_rate_id: taxRateId, tax_behavior: 'exclusive' });
+    await request
+      .post(`/membership-plans/${planId}/prices`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ price: 100, valid_from: '2020-01-01', valid_to: null });
+
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.current_price).toBe('100.00');
+    expect(res.body.amount_excl_tax).toBeCloseTo(100, 2);
+    expect(res.body.amount_incl_tax).toBeCloseTo(120, 2);
+  });
+
+  it('carries tax_rate_id and tax_behavior over to the duplicated plan', async () => {
+    const taxRateId = await createTaxRate(gymId, 8);
+    const planId = await createPlan(gymId, { name: 'Tax Duplicate Source Plan' });
+    await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tax_rate_id: taxRateId, tax_behavior: 'exclusive' });
+
+    const res = await request
+      .post(`/membership-plans/${planId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(201);
+    expect(res.body.tax_rate_id).toBe(taxRateId);
+    expect(res.body.tax_behavior).toBe('exclusive');
+  });
+});
+
 // #409: GET /:id/charge-benefits used to INNER JOIN charge_types, which
 // silently dropped any benefit whose gym_charge is a custom sellable item
 // (charge_type_id is NULL for those — only system items have one).

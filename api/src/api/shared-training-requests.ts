@@ -1,19 +1,9 @@
 /**
- * #323 + #324: Shared-training request management for trainers and admins.
+ * #360 stage 3: shared-training request management backed by
+ * calendar_event_shared_training_requests (replaces shared_training_requests).
  *
- * #360 stage 3: backed by calendar_event_shared_training_requests /
- * calendar_events (kind='session') / calendar_event_bookings instead of
- * shared_training_requests / class_sessions / bookings — see
- * docs/architecture.md's "Planned: CalendarEvent Unification" section.
- * `class_session_id` is kept as the request/response field name (aliased
- * from calendar_event_id) since it's the contract every consumer already
- * reads.
- *
- * GET  /shared-training-requests             list requests
- * GET  /shared-training-requests/:id         single request
- * POST /shared-training-requests             staff creates request on behalf of a member
- * POST /shared-training-requests/:id/approve approve → books member, marks approved
- * POST /shared-training-requests/:id/reject  reject → marks rejected, notifies member
+ * API shape is unchanged; `class_session_id` in responses is aliased from
+ * `calendar_event_id` for backward compat until stage-4 frontend migration.
  */
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -26,7 +16,9 @@ export const sharedTrainingRequestsRouter = Router();
 const STATUSES = ['pending', 'approved', 'rejected', 'cancelled'] as const;
 
 const SELECT = `
-  SELECT str.id, str.gym_id, str.calendar_event_id, str.calendar_event_id AS class_session_id,
+  SELECT str.id, str.gym_id,
+         str.calendar_event_id AS class_session_id,
+         str.calendar_event_id,
          str.requesting_member_id,
          str.activity_type_id, str.status, str.reviewed_by_membership_id,
          str.reviewed_at, str.created_at, str.notes,
@@ -48,7 +40,7 @@ const SELECT = `
 
 sharedTrainingRequestsRouter.get('/', async (req, res, next) => {
   const { gymId, role, gymMembershipId } = getTenantContext(req);
-  const { status, class_session_id } = req.query as Record<string, string | undefined>;
+  const { status, class_session_id, calendar_event_id } = req.query as Record<string, string | undefined>;
 
   if (status && !STATUSES.includes(status as any)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
@@ -62,8 +54,10 @@ sharedTrainingRequestsRouter.get('/', async (req, res, next) => {
       where.push('ce.trainer_membership_id = ?');
       params.push(gymMembershipId);
     }
-    if (status)           { where.push('str.status = ?');              params.push(status); }
-    if (class_session_id) { where.push('str.calendar_event_id = ?');   params.push(class_session_id); }
+    if (status) { where.push('str.status = ?'); params.push(status); }
+    // Accept both old and new param names
+    const eventId = calendar_event_id ?? class_session_id;
+    if (eventId) { where.push('str.calendar_event_id = ?'); params.push(eventId); }
 
     const { rows } = await db.query(
       `${SELECT} WHERE ${where.join(' AND ')} ORDER BY str.created_at DESC`,
@@ -82,28 +76,29 @@ sharedTrainingRequestsRouter.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-/** Staff creates a shared training request on behalf of a member. */
 sharedTrainingRequestsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { class_session_id, requesting_member_id, notes } = req.body;
-  if (!class_session_id || !requesting_member_id) {
-    return res.status(400).json({ error: 'class_session_id and requesting_member_id are required' });
+  // Accept both old and new field names
+  const calendarEventId = req.body.calendar_event_id ?? req.body.class_session_id;
+  const { requesting_member_id, notes } = req.body;
+  if (!calendarEventId || !requesting_member_id) {
+    return res.status(400).json({ error: 'calendar_event_id (or class_session_id) and requesting_member_id are required' });
   }
 
   try {
-    const validationErr = await validateRequest(gymId, Number(class_session_id), Number(requesting_member_id));
+    const validationErr = await validateRequest(gymId, Number(calendarEventId), Number(requesting_member_id));
     if (validationErr) return res.status(validationErr.status).json({ error: validationErr.message, code: validationErr.code });
 
-    const { rows: sessionRows } = await db.query<{ activity_type_id: number }>(
-      "SELECT activity_type_id FROM calendar_events WHERE id = ? AND gym_id = ? AND kind = 'session'",
-      [class_session_id, gymId],
+    const { rows: eventRows } = await db.query<{ activity_type_id: number }>(
+      'SELECT activity_type_id FROM calendar_events WHERE id = ? AND gym_id = ?',
+      [calendarEventId, gymId],
     );
 
     const { insertId } = await db.query(
       `INSERT INTO calendar_event_shared_training_requests
          (gym_id, calendar_event_id, requesting_member_id, activity_type_id, status, notes, created_at)
        VALUES (?, ?, ?, ?, 'pending', ?, UTC_TIMESTAMP())`,
-      [gymId, class_session_id, requesting_member_id, sessionRows[0].activity_type_id, notes ?? null],
+      [gymId, calendarEventId, requesting_member_id, eventRows[0].activity_type_id, notes ?? null],
     );
     const { rows } = await db.query(`${SELECT} WHERE str.id = ?`, [insertId]);
     recordAudit(req, { action: 'create', entityType: 'shared_training_request', entityId: insertId });
@@ -115,7 +110,6 @@ sharedTrainingRequestsRouter.post('/', requireModuleWrite('TRAINING'), async (re
   }
 });
 
-/** Approve: book the requesting member and enforce concurrent-group capacity. */
 sharedTrainingRequestsRouter.post('/:id/approve',
   requireRole('admin', 'trainer_performance', 'trainer_perf_nutrition'),
   async (req, res, next) => {
@@ -123,7 +117,7 @@ sharedTrainingRequestsRouter.post('/:id/approve',
 
     try {
       let notifyMemberId: number | null = null;
-      let notifySessionId: number | null = null;
+      let notifyEventId: number | null = null;
 
       await db.transaction(async (tx) => {
         const { rows: reqRows } = await tx.query(
@@ -146,12 +140,12 @@ sharedTrainingRequestsRouter.post('/:id/approve',
                   at.is_shareable,
                   gm.max_concurrent_groups AS trainer_max,
                   sp.max_concurrent_groups AS space_max,
-                  (SELECT COUNT(*) FROM calendar_event_bookings b WHERE b.calendar_event_id = ce.id AND b.status = 'booked') AS booked_count
+                  (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked') AS booked_count
            FROM calendar_events ce
            JOIN activity_types at ON at.id = ce.activity_type_id
            LEFT JOIN gym_memberships gm ON gm.id = ce.trainer_membership_id
            LEFT JOIN spaces sp ON sp.id = ce.space_id
-           WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL
+           WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL
            FOR UPDATE`,
           [strReq.calendar_event_id, gymId],
         );
@@ -168,9 +162,8 @@ sharedTrainingRequestsRouter.post('/:id/approve',
           throw Object.assign(new Error('Shared booking is no longer enabled for this session'), { status: 409 });
         }
 
-        // max_concurrent_groups = total booked limit including shared bookings; null = unconstrained.
         const trainerMax = session.trainer_max != null ? Number(session.trainer_max) : Infinity;
-        const spaceMax = session.space_max != null ? Number(session.space_max) : Infinity;
+        const spaceMax   = session.space_max   != null ? Number(session.space_max)   : Infinity;
         const effectiveMax = Math.min(trainerMax, spaceMax);
         if (isFinite(effectiveMax) && Number(session.booked_count) >= effectiveMax) {
           throw Object.assign(
@@ -186,7 +179,6 @@ sharedTrainingRequestsRouter.post('/:id/approve',
           [gymMembershipId, req.params.id],
         );
 
-        // Book the member directly — trainer approval intentionally overrides normal capacity.
         await tx.query(
           `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
            VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
@@ -194,11 +186,11 @@ sharedTrainingRequestsRouter.post('/:id/approve',
         );
 
         notifyMemberId = strReq.requesting_member_id;
-        notifySessionId = strReq.calendar_event_id;
+        notifyEventId  = strReq.calendar_event_id;
       });
 
-      if (notifyMemberId !== null && notifySessionId !== null) {
-        sendNotification(gymId, notifyMemberId, 'shared_training_approved', 'session', notifySessionId, { title: '' });
+      if (notifyMemberId !== null && notifyEventId !== null) {
+        sendNotification(gymId, notifyMemberId, 'shared_training_approved', 'session', notifyEventId, { title: '' });
       }
 
       recordAudit(req, { action: 'approve', entityType: 'shared_training_request', entityId: Number(req.params.id) });
@@ -241,10 +233,10 @@ sharedTrainingRequestsRouter.post('/:id/reject', requireModuleWrite('TRAINING'),
   } catch (err) { next(err); }
 });
 
-/** Shared validation used by the member self-service endpoint in me.ts. */
+/** Shared validation used by me.ts for member self-service shared-training requests. */
 export async function validateRequest(
   gymId: string,
-  classSessionId: number,
+  calendarEventId: number,
   requestingMemberId: number,
 ): Promise<{ status: number; message: string; code?: string } | null> {
   const { rows: sessionRows } = await db.query(
@@ -252,7 +244,7 @@ export async function validateRequest(
      FROM calendar_events ce
      JOIN activity_types at ON at.id = ce.activity_type_id
      WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL`,
-    [classSessionId, gymId],
+    [calendarEventId, gymId],
   );
   if (sessionRows.length === 0) return { status: 404, message: 'Session not found' };
   const session = sessionRows[0];
@@ -263,7 +255,7 @@ export async function validateRequest(
   const { rows: dupRows } = await db.query(
     `SELECT id FROM calendar_event_shared_training_requests
      WHERE gym_id = ? AND calendar_event_id = ? AND requesting_member_id = ? AND status IN ('pending','approved')`,
-    [gymId, classSessionId, requestingMemberId],
+    [gymId, calendarEventId, requestingMemberId],
   );
   if (dupRows.length > 0) return { status: 409, message: 'A request already exists for this session', code: 'duplicate_request' };
 

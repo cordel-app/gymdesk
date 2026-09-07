@@ -5,6 +5,7 @@ import { tenantContext, requireRole, requireSuperadmin } from '../infra/tenantCo
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { ASSIGNABLE_ROLES, AppRole } from '../infra/permissions';
+import { buildGymFolderPrefix, initializeGymBucket, isStorageConfigured } from '../infra/storage';
 
 export const gymsRouter = Router();
 export const platformRouter = Router();
@@ -51,7 +52,9 @@ function attachTheme(row: any) {
     logo_updated_at: theme_logo_updated_at,
     tokens: typeof theme_tokens === 'string' ? JSON.parse(theme_tokens) : (theme_tokens ?? null),
   } : null;
-  return { ...rest, theme };
+  // #417: platform-wide flag (same for every gym on this deployment), not a
+  // per-row DB column — lets the admin UI hide/disable the init action.
+  return { ...rest, theme, storage_configured: isStorageConfigured() };
 }
 
 /** Slugify a name: lowercase, spaces→hyphens, strip non-alphanumeric. */
@@ -349,6 +352,48 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   );
   recordAudit(req, { action: 'create', entityType: 'gym', entityId: newId, next: attachTheme(rows[0]) });
   res.status(201).json(attachTheme(rows[0]));
+});
+
+// #417 stage 1: provisions the gym's folder structure inside the shared R2
+// bucket. Idempotent — re-running reuses the prefix captured on first init
+// rather than recomputing from the (possibly since-renamed) gym name.
+platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (req, res) => {
+  const { rows: existing } = await db.query(
+    'SELECT * FROM gyms WHERE id = ? AND deleted_at IS NULL',
+    [req.params.id],
+  );
+  if (existing.length === 0) return res.status(404).json({ error: 'Gym not found' });
+  const gym = existing[0];
+
+  if (!isStorageConfigured()) {
+    return res.status(503).json({ error: 'Cloudflare storage has not been configured for this deployment' });
+  }
+
+  const folderPrefix: string = gym.storage_folder_prefix ?? buildGymFolderPrefix(gym.id, gym.name);
+
+  try {
+    await initializeGymBucket(folderPrefix);
+  } catch (err: any) {
+    return res.status(502).json({ error: `Failed to initialize Cloudflare storage: ${err.message ?? 'unknown error'}` });
+  }
+
+  const actorName = req.superadminName ?? null;
+  await db.query(
+    `UPDATE gyms SET
+       storage_folder_prefix   = ?,
+       storage_initialized_at  = UTC_TIMESTAMP(),
+       modified_at             = UTC_TIMESTAMP(),
+       modified_by_name        = ?
+     WHERE id = ? AND deleted_at IS NULL`,
+    [folderPrefix, actorName, req.params.id],
+  );
+
+  const { rows } = await db.query(
+    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    [req.params.id],
+  );
+  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: gym, next: attachTheme(rows[0]) });
+  res.json(attachTheme(rows[0]));
 });
 
 platformRouter.post('/gyms/:gymId/admins', requireSuperadmin, async (req, res) => {

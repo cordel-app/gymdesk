@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { db } from '../infra/db';
+import { bookMemberOnSession } from '../api/bookings';
 
 export interface ScheduleRule {
   id: number;
@@ -142,33 +143,17 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
   const occurrences = occurrenceDatesForRule(rule);
   if (occurrences.length === 0) return;
 
-  // #360 stage 3: schedule-rule occurrences are bookable CalendarEvents
-  // (kind='session'), so they need a center like class-sessions.ts's
-  // resolveCenterId() would resolve — the activity type's own default,
-  // falling back to the gym's sole center. There's no request context here
-  // (this runs from the schedule-rules API, not per-booking), so a gym with
-  // several centers and no default_center_id on the activity type leaves
-  // center_id NULL rather than guessing.
-  let centerId = rule.default_center_id ?? null;
-  if (centerId == null) {
-    const { rows: centerRows } = await db.query(
-      'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
-      [rule.gym_id],
-    );
-    if (centerRows.length === 1) centerId = centerRows[0].id;
-  }
-
   const nowStr = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss');
   const rows = occurrences.map(({ date }) => ({
     gym_id: rule.gym_id,
+    center_id: rule.default_center_id ?? null,
     kind: 'session',
-    center_id: centerId,
     title: rule.activity_type_name,
     activity_type_id: rule.activity_type_id,
     space_id: rule.default_space_id ?? null,
     trainer_membership_id: rule.default_trainer_membership_id ?? null,
     color: rule.color ?? null,
-    capacity: rule.max_capacity ?? null,
+    capacity: rule.max_capacity,
     starts_at: toUtcDatetime(date, rule.start_time, gymTimezone),
     ends_at: toUtcDatetime(date, rule.end_time, gymTimezone),
     all_day: 0,
@@ -184,14 +169,53 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     const chunk = rows.slice(i, i + CHUNK);
     await db.query(
       `INSERT INTO calendar_events
-         (gym_id, kind, center_id, title, activity_type_id, space_id, trainer_membership_id, color,
+         (gym_id, center_id, kind, title, activity_type_id, space_id, trainer_membership_id, color,
           capacity, starts_at, ends_at, all_day, status, schedule_rule_id, created_at, updated_at)
        VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`,
       chunk.flatMap((r) => [
-        r.gym_id, r.kind, r.center_id, r.title, r.activity_type_id, r.space_id, r.trainer_membership_id, r.color,
-        r.capacity, r.starts_at, r.ends_at, r.all_day, r.status, r.schedule_rule_id, r.created_at, r.updated_at,
+        r.gym_id, r.center_id, r.kind, r.title, r.activity_type_id, r.space_id,
+        r.trainer_membership_id, r.color, r.capacity,
+        r.starts_at, r.ends_at, r.all_day, r.status, r.schedule_rule_id, r.created_at, r.updated_at,
       ]),
     );
+  }
+
+  await bookAssignedMembersOnNewOccurrences(rule.id, rule.gym_id, rows.map((r) => r.starts_at));
+}
+
+/**
+ * #366: for every Member assigned to this recurring rule (staff selection at
+ * rule creation/edit), reserve them on the occurrences just materialized —
+ * same reservation mechanism (force=true) staff use for a manual add, so
+ * capacity is never a hard block here either. Idempotent: bookMemberOnSession
+ * is called once per fresh occurrence, and each occurrence is a brand-new
+ * calendar_events row with no existing bookings.
+ */
+async function bookAssignedMembersOnNewOccurrences(ruleId: number, gymId: string, startsAtValues: string[]): Promise<void> {
+  if (startsAtValues.length === 0) return;
+
+  const { rows: memberRows } = await db.query(
+    'SELECT member_id FROM activity_type_schedule_rule_members WHERE schedule_rule_id = ?',
+    [ruleId],
+  );
+  if (memberRows.length === 0) return;
+
+  const { rows: eventRows } = await db.query(
+    `SELECT id FROM calendar_events
+     WHERE schedule_rule_id = ? AND starts_at IN (${startsAtValues.map(() => '?').join(',')})`,
+    [ruleId, ...startsAtValues],
+  );
+
+  for (const ev of eventRows) {
+    for (const m of memberRows) {
+      try {
+        await bookMemberOnSession(gymId, m.member_id, ev.id, true);
+      } catch {
+        // Best-effort: a booking that can't be created for one member on one
+        // occurrence (e.g. it was cancelled concurrently) must not block the
+        // rest of the assigned Members or occurrences.
+      }
+    }
   }
 }
 

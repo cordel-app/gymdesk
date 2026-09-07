@@ -29,16 +29,24 @@ async function createCenter(gid: string): Promise<number> {
 }
 
 async function createActivityType(gid: string, isShareable: 0 | 1, capacity = 10): Promise<number> {
+  // Use a unique name so the (gym_id, name) UNIQUE constraint on class_types
+  // never causes INSERT IGNORE to silently skip on repeated calls.
   const name = `AT-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const { insertId } = await db.query(
     `INSERT INTO activity_types (gym_id, name, max_capacity, status, is_shareable)
      VALUES (?, ?, ?, 'active', ?)`,
     [gid, name, capacity, isShareable],
   );
+  // Mirror into class_types if the legacy table still exists (pre-059 migration state).
+  // Use the same unique name to avoid (gym_id, name) collisions.
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status)
+     VALUES (?, ?, ?, ?, 'active')`,
+    [insertId, gid, name, capacity],
+  ).catch(() => { /* class_types table was dropped on fully-migrated DBs */ });
   return insertId;
 }
 
-// #360 stage 3: sessions are now calendar_events rows (kind='session').
 async function createSession(
   gid: string,
   actTypeId: number,
@@ -47,10 +55,10 @@ async function createSession(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO calendar_events
-       (gym_id, kind, activity_type_id, center_id, title, starts_at, ends_at, status, allows_shared_booking)
-     VALUES (?, 'session', ?, ?, 'Test Session', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+       (gym_id, center_id, kind, activity_type_id, starts_at, ends_at, status, allows_shared_booking)
+     VALUES (?, ?, 'session', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-    [gid, actTypeId, cid, allowsShared],
+    [gid, cid, actTypeId, allowsShared],
   );
   return insertId;
 }

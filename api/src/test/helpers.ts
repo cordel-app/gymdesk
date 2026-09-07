@@ -45,11 +45,10 @@ export async function cleanupTestGyms() {
   // Delete in FK dependency order to avoid constraint violations.
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_methods WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM shared_training_requests WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM bookings WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM class_package_transactions WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_event_shared_training_requests WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM shared_training_requests WHERE gym_id IN (${marks})`, ids).catch(() => {});
   await db.query(`DELETE FROM calendar_event_bookings WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM bookings WHERE gym_id IN (${marks})`, ids).catch(() => {});
   await db.query(`DELETE FROM member_notifications WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_restrictions WHERE gym_id IN (${marks})`, ids);
@@ -59,7 +58,7 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM member_nutrition_plans WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});
   await db.query(`DELETE FROM space_activity_types WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM spaces WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM activity_types WHERE gym_id IN (${marks})`, ids);
@@ -81,5 +80,7 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM promotion_charge_benefits WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotion_membership_plans WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM promotions WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM gym_holiday_hours WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM gym_operating_hours WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, ids);
 }

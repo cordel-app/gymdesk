@@ -46,15 +46,18 @@ async function createActivityType(gymId: string, maxCapacity: number): Promise<n
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Test Class', ?, 'active')`,
     [gymId, maxCapacity],
   );
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, 'Test Class', ?, 'active')`,
+    [insertId, gymId, maxCapacity],
+  ).catch(() => { /* class_types may not exist on fully-migrated DBs */ });
   return insertId;
 }
 
-// #360 stage 3: sessions are now calendar_events rows (kind='session').
 async function createSession(gymId: string, activityTypeId: number, centerId: number): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO calendar_events (gym_id, kind, activity_type_id, center_id, title, starts_at, ends_at, status)
-     VALUES (?, 'session', ?, ?, 'Test Class', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
-    [gymId, activityTypeId, centerId],
+    `INSERT INTO calendar_events (gym_id, center_id, kind, activity_type_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
+    [gymId, centerId, activityTypeId],
   );
   return insertId;
 }

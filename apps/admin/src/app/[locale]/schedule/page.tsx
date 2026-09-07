@@ -12,6 +12,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { SessionRosterPanel } from './SessionRosterPanel';
 import { SharedTrainingPanel } from './SharedTrainingPanel';
+import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
+import type { MemberResult } from '../calendar/MemberSearchInput';
 
 interface Session {
   id: number;
@@ -86,6 +88,7 @@ export default function SchedulePage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assignedMembers, setAssignedMembers] = useState<MemberResult[]>([]);
 
   const [cancelling, setCancelling] = useState<Session | null>(null);
   const [cancelReason, setCancelReason] = useState('');
@@ -113,6 +116,7 @@ export default function SchedulePage() {
   function openAdd() {
     setEditing(null);
     setForm({ ...emptyForm, starts_at: localISO(new Date()) });
+    setAssignedMembers([]);
     setError(null); setModalOpen(true);
   }
 
@@ -154,11 +158,14 @@ export default function SchedulePage() {
       starts_at: startsAt, ends_at: endsAt,
       max_capacity_override: form.max_capacity_override ? parseInt(form.max_capacity_override, 10) : null,
     };
+    if (!editing && assignedMembers.length > 0) {
+      body.member_ids = assignedMembers.map((m) => m.id);
+    }
     setSaving(true); setError(null);
     try {
       if (editing) await apiFetch(`/class-sessions/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
       else await apiFetch('/class-sessions', { method: 'POST', body: JSON.stringify(body) });
-      setModalOpen(false); setEditing(null); setForm(emptyForm); load();
+      setModalOpen(false); setEditing(null); setForm(emptyForm); setAssignedMembers([]); load();
     } catch (err: any) { setError(err.message ?? t('schedule.error_generic')); }
     finally { setSaving(false); }
   }
@@ -265,7 +272,7 @@ export default function SchedulePage() {
         error={error} saving={saving}
         cancelLabel={t('schedule.cancel')}
         saveLabel={saving ? t('schedule.saving') : editing ? t('schedule.save_changes') : t('schedule.modal_add')}
-        onCancel={() => { setModalOpen(false); setEditing(null); setForm(emptyForm); setError(null); }}
+        onCancel={() => { setModalOpen(false); setEditing(null); setForm(emptyForm); setAssignedMembers([]); setError(null); }}
         onSave={save}
       >
         <FormLabel>{t('schedule.label_class_type')} *</FormLabel>
@@ -293,6 +300,21 @@ export default function SchedulePage() {
         <FormInput type="number" min="1" step="1" value={form.max_capacity_override}
                    placeholder={t('schedule.capacity_from_type')}
                    onChange={(e) => setForm({ ...form, max_capacity_override: e.target.value })} />
+        {!editing && (
+          <>
+            <FormLabel>{t('schedule.label_members')}</FormLabel>
+            <MemberMultiSelect
+              selected={assignedMembers}
+              onChange={setAssignedMembers}
+              capacity={
+                form.max_capacity_override
+                  ? parseInt(form.max_capacity_override, 10)
+                  : classTypes.find((c) => c.id === parseInt(form.class_type_id, 10))?.max_capacity ?? null
+              }
+              overCapacityLabel={(count, capacity) => t('schedule.members_over_capacity', { count, capacity })}
+            />
+          </>
+        )}
       </CrudModal>
 
       <ConfirmDialog

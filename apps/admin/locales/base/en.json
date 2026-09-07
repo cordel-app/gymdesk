@@ -54,7 +54,8 @@
     "assigned_plans": "Assigned Plans",
     "taxes": "Taxes",
     "feature_flags": "Feature Flags",
-    "nutrition_plans": "Nutrition Plans"
+    "nutrition_plans": "Nutrition Plans",
+    "operating_hours": "Operating Hours"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -361,7 +362,16 @@
     "confirm_delete": "Delete",
     "error_required": "Name is required.",
     "error_generic": "Something went wrong.",
-    "error_load": "Failed to load gyms."
+    "error_load": "Failed to load gyms.",
+    "section_storage": "Storage",
+    "storage_initialized": "Initialized",
+    "storage_not_initialized": "Not initialized",
+    "storage_initialized_at": "Initialized At",
+    "storage_folder": "Folder",
+    "btn_initialize_storage": "Initialize Cloudflare Bucket",
+    "initializing_storage": "Initializing…",
+    "storage_not_configured": "Cloudflare storage has not been configured for this deployment.",
+    "error_storage_initialize": "Failed to initialize Cloudflare storage."
   },
   "themes": {
     "title": "Base Themes",
@@ -720,7 +730,13 @@
     "assign_error_no_members": "Select at least one member.",
     "assign_error_exact_count": "This plan requires exactly {count} member(s).",
     "assign_error_no_owner": "Select which member is the owner.",
-    "assign_error_no_start": "Starts on is required."
+    "assign_error_no_start": "Starts on is required.",
+    "label_tax_rate": "Tax Rate",
+    "label_tax_behavior": "Tax Behavior",
+    "label_current_price": "Current price",
+    "tax_rate_default": "Gym default",
+    "tax_behavior_inclusive": "Tax included in price",
+    "tax_behavior_exclusive": "Tax added to price"
   },
   "prices": {
     "title": "Prices",
@@ -792,6 +808,8 @@
     "label_trainer": "Coach",
     "label_capacity_override": "Capacity override",
     "capacity_from_type": "leave blank to use the type's default",
+    "label_members": "Assign members",
+    "members_over_capacity": "{count} members assigned — capacity is {capacity}",
     "saving": "Saving…",
     "save_changes": "Save Changes",
     "error_required": "Class type, start and duration are required.",
@@ -2046,6 +2064,8 @@
       "label_end_time": "End time",
       "label_weekday": "Day",
       "label_ordinal": "Occurrence",
+      "label_members": "Assign members",
+      "members_over_capacity": "{count} members assigned — capacity is {capacity}",
       "type_one_off": "One-off",
       "type_weekly": "Weekly",
       "type_monthly": "Monthly",
@@ -2773,5 +2793,41 @@
     "error_member_required": "Please select a member.",
     "error_name_required": "Please enter a plan name.",
     "error_generic": "An error occurred. Please try again."
+  },
+  "operating_hours": {
+    "title": "Operating Hours & Holidays",
+    "section_weekly": "Weekly Service Hours",
+    "section_holidays": "Holidays & Special Hours",
+    "weekday_closed": "Closed",
+    "add_shift": "+ Add shift",
+    "remove_shift": "Remove",
+    "label_start_time": "Start time",
+    "label_end_time": "End time",
+    "save_weekly": "Save Weekly Hours",
+    "saving": "Saving…",
+    "saved": "Weekly hours saved.",
+    "error_generic": "Something went wrong. Please try again.",
+    "add_holiday": "+ Add Holiday",
+    "edit_holiday": "Edit",
+    "delete_holiday": "Delete",
+    "empty_holidays": "No holidays or special hours configured yet.",
+    "col_dates": "Dates",
+    "col_hours": "Hours",
+    "col_annual_renewal": "Repeats Yearly",
+    "col_label": "Label",
+    "col_actions": "Actions",
+    "label_date_start": "Start date *",
+    "label_date_end": "End date *",
+    "label_is_closed": "Fully closed",
+    "label_annual_renewal": "Repeat every year",
+    "label_label": "Label",
+    "placeholder_label": "e.g. Christmas Day",
+    "confirm_delete_title": "Delete Holiday",
+    "confirm_delete_body": "This will remove this holiday/special-hours exception.",
+    "confirm_delete": "Delete",
+    "cancel": "Cancel",
+    "save_changes": "Save",
+    "yes": "Yes",
+    "no": "No"
   }
 }

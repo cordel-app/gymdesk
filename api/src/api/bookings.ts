@@ -12,26 +12,14 @@ async function packageCredits() {
 }
 
 /**
- * P2.5 bookings: waitlist + attendance.
- * Booking creation is transactional:
- *   1. SELECT ... FOR UPDATE on the session to serialise concurrent inserts.
- *   2. Count non-cancelled bookings on that session.
- *   3. If under effective capacity → status='booked', booked_at=UTC_TIMESTAMP().
- *      Else → status='waitlisted' with next waitlist_position.
- * Duplicate active bookings (same member × same session, non-cancelled) hit
- * the unique index and return 409.
+ * P2.5 bookings: waitlist + attendance — now backed by calendar_event_bookings.
  *
- * #193: attendance_status ('pending'|'present'|'absent') is now separate from
- * booking lifecycle status ('booked'|'waitlisted'|'cancelled').
- *
- * #360 stage 3: backed by calendar_events (kind='session')/calendar_event_bookings
- * instead of class_sessions/bookings — see docs/architecture.md's "Planned:
- * CalendarEvent Unification" section. `class_session_id` is kept as the
- * request/response field name (aliased from calendar_event_id) since it's
- * the contract every consumer (admin/member frontends, /me/*) already reads.
+ * API shapes are preserved: `class_session_id` in requests/responses maps to
+ * `ceb.calendar_event_id`; stage-4 frontend migration will rename the field.
  */
 const SELECT = `
-  SELECT ceb.*, ceb.calendar_event_id AS class_session_id,
+  SELECT ceb.*,
+         ceb.calendar_event_id AS class_session_id,
          m.name AS member_name, m.email AS member_email,
          ce.starts_at AS session_starts_at, ce.ends_at AS session_ends_at,
          ce.status AS session_status,
@@ -82,8 +70,7 @@ bookingsRouter.get('/:id', async (req, res) => {
 /**
  * Runs the booking flow inside a transaction; exported so /me/bookings can share it.
  * Pass force=true to allow adding a member even when the session is at capacity
- * (always inserts as 'booked', never waitlisted). Only staff-facing — the member
- * app should never send force=true.
+ * (always inserts as 'booked', never waitlisted). Only staff-facing.
  */
 export async function bookMemberOnSession(
   gymId: string,
@@ -105,7 +92,6 @@ export async function bookMemberOnSession(
     if (session.length === 0) throw Object.assign(new Error('Session not found'), { status: 404 });
     if (session[0].status !== 'scheduled') throw Object.assign(new Error('Session is not open for bookings'), { status: 400 });
 
-    // Run access hooks (plan-access, packages) — they can throw with .status/.message.
     for (const hook of accessHooks) {
       await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id);
     }
@@ -116,7 +102,6 @@ export async function bookMemberOnSession(
       [sessionId],
     );
 
-    // forceWaitlist: staff explicitly chose "add to waiting list" even if capacity available.
     if (forceWaitlist) {
       const position = Number(nextRows[0].next);
       const { insertId } = await tx.query(
@@ -128,9 +113,7 @@ export async function bookMemberOnSession(
     }
 
     const { rows: countRows } = await tx.query(
-      `SELECT COUNT(*) AS booked
-       FROM calendar_event_bookings
-       WHERE calendar_event_id = ? AND status = 'booked'`,
+      `SELECT COUNT(*) AS booked FROM calendar_event_bookings WHERE calendar_event_id = ? AND status = 'booked'`,
       [sessionId],
     );
     const booked = Number(countRows[0].booked);
@@ -142,7 +125,6 @@ export async function bookMemberOnSession(
          VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
         [gymId, session[0].center_id, memberId, sessionId],
       );
-      // P3.3: settle a package debit if one was claimed by the access hook.
       const pc = await packageCredits();
       await pc.debitPackageIfClaimed(tx, insertId, gymId);
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
@@ -179,15 +161,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       [actorMembershipId ?? null, bookingId],
     );
 
-    // #372: a package credit only auto-refunds when the member cancels at
-    // least one day before the session. A same-day cancellation keeps the
-    // credit consumed by default — a trainer can still refund it explicitly
-    // afterwards via POST /bookings/:id/refund-credit.
     if (b.user_class_package_id) {
-      // Compare actual elapsed time, not calendar dates: DATEDIFF would count
-      // a session 2 hours away as "1 day before" whenever "now" and the
-      // session fall on different calendar dates (e.g. cancelling just after
-      // UTC midnight for a session later that same UTC day).
       const { rows: dayRows } = await tx.query(
         'SELECT (? >= DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY)) AS cancelled_in_advance',
         [b.session_starts_at],
@@ -199,8 +173,6 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       }
     }
 
-    // Only a freed 'booked' slot promotes someone; cancelling a 'waitlisted'
-    // booking doesn't create a new spot.
     if (b.status !== 'booked') return { promoted: null, promotedMemberId: null };
 
     const { rows: waitRows } = await tx.query(
@@ -215,8 +187,6 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       [waitRows[0].id],
     );
 
-    // Promoted member may now need to debit a package. Re-run the access
-    // hooks against the promoted member to establish intent, then debit.
     const promotedMemberId = waitRows[0].member_id;
     const { rows: sessionRow } = await tx.query(
       'SELECT activity_type_id, center_id FROM calendar_events WHERE id = ?',
@@ -224,7 +194,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     );
     for (const hook of accessHooks) {
       try { await hook(tx, gymId, promotedMemberId, sessionRow[0].activity_type_id, sessionRow[0].center_id); }
-      catch { /* promotion never fails; if hook throws, the promoted member just doesn't get a package debit */ }
+      catch { /* promotion never fails */ }
     }
     const pc = await packageCredits();
     await pc.debitPackageIfClaimed(tx, waitRows[0].id, gymId);
@@ -278,7 +248,6 @@ bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, ne
   }
 });
 
-/** Mark attendance — staff-level. Accepts 'present' or 'absent'. */
 bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { status } = req.body;
@@ -286,7 +255,6 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
     return res.status(400).json({ error: "status must be 'present' or 'absent'" });
   }
 
-  // Fetch current state for audit.
   const { rows: current } = await db.query(
     `SELECT attendance_status FROM calendar_event_bookings WHERE id = ? AND gym_id = ? AND status = 'booked'`,
     [req.params.id, gymId],
@@ -311,12 +279,9 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
 });
 
 /**
- * #372: explicit trainer/staff refund of a package credit that was kept
- * consumed by a same-day cancellation (cancelBooking only auto-refunds when
- * the member cancelled >= 1 day before the session). Only cancelled bookings
- * that still hold a package link are eligible — an advance cancellation
- * already auto-refunded and cleared user_class_package_id, so re-running this
- * on it (or calling it twice) 404s instead of double-refunding.
+ * #372: explicit trainer/staff refund of a package credit kept consumed by a
+ * same-day cancellation. Only cancelled bookings that still hold a package link
+ * are eligible.
  */
 bookingsRouter.post('/:id/refund-credit', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res, next) => {
   const { gymId, gymMembershipId, userId } = getTenantContext(req);

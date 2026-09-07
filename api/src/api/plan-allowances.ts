@@ -83,12 +83,12 @@ registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, centerId) 
     const ws = windowStart.rows[0].ws;
 
     const { rows: usageRows } = await tx.query(
-      `SELECT COUNT(*) AS n FROM calendar_event_bookings b
-       JOIN calendar_events ce ON ce.id = b.calendar_event_id
-       WHERE b.gym_id = ? AND b.member_id = ?
+      `SELECT COUNT(*) AS n FROM calendar_event_bookings ceb
+       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+       WHERE ceb.gym_id = ? AND ceb.member_id = ?
          AND ce.activity_type_id = ?
-         AND b.status NOT IN ('cancelled')
-         AND b.created_at >= ?`,
+         AND ceb.status NOT IN ('cancelled')
+         AND ceb.created_at >= ?`,
       [gymId, memberId, activityTypeId, ws],
     );
 

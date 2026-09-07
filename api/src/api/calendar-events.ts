@@ -1,50 +1,58 @@
+/**
+ * #360 stage 3: unified CalendarEvent routers.
+ *
+ * Both routers share the calendar_events table differentiated by the `kind`
+ * column added in migration 134:
+ *   - classSessionsRouter  → kind = 'session'  (was api/class-sessions.ts)
+ *   - calendarEventsRouter → kind = 'event'    (original calendar-events.ts)
+ *
+ * Bookings for sessions live in calendar_event_bookings (migration 132).
+ */
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
-import { insertAndFetch } from '../infra/db-helpers';
 import { sendBulkNotification } from '../infra/notifications';
 import { bookMemberOnSession } from './bookings';
 
-/**
- * #360 stage 3 (API consolidation): class-sessions.ts and calendar-events.ts
- * merged into this single file, per the issue #360 comment thread. Both
- * mount separately in app.ts (`/class-sessions`, `/calendar-events`) and
- * keep their existing endpoint paths/request/response shapes — only the
- * backing table changed, from the now-frozen `class_sessions`/`bookings` to
- * `calendar_events`/`calendar_event_bookings`. A `kind` column discriminates
- * the two: 'session' for bookable occurrences (this file's classSessionsRouter,
- * and domain/scheduleEngine.ts's schedule-rule materializer), 'event' for
- * plain calendar events (calendarEventsRouter). This is what lets the admin
- * Calendar page's existing dual-fetch (#326) keep rendering each occurrence
- * exactly once — `GET /class-sessions` filters kind='session', `GET
- * /calendar-events` filters kind='event'.
- *
- * See docs/architecture.md's "Planned: CalendarEvent Unification" section.
- */
-
-// ────────────────────────────────────────────────────────────────────────
-// classSessionsRouter — bookable occurrences (kind='session')
-// ────────────────────────────────────────────────────────────────────────
+// ─── Shared helpers ──────────────────────────────────────────────────────────
 
 const SESSION_STATUSES = ['scheduled', 'cancelled', 'completed'] as const;
+const EVENT_STATUSES   = ['draft', 'scheduled', 'completed', 'cancelled'] as const;
+
+/** Interval overlap: new event [newStart, newEnd) overlaps existing if newStart < end AND newEnd > start */
+async function checkConflict(
+  gymId: string,
+  field: 'space_id' | 'trainer_membership_id',
+  resourceId: number,
+  startsAt: string,
+  endsAt: string,
+  excludeId?: number,
+): Promise<boolean> {
+  const { rows } = await db.query(
+    `SELECT COUNT(*) AS cnt FROM calendar_events
+     WHERE gym_id = ? AND ${field} = ?
+       AND status != 'cancelled'
+       AND deleted_at IS NULL
+       AND id != COALESCE(?, 0)
+       AND starts_at < ? AND ends_at > ?`,
+    [gymId, resourceId, excludeId ?? null, endsAt, startsAt],
+  );
+  return rows[0].cnt > 0;
+}
+
+// ─── classSessionsRouter ─────────────────────────────────────────────────────
 
 /**
- * Effective capacity: COALESCE(ce.capacity, at.max_capacity).
- * `max_capacity_override` is kept as the request/response field name (it's
- * what class_sessions used, and the admin schedule page still reads/writes
- * it) even though the backing column is now calendar_events.capacity.
- *
- * #323+#324: sharing fields — is_shareable, allows_shared_booking, concurrent_groups_count,
- * effective_max_groups (min of trainer and space concurrent-group limits).
+ * SELECT fragment for sessions. Produces the same response shape as the old
+ * class_sessions-backed query so stage-4 frontend migration starts from a
+ * stable baseline.  Key aliases:
+ *   ce.capacity → max_capacity_override   (old field name kept for compat)
  */
 const SESSION_SELECT = `
-  SELECT ce.id, ce.gym_id, ce.center_id, ce.trainer_membership_id, ce.space_id, ce.activity_type_id,
-         ce.starts_at, ce.ends_at, ce.capacity AS max_capacity_override, ce.status, ce.cancellation_reason,
-         ce.created_by_membership_id, ce.modified_by_membership_id, ce.deleted_at,
-         ce.effective_trainer_membership_id, ce.effective_trainer_confirmed_at, ce.allows_shared_booking,
-         ce.created_at, ce.updated_at,
+  SELECT ce.*,
+         ce.capacity AS max_capacity_override,
          at.name AS class_type_name,
          at.color AS activity_type_color,
          at.max_capacity AS class_type_capacity,
@@ -65,11 +73,11 @@ const SESSION_SELECT = `
            THEN (
              SELECT COUNT(*) FROM calendar_events ce2
              WHERE ce2.gym_id = ce.gym_id
-               AND ce2.kind = 'session'
                AND ce2.trainer_membership_id = ce.trainer_membership_id
                AND ce2.space_id = ce.space_id
                AND ce2.starts_at = ce.starts_at
                AND ce2.ends_at = ce.ends_at
+               AND ce2.kind = 'session'
                AND ce2.status <> 'cancelled'
                AND ce2.deleted_at IS NULL
            )
@@ -94,13 +102,13 @@ classSessionsRouter.get('/', async (req, res) => {
   const { from, to, status, center_id, activity_type_id, space_id, trainer_membership_id } = req.query as Record<string, string | undefined>;
   const where: string[] = ["ce.gym_id = ?", "ce.kind = 'session'", 'ce.deleted_at IS NULL'];
   const params: any[] = [gymId];
-  if (from) { where.push('ce.starts_at >= ?'); params.push(from); }
-  if (to)   { where.push('ce.starts_at <= ?'); params.push(to); }
+  if (from)                 { where.push('ce.starts_at >= ?');              params.push(from); }
+  if (to)                   { where.push('ce.starts_at <= ?');              params.push(to); }
   if (status && SESSION_STATUSES.includes(status as any)) { where.push('ce.status = ?'); params.push(status); }
-  if (center_id)              { where.push('ce.center_id = ?');              params.push(center_id); }
-  if (activity_type_id)       { where.push('ce.activity_type_id = ?');       params.push(activity_type_id); }
-  if (space_id)               { where.push('ce.space_id = ?');               params.push(space_id); }
-  if (trainer_membership_id)  { where.push('ce.trainer_membership_id = ?');  params.push(trainer_membership_id); }
+  if (center_id)            { where.push('ce.center_id = ?');              params.push(center_id); }
+  if (activity_type_id)     { where.push('ce.activity_type_id = ?');       params.push(activity_type_id); }
+  if (space_id)             { where.push('ce.space_id = ?');               params.push(space_id); }
+  if (trainer_membership_id){ where.push('ce.trainer_membership_id = ?'); params.push(trainer_membership_id); }
   const { rows } = await db.query(
     `${SESSION_SELECT} WHERE ${where.join(' AND ')} ORDER BY ce.starts_at ASC`,
     params,
@@ -110,7 +118,10 @@ classSessionsRouter.get('/', async (req, res) => {
 
 classSessionsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL`, [req.params.id, gymId]);
+  const { rows } = await db.query(
+    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
   if (rows.length === 0) return res.status(404).json({ error: 'Session not found' });
   res.json(rows[0]);
 });
@@ -138,14 +149,33 @@ async function validateSessionRefs(gymId: string, body: any, centerId: number) {
     );
     if (rows.length === 0) return 'Space not found';
     if (rows[0].status !== 'active') return 'Space is inactive';
-    if (rows[0].center_id !== centerId) return 'Space does not belong to this session\'s center';
+    if (rows[0].center_id !== centerId) return "Space does not belong to this session's center";
   }
   return null;
 }
 
-async function activityTypeName(gymId: string, activityTypeId: number): Promise<string> {
-  const { rows } = await db.query('SELECT name FROM activity_types WHERE id = ? AND gym_id = ?', [activityTypeId, gymId]);
-  return rows[0]?.name ?? '';
+/**
+ * #366: normalize + validate the optional `member_ids` field on session
+ * creation — staff assigning Members directly (they become normal
+ * calendar_event_bookings via the same force=true mechanism used for a
+ * manual add, so capacity is never a hard block for staff).
+ */
+function normalizeMemberIds(body: any): number[] | string {
+  if (!('member_ids' in body) || body.member_ids == null) return [];
+  if (!Array.isArray(body.member_ids)) return 'member_ids must be an array of member ids';
+  const ids: number[] = body.member_ids.map(Number);
+  if (ids.some((id: number) => !Number.isInteger(id) || id <= 0)) return 'member_ids must contain positive integers';
+  return [...new Set(ids)];
+}
+
+async function validateMemberIds(gymId: string, memberIds: number[]): Promise<string | null> {
+  if (memberIds.length === 0) return null;
+  const { rows } = await db.query(
+    `SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${memberIds.map(() => '?').join(',')})`,
+    [gymId, ...memberIds],
+  );
+  if (rows.length !== memberIds.length) return 'One or more member_ids were not found for this gym';
+  return null;
 }
 
 classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
@@ -163,25 +193,31 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
     return res.status(400).json({ error: 'max_capacity_override must be a positive integer' });
   }
 
+  const memberIds = normalizeMemberIds(req.body);
+  if (typeof memberIds === 'string') return res.status(400).json({ error: memberIds });
+
   try {
     const resolvedCenterId = await resolveCenterId(gymId, req, center_id);
     const err = await validateSessionRefs(gymId, req.body, resolvedCenterId);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
 
-    const trainerId = trainer_membership_id ?? null;
+    const memberErr = await validateMemberIds(gymId, memberIds);
+    if (memberErr) return res.status(400).json({ error: memberErr });
+
+    // Fetch activity type name for the title field (required on calendar_events).
+    const { rows: atRows2 } = await db.query(
+      'SELECT name, is_shareable FROM activity_types WHERE id = ? AND gym_id = ?',
+      [activity_type_id, gymId],
+    );
+    const activityTitle = atRows2[0]?.name ?? '';
+    const newShareable = !!atRows2[0]?.is_shareable;
+
+    const trainerId  = trainer_membership_id ?? null;
     const spaceIdVal = space_id ?? null;
     const startsAtDate = new Date(starts_at);
-    const endsAtDate = new Date(ends_at);
-    const title = await activityTypeName(gymId, activity_type_id);
+    const endsAtDate   = new Date(ends_at);
 
-    // When both trainer and space are set, validate concurrent-group capacity atomically.
     if (trainerId && spaceIdVal) {
-      const { rows: atRows } = await db.query(
-        'SELECT is_shareable FROM activity_types WHERE id = ? AND gym_id = ?',
-        [activity_type_id, gymId],
-      );
-      const newShareable = !!atRows[0]?.is_shareable;
-
       const row = await db.transaction(async (tx) => {
         const { rows: existing } = await tx.query(
           `SELECT ce.id, at.is_shareable AS act_shareable, ce.allows_shared_booking,
@@ -191,18 +227,16 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
            JOIN activity_types at ON at.id = ce.activity_type_id
            JOIN gym_memberships gm ON gm.id = ce.trainer_membership_id
            JOIN spaces sp ON sp.id = ce.space_id
-           WHERE ce.gym_id = ? AND ce.kind = 'session' AND ce.trainer_membership_id = ? AND ce.space_id = ?
+           WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
              AND ce.starts_at = ? AND ce.ends_at = ?
+             AND ce.kind = 'session'
              AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL
            FOR UPDATE`,
           [gymId, trainerId, spaceIdVal, startsAtDate, endsAtDate],
         );
 
         if (existing.length > 0) {
-          const effectiveMax = Math.min(
-            Number(existing[0].trainer_max),
-            Number(existing[0].space_max),
-          );
+          const effectiveMax = Math.min(Number(existing[0].trainer_max), Number(existing[0].space_max));
           if (existing.length >= effectiveMax) {
             throw Object.assign(new Error('Slot is fully occupied'), { status: 409, code: 'slot_fully_occupied' });
           }
@@ -223,12 +257,19 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
 
         const { insertId } = await tx.query(
           `INSERT INTO calendar_events
-           (gym_id, kind, center_id, title, activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
-           VALUES (?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, resolvedCenterId, title, activity_type_id, trainerId, spaceIdVal,
+           (gym_id, center_id, kind, title, activity_type_id, trainer_membership_id, space_id,
+            starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
+           VALUES (?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
            startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
         );
-        const { rows } = await tx.query(`${SESSION_SELECT} WHERE ce.id = ?`, [insertId]);
+        for (const memberId of memberIds) {
+          await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
+        }
+        const { rows } = await tx.query(
+          `${SESSION_SELECT} WHERE ce.id = ?`,
+          [insertId],
+        );
         return rows[0];
       });
 
@@ -236,16 +277,21 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
       return res.status(201).json(row);
     }
 
-    // No concurrent-group check needed when trainer or space is absent.
-    const row = await insertAndFetch(
-      `INSERT INTO calendar_events
-       (gym_id, kind, center_id, title, activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, resolvedCenterId, title, activity_type_id, trainerId, spaceIdVal,
-       startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
-      `${SESSION_SELECT} WHERE ce.id = ?`,
-      (id) => [id],
-    );
+    const row = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO calendar_events
+         (gym_id, center_id, kind, title, activity_type_id, trainer_membership_id, space_id,
+          starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
+         VALUES (?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
+         startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
+      );
+      for (const memberId of memberIds) {
+        await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
+      }
+      const { rows } = await tx.query(`${SESSION_SELECT} WHERE ce.id = ?`, [insertId]);
+      return rows[0];
+    });
     recordAudit(req, { action: 'create', entityType: 'class_session', entityId: row.id, next: row });
     res.status(201).json(row);
   } catch (e: any) {
@@ -274,18 +320,12 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
     const err = await validateSessionRefs(gymId, req.body, cur.center_id);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
 
-    // Resolve effective post-update slot values for sharing revalidation.
-    const effTrainer = 'trainer_membership_id' in req.body ? (trainer_membership_id ?? null) : cur.cur_trainer;
-    const effSpace   = 'space_id'               in req.body ? (space_id ?? null)               : cur.cur_space;
-    const effStarts  = starts_at ? new Date(starts_at) : cur.cur_starts;
-    const effEnds    = ends_at   ? new Date(ends_at)   : cur.cur_ends;
+    const effTrainer  = 'trainer_membership_id' in req.body ? (trainer_membership_id ?? null) : cur.cur_trainer;
+    const effSpace    = 'space_id'               in req.body ? (space_id ?? null)               : cur.cur_space;
+    const effStarts   = starts_at ? new Date(starts_at) : cur.cur_starts;
+    const effEnds     = ends_at   ? new Date(ends_at)   : cur.cur_ends;
     const effActivity = 'activity_type_id' in req.body ? activity_type_id : cur.cur_activity;
-    const newTitle = 'activity_type_id' in req.body && activity_type_id
-      ? await activityTypeName(gymId, activity_type_id)
-      : null;
 
-    // When the effective slot (trainer + space + time) changes and both trainer+space are set,
-    // revalidate concurrent-group capacity atomically.
     const slotChanged = effTrainer !== cur.cur_trainer || effSpace !== cur.cur_space ||
       String(effStarts) !== String(cur.cur_starts) || String(effEnds) !== String(cur.cur_ends) ||
       effActivity !== cur.cur_activity;
@@ -298,7 +338,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
       const newShareable = !!atRows[0]?.is_shareable;
 
       await db.transaction(async (tx) => {
-        // Lock other sessions at the target slot (excluding this session).
         const { rows: existing } = await tx.query(
           `SELECT ce.id, at.is_shareable AS act_shareable, ce.allows_shared_booking,
                   COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
@@ -307,8 +346,9 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
            JOIN activity_types at ON at.id = ce.activity_type_id
            JOIN gym_memberships gm ON gm.id = ce.trainer_membership_id
            JOIN spaces sp ON sp.id = ce.space_id
-           WHERE ce.gym_id = ? AND ce.kind = 'session' AND ce.trainer_membership_id = ? AND ce.space_id = ?
+           WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
              AND ce.starts_at = ? AND ce.ends_at = ?
+             AND ce.kind = 'session'
              AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL
              AND ce.id <> ?
            FOR UPDATE`,
@@ -338,7 +378,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
         await tx.query(
           `UPDATE calendar_events SET
             activity_type_id      = COALESCE(?, activity_type_id),
-            title                  = COALESCE(?, title),
             trainer_membership_id = IF(?, ?, trainer_membership_id),
             space_id              = IF(?, ?, space_id),
             starts_at             = COALESCE(?, starts_at),
@@ -348,7 +387,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
            WHERE id = ? AND gym_id = ? AND kind = 'session'`,
           [
             activity_type_id ?? null,
-            newTitle,
             'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
             'space_id'              in req.body ? 1 : 0, space_id ?? null,
             starts_at ? new Date(starts_at) : null,
@@ -361,14 +399,16 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
         );
       });
 
-      const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [req.params.id, gymId]);
+      const { rows } = await db.query(
+        `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+        [req.params.id, gymId],
+      );
       return res.json(rows[0]);
     }
 
     const { rowCount } = await db.query(
       `UPDATE calendar_events SET
         activity_type_id       = COALESCE(?, activity_type_id),
-        title                   = COALESCE(?, title),
         trainer_membership_id  = IF(?, ?, trainer_membership_id),
         space_id               = IF(?, ?, space_id),
         starts_at              = COALESCE(?, starts_at),
@@ -379,7 +419,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
        WHERE id = ? AND gym_id = ? AND kind = 'session'`,
       [
         activity_type_id ?? null,
-        newTitle,
         'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
         'space_id'              in req.body ? 1 : 0, space_id ?? null,
         starts_at ? new Date(starts_at) : null,
@@ -392,7 +431,10 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Session not found' });
-    const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [req.params.id, gymId]);
+    const { rows } = await db.query(
+      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+      [req.params.id, gymId],
+    );
     res.json(rows[0]);
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
@@ -400,9 +442,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
   }
 });
 
-/** #323: Toggle sharing authorization for a slot.
- *  Enabling allows a second eligible group to book directly.
- *  Disabling while concurrent sessions exist returns 409 — existing bookings are never cancelled. */
 classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { authorized } = req.body;
@@ -420,8 +459,9 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'
     if (!authorized && session.trainer_membership_id && session.space_id) {
       const { rows: concurrent } = await db.query(
         `SELECT COUNT(*) AS cnt FROM calendar_events ce
-         WHERE ce.gym_id = ? AND ce.kind = 'session' AND ce.trainer_membership_id = ? AND ce.space_id = ?
+         WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
            AND ce.starts_at = ? AND ce.ends_at = ?
+           AND ce.kind = 'session'
            AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL AND ce.id <> ?`,
         [gymId, session.trainer_membership_id, session.space_id, session.starts_at, session.ends_at, req.params.id],
       );
@@ -434,19 +474,20 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'
     }
 
     await db.query(
-      "UPDATE calendar_events SET allows_shared_booking = ?, modified_by_membership_id = ? WHERE id = ? AND gym_id = ? AND kind = 'session'",
+      `UPDATE calendar_events SET allows_shared_booking = ?, modified_by_membership_id = ?
+       WHERE id = ? AND gym_id = ? AND kind = 'session'`,
       [authorized ? 1 : 0, gymMembershipId, req.params.id, gymId],
     );
 
     recordAudit(req, { action: 'update', entityType: 'class_session', entityId: req.params.id, next: { allows_shared_booking: authorized } });
-    const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [req.params.id, gymId]);
+    const { rows } = await db.query(
+      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+      [req.params.id, gymId],
+    );
     res.json(rows[0]);
   } catch (e) { next(e); }
 });
 
-// P2.4: cancel is a status flip with a required reason — never a hard delete,
-// so the session stays queryable for history and its bookings can cascade
-// cancel (wired in P2.5).
 classSessionsRouter.post('/:id/cancel', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const reason = String(req.body?.cancellation_reason ?? '').trim();
@@ -468,7 +509,6 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('TRAINING'), async (r
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
 
-  // Notify all booked members fire-and-forget
   const { rows: bookedRows } = await db.query(
     "SELECT member_id FROM calendar_event_bookings WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked'",
     [req.params.id, gymId],
@@ -484,7 +524,6 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('TRAINING'), async (r
   res.status(204).send();
 });
 
-/** #193: Bulk-mark all pending confirmed bookings as present. */
 classSessionsRouter.post('/:id/bulk-present',
   requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'),
   async (req, res) => {
@@ -509,15 +548,6 @@ classSessionsRouter.post('/:id/bulk-present',
   },
 );
 
-/**
- * #372: a Member attends a session without having booked ahead of time (e.g.
- * capacity opened up at the door). Books them ('force' — capacity is
- * advisory for staff, same as the normal over-capacity add flow) and marks
- * attendance present in one step, so a package credit is consumed exactly
- * like any other booked+attended session (P3.3's debitPackageIfClaimed,
- * triggered by bookMemberOnSession). A member who already has an active
- * booking for this session should use the normal attendance endpoint instead.
- */
 classSessionsRouter.post('/:id/walk-in',
   requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'),
   async (req, res, next) => {
@@ -555,7 +585,10 @@ classSessionsRouter.post('/:id/walk-in',
         return booking.id;
       });
 
-      const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [req.params.id, gymId]);
+      const { rows } = await db.query(
+        `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+        [req.params.id, gymId],
+      );
       res.status(201).json({ booking_id: bookingId, session: rows[0] });
     } catch (err: any) {
       if (err.status) return res.status(err.status).json({ error: err.message });
@@ -564,7 +597,6 @@ classSessionsRouter.post('/:id/walk-in',
   },
 );
 
-/** #193: Set or clear the trainer who actually delivered the session. */
 classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id } = req.body;
@@ -600,11 +632,13 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('TRAINING')
     next: { effective_trainer_membership_id: trainer_membership_id ?? null },
   });
 
-  const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [req.params.id, gymId]);
+  const { rows } = await db.query(
+    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+    [req.params.id, gymId],
+  );
   res.json(rows[0]);
 });
 
-/** #193: Complete a session — hard-blocked until all confirmed bookings have attendance and a trainer is set. */
 classSessionsRouter.post('/:id/complete', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
 
@@ -624,7 +658,6 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('TRAINING'), async 
     [req.params.id, gymId],
   );
   const pendingCount = Number(pendingRows[0].pending_count);
-
   const missingTrainer = session.trainer_membership_id == null && session.effective_trainer_membership_id == null;
 
   if (pendingCount > 0 || missingTrainer) {
@@ -641,17 +674,14 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('TRAINING'), async 
   );
 
   recordAudit(req, { action: 'complete', entityType: 'class_session', entityId: req.params.id, next: { status: 'completed' } });
-  const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [req.params.id, gymId]);
+  const { rows } = await db.query(
+    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+    [req.params.id, gymId],
+  );
   res.json(rows[0]);
 });
 
-// ────────────────────────────────────────────────────────────────────────
-// calendarEventsRouter — plain, non-bookable events (kind='event')
-// ────────────────────────────────────────────────────────────────────────
-
-export const calendarEventsRouter = Router();
-
-const EVENT_STATUSES = ['draft', 'scheduled', 'completed', 'cancelled'] as const;
+// ─── calendarEventsRouter ─────────────────────────────────────────────────────
 
 const EVENT_SELECT = `
   SELECT
@@ -672,26 +702,7 @@ const EVENT_SELECT = `
   LEFT JOIN gym_memberships gm4  ON gm4.id  = ce.deleted_by_membership_id
 `;
 
-/** Interval overlap: new event [newStart, newEnd) overlaps existing if newStart < end AND newEnd > start */
-async function checkConflict(
-  gymId: string,
-  field: 'space_id' | 'trainer_membership_id',
-  resourceId: number,
-  startsAt: string,
-  endsAt: string,
-  excludeId?: number,
-): Promise<boolean> {
-  const { rows } = await db.query(
-    `SELECT COUNT(*) AS cnt FROM calendar_events
-     WHERE gym_id = ? AND ${field} = ?
-       AND status != 'cancelled'
-       AND deleted_at IS NULL
-       AND id != COALESCE(?, 0)
-       AND starts_at < ? AND ends_at > ?`,
-    [gymId, resourceId, excludeId ?? null, endsAt, startsAt],
-  );
-  return rows[0].cnt > 0;
-}
+export const calendarEventsRouter = Router();
 
 calendarEventsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -700,11 +711,11 @@ calendarEventsRouter.get('/', async (req, res) => {
   const params: any[] = [gymId];
   let sql = `${EVENT_SELECT} WHERE ce.gym_id = ? AND ce.kind = 'event' AND ce.deleted_at IS NULL`;
 
-  if (from) { sql += ' AND ce.ends_at >= ?'; params.push(from); }
-  if (to)   { sql += ' AND ce.starts_at <= ?'; params.push(to); }
-  if (space_id)              { sql += ' AND ce.space_id = ?';              params.push(space_id); }
-  if (activity_type_id)      { sql += ' AND ce.activity_type_id = ?';      params.push(activity_type_id); }
-  if (trainer_membership_id) { sql += ' AND ce.trainer_membership_id = ?'; params.push(trainer_membership_id); }
+  if (from)                 { sql += ' AND ce.ends_at >= ?';              params.push(from); }
+  if (to)                   { sql += ' AND ce.starts_at <= ?';            params.push(to); }
+  if (space_id)             { sql += ' AND ce.space_id = ?';              params.push(space_id); }
+  if (activity_type_id)     { sql += ' AND ce.activity_type_id = ?';      params.push(activity_type_id); }
+  if (trainer_membership_id){ sql += ' AND ce.trainer_membership_id = ?'; params.push(trainer_membership_id); }
 
   sql += ' ORDER BY ce.starts_at ASC';
   const { rows } = await db.query(sql, params);
@@ -790,7 +801,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
     return res.status(400).json({ error: `status must be one of: ${EVENT_STATUSES.join(', ')}` });
   }
 
-  const resolvedSpaceId   = 'space_id' in req.body ? (space_id ?? null) : existing[0].space_id;
+  const resolvedSpaceId   = 'space_id'              in req.body ? (space_id ?? null)              : existing[0].space_id;
   const resolvedTrainerId = 'trainer_membership_id' in req.body ? (trainer_membership_id ?? null) : existing[0].trainer_membership_id;
   const selfId = Number(req.params.id);
 
@@ -851,7 +862,7 @@ calendarEventsRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, 
 
   await db.query(
     `UPDATE calendar_events SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
-     WHERE id = ? AND gym_id = ?`,
+     WHERE id = ? AND gym_id = ? AND kind = 'event'`,
     [gymMembershipId ?? null, req.params.id, gymId],
   );
   recordAudit(req, { action: 'delete', entityType: 'calendar_event', entityId: req.params.id, entityName: existing[0].title });

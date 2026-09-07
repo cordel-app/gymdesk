@@ -54,7 +54,8 @@
     "assigned_plans": "Planes Asignados",
     "taxes": "Impuestos",
     "feature_flags": "Flags de características",
-    "nutrition_plans": "Planes de nutrición"
+    "nutrition_plans": "Planes de nutrición",
+    "operating_hours": "Horario y Festivos"
   },
   "dashboard": {
     "title": "Panel",
@@ -307,7 +308,16 @@
     "confirm_delete": "Eliminar",
     "error_required": "El nombre es obligatorio.",
     "error_generic": "Algo salió mal.",
-    "error_load": "Error al cargar los gimnasios."
+    "error_load": "Error al cargar los gimnasios.",
+    "section_storage": "Almacenamiento",
+    "storage_initialized": "Inicializado",
+    "storage_not_initialized": "No inicializado",
+    "storage_initialized_at": "Inicializado el",
+    "storage_folder": "Carpeta",
+    "btn_initialize_storage": "Inicializar bucket de Cloudflare",
+    "initializing_storage": "Inicializando…",
+    "storage_not_configured": "El almacenamiento de Cloudflare no está configurado para este despliegue.",
+    "error_storage_initialize": "No se pudo inicializar el almacenamiento de Cloudflare."
   },
   "themes": {
     "title": "Temas base",
@@ -652,7 +662,13 @@
     "assign_error_no_members": "Selecciona al menos un miembro.",
     "assign_error_exact_count": "Este plan requiere exactamente {count} miembro(s).",
     "assign_error_no_owner": "Selecciona quién es el titular.",
-    "assign_error_no_start": "La fecha de inicio es obligatoria."
+    "assign_error_no_start": "La fecha de inicio es obligatoria.",
+    "label_tax_rate": "Tipo de impuesto",
+    "label_tax_behavior": "Comportamiento del impuesto",
+    "label_current_price": "Precio actual",
+    "tax_rate_default": "Predeterminado del gimnasio",
+    "tax_behavior_inclusive": "Impuesto incluido en el precio",
+    "tax_behavior_exclusive": "Impuesto añadido al precio"
   },
   "prices": {
     "title": "Precios",
@@ -724,6 +740,8 @@
     "label_trainer": "Entrenador",
     "label_capacity_override": "Aforo específico",
     "capacity_from_type": "en blanco = usar el del tipo",
+    "label_members": "Asignar miembros",
+    "members_over_capacity": "{count} miembros asignados — el aforo es {capacity}",
     "saving": "Guardando…",
     "save_changes": "Guardar cambios",
     "error_required": "Tipo, inicio y duración son obligatorios.",
@@ -1987,6 +2005,8 @@
       "label_end_time": "Hora fin",
       "label_weekday": "Día",
       "label_ordinal": "Ocurrencia",
+      "label_members": "Asignar miembros",
+      "members_over_capacity": "{count} miembros asignados — el aforo es {capacity}",
       "type_one_off": "Puntual",
       "type_weekly": "Semanal",
       "type_monthly": "Mensual",
@@ -2705,5 +2725,41 @@
     "error_member_required": "Por favor, selecciona un miembro.",
     "error_name_required": "Por favor, introduce un nombre para el plan.",
     "error_generic": "Se ha producido un error. Inténtalo de nuevo."
+  },
+  "operating_hours": {
+    "title": "Horario y Festivos",
+    "section_weekly": "Horario Semanal",
+    "section_holidays": "Festivos y Horarios Especiales",
+    "weekday_closed": "Cerrado",
+    "add_shift": "+ Añadir turno",
+    "remove_shift": "Eliminar",
+    "label_start_time": "Hora de inicio",
+    "label_end_time": "Hora de fin",
+    "save_weekly": "Guardar Horario Semanal",
+    "saving": "Guardando…",
+    "saved": "Horario semanal guardado.",
+    "error_generic": "Algo salió mal. Inténtalo de nuevo.",
+    "add_holiday": "+ Añadir Festivo",
+    "edit_holiday": "Editar",
+    "delete_holiday": "Eliminar",
+    "empty_holidays": "Aún no hay festivos ni horarios especiales configurados.",
+    "col_dates": "Fechas",
+    "col_hours": "Horario",
+    "col_annual_renewal": "Se repite cada año",
+    "col_label": "Etiqueta",
+    "col_actions": "Acciones",
+    "label_date_start": "Fecha de inicio *",
+    "label_date_end": "Fecha de fin *",
+    "label_is_closed": "Cerrado todo el día",
+    "label_annual_renewal": "Repetir cada año",
+    "label_label": "Etiqueta",
+    "placeholder_label": "p. ej. Navidad",
+    "confirm_delete_title": "Eliminar Festivo",
+    "confirm_delete_body": "Esto eliminará esta excepción de festivo/horario especial.",
+    "confirm_delete": "Eliminar",
+    "cancel": "Cancelar",
+    "save_changes": "Guardar",
+    "yes": "Sí",
+    "no": "No"
   }
 }

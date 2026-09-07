@@ -9,22 +9,20 @@ const STATUSES = ['active', 'inactive'] as const;
 
 export const centersRouter = Router();
 
+// Tables that reference centers.id — checked before a delete is allowed.
 // [table, column, softDeleted, label, extraWhere?] — softDeleted tables are
-// only "dependent" via their non-deleted rows; calendar_event_bookings has no
-// soft delete, so every row counts. calendar_events also holds plain events
-// (`kind = 'event'`); only session occurrences (`kind = 'session'`) block
-// deletion, so the extraWhere clause is required.
+// only "dependent" via their non-deleted rows; calendar_event_bookings (like
+// the legacy `bookings` table it replaced, see #360 stage 3) has no soft
+// delete — cancellation is tracked via `status`, not `deleted_at` — so every
+// row counts. calendar_events also holds one-off Activities/CalendarEvents
+// (`kind = 'event'`); only the session occurrences (`kind = 'session'`) that
+// used to live in the now-merged `class_sessions` table are a dependency here.
 const DEPENDENT_TABLES: Array<[string, string, boolean, string, string?]> = [
-  ['member_centers', 'center_id', true, 'member center assignments'],
+  ['member_centers', 'center_id', true, 'member centers'],
   ['rooms', 'center_id', true, 'rooms'],
-  ['class_sessions', 'center_id', true, 'class sessions'],
-  ['bookings', 'center_id', false, 'bookings'],
-  ['trainer_availability', 'center_id', true, 'trainer availability'],
-  ['events', 'center_id', true, 'events'],
-  // #360 stage 3: calendar_events/calendar_event_bookings are the live
-  // tables now — class_sessions/bookings above stay only for pre-cutover rows.
   ['calendar_events', 'center_id', true, 'class sessions', "kind = 'session'"],
   ['calendar_event_bookings', 'center_id', false, 'bookings'],
+  ['trainer_availability', 'center_id', true, 'trainer availability'],
 ];
 
 async function firstDependentTable(centerId: number, gymId: string): Promise<string | null> {

@@ -6,6 +6,7 @@ import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers
 import { effectivePrice, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
+import { computePriceFields, validateTaxRateId } from './sellable-items';
 
 interface PlanRow {
   id: number;
@@ -15,6 +16,8 @@ interface PlanRow {
   lifecycle_status: string;
   enrollment_status: string;
   member_limit: '1' | '2' | 'family';
+  tax_rate_id: number | null;
+  tax_behavior: 'inclusive' | 'exclusive';
   created_by: number | null;
   created_by_name?: string | null;
   modified_at: string | null;
@@ -80,6 +83,7 @@ interface SellableItemRow {
 export const membershipPlansRouter = Router();
 
 const VALID_MEMBER_LIMIT = ['1', '2', 'family'];
+const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -95,7 +99,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems] = await Promise.all([
+  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems, taxRateRows] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
       [plan.id, gymId],
@@ -144,12 +148,31 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
        ORDER BY gc.is_system DESC, gc.name ASC`,
       [gymId],
     ).then(r => r.rows),
+    plan.tax_rate_id == null
+      ? Promise.resolve([])
+      : db.query<{ name: string; rate_percent: string }>(
+          'SELECT name, rate_percent FROM tax_rates WHERE id = ? AND gym_id = ?',
+          [plan.tax_rate_id, gymId],
+        ).then(r => r.rows),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
+  // mysql2 may return DATE columns as Date objects (not strings) depending on the
+  // connection's timezone config — normalize before string-comparing.
+  const toDateStr = (v: unknown): string | null =>
+    v == null ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
   const currentPrice = prices.find(p => {
-    return p.valid_from <= today && (p.valid_to == null || p.valid_to >= today);
+    const from = toDateStr(p.valid_from);
+    const to = toDateStr(p.valid_to);
+    return from != null && from <= today && (to == null || to >= today);
   }) ?? null;
+
+  const taxRate = taxRateRows[0] ?? null;
+  const priceFields = computePriceFields({
+    amount: currentPrice ? currentPrice.price : null,
+    tax_rate_percent: taxRate ? taxRate.rate_percent : null,
+    tax_behavior: plan.tax_behavior,
+  });
 
   return {
     ...plan,
@@ -161,6 +184,9 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     member_count: memberCount,
     charge_benefits: chargeBenefits,
     sellable_items: sellableItems,
+    tax_rate_name: taxRate ? taxRate.name : null,
+    tax_rate_percent: taxRate ? taxRate.rate_percent : null,
+    ...priceFields,
   };
 }
 
@@ -208,21 +234,37 @@ membershipPlansRouter.get('/:id', async (req, res) => {
   res.json(await enrichPlan(rows[0], gymId));
 });
 
+async function getSystemTaxRateId(gymId: string): Promise<number | null> {
+  const { rows } = await db.query(
+    'SELECT id FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND deleted_at IS NULL LIMIT 1',
+    [gymId],
+  );
+  return rows.length > 0 ? rows[0].id : null;
+}
+
 membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, lifecycle_status, enrollment_status, member_limit } = req.body;
+  const { name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (member_limit !== undefined && !VALID_MEMBER_LIMIT.includes(member_limit)) {
     return res.status(400).json({ error: 'member_limit must be one of: 1, 2, family' });
   }
+  if (tax_behavior !== undefined && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+    return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+  }
+  const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
+  if (taxRateErr) return res.status(400).json({ error: taxRateErr });
+  const resolvedTaxRateId = tax_rate_id != null ? Number(tax_rate_id) : await getSystemTaxRateId(gymId);
+
   const callerMemberId = await getCallerMembershipId(req);
   try {
     const row = await insertAndFetch(
       `INSERT INTO membership_plans
-       (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null,
-       lifecycle_status ?? 'draft', enrollment_status ?? 'staff_only', member_limit ?? '1', callerMemberId],
+       lifecycle_status ?? 'draft', enrollment_status ?? 'staff_only', member_limit ?? '1',
+       resolvedTaxRateId, tax_behavior || 'inclusive', callerMemberId],
       'SELECT * FROM membership_plans WHERE id = ?',
       (id) => [id],
     );
@@ -235,7 +277,7 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
 
 membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, description, lifecycle_status, enrollment_status, member_limit } = req.body;
+  const { name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior } = req.body;
 
   const VALID_LIFECYCLE = ['draft', 'active', 'paused', 'inactive'];
   const VALID_ENROLLMENT = ['public', 'staff_only'];
@@ -245,6 +287,11 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   if (enrollment_status && !VALID_ENROLLMENT.includes(enrollment_status)) {
     return res.status(400).json({ error: 'Invalid enrollment_status' });
   }
+  if (tax_behavior !== undefined && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+    return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+  }
+  const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
+  if (taxRateErr) return res.status(400).json({ error: taxRateErr });
   if (['public', 'staff_only'].includes(enrollment_status) && lifecycle_status && lifecycle_status !== 'active') {
     return res.status(400).json({ error: 'enrollment can only be public or staff_only when lifecycle_status is active' });
   }
@@ -280,6 +327,8 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         lifecycle_status  = COALESCE(?, lifecycle_status),
         enrollment_status = COALESCE(?, enrollment_status),
         member_limit      = COALESCE(?, member_limit),
+        tax_rate_id       = COALESCE(?, tax_rate_id),
+        tax_behavior      = COALESCE(?, tax_behavior),
         modified_at       = NOW(),
         modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -289,6 +338,8 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         lifecycle_status ?? null,
         enrollment_status ?? null,
         member_limit ?? null,
+        tax_rate_id != null ? Number(tax_rate_id) : null,
+        tax_behavior ?? null,
         callerMemberId,
         req.params.id, gymId,
       ],
@@ -441,9 +492,9 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
     const newPlanId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO membership_plans
-         (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, created_by)
-         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?)`,
-        [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, callerMemberId],
+         (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior, created_by)
+         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?)`,
+        [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, orig.tax_rate_id, orig.tax_behavior, callerMemberId],
       );
 
       // Copy billing policy

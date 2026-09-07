@@ -28,15 +28,19 @@ async function createActivityType(gymId: string, maxCapacity = 5): Promise<numbe
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'PT Test', ?, 'active')`,
     [gymId, maxCapacity],
   );
+  // class_sessions.class_type_id may still legacy-FK into class_types on older DB states — mirror the row.
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, 'PT Test', ?, 'active')`,
+    [insertId, gymId, maxCapacity],
+  ).catch(() => {});
   return insertId;
 }
 
-// #360 stage 3: sessions are now calendar_events rows (kind='session').
 async function createSessionStarting(gymId: string, activityTypeId: number, centerId: number, intervalSql: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO calendar_events (gym_id, kind, activity_type_id, center_id, title, starts_at, ends_at, status)
-     VALUES (?, 'session', ?, ?, 'PT Test', ${intervalSql}, DATE_ADD(${intervalSql}, INTERVAL 1 HOUR), 'scheduled')`,
-    [gymId, activityTypeId, centerId],
+    `INSERT INTO calendar_events (gym_id, center_id, kind, activity_type_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', ?, ${intervalSql}, DATE_ADD(${intervalSql}, INTERVAL 1 HOUR), 'scheduled')`,
+    [gymId, centerId, activityTypeId],
   );
   return insertId;
 }

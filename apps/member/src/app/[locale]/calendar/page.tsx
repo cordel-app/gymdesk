@@ -9,6 +9,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 
 interface ActivityType { id: number; name: string; color: string | null }
 
@@ -70,6 +71,8 @@ export default function MemberCalendarPage() {
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
+  const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
   useEffect(() => {
     if (appLoading) return;
@@ -77,7 +80,14 @@ export default function MemberCalendarPage() {
     apiFetch<ActivityType[]>('/activity-types?status=active')
       .then(setActivityTypes)
       .catch(() => {});
+    // #418: Operating Hours & Holidays — greys out closed/out-of-hours slots.
+    // Non-fatal if the feature isn't configured/enabled for this gym.
+    apiFetch<{ weekly: WeeklyShiftDTO[]; holidays: HolidayDTO[] }>('/me/operating-hours')
+      .then(({ weekly, holidays }) => { setWeeklyHours(weekly); setHolidays(holidays); })
+      .catch(() => {});
   }, [appLoading, isLinked, locale]);
+
+  const businessHours = weeklyToBusinessHours(weeklyHours);
 
   const fetchEvents = useCallback(
     (info: any, successCb: (events: any[]) => void, failureCb: (err: Error) => void) => {
@@ -85,8 +95,8 @@ export default function MemberCalendarPage() {
       if (filterAtId) params.set('activity_type_id', filterAtId);
       apiFetch<ScheduleSession[]>(`/me/schedule?${params}`)
         .then((sessions) =>
-          successCb(
-            sessions.map((s) => ({
+          successCb([
+            ...sessions.map((s) => ({
               id: String(s.id),
               title: s.class_type_name,
               start: s.starts_at,
@@ -95,11 +105,12 @@ export default function MemberCalendarPage() {
               borderColor:     STATE_COLORS[s.availability_state],
               extendedProps: s,
             })),
-          ),
+            ...holidayBackgroundEvents(holidays, info.start, info.end),
+          ]),
         )
         .catch(failureCb);
     },
-    [filterAtId, apiFetch],
+    [filterAtId, apiFetch, holidays],
   );
 
   function refetch() {
@@ -234,6 +245,7 @@ export default function MemberCalendarPage() {
           headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }}
           height="100%"
           events={fetchEvents}
+          businessHours={businessHours}
           eventClick={handleEventClick}
           dateClick={handleDateClick}
           eventContent={(arg: any) => {

@@ -25,10 +25,14 @@ async function createActivityType(gid: string, shareable = true, capacity = 10):
      VALUES (?, ?, ?, 'active', ?)`,
     [gid, name, capacity, shareable ? 1 : 0],
   );
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status)
+     VALUES (?, ?, ?, ?, 'active')`,
+    [insertId, gid, name, capacity],
+  ).catch(() => { /* class_types dropped on fully-migrated DBs */ });
   return insertId;
 }
 
-// #360 stage 3: sessions are now calendar_events rows (kind='session').
 async function createSession(
   gid: string,
   atId: number,
@@ -39,11 +43,11 @@ async function createSession(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO calendar_events
-       (gym_id, kind, activity_type_id, center_id, space_id, trainer_membership_id,
-        title, starts_at, ends_at, status, allows_shared_booking)
-     VALUES (?, 'session', ?, ?, ?, ?, 'Test Session', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+       (gym_id, center_id, kind, activity_type_id, space_id, trainer_membership_id,
+        starts_at, ends_at, status, allows_shared_booking)
+     VALUES (?, ?, 'session', ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-    [gid, atId, cid, spaceId ?? null, trainerMembershipId ?? null, allowsShared],
+    [gid, cid, atId, spaceId ?? null, trainerMembershipId ?? null, allowsShared],
   );
   return insertId;
 }

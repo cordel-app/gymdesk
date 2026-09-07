@@ -22,6 +22,12 @@ async function createActivityType(gymId: string, maxCapacity = 10): Promise<numb
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, ?, ?, 'active')`,
     [gymId, name, maxCapacity],
   );
+  // Mirror into class_types so class_sessions.class_type_id FK is satisfied on CI
+  // (pre-migration-059 schema still has that column and constraint).
+  await db.query(
+    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, ?, ?, 'active')`,
+    [insertId, gymId, name, maxCapacity],
+  ).catch(() => { /* class_types may not exist on fully-migrated DBs */ });
   return insertId;
 }
 
@@ -33,12 +39,11 @@ async function createCenter(gymId: string): Promise<number> {
   return insertId;
 }
 
-// #360 stage 3: sessions are now calendar_events rows (kind='session').
 async function createSession(gymId: string, activityTypeId: number, centerId: number, trainerId: number | null = null): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO calendar_events (gym_id, kind, activity_type_id, center_id, trainer_membership_id, title, starts_at, ends_at, status)
-     VALUES (?, 'session', ?, ?, ?, 'Test Session', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
-    [gymId, activityTypeId, centerId, trainerId],
+    `INSERT INTO calendar_events (gym_id, center_id, kind, activity_type_id, trainer_membership_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
+    [gymId, centerId, activityTypeId, trainerId],
   );
   return insertId;
 }

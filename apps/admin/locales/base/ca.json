@@ -55,7 +55,8 @@
     "assigned_plans": "Plans Assignats",
     "taxes": "Impostos",
     "feature_flags": "Flags de funcionalitats",
-    "nutrition_plans": "Plans de nutrició"
+    "nutrition_plans": "Plans de nutrició",
+    "operating_hours": "Horari i Festius"
   },
   "dashboard": {
     "title": "Tauler",
@@ -308,7 +309,16 @@
     "confirm_delete": "Eliminar",
     "error_required": "El nom és obligatori.",
     "error_generic": "Alguna cosa ha fallat.",
-    "error_load": "Error en carregar els gimnasos."
+    "error_load": "Error en carregar els gimnasos.",
+    "section_storage": "Emmagatzematge",
+    "storage_initialized": "Inicialitzat",
+    "storage_not_initialized": "No inicialitzat",
+    "storage_initialized_at": "Inicialitzat el",
+    "storage_folder": "Carpeta",
+    "btn_initialize_storage": "Inicialitza el bucket de Cloudflare",
+    "initializing_storage": "Inicialitzant…",
+    "storage_not_configured": "L'emmagatzematge de Cloudflare no està configurat per a aquest desplegament.",
+    "error_storage_initialize": "No s'ha pogut inicialitzar l'emmagatzematge de Cloudflare."
   },
   "themes": {
     "title": "Temes base",
@@ -652,7 +662,13 @@
     "assign_error_no_members": "Selecciona almenys un membre.",
     "assign_error_exact_count": "Aquest pla requereix exactament {count} membre(s).",
     "assign_error_no_owner": "Selecciona qui és el titular.",
-    "assign_error_no_start": "La data d'inici és obligatòria."
+    "assign_error_no_start": "La data d'inici és obligatòria.",
+    "label_tax_rate": "Tipus d'impost",
+    "label_tax_behavior": "Comportament de l'impost",
+    "label_current_price": "Preu actual",
+    "tax_rate_default": "Per defecte del gimnàs",
+    "tax_behavior_inclusive": "Impost inclòs en el preu",
+    "tax_behavior_exclusive": "Impost afegit al preu"
   },
   "prices": {
     "title": "Preus",
@@ -725,6 +741,8 @@
     "label_room": "Sala",
     "label_capacity_override": "Aforament específic",
     "capacity_from_type": "en blanc = usar el del tipus",
+    "label_members": "Assignar membres",
+    "members_over_capacity": "{count} membres assignats — l'aforament és {capacity}",
     "saving": "Desant…",
     "save_changes": "Desar canvis",
     "error_required": "Tipus, inici i durada són obligatoris.",
@@ -2015,6 +2033,8 @@
       "label_end_time": "Hora fi",
       "label_weekday": "Dia",
       "label_ordinal": "Ocurrència",
+      "label_members": "Assignar membres",
+      "members_over_capacity": "{count} membres assignats — l'aforament és {capacity}",
       "type_one_off": "Puntual",
       "type_weekly": "Setmanal",
       "type_monthly": "Mensual",
@@ -2733,5 +2753,41 @@
     "error_member_required": "Si us plau, selecciona un membre.",
     "error_name_required": "Si us plau, introdueix un nom per al pla.",
     "error_generic": "S'ha produït un error. Torna-ho a intentar."
+  },
+  "operating_hours": {
+    "title": "Horari i Festius",
+    "section_weekly": "Horari Setmanal",
+    "section_holidays": "Festius i Horaris Especials",
+    "weekday_closed": "Tancat",
+    "add_shift": "+ Afegir torn",
+    "remove_shift": "Eliminar",
+    "label_start_time": "Hora d'inici",
+    "label_end_time": "Hora de fi",
+    "save_weekly": "Desar Horari Setmanal",
+    "saving": "Desant…",
+    "saved": "Horari setmanal desat.",
+    "error_generic": "Alguna cosa ha fallat. Torna-ho a provar.",
+    "add_holiday": "+ Afegir Festiu",
+    "edit_holiday": "Editar",
+    "delete_holiday": "Eliminar",
+    "empty_holidays": "Encara no hi ha festius ni horaris especials configurats.",
+    "col_dates": "Dates",
+    "col_hours": "Horari",
+    "col_annual_renewal": "Es repeteix cada any",
+    "col_label": "Etiqueta",
+    "col_actions": "Accions",
+    "label_date_start": "Data d'inici *",
+    "label_date_end": "Data de fi *",
+    "label_is_closed": "Tancat tot el dia",
+    "label_annual_renewal": "Repetir cada any",
+    "label_label": "Etiqueta",
+    "placeholder_label": "p. ex. Nadal",
+    "confirm_delete_title": "Eliminar Festiu",
+    "confirm_delete_body": "Això eliminarà aquesta excepció de festiu/horari especial.",
+    "confirm_delete": "Eliminar",
+    "cancel": "Cancel·lar",
+    "save_changes": "Desar",
+    "yes": "Sí",
+    "no": "No"
   }
 }

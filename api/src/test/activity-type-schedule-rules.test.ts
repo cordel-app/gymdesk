@@ -17,6 +17,25 @@ function rulesBase(atId: number) {
   return `/activity-types/${atId}/schedule-rules`;
 }
 
+// Tomorrow's date (YYYY-MM-DD, UTC) — used by the #366 member_ids tests below so the
+// materialized occurrence's starts_at is safely in the future regardless of the gym's
+// timezone offset (occurrenceDatesForRule only needs start_date >= today in UTC, but
+// cancelFutureOccurrences compares the localized starts_at against UTC_TIMESTAMP()).
+function tomorrowStr(): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+async function insertTestMember(gymId: string, label: string): Promise<number> {
+  const email = `sr-member-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+  const { insertId } = await db.query(
+    `INSERT INTO members (gym_id, name, email) VALUES (?, 'Some Name', ?)`,
+    [gymId, email],
+  );
+  return insertId;
+}
+
 beforeAll(async () => {
   gymId = await createTestGym('SR Test Gym');
   await createTestMembership(gymId, 'admin');
@@ -562,5 +581,258 @@ describe('PUT and DELETE schedule rule', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
+  });
+});
+
+// ── #366: member_ids assignment ─────────────────────────────────────────────
+// POST/PUT accept an optional `member_ids: number[]` field so staff can assign
+// Members to a recurring rule; every materialized occurrence auto-books them
+// (force=true — capacity is advisory, never a hard block for a staff assignment).
+
+describe('member_ids assignment (#366)', () => {
+  describe('POST with member_ids', () => {
+    let memberId: number;
+    let ruleId: number;
+    let eventId: number;
+
+    it('returns 201 with member_ids echoing what was sent', async () => {
+      memberId = await insertTestMember(gymId, 'post-happy');
+
+      const res = await request
+        .post(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '09:00',
+          end_time: '10:00',
+          member_ids: [memberId],
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.member_ids).toEqual([memberId]);
+      ruleId = res.body.id;
+    });
+
+    it('materializes a calendar_events row for the rule', async () => {
+      const { rows } = await db.query(
+        `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+        [ruleId],
+      );
+      expect(rows.length).toBe(1);
+      eventId = rows[0].id;
+    });
+
+    it('books the assigned member on the occurrence with status booked (not waitlisted, despite force=true)', async () => {
+      const { rows } = await db.query(
+        `SELECT status FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ? AND status = 'booked'`,
+        [eventId, memberId],
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0].status).toBe('booked');
+    });
+  });
+
+  describe('capacity is advisory, not blocking, for assigned members', () => {
+    it('assigning a member to a rule never returns a capacity-related 4xx, even though force=true is used internally', async () => {
+      const memberId = await insertTestMember(gymId, 'advisory-capacity');
+
+      const res = await request
+        .post(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '11:00',
+          end_time: '12:00',
+          member_ids: [memberId],
+        });
+      expect(res.status).toBe(201);
+      expect(res.body.member_ids).toEqual([memberId]);
+
+      const { rows: eventRows } = await db.query(
+        `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+        [res.body.id],
+      );
+      expect(eventRows.length).toBe(1);
+
+      const { rows: bookingRows } = await db.query(
+        `SELECT status FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ?`,
+        [eventRows[0].id, memberId],
+      );
+      expect(bookingRows.length).toBe(1);
+      expect(bookingRows[0].status).toBe('booked');
+    });
+  });
+
+  describe('member_ids validation', () => {
+    it('returns 400 when member_ids contains a member id that does not exist in this gym', async () => {
+      const res = await request
+        .post(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '13:00',
+          end_time: '14:00',
+          member_ids: [999999],
+        });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when member_ids is not an array', async () => {
+      const res = await request
+        .post(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '14:00',
+          end_time: '15:00',
+          member_ids: 'not-an-array',
+        });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('PUT updates the assigned set', () => {
+    let ruleId: number;
+    let memberA: number;
+    let memberB: number;
+    let oldEventId: number;
+
+    beforeAll(async () => {
+      memberA = await insertTestMember(gymId, 'put-a');
+      memberB = await insertTestMember(gymId, 'put-b');
+
+      const createRes = await request
+        .post(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '16:00',
+          end_time: '17:00',
+          member_ids: [memberA],
+        });
+      expect(createRes.status).toBe(201);
+      ruleId = createRes.body.id;
+
+      const { rows } = await db.query(
+        `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+        [ruleId],
+      );
+      expect(rows.length).toBe(1);
+      oldEventId = rows[0].id;
+    });
+
+    it('PUT with a different member_ids returns the new set', async () => {
+      const res = await request
+        .put(`/activity-types/${activityTypeId}/schedule-rules/${ruleId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '16:00',
+          end_time: '17:00',
+          member_ids: [memberB],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.member_ids).toEqual([memberB]);
+    });
+
+    it("cancels the old occurrence's booking (member A's old row is soft-cancelled with it)", async () => {
+      const { rows } = await db.query(
+        `SELECT status, deleted_at FROM calendar_events WHERE id = ?`,
+        [oldEventId],
+      );
+      expect(rows.length).toBe(1);
+      expect(rows[0].status).toBe('cancelled');
+      expect(rows[0].deleted_at).not.toBeNull();
+    });
+
+    it('re-materializes a fresh occurrence with only member B booked', async () => {
+      const { rows: eventRows } = await db.query(
+        `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+        [ruleId],
+      );
+      expect(eventRows.length).toBe(1);
+      const newEventId = eventRows[0].id;
+      expect(newEventId).not.toBe(oldEventId);
+
+      const { rows: bookingRows } = await db.query(
+        `SELECT member_id, status FROM calendar_event_bookings WHERE calendar_event_id = ? AND status = 'booked'`,
+        [newEventId],
+      );
+      expect(bookingRows.map((r: any) => r.member_id)).toEqual([memberB]);
+    });
+  });
+
+  describe('PUT omitting member_ids leaves the assignment untouched', () => {
+    let ruleId: number;
+    let memberC: number;
+
+    beforeAll(async () => {
+      memberC = await insertTestMember(gymId, 'omit');
+
+      const createRes = await request
+        .post(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '18:00',
+          end_time: '19:00',
+          member_ids: [memberC],
+        });
+      expect(createRes.status).toBe(201);
+      ruleId = createRes.body.id;
+    });
+
+    it('PUT with no member_ids key still returns 200', async () => {
+      const res = await request
+        .put(`/activity-types/${activityTypeId}/schedule-rules/${ruleId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({
+          type: 'one_off',
+          start_date: tomorrowStr(),
+          start_time: '18:30',
+          end_time: '19:30',
+          // member_ids intentionally omitted
+        });
+      expect(res.status).toBe(200);
+    });
+
+    it('GET still shows member C as assigned', async () => {
+      const res = await request
+        .get(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const rule = res.body.find((r: any) => r.id === ruleId);
+      expect(rule).toBeDefined();
+      expect(rule.member_ids).toEqual([memberC]);
+    });
+  });
+
+  describe('GET list includes member_ids', () => {
+    it('every rule in the list response has a member_ids array', async () => {
+      const res = await request
+        .get(rulesBase(activityTypeId))
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      expect(res.body.length).toBeGreaterThan(0);
+      for (const rule of res.body) {
+        expect(Array.isArray(rule.member_ids)).toBe(true);
+      }
+    });
   });
 });
