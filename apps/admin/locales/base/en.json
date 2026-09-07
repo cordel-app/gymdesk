@@ -267,6 +267,7 @@
     "filter_member": "Member",
     "filter_from": "From",
     "filter_to": "To",
+    "filter_status": "Status",
     "filter_clear": "Clear filters",
     "col_member": "Member",
     "col_plan": "Plan",
@@ -720,7 +721,13 @@
     "assign_error_no_members": "Select at least one member.",
     "assign_error_exact_count": "This plan requires exactly {count} member(s).",
     "assign_error_no_owner": "Select which member is the owner.",
-    "assign_error_no_start": "Starts on is required."
+    "assign_error_no_start": "Starts on is required.",
+    "label_tax_rate": "Tax Rate",
+    "label_tax_behavior": "Tax Behavior",
+    "label_current_price": "Current price",
+    "tax_rate_default": "Gym default",
+    "tax_behavior_inclusive": "Tax included in price",
+    "tax_behavior_exclusive": "Tax added to price"
   },
   "prices": {
     "title": "Prices",
