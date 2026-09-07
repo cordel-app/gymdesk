@@ -19,6 +19,17 @@ import { generateReceiptPdf } from '../lib/receipt-pdf';
 const PAYMENT_EVENT_TYPES = ['charge_created', 'payment_recorded', 'adjustment'] as const;
 const SOURCES = ['admin', 'system', 'employee', 'customer', 'provider'] as const;
 
+// #416 — billing-events admin view status filter. `status` is derived from `event_type`
+// (see BillingEventRow below), not a stored column, so it can't be pushed into SQL WHERE.
+const BILLING_EVENT_STATUSES = ['paid', 'failed', 'scheduled', 'recorded'] as const;
+
+// Accepts repeated `status=a&status=b` or a single comma-separated value.
+const billingEventStatusParam = z.preprocess((v) => {
+  if (v === undefined) return undefined;
+  const arr = Array.isArray(v) ? v : [v];
+  return arr.flatMap((s) => String(s).split(',').map((x) => x.trim())).filter(Boolean);
+}, z.array(z.enum(BILLING_EVENT_STATUSES)).optional());
+
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
@@ -187,6 +198,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const q = parseQuery(req, res, z.object({
     member_id: z.coerce.number().int().positive().optional(),
+    status: billingEventStatusParam,
     from: z.string().optional(),
     to: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
@@ -260,7 +272,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const futureParams: any[] = [gymId];
     if (q.member_id !== undefined) { futureWhere.push('um.member_id = ?'); futureParams.push(q.member_id); }
 
-    const { rows: activeRows } = await db.query<{
+    const includeScheduled = !q.status || q.status.includes('scheduled');
+    const activeRows = includeScheduled ? (await db.query<{
       user_membership_id: number; member_id: number; member_name: string | null;
       plan_name: string | null; next_billing_date: string;
       recurring_billing_interval: number; recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
@@ -276,7 +289,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
        LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
        WHERE ${futureWhere.join(' AND ')}`,
       futureParams,
-    );
+    )).rows : [];
 
     const today = new Date().toISOString().slice(0, 10);
     const future: BillingEventRow[] = [];
@@ -309,10 +322,11 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     }
 
     // Merge, sort DESC by billing_date
-    const all = [...past, ...future].sort((a, b) => {
+    const merged = [...past, ...future].sort((a, b) => {
       if (b.billing_date !== a.billing_date) return b.billing_date < a.billing_date ? -1 : 1;
       return (b.id ?? 0) - (a.id ?? 0);
     });
+    const all = q.status?.length ? merged.filter((r) => q.status!.includes(r.status as any)) : merged;
 
     const total = all.length;
     const items = all.slice(q.offset, q.offset + q.limit);

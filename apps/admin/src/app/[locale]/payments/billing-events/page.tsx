@@ -6,6 +6,9 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useLocale } from 'next-intl';
+import { MultiSelectFilter } from '@/components/MultiSelectFilter';
+
+const STATUS_VALUES = ['paid', 'failed', 'scheduled', 'recorded'] as const;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -244,6 +247,9 @@ export default function BillingEventsPage() {
   const [memberName, setMemberName] = useState<string>(searchParams.get('memberName') ?? '');
   const [from, setFrom] = useState(searchParams.get('from') ?? '');
   const [to, setTo] = useState(searchParams.get('to') ?? '');
+  const [status, setStatus] = useState<string[]>(
+    (searchParams.get('status') ?? '').split(',').filter(Boolean),
+  );
   const [offset, setOffset] = useState(0);
 
   const [items, setItems] = useState<BillingEvent[]>([]);
@@ -253,15 +259,17 @@ export default function BillingEventsPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   // Sync filter state to URL
-  function pushParams(params: { memberId?: number | null; memberName?: string; from?: string; to?: string }) {
+  function pushParams(params: { memberId?: number | null; memberName?: string; from?: string; to?: string; status?: string[] }) {
     const p = new URLSearchParams();
     const mId = params.memberId !== undefined ? params.memberId : memberId;
     const mName = params.memberName !== undefined ? params.memberName : memberName;
     const f = params.from !== undefined ? params.from : from;
     const t2 = params.to !== undefined ? params.to : to;
+    const s = params.status !== undefined ? params.status : status;
     if (mId) { p.set('memberId', String(mId)); p.set('memberName', mName); }
     if (f) p.set('from', f);
     if (t2) p.set('to', t2);
+    if (s.length > 0) p.set('status', s.join(','));
     router.replace(`/${locale}/payments/billing-events${p.toString() ? '?' + p.toString() : ''}`, { scroll: false });
   }
 
@@ -274,6 +282,7 @@ export default function BillingEventsPage() {
       if (memberId) p.set('member_id', String(memberId));
       if (from) p.set('from', from);
       if (to) p.set('to', to);
+      for (const s of status) p.append('status', s);
       const data = await apiFetch<PageResult>(`/payments/billing-events?${p}`);
       setItems(data.items);
       setTotal(data.total);
@@ -285,7 +294,7 @@ export default function BillingEventsPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGymId, memberId, from, to]);
+  }, [activeGymId, memberId, from, to, status]);
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
@@ -351,10 +360,21 @@ export default function BillingEventsPage() {
             style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
           />
         </div>
-        {(memberId || from || to) && (
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
+            {t('billing_events_page.filter_status')}
+          </label>
+          <MultiSelectFilter
+            label={t('billing_events_page.filter_status')}
+            options={STATUS_VALUES.map((v) => ({ value: v, label: statusLabel[v] }))}
+            selected={status}
+            onChange={(next) => { setStatus(next); pushParams({ status: next }); }}
+          />
+        </div>
+        {(memberId || from || to || status.length > 0) && (
           <button
             onClick={() => {
-              setMemberId(null); setMemberName(''); setFrom(''); setTo('');
+              setMemberId(null); setMemberName(''); setFrom(''); setTo(''); setStatus([]);
               router.replace(`/${locale}/payments/billing-events`, { scroll: false });
             }}
             style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer', border: '1px solid #d1d5db', borderRadius: 6, alignSelf: 'flex-end' }}

@@ -31,11 +31,15 @@ async function getChargeTypeId(code = 'membership_fee'): Promise<number> {
 }
 
 async function insertBillingEvent(gymId: string, memberId: number): Promise<number> {
+  return insertBillingEventOfType(gymId, memberId, 'payment_recorded');
+}
+
+async function insertBillingEventOfType(gymId: string, memberId: number, eventType: string): Promise<number> {
   const chargeTypeId = await getChargeTypeId();
   const { insertId } = await db.query(
     `INSERT INTO billing_events (gym_id, member_id, event_type, charge_type_id, source, actor_user_id, amount)
-     VALUES (?, ?, 'payment_recorded', ?, 'employee', 'test-user', 99.00)`,
-    [gymId, memberId, chargeTypeId],
+     VALUES (?, ?, ?, ?, 'employee', 'test-user', 99.00)`,
+    [gymId, memberId, eventType, chargeTypeId],
   );
   return insertId;
 }
@@ -204,6 +208,92 @@ describe('GET /payments/billing-events', () => {
     expect(v.id).toBeNull();
     expect(v.status).toBe('scheduled');
     expect(v.event_type).toBe('upcoming');
+  });
+
+  // ── #416: multi-select status filtering ──
+  describe('status filter (#416)', () => {
+    let statusGymId: string;
+    let statusMemberId: number;
+    let paidId: number;
+    let failedId: number;
+
+    beforeAll(async () => {
+      statusGymId = await createTestGym('BE Status Gym');
+      await createTestMembership(statusGymId, 'admin');
+      statusMemberId = await createMember(statusGymId);
+      paidId = await insertBillingEventOfType(statusGymId, statusMemberId, 'payment_recorded');
+      failedId = await insertBillingEventOfType(statusGymId, statusMemberId, 'failed_billing');
+      await insertBillingEventOfType(statusGymId, statusMemberId, 'adjustment'); // -> 'recorded'
+
+      // Also give this gym a scheduled/virtual billing event so 'scheduled' filtering has something to match.
+      const planId = await createPlanWithPolicy(statusGymId);
+      const futureMemberId = await createMember(statusGymId);
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 30);
+      await createUserMembership(statusGymId, futureMemberId, planId, futureDate.toISOString().slice(0, 10));
+    });
+
+    it('filters by a single status', async () => {
+      const res = await request
+        .get('/payments/billing-events?status=paid')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', statusGymId);
+      expect(res.status).toBe(200);
+      expect(res.body.items.length).toBeGreaterThan(0);
+      expect(res.body.items.every((i: any) => i.status === 'paid')).toBe(true);
+      expect(res.body.items.some((i: any) => i.id === paidId)).toBe(true);
+    });
+
+    it('filters by multiple statuses passed as a comma-separated value', async () => {
+      const res = await request
+        .get('/payments/billing-events?status=paid,failed')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', statusGymId);
+      expect(res.status).toBe(200);
+      const statuses = new Set(res.body.items.map((i: any) => i.status));
+      expect([...statuses].every((s) => s === 'paid' || s === 'failed')).toBe(true);
+      expect(res.body.items.some((i: any) => i.id === paidId)).toBe(true);
+      expect(res.body.items.some((i: any) => i.id === failedId)).toBe(true);
+    });
+
+    it('filters by multiple statuses passed as repeated params', async () => {
+      const res = await request
+        .get('/payments/billing-events?status=paid&status=failed')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', statusGymId);
+      expect(res.status).toBe(200);
+      const statuses = new Set(res.body.items.map((i: any) => i.status));
+      expect([...statuses].every((s) => s === 'paid' || s === 'failed')).toBe(true);
+    });
+
+    it('filtering by "scheduled" returns only virtual rows', async () => {
+      const res = await request
+        .get('/payments/billing-events?status=scheduled')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', statusGymId);
+      expect(res.status).toBe(200);
+      expect(res.body.items.length).toBeGreaterThan(0);
+      expect(res.body.items.every((i: any) => i.status === 'scheduled' && i.type === 'virtual')).toBe(true);
+    });
+
+    it('rejects an invalid status value with 400', async () => {
+      const res = await request
+        .get('/payments/billing-events?status=bogus')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', statusGymId);
+      expect(res.status).toBe(400);
+    });
+
+    it('still scopes by gym_id when a status filter is applied (tenant isolation)', async () => {
+      const otherStatusGymId = await createTestGym('BE Status Other Gym');
+      await createTestMembership(otherStatusGymId, 'admin');
+      const res = await request
+        .get('/payments/billing-events?status=paid')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', otherStatusGymId);
+      expect(res.status).toBe(200);
+      expect(res.body.items.filter((i: any) => i.type === 'real')).toHaveLength(0);
+    });
   });
 });
 

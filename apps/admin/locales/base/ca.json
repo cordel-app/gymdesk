@@ -213,6 +213,7 @@
     "filter_member": "Soci",
     "filter_from": "Des de",
     "filter_to": "Fins a",
+    "filter_status": "Estat",
     "filter_clear": "Netejar filtres",
     "col_member": "Soci",
     "col_plan": "Pla",
