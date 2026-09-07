@@ -3,6 +3,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { handleDupEntry } from '../infra/db-helpers';
 import { recordAudit } from '../infra/audit';
+import { sendNotification } from '../infra/notifications';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
 let packageCreditsModule: typeof import('./package-credits') | null = null;
 async function packageCredits() {
@@ -257,7 +258,19 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
 bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
-    await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
+    const { rows: sessionRows } = await db.query<{ calendar_event_id: number; title: string; starts_at: string }>(
+      `SELECT ceb.calendar_event_id, ce.starts_at, at.name AS title
+         FROM calendar_event_bookings ceb
+         JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+         JOIN activity_types at ON at.id = ce.activity_type_id
+        WHERE ceb.id = ? AND ceb.gym_id = ?`,
+      [req.params.id, gymId],
+    );
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
+    if (cancelResult.promotedMemberId && sessionRows.length > 0) {
+      sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
+        sessionRows[0].calendar_event_id, { title: sessionRows[0].title, starts_at: sessionRows[0].starts_at });
+    }
     res.status(204).send();
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
