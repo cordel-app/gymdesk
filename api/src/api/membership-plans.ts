@@ -157,8 +157,14 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
+  // mysql2 may return DATE columns as Date objects (not strings) depending on the
+  // connection's timezone config — normalize before string-comparing.
+  const toDateStr = (v: unknown): string | null =>
+    v == null ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
   const currentPrice = prices.find(p => {
-    return p.valid_from <= today && (p.valid_to == null || p.valid_to >= today);
+    const from = toDateStr(p.valid_from);
+    const to = toDateStr(p.valid_to);
+    return from != null && from <= today && (to == null || to >= today);
   }) ?? null;
 
   const taxRate = taxRateRows[0] ?? null;
