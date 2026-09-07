@@ -631,6 +631,214 @@ describe('DELETE /user-memberships/:id', () => {
   });
 });
 
+// ─── POST /user-memberships/:id/assign-new-plan (#412) ────────────────────────
+
+describe('POST /user-memberships/:id/assign-new-plan', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Assign New Plan Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId);
+    const newPlanId = await createPlan(gymId);
+    const res = await request
+      .post(`/user-memberships/${umId}/assign-new-plan`)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when a non-admin role (front_desk) attempts to assign a new plan', async () => {
+    const gymFD = await createTestGym('UM Assign New Plan FrontDesk Gym');
+    await createTestMembership(gymFD, 'front_desk');
+    const memberId = await createMember(gymFD);
+    const planId = await createPlan(gymFD);
+    const umId = await createUserMembershipDirect(gymFD, memberId, planId);
+    const newPlanId = await createPlan(gymFD);
+    const res = await request
+      .post(`/user-memberships/${umId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymFD)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when superseding a gym B membership with gym A credentials', async () => {
+    const gymOther = await createTestGym('UM Assign New Plan Other Gym');
+    // A different Clerk user is admin in the other gym -- TEST_USER_ID has no
+    // membership row there, mirroring the "Tenant isolation" describe above.
+    await createTestMembership(gymOther, 'admin', 'other-clerk-user-id');
+    const otherMemberId = await createMember(gymOther);
+    const otherPlanId = await createPlan(gymOther);
+    const otherUmId = await createUserMembershipDirect(gymOther, otherMemberId, otherPlanId);
+
+    // The target plan is valid in the *requesting* gym so the plan lookup
+    // itself succeeds -- this isolates the 404 to the cross-gym membership id.
+    const newPlanId = await createPlan(gymId);
+    const res = await request
+      .post(`/user-memberships/${otherUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a non-existent membership id', async () => {
+    const newPlanId = await createPlan(gymId);
+    const res = await request
+      .post('/user-memberships/9999999/assign-new-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when membership_plan_id is missing', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId);
+    const res = await request
+      .post(`/user-memberships/${umId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ starts_at: isoDate(1) });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when starts_at is missing', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId);
+    const newPlanId = await createPlan(gymId);
+    const res = await request
+      .post(`/user-memberships/${umId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when final_price overrides the effective price without a discount_reason', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId);
+    const newPlanId = await createPlan(gymId);
+    const res = await request
+      .post(`/user-memberships/${umId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), final_price: 10 });
+    expect(res.status).toBe(400);
+  });
+
+  it('supersedes an active membership: old row expires, new row is active, and both appear newest-first', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Active Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(201);
+    expect(res.body.id).not.toBe(oldUmId);
+    expect(res.body.member_id).toBe(memberId);
+    expect(res.body.status).toBe('active');
+    expect(res.body.membership_plan_id).toBe(newPlanId);
+
+    const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    expect(oldRows[0].status).toBe('expired');
+
+    // The new membership gets its own owner row in user_membership_members,
+    // just like POST / does.
+    const { rows: newOwnerRows } = await db.query(
+      'SELECT member_id, is_owner FROM user_membership_members WHERE user_membership_id = ?',
+      [res.body.id],
+    );
+    expect(newOwnerRows).toHaveLength(1);
+    expect(newOwnerRows[0].member_id).toBe(memberId);
+    expect(Boolean(newOwnerRows[0].is_owner)).toBe(true);
+
+    const list = await request
+      .get(`/user-memberships?member_id=${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    expect(list.body).toHaveLength(2);
+    // ORDER BY starts_at DESC -- the newly-assigned (later starts_at) row comes first.
+    expect(list.body[0].id).toBe(res.body.id);
+    expect(list.body[0].status).toBe('active');
+    expect(list.body[1].id).toBe(oldUmId);
+    expect(list.body[1].status).toBe('expired');
+  });
+
+  it('supersedes a paused membership the same way (old row -> expired)', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Paused Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'paused');
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('active');
+
+    const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    expect(oldRows[0].status).toBe('expired');
+  });
+
+  it('leaves an already-terminal (cancelled) membership untouched while still creating a new active row', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Cancelled Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'cancelled');
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('active');
+    expect(res.body.membership_plan_id).toBe(newPlanId);
+
+    // The terminal old row is left exactly as it was -- never flipped to 'expired'.
+    const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    expect(oldRows[0].status).toBe('cancelled');
+  });
+
+  it('accepts a final_price override together with a discount_reason', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Discount Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        membership_plan_id: newPlanId,
+        starts_at: isoDate(1),
+        final_price: 5,
+        discount_reason: 'Loyalty discount',
+      });
+    expect(res.status).toBe(201);
+    expect(Number(res.body.final_price)).toBe(5);
+    expect(res.body.discount_reason).toBe('Loyalty discount');
+  });
+});
+
 // ─── GET /user-memberships/:id/members (#374) ─────────────────────────────────
 
 describe('GET /user-memberships/:id/members', () => {
