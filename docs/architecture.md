@@ -634,6 +634,8 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | secrets | CI + deploys (Clerk test instance in dev) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Frontend builds (baked as build arg) |
 | `CORDEL_FITNESS_MEMBERS_URL`, `CORDEL_FITNESS_ADMIN_URL` | variables | App URLs for invite emails |
+| `CLOUDFLARE_R2_ENDPOINT`, `CLOUDFLARE_R2_BUCKET` | variables | R2 storage (#417) — platform-wide bucket config |
+| `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | secrets | R2 storage (#417) — optional; `deploy.yml` writes them empty if unset, so the API just reports storage as unconfigured rather than failing to deploy |
 
 ### Repo-scoped (cross-env)
 
