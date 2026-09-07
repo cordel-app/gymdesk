@@ -27,6 +27,53 @@ async function getGymTimezone(gymId: string): Promise<string> {
 }
 
 /**
+ * #366: validate + normalize the optional `member_ids` field (staff assigns
+ * Members to a recurring rule so they're auto-reserved on every generated
+ * occurrence). Returns null (all valid) or an error string.
+ */
+function normalizeMemberIds(body: any): number[] | null | string {
+  if (!('member_ids' in body) || body.member_ids == null) return null;
+  if (!Array.isArray(body.member_ids)) return 'member_ids must be an array of member ids';
+  const ids: number[] = body.member_ids.map(Number);
+  if (ids.some((id: number) => !Number.isInteger(id) || id <= 0)) return 'member_ids must contain positive integers';
+  return [...new Set(ids)];
+}
+
+async function validateMemberIds(gymId: string, memberIds: number[]): Promise<string | null> {
+  if (memberIds.length === 0) return null;
+  const { rows } = await db.query(
+    `SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${memberIds.map(() => '?').join(',')})`,
+    [gymId, ...memberIds],
+  );
+  if (rows.length !== memberIds.length) return 'One or more member_ids were not found for this gym';
+  return null;
+}
+
+async function setRuleMembers(gymId: string, ruleId: number, memberIds: number[]): Promise<void> {
+  await db.query('DELETE FROM activity_type_schedule_rule_members WHERE schedule_rule_id = ?', [ruleId]);
+  if (memberIds.length === 0) return;
+  await db.query(
+    `INSERT INTO activity_type_schedule_rule_members (gym_id, schedule_rule_id, member_id) VALUES ${memberIds.map(() => '(?,?,?)').join(',')}`,
+    memberIds.flatMap((memberId) => [gymId, ruleId, memberId]),
+  );
+}
+
+async function getRuleMemberIdsByRule(ruleIds: number[]): Promise<Map<number, number[]>> {
+  const map = new Map<number, number[]>();
+  if (ruleIds.length === 0) return map;
+  const { rows } = await db.query(
+    `SELECT schedule_rule_id, member_id FROM activity_type_schedule_rule_members WHERE schedule_rule_id IN (${ruleIds.map(() => '?').join(',')})`,
+    ruleIds,
+  );
+  for (const r of rows) {
+    const arr = map.get(r.schedule_rule_id) ?? [];
+    arr.push(r.member_id);
+    map.set(r.schedule_rule_id, arr);
+  }
+  return map;
+}
+
+/**
  * Normalise the weekdays for a weekly rule.
  * Accepts either the new `weekdays: number[]` field or the legacy `weekday: number` field
  * and always returns a sorted, deduplicated array. Returns null for non-weekly types.
@@ -121,7 +168,8 @@ activityTypeScheduleRulesRouter.get('/', async (req, res) => {
     'SELECT * FROM activity_type_schedule_rules WHERE activity_type_id = ? AND gym_id = ? ORDER BY created_at ASC',
     [activityTypeId, gymId],
   );
-  res.json(rows.map(formatRule));
+  const memberIdsByRule = await getRuleMemberIdsByRule(rows.map((r: any) => r.id));
+  res.json(rows.map((r: any) => ({ ...formatRule(r), member_ids: memberIdsByRule.get(r.id) ?? [] })));
 });
 
 // POST /activity-types/:activityTypeId/schedule-rules
@@ -133,6 +181,13 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
   }
 
   const err = validateRule(req.body); if (err) return res.status(400).json({ error: err });
+
+  const memberIds = normalizeMemberIds(req.body);
+  if (typeof memberIds === 'string') return res.status(400).json({ error: memberIds });
+  if (memberIds) {
+    const memberErr = await validateMemberIds(gymId, memberIds);
+    if (memberErr) return res.status(400).json({ error: memberErr });
+  }
 
   const { type, start_date, end_date, weekday, ordinal, start_time, end_time } = req.body;
   const weekdays = resolveWeekdays(req.body);
@@ -153,11 +208,15 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
     ],
   );
 
+  if (memberIds && memberIds.length > 0) {
+    await setRuleMembers(gymId, insertId, memberIds);
+  }
+
   const gymTimezone = await getGymTimezone(gymId);
   await materializeScheduleRule(insertId, gymTimezone);
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [insertId]);
-  res.status(201).json(formatRule(rows[0]));
+  res.status(201).json({ ...formatRule(rows[0]), member_ids: memberIds ?? [] });
 });
 
 // PUT /activity-types/:activityTypeId/schedule-rules/:ruleId
@@ -176,6 +235,13 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   if (existing.length === 0) return res.status(404).json({ error: 'Schedule rule not found' });
 
   const err = validateRule(req.body); if (err) return res.status(400).json({ error: err });
+
+  const memberIds = normalizeMemberIds(req.body);
+  if (typeof memberIds === 'string') return res.status(400).json({ error: memberIds });
+  if (memberIds) {
+    const memberErr = await validateMemberIds(gymId, memberIds);
+    if (memberErr) return res.status(400).json({ error: memberErr });
+  }
 
   const { type, start_date, end_date, weekday, ordinal, start_time, end_time } = req.body;
   const weekdays = resolveWeekdays(req.body);
@@ -198,13 +264,18 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
     ],
   );
 
-  // Cancel future events for this rule, then regenerate
+  // `member_ids` omitted from the request body leaves the current assignment untouched.
+  if (memberIds) await setRuleMembers(gymId, Number(ruleId), memberIds);
+
+  // Cancel future events for this rule, then regenerate — re-materialization
+  // re-books the (possibly updated) assigned Members on the new occurrences.
   await cancelFutureOccurrences(Number(ruleId));
   const gymTimezone = await getGymTimezone(gymId);
   await materializeScheduleRule(Number(ruleId), gymTimezone);
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);
-  res.json(formatRule(rows[0]));
+  const currentMemberIds = memberIds ?? (await getRuleMemberIdsByRule([Number(ruleId)])).get(Number(ruleId)) ?? [];
+  res.json({ ...formatRule(rows[0]), member_ids: currentMemberIds });
 });
 
 // DELETE /activity-types/:activityTypeId/schedule-rules/:ruleId

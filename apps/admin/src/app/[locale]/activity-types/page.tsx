@@ -13,6 +13,8 @@ import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall } from '@/components/ui';
+import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
+import type { MemberResult } from '../calendar/MemberSearchInput';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +56,7 @@ interface ScheduleRule {
   ordinal: 'first' | 'second' | 'third' | 'fourth' | 'fifth' | 'last' | null;
   start_time: string;
   end_time: string;
+  member_ids: number[];
 }
 
 interface Center { id: number; name: string; }
@@ -149,6 +152,8 @@ export default function ActivityTypesPage() {
   const [editRuleForm, setEditRuleForm] = useState<RuleForm>(emptyRuleForm);
   const [ruleSaving, setRuleSaving] = useState(false);
   const [ruleError, setRuleError] = useState<string | null>(null);
+  const [addRuleMembers, setAddRuleMembers] = useState<MemberResult[]>([]);
+  const [editRuleMembers, setEditRuleMembers] = useState<MemberResult[]>([]);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -327,6 +332,7 @@ export default function ActivityTypesPage() {
     setEditingRuleId(null);
     setAddingRuleFor(actId);
     setAddRuleForm(emptyRuleForm);
+    setAddRuleMembers([]);
     setRuleError(null);
   }
 
@@ -354,6 +360,7 @@ export default function ActivityTypesPage() {
           ordinal: addRuleForm.ordinal || null,
           start_time: addRuleForm.start_time,
           end_time: addRuleForm.end_time,
+          member_ids: addRuleMembers.map((m) => m.id),
         }),
       });
       setAddingRuleFor(null);
@@ -365,7 +372,7 @@ export default function ActivityTypesPage() {
     }
   }
 
-  function openEditRule(rule: ScheduleRule) {
+  async function openEditRule(rule: ScheduleRule) {
     setAddingRuleFor(null);
     setEditingRuleId(rule.id);
     setEditRuleForm({
@@ -379,6 +386,15 @@ export default function ActivityTypesPage() {
       end_time: rule.end_time,
     });
     setRuleError(null);
+    setEditRuleMembers([]);
+    if (rule.member_ids.length > 0) {
+      try {
+        const members = await Promise.all(rule.member_ids.map((id) => apiFetch<MemberResult>(`/members/${id}`)));
+        setEditRuleMembers(members);
+      } catch {
+        // Member lookup failing shouldn't block editing the rest of the rule.
+      }
+    }
   }
 
   function cancelEditRule() {
@@ -405,6 +421,7 @@ export default function ActivityTypesPage() {
           ordinal: editRuleForm.ordinal || null,
           start_time: editRuleForm.start_time,
           end_time: editRuleForm.end_time,
+          member_ids: editRuleMembers.map((m) => m.id),
         }),
       });
       setEditingRuleId(null);
@@ -476,6 +493,9 @@ export default function ActivityTypesPage() {
     saveLabel: string,
     onSave: () => void,
     onCancel: () => void,
+    members: MemberResult[],
+    setMembers: (m: MemberResult[]) => void,
+    capacity: number,
   ) {
     return (
       <div style={{ background: 'var(--gd-card-bg, #f9f9fb)', border: '1px solid var(--gd-card-border, #eee)', borderRadius: 8, padding: '14px 16px', marginBottom: 10 }}>
@@ -562,6 +582,15 @@ export default function ActivityTypesPage() {
             <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: to24h(e.target.value) })} style={inlineInputStyle} />
           </div>
         </div>
+        <div style={{ marginBottom: 10 }}>
+          <label style={inlineLabelStyle}>{ts('label_members')}</label>
+          <MemberMultiSelect
+            selected={members}
+            onChange={setMembers}
+            capacity={capacity}
+            overCapacityLabel={(count, cap) => ts('members_over_capacity', { count, capacity: cap })}
+          />
+        </div>
         {ruleError && <p style={errorStyle}>{ruleError}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} style={btnSmall('#888')}>{ts('cancel')}</button>
@@ -597,6 +626,9 @@ export default function ActivityTypesPage() {
                     ts('update_rule'),
                     () => saveEditRule(row.id, rule.id),
                     cancelEditRule,
+                    editRuleMembers,
+                    setEditRuleMembers,
+                    row.max_capacity,
                   )}
                 </div>
               ) : (
@@ -616,6 +648,9 @@ export default function ActivityTypesPage() {
               ts('save_rule'),
               () => saveAddRule(row.id),
               cancelAddRule,
+              addRuleMembers,
+              setAddRuleMembers,
+              row.max_capacity,
             )
           : editingRuleId == null && (
               <button

@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { db } from '../infra/db';
+import { bookMemberOnSession } from '../api/bookings';
 
 export interface ScheduleRule {
   id: number;
@@ -177,6 +178,44 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
         r.starts_at, r.ends_at, r.all_day, r.status, r.schedule_rule_id, r.created_at, r.updated_at,
       ]),
     );
+  }
+
+  await bookAssignedMembersOnNewOccurrences(rule.id, rule.gym_id, rows.map((r) => r.starts_at));
+}
+
+/**
+ * #366: for every Member assigned to this recurring rule (staff selection at
+ * rule creation/edit), reserve them on the occurrences just materialized —
+ * same reservation mechanism (force=true) staff use for a manual add, so
+ * capacity is never a hard block here either. Idempotent: bookMemberOnSession
+ * is called once per fresh occurrence, and each occurrence is a brand-new
+ * calendar_events row with no existing bookings.
+ */
+async function bookAssignedMembersOnNewOccurrences(ruleId: number, gymId: string, startsAtValues: string[]): Promise<void> {
+  if (startsAtValues.length === 0) return;
+
+  const { rows: memberRows } = await db.query(
+    'SELECT member_id FROM activity_type_schedule_rule_members WHERE schedule_rule_id = ?',
+    [ruleId],
+  );
+  if (memberRows.length === 0) return;
+
+  const { rows: eventRows } = await db.query(
+    `SELECT id FROM calendar_events
+     WHERE schedule_rule_id = ? AND starts_at IN (${startsAtValues.map(() => '?').join(',')})`,
+    [ruleId, ...startsAtValues],
+  );
+
+  for (const ev of eventRows) {
+    for (const m of memberRows) {
+      try {
+        await bookMemberOnSession(gymId, m.member_id, ev.id, true);
+      } catch {
+        // Best-effort: a booking that can't be created for one member on one
+        // occurrence (e.g. it was cancelled concurrently) must not block the
+        // rest of the assigned Members or occurrences.
+      }
+    }
   }
 }
 

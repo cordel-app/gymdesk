@@ -13,7 +13,6 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
-import { insertAndFetch } from '../infra/db-helpers';
 import { sendBulkNotification } from '../infra/notifications';
 import { bookMemberOnSession } from './bookings';
 
@@ -155,6 +154,30 @@ async function validateSessionRefs(gymId: string, body: any, centerId: number) {
   return null;
 }
 
+/**
+ * #366: normalize + validate the optional `member_ids` field on session
+ * creation — staff assigning Members directly (they become normal
+ * calendar_event_bookings via the same force=true mechanism used for a
+ * manual add, so capacity is never a hard block for staff).
+ */
+function normalizeMemberIds(body: any): number[] | string {
+  if (!('member_ids' in body) || body.member_ids == null) return [];
+  if (!Array.isArray(body.member_ids)) return 'member_ids must be an array of member ids';
+  const ids: number[] = body.member_ids.map(Number);
+  if (ids.some((id: number) => !Number.isInteger(id) || id <= 0)) return 'member_ids must contain positive integers';
+  return [...new Set(ids)];
+}
+
+async function validateMemberIds(gymId: string, memberIds: number[]): Promise<string | null> {
+  if (memberIds.length === 0) return null;
+  const { rows } = await db.query(
+    `SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${memberIds.map(() => '?').join(',')})`,
+    [gymId, ...memberIds],
+  );
+  if (rows.length !== memberIds.length) return 'One or more member_ids were not found for this gym';
+  return null;
+}
+
 classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
@@ -170,10 +193,16 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
     return res.status(400).json({ error: 'max_capacity_override must be a positive integer' });
   }
 
+  const memberIds = normalizeMemberIds(req.body);
+  if (typeof memberIds === 'string') return res.status(400).json({ error: memberIds });
+
   try {
     const resolvedCenterId = await resolveCenterId(gymId, req, center_id);
     const err = await validateSessionRefs(gymId, req.body, resolvedCenterId);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
+
+    const memberErr = await validateMemberIds(gymId, memberIds);
+    if (memberErr) return res.status(400).json({ error: memberErr });
 
     // Fetch activity type name for the title field (required on calendar_events).
     const { rows: atRows2 } = await db.query(
@@ -234,6 +263,9 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
           [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
            startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
         );
+        for (const memberId of memberIds) {
+          await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
+        }
         const { rows } = await tx.query(
           `${SESSION_SELECT} WHERE ce.id = ?`,
           [insertId],
@@ -245,16 +277,21 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
       return res.status(201).json(row);
     }
 
-    const row = await insertAndFetch(
-      `INSERT INTO calendar_events
-       (gym_id, center_id, kind, title, activity_type_id, trainer_membership_id, space_id,
-        starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
-       startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
-      `${SESSION_SELECT} WHERE ce.id = ?`,
-      (id) => [id],
-    );
+    const row = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO calendar_events
+         (gym_id, center_id, kind, title, activity_type_id, trainer_membership_id, space_id,
+          starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
+         VALUES (?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
+         startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
+      );
+      for (const memberId of memberIds) {
+        await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
+      }
+      const { rows } = await tx.query(`${SESSION_SELECT} WHERE ce.id = ?`, [insertId]);
+      return rows[0];
+    });
     recordAudit(req, { action: 'create', entityType: 'class_session', entityId: row.id, next: row });
     res.status(201).json(row);
   } catch (e: any) {
