@@ -308,7 +308,16 @@
     "confirm_delete": "Eliminar",
     "error_required": "El nom és obligatori.",
     "error_generic": "Alguna cosa ha fallat.",
-    "error_load": "Error en carregar els gimnasos."
+    "error_load": "Error en carregar els gimnasos.",
+    "section_storage": "Emmagatzematge",
+    "storage_initialized": "Inicialitzat",
+    "storage_not_initialized": "No inicialitzat",
+    "storage_initialized_at": "Inicialitzat el",
+    "storage_folder": "Carpeta",
+    "btn_initialize_storage": "Inicialitza el bucket de Cloudflare",
+    "initializing_storage": "Inicialitzant…",
+    "storage_not_configured": "L'emmagatzematge de Cloudflare no està configurat per a aquest desplegament.",
+    "error_storage_initialize": "No s'ha pogut inicialitzar l'emmagatzematge de Cloudflare."
   },
   "themes": {
     "title": "Temes base",

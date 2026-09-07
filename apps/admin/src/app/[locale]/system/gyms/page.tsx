@@ -35,6 +35,9 @@ interface Gym {
   modified_by_name: string | null;
   deleted_at: string | null;
   deleted_by_name: string | null;
+  storage_configured: boolean;
+  storage_folder_prefix: string | null;
+  storage_initialized_at: string | null;
 }
 
 const STATUSES = ['active', 'inactive'] as const;
@@ -78,6 +81,7 @@ export default function SystemGymsPage() {
 
   const [details, setDetails] = useState<Gym | null>(null);
   const [deleting, setDeleting] = useState<Gym | null>(null);
+  const [initializingStorageId, setInitializingStorageId] = useState<string | null>(null);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -208,6 +212,20 @@ export default function SystemGymsPage() {
   function handleManage(gymId: string) {
     setActiveGymId(gymId);
     router.push(`/${locale}/members`);
+  }
+
+  // ─── Storage (#417) ─────────────────────────────────────────────────────────
+
+  async function handleInitializeStorage(gym: Gym) {
+    setInitializingStorageId(gym.id);
+    try {
+      await apiFetch(`/platform/gyms/${gym.id}/storage/initialize`, { method: 'POST' });
+      await load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_storage_initialize'));
+    } finally {
+      setInitializingStorageId(null);
+    }
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -351,6 +369,31 @@ export default function SystemGymsPage() {
             <DetailRow label={t('label_slug')} value={gym.slug} />
             <DetailRow label={t('label_plan')} value={gym.plan} />
             <DetailRow label={t('label_theme')} value={gym.theme?.name ?? '—'} />
+
+            <SectionHeader title={t('section_storage')} />
+            <DetailRow
+              label={t('label_status')}
+              value={gym.storage_initialized_at ? t('storage_initialized') : t('storage_not_initialized')}
+            />
+            {gym.storage_initialized_at && (
+              <>
+                <DetailRow label={t('storage_initialized_at')} value={fmtDate(gym.storage_initialized_at)} />
+                <DetailRow label={t('storage_folder')} value={gym.storage_folder_prefix ?? '—'} />
+              </>
+            )}
+            {!gym.storage_configured ? (
+              <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c0392b' }}>{t('storage_not_configured')}</p>
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => handleInitializeStorage(gym)}
+                  disabled={initializingStorageId === gym.id}
+                  style={btnSmall('#444')}
+                >
+                  {initializingStorageId === gym.id ? t('initializing_storage') : t('btn_initialize_storage')}
+                </button>
+              </div>
+            )}
 
             <SectionHeader title={t('section_notes')} />
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('notes_placeholder')}</p>

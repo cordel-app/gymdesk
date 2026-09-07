@@ -361,7 +361,16 @@
     "confirm_delete": "Delete",
     "error_required": "Name is required.",
     "error_generic": "Something went wrong.",
-    "error_load": "Failed to load gyms."
+    "error_load": "Failed to load gyms.",
+    "section_storage": "Storage",
+    "storage_initialized": "Initialized",
+    "storage_not_initialized": "Not initialized",
+    "storage_initialized_at": "Initialized At",
+    "storage_folder": "Folder",
+    "btn_initialize_storage": "Initialize Cloudflare Bucket",
+    "initializing_storage": "Initializing…",
+    "storage_not_configured": "Cloudflare storage has not been configured for this deployment.",
+    "error_storage_initialize": "Failed to initialize Cloudflare storage."
   },
   "themes": {
     "title": "Base Themes",

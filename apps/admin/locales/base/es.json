@@ -307,7 +307,16 @@
     "confirm_delete": "Eliminar",
     "error_required": "El nombre es obligatorio.",
     "error_generic": "Algo salió mal.",
-    "error_load": "Error al cargar los gimnasios."
+    "error_load": "Error al cargar los gimnasios.",
+    "section_storage": "Almacenamiento",
+    "storage_initialized": "Inicializado",
+    "storage_not_initialized": "No inicializado",
+    "storage_initialized_at": "Inicializado el",
+    "storage_folder": "Carpeta",
+    "btn_initialize_storage": "Inicializar bucket de Cloudflare",
+    "initializing_storage": "Inicializando…",
+    "storage_not_configured": "El almacenamiento de Cloudflare no está configurado para este despliegue.",
+    "error_storage_initialize": "No se pudo inicializar el almacenamiento de Cloudflare."
   },
   "themes": {
     "title": "Temas base",
