@@ -24,7 +24,7 @@ exports.up = async (knex) => {
       t.integer('member_id').unsigned().notNullable()
         .references('id').inTable('members').onDelete('CASCADE');
 
-      t.datetime('created_at').notNullable().defaultTo(knex.raw('UTC_TIMESTAMP()'));
+      t.datetime('created_at').notNullable().defaultTo(knex.fn.now());
 
       t.index(['gym_id', 'schedule_rule_id'], 'atsrm_gym_rule_idx');
       t.index(['gym_id', 'member_id'], 'atsrm_gym_member_idx');
