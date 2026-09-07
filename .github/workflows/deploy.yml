@@ -47,7 +47,8 @@ jobs:
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         # Runtime env is the SINGLE SOURCE OF TRUTH in GitHub: these secrets/vars
-        # are written to an EnvironmentFile on the VPS on every deploy (see script).
+        # are written as inline Environment= lines in the fitness-api.container
+        # quadlet unit on the VPS, regenerated on every deploy (see script).
         # To change a value, edit it in GitHub → Settings → Environments → dev.
         # Never hand-edit env on the VPS.
         env:
@@ -102,36 +103,50 @@ jobs:
               if [ -z "${!v:-}" ]; then echo "ERROR: $v is empty in GitHub env 'dev'"; exit 1; fi
             done
 
-            ENV_FILE="$HOME/fitness-api.env"
-            umask 077
-            cat > "$ENV_FILE" <<ENVEOF
-            NODE_ENV=${APP_NODE_ENV}
-            PORT=${APP_PORT}
-            CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
-            CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
-            CLERK_WEBHOOK_SIGNING_SECRET=${CLERK_WEBHOOK_SIGNING_SECRET}
-            CORDEL_FITNESS_DB_HOST=${CORDEL_FITNESS_DB_HOST}
-            CORDEL_FITNESS_DB_USER=${CORDEL_FITNESS_DB_USER}
-            CORDEL_FITNESS_DB_PASSWORD=${CORDEL_FITNESS_DB_PASSWORD}
-            CORDEL_FITNESS_DB_NAME=${CORDEL_FITNESS_DB_NAME}
-            CORDEL_FITNESS_ADMIN_URL=${CORDEL_FITNESS_ADMIN_URL}
-            CORDEL_FITNESS_MEMBERS_URL=${CORDEL_FITNESS_MEMBERS_URL}
-            CLOUDFLARE_R2_ENDPOINT=${CLOUDFLARE_R2_ENDPOINT:-}
-            CLOUDFLARE_R2_ACCESS_KEY_ID=${CLOUDFLARE_R2_ACCESS_KEY_ID:-}
-            CLOUDFLARE_R2_SECRET_ACCESS_KEY=${CLOUDFLARE_R2_SECRET_ACCESS_KEY:-}
-            CLOUDFLARE_R2_BUCKET=${CLOUDFLARE_R2_BUCKET:-}
-            ENVEOF
-
-            # Point the quadlet at the env file and drop any inline Environment=
-            # lines so the GitHub-sourced env file is authoritative (podman --env
-            # would otherwise override --env-file).
+            # Values are written as inline Environment= lines directly into the
+            # quadlet unit file (no separate EnvironmentFile) — GitHub stays the
+            # single source of truth and this block is fully regenerated on
+            # every deploy, so nothing here is ever hand-edited on the VPS.
             CF="$HOME/.config/containers/systemd/fitness-api.container"
             if [ ! -f "$CF" ]; then echo "ERROR: quadlet $CF not found"; exit 1; fi
-            cp "$CF" "$CF.bak.$(date +%s)"
-            sed -i '/^Environment=/d' "$CF"
-            if ! grep -q "^EnvironmentFile=${ENV_FILE}$" "$CF"; then
-              sed -i "\|^\[Container\]|a EnvironmentFile=${ENV_FILE}" "$CF"
+            if ! grep -q '^\[Container\]$' "$CF"; then
+              echo "ERROR: [Container] section not found in $CF"; exit 1
             fi
+
+            umask 077
+            cp "$CF" "$CF.bak.$(date +%s)"
+            # Keep only the 3 most recent backups — they now carry secrets too.
+            ls -t "$CF".bak.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+
+            ENV_BLOCK="$(mktemp)"
+            cat > "$ENV_BLOCK" <<ENVEOF
+            Environment=NODE_ENV=${APP_NODE_ENV}
+            Environment=PORT=${APP_PORT}
+            Environment=CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+            Environment=CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
+            Environment=CLERK_WEBHOOK_SIGNING_SECRET=${CLERK_WEBHOOK_SIGNING_SECRET}
+            Environment=CORDEL_FITNESS_DB_HOST=${CORDEL_FITNESS_DB_HOST}
+            Environment=CORDEL_FITNESS_DB_USER=${CORDEL_FITNESS_DB_USER}
+            Environment=CORDEL_FITNESS_DB_PASSWORD=${CORDEL_FITNESS_DB_PASSWORD}
+            Environment=CORDEL_FITNESS_DB_NAME=${CORDEL_FITNESS_DB_NAME}
+            Environment=CORDEL_FITNESS_ADMIN_URL=${CORDEL_FITNESS_ADMIN_URL}
+            Environment=CORDEL_FITNESS_MEMBERS_URL=${CORDEL_FITNESS_MEMBERS_URL}
+            Environment=CLOUDFLARE_R2_ENDPOINT=${CLOUDFLARE_R2_ENDPOINT:-}
+            Environment=CLOUDFLARE_R2_ACCESS_KEY_ID=${CLOUDFLARE_R2_ACCESS_KEY_ID:-}
+            Environment=CLOUDFLARE_R2_SECRET_ACCESS_KEY=${CLOUDFLARE_R2_SECRET_ACCESS_KEY:-}
+            Environment=CLOUDFLARE_R2_BUCKET=${CLOUDFLARE_R2_BUCKET:-}
+            ENVEOF
+
+            # Drop this unit's previous Environment=/EnvironmentFile= lines,
+            # then insert the fresh GitHub-sourced block right after
+            # [Container].
+            sed -i '/^Environment=/d; /^EnvironmentFile=/d' "$CF"
+            sed -i "/^\[Container\]$/r $ENV_BLOCK" "$CF"
+            rm -f "$ENV_BLOCK"
+
+            # Retire the old EnvironmentFile-based secrets file (superseded above).
+            rm -f "$HOME/fitness-api.env"
+
             systemctl --user daemon-reload
 
             if ! systemctl --user restart fitness-api.service; then
