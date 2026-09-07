@@ -212,6 +212,7 @@
     "filter_member": "Socio",
     "filter_from": "Desde",
     "filter_to": "Hasta",
+    "filter_status": "Estado",
     "filter_clear": "Limpiar filtros",
     "col_member": "Socio",
     "col_plan": "Plan",
