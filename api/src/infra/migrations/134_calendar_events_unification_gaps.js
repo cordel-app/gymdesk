@@ -133,23 +133,12 @@ exports.up = async (knex) => {
         .withKeyName('fk_cpt_calendar_event_booking');
     });
   }
-  // At most one of the legacy (bookings) and new (calendar_event_bookings)
-  // booking references should ever be set on the same ledger row.
-  const [[{ cnt: cntSingleBookingCheck }]] = await knex.raw(
-    `SELECT COUNT(*) AS cnt FROM information_schema.TABLE_CONSTRAINTS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'class_package_transactions'
-       AND CONSTRAINT_NAME = 'chk_cpt_single_booking_ref'`,
-  );
-  if (cntSingleBookingCheck === 0) {
-    await knex.raw(
-      "ALTER TABLE class_package_transactions ADD CONSTRAINT chk_cpt_single_booking_ref " +
-      "CHECK (booking_id IS NULL OR calendar_event_booking_id IS NULL)",
-    );
-  }
+  // NOTE: a CHECK(booking_id IS NULL OR calendar_event_booking_id IS NULL) was
+  // intended here but MySQL/HeatWave rejects it when booking_id is referenced by
+  // a FK referential action. Mutual exclusivity is enforced in package-credits.ts.
 };
 
 exports.down = async (knex) => {
-  await knex.raw('ALTER TABLE class_package_transactions DROP CHECK chk_cpt_single_booking_ref').catch(() => {});
   if (await knex.schema.hasColumn('class_package_transactions', 'calendar_event_booking_id')) {
     await knex.raw('ALTER TABLE class_package_transactions DROP FOREIGN KEY fk_cpt_calendar_event_booking').catch(() => {});
     await knex.schema.alterTable('class_package_transactions', (t) => t.dropColumn('calendar_event_booking_id'));
