@@ -62,7 +62,7 @@ function validateUnits(units: any): string | null {
   return null;
 }
 
-async function validateTaxRateId(gymId: string, taxRateId: any): Promise<string | null> {
+export async function validateTaxRateId(gymId: string, taxRateId: any): Promise<string | null> {
   if (taxRateId === undefined || taxRateId === null || taxRateId === '') return null;
   const n = Number(taxRateId);
   if (!Number.isInteger(n)) return 'tax_rate_id must be an integer';
@@ -74,7 +74,7 @@ async function validateTaxRateId(gymId: string, taxRateId: any): Promise<string 
   return null;
 }
 
-function computePriceFields(row: any) {
+export function computePriceFields(row: any) {
   const amount = row.amount != null ? parseFloat(row.amount) : null;
   const rate = row.tax_rate_percent != null ? parseFloat(row.tax_rate_percent) : null;
   const behavior = row.tax_behavior ?? 'inclusive';
