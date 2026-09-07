@@ -652,7 +652,13 @@
     "assign_error_no_members": "Selecciona almenys un membre.",
     "assign_error_exact_count": "Aquest pla requereix exactament {count} membre(s).",
     "assign_error_no_owner": "Selecciona qui és el titular.",
-    "assign_error_no_start": "La data d'inici és obligatòria."
+    "assign_error_no_start": "La data d'inici és obligatòria.",
+    "label_tax_rate": "Tipus d'impost",
+    "label_tax_behavior": "Comportament de l'impost",
+    "label_current_price": "Preu actual",
+    "tax_rate_default": "Per defecte del gimnàs",
+    "tax_behavior_inclusive": "Impost inclòs en el preu",
+    "tax_behavior_exclusive": "Impost afegit al preu"
   },
   "prices": {
     "title": "Preus",

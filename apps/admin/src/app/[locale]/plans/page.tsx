@@ -43,6 +43,7 @@ interface PriceRow { id: number; price: string; valid_from: string; valid_to: st
 interface ActivityType { id: number; name: string; }
 interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; availability: string; }
 interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
+interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; }
 
 interface Plan {
   id: number;
@@ -63,6 +64,12 @@ interface Plan {
   modified_by_name: string | null;
   deleted_at: string | null;
   charge_benefits: ChargeBenefit[];
+  tax_rate_id: number | null;
+  tax_behavior: 'inclusive' | 'exclusive';
+  tax_rate_name: string | null;
+  tax_rate_percent: string | null;
+  amount_excl_tax: number | null;
+  amount_incl_tax: number | null;
 }
 
 const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
@@ -71,6 +78,7 @@ const MEMBER_LIMITS = ['1', '2', 'family'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
+const TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
 
 // Applied automatically to every new plan; staff can adjust it afterwards via the Billing Policy section.
 const DEFAULT_BILLING_POLICY = {
@@ -93,6 +101,8 @@ const emptyEditForm = {
   lifecycle_status: 'draft' as Plan['lifecycle_status'],
   enrollment_status: 'staff_only' as Plan['enrollment_status'],
   member_limit: '1' as Plan['member_limit'],
+  tax_rate_id: '',
+  tax_behavior: 'inclusive' as Plan['tax_behavior'],
 };
 
 type InlineNew = {
@@ -101,12 +111,17 @@ type InlineNew = {
   lifecycle_status: Plan['lifecycle_status'];
   enrollment_status: Plan['enrollment_status'];
   member_limit: Plan['member_limit'];
+  tax_rate_id: string;
+  tax_behavior: Plan['tax_behavior'];
   saving: boolean;
   error: string | null;
 };
 
 function emptyInlineNew(): InlineNew {
-  return { name: '', description: '', lifecycle_status: 'draft', enrollment_status: 'staff_only', member_limit: '1', saving: false, error: null };
+  return {
+    name: '', description: '', lifecycle_status: 'draft', enrollment_status: 'staff_only', member_limit: '1',
+    tax_rate_id: '', tax_behavior: 'inclusive', saving: false, error: null,
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -184,6 +199,9 @@ export default function PlansPage() {
   const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
   const [cbSaving, setCbSaving] = useState(false);
 
+  // Tax rates (#413)
+  const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
+
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   useEffect(() => {
@@ -193,8 +211,18 @@ export default function PlansPage() {
   useEffect(() => {
     if (!gymLoading && activeGymId) {
       apiFetch<GymCharge[]>('/sellable-items?availability=available').then(setGymCharges).catch(() => {});
+      apiFetch<TaxRate[]>('/taxes').then(setTaxRates).catch(() => setTaxRates([]));
     }
   }, [gymLoading, activeGymId]);
+
+  function taxRateOptions(currentId: string) {
+    const options = taxRates.filter((tr) => tr.status === 'active');
+    if (currentId && !options.some((tr) => String(tr.id) === currentId)) {
+      const current = taxRates.find((tr) => String(tr.id) === currentId);
+      if (current) options.push(current);
+    }
+    return options;
+  }
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
@@ -237,6 +265,8 @@ export default function PlansPage() {
       lifecycle_status: plan.lifecycle_status,
       enrollment_status: plan.enrollment_status,
       member_limit: plan.member_limit,
+      tax_rate_id: plan.tax_rate_id != null ? String(plan.tax_rate_id) : '',
+      tax_behavior: plan.tax_behavior ?? 'inclusive',
     });
     setEditError(null);
   }
@@ -258,6 +288,8 @@ export default function PlansPage() {
           lifecycle_status: editForm.lifecycle_status,
           enrollment_status: editForm.enrollment_status,
           member_limit: editForm.member_limit,
+          tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
+          tax_behavior: editForm.tax_behavior,
         }),
       });
       setEditingId(null);
@@ -293,6 +325,8 @@ export default function PlansPage() {
           lifecycle_status: inlineNew.lifecycle_status,
           enrollment_status: inlineNew.enrollment_status,
           member_limit: inlineNew.member_limit,
+          tax_rate_id: inlineNew.tax_rate_id !== '' ? parseInt(inlineNew.tax_rate_id, 10) : null,
+          tax_behavior: inlineNew.tax_behavior,
         }),
       });
       await apiFetch(`/membership-plans/${created.id}/billing-policy`, {
@@ -575,6 +609,31 @@ export default function PlansPage() {
               </select>
             </div>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={inlineLabelStyle}>{t('plans.label_tax_rate')}</label>
+              <select
+                value={inlineNew.tax_rate_id}
+                onChange={(e) => setInlineNew({ ...inlineNew, tax_rate_id: e.target.value })}
+                style={inlineSelectStyle}
+              >
+                <option value="">{t('plans.tax_rate_default')}</option>
+                {taxRateOptions(inlineNew.tax_rate_id).map((tr) => (
+                  <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('plans.label_tax_behavior')}</label>
+              <select
+                value={inlineNew.tax_behavior}
+                onChange={(e) => setInlineNew({ ...inlineNew, tax_behavior: e.target.value as Plan['tax_behavior'] })}
+                style={inlineSelectStyle}
+              >
+                {TAX_BEHAVIORS.map((b) => <option key={b} value={b}>{t(`plans.tax_behavior_${b}`)}</option>)}
+              </select>
+            </div>
+          </div>
           <p style={{ ...fieldDescStyle, margin: '0 0 12px' }}>
             {t('plans.default_billing_notice', {
               billing: fmtBillingInterval(DEFAULT_BILLING_POLICY.recurring_billing_interval, DEFAULT_BILLING_POLICY.recurring_billing_unit),
@@ -729,6 +788,29 @@ export default function PlansPage() {
                           {MEMBER_LIMITS.map((m) => (
                             <option key={m} value={m}>{t(`plans.member_limit_${m}`)}</option>
                           ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={inlineLabelStyle}>{t('plans.label_tax_rate')}</label>
+                        <select
+                          value={editForm.tax_rate_id}
+                          onChange={(e) => setEditForm({ ...editForm, tax_rate_id: e.target.value })}
+                          style={inlineSelectStyle}
+                        >
+                          <option value="">{t('plans.tax_rate_default')}</option>
+                          {taxRateOptions(editForm.tax_rate_id).map((tr) => (
+                            <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={inlineLabelStyle}>{t('plans.label_tax_behavior')}</label>
+                        <select
+                          value={editForm.tax_behavior}
+                          onChange={(e) => setEditForm({ ...editForm, tax_behavior: e.target.value as Plan['tax_behavior'] })}
+                          style={inlineSelectStyle}
+                        >
+                          {TAX_BEHAVIORS.map((b) => <option key={b} value={b}>{t(`plans.tax_behavior_${b}`)}</option>)}
                         </select>
                       </div>
                     </div>
@@ -994,6 +1076,16 @@ export default function PlansPage() {
                       title={t('plans.section_prices')}
                       action={priceForPlanId === plan.id ? null : <button onClick={() => openAddPrice(plan.id)} style={linkBtn}>+ Add</button>}
                     />
+                    <DetailRow
+                      label={t('plans.label_tax_rate')}
+                      value={plan.tax_rate_name ? `${plan.tax_rate_name} (${parseFloat(plan.tax_rate_percent ?? '0')}%, ${t(`plans.tax_behavior_${plan.tax_behavior}`)})` : t('plans.tax_rate_default')}
+                    />
+                    {plan.current_price != null && plan.amount_excl_tax != null && plan.amount_incl_tax != null && (
+                      <DetailRow
+                        label={t('plans.label_current_price')}
+                        value={`€${plan.amount_excl_tax.toFixed(2)} + tax = €${plan.amount_incl_tax.toFixed(2)}`}
+                      />
+                    )}
                     {priceForPlanId === plan.id && (
                       <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>

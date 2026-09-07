@@ -47,7 +47,7 @@ exports.up = async (knex) => {
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'calendar_events'
        AND CONSTRAINT_NAME = 'chk_ce_kind'`,
   );
-  if (cntKindChk === 0) {
+  if (Number(cntKindChk) === 0) {
     await knex.raw(
       "ALTER TABLE calendar_events ADD CONSTRAINT chk_ce_kind CHECK (kind IN ('session','event'))",
     );
@@ -84,32 +84,31 @@ exports.up = async (knex) => {
   }
 
   // 6. Fix calendar_event_shared_training_requests.calendar_event_id FK to CASCADE.
-  //    Migration 133 used RESTRICT (Knex default). Two independent guards so a retry
-  //    after a partial failure doesn't leave the table with no FK at all.
-
-  // 6a. Drop RESTRICT FK if still present
-  const [[{ cnt: cntRestrictFk }]] = await knex.raw(
-    `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
-     WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
-       AND DELETE_RULE = 'RESTRICT'`,
+  //    Migration 133 created fk_cestr_event without .onDelete(), which MySQL may
+  //    store as RESTRICT or NO ACTION (the two are equivalent at runtime). We join
+  //    TABLE_CONSTRAINTS (has TABLE_NAME) with REFERENTIAL_CONSTRAINTS (has DELETE_RULE)
+  //    to read the actual rule, then branch once rather than using two separate COUNT
+  //    guards that can disagree.
+  const [fkUpRows] = await knex.raw(
+    `SELECT rc.DELETE_RULE
+     FROM information_schema.TABLE_CONSTRAINTS tc
+     JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+       ON rc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+     WHERE tc.TABLE_SCHEMA = DATABASE()
+       AND tc.TABLE_NAME = 'calendar_event_shared_training_requests'
+       AND tc.CONSTRAINT_NAME = 'fk_cestr_event'`,
   );
-  if (cntRestrictFk > 0) {
+  const upDeleteRule = fkUpRows[0]?.DELETE_RULE ?? null; // null = FK absent
+
+  // 6a. Drop the existing FK if it exists but is not already CASCADE
+  if (upDeleteRule !== null && upDeleteRule !== 'CASCADE') {
     await knex.raw(
       'ALTER TABLE calendar_event_shared_training_requests DROP FOREIGN KEY fk_cestr_event',
     );
   }
 
-  // 6b. Add CASCADE FK if absent
-  const [[{ cnt: cntCascadeFk }]] = await knex.raw(
-    `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
-     WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
-       AND DELETE_RULE = 'CASCADE'`,
-  );
-  if (cntCascadeFk === 0) {
+  // 6b. Add CASCADE FK if it was absent or was just dropped above
+  if (upDeleteRule !== 'CASCADE') {
     await knex.raw(
       `ALTER TABLE calendar_event_shared_training_requests
        ADD CONSTRAINT fk_cestr_event
@@ -146,31 +145,29 @@ exports.down = async (knex) => {
     }
   }
 
-  // Restore RESTRICT FK on calendar_event_shared_training_requests (two independent guards)
+  // Restore RESTRICT FK on calendar_event_shared_training_requests
 
-  // 6a (down). Drop CASCADE FK if present
-  const [[{ cnt: cntCascadeFk }]] = await knex.raw(
-    `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
-     WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
-       AND DELETE_RULE = 'CASCADE'`,
+  const [fkDownRows] = await knex.raw(
+    `SELECT rc.DELETE_RULE
+     FROM information_schema.TABLE_CONSTRAINTS tc
+     JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+       ON rc.CONSTRAINT_SCHEMA = tc.TABLE_SCHEMA AND rc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+     WHERE tc.TABLE_SCHEMA = DATABASE()
+       AND tc.TABLE_NAME = 'calendar_event_shared_training_requests'
+       AND tc.CONSTRAINT_NAME = 'fk_cestr_event'`,
   );
-  if (cntCascadeFk > 0) {
+  const downDeleteRule = fkDownRows[0]?.DELETE_RULE ?? null;
+
+  // 6a (down). Drop the CASCADE FK if present
+  if (downDeleteRule === 'CASCADE') {
     await knex.raw(
       'ALTER TABLE calendar_event_shared_training_requests DROP FOREIGN KEY fk_cestr_event',
     );
   }
 
-  // 6b (down). Add RESTRICT FK if absent
-  const [[{ cnt: cntRestrictFk }]] = await knex.raw(
-    `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
-     WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
-       AND DELETE_RULE = 'RESTRICT'`,
-  );
-  if (cntRestrictFk === 0) {
+  // 6b (down). Add RESTRICT FK if it was absent or was just dropped above
+  // RESTRICT and NO ACTION are equivalent; either means this step is already done.
+  if (downDeleteRule !== 'RESTRICT' && downDeleteRule !== 'NO ACTION') {
     await knex.raw(
       `ALTER TABLE calendar_event_shared_training_requests
        ADD CONSTRAINT fk_cestr_event

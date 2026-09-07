@@ -652,7 +652,13 @@
     "assign_error_no_members": "Selecciona al menos un miembro.",
     "assign_error_exact_count": "Este plan requiere exactamente {count} miembro(s).",
     "assign_error_no_owner": "Selecciona quién es el titular.",
-    "assign_error_no_start": "La fecha de inicio es obligatoria."
+    "assign_error_no_start": "La fecha de inicio es obligatoria.",
+    "label_tax_rate": "Tipo de impuesto",
+    "label_tax_behavior": "Comportamiento del impuesto",
+    "label_current_price": "Precio actual",
+    "tax_rate_default": "Predeterminado del gimnasio",
+    "tax_behavior_inclusive": "Impuesto incluido en el precio",
+    "tax_behavior_exclusive": "Impuesto añadido al precio"
   },
   "prices": {
     "title": "Precios",
