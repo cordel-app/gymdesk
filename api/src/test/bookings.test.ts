@@ -14,16 +14,10 @@ afterAll(async () => {
 });
 
 async function createActivityType(gymId: string, maxCapacity: number): Promise<number> {
-  // Insert into activity_types. On older DB schemas class_types still exists and
-  // class_sessions.class_type_id FKs into it, so mirror the row there too.
   const { insertId } = await db.query(
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Test Class', ?, 'active')`,
     [gymId, maxCapacity],
   );
-  await db.query(
-    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, 'Test Class', ?, 'active')`,
-    [insertId, gymId, maxCapacity],
-  ).catch(() => { /* class_types may not exist on fully-migrated DBs */ });
   return insertId;
 }
 
@@ -35,25 +29,14 @@ async function createCenter(gymId: string): Promise<number> {
   return insertId;
 }
 
-async function createSession(gymId: string, activityTypeId: number, centerId: number, maxCapacityOverride: number | null = null): Promise<number> {
-  // class_type_id is a legacy NOT NULL column present in older DB states (pre-059 drop).
-  // Try with it first; if the column no longer exists, fall back without it.
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status, max_capacity_override)
-       VALUES (?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-      [gymId, activityTypeId, activityTypeId, centerId, maxCapacityOverride],
-    );
-    return insertId;
-  } catch (err: any) {
-    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status, max_capacity_override)
-       VALUES (?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-      [gymId, activityTypeId, centerId, maxCapacityOverride],
-    );
-    return insertId;
-  }
+// #360 stage 3: sessions are now calendar_events rows (kind='session').
+async function createSession(gymId: string, activityTypeId: number, centerId: number, capacity: number | null = null): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO calendar_events (gym_id, kind, activity_type_id, center_id, title, starts_at, ends_at, status, capacity)
+     VALUES (?, 'session', ?, ?, 'Test Class', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+    [gymId, activityTypeId, centerId, capacity],
+  );
+  return insertId;
 }
 
 async function createMember(gymId: string, centerId: number, email: string): Promise<number> {
@@ -141,7 +124,7 @@ describe('Bookings', () => {
 
     // Verify the waitlisted member was promoted
     const { rows } = await db.query(
-      `SELECT status, waitlist_position FROM bookings WHERE id = ?`,
+      `SELECT status, waitlist_position FROM calendar_event_bookings WHERE id = ?`,
       [waitlistedBooking.id],
     );
     expect(rows[0].status).toBe('booked');

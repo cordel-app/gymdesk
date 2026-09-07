@@ -22,17 +22,24 @@ async function packageCredits() {
  *
  * #193: attendance_status ('pending'|'present'|'absent') is now separate from
  * booking lifecycle status ('booked'|'waitlisted'|'cancelled').
+ *
+ * #360 stage 3: backed by calendar_events (kind='session')/calendar_event_bookings
+ * instead of class_sessions/bookings — see docs/architecture.md's "Planned:
+ * CalendarEvent Unification" section. `class_session_id` is kept as the
+ * request/response field name (aliased from calendar_event_id) since it's
+ * the contract every consumer (admin/member frontends, /me/*) already reads.
  */
 const SELECT = `
-  SELECT b.*, m.name AS member_name, m.email AS member_email,
-         cs.starts_at AS session_starts_at, cs.ends_at AS session_ends_at,
-         cs.status AS session_status,
+  SELECT ceb.*, ceb.calendar_event_id AS class_session_id,
+         m.name AS member_name, m.email AS member_email,
+         ce.starts_at AS session_starts_at, ce.ends_at AS session_ends_at,
+         ce.status AS session_status,
          at.name AS class_type_name,
-         COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity
-  FROM bookings b
-  JOIN members m ON m.id = b.member_id
-  JOIN class_sessions cs ON cs.id = b.class_session_id
-  JOIN activity_types at ON at.id = cs.activity_type_id
+         COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
+  FROM calendar_event_bookings ceb
+  JOIN members m ON m.id = ceb.member_id
+  JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+  JOIN activity_types at ON at.id = ce.activity_type_id
 `;
 
 // Hook point for P2.7 (plan-access) and P3.3 (packages). Called inside the
@@ -49,16 +56,16 @@ export const bookingsRouter = Router();
 bookingsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { session_id, status } = req.query as Record<string, string | undefined>;
-  const where: string[] = ['b.gym_id = ?'];
+  const where: string[] = ['ceb.gym_id = ?'];
   const params: (string | number)[] = [gymId];
-  if (session_id) { where.push('b.class_session_id = ?'); params.push(session_id); }
-  if (status)     { where.push('b.status = ?'); params.push(status); }
+  if (session_id) { where.push('ceb.calendar_event_id = ?'); params.push(session_id); }
+  if (status)     { where.push('ceb.status = ?'); params.push(status); }
   const { rows } = await db.query(
     `${SELECT} WHERE ${where.join(' AND ')}
      ORDER BY
-       FIELD(b.status, 'booked','attended','no_show','waitlisted','cancelled'),
-       b.waitlist_position IS NULL, b.waitlist_position ASC,
-       b.booked_at ASC`,
+       FIELD(ceb.status, 'booked','attended','no_show','waitlisted','cancelled'),
+       ceb.waitlist_position IS NULL, ceb.waitlist_position ASC,
+       ceb.booked_at ASC`,
     params,
   );
   res.json(rows);
@@ -66,7 +73,7 @@ bookingsRouter.get('/', async (req, res) => {
 
 bookingsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
+  const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
   if (rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
   res.json(rows[0]);
 });
@@ -87,11 +94,11 @@ export async function bookMemberOnSession(
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
-      `SELECT cs.id, cs.activity_type_id, cs.status, cs.center_id,
-              COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity
-       FROM class_sessions cs
-       JOIN activity_types at ON at.id = cs.activity_type_id
-       WHERE cs.id = ? AND cs.gym_id = ? AND cs.deleted_at IS NULL FOR UPDATE`,
+      `SELECT ce.id, ce.activity_type_id, ce.status, ce.center_id,
+              COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
+       FROM calendar_events ce
+       JOIN activity_types at ON at.id = ce.activity_type_id
+       WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL FOR UPDATE`,
       [sessionId, gymId],
     );
     if (session.length === 0) throw Object.assign(new Error('Session not found'), { status: 404 });
@@ -104,7 +111,7 @@ export async function bookMemberOnSession(
 
     const { rows: nextRows } = await tx.query(
       `SELECT COALESCE(MAX(waitlist_position), 0) + 1 AS next
-       FROM bookings WHERE class_session_id = ? AND status = 'waitlisted'`,
+       FROM calendar_event_bookings WHERE calendar_event_id = ? AND status = 'waitlisted'`,
       [sessionId],
     );
 
@@ -112,7 +119,7 @@ export async function bookMemberOnSession(
     if (forceWaitlist) {
       const position = Number(nextRows[0].next);
       const { insertId } = await tx.query(
-        `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at)
          VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
         [gymId, session[0].center_id, memberId, sessionId, position],
       );
@@ -121,8 +128,8 @@ export async function bookMemberOnSession(
 
     const { rows: countRows } = await tx.query(
       `SELECT COUNT(*) AS booked
-       FROM bookings
-       WHERE class_session_id = ? AND status = 'booked'`,
+       FROM calendar_event_bookings
+       WHERE calendar_event_id = ? AND status = 'booked'`,
       [sessionId],
     );
     const booked = Number(countRows[0].booked);
@@ -130,7 +137,7 @@ export async function bookMemberOnSession(
 
     if (!overCapacity || force) {
       const { insertId } = await tx.query(
-        `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at)
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
          VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
         [gymId, session[0].center_id, memberId, sessionId],
       );
@@ -142,7 +149,7 @@ export async function bookMemberOnSession(
 
     const position = Number(nextRows[0].next);
     const { insertId } = await tx.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, waitlist_position, waitlisted_at)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at)
        VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
       [gymId, session[0].center_id, memberId, sessionId, position],
     );
@@ -155,11 +162,11 @@ export async function bookMemberOnSession(
 export async function cancelBooking(gymId: string, bookingId: number, actorMembershipId?: number | null) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
-      `SELECT b.id, b.member_id, b.class_session_id, b.status, b.user_class_package_id,
-              cs.starts_at AS session_starts_at
-       FROM bookings b
-       JOIN class_sessions cs ON cs.id = b.class_session_id
-       WHERE b.id = ? AND b.gym_id = ? FOR UPDATE`,
+      `SELECT ceb.id, ceb.member_id, ceb.calendar_event_id, ceb.status, ceb.user_class_package_id,
+              ce.starts_at AS session_starts_at
+       FROM calendar_event_bookings ceb
+       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+       WHERE ceb.id = ? AND ceb.gym_id = ? FOR UPDATE`,
       [bookingId, gymId],
     );
     if (bookingRows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
@@ -167,7 +174,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     if (b.status === 'cancelled') throw Object.assign(new Error('Already cancelled'), { status: 400 });
 
     await tx.query(
-      "UPDATE bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by_membership_id=? WHERE id = ?",
+      "UPDATE calendar_event_bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by_membership_id=? WHERE id = ?",
       [actorMembershipId ?? null, bookingId],
     );
 
@@ -196,14 +203,14 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     if (b.status !== 'booked') return { promoted: null, promotedMemberId: null };
 
     const { rows: waitRows } = await tx.query(
-      `SELECT id, member_id, waitlist_position FROM bookings
-       WHERE class_session_id = ? AND status = 'waitlisted'
+      `SELECT id, member_id, waitlist_position FROM calendar_event_bookings
+       WHERE calendar_event_id = ? AND status = 'waitlisted'
        ORDER BY waitlist_position ASC LIMIT 1 FOR UPDATE`,
-      [b.class_session_id],
+      [b.calendar_event_id],
     );
     if (waitRows.length === 0) return { promoted: null, promotedMemberId: null };
     await tx.query(
-      "UPDATE bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
+      "UPDATE calendar_event_bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
       [waitRows[0].id],
     );
 
@@ -211,8 +218,8 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     // hooks against the promoted member to establish intent, then debit.
     const promotedMemberId = waitRows[0].member_id;
     const { rows: sessionRow } = await tx.query(
-      'SELECT activity_type_id, center_id FROM class_sessions WHERE id = ?',
-      [b.class_session_id],
+      'SELECT activity_type_id, center_id FROM calendar_events WHERE id = ?',
+      [b.calendar_event_id],
     );
     for (const hook of accessHooks) {
       try { await hook(tx, gymId, promotedMemberId, sessionRow[0].activity_type_id, sessionRow[0].center_id); }
@@ -239,7 +246,7 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
 
   try {
     const result = await bookMemberOnSession(gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist));
-    const { rows } = await db.query(`${SELECT} WHERE b.id = ?`, [result.id]);
+    const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     res.status(201).json({ ...rows[0], over_capacity: result.over_capacity });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
@@ -268,7 +275,7 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
 
   // Fetch current state for audit.
   const { rows: current } = await db.query(
-    `SELECT attendance_status FROM bookings WHERE id = ? AND gym_id = ? AND status = 'booked'`,
+    `SELECT attendance_status FROM calendar_event_bookings WHERE id = ? AND gym_id = ? AND status = 'booked'`,
     [req.params.id, gymId],
   );
   if (current.length === 0) {
@@ -276,7 +283,7 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
   }
 
   await db.query(
-    `UPDATE bookings
+    `UPDATE calendar_event_bookings
      SET attendance_status = ?,
          attendance_recorded_at = UTC_TIMESTAMP(),
          attendance_recorded_by_membership_id = ?,
@@ -286,7 +293,7 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
     [status, gymMembershipId, gymMembershipId, req.params.id, gymId],
   );
 
-  const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
+  const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
   res.json(rows[0]);
 });
 
@@ -303,7 +310,7 @@ bookingsRouter.post('/:id/refund-credit', requireRole('admin', 'front_desk', 'tr
   try {
     const result = await db.transaction(async (tx) => {
       const { rows: bookingRows } = await tx.query(
-        "SELECT id, status, user_class_package_id FROM bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
+        "SELECT id, status, user_class_package_id FROM calendar_event_bookings WHERE id = ? AND gym_id = ? FOR UPDATE",
         [req.params.id, gymId],
       );
       if (bookingRows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
@@ -323,7 +330,7 @@ bookingsRouter.post('/:id/refund-credit', requireRole('admin', 'front_desk', 'tr
       next: { user_class_package_id: result.userClassPackageId, actor_membership_id: gymMembershipId },
     });
 
-    const { rows } = await db.query(`${SELECT} WHERE b.id = ? AND b.gym_id = ?`, [req.params.id, gymId]);
+    const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });

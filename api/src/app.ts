@@ -18,7 +18,7 @@ import { spacesRouter } from './api/spaces';
 import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
 import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-rules';
-import { classSessionsRouter } from './api/class-sessions';
+import { classSessionsRouter } from './api/calendar-events';
 // Side-effect import: registers the booking access hook for plan allowances + center validation.
 import './api/plan-allowances';
 import { classPackagesRouter } from './api/class-packages';

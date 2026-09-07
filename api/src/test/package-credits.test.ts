@@ -28,32 +28,17 @@ async function createActivityType(gymId: string, maxCapacity = 5): Promise<numbe
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'PT Test', ?, 'active')`,
     [gymId, maxCapacity],
   );
-  // class_sessions.class_type_id may still legacy-FK into class_types on older DB states — mirror the row.
-  await db.query(
-    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, 'PT Test', ?, 'active')`,
-    [insertId, gymId, maxCapacity],
-  ).catch(() => {});
   return insertId;
 }
 
+// #360 stage 3: sessions are now calendar_events rows (kind='session').
 async function createSessionStarting(gymId: string, activityTypeId: number, centerId: number, intervalSql: string): Promise<number> {
-  // class_type_id is a legacy NOT NULL column present in older DB states (pre-059 drop) — see bookings.test.ts.
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status)
-       VALUES (?, ?, ?, ?, ${intervalSql}, DATE_ADD(${intervalSql}, INTERVAL 1 HOUR), 'scheduled')`,
-      [gymId, activityTypeId, activityTypeId, centerId],
-    );
-    return insertId;
-  } catch (err: any) {
-    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions (gym_id, activity_type_id, center_id, starts_at, ends_at, status)
-       VALUES (?, ?, ?, ${intervalSql}, DATE_ADD(${intervalSql}, INTERVAL 1 HOUR), 'scheduled')`,
-      [gymId, activityTypeId, centerId],
-    );
-    return insertId;
-  }
+  const { insertId } = await db.query(
+    `INSERT INTO calendar_events (gym_id, kind, activity_type_id, center_id, title, starts_at, ends_at, status)
+     VALUES (?, 'session', ?, ?, 'PT Test', ${intervalSql}, DATE_ADD(${intervalSql}, INTERVAL 1 HOUR), 'scheduled')`,
+    [gymId, activityTypeId, centerId],
+  );
+  return insertId;
 }
 
 async function createMember(gymId: string, centerId: number): Promise<number> {
@@ -220,7 +205,7 @@ describe('Package-credit consumption (#372)', () => {
       .send({ member_id: memberId });
     expect(res.status).toBe(201);
 
-    const { rows } = await db.query('SELECT status, attendance_status, user_class_package_id FROM bookings WHERE id = ?', [res.body.booking_id]);
+    const { rows } = await db.query('SELECT status, attendance_status, user_class_package_id FROM calendar_event_bookings WHERE id = ?', [res.body.booking_id]);
     expect(rows[0].status).toBe('booked');
     expect(rows[0].attendance_status).toBe('present');
     expect(rows[0].user_class_package_id).toBe(packageId);

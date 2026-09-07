@@ -359,11 +359,11 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
     }
     const { rows } = await db.query(
       `SELECT b.id, b.status, b.waitlist_position, b.booked_at, b.cancelled_at,
-              b.class_session_id,
+              b.calendar_event_id AS class_session_id,
               cs.starts_at, cs.ends_at, cs.status AS session_status,
               at.name AS class_name, at.description
-       FROM bookings b
-       JOIN class_sessions cs ON cs.id = b.class_session_id
+       FROM calendar_event_bookings b
+       JOIN calendar_events cs ON cs.id = b.calendar_event_id
        JOIN activity_types at ON at.id = cs.activity_type_id
        WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at ASC`,
@@ -394,7 +394,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const from = (req.query.from as string) || new Date().toISOString();
     const to = req.query.to as string | undefined;
     const activityTypeId = req.query.activity_type_id as string | undefined;
-    const where: string[] = ["cs.gym_id = ?", "cs.status = 'scheduled'", "cs.starts_at >= ?"];
+    const where: string[] = ["cs.gym_id = ?", "cs.kind = 'session'", "cs.status = 'scheduled'", "cs.starts_at >= ?"];
     const params: any[] = [gymId, from];
     if (to) { where.push('cs.starts_at <= ?'); params.push(to); }
     if (activityTypeId) { where.push('cs.activity_type_id = ?'); params.push(activityTypeId); }
@@ -416,7 +416,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               at.is_shareable,
               sp.name AS space_name,
               tm.name AS trainer_name,
-              COALESCE(cs.max_capacity_override, at.max_capacity) AS effective_capacity,
+              COALESCE(cs.capacity, at.max_capacity) AS effective_capacity,
               CASE
                 WHEN cs.trainer_membership_id IS NOT NULL AND cs.space_id IS NOT NULL
                 THEN LEAST(COALESCE(tm.max_concurrent_groups, 1), COALESCE(sp.max_concurrent_groups, 1))
@@ -425,8 +425,9 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               CASE
                 WHEN cs.trainer_membership_id IS NOT NULL AND cs.space_id IS NOT NULL
                 THEN (
-                  SELECT COUNT(*) FROM class_sessions cs2
+                  SELECT COUNT(*) FROM calendar_events cs2
                   WHERE cs2.gym_id = cs.gym_id
+                    AND cs2.kind = 'session'
                     AND cs2.trainer_membership_id = cs.trainer_membership_id
                     AND cs2.space_id = cs.space_id
                     AND cs2.starts_at = cs.starts_at AND cs2.ends_at = cs.ends_at
@@ -435,33 +436,33 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 ELSE 1
               END AS concurrent_groups_count,
               (
-                SELECT COUNT(*) FROM bookings b
-                WHERE b.class_session_id = cs.id AND b.status = 'booked'
+                SELECT COUNT(*) FROM calendar_event_bookings b
+                WHERE b.calendar_event_id = cs.id AND b.status = 'booked'
               ) AS booked_count,
               (
-                SELECT b.status FROM bookings b
-                WHERE b.class_session_id = cs.id AND b.member_id = ? AND b.status <> 'cancelled'
+                SELECT b.status FROM calendar_event_bookings b
+                WHERE b.calendar_event_id = cs.id AND b.member_id = ? AND b.status <> 'cancelled'
                 LIMIT 1
               ) AS my_booking_status,
               (
-                SELECT b.waitlist_position FROM bookings b
-                WHERE b.class_session_id = cs.id AND b.member_id = ? AND b.status = 'waitlisted'
+                SELECT b.waitlist_position FROM calendar_event_bookings b
+                WHERE b.calendar_event_id = cs.id AND b.member_id = ? AND b.status = 'waitlisted'
                 LIMIT 1
               ) AS my_waitlist_position,
               (
-                SELECT b.id FROM bookings b
-                WHERE b.class_session_id = cs.id AND b.member_id = ? AND b.status <> 'cancelled'
+                SELECT b.id FROM calendar_event_bookings b
+                WHERE b.calendar_event_id = cs.id AND b.member_id = ? AND b.status <> 'cancelled'
                 LIMIT 1
               ) AS my_booking_id,
               (
-                SELECT str.id FROM shared_training_requests str
-                WHERE str.class_session_id = cs.id AND str.requesting_member_id = ?
+                SELECT str.id FROM calendar_event_shared_training_requests str
+                WHERE str.calendar_event_id = cs.id AND str.requesting_member_id = ?
                   AND str.status IN ('pending','approved')
                 LIMIT 1
               ) AS my_shared_request_id,
               (
-                SELECT str.status FROM shared_training_requests str
-                WHERE str.class_session_id = cs.id AND str.requesting_member_id = ?
+                SELECT str.status FROM calendar_event_shared_training_requests str
+                WHERE str.calendar_event_id = cs.id AND str.requesting_member_id = ?
                   AND str.status IN ('pending','approved')
                 LIMIT 1
               ) AS my_shared_request_status,
@@ -479,7 +480,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                   ))
                   AND ctum.activity_type_id = cs.activity_type_id
               ) AS access_locked
-       FROM class_sessions cs
+       FROM calendar_events cs
        JOIN activity_types at ON at.id = cs.activity_type_id
        LEFT JOIN spaces sp ON sp.id = cs.space_id
        LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
@@ -540,7 +541,7 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id));
     // Notify fire-and-forget
     db.query(
-      `SELECT at.name AS title, cs.starts_at FROM class_sessions cs
+      `SELECT at.name AS title, cs.starts_at FROM calendar_events cs
        JOIN activity_types at ON at.id = cs.activity_type_id WHERE cs.id = ?`,
       [class_session_id],
     ).then(({ rows: si }: any) => {
@@ -594,10 +595,10 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT b.id, b.class_session_id, cs.starts_at,
+      `SELECT b.id, b.calendar_event_id AS class_session_id, cs.starts_at,
               at.name AS title
-       FROM bookings b
-       JOIN class_sessions cs ON cs.id = b.class_session_id
+       FROM calendar_event_bookings b
+       JOIN calendar_events cs ON cs.id = b.calendar_event_id
        JOIN activity_types at ON at.id = cs.activity_type_id
        WHERE b.id = ? AND b.gym_id = ? AND b.member_id = ?`,
       [req.params.id, gymId, memberId],
@@ -630,17 +631,17 @@ meRouter.post('/shared-training-requests', requireRole('member'), requireFeature
     if (validationErr) return res.status(validationErr.status).json({ error: validationErr.message, code: validationErr.code });
 
     const { rows: sessionRows } = await db.query<{ activity_type_id: number }>(
-      'SELECT activity_type_id FROM class_sessions WHERE id = ? AND gym_id = ?',
+      "SELECT activity_type_id FROM calendar_events WHERE id = ? AND gym_id = ? AND kind = 'session'",
       [class_session_id, gymId],
     );
     const { insertId } = await db.query(
-      `INSERT INTO shared_training_requests
-         (gym_id, class_session_id, requesting_member_id, activity_type_id, status, notes, created_at)
+      `INSERT INTO calendar_event_shared_training_requests
+         (gym_id, calendar_event_id, requesting_member_id, activity_type_id, status, notes, created_at)
        VALUES (?, ?, ?, ?, 'pending', ?, UTC_TIMESTAMP())`,
       [gymId, class_session_id, memberId, sessionRows[0].activity_type_id, notes ?? null],
     );
     const { rows } = await db.query(
-      'SELECT * FROM shared_training_requests WHERE id = ?',
+      'SELECT *, calendar_event_id AS class_session_id FROM calendar_event_shared_training_requests WHERE id = ?',
       [insertId],
     );
     res.status(201).json(rows[0]);
@@ -657,12 +658,12 @@ meRouter.get('/shared-training-requests', requireRole('member'), requireFeatureE
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT str.*, at.name AS activity_type_name,
+      `SELECT str.*, str.calendar_event_id AS class_session_id, at.name AS activity_type_name,
               cs.starts_at AS session_starts_at, cs.ends_at AS session_ends_at,
               sp.name AS space_name, tm.name AS trainer_name
-       FROM shared_training_requests str
+       FROM calendar_event_shared_training_requests str
        JOIN activity_types at ON at.id = str.activity_type_id
-       JOIN class_sessions cs ON cs.id = str.class_session_id
+       JOIN calendar_events cs ON cs.id = str.calendar_event_id
        LEFT JOIN spaces sp ON sp.id = cs.space_id
        LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
        WHERE str.gym_id = ? AND str.requesting_member_id = ?
@@ -680,14 +681,14 @@ meRouter.delete('/shared-training-requests/:id', requireRole('member'), requireF
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT id, status FROM shared_training_requests
+      `SELECT id, status FROM calendar_event_shared_training_requests
        WHERE id = ? AND gym_id = ? AND requesting_member_id = ?`,
       [req.params.id, gymId, memberId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Request not found' });
     if (rows[0].status !== 'pending') return res.status(409).json({ error: `Cannot cancel a ${rows[0].status} request` });
     await db.query(
-      "UPDATE shared_training_requests SET status = 'cancelled' WHERE id = ?",
+      "UPDATE calendar_event_shared_training_requests SET status = 'cancelled' WHERE id = ?",
       [req.params.id],
     );
     res.status(204).send();
@@ -1273,7 +1274,7 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
     const { centerId, allowedCenterIds } = getCenterContext(req);
     const where: string[] = [
       'b.gym_id = ?', 'b.member_id = ?', "b.status = 'booked'",
-      "cs.status = 'scheduled'", 'cs.starts_at >= ?', 'cs.starts_at <= ?',
+      "cs.kind = 'session'", "cs.status = 'scheduled'", 'cs.starts_at >= ?', 'cs.starts_at <= ?',
     ];
     const params: any[] = [gymId, memberId, now, future];
     if (centerId != null) {
@@ -1289,8 +1290,8 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
       `SELECT b.id AS booking_id, 'session' AS kind,
               cs.id AS entity_id, at.name AS title, sp.name AS space_name,
               tm.name AS trainer_name, cs.starts_at, cs.ends_at
-       FROM bookings b
-       JOIN class_sessions cs ON cs.id = b.class_session_id
+       FROM calendar_event_bookings b
+       JOIN calendar_events cs ON cs.id = b.calendar_event_id
        JOIN activity_types at ON at.id = cs.activity_type_id
        LEFT JOIN spaces sp ON sp.id = cs.space_id
        LEFT JOIN gym_memberships tm ON tm.id = cs.trainer_membership_id
@@ -1317,7 +1318,7 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     const cutoff = new Date().toISOString();
 
     const { centerId, allowedCenterIds } = getCenterContext(req);
-    const where: string[] = ['b.gym_id = ?', 'b.member_id = ?', 'cs.starts_at < ?'];
+    const where: string[] = ['b.gym_id = ?', 'b.member_id = ?', "cs.kind = 'session'", 'cs.starts_at < ?'];
     const params: any[] = [gymId, memberId, cutoff];
     if (centerId != null) {
       where.push('cs.center_id = ?');
@@ -1333,8 +1334,8 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
               cs.id AS entity_id, at.name AS title,
               cs.starts_at, cs.ends_at, b.status AS booking_status,
               b.attendance_status, b.cancelled_at
-       FROM bookings b
-       JOIN class_sessions cs ON cs.id = b.class_session_id
+       FROM calendar_event_bookings b
+       JOIN calendar_events cs ON cs.id = b.calendar_event_id
        JOIN activity_types at ON at.id = cs.activity_type_id
        WHERE ${where.join(' AND ')}
        ORDER BY cs.starts_at DESC`,

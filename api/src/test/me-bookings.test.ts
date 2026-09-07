@@ -9,11 +9,8 @@
 // correctly, apply center scoping, and (for /me/bookings and
 // /me/activity-history) join `activity_types` instead of the legacy table.
 //
-// `class_sessions.class_type_id` itself is still a legacy NOT NULL column
-// (migration 059 added `activity_type_id` alongside it but never dropped or
-// relaxed it), so test setup mirrors each activity type into `class_types`
-// under the same id and supplies both columns, matching the pattern used by
-// bookings.test.ts / member-calendar.test.ts / me-impersonation-context.test.ts.
+// #360 stage 3: sessions/bookings are now calendar_events (kind='session') /
+// calendar_event_bookings rows.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
@@ -59,20 +56,14 @@ async function createActivityType(gymId: string, maxCapacity: number): Promise<n
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Test Class', ?, 'active')`,
     [gymId, maxCapacity],
   );
-  // class_sessions.class_type_id FKs into class_types and is still NOT NULL;
-  // mirror the row there under the same id so createSession can satisfy it.
-  await db.query(
-    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status) VALUES (?, ?, 'Test Class', ?, 'active')`,
-    [insertId, gymId, maxCapacity],
-  ).catch(() => { /* class_types may not exist on a fully-migrated DB */ });
   return insertId;
 }
 
 async function createSession(gymId: string, activityTypeId: number, centerId: number, whenSql: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO class_sessions (gym_id, activity_type_id, class_type_id, center_id, starts_at, ends_at, status)
-     VALUES (?, ?, ?, ?, ${whenSql}, DATE_ADD(${whenSql}, INTERVAL 1 HOUR), 'scheduled')`,
-    [gymId, activityTypeId, activityTypeId, centerId],
+    `INSERT INTO calendar_events (gym_id, kind, activity_type_id, center_id, title, starts_at, ends_at, status)
+     VALUES (?, 'session', ?, ?, 'Test Class', ${whenSql}, DATE_ADD(${whenSql}, INTERVAL 1 HOUR), 'scheduled')`,
+    [gymId, activityTypeId, centerId],
   );
   return insertId;
 }
@@ -118,12 +109,12 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
     );
 
     await db.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at, attendance_status)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, attendance_status)
        VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), 'pending')`,
       [gymId, centerAId, memberId, futureSessionInCenterA],
     );
     await db.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at, attendance_status)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, attendance_status)
        VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), 'present')`,
       [gymId, centerAId, memberId, pastSessionInCenterA],
     );

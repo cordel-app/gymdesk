@@ -108,11 +108,11 @@ export async function debitPackageIfClaimed(tx: any, bookingId: number, gymId: s
     [intent.userClassPackageId],
   );
   await tx.query(
-    'UPDATE bookings SET user_class_package_id = ? WHERE id = ?',
+    'UPDATE calendar_event_bookings SET user_class_package_id = ? WHERE id = ?',
     [intent.userClassPackageId, bookingId],
   );
   await tx.query(
-    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, amount, reason) VALUES (?, ?, ?, -1, ?)',
+    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, calendar_event_booking_id, amount, reason) VALUES (?, ?, ?, -1, ?)',
     [gymId, intent.userClassPackageId, bookingId, 'Booking debit'],
   );
   packageIntentByTx.delete(tx);
@@ -137,11 +137,11 @@ export async function refundPackageCredit(
     [userClassPackageId],
   );
   await tx.query(
-    'UPDATE bookings SET user_class_package_id = NULL WHERE id = ?',
+    'UPDATE calendar_event_bookings SET user_class_package_id = NULL WHERE id = ?',
     [bookingId],
   );
   await tx.query(
-    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, amount, reason, actor_user_id) VALUES (?, ?, ?, 1, ?, ?)',
+    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, calendar_event_booking_id, amount, reason, actor_user_id) VALUES (?, ?, ?, 1, ?, ?)',
     [gymId, userClassPackageId, bookingId, reason, actorUserId],
   );
 }

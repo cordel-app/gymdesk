@@ -25,14 +25,10 @@ async function createActivityType(gid: string, shareable = true, capacity = 10):
      VALUES (?, ?, ?, 'active', ?)`,
     [gid, name, capacity, shareable ? 1 : 0],
   );
-  await db.query(
-    `INSERT IGNORE INTO class_types (id, gym_id, name, max_capacity, status)
-     VALUES (?, ?, ?, ?, 'active')`,
-    [insertId, gid, name, capacity],
-  ).catch(() => { /* class_types dropped on fully-migrated DBs */ });
   return insertId;
 }
 
+// #360 stage 3: sessions are now calendar_events rows (kind='session').
 async function createSession(
   gid: string,
   atId: number,
@@ -41,34 +37,21 @@ async function createSession(
   spaceId?: number,
   trainerMembershipId?: number,
 ): Promise<number> {
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions
-         (gym_id, activity_type_id, class_type_id, center_id, space_id, trainer_membership_id,
-          starts_at, ends_at, status, allows_shared_booking)
-       VALUES (?, ?, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
-               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-      [gid, atId, atId, cid, spaceId ?? null, trainerMembershipId ?? null, allowsShared],
-    );
-    return insertId;
-  } catch (err: any) {
-    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
-    const { insertId } = await db.query(
-      `INSERT INTO class_sessions
-         (gym_id, activity_type_id, center_id, space_id, trainer_membership_id,
-          starts_at, ends_at, status, allows_shared_booking)
-       VALUES (?, ?, ?, ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
-               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
-      [gid, atId, cid, spaceId ?? null, trainerMembershipId ?? null, allowsShared],
-    );
-    return insertId;
-  }
+  const { insertId } = await db.query(
+    `INSERT INTO calendar_events
+       (gym_id, kind, activity_type_id, center_id, space_id, trainer_membership_id,
+        title, starts_at, ends_at, status, allows_shared_booking)
+     VALUES (?, 'session', ?, ?, ?, ?, 'Test Session', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+             DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
+    [gid, atId, cid, spaceId ?? null, trainerMembershipId ?? null, allowsShared],
+  );
+  return insertId;
 }
 
 async function createSharedRequest(gid: string, csId: number, membId: number, atId: number): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO shared_training_requests
-       (gym_id, class_session_id, requesting_member_id, activity_type_id, status, created_at)
+    `INSERT INTO calendar_event_shared_training_requests
+       (gym_id, calendar_event_id, requesting_member_id, activity_type_id, status, created_at)
      VALUES (?, ?, ?, ?, 'pending', UTC_TIMESTAMP())`,
     [gid, csId, membId, atId],
   );
@@ -304,7 +287,7 @@ describe('POST /shared-training-requests/:id/approve', () => {
     expect(res.body.status).toBe('approved');
 
     const { rows: bookings } = await db.query(
-      'SELECT id FROM bookings WHERE member_id = ? AND class_session_id = ? AND status = ?',
+      'SELECT id FROM calendar_event_bookings WHERE member_id = ? AND calendar_event_id = ? AND status = ?',
       [m, cs, 'booked'],
     );
     expect(bookings.length).toBe(1);
@@ -339,7 +322,7 @@ describe('POST /shared-training-requests/:id/approve', () => {
       [gymId, `filler-cap-${Date.now()}@test.com`],
     );
     await db.query(
-      `INSERT INTO bookings (gym_id, center_id, member_id, class_session_id, status, booked_at)
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
        VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
       [gymId, centerId, bm, cs],
     );

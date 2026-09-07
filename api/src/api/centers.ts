@@ -19,6 +19,10 @@ const DEPENDENT_TABLES: Array<[string, string, boolean]> = [
   ['bookings', 'center_id', false],
   ['trainer_availability', 'center_id', true],
   ['events', 'center_id', true],
+  // #360 stage 3: calendar_events/calendar_event_bookings are the live
+  // tables now — class_sessions/bookings above stay only for pre-cutover rows.
+  ['calendar_events', 'center_id', true],
+  ['calendar_event_bookings', 'center_id', false],
 ];
 
 async function firstDependentTable(centerId: number, gymId: string): Promise<string | null> {
