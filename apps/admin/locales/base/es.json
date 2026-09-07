@@ -54,7 +54,8 @@
     "assigned_plans": "Planes Asignados",
     "taxes": "Impuestos",
     "feature_flags": "Flags de características",
-    "nutrition_plans": "Planes de nutrición"
+    "nutrition_plans": "Planes de nutrición",
+    "operating_hours": "Horario y Festivos"
   },
   "dashboard": {
     "title": "Panel",
@@ -2704,5 +2705,41 @@
     "error_member_required": "Por favor, selecciona un miembro.",
     "error_name_required": "Por favor, introduce un nombre para el plan.",
     "error_generic": "Se ha producido un error. Inténtalo de nuevo."
+  },
+  "operating_hours": {
+    "title": "Horario y Festivos",
+    "section_weekly": "Horario Semanal",
+    "section_holidays": "Festivos y Horarios Especiales",
+    "weekday_closed": "Cerrado",
+    "add_shift": "+ Añadir turno",
+    "remove_shift": "Eliminar",
+    "label_start_time": "Hora de inicio",
+    "label_end_time": "Hora de fin",
+    "save_weekly": "Guardar Horario Semanal",
+    "saving": "Guardando…",
+    "saved": "Horario semanal guardado.",
+    "error_generic": "Algo salió mal. Inténtalo de nuevo.",
+    "add_holiday": "+ Añadir Festivo",
+    "edit_holiday": "Editar",
+    "delete_holiday": "Eliminar",
+    "empty_holidays": "Aún no hay festivos ni horarios especiales configurados.",
+    "col_dates": "Fechas",
+    "col_hours": "Horario",
+    "col_annual_renewal": "Se repite cada año",
+    "col_label": "Etiqueta",
+    "col_actions": "Acciones",
+    "label_date_start": "Fecha de inicio *",
+    "label_date_end": "Fecha de fin *",
+    "label_is_closed": "Cerrado todo el día",
+    "label_annual_renewal": "Repetir cada año",
+    "label_label": "Etiqueta",
+    "placeholder_label": "p. ej. Navidad",
+    "confirm_delete_title": "Eliminar Festivo",
+    "confirm_delete_body": "Esto eliminará esta excepción de festivo/horario especial.",
+    "confirm_delete": "Eliminar",
+    "cancel": "Cancelar",
+    "save_changes": "Guardar",
+    "yes": "Sí",
+    "no": "No"
   }
 }

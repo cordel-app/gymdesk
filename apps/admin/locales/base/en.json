@@ -54,7 +54,8 @@
     "assigned_plans": "Assigned Plans",
     "taxes": "Taxes",
     "feature_flags": "Feature Flags",
-    "nutrition_plans": "Nutrition Plans"
+    "nutrition_plans": "Nutrition Plans",
+    "operating_hours": "Operating Hours"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -2772,5 +2773,41 @@
     "error_member_required": "Please select a member.",
     "error_name_required": "Please enter a plan name.",
     "error_generic": "An error occurred. Please try again."
+  },
+  "operating_hours": {
+    "title": "Operating Hours & Holidays",
+    "section_weekly": "Weekly Service Hours",
+    "section_holidays": "Holidays & Special Hours",
+    "weekday_closed": "Closed",
+    "add_shift": "+ Add shift",
+    "remove_shift": "Remove",
+    "label_start_time": "Start time",
+    "label_end_time": "End time",
+    "save_weekly": "Save Weekly Hours",
+    "saving": "Saving…",
+    "saved": "Weekly hours saved.",
+    "error_generic": "Something went wrong. Please try again.",
+    "add_holiday": "+ Add Holiday",
+    "edit_holiday": "Edit",
+    "delete_holiday": "Delete",
+    "empty_holidays": "No holidays or special hours configured yet.",
+    "col_dates": "Dates",
+    "col_hours": "Hours",
+    "col_annual_renewal": "Repeats Yearly",
+    "col_label": "Label",
+    "col_actions": "Actions",
+    "label_date_start": "Start date *",
+    "label_date_end": "End date *",
+    "label_is_closed": "Fully closed",
+    "label_annual_renewal": "Repeat every year",
+    "label_label": "Label",
+    "placeholder_label": "e.g. Christmas Day",
+    "confirm_delete_title": "Delete Holiday",
+    "confirm_delete_body": "This will remove this holiday/special-hours exception.",
+    "confirm_delete": "Delete",
+    "cancel": "Cancel",
+    "save_changes": "Save",
+    "yes": "Yes",
+    "no": "No"
   }
 }

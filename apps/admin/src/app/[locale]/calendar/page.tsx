@@ -15,6 +15,7 @@ import { btnStyle } from '@/components/ui';
 import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
 import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
 import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
+import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -72,6 +73,8 @@ export default function CalendarPage() {
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
+  const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
+  const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [filterId, setFilterId] = useState('');
@@ -103,6 +106,22 @@ export default function CalendarPage() {
       setTrainers(tr);
     }).catch((err: any) => toast(err.message));
   }, [activeGymId, gymLoading]);
+
+  // #418: Operating Hours & Holidays — fetched once for the grey-out background.
+  // Reference-only for admins: staff can freely create events outside these
+  // hours (no selectConstraint is applied), unlike the member calendar.
+  useEffect(() => {
+    if (!activeGymId || gymLoading) return;
+    Promise.all([
+      apiFetch<WeeklyShiftDTO[]>('/operating-hours/weekly'),
+      apiFetch<HolidayDTO[]>('/operating-hours/holidays'),
+    ]).then(([weekly, hol]) => {
+      setWeeklyHours(weekly);
+      setHolidays(hol);
+    }).catch(() => { /* feature may be disabled/unconfigured — non-fatal */ });
+  }, [activeGymId, gymLoading]);
+
+  const businessHours = weeklyToBusinessHours(weeklyHours);
 
   const fetchEvents = useCallback(
     (info: any, successCb: (events: any[]) => void, failureCb: (err: Error) => void) => {
@@ -140,11 +159,12 @@ export default function CalendarPage() {
             editable: false,
             extendedProps: { ...s, _type: 'session' },
           }));
-          successCb([...calMapped, ...sessionMapped]);
+          const holidayBg = holidayBackgroundEvents(holidays, info.start, info.end);
+          successCb([...calMapped, ...sessionMapped, ...holidayBg]);
         })
         .catch(failureCb);
     },
-    [activeGymId, filterMode, filterId, apiFetch],
+    [activeGymId, filterMode, filterId, apiFetch, holidays],
   );
 
   function refetch() {
@@ -418,6 +438,7 @@ export default function CalendarPage() {
               month: t('view_month'),
             }}
             events={fetchEvents}
+            businessHours={businessHours}
             selectable={canWrite}
             editable={canWrite}
             eventResizableFromStart={canWrite}

@@ -41,6 +41,7 @@ import { auditLogsRouter } from './api/audit-logs';
 import { centersRouter } from './api/centers';
 import { memberCentersRouter } from './api/member-centers';
 import { trainerAvailabilityRouter } from './api/trainer-availability';
+import { operatingHoursRouter } from './api/operating-hours';
 // Side-effect import: registers the booking access hook for package credits.
 // Must be imported BEFORE plan-allowances so its hook is queued first
 // (plan-access checks getPackageIntent to know whether to bail on 403).
@@ -189,6 +190,7 @@ app.use('/activity-types/:activityTypeId/schedule-rules', requireAuth(), tenantC
 app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.class_packages'), classPackagesRouter);
 app.use('/centers',       requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.centers'), centersRouter);
 app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), trainerAvailabilityRouter);
+app.use('/operating-hours', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('calendar.operating_hours'), operatingHoursRouter);
 
 // MEMBERS module — admin/front_desk=RW, trainer*/nutritionist=R_ASSIGNED, accountant/member=NONE
 app.use('/members',       requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), membersRouter);
