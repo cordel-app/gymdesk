@@ -6,13 +6,19 @@
  * Changes:
  *   1. calendar_events.center_id        — FK to centers (was missing from stage 2)
  *   2. calendar_events.kind             — 'session'|'event', default 'event'
+ *       2a. Add column (guarded)
+ *       2b. Add CHECK constraint chk_ce_kind (independent guard)
+ *       2c. Backfill schedule_rule_id rows → kind='session' (idempotent)
  *   3. calendar_event_bookings.center_id
  *   4. calendar_event_bookings.modified_at
  *   5. calendar_event_bookings.modified_by_membership_id
  *   6. calendar_event_shared_training_requests.calendar_event_id FK — fix to CASCADE
+ *       6a. Drop RESTRICT FK if present (independent guard)
+ *       6b. Add CASCADE FK if absent (independent guard)
  *   7. class_package_transactions.calendar_event_booking_id — new FK to ceb
- *   8. class_package_transactions.booking_id — make nullable so new inserts can set it NULL
- *   9. Backfill: rows with schedule_rule_id → kind='session'
+ *
+ * Note: class_package_transactions.booking_id is already nullable since migration 017;
+ * no MODIFY COLUMN is needed here.
  *
  * Every step is guarded independently — DDL is non-transactional in MySQL.
  */
@@ -27,30 +33,31 @@ exports.up = async (knex) => {
     });
   }
 
-  // 2. kind on calendar_events
+  // 2a. Add kind column on calendar_events
   if (!(await knex.schema.hasColumn('calendar_events', 'kind'))) {
     await knex.schema.table('calendar_events', (t) => {
       t.string('kind', 10).notNullable().defaultTo('event').after('center_id');
     });
+  }
 
-    const [[{ cnt: cntKindChk }]] = await knex.raw(
-      `SELECT COUNT(*) AS cnt FROM information_schema.TABLE_CONSTRAINTS
-       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'calendar_events'
-         AND CONSTRAINT_NAME = 'chk_ce_kind'`,
-    );
-    if (cntKindChk === 0) {
-      await knex.raw(
-        "ALTER TABLE calendar_events ADD CONSTRAINT chk_ce_kind CHECK (kind IN ('session','event'))",
-      );
-    }
-
-    // Backfill: materialised sessions have a schedule_rule_id; hand-created sessions
-    // (created via the class-sessions router before this migration) do not exist in
-    // production yet (hard cutover — no prod data to preserve per decision in #360).
+  // 2b. Add CHECK constraint (independent guard — column may exist without the constraint
+  //     if the connection dropped after ADD COLUMN but before this step)
+  const [[{ cnt: cntKindChk }]] = await knex.raw(
+    `SELECT COUNT(*) AS cnt FROM information_schema.TABLE_CONSTRAINTS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'calendar_events'
+       AND CONSTRAINT_NAME = 'chk_ce_kind'`,
+  );
+  if (cntKindChk === 0) {
     await knex.raw(
-      "UPDATE calendar_events SET kind = 'session' WHERE schedule_rule_id IS NOT NULL",
+      "ALTER TABLE calendar_events ADD CONSTRAINT chk_ce_kind CHECK (kind IN ('session','event'))",
     );
   }
+
+  // 2c. Backfill (idempotent): materialised sessions have a schedule_rule_id.
+  //     Hard cutover — no prod data to preserve per decision in #360.
+  await knex.raw(
+    "UPDATE calendar_events SET kind = 'session' WHERE schedule_rule_id IS NOT NULL AND kind <> 'session'",
+  );
 
   // 3. center_id on calendar_event_bookings
   if (!(await knex.schema.hasColumn('calendar_event_bookings', 'center_id'))) {
@@ -77,7 +84,10 @@ exports.up = async (knex) => {
   }
 
   // 6. Fix calendar_event_shared_training_requests.calendar_event_id FK to CASCADE.
-  //    Migration 133 used RESTRICT (Knex default). Drop and recreate.
+  //    Migration 133 used RESTRICT (Knex default). Two independent guards so a retry
+  //    after a partial failure doesn't leave the table with no FK at all.
+
+  // 6a. Drop RESTRICT FK if still present
   const [[{ cnt: cntRestrictFk }]] = await knex.raw(
     `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
      WHERE CONSTRAINT_SCHEMA = DATABASE()
@@ -89,6 +99,17 @@ exports.up = async (knex) => {
     await knex.raw(
       'ALTER TABLE calendar_event_shared_training_requests DROP FOREIGN KEY fk_cestr_event',
     );
+  }
+
+  // 6b. Add CASCADE FK if absent
+  const [[{ cnt: cntCascadeFk }]] = await knex.raw(
+    `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
+     WHERE CONSTRAINT_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'calendar_event_shared_training_requests'
+       AND REFERENCED_TABLE_NAME = 'calendar_events'
+       AND DELETE_RULE = 'CASCADE'`,
+  );
+  if (cntCascadeFk === 0) {
     await knex.raw(
       `ALTER TABLE calendar_event_shared_training_requests
        ADD CONSTRAINT fk_cestr_event
@@ -103,18 +124,6 @@ exports.up = async (knex) => {
         .references('id').inTable('calendar_event_bookings').onDelete('SET NULL')
         .withKeyName('fk_cpt_ceb');
     });
-  }
-
-  // 8. Make class_package_transactions.booking_id nullable so new code can set it NULL.
-  const [[{ IS_NULLABLE: bookingIdNullable }]] = await knex.raw(
-    `SELECT IS_NULLABLE FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'class_package_transactions'
-       AND COLUMN_NAME = 'booking_id'`,
-  );
-  if (bookingIdNullable === 'NO') {
-    await knex.raw(
-      'ALTER TABLE class_package_transactions MODIFY COLUMN booking_id INT UNSIGNED NULL',
-    );
   }
 };
 
@@ -137,7 +146,9 @@ exports.down = async (knex) => {
     }
   }
 
-  // Restore RESTRICT FK on calendar_event_shared_training_requests
+  // Restore RESTRICT FK on calendar_event_shared_training_requests (two independent guards)
+
+  // 6a (down). Drop CASCADE FK if present
   const [[{ cnt: cntCascadeFk }]] = await knex.raw(
     `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
      WHERE CONSTRAINT_SCHEMA = DATABASE()
@@ -149,6 +160,17 @@ exports.down = async (knex) => {
     await knex.raw(
       'ALTER TABLE calendar_event_shared_training_requests DROP FOREIGN KEY fk_cestr_event',
     );
+  }
+
+  // 6b (down). Add RESTRICT FK if absent
+  const [[{ cnt: cntRestrictFk }]] = await knex.raw(
+    `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
+     WHERE CONSTRAINT_SCHEMA = DATABASE()
+       AND TABLE_NAME = 'calendar_event_shared_training_requests'
+       AND REFERENCED_TABLE_NAME = 'calendar_events'
+       AND DELETE_RULE = 'RESTRICT'`,
+  );
+  if (cntRestrictFk === 0) {
     await knex.raw(
       `ALTER TABLE calendar_event_shared_training_requests
        ADD CONSTRAINT fk_cestr_event
