@@ -277,6 +277,84 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   res.status(204).send();
 });
 
+// Assign New Plan (#412): supersede the member's current plan atomically —
+// expire the old membership and create the new active one in a single
+// transaction, so the one-active-membership-per-member unique index never
+// sees two active rows for this member at once.
+userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (req, res, next) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const { membership_plan_id, starts_at, ends_at, final_price, discount_reason, discount_expires_at } = req.body;
+  if (!membership_plan_id || !starts_at) {
+    return res.status(400).json({ error: 'membership_plan_id and starts_at are required' });
+  }
+
+  const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
+  if (!eff) return res.status(404).json({ error: 'Plan not found' });
+
+  const finalOverride = final_price != null && final_price !== '';
+  const parsedFinal = finalOverride ? parseFloat(final_price) : eff.price;
+  if (finalOverride) {
+    if (isNaN(parsedFinal) || parsedFinal < 0) return res.status(400).json({ error: 'final_price must be a non-negative number' });
+    if (!discount_reason || !String(discount_reason).trim()) {
+      return res.status(400).json({ error: 'discount_reason is required when final_price differs from the effective price' });
+    }
+  }
+
+  try {
+    const newId: number | null = await db.transaction(async (tx) => {
+      const { rows: current } = await tx.query(
+        'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+        [req.params.id, gymId],
+      );
+      if (current.length === 0) return null;
+      const prev = current[0];
+
+      // Only supersede a still-live plan; a row that's already cancelled/expired is left as-is.
+      if (prev.status === 'active' || prev.status === 'paused') {
+        await tx.query("UPDATE user_memberships SET status = 'expired' WHERE id = ? AND gym_id = ?", [prev.id, gymId]);
+        await recordStatusChange(tx, {
+          gymId, userMembershipId: prev.id, memberId: prev.member_id,
+          previousStatus: prev.status, newStatus: 'expired',
+          source: sourceForRole(role), actorUserId: userId,
+        });
+      }
+
+      const { insertId } = await tx.query(
+        `INSERT INTO user_memberships
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, final_price,
+          discount_reason, discount_expires_at, starts_at, ends_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+        [
+          prev.member_id, gymId, membership_plan_id,
+          eff.base_price, eff.plan_price_id, parsedFinal,
+          finalOverride ? String(discount_reason).trim() : null,
+          discount_expires_at || null,
+          starts_at, ends_at ?? null,
+        ],
+      );
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: insertId, memberId: prev.member_id,
+        previousStatus: null, newStatus: 'active',
+        source: sourceForRole(role), actorUserId: userId,
+      });
+      await tx.query(
+        'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
+        [gymId, insertId, prev.member_id],
+      );
+      return insertId;
+    });
+    if (newId === null) return res.status(404).json({ error: 'Membership not found' });
+    const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ?`, [newId]);
+    recordAudit(req, {
+      action: 'assign_new_plan', entityType: 'user_membership', entityId: newId,
+      next: rows[0], previous: { supersedes_user_membership_id: Number(req.params.id) },
+    });
+    res.status(201).json(rows[0]);
+  } catch (err: any) {
+    handleDupEntry(err, res, next, 'This member already has an active membership.');
+  }
+});
+
 // ─── Covered Members (#374 — multi-member Membership Plans) ───────────────────
 // A Membership's covered Members receive the plan's benefits/entitlements
 // alongside its owner. The owner (inserted on POST /) can never be removed;

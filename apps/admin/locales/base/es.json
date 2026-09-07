@@ -153,7 +153,18 @@
     "col_modified_by": "Modificado por",
     "col_modified_at": "Modificado el",
     "unsaved_changes": "Tienes cambios sin guardar. ¿Descartarlos?",
-    "unsaved_discard": "Descartar cambios"
+    "unsaved_discard": "Descartar cambios",
+    "action_cancel_plan": "Cancelar plan",
+    "action_assign_new_plan": "Asignar nuevo plan",
+    "confirm_cancel_plan": "¿Cancelar este plan? El movimiento quedará registrado.",
+    "assign_new_plan_title": "Asignar nuevo plan",
+    "assign_new_plan_label_plan": "Nuevo plan",
+    "assign_new_plan_pick_plan": "Selecciona un plan…",
+    "assign_new_plan_label_starts": "Fecha de inicio",
+    "assign_new_plan_submit": "Asignar plan",
+    "assign_new_plan_error_no_plan": "Selecciona un plan",
+    "assign_new_plan_error_no_start": "La fecha de inicio es obligatoria",
+    "assign_new_plan_error_generic": "Se produjo un error al asignar el nuevo plan."
   },
   "member_payments": {
     "title": "Pagos del socio",

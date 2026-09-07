@@ -154,7 +154,18 @@
     "col_modified_by": "Modificat per",
     "col_modified_at": "Modificat el",
     "unsaved_changes": "Tens canvis sense desar. Descartar-los?",
-    "unsaved_discard": "Descartar canvis"
+    "unsaved_discard": "Descartar canvis",
+    "action_cancel_plan": "Cancel·lar pla",
+    "action_assign_new_plan": "Assignar nou pla",
+    "confirm_cancel_plan": "Vols cancel·lar aquest pla? El moviment es conservarà.",
+    "assign_new_plan_title": "Assignar nou pla",
+    "assign_new_plan_label_plan": "Nou pla",
+    "assign_new_plan_pick_plan": "Selecciona un pla…",
+    "assign_new_plan_label_starts": "Data d'inici",
+    "assign_new_plan_submit": "Assignar pla",
+    "assign_new_plan_error_no_plan": "Selecciona un pla",
+    "assign_new_plan_error_no_start": "Cal indicar la data d'inici",
+    "assign_new_plan_error_generic": "S'ha produït un error en assignar el nou pla."
   },
   "member_payments": {
     "title": "Pagaments del soci",

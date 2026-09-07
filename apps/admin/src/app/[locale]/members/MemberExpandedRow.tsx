@@ -4,7 +4,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ContextMenu } from '@/components/ContextMenu';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { AssignNewPlanModal } from './AssignNewPlanModal';
 
 interface UserMembership {
   id: number;
@@ -15,6 +19,11 @@ interface UserMembership {
   starts_at: string | null;
   ends_at: string | null;
   next_billing_date: string | null;
+}
+
+interface Plan {
+  id: number;
+  name: string;
 }
 
 interface Allowance {
@@ -68,23 +77,30 @@ export function MemberExpandedRow({
   memberId,
   canManageTraining,
   canManagePackages,
+  isAdmin,
+  plans,
 }: {
   memberId: number;
   canManageTraining: boolean;
   canManagePackages: boolean;
+  isAdmin: boolean;
+  plans: Plan[];
 }) {
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
+  const { toast } = useToast();
   const loadedRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [membership, setMembership] = useState<UserMembership | null>(null);
+  const [memberships, setMemberships] = useState<UserMembership[]>([]);
   const [membershipNotFound, setMembershipNotFound] = useState(false);
   const [allowances, setAllowances] = useState<Allowance[]>([]);
+  const [cancelling, setCancelling] = useState<UserMembership | null>(null);
+  const [assigningFor, setAssigningFor] = useState<UserMembership | null>(null);
 
   const [clerkStatus, setClerkStatus] = useState<{ status: string } | null>(null);
   const [trainingPlans, setTrainingPlans] = useState<TrainingPlanAssignment[]>([]);
@@ -107,7 +123,7 @@ export function MemberExpandedRow({
     setLoading(true);
     setError(null);
     try {
-      const [memberships, plans, nutrition, events, clerk, packages] = await Promise.all([
+      const [membershipList, memberTrainingPlans, nutrition, events, clerk, packages] = await Promise.all([
         apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}`).catch(() => []),
         canManageTraining
           ? apiFetch<TrainingPlanAssignment[]>(`/members/${memberId}/member-training-plans`).catch(() => [])
@@ -118,11 +134,11 @@ export function MemberExpandedRow({
         apiFetch<SessionPackage[]>(`/members/${memberId}/class-packages`).catch(() => []),
       ]);
 
-      const current = memberships[0] ?? null;
-      setMembership(current);
-      setMembershipNotFound(memberships.length === 0);
+      const current = membershipList[0] ?? null;
+      setMemberships(membershipList);
+      setMembershipNotFound(membershipList.length === 0);
       setClerkStatus(clerk);
-      setTrainingPlans(plans);
+      setTrainingPlans(memberTrainingPlans);
       setNutritionPlans(nutrition);
       setBillingEvents(events.items ?? []);
       setSessionPackages(packages);
@@ -131,11 +147,45 @@ export function MemberExpandedRow({
         apiFetch<Allowance[]>(`/membership-plans/${current.membership_plan_id}/allowances`)
           .then(setAllowances)
           .catch(() => setAllowances([]));
+      } else {
+        setAllowances([]);
       }
     } catch {
       setError(t('members.expanded_error'));
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Re-fetches just the plan history + benefits after a cancel/assign-new-plan
+  // action, without re-running the other expanded-row sections' fetches.
+  async function reloadMemberships() {
+    try {
+      const list = await apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}`);
+      setMemberships(list);
+      setMembershipNotFound(list.length === 0);
+      const current = list[0] ?? null;
+      if (current?.membership_plan_id) {
+        apiFetch<Allowance[]>(`/membership-plans/${current.membership_plan_id}/allowances`)
+          .then(setAllowances)
+          .catch(() => setAllowances([]));
+      } else {
+        setAllowances([]);
+      }
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'));
+    }
+  }
+
+  async function handleCancelPlan() {
+    if (!cancelling) return;
+    try {
+      await apiFetch(`/user-memberships/${cancelling.id}`, { method: 'DELETE' });
+      setCancelling(null);
+      reloadMemberships();
+    } catch (err: any) {
+      setCancelling(null);
+      toast(err.message ?? t('members.error_generic'));
     }
   }
 
@@ -214,57 +264,76 @@ export function MemberExpandedRow({
         </Section>
       )}
 
-      {/* Membership */}
+      {/* Membership — full plan history, newest to oldest (#412) */}
       <Section label={t('members.section_membership')}>
         {membershipNotFound ? (
           <p style={dim}>{t('members.no_membership')}</p>
-        ) : !membership ? (
+        ) : memberships.length === 0 ? (
           <p style={dim}>{t('members.expanded_loading')}</p>
         ) : (
-          <div style={card}>
-            <Field label={t('members.membership_plan')}>{membership.plan_name ?? '—'}</Field>
-            <Field label={t('members.membership_status')}>
-              <StatusBadge status={membership.status} label={membership.status} />
-            </Field>
-            <Field label={t('members.membership_rate')}>
-              {membership.final_price ? `€${parseFloat(membership.final_price).toFixed(2)}` : '—'}
-            </Field>
-            {membership.starts_at && (
-              <Field label={t('members.membership_start')}>
-                {fmtDate(membership.starts_at)}
-              </Field>
-            )}
-            {membership.ends_at && (
-              <Field label={t('members.membership_end')}>
-                {fmtDate(membership.ends_at)}
-              </Field>
-            )}
-            {membership.next_billing_date && (
-              <Field label={t('members.membership_next_billing')}>
-                {fmtDate(membership.next_billing_date)}
-              </Field>
-            )}
+          <div>
+            {memberships.map((m, idx) => (
+              <div key={m.id} style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <Field label={t('members.membership_plan')}>{m.plan_name ?? '—'}</Field>
+                    <Field label={t('members.membership_status')}>
+                      <StatusBadge status={m.status} label={t(`status.${m.status}`)} />
+                    </Field>
+                    <Field label={t('members.membership_rate')}>
+                      {m.final_price ? `€${parseFloat(m.final_price).toFixed(2)}` : '—'}
+                    </Field>
+                    {m.starts_at && (
+                      <Field label={t('members.membership_start')}>
+                        {fmtDate(m.starts_at)}
+                      </Field>
+                    )}
+                    {m.ends_at && (
+                      <Field label={t('members.membership_end')}>
+                        {fmtDate(m.ends_at)}
+                      </Field>
+                    )}
+                    {idx === 0 && m.next_billing_date && (
+                      <Field label={t('members.membership_next_billing')}>
+                        {fmtDate(m.next_billing_date)}
+                      </Field>
+                    )}
 
-            {/* Benefits */}
-            {membership.membership_plan_id != null && (
-              <div style={{ marginTop: 10 }}>
-                <div style={fieldLabelStyle}>{t('members.section_benefits')}</div>
-                {allowances.length === 0 ? (
-                  <p style={{ ...dim, margin: '2px 0 0' }}>{t('members.no_benefits')}</p>
-                ) : (
-                  <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: '#444' }}>
-                    {allowances.map((a) => (
-                      <li key={a.id}>
-                        {a.activity_type_name}
-                        {a.allowance_type === 'session_count' && a.session_count != null
-                          ? ` — ${a.session_count}${a.recurrence_interval ? ` / ${a.recurrence_interval} ${a.recurrence_unit}` : ''}`
-                          : ' — Unlimited'}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                    {/* Benefits — only shown for the most recent plan */}
+                    {idx === 0 && m.membership_plan_id != null && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={fieldLabelStyle}>{t('members.section_benefits')}</div>
+                        {allowances.length === 0 ? (
+                          <p style={{ ...dim, margin: '2px 0 0' }}>{t('members.no_benefits')}</p>
+                        ) : (
+                          <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: '#444' }}>
+                            {allowances.map((a) => (
+                              <li key={a.id}>
+                                {a.activity_type_name}
+                                {a.allowance_type === 'session_count' && a.session_count != null
+                                  ? ` — ${a.session_count}${a.recurrence_interval ? ` / ${a.recurrence_interval} ${a.recurrence_unit}` : ''}`
+                                  : ' — Unlimited'}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {isAdmin && (
+                    <ContextMenu
+                      ariaLabel={`Actions for ${m.plan_name ?? 'plan'}`}
+                      items={[
+                        { label: t('members.action_assign_new_plan'), onClick: () => setAssigningFor(m) },
+                        ...(m.status !== 'cancelled'
+                          ? [{ label: t('members.action_cancel_plan'), onClick: () => setCancelling(m), danger: true }]
+                          : []),
+                      ]}
+                    />
+                  )}
+                </div>
               </div>
-            )}
+            ))}
           </div>
         )}
       </Section>
@@ -459,6 +528,24 @@ export function MemberExpandedRow({
           </div>
         )}
       </Section>
+
+      <ConfirmDialog
+        open={cancelling !== null}
+        message={t('members.confirm_cancel_plan')}
+        confirmLabel={t('members.action_cancel_plan')}
+        cancelLabel={t('members.cancel')}
+        onConfirm={handleCancelPlan}
+        onCancel={() => setCancelling(null)}
+      />
+
+      {assigningFor && (
+        <AssignNewPlanModal
+          membership={assigningFor}
+          plans={plans}
+          onClose={() => setAssigningFor(null)}
+          onAssigned={() => { setAssigningFor(null); reloadMemberships(); }}
+        />
+      )}
     </div>
   );
 }
