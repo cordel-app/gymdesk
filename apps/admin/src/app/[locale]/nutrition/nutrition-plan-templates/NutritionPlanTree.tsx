@@ -19,6 +19,40 @@ import { btnStyle, btnSmall } from '@/components/ui';
 
 interface LibraryItem { id: number; name: string; category: string; quality_slugs: string[] }
 
+interface LibraryQuality { id: number; slug: string }
+interface LibraryItemRow {
+  id: number;
+  name: string;
+  category: string;
+  qualities?: LibraryQuality[];
+  quality_slugs?: string[];
+}
+interface LibraryListResponse {
+  items: LibraryItemRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** GET /nutrition-library returns { items, total, limit, offset } since #350 (was a bare array). */
+function normalizeLibraryItems(data: LibraryListResponse | LibraryItemRow[] | unknown): LibraryItem[] {
+  const rows: LibraryItemRow[] = Array.isArray(data)
+    ? data
+    : (data && typeof data === 'object' && Array.isArray((data as LibraryListResponse).items))
+      ? (data as LibraryListResponse).items
+      : [];
+  return rows.map((item) => ({
+    id: item.id,
+    name: item.name,
+    category: item.category,
+    quality_slugs: Array.isArray(item.quality_slugs)
+      ? item.quality_slugs
+      : Array.isArray(item.qualities)
+        ? item.qualities.map((q) => q.slug)
+        : [],
+  }));
+}
+
 export interface MealItem {
   id: number;
   nutrition_library_item_id: number;
@@ -112,8 +146,11 @@ export function NutritionPlanTree({
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
   useEffect(() => {
-    apiFetch<LibraryItem[]>('/nutrition-library').then(setLibraryItems).catch(() => {});
-  }, []);
+    // limit=200 is the API max; the picker needs the full catalog, not one page.
+    apiFetch<LibraryListResponse>('/nutrition-library?limit=200')
+      .then((data) => setLibraryItems(normalizeLibraryItems(data)))
+      .catch(() => setLibraryItems([]));
+  }, [apiFetch]);
 
   const [addingDay, setAddingDay] = useState(false);
   const [addDayWeekday, setAddDayWeekday] = useState('');
@@ -580,7 +617,7 @@ function ItemsReadView({
   return (
     <div>
       {items.map((item, idx) => {
-        const libItem = libraryItems.find((l) => l.id === item.nutrition_library_item_id);
+        const libItem = (Array.isArray(libraryItems) ? libraryItems : []).find((l) => l.id === item.nutrition_library_item_id);
         const showOr = idx > 0 && items[idx - 1].component_type === item.component_type;
         return (
           <React.Fragment key={item.id}>
@@ -591,7 +628,7 @@ function ItemsReadView({
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
               <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
-              {libItem && libItem.quality_slugs.map((slug) => (
+              {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                 <QualityBadge key={slug} slug={slug} t={t} />
               ))}
               <span style={{ flex: 1 }} />
@@ -635,7 +672,8 @@ function MealItemsEditor({
   const { toast } = useToast();
 
   // Derive available food types from library items
-  const availableFoodTypes = [...new Set(libraryItems.map((i) => i.category))].sort();
+  const foods = Array.isArray(libraryItems) ? libraryItems : [];
+  const availableFoodTypes = [...new Set(foods.map((i) => i.category))].sort();
 
   // Add form
   const [addFoodType, setAddFoodType] = useState('');
@@ -653,11 +691,11 @@ function MealItemsEditor({
   const base = `/nutrition-plan-templates/${templateId}/days/${dayId}/meals/${mealId}/items`;
 
   // Filtered foods for add form
-  const addFilteredItems = addFoodType ? libraryItems.filter((i) => i.category === addFoodType) : [];
+  const addFilteredItems = addFoodType ? foods.filter((i) => i.category === addFoodType) : [];
   const selectedAddItem = addFilteredItems.find((i) => i.id === Number(addItemId));
 
   // Filtered foods for edit form
-  const editFilteredItems = editState ? libraryItems.filter((i) => i.category === editState.foodType) : [];
+  const editFilteredItems = editState ? foods.filter((i) => i.category === editState.foodType) : [];
   const selectedEditItem = editState ? editFilteredItems.find((i) => i.id === Number(editState.itemId)) : undefined;
 
   function handleAddFoodTypeChange(newType: string) {
@@ -671,7 +709,7 @@ function MealItemsEditor({
   }
 
   function startEdit(item: MealItem) {
-    const libItem = libraryItems.find((l) => l.id === item.nutrition_library_item_id);
+    const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
     setEditState({
       id: item.id,
       foodType: libItem?.category ?? item.component_type,
@@ -755,7 +793,7 @@ function MealItemsEditor({
       {/* Items list */}
       {items.map((item, idx) => {
         const isEditing = editState?.id === item.id;
-        const libItem = libraryItems.find((l) => l.id === item.nutrition_library_item_id);
+        const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
         const showOr = !isEditing && idx > 0 && items[idx - 1].component_type === item.component_type && editState?.id !== items[idx - 1].id;
 
         return (
@@ -821,9 +859,9 @@ function MealItemsEditor({
                   </button>
                   <button onClick={cancelEdit} style={cancelBtnStyle}>{t('nutrition_plan_templates.cancel')}</button>
                 </div>
-                {selectedEditItem && selectedEditItem.quality_slugs.length > 0 && (
+                {(selectedEditItem?.quality_slugs ?? []).length > 0 && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-                    {selectedEditItem.quality_slugs.map((slug) => (
+                    {(selectedEditItem?.quality_slugs ?? []).map((slug) => (
                       <QualityBadge key={slug} slug={slug} t={t as any} />
                     ))}
                   </div>
@@ -833,7 +871,7 @@ function MealItemsEditor({
               /* Read row */
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', borderBottom: '1px solid #f5f5f8' }}>
                 <span style={{ fontSize: 13, fontWeight: 500 }}>{item.item_name}</span>
-                {libItem && libItem.quality_slugs.map((slug) => (
+                {libItem && (libItem.quality_slugs ?? []).map((slug) => (
                   <QualityBadge key={slug} slug={slug} t={t as any} />
                 ))}
                 <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 4 }}>
@@ -914,9 +952,9 @@ function MealItemsEditor({
               {t('nutrition_plan_templates.tree_add_item')}
             </button>
           </div>
-          {selectedAddItem && selectedAddItem.quality_slugs.length > 0 && (
+          {(selectedAddItem?.quality_slugs ?? []).length > 0 && (
             <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
-              {selectedAddItem.quality_slugs.map((slug) => (
+              {(selectedAddItem?.quality_slugs ?? []).map((slug) => (
                 <QualityBadge key={slug} slug={slug} t={t as any} />
               ))}
             </div>
@@ -1003,7 +1041,7 @@ function RestrictionsSection({
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
           <select value={addItemId} onChange={(e) => setAddItemId(e.target.value)} style={selectStyle}>
             <option value="">{t('nutrition_plan_templates.tree_pick_restriction_item')}</option>
-            {libraryItems.map((o) => (
+            {(Array.isArray(libraryItems) ? libraryItems : []).map((o) => (
               <option key={o.id} value={o.id}>{o.name} ({o.category})</option>
             ))}
           </select>
