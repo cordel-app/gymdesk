@@ -87,12 +87,13 @@ exports.up = async (knex) => {
   //    Migration 133 used RESTRICT (Knex default). Two independent guards so a retry
   //    after a partial failure doesn't leave the table with no FK at all.
 
-  // 6a. Drop RESTRICT FK if still present
+  // 6a. Drop RESTRICT FK if still present.
+  // NOTE: information_schema.REFERENTIAL_CONSTRAINTS has no TABLE_NAME column;
+  // identify the FK by CONSTRAINT_NAME + DELETE_RULE instead.
   const [[{ cnt: cntRestrictFk }]] = await knex.raw(
     `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
      WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
+       AND CONSTRAINT_NAME = 'fk_cestr_event'
        AND DELETE_RULE = 'RESTRICT'`,
   );
   if (cntRestrictFk > 0) {
@@ -105,8 +106,7 @@ exports.up = async (knex) => {
   const [[{ cnt: cntCascadeFk }]] = await knex.raw(
     `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
      WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
+       AND CONSTRAINT_NAME = 'fk_cestr_event'
        AND DELETE_RULE = 'CASCADE'`,
   );
   if (cntCascadeFk === 0) {
@@ -152,8 +152,7 @@ exports.down = async (knex) => {
   const [[{ cnt: cntCascadeFk }]] = await knex.raw(
     `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
      WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
+       AND CONSTRAINT_NAME = 'fk_cestr_event'
        AND DELETE_RULE = 'CASCADE'`,
   );
   if (cntCascadeFk > 0) {
@@ -166,8 +165,7 @@ exports.down = async (knex) => {
   const [[{ cnt: cntRestrictFk }]] = await knex.raw(
     `SELECT COUNT(*) AS cnt FROM information_schema.REFERENTIAL_CONSTRAINTS
      WHERE CONSTRAINT_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'calendar_event_shared_training_requests'
-       AND REFERENCED_TABLE_NAME = 'calendar_events'
+       AND CONSTRAINT_NAME = 'fk_cestr_event'
        AND DELETE_RULE = 'RESTRICT'`,
   );
   if (cntRestrictFk === 0) {
