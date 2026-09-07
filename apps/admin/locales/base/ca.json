@@ -55,7 +55,8 @@
     "assigned_plans": "Plans Assignats",
     "taxes": "Impostos",
     "feature_flags": "Flags de funcionalitats",
-    "nutrition_plans": "Plans de nutrició"
+    "nutrition_plans": "Plans de nutrició",
+    "operating_hours": "Horari i Festius"
   },
   "dashboard": {
     "title": "Tauler",
@@ -2739,5 +2740,41 @@
     "error_member_required": "Si us plau, selecciona un membre.",
     "error_name_required": "Si us plau, introdueix un nom per al pla.",
     "error_generic": "S'ha produït un error. Torna-ho a intentar."
+  },
+  "operating_hours": {
+    "title": "Horari i Festius",
+    "section_weekly": "Horari Setmanal",
+    "section_holidays": "Festius i Horaris Especials",
+    "weekday_closed": "Tancat",
+    "add_shift": "+ Afegir torn",
+    "remove_shift": "Eliminar",
+    "label_start_time": "Hora d'inici",
+    "label_end_time": "Hora de fi",
+    "save_weekly": "Desar Horari Setmanal",
+    "saving": "Desant…",
+    "saved": "Horari setmanal desat.",
+    "error_generic": "Alguna cosa ha fallat. Torna-ho a provar.",
+    "add_holiday": "+ Afegir Festiu",
+    "edit_holiday": "Editar",
+    "delete_holiday": "Eliminar",
+    "empty_holidays": "Encara no hi ha festius ni horaris especials configurats.",
+    "col_dates": "Dates",
+    "col_hours": "Horari",
+    "col_annual_renewal": "Es repeteix cada any",
+    "col_label": "Etiqueta",
+    "col_actions": "Accions",
+    "label_date_start": "Data d'inici *",
+    "label_date_end": "Data de fi *",
+    "label_is_closed": "Tancat tot el dia",
+    "label_annual_renewal": "Repetir cada any",
+    "label_label": "Etiqueta",
+    "placeholder_label": "p. ex. Nadal",
+    "confirm_delete_title": "Eliminar Festiu",
+    "confirm_delete_body": "Això eliminarà aquesta excepció de festiu/horari especial.",
+    "confirm_delete": "Eliminar",
+    "cancel": "Cancel·lar",
+    "save_changes": "Desar",
+    "yes": "Sí",
+    "no": "No"
   }
 }

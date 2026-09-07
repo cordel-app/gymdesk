@@ -376,6 +376,33 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
 });
 
 /**
+ * #418: read-only weekly hours + holiday exceptions for the member's own gym,
+ * used by the member calendar to grey out closed/out-of-hours slots. Reads
+ * are open to any authenticated member — this isn't sensitive, gym-wide data
+ * — unlike the admin CRUD in operating-hours.ts, which is ORGANIZATION-gated.
+ */
+meRouter.get('/operating-hours', requireRole('member'), requireFeatureEnabled('calendar.operating_hours'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const [{ rows: weekly }, { rows: holidays }] = await Promise.all([
+      db.query(
+        `SELECT weekday, start_time, end_time FROM gym_operating_hours
+         WHERE gym_id = ? AND deleted_at IS NULL ORDER BY weekday ASC, start_time ASC`,
+        [gymId],
+      ),
+      db.query(
+        `SELECT date_start, date_end, start_time, end_time, is_closed, annual_renewal
+         FROM gym_holiday_hours WHERE gym_id = ? AND deleted_at IS NULL ORDER BY date_start ASC`,
+        [gymId],
+      ),
+    ]);
+    res.json({ weekly, holidays });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * P2.8: upcoming schedule for the current member with per-session status:
  *   - spots_left: capacity minus current booked/attended/no_show count
  *   - my_booking_status: their own booking on this session (or null)
