@@ -608,6 +608,7 @@
     "session_count": "Sesiones",
     "recurrence": "Por",
     "members_count": "{n} socios",
+    "members_using_plan": "Socios que usan este plan",
     "label_billing_initial_interval": "Intervalo de facturación inicial",
     "label_billing_initial_unit": "Unidad de facturación inicial",
     "label_billing_recurring_interval": "Intervalo de facturación recurrente",

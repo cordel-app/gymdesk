@@ -674,6 +674,7 @@
     "no_allowances": "No service restrictions",
     "no_prices": "No price history yet",
     "members_count": "{n} members",
+    "members_using_plan": "Members using this plan",
     "section_charge_benefits": "Charge Benefits",
     "section_period_benefits": "Period Benefits",
     "cb_action_no_benefit": "No Benefit",

@@ -608,6 +608,7 @@
     "session_count": "Sessions",
     "recurrence": "Per",
     "members_count": "{n} socis",
+    "members_using_plan": "Socis que usen aquest pla",
     "label_billing_initial_interval": "Interval de facturació inicial",
     "label_billing_initial_unit": "Unitat de facturació inicial",
     "label_billing_recurring_interval": "Interval de facturació recurrent",

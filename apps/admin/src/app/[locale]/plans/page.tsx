@@ -749,7 +749,7 @@ export default function PlansPage() {
                     <DetailRow label={t('plans.label_lifecycle_status')} value={t(`status.${plan.lifecycle_status}`)} />
                     <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
                     <DetailRow label={t('plans.label_member_limit')} value={t(`plans.member_limit_${plan.member_limit}`)} />
-                    <DetailRow label="Members" value={String(plan.member_count)} />
+                    <DetailRow label={t('plans.members_using_plan')} value={String(plan.member_count)} />
 
                     <SectionHeader
                       title={t('plans.section_billing')}
