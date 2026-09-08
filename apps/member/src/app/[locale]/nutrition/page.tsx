@@ -7,6 +7,7 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 
 interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
 interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: MealItem[] }
