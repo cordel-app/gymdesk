@@ -83,6 +83,13 @@ const paymentWebhookRateLimit = rateLimit({
   handler: (_req, res) => res.status(429).json({ error: 'Too many requests' }),
 });
 
+// Monei's dashboard preflights a new webhook URL with a GET before saving it
+// and rejects the URL if that returns a non-2xx — this route only otherwise
+// handles POST, so give the preflight a 200 to check against.
+paymentWebhookRouter.get('/', (_req: Request, res: Response) => {
+  res.status(200).json({ ok: true });
+});
+
 /**
  * Monei webhook receiver. Mounted BEFORE express.json() with a raw body parser
  * so the HMAC signature can be verified against the exact raw bytes Monei signed.
