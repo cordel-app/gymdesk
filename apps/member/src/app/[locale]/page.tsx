@@ -5,6 +5,7 @@ import { useAuth } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
@@ -57,8 +58,11 @@ export default function HomePage() {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, member, isSuperadmin } = useApp();
+  const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
-  const featureEnabled = (key: string) => isSuperadmin || isFeatureEnabled(featureFlags, key);
+  // Superadmins bypass member_web.* flags only in their native capacity — while
+  // impersonating a member, visibility must reflect that member's own flags (#439).
+  const featureEnabled = (key: string) => (isSuperadmin && !isImpersonating) || isFeatureEnabled(featureFlags, key);
 
   const [nextBooking, setNextBooking] = useState<UpcomingBooking | null | undefined>(undefined);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);

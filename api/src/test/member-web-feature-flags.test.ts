@@ -185,17 +185,30 @@ describe('member_web.* flags gate /me/* routes for regular members', () => {
   });
 });
 
-describe('superadmin bypasses member_web feature flags while impersonating a member', () => {
-  it('returns 200 on GET /me/nutrition-plan for a superadmin impersonating a member, even when disabled', async () => {
+describe('#439 — superadmin feature-flag bypass respects impersonation precedence', () => {
+  it('returns 200 on GET /me/nutrition-plan for a superadmin acting natively (not impersonating), even when disabled', async () => {
     await setFlag('member_web.my_nutrition', false);
 
-    // Default mock (no mockResolvedValueOnce override) = superadmin.
+    // Default mock (no mockResolvedValueOnce override) = superadmin, no x-impersonate-as header.
+    const res = await request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+
+    await setFlag('member_web.my_nutrition', true);
+  });
+
+  it('returns 403 on GET /me/nutrition-plan for a superadmin impersonating a member when the flag is disabled — the bypass must not carry over to the impersonated identity', async () => {
+    await setFlag('member_web.my_nutrition', false);
+
+    // Default mock (no mockResolvedValueOnce override) = superadmin, but impersonating.
     const res = await request
       .get('/me/nutrition-plan')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .set('x-impersonate-as', `member:${memberId}`);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
 
     await setFlag('member_web.my_nutrition', true);
   });

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
@@ -40,6 +41,7 @@ export default function TrainingPage() {
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, isSuperadmin } = useApp();
+  const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
 
   const [plans, setPlans] = useState<TrainingPlan[]>([]);
@@ -62,9 +64,9 @@ export default function TrainingPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
-    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.my_training_plan')) { router.replace(`/${locale}`); return; }
+    if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.my_training_plan')) { router.replace(`/${locale}`); return; }
     loadPlans();
-  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
+  }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
   function openExercise(we: BlockExercise) {
     if (expandedExercise === we.id) { setExpandedExercise(null); return; }

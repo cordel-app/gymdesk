@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
@@ -21,6 +22,7 @@ export default function NutritionPage() {
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, isSuperadmin } = useApp();
+  const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
 
   const [plan, setPlan] = useState<NutritionPlan | null | undefined>(undefined);
@@ -30,7 +32,7 @@ export default function NutritionPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
-    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.my_nutrition')) { router.replace(`/${locale}`); return; }
+    if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.my_nutrition')) { router.replace(`/${locale}`); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -43,7 +45,7 @@ export default function NutritionPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
+  }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
   function weekdayLabel(weekday: number): string {
     if (weekday === ALL_DAYS_WEEKDAY) return t('nutrition.all_days');
