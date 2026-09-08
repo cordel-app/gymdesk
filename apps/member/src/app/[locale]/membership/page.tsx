@@ -5,8 +5,10 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 
 interface Benefit {
   benefit_code: string;
@@ -88,6 +90,7 @@ export default function MembershipPage() {
   const { apiFetch } = useApiClient();
   const { getToken } = useAuth();
   const { isLinked, loading: appLoading, gymName, isSuperadmin } = useApp();
+  const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
 
   const [membership, setMembership] = useState<Membership | null>(null);
@@ -108,7 +111,7 @@ export default function MembershipPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
-    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.my_membership')) { router.replace(`/${locale}`); return; }
+    if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.my_membership')) { router.replace(`/${locale}`); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -132,7 +135,7 @@ export default function MembershipPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
+  }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
   const pendingRequest = paymentRequests.find(r => r.status === 'pending') ?? null;
   const showStartPayment = !pendingRequest

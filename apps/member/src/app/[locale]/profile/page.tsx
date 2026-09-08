@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 
 interface Profile {
   id: number;
@@ -33,6 +35,7 @@ export default function ProfilePage() {
     centers, activeCenterId, setActiveCenterId,
     isSuperadmin,
   } = useApp();
+  const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
 
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -51,7 +54,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
-    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.profile')) { router.replace(`/${locale}`); return; }
+    if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.profile')) { router.replace(`/${locale}`); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -74,7 +77,7 @@ export default function ProfilePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
+  }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
   function startEdit() {
     setPhone(profile?.phone ?? '');

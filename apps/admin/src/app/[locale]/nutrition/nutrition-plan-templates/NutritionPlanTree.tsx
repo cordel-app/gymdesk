@@ -232,6 +232,7 @@ export function NutritionPlanTree({
                 key={day.id}
                 day={day}
                 templateId={templateId}
+                apiBase={apiBase}
                 canWrite={canWrite}
                 libraryItems={libraryItems}
                 onRemoveDay={() => setRemovingDay(day)}
@@ -244,6 +245,7 @@ export function NutritionPlanTree({
 
       <RestrictionsSection
         templateId={templateId}
+        apiBase={apiBase}
         restrictions={hierarchy.restrictions ?? []}
         canWrite={canWrite}
         libraryItems={libraryItems}
@@ -252,6 +254,7 @@ export function NutritionPlanTree({
 
       <GoalsSection
         templateId={templateId}
+        apiBase={apiBase}
         goals={hierarchy.goals ?? []}
         canWrite={canWrite}
         onChanged={onChanged}
@@ -272,10 +275,11 @@ export function NutritionPlanTree({
 /* ---- DayRow ---- */
 
 function DayRow({
-  day, templateId, canWrite, libraryItems, onRemoveDay, onChanged,
+  day, templateId, apiBase, canWrite, libraryItems, onRemoveDay, onChanged,
 }: {
   day: HierDay;
   templateId: number;
+  apiBase: string;
   canWrite: boolean;
   libraryItems: LibraryItem[];
   onRemoveDay: () => void;
@@ -293,7 +297,7 @@ function DayRow({
   const [addMealType, setAddMealType] = useState('');
   const [removingMeal, setRemovingMeal] = useState<HierMeal | null>(null);
 
-  const base = `/nutrition-plan-templates/${templateId}/days/${day.id}`;
+  const base = `${apiBase}/${templateId}/days/${day.id}`;
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -381,6 +385,7 @@ function DayRow({
                 key={meal.id}
                 meal={meal}
                 templateId={templateId}
+                apiBase={apiBase}
                 dayId={day.id}
                 canWrite={canWrite}
                 libraryItems={libraryItems}
@@ -425,10 +430,11 @@ function DayRow({
 /* ---- MealRow ---- */
 
 function MealRow({
-  meal, templateId, dayId, canWrite, libraryItems, onRemove, onChanged,
+  meal, templateId, apiBase, dayId, canWrite, libraryItems, onRemove, onChanged,
 }: {
   meal: HierMeal;
   templateId: number;
+  apiBase: string;
   dayId: number;
   canWrite: boolean;
   libraryItems: LibraryItem[];
@@ -453,7 +459,7 @@ function MealRow({
     setNotesVal(meal.notes ?? '');
   }, [meal]);
 
-  const base = `/nutrition-plan-templates/${templateId}/days/${dayId}/meals/${meal.id}`;
+  const base = `${apiBase}/${templateId}/days/${dayId}/meals/${meal.id}`;
 
   function cancelEdit() {
     setMealTypeVal(meal.meal_type ?? '');
@@ -585,6 +591,7 @@ function MealRow({
 
           <MealItemsEditor
             templateId={templateId}
+            apiBase={apiBase}
             dayId={dayId}
             mealId={meal.id}
             items={meal.items}
@@ -657,9 +664,10 @@ interface ItemEditState {
 }
 
 function MealItemsEditor({
-  templateId, dayId, mealId, items, libraryItems, canWrite, onChanged,
+  templateId, apiBase, dayId, mealId, items, libraryItems, canWrite, onChanged,
 }: {
   templateId: number;
+  apiBase: string;
   dayId: number;
   mealId: number;
   items: MealItem[];
@@ -688,7 +696,7 @@ function MealItemsEditor({
 
   const [removingId, setRemovingId] = useState<number | null>(null);
 
-  const base = `/nutrition-plan-templates/${templateId}/days/${dayId}/meals/${mealId}/items`;
+  const base = `${apiBase}/${templateId}/days/${dayId}/meals/${mealId}/items`;
 
   // Filtered foods for add form
   const addFilteredItems = addFoodType ? foods.filter((i) => i.category === addFoodType) : [];
@@ -977,9 +985,10 @@ function MealItemsEditor({
 /* ---- RestrictionsSection ---- */
 
 function RestrictionsSection({
-  templateId, restrictions, canWrite, libraryItems, onChanged,
+  templateId, apiBase, restrictions, canWrite, libraryItems, onChanged,
 }: {
   templateId: number;
+  apiBase: string;
   restrictions: HierRestriction[];
   canWrite: boolean;
   libraryItems: LibraryItem[];
@@ -993,7 +1002,7 @@ function RestrictionsSection({
   const [adding, setAdding] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
 
-  const base = `/nutrition-plan-templates/${templateId}/restrictions`;
+  const base = `${apiBase}/${templateId}/restrictions`;
 
   async function addRestriction() {
     if (!addItemId) { toast(t('nutrition_plan_templates.tree_pick_restriction_item')); return; }
@@ -1068,9 +1077,10 @@ const emptyGoalForm = { item_name: '', quantity: '', unit: '', frequency: 'daily
 type GoalForm = typeof emptyGoalForm;
 
 function GoalsSection({
-  templateId, goals, canWrite, onChanged,
+  templateId, apiBase, goals, canWrite, onChanged,
 }: {
   templateId: number;
+  apiBase: string;
   goals: HierGoal[];
   canWrite: boolean;
   onChanged: () => Promise<void> | void;
@@ -1084,7 +1094,7 @@ function GoalsSection({
   const [adding, setAdding] = useState(false);
   const [removingId, setRemovingId] = useState<number | null>(null);
 
-  const base = `/nutrition-plan-templates/${templateId}/goals`;
+  const base = `${apiBase}/${templateId}/goals`;
 
   async function addGoal() {
     if (!addForm.item_name || !addForm.quantity || !addForm.unit.trim()) {

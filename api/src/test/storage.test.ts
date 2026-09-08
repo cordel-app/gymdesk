@@ -101,3 +101,50 @@ describe('initializeGymBucket()', () => {
     }
   });
 });
+
+describe('uploadGymImage()', () => {
+  it('throws without touching the network when not configured', async () => {
+    const { uploadGymImage } = await import('../infra/storage');
+    await expect(uploadGymImage('gym_123-Gym', 'Exercises/Images', 'image/png', Buffer.from('x'))).rejects.toThrow(
+      'Cloudflare R2 storage is not configured for this deployment',
+    );
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('uploads into <prefix>/<folder>/ with a generated filename and returns the endpoint+bucket+key URL', async () => {
+    setConfigured();
+    const { uploadGymImage } = await import('../infra/storage');
+    const body = Buffer.from('fake-image-bytes');
+    const url = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', body);
+
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const input = sendMock.mock.calls[0][0].input;
+    expect(input.Bucket).toBe('test-bucket');
+    expect(input.Body).toBe(body);
+    expect(input.ContentType).toBe('image/png');
+    expect(input.Key).toMatch(/^gym_123-GymName\/Exercises\/Images\/[0-9a-f-]{36}\.png$/);
+    expect(url).toBe(`https://example.r2.cloudflarestorage.com/test-bucket/${input.Key}`);
+  });
+
+  it('maps mime types to the expected file extension', async () => {
+    setConfigured();
+    const { uploadGymImage } = await import('../infra/storage');
+    const cases: Array<[string, string]> = [
+      ['image/jpeg', 'jpg'],
+      ['image/webp', 'webp'],
+      ['image/gif', 'gif'],
+    ];
+    for (const [mime, ext] of cases) {
+      const url = await uploadGymImage('gym_123-GymName', 'Exercises/Images', mime, Buffer.from('x'));
+      expect(url.endsWith(`.${ext}`)).toBe(true);
+    }
+  });
+
+  it('generates a distinct key for every upload (no filename collisions)', async () => {
+    setConfigured();
+    const { uploadGymImage } = await import('../infra/storage');
+    const urlA = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', Buffer.from('a'));
+    const urlB = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', Buffer.from('b'));
+    expect(urlA).not.toBe(urlB);
+  });
+});

@@ -27,12 +27,17 @@ export function invalidateFeatureFlagsCache(): void {
  * disabled. Checks the given key AND every ancestor key (split on '.'), so
  * disabling 'nutrition' also blocks 'nutrition.nutrition_library'.
  *
- * Superadmins always bypass the check. If a key has no row in the DB the
- * feature defaults to enabled (safe fallback for features not yet seeded).
+ * Superadmins bypass the check only in their native capacity. While
+ * impersonating (`tenantCtx.impersonatedUserId` set), the check applies
+ * against the impersonated user's scope like it would for anyone else (#439)
+ * — `tenantCtx.isSuperadmin` stays `true` under impersonation for other
+ * permission checks, so impersonation must be excluded here explicitly.
+ * If a key has no row in the DB the feature defaults to enabled (safe
+ * fallback for features not yet seeded).
  */
 export function requireFeatureEnabled(key: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    if (req.tenantCtx?.isSuperadmin) return next();
+    if (req.tenantCtx?.isSuperadmin && !req.tenantCtx?.impersonatedUserId) return next();
     try {
       const flags = await getFeatureFlags();
       const parts = key.split('.');
