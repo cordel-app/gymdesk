@@ -52,6 +52,7 @@ import { themesRouter, themesPublicRouter } from './api/themes';
 import { gymThemesRouter } from './api/gym-themes';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { staffRouter } from './api/staff';
+import { staffCentersRouter } from './api/staff-centers';
 import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
@@ -185,6 +186,7 @@ app.use('/gym-users',     requireAuth(), tenantContext, requireModuleAccess('ORG
 app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.spaces'), spacesRouter);
 app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), trainersRouter);
 app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), staffRouter);
+app.use('/staff/:staffId/centers', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), staffCentersRouter);
 app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypesRouter);
 app.use('/activity-types/:activityTypeId/schedule-rules', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypeScheduleRulesRouter);
 app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.class_packages'), classPackagesRouter);
