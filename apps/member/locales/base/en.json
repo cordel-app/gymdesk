@@ -265,7 +265,15 @@
   "link": {
     "linking": "Setting up your account…",
     "error_no_invitation": "No pending invitation found for this account.",
-    "error_generic": "Something went wrong."
+    "error_generic": "Something went wrong.",
+    "set_password_title": "Set a password",
+    "set_password_hint": "Choose a password to finish setting up your account.",
+    "password_label": "Password",
+    "confirm_password_label": "Confirm password",
+    "password_too_short": "Password must be at least 8 characters.",
+    "password_mismatch": "Passwords don't match.",
+    "submit": "Continue",
+    "submitting": "Setting up…"
   },
   "billing_unit": {
     "day_one": "day",
