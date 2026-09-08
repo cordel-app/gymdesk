@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -28,8 +29,6 @@ export interface StaffMember {
   hire_date: string;
   contract_end_date: string | null;
   termination_date: string | null;
-  assigned_center_id: number | null;
-  assigned_center_name: string | null;
   direct_manager_id: number | null;
   direct_manager_name: string | null;
   employee_number: string | null;
@@ -74,12 +73,15 @@ const CURRENT_STATUSES = [
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
 
-const SECTIONS = ['general', 'employment', 'schedule', 'notes', 'clerk'] as const;
-type Section = (typeof SECTIONS)[number];
-
 interface ClerkStatus {
   status: 'not_enrolled' | 'invited' | 'active' | 'suspended' | 'error';
   userId: string | null;
+}
+
+interface StaffCenterAssignment {
+  center_id: number;
+  name: string;
+  is_default: boolean;
 }
 
 const emptyForm = (): Partial<StaffMember> => ({
@@ -95,7 +97,6 @@ const emptyForm = (): Partial<StaffMember> => ({
   hire_date: new Date().toISOString().slice(0, 10),
   contract_end_date: null,
   termination_date: null,
-  assigned_center_id: null,
   direct_manager_id: null,
   employee_number: null,
   company_email: null,
@@ -179,7 +180,9 @@ export default function StaffPage() {
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading } = useGym();
+  const { centers } = useCenter();
   const { toast } = useToast();
+  const showCenters = centers.length > 1;
 
   const [rows, setRows] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,15 +195,18 @@ export default function StaffPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const [expandedId, setExpandedId] = useState<number | 'new' | null>(null);
-  const [activeSection, setActiveSection] = useState<Section>('general');
   const [form, setForm] = useState<Partial<StaffMember>>(emptyForm());
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
+  const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
 
   const [clerkStatus, setClerkStatus] = useState<ClerkStatus | null>(null);
   const [clerkLoading, setClerkLoading] = useState(false);
 
   const [detailsMember, setDetailsMember] = useState<StaffMember | null>(null);
+  const [detailsCenters, setDetailsCenters] = useState<StaffCenterAssignment[]>([]);
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
   const [deactivating, setDeactivating] = useState<StaffMember | null>(null);
 
@@ -240,11 +246,19 @@ export default function StaffPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!detailsMember) { setDetailsCenters([]); return; }
+    apiFetch<StaffCenterAssignment[]>(`/staff/${detailsMember.id}/centers`)
+      .then(setDetailsCenters)
+      .catch(() => setDetailsCenters([]));
+  }, [detailsMember]);
+
   function openNew() {
     setForm(emptyForm());
     setExpandedId('new');
-    setActiveSection('general');
     setFormError(null);
+    setAssignedCenterIds(centers.length === 1 ? new Set([centers[0].id]) : new Set());
+    setDefaultCenterId(centers.length === 1 ? centers[0].id : null);
     setTimeout(() => firstNameRef.current?.focus(), 50);
   }
 
@@ -252,7 +266,6 @@ export default function StaffPage() {
     if (expandedId === member.id) { setExpandedId(null); setClerkStatus(null); return; }
     setForm({ ...member });
     setExpandedId(member.id);
-    setActiveSection('general');
     setFormError(null);
     setClerkStatus(null);
     setClerkLoading(true);
@@ -260,12 +273,30 @@ export default function StaffPage() {
       .then(setClerkStatus)
       .catch(() => setClerkStatus({ status: 'error', userId: null }))
       .finally(() => setClerkLoading(false));
+    setAssignedCenterIds(new Set());
+    setDefaultCenterId(null);
+    apiFetch<StaffCenterAssignment[]>(`/staff/${member.id}/centers`)
+      .then((assignments) => {
+        setAssignedCenterIds(new Set(assignments.map((a) => a.center_id)));
+        setDefaultCenterId(assignments.find((a) => a.is_default)?.center_id ?? null);
+      })
+      .catch(() => { setAssignedCenterIds(new Set()); setDefaultCenterId(null); });
   }
 
   function cancelEdit() {
     setExpandedId(null);
     setFormError(null);
     setClerkStatus(null);
+    setAssignedCenterIds(new Set());
+    setDefaultCenterId(null);
+  }
+
+  function toggleCenter(id: number, checked: boolean) {
+    const next = new Set(assignedCenterIds);
+    if (checked) next.add(id); else next.delete(id);
+    setAssignedCenterIds(next);
+    if (!checked && defaultCenterId === id) setDefaultCenterId(null);
+    if (checked && next.size === 1) setDefaultCenterId(id);
   }
 
   async function handleSave() {
@@ -273,14 +304,29 @@ export default function StaffPage() {
       setFormError(t('error_required'));
       return;
     }
+    if (showCenters && assignedCenterIds.size > 1 && (defaultCenterId == null || !assignedCenterIds.has(defaultCenterId))) {
+      setFormError(t('error_default_not_assigned'));
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
       if (expandedId === 'new') {
-        await apiFetch('/staff', { method: 'POST', body: JSON.stringify(form) });
+        const body: Record<string, unknown> = { ...form };
+        if (showCenters) {
+          body.center_ids = Array.from(assignedCenterIds);
+          body.default_center_id = defaultCenterId;
+        }
+        await apiFetch('/staff', { method: 'POST', body: JSON.stringify(body) });
         toast(t('created'));
       } else {
         await apiFetch(`/staff/${expandedId}`, { method: 'PUT', body: JSON.stringify(form) });
+        if (showCenters) {
+          await apiFetch(`/staff/${expandedId}/centers`, {
+            method: 'PUT',
+            body: JSON.stringify({ center_ids: Array.from(assignedCenterIds), default_center_id: defaultCenterId }),
+          });
+        }
         toast(t('saved'));
       }
       setExpandedId(null);
@@ -491,6 +537,36 @@ export default function StaffPage() {
   }
 
 
+  function renderCenters() {
+    if (!showCenters) return null;
+    return (
+      <div>
+        <p style={subsectionLabelStyle}>{t('subsection_centers')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 360 }}>
+          <FormRow label={t('label_assigned_centers')}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 160, overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, padding: 10 }}>
+              {centers.map((c) => (
+                <label key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
+                  <input type="checkbox" checked={assignedCenterIds.has(c.id)}
+                         onChange={(e) => toggleCenter(c.id, e.target.checked)} />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          </FormRow>
+          <FormRow label={t('label_default_center')}>
+            <select style={selectStyle} value={defaultCenterId ?? ''} onChange={(e) => setDefaultCenterId(e.target.value ? Number(e.target.value) : null)}>
+              <option value="">{t('default_center_none')}</option>
+              {centers.filter((c) => assignedCenterIds.has(c.id)).map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </FormRow>
+        </div>
+      </div>
+    );
+  }
+
   function renderNotes() {
     return (
       <FormRow label={t('label_notes')}>
@@ -556,43 +632,35 @@ export default function StaffPage() {
     );
   }
 
-  function renderSectionContent() {
-    switch (activeSection) {
-      case 'general': return renderGeneral();
-      case 'employment': return renderEmployment();
-      case 'schedule': return renderSchedule();
-      case 'notes': return renderNotes();
-      case 'clerk': return renderClerk();
-    }
-  }
-
   function renderInlineEditor() {
     return (
       <div style={{ borderTop: '1px solid #e8e8ed', padding: 20 }}>
-        {/* Section tabs */}
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 20, borderBottom: '1px solid #e8e8ed', paddingBottom: 12 }}>
-          {SECTIONS.map((s) => (
-            <button
-              key={s}
-              onClick={() => setActiveSection(s)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 6,
-                border: 'none',
-                background: activeSection === s ? '#4c6ef5' : 'transparent',
-                color: activeSection === s ? '#fff' : '#555',
-                fontWeight: activeSection === s ? 600 : 400,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              {t(`section_${s}`)}
-            </button>
-          ))}
-        </div>
+        {/* All sections consolidated into a single continuous scrolling view (#440) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {renderGeneral()}
 
-        {/* Section content */}
-        {renderSectionContent()}
+          <div>
+            <p style={subsectionLabelStyle}>{t('section_employment')}</p>
+            {renderEmployment()}
+          </div>
+
+          {renderCenters()}
+
+          <div>
+            <p style={subsectionLabelStyle}>{t('section_schedule')}</p>
+            {renderSchedule()}
+          </div>
+
+          <div>
+            <p style={subsectionLabelStyle}>{t('section_notes')}</p>
+            {renderNotes()}
+          </div>
+
+          <div>
+            <p style={subsectionLabelStyle}>{t('section_clerk')}</p>
+            {renderClerk()}
+          </div>
+        </div>
 
         {/* Error + actions */}
         {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
@@ -716,7 +784,9 @@ export default function StaffPage() {
           {field(t('label_hire_date'), member.hire_date)}
           {field(t('label_contract_end_date'), member.contract_end_date)}
           {field(t('label_termination_date'), member.termination_date)}
-          {field(t('label_center'), member.assigned_center_name)}
+          {field(t('label_centers'), detailsCenters.length > 0
+            ? detailsCenters.map((c) => c.is_default ? `${c.name} (${t('default_center_badge')})` : c.name).join(', ')
+            : null)}
           {field(t('label_employee_number'), member.employee_number)}
           <hr style={{ border: 'none', borderTop: '1px solid #e8e8ed', margin: '20px 0' }} />
           {field(t('label_company_email'), member.company_email)}

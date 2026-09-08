@@ -181,6 +181,21 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   Subscriptions page deleted, `user_memberships.plan` column dropped
   (migrations 004, 007, 009). The member app's `/subscriptions` route was
   renamed to `/membership` (P1.8).
+- **#440 (done)**: Staff Management — consolidated the expanded staff profile view in
+  `apps/admin/src/app/[locale]/staff/page.tsx` from tabbed sections (General/Employment/
+  Schedule/Notes/Clerk) into a single continuous scroll (tab bar + `activeSection` state
+  removed). Added multi-center association for Staff, mirroring #59's `member_centers`
+  pattern: migration 136 creates `staff_centers` (gym_id/staff_id/center_id, `is_default`,
+  same generated-column one-default-per-staff unique index as `member_centers`); migration
+  137 backfills it from the old single `staff.assigned_center_id` column (falling back to
+  a gym's sole center) and then drops that column — nothing outside `staff.ts` read it.
+  New `api/src/api/staff-centers.ts` (`GET`/`PUT /staff/:staffId/centers`, admin-only
+  write) mirrors `member-centers.ts`, except a staff member may have zero centers (no
+  access-control path depends on staff having one, unlike members). `staff.ts`'s
+  create/duplicate now accept/propagate `center_ids`/`default_center_id` via
+  `resolveStaffCenters()` (members' `resolveMemberCenters()` equivalent). Frontend adds a
+  Centers subsection (checkboxes + default `<select>`, hidden for single-center gyms,
+  matching the Members page's `showCenters` pattern) to the consolidated view.
 
 ## Decisions
 
