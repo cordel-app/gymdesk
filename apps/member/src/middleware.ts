@@ -10,6 +10,9 @@ const handleI18nRouting = createIntlMiddleware({
 const isPublicRoute = createRouteMatcher([
   '/:locale/sign-in(.*)',
   '/:locale/classes(.*)',
+  // /link redeems a Clerk invitation ticket to establish the session in the
+  // first place — the visitor is by definition unauthenticated until it runs.
+  '/:locale/link(.*)',
   '/:locale',
   '/',
   '/api/proxy(.*)',
