@@ -5,8 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>Pago</title>
-  <!-- SRI hash TBD — see SCRIPT-INVENTORY.md. Do not ship to production without a Monei-provided sha384. -->
-  <script src="https://js.monei.com/v3/monei.js" crossorigin="anonymous"></script>
+  <!-- SRI hash TBD — see SCRIPT-INVENTORY.md. Do not ship to production without a
+       Monei-provided sha384. crossorigin is intentionally omitted until then: it only
+       has an effect paired with integrity, and Monei's CDN doesn't send
+       Access-Control-Allow-Origin — setting it alone makes the browser refuse to run
+       the script at all (blocked by CORS), breaking the card widget entirely. -->
+  <script src="https://js.monei.com/v3/monei.js"></script>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
