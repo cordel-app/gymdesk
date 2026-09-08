@@ -7,7 +7,6 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
-import { useImpersonation } from '@/context/ImpersonationContext';
 
 interface BlockExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;

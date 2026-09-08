@@ -7,7 +7,6 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
-import { useImpersonation } from '@/context/ImpersonationContext';
 
 interface Profile {
   id: number;
