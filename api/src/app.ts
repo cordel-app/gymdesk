@@ -8,6 +8,7 @@ import { membersRouter } from './api/members';
 import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { gymsRouter, platformRouter } from './api/gyms';
+import { storageRouter } from './api/storage';
 import { superadminsRouter } from './api/superadmins';
 import { impersonationRouter } from './api/impersonation';
 import { membershipPlansRouter } from './api/membership-plans';
@@ -52,6 +53,7 @@ import { themesRouter, themesPublicRouter } from './api/themes';
 import { gymThemesRouter } from './api/gym-themes';
 import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
 import { staffRouter } from './api/staff';
+import { staffCentersRouter } from './api/staff-centers';
 import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
@@ -185,6 +187,7 @@ app.use('/gym-users',     requireAuth(), tenantContext, requireModuleAccess('ORG
 app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.spaces'), spacesRouter);
 app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), trainersRouter);
 app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), staffRouter);
+app.use('/staff/:staffId/centers', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), staffCentersRouter);
 app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypesRouter);
 app.use('/activity-types/:activityTypeId/schedule-rules', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypeScheduleRulesRouter);
 app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.class_packages'), classPackagesRouter);
@@ -198,6 +201,7 @@ app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContex
 app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), bookingsRouter);
 
 // TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE
+app.use('/storage',          requireAuth(), tenantContext, storageRouter);
 app.use('/muscles',          requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), musclesRouter);
 app.use('/exercises',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), exercisesRouter);
 app.use('/result-types',     requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.exercises'), resultTypesRouter);

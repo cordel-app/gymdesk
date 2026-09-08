@@ -8,6 +8,40 @@ const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY!
 
 export const staffRouter = Router();
 
+/**
+ * #440: resolve a staff member's center assignment for creation. Mirrors
+ * members.ts's resolveMemberCenters, except a staff member is allowed zero
+ * centers (an empty `center_ids` array, or none supplied for a multi-center
+ * gym, leaves them unassigned rather than erroring) — unlike members, no
+ * access-control path depends on a staff member having a center.
+ */
+async function resolveStaffCenters(
+  gymId: string,
+  centerIds: unknown,
+  defaultCenterId: unknown,
+): Promise<{ ids: number[]; defaultId: number | null } | { error: string }> {
+  if (Array.isArray(centerIds)) {
+    if (centerIds.length === 0) return { ids: [], defaultId: null };
+    const ids = centerIds.map((id) => Number(id));
+    const defaultId = ids.length === 1 ? ids[0] : Number(defaultCenterId);
+    if (!defaultId || !ids.includes(defaultId)) {
+      return { error: 'default_center_id must be one of center_ids' };
+    }
+    const { rows } = await db.query(
+      `SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${ids.map(() => '?').join(',')})`,
+      [gymId, ...ids],
+    );
+    if (rows.length !== new Set(ids).size) return { error: 'One or more center_ids are invalid for this gym' };
+    return { ids, defaultId };
+  }
+  const { rows } = await db.query<{ id: number }>(
+    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
+    [gymId],
+  );
+  if (rows.length === 1) return { ids: [rows[0].id], defaultId: rows[0].id };
+  return { ids: [], defaultId: null };
+}
+
 const STAFF_SELECT = `
   s.id,
   s.gym_id,
@@ -25,8 +59,6 @@ const STAFF_SELECT = `
   s.hire_date,
   s.contract_end_date,
   s.termination_date,
-  s.assigned_center_id,
-  c.name AS assigned_center_name,
   s.direct_manager_id,
   CONCAT(m.first_name, ' ', m.last_name) AS direct_manager_name,
   s.employee_number,
@@ -53,7 +85,6 @@ const STAFF_SELECT = `
 
 const STAFF_FROM = `
   FROM staff s
-  LEFT JOIN centers c ON c.id = s.assigned_center_id
   LEFT JOIN staff m ON m.id = s.direct_manager_id AND m.deleted_at IS NULL
 `;
 
@@ -70,9 +101,14 @@ const VALID_SORT: Record<string, string> = {
 staffRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
 
+  const joins: string[] = [];
   const where: string[] = ['s.deleted_at IS NULL', 's.gym_id = ?'];
   const params: any[] = [gymId];
 
+  if (req.query.center_id) {
+    joins.push('JOIN staff_centers sc ON sc.staff_id = s.id AND sc.center_id = ? AND sc.deleted_at IS NULL');
+    params.unshift(Number(req.query.center_id));
+  }
   if (req.query.q) {
     const q = `%${req.query.q}%`;
     where.push('(s.first_name LIKE ? OR s.last_name LIKE ? OR s.email LIKE ? OR s.employee_number LIKE ?)');
@@ -81,13 +117,12 @@ staffRouter.get('/', async (req, res) => {
   if (req.query.profile) { where.push('s.profile = ?'); params.push(req.query.profile); }
   if (req.query.employment_status) { where.push('s.employment_status = ?'); params.push(req.query.employment_status); }
   if (req.query.current_status) { where.push('s.current_status = ?'); params.push(req.query.current_status); }
-  if (req.query.center_id) { where.push('s.assigned_center_id = ?'); params.push(Number(req.query.center_id)); }
 
   const sortCol = VALID_SORT[req.query.sort as string] ?? 's.last_name, s.first_name';
   const sortDir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
 
   const { rows } = await db.query(
-    `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE ${where.join(' AND ')} ORDER BY ${sortCol} ${sortDir}`,
+    `SELECT ${STAFF_SELECT} ${STAFF_FROM} ${joins.join(' ')} WHERE ${where.join(' AND ')} ORDER BY ${sortCol} ${sortDir}`,
     params,
   );
   res.json(rows);
@@ -136,12 +171,12 @@ staffRouter.get('/:id/clerk-status', async (req, res, next) => {
 });
 
 staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, userId, gymMembershipId } = getTenantContext(req);
   const {
     first_name, last_name, email, mobile_phone, profile_photo_url,
     date_of_birth, national_id, profile, employment_status, current_status,
     hire_date, contract_end_date, termination_date,
-    assigned_center_id, direct_manager_id, employee_number,
+    center_ids, default_center_id, direct_manager_id, employee_number,
     company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
     working_days, work_start_time, work_end_time, break_duration_minutes, notes,
   } = req.body;
@@ -150,38 +185,51 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
     return res.status(400).json({ error: 'first_name, last_name, email, profile, and hire_date are required' });
   }
 
+  const centers = await resolveStaffCenters(gymId, center_ids, default_center_id);
+  if ('error' in centers) return res.status(400).json({ error: centers.error });
+
   try {
-    const { insertId } = await db.query(
-      `INSERT INTO staff (
-        gym_id, first_name, last_name, email, mobile_phone, profile_photo_url,
-        date_of_birth, national_id, profile, employment_status, current_status,
-        hire_date, contract_end_date, termination_date,
-        assigned_center_id, direct_manager_id, employee_number,
-        company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
-        working_days, work_start_time, work_end_time, break_duration_minutes, notes,
-        created_by, updated_by, created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
-      )`,
-      [
-        gymId, first_name, last_name, email, mobile_phone ?? null, profile_photo_url ?? null,
-        date_of_birth ?? null, national_id ?? null, profile,
-        employment_status ?? 'active', current_status ?? 'available',
-        hire_date, contract_end_date ?? null, termination_date ?? null,
-        assigned_center_id ?? null, direct_manager_id ?? null, employee_number ?? null,
-        company_email ?? null, company_phone ?? null, personal_phone ?? null,
-        emergency_contact ?? null, emergency_phone ?? null,
-        working_days ?? null, work_start_time ?? null, work_end_time ?? null,
-        break_duration_minutes ?? null, notes ?? null,
-        userId ?? null, userId ?? null,
-      ],
-    );
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO staff (
+          gym_id, first_name, last_name, email, mobile_phone, profile_photo_url,
+          date_of_birth, national_id, profile, employment_status, current_status,
+          hire_date, contract_end_date, termination_date,
+          direct_manager_id, employee_number,
+          company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
+          working_days, work_start_time, work_end_time, break_duration_minutes, notes,
+          created_by, updated_by, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+        )`,
+        [
+          gymId, first_name, last_name, email, mobile_phone ?? null, profile_photo_url ?? null,
+          date_of_birth ?? null, national_id ?? null, profile,
+          employment_status ?? 'active', current_status ?? 'available',
+          hire_date, contract_end_date ?? null, termination_date ?? null,
+          direct_manager_id ?? null, employee_number ?? null,
+          company_email ?? null, company_phone ?? null, personal_phone ?? null,
+          emergency_contact ?? null, emergency_phone ?? null,
+          working_days ?? null, work_start_time ?? null, work_end_time ?? null,
+          break_duration_minutes ?? null, notes ?? null,
+          userId ?? null, userId ?? null,
+        ],
+      );
+      for (const centerId of centers.ids) {
+        await tx.query(
+          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, assigned_by_membership_id)
+           VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
+          [gymId, insertId, centerId, centerId === centers.defaultId, gymMembershipId],
+        );
+      }
+      return insertId;
+    });
 
     const { rows } = await db.query(
       `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ?`,
@@ -217,7 +265,7 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     first_name, last_name, email, mobile_phone, profile_photo_url,
     date_of_birth, national_id, profile, employment_status, current_status,
     hire_date, contract_end_date, termination_date,
-    assigned_center_id, direct_manager_id, employee_number,
+    direct_manager_id, employee_number,
     company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
     working_days, work_start_time, work_end_time, break_duration_minutes, notes,
   } = req.body;
@@ -228,7 +276,7 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         first_name = ?, last_name = ?, email = ?, mobile_phone = ?, profile_photo_url = ?,
         date_of_birth = ?, national_id = ?, profile = ?, employment_status = ?, current_status = ?,
         hire_date = ?, contract_end_date = ?, termination_date = ?,
-        assigned_center_id = ?, direct_manager_id = ?, employee_number = ?,
+        direct_manager_id = ?, employee_number = ?,
         company_email = ?, company_phone = ?, personal_phone = ?, emergency_contact = ?, emergency_phone = ?,
         working_days = ?, work_start_time = ?, work_end_time = ?, break_duration_minutes = ?, notes = ?,
         updated_by = ?, updated_at = UTC_TIMESTAMP()
@@ -240,7 +288,7 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         profile ?? prev.profile, employment_status ?? prev.employment_status,
         current_status ?? prev.current_status,
         hire_date ?? prev.hire_date, contract_end_date ?? null, termination_date ?? null,
-        assigned_center_id ?? null, direct_manager_id ?? null, employee_number ?? null,
+        direct_manager_id ?? null, employee_number ?? null,
         company_email ?? null, company_phone ?? null, personal_phone ?? null,
         emergency_contact ?? null, emergency_phone ?? null,
         working_days ?? null, work_start_time ?? null, work_end_time ?? null,
@@ -294,7 +342,7 @@ staffRouter.patch('/:id/deactivate', requireRole('admin'), async (req, res) => {
 });
 
 staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId } = getTenantContext(req);
+  const { gymId, userId, gymMembershipId } = getTenantContext(req);
 
   const { rows } = await db.query(
     'SELECT * FROM staff WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -304,37 +352,52 @@ staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) 
   const src = rows[0];
 
   try {
-    const { insertId } = await db.query(
-      `INSERT INTO staff (
-        gym_id, first_name, last_name, email, mobile_phone,
-        date_of_birth, national_id, profile, employment_status, current_status,
-        hire_date, contract_end_date, termination_date,
-        assigned_center_id, direct_manager_id,
-        company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
-        working_days, work_start_time, work_end_time, break_duration_minutes, notes,
-        created_by, updated_by, created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?,
-        ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
-      )`,
-      [
-        gymId,
-        `${src.first_name} (copy)`, src.last_name, src.email, src.mobile_phone,
-        src.date_of_birth, src.national_id, src.profile, 'active', 'available',
-        src.hire_date, src.contract_end_date, null,
-        src.assigned_center_id, src.direct_manager_id,
-        src.company_email, src.company_phone, src.personal_phone,
-        src.emergency_contact, src.emergency_phone,
-        src.working_days, src.work_start_time, src.work_end_time,
-        src.break_duration_minutes, src.notes,
-        userId ?? null, userId ?? null,
-      ],
-    );
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO staff (
+          gym_id, first_name, last_name, email, mobile_phone,
+          date_of_birth, national_id, profile, employment_status, current_status,
+          hire_date, contract_end_date, termination_date,
+          direct_manager_id,
+          company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
+          working_days, work_start_time, work_end_time, break_duration_minutes, notes,
+          created_by, updated_by, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+        )`,
+        [
+          gymId,
+          `${src.first_name} (copy)`, src.last_name, src.email, src.mobile_phone,
+          src.date_of_birth, src.national_id, src.profile, 'active', 'available',
+          src.hire_date, src.contract_end_date, null,
+          src.direct_manager_id,
+          src.company_email, src.company_phone, src.personal_phone,
+          src.emergency_contact, src.emergency_phone,
+          src.working_days, src.work_start_time, src.work_end_time,
+          src.break_duration_minutes, src.notes,
+          userId ?? null, userId ?? null,
+        ],
+      );
+
+      const { rows: srcCenters } = await tx.query<{ center_id: number; is_default: boolean }>(
+        'SELECT center_id, is_default FROM staff_centers WHERE staff_id = ? AND gym_id = ? AND deleted_at IS NULL',
+        [req.params.id, gymId],
+      );
+      for (const sc of srcCenters) {
+        await tx.query(
+          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, assigned_by_membership_id)
+           VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
+          [gymId, insertId, sc.center_id, sc.is_default, gymMembershipId],
+        );
+      }
+      return insertId;
+    });
 
     const { rows: duped } = await db.query(
       `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ?`,
