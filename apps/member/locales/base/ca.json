@@ -265,7 +265,15 @@
   "link": {
     "linking": "Configurant el teu compte…",
     "error_no_invitation": "No s'ha trobat cap invitació pendent per a aquest compte.",
-    "error_generic": "Alguna cosa ha anat malament."
+    "error_generic": "Alguna cosa ha anat malament.",
+    "set_password_title": "Crea una contrasenya",
+    "set_password_hint": "Tria una contrasenya per acabar de configurar el teu compte.",
+    "password_label": "Contrasenya",
+    "confirm_password_label": "Confirma la contrasenya",
+    "password_too_short": "La contrasenya ha de tenir com a mínim 8 caràcters.",
+    "password_mismatch": "Les contrasenyes no coincideixen.",
+    "submit": "Continua",
+    "submitting": "Configurant…"
   },
   "billing_unit": {
     "day_one": "dia",

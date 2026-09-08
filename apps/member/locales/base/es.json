@@ -265,7 +265,15 @@
   "link": {
     "linking": "Configurando tu cuenta…",
     "error_no_invitation": "No se encontró ninguna invitación pendiente para esta cuenta.",
-    "error_generic": "Algo ha salido mal."
+    "error_generic": "Algo ha salido mal.",
+    "set_password_title": "Crea una contraseña",
+    "set_password_hint": "Elige una contraseña para terminar de configurar tu cuenta.",
+    "password_label": "Contraseña",
+    "confirm_password_label": "Confirmar contraseña",
+    "password_too_short": "La contraseña debe tener al menos 8 caracteres.",
+    "password_mismatch": "Las contraseñas no coinciden.",
+    "submit": "Continuar",
+    "submitting": "Configurando…"
   },
   "billing_unit": {
     "day_one": "día",
