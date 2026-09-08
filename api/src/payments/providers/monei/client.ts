@@ -21,7 +21,10 @@ export class MoneiClient {
     const response = await fetch(`${MONEI_API_BASE}${path}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
+        // MONEI's API expects the raw API key, not a Bearer-scheme token —
+        // confirmed against the official SDK's setApiKeyToObject(), which
+        // assigns the key straight to the Authorization header.
+        'Authorization': this.apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
