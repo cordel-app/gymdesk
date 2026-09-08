@@ -210,9 +210,9 @@ describe('Happy path', () => {
     expect(sendMock).toHaveBeenCalledTimes(1);
 
     const expectedPrefix = `${gymId}-StorageUploadsGym`;
-    expect(res.body.url).toMatch(
-      new RegExp(`^${R2_ENDPOINT}/${R2_BUCKET}/${expectedPrefix}/Exercises/Images/[0-9a-f-]{36}\\.png$`),
-    );
+    const expectedBase = `${R2_ENDPOINT}/${R2_BUCKET}/${expectedPrefix}/Exercises/Images/`;
+    expect(res.body.url.startsWith(expectedBase)).toBe(true);
+    expect(res.body.url.slice(expectedBase.length)).toMatch(/^[0-9a-f-]{36}\.png$/);
 
     const sentInput = sendMock.mock.calls[0][0].input;
     expect(sentInput.Bucket).toBe(R2_BUCKET);

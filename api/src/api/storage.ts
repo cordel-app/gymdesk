@@ -27,9 +27,12 @@ async function handleImageUpload(req: express.Request, res: express.Response, fo
   if (!mime || !ALLOWED_IMAGE_MIME_TYPES.includes(mime)) {
     return res.status(415).json({ error: `Unsupported image type. Allowed: ${ALLOWED_IMAGE_MIME_TYPES.join(', ')}` });
   }
-  const body = req.body as Buffer;
-  if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
-  if (body.length > IMAGE_MAX_BYTES) {
+  const rawBody = req.body;
+  if (!Buffer.isBuffer(rawBody)) {
+    return res.status(400).json({ error: 'Request body is empty' });
+  }
+  if (rawBody.byteLength === 0) return res.status(400).json({ error: 'Request body is empty' });
+  if (rawBody.byteLength > IMAGE_MAX_BYTES) {
     return res.status(413).json({ error: `Image exceeds ${IMAGE_MAX_BYTES / (1024 * 1024)}MB limit` });
   }
 
@@ -48,7 +51,7 @@ async function handleImageUpload(req: express.Request, res: express.Response, fo
   }
 
   try {
-    const url = await uploadGymImage(folderPrefix, folder, mime, body);
+    const url = await uploadGymImage(folderPrefix, folder, mime, rawBody);
     res.status(201).json({ url });
   } catch (err: any) {
     res.status(502).json({ error: `Failed to upload image: ${err.message ?? 'unknown error'}` });
