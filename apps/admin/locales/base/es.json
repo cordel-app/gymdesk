@@ -256,7 +256,15 @@
   },
   "common": {
     "coming_soon": "Próximamente.",
-    "error_load_gyms": "Error al cargar los gimnasios"
+    "error_load_gyms": "Error al cargar los gimnasios",
+    "image_upload": "Subir imagen",
+    "image_replace": "Reemplazar imagen",
+    "image_remove": "Quitar",
+    "image_uploading": "Subiendo…",
+    "image_invalid_type": "Tipo de imagen no admitido. Permitidos: PNG, JPEG, WEBP, GIF.",
+    "image_upload_error": "No se pudo subir la imagen.",
+    "image_not_configured": "El almacenamiento de Cloudflare no está configurado para este entorno.",
+    "image_not_initialized": "El almacenamiento de Cloudflare no se ha inicializado para este gimnasio, por lo que no se pueden subir imágenes."
   },
   "system_gyms": {
     "title": "Gimnasios",

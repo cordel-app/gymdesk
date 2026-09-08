@@ -15,7 +15,7 @@ const FeatureFlagsContext = createContext<FeatureFlagsContextValue>({
 
 // Matches the backend's in-memory cache TTL (api/src/infra/featureFlags.ts)
 // so a toggle in Cordel → Feature Flags reaches an already-open member
-// session without a full page reload (#439).
+// session without a full page reload (#438, #439).
 const POLL_INTERVAL_MS = 30_000;
 
 export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
@@ -34,6 +34,7 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function fetchFlags(isInitial: boolean) {
+      if (isInitial) setLoading(true);
       try {
         const token = await getToken();
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };

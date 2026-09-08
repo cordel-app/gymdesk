@@ -168,45 +168,47 @@ export default function HomePage() {
       )}
 
       {/* Next booking */}
-      <section style={styles.section}>
-        <h2 style={styles.h2}>{t('home.next_booking')}</h2>
-        {loading ? (
-          <div style={styles.card}><p style={styles.hint}>{t('home.loading')}</p></div>
-        ) : nextBooking ? (
-          <div style={styles.card}>
-            <div style={styles.bookingRow}>
-              <div>
-                <p style={styles.bookingName}>{nextBooking.class_type_name}</p>
-                {nextBooking.room_name && (
-                  <p style={styles.bookingSub}>{nextBooking.room_name}</p>
+      {featureEnabled('member_web.my_bookings') && (
+        <section style={styles.section}>
+          <h2 style={styles.h2}>{t('home.next_booking')}</h2>
+          {loading ? (
+            <div style={styles.card}><p style={styles.hint}>{t('home.loading')}</p></div>
+          ) : nextBooking ? (
+            <div style={styles.card}>
+              <div style={styles.bookingRow}>
+                <div>
+                  <p style={styles.bookingName}>{nextBooking.class_type_name}</p>
+                  {nextBooking.room_name && (
+                    <p style={styles.bookingSub}>{nextBooking.room_name}</p>
+                  )}
+                  <p style={styles.bookingSub}>
+                    {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}
+                  </p>
+                </div>
+                {nextBooking.my_booking_status === 'waitlisted' && (
+                  <span style={styles.pillWait}>{t('home.waitlisted')}</span>
                 )}
-                <p style={styles.bookingSub}>
-                  {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}
-                </p>
               </div>
-              {nextBooking.my_booking_status === 'waitlisted' && (
-                <span style={styles.pillWait}>{t('home.waitlisted')}</span>
+              {nextBooking.my_booking_id && nextBooking.my_booking_status === 'booked' && (
+                <button
+                  style={styles.btnCancel}
+                  disabled={cancelPending}
+                  onClick={() => cancelBooking(nextBooking.my_booking_id!)}
+                >
+                  {cancelPending ? '…' : t('member_schedule.cancel_booking')}
+                </button>
               )}
             </div>
-            {nextBooking.my_booking_id && nextBooking.my_booking_status === 'booked' && (
-              <button
-                style={styles.btnCancel}
-                disabled={cancelPending}
-                onClick={() => cancelBooking(nextBooking.my_booking_id!)}
-              >
-                {cancelPending ? '…' : t('member_schedule.cancel_booking')}
+          ) : (
+            <div style={styles.card}>
+              <p style={styles.hint}>{t('home.no_upcoming_booking')}</p>
+              <button style={styles.btnSecondary} onClick={() => router.push(`/${locale}/calendar`)}>
+                {t('home.browse_calendar')}
               </button>
-            )}
-          </div>
-        ) : (
-          <div style={styles.card}>
-            <p style={styles.hint}>{t('home.no_upcoming_booking')}</p>
-            <button style={styles.btnSecondary} onClick={() => router.push(`/${locale}/calendar`)}>
-              {t('home.browse_calendar')}
-            </button>
-          </div>
-        )}
-      </section>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Today's Nutrition Plan — omitted entirely when there's nothing to show */}
       {!loading && todayMeals.length > 0 && (

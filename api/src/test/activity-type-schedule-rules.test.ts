@@ -27,6 +27,31 @@ function tomorrowStr(): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Upcoming Mon–Sun week whose Monday is today or later (UTC). */
+function upcomingMonSunWeek() {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const daysUntilMon = (1 - today.getUTCDay() + 7) % 7; // 0=Sun … 6=Sat; 1=Mon
+  const mon = new Date(today);
+  mon.setUTCDate(today.getUTCDate() + daysUntilMon);
+  const ymd = (offset: number) => {
+    const d = new Date(mon);
+    d.setUTCDate(mon.getUTCDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+  return {
+    start: ymd(0),
+    end: ymd(6),
+    mon: ymd(0),
+    tue: ymd(1),
+    wed: ymd(2),
+    thu: ymd(3),
+    fri: ymd(4),
+    sat: ymd(5),
+    sun: ymd(6),
+  };
+}
+
 async function insertTestMember(gymId: string, label: string): Promise<number> {
   const email = `sr-member-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
   const { insertId } = await db.query(
@@ -303,16 +328,17 @@ describe('POST schedule-rule weekly multi-day', () => {
   });
 
   it('schedule generation: Mon+Wed+Fri rule produces occurrences only on those days', async () => {
-    // Create a fresh rule for a specific week
+    // occurrenceDatesForRule skips dates before today, so the window must be a future week.
+    const week = upcomingMonSunWeek();
     const createRes = await request
       .post(rulesBase(activityTypeId))
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
         type: 'weekly',
-        start_date: '2026-09-07', // week of 7–13 Sep 2026
-        end_date: '2026-09-13',
-        weekdays: [1, 3, 5],      // Mon=8 Sep, Wed=10 Sep, Fri=12 Sep
+        start_date: week.start,
+        end_date: week.end,
+        weekdays: [1, 3, 5], // Mon, Wed, Fri
         start_time: '07:00',
         end_time: '08:00',
       });
@@ -326,28 +352,27 @@ describe('POST schedule-rule weekly multi-day', () => {
     );
     const dates = rows.map((r: any) => (r.d instanceof Date ? r.d.toISOString().slice(0, 10) : String(r.d).slice(0, 10)));
 
-    // Must include Mon/Wed/Fri
-    expect(dates).toContain('2026-09-07'); // Mon
-    expect(dates).toContain('2026-09-09'); // Wed
-    expect(dates).toContain('2026-09-11'); // Fri
-    // Must not include other days
-    expect(dates).not.toContain('2026-09-08'); // Tue
-    expect(dates).not.toContain('2026-09-10'); // Thu
-    expect(dates).not.toContain('2026-09-12'); // Sat
-    expect(dates).not.toContain('2026-09-13'); // Sun
+    expect(dates).toContain(week.mon);
+    expect(dates).toContain(week.wed);
+    expect(dates).toContain(week.fri);
+    expect(dates).not.toContain(week.tue);
+    expect(dates).not.toContain(week.thu);
+    expect(dates).not.toContain(week.sat);
+    expect(dates).not.toContain(week.sun);
   });
 
   // #360 stage 3: materialized occurrences are bookable CalendarEvents —
   // kind='session' and capacity backfilled from the activity type.
   it('materialized occurrences carry kind=session and the activity type\'s capacity', async () => {
+    const week = upcomingMonSunWeek();
     const createRes = await request
       .post(rulesBase(activityTypeId))
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
         type: 'weekly',
-        start_date: '2026-10-05',
-        end_date: '2026-10-11',
+        start_date: week.start,
+        end_date: week.end,
         weekdays: [1],
         start_time: '07:00',
         end_time: '08:00',
