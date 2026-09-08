@@ -45,8 +45,8 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
     // LIMIT/OFFSET must be literals, not `?` parameters: MySQL 8's prepared-statement
     // protocol rejects a parameterised LIMIT (ER_WRONG_ARGUMENTS). limit/offset are
     // already validated integers (clampLimit/clampOffset), so direct interpolation is safe.
-    const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; category: string; status: string; created_at: string; modified_at: string | null }>(
-      `SELECT id, gym_id, name, category, status, created_at, modified_at
+    const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; category: string; status: string; image_url: string | null; created_at: string; modified_at: string | null }>(
+      `SELECT id, gym_id, name, category, status, image_url, created_at, modified_at
        FROM nutrition_library_items
        WHERE ${where}
        ORDER BY name ASC
@@ -68,7 +68,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
 
 nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { name, category, quality_ids } = req.body;
+  const { name, category, quality_ids, image_url } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (!category || !CATEGORIES.includes(category as Category)) {
     return res.status(400).json({ error: `category must be one of: ${CATEGORIES.join(', ')}` });
@@ -85,8 +85,8 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     if (existing.length > 0) return res.status(409).json({ error: 'An item with this name and category already exists' });
 
     const { insertId } = await db.query(
-      "INSERT INTO nutrition_library_items (gym_id, name, category, status) VALUES (?, ?, ?, 'active')",
-      [gymId, name.trim(), category],
+      "INSERT INTO nutrition_library_items (gym_id, name, category, image_url, status) VALUES (?, ?, ?, ?, 'active')",
+      [gymId, name.trim(), category, image_url ?? null],
     );
 
     if (Array.isArray(quality_ids) && quality_ids.length > 0) {
@@ -94,7 +94,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     }
 
     const { rows } = await db.query(
-      'SELECT id, gym_id, name, category, status, created_at, modified_at FROM nutrition_library_items WHERE id = ?',
+      'SELECT id, gym_id, name, category, status, image_url, created_at, modified_at FROM nutrition_library_items WHERE id = ?',
       [insertId],
     );
     const qualitiesMap = await loadQualitiesMap([insertId]);
@@ -109,7 +109,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
 nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params;
-  const { name, category, quality_ids } = req.body;
+  const { name, category, quality_ids, image_url } = req.body;
 
   if (category !== undefined && !CATEGORIES.includes(category as Category)) {
     return res.status(400).json({ error: `category must be one of: ${CATEGORIES.join(', ')}` });
@@ -139,8 +139,9 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
 
     const updates: string[] = ['modified_at = UTC_TIMESTAMP()'];
     const params: any[] = [];
-    if (name?.trim())  { updates.push('name = ?');     params.push(name.trim()); }
-    if (category)      { updates.push('category = ?'); params.push(category); }
+    if (name?.trim())        { updates.push('name = ?');       params.push(name.trim()); }
+    if (category)            { updates.push('category = ?');   params.push(category); }
+    if ('image_url' in req.body) { updates.push('image_url = ?'); params.push(image_url ?? null); }
 
     params.push(id);
     await db.query(`UPDATE nutrition_library_items SET ${updates.join(', ')} WHERE id = ?`, params);
@@ -150,7 +151,7 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
     }
 
     const { rows } = await db.query(
-      'SELECT id, gym_id, name, category, status, created_at, modified_at FROM nutrition_library_items WHERE id = ?',
+      'SELECT id, gym_id, name, category, status, image_url, created_at, modified_at FROM nutrition_library_items WHERE id = ?',
       [id],
     );
     const qualitiesMap = await loadQualitiesMap([Number(id)]);

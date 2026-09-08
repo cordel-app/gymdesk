@@ -148,6 +148,17 @@ describe('POST /nutrition-library — gym-owned items', () => {
     expect(res.status).toBe(201);
     expect(res.body.category).toBe('side');
     expect(res.body.gym_id).toBe(gymId);
+    expect(res.body.image_url).toBeNull();
+  });
+
+  it('creates a gym-owned item with an image_url and returns it', async () => {
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Gym Item With Image ${Date.now()}`, category: 'side', image_url: 'https://r2.example/img.png' });
+    expect(res.status).toBe(201);
+    expect(res.body.image_url).toBe('https://r2.example/img.png');
   });
 
   it('returns 400 when creating without a name', async () => {
@@ -200,5 +211,25 @@ describe('PUT /nutrition-library/:id — gym-owned items only', () => {
       .send({ name: `Editable Item Updated ${suffix}` });
     expect(res.status).toBe(200);
     expect(res.body.name).toBe(`Editable Item Updated ${suffix}`);
+  });
+
+  it('sets image_url on own gym item and returns it', async () => {
+    const res = await request
+      .put(`/nutrition-library/${ownItemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ image_url: 'https://r2.example/updated.png' });
+    expect(res.status).toBe(200);
+    expect(res.body.image_url).toBe('https://r2.example/updated.png');
+  });
+
+  it('clears image_url when explicitly set to null', async () => {
+    const res = await request
+      .put(`/nutrition-library/${ownItemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ image_url: null });
+    expect(res.status).toBe(200);
+    expect(res.body.image_url).toBeNull();
   });
 });

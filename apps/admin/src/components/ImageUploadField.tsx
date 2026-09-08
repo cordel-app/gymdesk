@@ -7,10 +7,9 @@ import { useGym } from '@/context/GymContext';
 import { btnSmall } from './ui';
 
 /**
- * #417 stage 2: generic per-gym image upload widget backed by
+ * #417 stages 2-3: generic per-gym image upload widget backed by
  * POST /storage/uploads/:target. Replaces plain URL text inputs for image
- * fields (exercises.image_url first; nutrition meal images land in stage 3
- * against the same component).
+ * fields (exercises.image_url, nutrition_library_items.image_url).
  */
 interface ImageUploadFieldProps {
   uploadPath: string;
