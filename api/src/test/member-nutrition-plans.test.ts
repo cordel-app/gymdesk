@@ -12,6 +12,8 @@ import {
 
 let gymId: string;
 let memberId: number;
+// Use an existing seeded library item rather than inserting to avoid dup-entry errors.
+let libraryItemId: number;
 
 beforeAll(async () => {
   gymId = await createTestGym('MNP Test Gym');
@@ -23,6 +25,13 @@ beforeAll(async () => {
     [gymId, `mnp-member-${Date.now()}@test.com`],
   );
   memberId = insertId;
+
+  // Pick the first seeded global library item (migration 078 seeds 32 items).
+  const { rows } = await db.query<{ id: number }>(
+    'SELECT id FROM nutrition_library_items LIMIT 1',
+    [],
+  );
+  libraryItemId = rows[0].id;
 });
 
 afterAll(async () => {
