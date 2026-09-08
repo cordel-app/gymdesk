@@ -52,6 +52,16 @@ staffCentersRouter.put('/', requireRole('admin'), async (req, res, next) => {
 
   try {
     await db.transaction(async (tx) => {
+      // Clear the current default first so reviving another row as default
+      // cannot collide with staff_centers_one_default_unique (generated
+      // unique on staff_id while is_default=1 AND deleted_at IS NULL).
+      await tx.query(
+        `UPDATE staff_centers
+         SET is_default = 0, modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+         WHERE staff_id = ? AND gym_id = ? AND deleted_at IS NULL AND is_default = 1`,
+        [gymMembershipId, staffId, gymId],
+      );
+
       const { rows: current } = await tx.query<{ center_id: number }>(
         'SELECT center_id FROM staff_centers WHERE staff_id = ? AND gym_id = ? AND deleted_at IS NULL',
         [staffId, gymId],
