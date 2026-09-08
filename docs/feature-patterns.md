@@ -395,6 +395,28 @@ ALTER TABLE <entity>_centers ADD UNIQUE KEY <entity>_centers_one_default_unique 
 
 4. **Frontend** — `useCenter()` (`@/context/CenterContext`) for the gym's center list; gate the whole UI on `centers.length > 1` (`showCenters`) — a single-center gym never needs to see it, the backend's sole-center fallback handles assignment silently. Checkboxes for `center_ids` + a `<select>` for `default_center_id` (filtered to the checked ids). Fetch the entity's current assignment via `GET /<entities>/:id/centers` when expanding its edit row; submit via `POST /<entities>` (create, centers inline) or `PUT /<entities>/:id/centers` (edit, separate call after the entity's own `PUT`) — see `[locale]/members/page.tsx` or `[locale]/staff/page.tsx`.
 
+## Image Upload Field (per-gym R2 storage, #417)
+
+A domain field that stores an image URL (`exercises.image_url` today; nutrition meal images are the next consumer) is populated by uploading a file, not by pasting a URL. No schema change needed — the column stays a plain `VARCHAR` URL; only how it gets populated changes.
+
+1. **Upload route** — add one route per target on `storageRouter` (`api/src/api/storage.ts`), each gated by the module/feature that owns that image (not a single shared gate):
+
+```ts
+storageRouter.post(
+  '/uploads/widget-image',
+  requireModuleWrite('WIDGETS'),
+  requireFeatureEnabled('widgets.widgets'),
+  imageBodyParser, // shared express.raw({ type: image/*, limit: '6mb' }) parser
+  (req, res, next) => { handleImageUpload(req, res, 'Widgets/Images').catch(next); },
+);
+```
+
+`handleImageUpload()` already handles mime/size validation, the `isStorageConfigured()` 503, the per-gym `storage_folder_prefix` lookup + 409 ("not initialized for this gym") and the `uploadGymImage()` call — a new target only needs its own route + folder name (must match one of the folders `initializeGymBucket()` creates, see the Gyms row in `docs/architecture.md`).
+
+2. **Frontend** — use `<ImageUploadField uploadPath="/storage/uploads/widget-image" value={form.image_url} onChange={(url) => setForm({ ...form, image_url: url ?? '' })} />` (`apps/admin/src/components/ImageUploadField.tsx`) in place of a plain URL `<input>`, in both the add and edit forms. It reads `activeGym.storage_configured`/`storage_folder_prefix` from `GymContext` to show the not-configured/not-initialized warning without a round-trip, and posts the raw `File` to `uploadPath` on selection.
+
+3. **Read-only views** — render the stored URL as an `<img>` thumbnail (`maxWidth: 160, maxHeight: 120, objectFit: 'contain'`), not as text — see `ExerciseDetailModal.tsx` / the exercises expanded-row view.
+
 ---
 
 ## Dependency Awareness (shared catalog entities)

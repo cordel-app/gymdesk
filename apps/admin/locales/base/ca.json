@@ -257,7 +257,15 @@
   },
   "common": {
     "coming_soon": "Pròximament.",
-    "error_load_gyms": "Error en carregar els gimnasos"
+    "error_load_gyms": "Error en carregar els gimnasos",
+    "image_upload": "Puja una imatge",
+    "image_replace": "Substitueix la imatge",
+    "image_remove": "Elimina",
+    "image_uploading": "Pujant…",
+    "image_invalid_type": "Tipus d'imatge no admès. Permesos: PNG, JPEG, WEBP, GIF.",
+    "image_upload_error": "No s'ha pogut pujar la imatge.",
+    "image_not_configured": "L'emmagatzematge de Cloudflare no està configurat per a aquest entorn.",
+    "image_not_initialized": "L'emmagatzematge de Cloudflare no s'ha inicialitzat per a aquest gimnàs, per la qual cosa no es poden pujar imatges."
   },
   "system_gyms": {
     "title": "Gimnasos",
