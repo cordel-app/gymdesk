@@ -264,7 +264,13 @@ export default function StaffPage() {
 
   function openExpand(member: StaffMember) {
     if (expandedId === member.id) { setExpandedId(null); setClerkStatus(null); return; }
-    setForm({ ...member });
+    setForm({
+      ...member,
+      date_of_birth: member.date_of_birth?.slice(0, 10) ?? null,
+      hire_date: member.hire_date?.slice(0, 10) ?? '',
+      contract_end_date: member.contract_end_date?.slice(0, 10) ?? null,
+      termination_date: member.termination_date?.slice(0, 10) ?? null,
+    });
     setExpandedId(member.id);
     setFormError(null);
     setClerkStatus(null);
