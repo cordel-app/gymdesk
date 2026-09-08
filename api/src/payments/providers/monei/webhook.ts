@@ -55,16 +55,36 @@ export function verifyAndParseWebhook(
 
   const body = JSON.parse(rawBody.toString('utf8')) as MoneiWebhookBody;
 
-  const status = MONEI_STATUS_MAP[body.status] ?? 'failed';
+  // Only 'charge' events carry the payment_requests-relevant fields below.
+  // Other object types (subscription/account/settlement/provider) aren't
+  // subscribed to on this webhook, but ack them gracefully instead of
+  // crashing on missing fields if MONEI ever sends one anyway.
+  if (body.objectType !== 'charge') {
+    // No provider_order will ever match '' — the router's existing
+    // "no matching payment_request" branch acks this with 200.
+    return {
+      orderId: '',
+      status: 'failed',
+      providerRef: body.id,
+      paymentToken: null,
+      sequenceId: null,
+      cardLast4: null,
+      cardBrand: null,
+      rawBody,
+    };
+  }
+
+  const charge = body.object;
+  const status = MONEI_STATUS_MAP[charge.status] ?? 'failed';
 
   return {
-    orderId: body.orderId,
+    orderId: charge.orderId,
     status,
-    providerRef: body.id,
-    paymentToken: body.paymentToken ?? null,
-    sequenceId: body.sequenceId ?? null,
-    cardLast4: body.paymentMethod?.card?.last4 ?? null,
-    cardBrand: body.paymentMethod?.card?.brand ?? null,
+    providerRef: charge.id,
+    paymentToken: charge.paymentToken ?? null,
+    sequenceId: charge.sequenceId ?? null,
+    cardLast4: charge.paymentMethod?.card?.last4 ?? null,
+    cardBrand: charge.paymentMethod?.card?.brand ?? null,
     rawBody,
   };
 }

@@ -49,12 +49,21 @@ describe('verifyAndParseWebhook()', () => {
   }
 
   const validBody: Record<string, unknown> = {
-    id: 'pay_abc123',
-    orderId: 'ord-001',
-    status: 'SUCCEEDED',
-    paymentToken: 'tok_xyz',
-    sequenceId: 'seq_001',
-    paymentMethod: { card: { last4: '4242', brand: 'VISA' } },
+    id: 'evt_abc123',
+    type: 'charge.succeeded',
+    objectType: 'charge',
+    objectId: 'pay_abc123',
+    accountId: 'acc_merchant1',
+    livemode: false,
+    createdAt: 1700000000,
+    object: {
+      id: 'pay_abc123',
+      orderId: 'ord-001',
+      status: 'SUCCEEDED',
+      paymentToken: 'tok_xyz',
+      sequenceId: 'seq_001',
+      paymentMethod: { card: { last4: '4242', brand: 'VISA' } },
+    },
   };
 
   it('parses a valid webhook payload', () => {
@@ -101,7 +110,10 @@ describe('verifyAndParseWebhook()', () => {
     };
 
     for (const [moneiStatus, expected] of Object.entries(statuses)) {
-      const body = { ...validBody, status: moneiStatus };
+      const body = {
+        ...validBody,
+        object: { ...(validBody.object as object), status: moneiStatus },
+      };
       const raw = Buffer.from(JSON.stringify(body));
       const headers = buildSignedHeaders(raw);
       const payload = verifyAndParseWebhook(headers, raw, secret);
@@ -110,7 +122,10 @@ describe('verifyAndParseWebhook()', () => {
   });
 
   it('returns null for optional fields absent from payload', () => {
-    const sparse = { id: 'pay_no_token', orderId: 'ord-002', status: 'FAILED' };
+    const sparse = {
+      ...validBody,
+      object: { id: 'pay_no_token', orderId: 'ord-002', status: 'FAILED' },
+    };
     const raw = Buffer.from(JSON.stringify(sparse));
     const headers = buildSignedHeaders(raw);
 
@@ -120,5 +135,20 @@ describe('verifyAndParseWebhook()', () => {
     expect(payload.sequenceId).toBeNull();
     expect(payload.cardLast4).toBeNull();
     expect(payload.cardBrand).toBeNull();
+  });
+
+  it('ignores non-charge object types instead of throwing on missing fields', () => {
+    const accountEvent = {
+      ...validBody,
+      type: 'account.updated',
+      objectType: 'account',
+      object: { id: 'acc_merchant1', status: 'active' },
+    };
+    const raw = Buffer.from(JSON.stringify(accountEvent));
+    const headers = buildSignedHeaders(raw);
+
+    const payload = verifyAndParseWebhook(headers, raw, secret);
+
+    expect(payload.orderId).toBe('');
   });
 });
