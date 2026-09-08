@@ -281,7 +281,7 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
       `SELECT m.*, m.membership_plan_id AS fare_id,
-              p.name AS fare_name, p.base_price AS fare_price
+              p.name AS fare_name
        FROM members m
        LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
        WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
@@ -308,7 +308,7 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
     if (rowCount === 0) return res.status(404).json({ error: 'Member not found' });
     const { rows } = await db.query(
       `SELECT m.*, m.membership_plan_id AS fare_id,
-              p.name AS fare_name, p.base_price AS fare_price
+              p.name AS fare_name
        FROM members m
        LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
        WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
