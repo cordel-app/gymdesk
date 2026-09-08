@@ -21,6 +21,9 @@ export interface GymOption {
   slug: string;
   role: AppRole;
   theme: GymTheme | null;
+  // #417: platform-wide R2 config + per-gym init state, used to gate image uploads.
+  storage_configured: boolean;
+  storage_folder_prefix: string | null;
 }
 
 interface GymContextValue {

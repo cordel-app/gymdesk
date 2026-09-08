@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 /**
@@ -76,4 +77,36 @@ export async function initializeGymBucket(folderPrefix: string): Promise<void> {
       Body: '',
     }));
   }
+}
+
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+/**
+ * #417 stage 2: uploads an image into a gym's folder and returns its public
+ * URL. Per the issue thread's confirmed resolution, the URL is built from
+ * the endpoint + bucket + key rather than requesting a presigned/CDN URL —
+ * consistent with how `initializeGymBucket()`'s folder keys are addressed.
+ */
+export async function uploadGymImage(
+  folderPrefix: string,
+  folder: string,
+  mime: string,
+  body: Buffer,
+): Promise<string> {
+  const { bucket, endpoint } = getConfig();
+  const client = getClient();
+  const ext = MIME_EXTENSIONS[mime] ?? 'bin';
+  const key = `${folderPrefix}/${folder}/${randomUUID()}.${ext}`;
+  await client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: body,
+    ContentType: mime,
+  }));
+  return `${endpoint}/${bucket}/${key}`;
 }
