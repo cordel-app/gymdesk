@@ -13,6 +13,7 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle } from '@/components/ui';
 import { canWriteModule } from '@/config/permissions';
 import { NutritionPlanTree, Hierarchy } from '../nutrition-plan-templates/NutritionPlanTree';
+import { NewNutritionPlanDialog } from '../NewNutritionPlanDialog';
 
 interface MemberNutritionPlan {
   id: number;
@@ -53,6 +54,7 @@ export default function NutritionPlansPage() {
   const [memberFilter, setMemberFilter] = useState(searchParams.get('member_id') ?? '');
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
   const [deleting, setDeleting] = useState<MemberNutritionPlan | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
 
   // Inline editing
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -223,6 +225,9 @@ export default function NutritionPlansPage() {
           <button onClick={() => guardUnsaved(() => router.push(`/${locale}/nutrition/nutrition-plan-templates`))} style={btnStyle()}>
             {t('nutrition_plans.assign_from_template')}
           </button>
+          <button onClick={() => guardUnsaved(() => setNewOpen(true))} style={btnStyle()}>
+            {t('nutrition_plans.new_plan')}
+          </button>
         </div>
       </div>
 
@@ -297,6 +302,12 @@ export default function NutritionPlansPage() {
           action();
         }}
         onCancel={() => setPendingAction(null)}
+      />
+
+      <NewNutritionPlanDialog
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        onCreated={() => { setNewOpen(false); load(); }}
       />
     </div>
   );

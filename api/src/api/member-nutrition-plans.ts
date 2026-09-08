@@ -2,9 +2,13 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { handleDupEntry } from '../infra/db-helpers';
 
 export const memberNutritionPlansRouter = Router();
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 
 // member_nutrition_plan_meal_items.component_type has a narrower CHECK than the
 // template equivalent (chk_mnpmi_comp, migration 105) — no drink/dessert/other.
@@ -96,6 +100,56 @@ async function fetchMealWithItems(mealId: string | number) {
   );
   return { ...meal, items };
 }
+
+/* ── Create (from scratch or from a template) ────────────────────────────────
+ * #443: the "+ New Nutrition Plan" flow's backend — mirrors gym-training-plans.ts's
+ * POST /training-plans. Plain creation is used for the "from scratch" choice;
+ * template_id set clones the template hierarchy via createNutritionPlanTx,
+ * the same helper /nutrition-plan-templates/:id/assign now shares. */
+
+memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { member_id, template_id, name, description, start_date } = req.body;
+
+  const memberId = Number(member_id);
+  if (!Number.isInteger(memberId) || memberId <= 0) return res.status(400).json({ error: 'member_id is required' });
+  const templateId = template_id == null || template_id === '' ? null : Number(template_id);
+  if (templateId !== null && (!Number.isInteger(templateId) || templateId <= 0)) {
+    return res.status(400).json({ error: 'template_id must be a template id' });
+  }
+  if (!templateId && !name?.trim()) {
+    return res.status(400).json({ error: 'name is required when creating a plan from scratch (no template_id)' });
+  }
+  if (!start_date || typeof start_date !== 'string' || !DATE_RE.test(start_date)) {
+    return res.status(400).json({ error: 'start_date is required (YYYY-MM-DD)' });
+  }
+
+  try {
+    const { rows: memberRows } = await db.query(
+      'SELECT 1 FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [memberId, gymId],
+    );
+    if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+    const created = await db.transaction((tx) => createNutritionPlanTx(tx, {
+      gymId, memberId, gymMembershipId,
+      templateId,
+      name: name?.trim() || null,
+      description,
+      startDate: start_date,
+    }));
+
+    const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ?`, [created.planId]);
+    recordAudit(req, {
+      action: 'create', entityType: 'member_nutrition_plan', entityId: created.planId,
+      next: { member_id: memberId, template_id: templateId, name: created.planName, start_date },
+    });
+    res.status(201).json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
 
 /* ── List ─────────────────────────────────────────────────────────────────── */
 
