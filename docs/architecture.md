@@ -639,6 +639,8 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | `CORDEL_FITNESS_MEMBERS_URL`, `CORDEL_FITNESS_ADMIN_URL` | variables | App URLs for invite emails |
 | `CLOUDFLARE_R2_ENDPOINT`, `CLOUDFLARE_R2_BUCKET` | variables | R2 storage (#417) — platform-wide bucket config |
 | `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | secrets | R2 storage (#417) — optional; `deploy.yml` writes them empty if unset, so the API just reports storage as unconfigured rather than failing to deploy |
+| `MONEI_API_KEY`, `MONEI_WEBHOOK_SECRET` | secrets | MONEI payments (Phase 8) — required; `deploy.yml` fails the deploy if either is empty. **Both are the same value**: MONEI signs webhooks with the account's API Key, not a separate per-webhook secret (see `docs.monei.com/guides/verify-signature`), so `MONEI_WEBHOOK_SECRET` should be set to the same value as `MONEI_API_KEY` (MONEI Dashboard → Settings → API Access → Your API Key) |
+| `PAYMENT_PROVIDER`, `PAYMENT_PAGE_URL`, `PAYMENT_NOTIFICATION_URL`, `PAYMENT_OK_URL`, `PAYMENT_KO_URL` | literals in `deploy.yml` | Fixed, non-secret values — not stored as GitHub vars since they never change per env today |
 
 ### Repo-scoped (cross-env)
 
