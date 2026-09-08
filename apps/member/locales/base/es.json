@@ -262,6 +262,11 @@
     "title": "El pago no se ha completado",
     "retry": "Intentar de nuevo"
   },
+  "link": {
+    "linking": "Configurando tu cuenta…",
+    "error_no_invitation": "No se encontró ninguna invitación pendiente para esta cuenta.",
+    "error_generic": "Algo ha salido mal."
+  },
   "billing_unit": {
     "day_one": "día",
     "day_other": "días",

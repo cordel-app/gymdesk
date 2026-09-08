@@ -262,6 +262,11 @@
     "title": "El pagament no s'ha completat",
     "retry": "Tornar-ho a intentar"
   },
+  "link": {
+    "linking": "Configurant el teu compte…",
+    "error_no_invitation": "No s'ha trobat cap invitació pendent per a aquest compte.",
+    "error_generic": "Alguna cosa ha anat malament."
+  },
   "billing_unit": {
     "day_one": "dia",
     "day_other": "dies",

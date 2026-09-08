@@ -262,6 +262,11 @@
     "title": "Payment was not completed",
     "retry": "Try again"
   },
+  "link": {
+    "linking": "Setting up your account…",
+    "error_no_invitation": "No pending invitation found for this account.",
+    "error_generic": "Something went wrong."
+  },
   "billing_unit": {
     "day_one": "day",
     "day_other": "days",
