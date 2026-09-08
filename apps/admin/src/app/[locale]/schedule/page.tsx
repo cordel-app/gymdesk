@@ -17,7 +17,7 @@ import type { MemberResult } from '../calendar/MemberSearchInput';
 
 interface Session {
   id: number;
-  class_type_id: number;
+  activity_type_id: number;
   class_type_name: string;
   class_type_duration: number;
   class_type_capacity: number;
@@ -37,12 +37,12 @@ interface Session {
   attendance_pending: number;
   attendance_absent: number;
 }
-interface ClassType { id: number; name: string; duration_minutes: number; max_capacity: number; status: string }
+interface ActivityType { id: number; name: string; duration_minutes: number; max_capacity: number; status: string }
 interface Trainer { gym_membership_id: number; user_id: string; name: string }
 interface Space { id: number; name: string; status: string }
 
 const emptyForm = {
-  class_type_id: '',
+  activity_type_id: '',
   trainer_membership_id: '',
   space_id: '',
   starts_at: '',
@@ -78,7 +78,7 @@ export default function SchedulePage() {
   });
 
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
+  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,13 +101,13 @@ export default function SchedulePage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [ss, ct, tr, rm] = await Promise.all([
+      const [ss, at, tr, rm] = await Promise.all([
         apiFetch<Session[]>(`/class-sessions?from=${rangeStart}&to=${rangeEnd} 23:59:59`),
-        apiFetch<ClassType[]>('/class-types?status=active'),
+        apiFetch<ActivityType[]>('/activity-types?status=active'),
         apiFetch<Trainer[]>('/trainers'),
         apiFetch<Space[]>('/spaces?status=active'),
       ]);
-      setSessions(ss); setClassTypes(ct); setTrainers(tr); setSpaces(rm);
+      setSessions(ss); setActivityTypes(at); setTrainers(tr); setSpaces(rm);
     } catch (err: any) { toast(err.message ?? t('schedule.error_generic')); }
     finally { setLoading(false); }
   }
@@ -123,7 +123,7 @@ export default function SchedulePage() {
   function openEdit(s: Session) {
     setEditing(s);
     setForm({
-      class_type_id: String(s.class_type_id),
+      activity_type_id: String(s.activity_type_id),
       trainer_membership_id: s.trainer_membership_id ? String(s.trainer_membership_id) : '',
       space_id: s.space_id ? String(s.space_id) : '',
       starts_at: s.starts_at.slice(0, 16),
@@ -133,18 +133,18 @@ export default function SchedulePage() {
     setError(null); setModalOpen(true);
   }
 
-  function onClassTypeChange(id: string) {
-    const ct = classTypes.find((c) => c.id === parseInt(id, 10));
+  function onActivityTypeChange(id: string) {
+    const at = activityTypes.find((c) => c.id === parseInt(id, 10));
     setForm((f) => ({
       ...f,
-      class_type_id: id,
-      duration_minutes: ct ? String(ct.duration_minutes) : f.duration_minutes,
-      max_capacity_override: ct ? '' : f.max_capacity_override,
+      activity_type_id: id,
+      duration_minutes: at ? String(at.duration_minutes) : f.duration_minutes,
+      max_capacity_override: at ? '' : f.max_capacity_override,
     }));
   }
 
   async function save() {
-    if (!form.class_type_id || !form.starts_at || !form.duration_minutes) {
+    if (!form.activity_type_id || !form.starts_at || !form.duration_minutes) {
       setError(t('schedule.error_required')); return;
     }
     const duration = parseInt(form.duration_minutes, 10);
@@ -152,7 +152,7 @@ export default function SchedulePage() {
     const startsAt = new Date(form.starts_at).toISOString();
     const endsAt = addMinutes(form.starts_at, duration);
     const body: any = {
-      class_type_id: parseInt(form.class_type_id, 10),
+      activity_type_id: parseInt(form.activity_type_id, 10),
       trainer_membership_id: form.trainer_membership_id ? parseInt(form.trainer_membership_id, 10) : null,
       space_id: form.space_id ? parseInt(form.space_id, 10) : null,
       starts_at: startsAt, ends_at: endsAt,
@@ -276,10 +276,10 @@ export default function SchedulePage() {
         onSave={save}
       >
         <FormLabel>{t('schedule.label_class_type')} *</FormLabel>
-        <select value={form.class_type_id} onChange={(e) => onClassTypeChange(e.target.value)}
+        <select value={form.activity_type_id} onChange={(e) => onActivityTypeChange(e.target.value)}
                 style={selectStyle} disabled={!!editing}>
           <option value="">—</option>
-          {classTypes.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+          {activityTypes.map((at) => <option key={at.id} value={at.id}>{at.name}</option>)}
         </select>
         <FormLabel>{t('schedule.label_starts')} *</FormLabel>
         <FormInput type="datetime-local" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} />
@@ -309,7 +309,7 @@ export default function SchedulePage() {
               capacity={
                 form.max_capacity_override
                   ? parseInt(form.max_capacity_override, 10)
-                  : classTypes.find((c) => c.id === parseInt(form.class_type_id, 10))?.max_capacity ?? null
+                  : activityTypes.find((c) => c.id === parseInt(form.activity_type_id, 10))?.max_capacity ?? null
               }
               overCapacityLabel={(count, capacity) => t('schedule.members_over_capacity', { count, capacity })}
             />
