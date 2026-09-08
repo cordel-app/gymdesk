@@ -13,6 +13,10 @@ const FeatureFlagsContext = createContext<FeatureFlagsContextValue>({
   loading: true,
 });
 
+// Matches the backend's in-memory cache TTL (api/src/infra/featureFlags.ts) so an
+// admin toggle reaches an already-open member session within one cache window.
+const POLL_INTERVAL_MS = 30_000;
+
 export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const [flags, setFlags] = useState<Record<string, boolean>>({});
@@ -27,7 +31,9 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    (async () => {
+
+    async function fetchFlags(showLoading: boolean) {
+      if (showLoading) setLoading(true);
       try {
         const token = await getToken();
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -38,11 +44,14 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
       } catch {
         if (!cancelled) setFlags({});
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && showLoading) setLoading(false);
       }
-    })();
+    }
 
-    return () => { cancelled = true; };
+    fetchFlags(true);
+    const interval = setInterval(() => fetchFlags(false), POLL_INTERVAL_MS);
+
+    return () => { cancelled = true; clearInterval(interval); };
   }, [isLoaded, isSignedIn, getToken]);
 
   return (
