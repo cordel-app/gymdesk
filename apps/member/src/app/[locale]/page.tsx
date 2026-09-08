@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 
 interface UpcomingBooking {
   id: number;
@@ -58,7 +59,11 @@ export default function HomePage() {
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, member, isSuperadmin } = useApp();
   const { flags: featureFlags } = useFeatureFlags();
-  const featureEnabled = (key: string) => isSuperadmin || isFeatureEnabled(featureFlags, key);
+  const { isImpersonating } = useImpersonation();
+  // The Super Admin bypass only applies when acting in their native capacity —
+  // while impersonating a Member, visibility must reflect that Member's actual
+  // flag state (#439).
+  const featureEnabled = (key: string) => (isSuperadmin && !isImpersonating) || isFeatureEnabled(featureFlags, key);
 
   const [nextBooking, setNextBooking] = useState<UpcomingBooking | null | undefined>(undefined);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);

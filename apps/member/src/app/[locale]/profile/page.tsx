@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 
 interface Profile {
   id: number;
@@ -34,6 +35,7 @@ export default function ProfilePage() {
     isSuperadmin,
   } = useApp();
   const { flags: featureFlags } = useFeatureFlags();
+  const { isImpersonating } = useImpersonation();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +53,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
-    if (!isSuperadmin && !isFeatureEnabled(featureFlags, 'member_web.profile')) { router.replace(`/${locale}`); return; }
+    if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.profile')) { router.replace(`/${locale}`); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -74,7 +76,7 @@ export default function ProfilePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [appLoading, isLinked, locale, isSuperadmin, featureFlags]);
+  }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
   function startEdit() {
     setPhone(profile?.phone ?? '');
