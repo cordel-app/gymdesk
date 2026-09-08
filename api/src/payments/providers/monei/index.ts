@@ -13,8 +13,8 @@ export class MoneiProvider implements PaymentProvider {
   private readonly client: MoneiClient;
   private readonly webhookSecret: string;
 
-  constructor(apiKey: string, webhookSecret: string) {
-    this.client = new MoneiClient(apiKey);
+  constructor(apiKey: string, webhookSecret: string, accountId?: string) {
+    this.client = new MoneiClient(apiKey, accountId);
     this.webhookSecret = webhookSecret;
   }
 
