@@ -248,5 +248,6 @@ app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('
 // Global error handler — must be last, after all routes
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);
-  res.status(500).json({ error: 'Internal server error' });
+  const status = typeof err?.status === 'number' ? err.status : 500;
+  res.status(status).json({ error: err?.message || 'Internal server error' });
 });
