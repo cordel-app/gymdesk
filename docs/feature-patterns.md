@@ -377,6 +377,48 @@ Catalog entities that use a status enum (workout templates, exercises) set `stat
 
 ---
 
+## Multi-Center Association (entity ↔ Centers, with a default)
+
+An entity that may belong to one or more Centers, with exactly one marked as the default (Members #59, Staff #440). A generated-column unique index enforces "at most one active default per entity row" in the DB itself, on top of the app-level transaction.
+
+1. **Join table** — `<entity>_centers`: `gym_id`, `<entity>_id`, `center_id` (PK on the pair), `is_default BOOLEAN`, `assigned_at`, `assigned_by_membership_id` (`INT UNSIGNED` FK → `gym_memberships(id) ON DELETE SET NULL` — the codebase-wide actor convention, e.g. `activity_types`, `promotions`, `training_plan_templates`; use it here too even if the entity's own table uses a different audit convention, like Staff's plain `created_by`/`updated_by` Clerk-id strings), `created_at`/`modified_at`/`modified_by_membership_id`, `deleted_at`. Then:
+
+```sql
+ALTER TABLE <entity>_centers ADD COLUMN default_key INT UNSIGNED
+  GENERATED ALWAYS AS (IF(is_default = 1 AND deleted_at IS NULL, <entity>_id, NULL)) VIRTUAL;
+ALTER TABLE <entity>_centers ADD UNIQUE KEY <entity>_centers_one_default_unique (default_key);
+```
+
+2. **Resolve-on-create helper** — `resolve<Entity>Centers(gymId, centerIds, defaultCenterId)` in the entity's own router file: explicit `center_ids` (validated against `centers` for the gym) > the gym's sole active center as an implicit default > (Members: error, an entity must have ≥1 center; Staff: `{ ids: [], defaultId: null }` — decide per entity whether zero centers is legal, based on whether anything gates access control on it). When `center_ids.length === 1` that id is the default without requiring an explicit `default_center_id`. Insert alongside the entity row inside the same `db.transaction`.
+
+3. **Update sub-router** — `<entity>-centers.ts`, mounted `mergeParams: true` at `/<entities>/:<entity>Id/centers` (register the `/<entities>` collection route first — Express falls through to this mount when the parent router's own routes don't match a `/:id/centers` suffix, exactly like `/members` vs `/members/:memberId/centers`). `GET` (no extra role gate beyond the module middleware) returns `{center_id, name, status, is_default, assigned_at}[]` ordered `is_default DESC, name ASC`. `PUT` (whatever role gate the entity's own writes use) diffs current vs. requested `center_ids` in a transaction: clear `is_default` on the current default first (so the generated unique key cannot collide when another row is revived as default), then soft-delete dropped rows, then `INSERT … ON DUPLICATE KEY UPDATE is_default=…, deleted_at=NULL` for the rest (revives a previously-dropped row instead of leaving a duplicate).
+
+4. **Frontend** — `useCenter()` (`@/context/CenterContext`) for the gym's center list; gate the whole UI on `centers.length > 1` (`showCenters`) — a single-center gym never needs to see it, the backend's sole-center fallback handles assignment silently. Checkboxes for `center_ids` + a `<select>` for `default_center_id` (filtered to the checked ids). Fetch the entity's current assignment via `GET /<entities>/:id/centers` when expanding its edit row; submit via `POST /<entities>` (create, centers inline) or `PUT /<entities>/:id/centers` (edit, separate call after the entity's own `PUT`) — see `[locale]/members/page.tsx` or `[locale]/staff/page.tsx`.
+
+## Image Upload Field (per-gym R2 storage, #417)
+
+A domain field that stores an image URL (`exercises.image_url` today; nutrition meal images are the next consumer) is populated by uploading a file, not by pasting a URL. No schema change needed — the column stays a plain `VARCHAR` URL; only how it gets populated changes.
+
+1. **Upload route** — add one route per target on `storageRouter` (`api/src/api/storage.ts`), each gated by the module/feature that owns that image (not a single shared gate):
+
+```ts
+storageRouter.post(
+  '/uploads/widget-image',
+  requireModuleWrite('WIDGETS'),
+  requireFeatureEnabled('widgets.widgets'),
+  imageBodyParser, // shared express.raw({ type: image/*, limit: '6mb' }) parser
+  (req, res, next) => { handleImageUpload(req, res, 'Widgets/Images').catch(next); },
+);
+```
+
+`handleImageUpload()` already handles mime/size validation, the `isStorageConfigured()` 503, the per-gym `storage_folder_prefix` lookup + 409 ("not initialized for this gym") and the `uploadGymImage()` call — a new target only needs its own route + folder name (must match one of the folders `initializeGymBucket()` creates, see the Gyms row in `docs/architecture.md`).
+
+2. **Frontend** — use `<ImageUploadField uploadPath="/storage/uploads/widget-image" value={form.image_url} onChange={(url) => setForm({ ...form, image_url: url ?? '' })} />` (`apps/admin/src/components/ImageUploadField.tsx`) in place of a plain URL `<input>`, in both the add and edit forms. It reads `activeGym.storage_configured`/`storage_folder_prefix` from `GymContext` to show the not-configured/not-initialized warning without a round-trip, and posts the raw `File` to `uploadPath` on selection.
+
+3. **Read-only views** — render the stored URL as an `<img>` thumbnail (`maxWidth: 160, maxHeight: 120, objectFit: 'contain'`), not as text — see `ExerciseDetailModal.tsx` / the exercises expanded-row view.
+
+---
+
 ## Dependency Awareness (shared catalog entities)
 
 Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:

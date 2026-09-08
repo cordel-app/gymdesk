@@ -31,6 +31,22 @@ async function createStaff(gymId: string, overrides: Record<string, unknown> = {
   return insertId as number;
 }
 
+async function createCenter(gymId: string, name: string): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')`,
+    [gymId, name],
+  );
+  return insertId as number;
+}
+
+async function getStaffCenterIds(staffId: number): Promise<number[]> {
+  const { rows } = await db.query<{ center_id: number }>(
+    'SELECT center_id FROM staff_centers WHERE staff_id = ? AND deleted_at IS NULL',
+    [staffId],
+  );
+  return rows.map((r) => r.center_id);
+}
+
 describe('staff', () => {
   let gymId: string;
   let gymBId: string;
@@ -92,6 +108,39 @@ describe('staff', () => {
       // Covered by require-role.test.ts; just confirm 201 for admin here.
       expect(res.status).toBe(201);
       expect(res2.status).toBe(201);
+    });
+
+    it('#440: creates a staff member with center_ids and assigns the given default', async () => {
+      const c1 = await createCenter(gymId, `Create Center 1 ${Date.now()}`);
+      const c2 = await createCenter(gymId, `Create Center 2 ${Date.now()}`);
+
+      const res = await request
+        .post('/staff')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ ...BASE, email: 'with-centers@gym.test', center_ids: [c1, c2], default_center_id: c2 });
+
+      expect(res.status).toBe(201);
+      const ids = await getStaffCenterIds(res.body.id);
+      expect(ids.sort()).toEqual([c1, c2].sort());
+
+      const { rows } = await db.query<{ is_default: number }>(
+        'SELECT is_default FROM staff_centers WHERE staff_id = ? AND center_id = ?',
+        [res.body.id, c2],
+      );
+      expect(rows[0].is_default).toBe(1);
+    });
+
+    it('#440: creates a staff member with no center_ids and leaves them unassigned', async () => {
+      const res = await request
+        .post('/staff')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ ...BASE, email: 'no-centers@gym.test', center_ids: [] });
+
+      expect(res.status).toBe(201);
+      const ids = await getStaffCenterIds(res.body.id);
+      expect(ids).toEqual([]);
     });
   });
 
@@ -240,6 +289,33 @@ describe('staff', () => {
       expect(res.body.profile_photo_url).toBeNull();
       expect(res.body.notes).toBe('some notes');
       expect(res.body.employment_status).toBe('active');
+    });
+
+    it('#440: copies staff_centers rows (including which one is default) to the duplicate', async () => {
+      const c1 = await createCenter(gymId, `Dup Center 1 ${Date.now()}`);
+      const c2 = await createCenter(gymId, `Dup Center 2 ${Date.now()}`);
+
+      const srcId = await createStaff(gymId, { email: 'dup-source-centers@gym.test' });
+      await request
+        .put(`/staff/${srcId}/centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ center_ids: [c1, c2], default_center_id: c2 });
+
+      const res = await request
+        .post(`/staff/${srcId}/duplicate`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+
+      expect(res.status).toBe(201);
+      const dupIds = await getStaffCenterIds(res.body.id);
+      expect(dupIds.sort()).toEqual([c1, c2].sort());
+
+      const { rows } = await db.query<{ is_default: number }>(
+        'SELECT is_default FROM staff_centers WHERE staff_id = ? AND center_id = ?',
+        [res.body.id, c2],
+      );
+      expect(rows[0].is_default).toBe(1);
     });
   });
 

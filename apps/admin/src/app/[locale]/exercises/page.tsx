@@ -13,6 +13,7 @@ import { DependencyDialog, ReferenceReport } from '@/components/DependencyDialog
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
+import { ImageUploadField } from '@/components/ImageUploadField';
 import { btnSmall, btnStyle } from '@/components/ui';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 
@@ -448,7 +449,11 @@ export default function ExercisesPage() {
           </div>
           <div>
             <label style={inlineLabelSt}>{t('label_image_url')}</label>
-            <input type="url" value={editForm.image_url} onChange={(e) => setEditForm({ ...editForm, image_url: e.target.value })} style={inlineInputSt} />
+            <ImageUploadField
+              uploadPath="/storage/uploads/exercise-image"
+              value={editForm.image_url || null}
+              onChange={(url) => setEditForm({ ...editForm, image_url: url ?? '' })}
+            />
           </div>
         </div>
 
@@ -510,7 +515,13 @@ export default function ExercisesPage() {
           <div style={subSectionSt}>
             <p style={sectionLabelSt}>{t('section_media')}</p>
             {ex.video_url && <p style={{ margin: '0 0 4px', fontSize: 13 }}><strong>{t('label_video_url')}:</strong> {ex.video_url}</p>}
-            {ex.image_url && <p style={{ margin: 0, fontSize: 13 }}><strong>{t('label_image_url')}:</strong> {ex.image_url}</p>}
+            {ex.image_url && (
+              <div>
+                <strong style={{ fontSize: 13 }}>{t('label_image_url')}:</strong>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={ex.image_url} alt="" style={{ display: 'block', marginTop: 4, maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
+              </div>
+            )}
           </div>
         )}
 
@@ -642,7 +653,11 @@ export default function ExercisesPage() {
         <FormLabel>{t('label_video_url')}</FormLabel>
         <FormInput type="url" value={addForm.video_url} onChange={(e) => setAddForm({ ...addForm, video_url: e.target.value })} />
         <FormLabel>{t('label_image_url')}</FormLabel>
-        <FormInput type="url" value={addForm.image_url} onChange={(e) => setAddForm({ ...addForm, image_url: e.target.value })} />
+        <ImageUploadField
+          uploadPath="/storage/uploads/exercise-image"
+          value={addForm.image_url || null}
+          onChange={(url) => setAddForm({ ...addForm, image_url: url ?? '' })}
+        />
         <FormLabel>{t('label_min_reps_default')}</FormLabel>
         <FormInput type="number" min="0" value={addForm.min_reps_default} onChange={(e) => setAddForm({ ...addForm, min_reps_default: e.target.value })} />
         <FormLabel>{t('label_max_reps_default')}</FormLabel>

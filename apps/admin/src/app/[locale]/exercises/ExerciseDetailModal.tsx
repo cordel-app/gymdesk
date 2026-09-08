@@ -82,7 +82,13 @@ export function ExerciseDetailModal({ exerciseId, exerciseName, onClose }: {
 
             <p style={{ ...sectionLabelSt, marginTop: 20 }}>{t('section_media')}</p>
             {field(t('label_video_url'), detail.video_url)}
-            {field(t('label_image_url'), detail.image_url)}
+            <div style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+              <span style={{ width: 180, flexShrink: 0, fontSize: 13, color: '#888', fontWeight: 500 }}>{t('label_image_url')}</span>
+              {detail.image_url
+                ? /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={detail.image_url} alt="" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
+                : <span style={{ fontSize: 13, color: '#333' }}>—</span>}
+            </div>
 
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>
               <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Audit</p>

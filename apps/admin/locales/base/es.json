@@ -256,7 +256,15 @@
   },
   "common": {
     "coming_soon": "Próximamente.",
-    "error_load_gyms": "Error al cargar los gimnasios"
+    "error_load_gyms": "Error al cargar los gimnasios",
+    "image_upload": "Subir imagen",
+    "image_replace": "Reemplazar imagen",
+    "image_remove": "Quitar",
+    "image_uploading": "Subiendo…",
+    "image_invalid_type": "Tipo de imagen no admitido. Permitidos: PNG, JPEG, WEBP, GIF.",
+    "image_upload_error": "No se pudo subir la imagen.",
+    "image_not_configured": "El almacenamiento de Cloudflare no está configurado para este entorno.",
+    "image_not_initialized": "El almacenamiento de Cloudflare no se ha inicializado para este gimnasio, por lo que no se pueden subir imágenes."
   },
   "system_gyms": {
     "title": "Gimnasios",
@@ -2079,7 +2087,13 @@
     "label_hire_date": "Fecha de alta",
     "label_contract_end_date": "Fin de contrato",
     "label_termination_date": "Fecha de baja",
-    "label_center": "Centro asignado",
+    "subsection_centers": "Centros",
+    "label_assigned_centers": "Centros Asignados",
+    "label_default_center": "Centro Predeterminado",
+    "default_center_none": "Selecciona un centro predeterminado",
+    "default_center_badge": "predeterminado",
+    "label_centers": "Centros",
+    "error_default_not_assigned": "Elige un centro predeterminado entre los centros asignados.",
     "label_employee_number": "Número de empleado",
     "label_company_email": "Email de empresa",
     "label_company_phone": "Teléfono de empresa",

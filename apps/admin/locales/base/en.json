@@ -310,7 +310,15 @@
   },
   "common": {
     "coming_soon": "Coming soon.",
-    "error_load_gyms": "Failed to load gyms"
+    "error_load_gyms": "Failed to load gyms",
+    "image_upload": "Upload image",
+    "image_replace": "Replace image",
+    "image_remove": "Remove",
+    "image_uploading": "Uploading…",
+    "image_invalid_type": "Unsupported image type. Allowed: PNG, JPEG, WEBP, GIF.",
+    "image_upload_error": "Failed to upload image.",
+    "image_not_configured": "Cloudflare storage has not been configured for this deployment.",
+    "image_not_initialized": "Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded."
   },
   "system_gyms": {
     "title": "Gyms",
@@ -2147,7 +2155,13 @@
     "label_hire_date": "Hire Date",
     "label_contract_end_date": "Contract End Date",
     "label_termination_date": "Termination Date",
-    "label_center": "Assigned Center",
+    "subsection_centers": "Centers",
+    "label_assigned_centers": "Assigned Centers",
+    "label_default_center": "Default Center",
+    "default_center_none": "Select a default center",
+    "default_center_badge": "default",
+    "label_centers": "Centers",
+    "error_default_not_assigned": "Choose a default center among the assigned centers.",
     "label_employee_number": "Employee Number",
     "label_company_email": "Company Email",
     "label_company_phone": "Company Phone",
