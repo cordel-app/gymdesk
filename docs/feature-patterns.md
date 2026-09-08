@@ -397,7 +397,7 @@ ALTER TABLE <entity>_centers ADD UNIQUE KEY <entity>_centers_one_default_unique 
 
 ## Image Upload Field (per-gym R2 storage, #417)
 
-A domain field that stores an image URL (`exercises.image_url` today; nutrition meal images are the next consumer) is populated by uploading a file, not by pasting a URL. No schema change needed — the column stays a plain `VARCHAR` URL; only how it gets populated changes.
+A domain field that stores an image URL (`exercises.image_url`, `nutrition_library_items.image_url`) is populated by uploading a file, not by pasting a URL. No schema change needed beyond adding the nullable `VARCHAR` column itself — it stays a plain URL; only how it gets populated changes.
 
 1. **Upload route** — add one route per target on `storageRouter` (`api/src/api/storage.ts`), each gated by the module/feature that owns that image (not a single shared gate):
 

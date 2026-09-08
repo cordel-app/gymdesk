@@ -1,4 +1,5 @@
-// Tests for storage.ts router (POST /storage/uploads/exercise-image, #417 stage 2)
+// Tests for storage.ts router (POST /storage/uploads/exercise-image, #417 stage 2;
+// POST /storage/uploads/nutrition-image, #417 stage 3)
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
@@ -247,5 +248,64 @@ describe('Happy path', () => {
     expect(resB.status).toBe(201);
     expect(resB.body.url).toContain(`/${gymBPrefix}/`);
     expect(resB.body.url).not.toContain(`${gymId}-StorageUploadsGym/`);
+  });
+});
+
+// ─── #417 stage 3: POST /storage/uploads/nutrition-image ────────────────────
+// Shares handleImageUpload() with exercise-image (validation/503/409/502 all
+// already covered above) — this route only needs its own guard + folder path.
+
+function uploadNutritionImageTo(id: string) {
+  return request
+    .post('/storage/uploads/nutrition-image')
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', id);
+}
+
+describe('POST /storage/uploads/nutrition-image', () => {
+  it('returns 401 without auth', async () => {
+    setStorageConfigured();
+    const res = await request
+      .post('/storage/uploads/nutrition-image')
+      .set('x-gym-id', gymId)
+      .set('Content-Type', 'image/png')
+      .send(Buffer.from('fake-png-bytes'));
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for accountant role (NUTRITION module is NONE for accountant)', async () => {
+    setStorageConfigured();
+    const accountantGym = await createTestGym('Storage Uploads Accountant Gym');
+    await createTestMembership(accountantGym, 'accountant');
+
+    const res = await uploadNutritionImageTo(accountantGym)
+      .set('Content-Type', 'image/png')
+      .send(Buffer.from('fake-png-bytes'));
+    expect(res.status).toBe(403);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 for front_desk role (NUTRITION module is read-only, requireModuleWrite blocks)', async () => {
+    setStorageConfigured();
+    const frontDeskGym = await createTestGym('Storage Uploads Nutrition FrontDesk Gym');
+    await createTestMembership(frontDeskGym, 'front_desk');
+
+    const res = await uploadNutritionImageTo(frontDeskGym)
+      .set('Content-Type', 'image/png')
+      .send(Buffer.from('fake-png-bytes'));
+    expect(res.status).toBe(403);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 201 with the uploaded image URL under the Nutrition/Images folder', async () => {
+    const res = await uploadNutritionImageTo(gymId)
+      .set('Content-Type', 'image/png')
+      .send(Buffer.from('fake-png-bytes'));
+    expect(res.status).toBe(201);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    const expectedBase = `${R2_ENDPOINT}/${R2_BUCKET}/${gymId}-StorageUploadsGym/Nutrition/Images/`;
+    expect(res.body.url.startsWith(expectedBase)).toBe(true);
+    expect(res.body.url.slice(expectedBase.length)).toMatch(/^[0-9a-f-]{36}\.png$/);
   });
 });

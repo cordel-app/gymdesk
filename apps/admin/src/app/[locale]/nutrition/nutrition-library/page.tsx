@@ -12,6 +12,7 @@ import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
+import { ImageUploadField } from '@/components/ImageUploadField';
 import { btnStyle } from '@/components/ui';
 
 interface NutritionalQuality { id: number; slug: string }
@@ -22,6 +23,7 @@ interface LibraryItem {
   name: string;
   category: string;
   status: 'active' | 'deleted';
+  image_url: string | null;
   created_at: string;
   modified_at: string | null;
   qualities: NutritionalQuality[];
@@ -63,6 +65,7 @@ export default function NutritionLibraryPage() {
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState<Category>('main_dish');
   const [newQualityIds, setNewQualityIds] = useState<number[]>([]);
+  const [newImageUrl, setNewImageUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -70,6 +73,7 @@ export default function NutritionLibraryPage() {
   const [editName, setEditName] = useState('');
   const [editCategory, setEditCategory] = useState<Category>('main_dish');
   const [editQualityIds, setEditQualityIds] = useState<number[]>([]);
+  const [editImageUrl, setEditImageUrl] = useState<string | null>(null);
 
   function categoryLabel(cat: string) {
     return t(`nutrition_library.category_${cat}`, { defaultValue: cat });
@@ -129,7 +133,7 @@ export default function NutritionLibraryPage() {
   }
 
   function openCreate() {
-    setNewName(''); setNewCategory('main_dish'); setNewQualityIds([]); setFormError(null);
+    setNewName(''); setNewCategory('main_dish'); setNewQualityIds([]); setNewImageUrl(null); setFormError(null);
     setCreating(true);
   }
 
@@ -138,6 +142,7 @@ export default function NutritionLibraryPage() {
     setEditName(item.name);
     setEditCategory(item.category as Category);
     setEditQualityIds(item.qualities.map((q) => q.id));
+    setEditImageUrl(item.image_url);
     setFormError(null);
   }
 
@@ -147,7 +152,7 @@ export default function NutritionLibraryPage() {
     try {
       await apiFetch('/nutrition-library', {
         method: 'POST',
-        body: JSON.stringify({ name: newName.trim(), category: newCategory, quality_ids: newQualityIds }),
+        body: JSON.stringify({ name: newName.trim(), category: newCategory, quality_ids: newQualityIds, image_url: newImageUrl }),
       });
       setCreating(false);
       load();
@@ -163,7 +168,7 @@ export default function NutritionLibraryPage() {
     try {
       await apiFetch(`/nutrition-library/${editing.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ name: editName.trim(), category: editCategory, quality_ids: editQualityIds }),
+        body: JSON.stringify({ name: editName.trim(), category: editCategory, quality_ids: editQualityIds, image_url: editImageUrl }),
       });
       setEditing(null);
       load();
@@ -253,6 +258,13 @@ export default function NutritionLibraryPage() {
             <DetailRow label={t('nutrition_library.col_status')} value={t(`nutrition_library.status_${item.status}`)} />
             <DetailRow label={t('nutrition_library.created_at')} value={new Date(item.created_at).toLocaleString()} />
             <DetailRow label={t('nutrition_library.modified_at')} value={item.modified_at ? new Date(item.modified_at).toLocaleString() : '—'} />
+            {item.image_url && (
+              <div style={{ display: 'flex', gap: 10 }}>
+                <span style={{ width: 120, flexShrink: 0, color: '#888' }}>{t('nutrition_library.label_image')}</span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={item.image_url} alt="" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
+              </div>
+            )}
           </div>
         )}
         expandedRowKeys={expanded}
@@ -284,6 +296,12 @@ export default function NutritionLibraryPage() {
         <select className="form-input" value={newCategory} onChange={(e) => setNewCategory(e.target.value as Category)}>
           {CATEGORIES.map((c) => <option key={c} value={c}>{categoryLabel(c)}</option>)}
         </select>
+        <FormLabel>{t('nutrition_library.label_image')}</FormLabel>
+        <ImageUploadField
+          uploadPath="/storage/uploads/nutrition-image"
+          value={newImageUrl}
+          onChange={setNewImageUrl}
+        />
         <FormLabel>{t('nutrition_library.nutritional_qualities_label')}</FormLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {allQualities.map((q) => (
@@ -317,6 +335,12 @@ export default function NutritionLibraryPage() {
         <select className="form-input" value={editCategory} onChange={(e) => setEditCategory(e.target.value as Category)}>
           {CATEGORIES.map((c) => <option key={c} value={c}>{categoryLabel(c)}</option>)}
         </select>
+        <FormLabel>{t('nutrition_library.label_image')}</FormLabel>
+        <ImageUploadField
+          uploadPath="/storage/uploads/nutrition-image"
+          value={editImageUrl}
+          onChange={setEditImageUrl}
+        />
         <FormLabel>{t('nutrition_library.nutritional_qualities_label')}</FormLabel>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {allQualities.map((q) => (

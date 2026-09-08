@@ -2444,6 +2444,7 @@
     "modal_edit_title": "Edit Food Item",
     "label_name": "Name",
     "label_category": "Category",
+    "label_image": "Image",
     "cancel": "Cancel",
     "create": "Create",
     "save": "Save",

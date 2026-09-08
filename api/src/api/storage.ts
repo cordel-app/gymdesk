@@ -5,11 +5,10 @@ import { requireFeatureEnabled } from '../infra/featureFlags';
 import { isStorageConfigured, uploadGymImage } from '../infra/storage';
 
 /**
- * #417 stage 2: generic per-gym image upload endpoint backed by Cloudflare R2.
- * One route per upload target so each carries its own module/feature guard —
- * a nutrition-image target (stage 3) will gate on NUTRITION instead of
- * TRAINING. Not directly tied to any single domain router (exercises,
- * nutrition meals, …) since the same upload flow serves all of them.
+ * #417 stage 2/3: generic per-gym image upload endpoint backed by Cloudflare R2.
+ * One route per upload target so each carries its own module/feature guard.
+ * Not directly tied to any single domain router (exercises, nutrition meals,
+ * …) since the same upload flow serves all of them.
  */
 
 export const storageRouter = Router();
@@ -64,4 +63,12 @@ storageRouter.post(
   requireFeatureEnabled('training.exercises'),
   imageBodyParser,
   (req, res, next) => { handleImageUpload(req, res, 'Exercises/Images').catch(next); },
+);
+
+storageRouter.post(
+  '/uploads/nutrition-image',
+  requireModuleWrite('NUTRITION'),
+  requireFeatureEnabled('nutrition.nutrition_library'),
+  imageBodyParser,
+  (req, res, next) => { handleImageUpload(req, res, 'Nutrition/Images').catch(next); },
 );
