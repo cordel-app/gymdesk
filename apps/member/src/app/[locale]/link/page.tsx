@@ -77,6 +77,9 @@ export default function LinkPage() {
   return (
     <div style={{ textAlign: 'center', padding: '60px 20px' }}>
       <p>{error ?? t('linking')}</p>
+      {/* Required mount point for Clerk's bot-protection CAPTCHA — sign-up
+          (including ticket-based) fails with a captcha_invalid error without it. */}
+      <div id="clerk-captcha" />
     </div>
   );
 }
