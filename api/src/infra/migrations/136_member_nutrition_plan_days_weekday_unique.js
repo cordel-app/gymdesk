@@ -11,6 +11,15 @@
  *
  * Idempotent/retry-safe: guarded by an information_schema existence check so a
  * retry after a partial failure resumes rather than erroring on a duplicate index.
+ *
+ * Defensive dedupe before the ALTER: every write path that predates #441 (only
+ * `nutrition-plan-templates.ts`'s `/:id/assign`, itself copying rows 1:1 from a
+ * template already protected by `nptd_template_weekday_unique` since migration
+ * 071) could not have produced a duplicate (plan, weekday) pair — but a stray
+ * row from a manual fix or a since-removed code path would otherwise fail the
+ * ALTER with a generic ER_DUP_ENTRY on deploy, blocking every later migration
+ * until someone manually deduplicates the table. Keeping the lowest id per
+ * pair is a cheap, safe no-op when (as expected) no duplicates exist.
  */
 
 async function indexExists(knex, table, name) {
@@ -24,6 +33,13 @@ async function indexExists(knex, table, name) {
 
 exports.up = async (knex) => {
   if (!await indexExists(knex, 'member_nutrition_plan_days', 'mnpd_plan_weekday_unique')) {
+    await knex.raw(`
+      DELETE d1 FROM member_nutrition_plan_days d1
+      JOIN member_nutrition_plan_days d2
+        ON d1.member_nutrition_plan_id = d2.member_nutrition_plan_id
+       AND d1.weekday = d2.weekday
+       AND d1.id > d2.id
+    `);
     await knex.raw(
       'ALTER TABLE member_nutrition_plan_days ' +
       'ADD CONSTRAINT mnpd_plan_weekday_unique UNIQUE (member_nutrition_plan_id, weekday)',
