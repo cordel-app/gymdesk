@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -41,8 +42,8 @@ export default function TrainingPage() {
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, isSuperadmin } = useApp();
-  const { flags: featureFlags } = useFeatureFlags();
   const { isImpersonating } = useImpersonation();
+  const { flags: featureFlags } = useFeatureFlags();
 
   const [plans, setPlans] = useState<TrainingPlan[]>([]);
   const [loading, setLoading] = useState(true);

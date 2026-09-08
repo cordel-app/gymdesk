@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
-import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { navigationGroups, filterNavGroups, NavItem as NavItemType, NavGroup as NavGroupType } from '@/config/navigationGroups';
 import { NavGroup } from './NavGroup';
 
@@ -15,13 +15,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const locale = useLocale();
   const pathname = usePathname();
   const { isSuperadmin, activeGym } = useGym();
-  const { flags } = useFeatureFlags();
   const { isImpersonating } = useImpersonation();
+  const { flags } = useFeatureFlags();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  // Determine user role for filtering. The Super Admin bypass only applies
-  // when acting in their native capacity — while impersonating, nav/feature-flag
-  // visibility must reflect the impersonated user's actual role (#439).
+  // Determine user role for filtering. The superadmin bypass only applies in
+  // native capacity — while impersonating, nav/feature-key gating must reflect
+  // the impersonated user's own role and flags (#439).
   const userRole = (isSuperadmin && !isImpersonating) ? 'superadmin' : (activeGym?.role ?? 'member');
 
   // Load expanded state from sessionStorage on mount

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -22,8 +23,8 @@ export default function NutritionPage() {
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, isSuperadmin } = useApp();
-  const { flags: featureFlags } = useFeatureFlags();
   const { isImpersonating } = useImpersonation();
+  const { flags: featureFlags } = useFeatureFlags();
 
   const [plan, setPlan] = useState<NutritionPlan | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);

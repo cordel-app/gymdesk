@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
+import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -34,8 +35,8 @@ export default function ProfilePage() {
     centers, activeCenterId, setActiveCenterId,
     isSuperadmin,
   } = useApp();
-  const { flags: featureFlags } = useFeatureFlags();
   const { isImpersonating } = useImpersonation();
+  const { flags: featureFlags } = useFeatureFlags();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
