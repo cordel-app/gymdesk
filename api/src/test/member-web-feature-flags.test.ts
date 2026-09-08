@@ -186,17 +186,19 @@ describe('member_web.* flags gate /me/* routes for regular members', () => {
 });
 
 describe('#439 — superadmin feature-flag bypass respects impersonation precedence', () => {
-  it('returns 200 on GET /me/nutrition-plan for a superadmin acting natively (not impersonating), even when disabled', async () => {
-    await setFlag('member_web.my_nutrition', false);
+  it('returns 200 for a superadmin acting natively (not impersonating) even when the flag is disabled', async () => {
+    // Native superadmins get tenantCtx.role = 'admin', so /me/* (requireRole('member'))
+    // 403s before requireFeatureEnabled runs. Assert the bypass on a staff route
+    // gated by the same middleware.
+    await setFlag('membership.members', false);
 
-    // Default mock (no mockResolvedValueOnce override) = superadmin, no x-impersonate-as header.
     const res = await request
-      .get('/me/nutrition-plan')
+      .get('/members')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
 
-    await setFlag('member_web.my_nutrition', true);
+    await setFlag('membership.members', true);
   });
 
   it('returns 403 on GET /me/nutrition-plan for a superadmin impersonating a member when the flag is disabled — the bypass must not carry over to the impersonated identity', async () => {
