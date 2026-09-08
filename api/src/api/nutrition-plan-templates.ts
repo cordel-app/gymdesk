@@ -3,6 +3,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
+import { createNutritionPlanTx } from './nutrition-plan-creation';
 
 export const nutritionPlanTemplatesRouter = Router();
 
@@ -533,67 +534,14 @@ nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION')
     if (srcRows.length === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
     const src = srcRows[0];
 
-    const newPlanId = await db.transaction(async (tx) => {
-      const { insertId } = await tx.query(
-        'INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [gymId, Number(member_id), src.id, (name ?? src.name), src.description ?? null, start_date ?? null, 'active', gymMembershipId],
-      );
-
-      const { rows: days } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const day of days) {
-        const { insertId: newDayId } = await tx.query(
-          'INSERT INTO member_nutrition_plan_days (gym_id, member_nutrition_plan_id, weekday, position) VALUES (?, ?, ?, ?)',
-          [gymId, insertId, day.weekday, day.position],
-        );
-        const { rows: meals } = await tx.query(
-          'SELECT * FROM nutrition_plan_template_meals WHERE nutrition_plan_template_day_id = ? ORDER BY position ASC',
-          [day.id],
-        );
-        for (const meal of meals) {
-          const { insertId: newMealId } = await tx.query(
-            'INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
-            [gymId, newDayId, meal.meal_type ?? null, meal.display_name, meal.notes ?? null, meal.position],
-          );
-          const { rows: items } = await tx.query(
-            'SELECT * FROM nutrition_plan_template_meal_items WHERE meal_id = ? ORDER BY position ASC',
-            [meal.id],
-          );
-          for (const item of items) {
-            await tx.query(
-              'INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-              [gymId, newMealId, item.nutrition_library_item_id, item.component_type, item.quantity ?? null, item.unit ?? null, item.position],
-            );
-          }
-        }
-      }
-
-      const { rows: restrictions } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_restrictions WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const r of restrictions) {
-        await tx.query(
-          'INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position) VALUES (?, ?, ?, ?, ?)',
-          [gymId, insertId, r.nutrition_library_item_id, r.applies_all_days, r.position],
-        );
-      }
-
-      const { rows: goals } = await tx.query(
-        'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? ORDER BY position ASC',
-        [id],
-      );
-      for (const g of goals) {
-        await tx.query(
-          'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position],
-        );
-      }
-
-      return insertId;
-    });
+    const { planId: newPlanId } = await db.transaction((tx) => createNutritionPlanTx(tx, {
+      gymId,
+      memberId: Number(member_id),
+      gymMembershipId,
+      templateId: src.id,
+      name: name ?? null,
+      startDate: start_date ?? null,
+    }));
 
     const { rows } = await db.query(
       'SELECT * FROM member_nutrition_plans WHERE id = ?',

@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle } from '@/components/ui';
 import { canWriteModule } from '@/config/permissions';
+import { NewNutritionPlanDialog } from '../NewNutritionPlanDialog';
 
 interface MemberNutritionPlan {
   id: number;
@@ -44,6 +45,7 @@ export default function NutritionPlansPage() {
   const [memberFilter, setMemberFilter] = useState(searchParams.get('member_id') ?? '');
   const [memberOptions, setMemberOptions] = useState<MemberOption[]>([]);
   const [deleting, setDeleting] = useState<MemberNutritionPlan | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
 
   const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
@@ -97,8 +99,11 @@ export default function NutritionPlansPage() {
             <option value="">{t('nutrition_plans.filter_all_members')}</option>
             {memberOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <button onClick={() => router.push(`/${locale}/nutrition/nutrition-plan-templates`)} style={btnStyle()}>
+          <button onClick={() => router.push(`/${locale}/nutrition/nutrition-plan-templates`)} style={btnStyle('#aaa')}>
             {t('nutrition_plans.assign_from_template')}
+          </button>
+          <button onClick={() => setNewOpen(true)} style={btnStyle()}>
+            {t('nutrition_plans.new_plan')}
           </button>
         </div>
       </div>
@@ -146,6 +151,12 @@ export default function NutritionPlansPage() {
         cancelLabel={t('nutrition_plans.cancel')}
         onConfirm={del}
         onCancel={() => setDeleting(null)}
+      />
+
+      <NewNutritionPlanDialog
+        open={newOpen}
+        onClose={() => setNewOpen(false)}
+        onCreated={() => { setNewOpen(false); load(); }}
       />
     </div>
   );
