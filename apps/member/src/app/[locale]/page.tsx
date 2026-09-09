@@ -101,7 +101,10 @@ export default function HomePage() {
 
   useEffect(() => {
     if (appLoading) return;
-    if (!isLinked) return;
+    if (!isLinked) {
+      setLoading(false);
+      return;
+    }
     load();
   }, [appLoading, isLinked]);
 
@@ -150,6 +153,33 @@ export default function HomePage() {
   const todayMeals = nutritionPlan?.days
     .filter((d) => d.weekday === todayWeekday() || d.weekday === ALL_DAYS_WEEKDAY)
     .flatMap((d) => d.meals) ?? [];
+
+  // Superadmin with no impersonation target has no member identity — /me/profile
+  // is 403 and widgets would spin forever. Prompt them to impersonate instead (#415).
+  if (isSuperadmin && !isImpersonating) {
+    return (
+      <main style={styles.container}>
+        <h1 style={styles.greeting}>{t('impersonation.home_prompt_title')}</h1>
+        <section style={styles.section}>
+          <div style={styles.card}>
+            <p style={styles.hint}>{t('impersonation.home_prompt')}</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (isImpersonating && !isLinked) {
+    return (
+      <main style={styles.container}>
+        <section style={styles.section}>
+          <div style={styles.card}>
+            <p style={styles.hint}>{t('impersonation.error_profile')}</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main style={styles.container}>

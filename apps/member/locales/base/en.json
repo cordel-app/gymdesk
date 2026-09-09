@@ -291,14 +291,17 @@
     "stop_button": "Stop Impersonating",
     "stopped": "Impersonation ended.",
     "button_impersonate": "Impersonate",
-    "dialog_title": "Impersonate a User",
+    "dialog_title": "Impersonate a Member",
     "search_placeholder": "Search by name…",
     "searching": "Searching…",
-    "search_empty": "No active users found.",
+    "search_empty": "No active members found.",
     "type_member": "Member",
     "type_staff": "Staff",
     "cancel": "Cancel",
-    "error_start": "Could not start impersonation."
+    "error_start": "Could not start impersonation.",
+    "home_prompt_title": "Support mode",
+    "home_prompt": "Use Impersonate in the bar above to view a member's account. Calendar, bookings, and the rest of the member app stay inactive until then.",
+    "error_profile": "Could not load this member's profile."
   },
   "nutrition": {
     "title": "My Nutrition",

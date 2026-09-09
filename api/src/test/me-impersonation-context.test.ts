@@ -155,6 +155,26 @@ describe('/me/schedule and /me/membership — superadmin member impersonation (#
     expect(res.body.membership.status).toBe('active');
   });
 
+  it('GET /me/profile as a bare superadmin (no impersonation) is 403', async () => {
+    const res = await request
+      .get('/me/profile')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(403);
+  });
+
+  it('GET /me/profile under impersonation returns the impersonated member', async () => {
+    const res = await request
+      .get('/me/profile')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-impersonate-as', `member:${memberId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(memberId);
+    expect(res.body.name).toBe('Impersonated Member');
+  });
+
   it('rejects impersonating a member that does not belong to the selected gym (tenant isolation)', async () => {
     const otherGym = await createTestGym('Impersonation Context Other Gym');
     const res = await request
