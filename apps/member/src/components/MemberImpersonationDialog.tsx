@@ -42,7 +42,10 @@ export function MemberImpersonationDialog({ onClose }: Props) {
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (!res.ok) throw new Error();
-      setTargets(await res.json());
+      const all: Target[] = await res.json();
+      // The member app can only assume a member identity — impersonating staff
+      // leaves /me/profile on requireRole('member') and 403s (#415).
+      setTargets(all.filter((t) => t.type === 'member'));
     } catch {
       setTargets([]);
     } finally {

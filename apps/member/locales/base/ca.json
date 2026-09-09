@@ -291,14 +291,17 @@
     "stop_button": "Atura la suplantació",
     "stopped": "Suplantació finalitzada.",
     "button_impersonate": "Suplantar",
-    "dialog_title": "Suplantar un usuari",
+    "dialog_title": "Suplantar un membre",
     "search_placeholder": "Cerca per nom…",
     "searching": "Cercant…",
-    "search_empty": "No s'han trobat usuaris actius.",
+    "search_empty": "No s'han trobat membres actius.",
     "type_member": "Membre",
     "type_staff": "Personal",
     "cancel": "Cancel·lar",
-    "error_start": "No s'ha pogut iniciar la suplantació."
+    "error_start": "No s'ha pogut iniciar la suplantació.",
+    "home_prompt_title": "Mode de suport",
+    "home_prompt": "Fes servir Suplantar a la barra de dalt per veure el compte d'un membre. El calendari, les reserves i la resta de l'app de membres resten inactius fins llavors.",
+    "error_profile": "No s'ha pogut carregar el perfil d'aquest membre."
   },
   "nutrition": {
     "title": "La Meva Nutrició",

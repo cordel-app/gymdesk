@@ -37,8 +37,17 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
       if (isInitial) setLoading(true);
       try {
         const token = await getToken();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        if (!token) {
+          if (!cancelled && isInitial) {
+            setFlags({});
+            setLoading(false);
+          }
+          return;
+        }
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        };
         const res = await fetch('/api/proxy/feature-flags', { headers });
         const data = res.ok ? await res.json() : {};
         if (!cancelled) setFlags(data ?? {});
