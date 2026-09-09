@@ -81,17 +81,21 @@ describe('initializeGymBucket()', () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
-  it('creates one folder-marker object per standard folder', async () => {
+  it('creates folder-marker objects for the gym root, parent folders, and leaf folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(6);
+    expect(sendMock).toHaveBeenCalledTimes(10);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
+      'gym_123-GymName/',
+      'gym_123-GymName/Nutrition/',
       'gym_123-GymName/Nutrition/Images/',
+      'gym_123-GymName/Exercises/',
       'gym_123-GymName/Exercises/Images/',
       'gym_123-GymName/Exercises/Videos/',
+      'gym_123-GymName/Branding/',
       'gym_123-GymName/Branding/Logo/',
       'gym_123-GymName/Branding/Images/',
       'gym_123-GymName/Members/',
