@@ -53,11 +53,6 @@ export const navigationGroups: NavGroup[] = [
         featureKey: 'calendar.calendar',
       },
       {
-        href: '/{{locale}}/schedule',
-        labelKey: 'nav.schedule',
-        featureKey: 'calendar.schedule',
-      },
-      {
         href: '/{{locale}}/calendar/operating-hours',
         labelKey: 'nav.operating_hours',
         featureKey: 'calendar.operating_hours',

@@ -3,7 +3,6 @@
     "dashboard": "Panel",
     "members": "Socios",
     "members_deleted": "Socios eliminados",
-    "schedule": "Horario",
     "memberships": "Membresías",
     "team": "Equipo",
     "plans": "Cuotas",
@@ -720,55 +719,19 @@
     "class_package_credit": "Crédito de bono de clases"
   },
   "schedule": {
-    "title": "Horario",
     "loading": "Cargando…",
-    "empty": "No hay sesiones en este rango.",
-    "add": "+ Añadir sesión",
-    "from": "Desde",
-    "to": "Hasta",
-    "trainer": "Entrenador",
-    "capacity": "Aforo",
-    "roster": "Lista",
-    "edit": "Editar",
-    "toggle_sharing": "Activar reserva compartida",
-    "shared_requests": "Compartido",
+    "error_generic": "Algo ha ido mal.",
+    "cancel": "Cancelar",
     "shared_training_requests": "Solicitudes de entreno compartido",
     "no_shared_requests": "No hay solicitudes de entreno compartido pendientes.",
     "shared_approve": "Aprobar",
     "shared_reject": "Rechazar",
-    "cancel": "Cancelar",
-    "cancel_confirm": "Cancelar sesión",
-    "confirm_cancel": "¿Cancelar esta sesión de {name}? Hace falta un motivo.",
-    "cancel_reason_placeholder": "Motivo de la cancelación",
-    "modal_add": "Añadir sesión",
-    "modal_edit": "Editar sesión",
-    "label_class_type": "Tipo de clase",
-    "label_starts": "Inicio",
-    "label_duration": "Duración (minutos)",
-    "label_trainer": "Entrenador",
-    "label_capacity_override": "Aforo específico",
-    "capacity_from_type": "en blanco = usar el del tipo",
-    "label_members": "Asignar miembros",
-    "members_over_capacity": "{count} miembros asignados — el aforo es {capacity}",
-    "saving": "Guardando…",
-    "save_changes": "Guardar cambios",
-    "error_required": "Tipo, inicio y duración son obligatorios.",
-    "error_duration": "La duración debe ser un entero positivo.",
-    "error_generic": "Algo ha ido mal.",
     "status": {
-      "scheduled": "Programada",
-      "cancelled": "Cancelada",
       "completed": "Realizada"
     },
-    "roster_title": "Lista de asistentes",
     "booked_heading": "Confirmados",
     "waitlist_heading": "Lista de espera",
     "no_bookings": "Aún no hay reservas.",
-    "booking_status": {
-      "booked": "Reservado",
-      "waitlisted": "En espera",
-      "cancelled": "Cancelado"
-    },
     "attendance_status": {
       "pending": "Pendiente",
       "present": "Presente",
@@ -790,8 +753,7 @@
     "complete_success": "Sesión marcada como completada.",
     "complete_blocked_pending": "{n} {n, plural, one {socio tiene} other {socios tienen}} asistencia pendiente. Márcalos como presentes o ausentes primero.",
     "complete_blocked_no_trainer": "Por favor, confirma el entrenador que impartió la sesión antes de completarla.",
-    "close": "Cerrar",
-    "label_space": "Espacio"
+    "close": "Cerrar"
   },
   "promotions": {
     "title": "Promociones",
@@ -2458,7 +2420,11 @@
     "metadata_updated_at": "Actualizado el",
     "metadata_deleted_by": "Eliminado por",
     "metadata_deleted_at": "Eliminado el",
-    "panel_resize_handle": "Redimensionar panel"
+    "panel_resize_handle": "Redimensionar panel",
+    "session_attendance": "Asistencia",
+    "session_shared_requests": "Entrenamiento compartido",
+    "session_sharing_on": "Reserva compartida activada",
+    "session_sharing_off": "Reserva compartida desactivada"
   },
   "gym_charges": {
     "title": "Cargos del Gimnasio",

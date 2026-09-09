@@ -1,9 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
+import { SessionRosterPanel } from './SessionRosterPanel';
+import { SharedTrainingPanel } from './SharedTrainingPanel';
 
 interface ClassSession {
   id: number;
@@ -14,7 +17,18 @@ interface ClassSession {
   space_name: string | null;
   effective_capacity: number;
   booked_count: number;
-  status: string;
+  status: 'scheduled' | 'cancelled' | 'completed';
+  trainer_membership_id: number | null;
+  effective_trainer_membership_id: number | null;
+  attendance_present: number;
+  attendance_absent: number;
+  attendance_pending: number;
+  allows_shared_booking: number;
+}
+
+interface Trainer {
+  gym_membership_id: number;
+  name: string;
 }
 
 interface Booking {
@@ -65,13 +79,17 @@ function fmtTime(iso: string) {
 }
 
 export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrite }: Props) {
+  const t = useTranslations('calendar');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
   const [session, setSession] = useState<ClassSession | null>(null);
   const [enrolled, setEnrolled] = useState<Booking[]>([]);
   const [waitlist, setWaitlist] = useState<Booking[]>([]);
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showRoster, setShowRoster] = useState(false);
+  const [showShared, setShowShared] = useState(false);
 
   // Remove member flow
   const [removingBooking, setRemovingBooking] = useState<Booking | null>(null);
@@ -98,11 +116,13 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, bookings] = await Promise.all([
+      const [s, bookings, tr] = await Promise.all([
         apiFetch<ClassSession>(`/class-sessions/${sessionId}`),
         apiFetch<Booking[]>(`/bookings?session_id=${sessionId}`),
+        apiFetch<Trainer[]>('/trainers').catch(() => [] as Trainer[]),
       ]);
       setSession(s);
+      setTrainers(tr);
       setEnrolled(bookings.filter((b) => b.status === 'booked'));
       setWaitlist(bookings.filter((b) => b.status === 'waitlisted').sort((a, b2) => (a.waitlist_position ?? 0) - (b2.waitlist_position ?? 0)));
     } catch (err: any) {
@@ -210,6 +230,19 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
       toast(err.message ?? 'Failed to update time');
     } finally {
       setSavingTime(false);
+    }
+  }
+
+  async function toggleSharing() {
+    if (!session) return;
+    try {
+      const updated = await apiFetch<ClassSession>(`/class-sessions/${session.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ allows_shared_booking: !Number(session.allows_shared_booking) }),
+      });
+      setSession((prev) => prev ? { ...prev, allows_shared_booking: updated.allows_shared_booking } : prev);
+    } catch (err: any) {
+      toast(err.message ?? 'Failed to update sharing');
     }
   }
 
@@ -439,10 +472,33 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
       </div>
 
       {/* Actions */}
-      {canWrite && !isCancelled && (
-        <div>
-          <div style={sectionLabel}>Actions</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div>
+        <div style={sectionLabel}>Actions</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            onClick={() => setShowRoster(true)}
+            style={{ ...btnBase, background: '#f3f4f6', color: '#374151', textAlign: 'left' }}
+          >
+            {t('session_attendance')}
+          </button>
+          {session.status === 'scheduled' && (
+            <button
+              onClick={() => setShowShared(true)}
+              style={{ ...btnBase, background: '#f3f4f6', color: '#374151', textAlign: 'left' }}
+            >
+              {t('session_shared_requests')}
+            </button>
+          )}
+          {canWrite && !isCancelled && session.status === 'scheduled' && (
+            <button
+              onClick={toggleSharing}
+              style={{ ...btnBase, background: Number(session.allows_shared_booking) ? '#ecfdf5' : '#f3f4f6', color: Number(session.allows_shared_booking) ? '#047857' : '#374151', textAlign: 'left' }}
+            >
+              {Number(session.allows_shared_booking) ? t('session_sharing_on') : t('session_sharing_off')}
+            </button>
+          )}
+          {canWrite && !isCancelled && (
+            <>
             {/* Change time */}
             {!showChangeTime ? (
               <button
@@ -531,8 +587,30 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
                 </div>
               </div>
             )}
+            </>
+          )}
           </div>
         </div>
+
+      {showRoster && session && (
+        <SessionRosterPanel
+          session={session}
+          canAttendance={canWrite}
+          trainers={trainers}
+          onClose={() => { setShowRoster(false); load(); }}
+          onSessionUpdated={(updated) => {
+            setSession((prev) => prev ? { ...prev, ...updated } : prev);
+            onMutated();
+          }}
+        />
+      )}
+
+      {showShared && (
+        <SharedTrainingPanel
+          sessionId={sessionId}
+          canWrite={canWrite}
+          onClose={() => setShowShared(false)}
+        />
       )}
 
       {/* Remove member confirmation overlay */}

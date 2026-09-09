@@ -3,7 +3,6 @@
     "dashboard": "Dashboard",
     "members": "Members",
     "members_deleted": "Deleted Members",
-    "schedule": "Schedule",
     "memberships": "Memberships",
     "team": "Team",
     "plans": "Plans",
@@ -788,55 +787,19 @@
     "class_package_credit": "Class package credit"
   },
   "schedule": {
-    "title": "Schedule",
     "loading": "Loading…",
-    "empty": "No sessions in this range.",
-    "add": "+ Add Session",
-    "from": "From",
-    "to": "To",
-    "trainer": "Coach",
-    "capacity": "Capacity",
-    "roster": "Roster",
-    "edit": "Edit",
-    "toggle_sharing": "Toggle shared booking",
-    "shared_requests": "Shared",
+    "error_generic": "Something went wrong.",
+    "cancel": "Cancel",
     "shared_training_requests": "Shared Training Requests",
     "no_shared_requests": "No pending shared training requests.",
     "shared_approve": "Approve",
     "shared_reject": "Reject",
-    "cancel": "Cancel",
-    "cancel_confirm": "Cancel session",
-    "confirm_cancel": "Cancel this {name} session? A reason is required.",
-    "cancel_reason_placeholder": "Reason for cancellation",
-    "modal_add": "Add Session",
-    "modal_edit": "Edit Session",
-    "label_class_type": "Class type",
-    "label_starts": "Starts",
-    "label_duration": "Duration (minutes)",
-    "label_trainer": "Coach",
-    "label_capacity_override": "Capacity override",
-    "capacity_from_type": "leave blank to use the type's default",
-    "label_members": "Assign members",
-    "members_over_capacity": "{count} members assigned — capacity is {capacity}",
-    "saving": "Saving…",
-    "save_changes": "Save Changes",
-    "error_required": "Class type, start and duration are required.",
-    "error_duration": "Duration must be a positive integer.",
-    "error_generic": "Something went wrong.",
     "status": {
-      "scheduled": "Scheduled",
-      "cancelled": "Cancelled",
       "completed": "Completed"
     },
-    "roster_title": "Roster",
     "booked_heading": "Confirmed",
     "waitlist_heading": "Waitlist",
     "no_bookings": "No bookings yet.",
-    "booking_status": {
-      "booked": "Booked",
-      "waitlisted": "Waitlist",
-      "cancelled": "Cancelled"
-    },
     "attendance_status": {
       "pending": "Pending",
       "present": "Present",
@@ -858,8 +821,7 @@
     "complete_success": "Session marked as completed.",
     "complete_blocked_pending": "{n} {n, plural, one {member has} other {members have}} pending attendance. Mark them as present or absent first.",
     "complete_blocked_no_trainer": "Please confirm the trainer who delivered this session before completing it.",
-    "close": "Close",
-    "label_space": "Space"
+    "close": "Close"
   },
   "promotions": {
     "title": "Promotions",
@@ -2526,7 +2488,11 @@
     "metadata_updated_at": "Updated at",
     "metadata_deleted_by": "Deleted by",
     "metadata_deleted_at": "Deleted at",
-    "panel_resize_handle": "Resize panel"
+    "panel_resize_handle": "Resize panel",
+    "session_attendance": "Attendance",
+    "session_shared_requests": "Shared training",
+    "session_sharing_on": "Shared booking on",
+    "session_sharing_off": "Shared booking off"
   },
   "gym_charges": {
     "title": "Gym Charges",
