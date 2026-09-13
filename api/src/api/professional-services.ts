@@ -109,11 +109,12 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
 
   try {
     const { rows: existing } = await db.query(
-      'SELECT id, is_system FROM professional_services WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-      [req.params.id, gymId],
+      'SELECT id, is_system, gym_id FROM professional_services WHERE id = ? AND deleted_at IS NULL',
+      [req.params.id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
     if (existing[0].is_system) return res.status(403).json({ error: 'System Professional Services cannot be edited.' });
+    if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Not found' });
 
     await db.query(
       `UPDATE professional_services SET
