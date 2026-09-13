@@ -566,7 +566,7 @@ export default function PlansPage() {
   function renderInlineNewRow() {
     if (!inlineNew) return null;
     return (
-      <div style={cardStyle}>
+      <div style={cardStyle(true)}>
         <div style={{ padding: '16px 20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1.5fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
@@ -643,7 +643,7 @@ export default function PlansPage() {
           {inlineNew.error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall()}>
               {inlineNew.saving ? t('plans.saving') : t('plans.save_changes')}
             </button>
           </div>
@@ -661,12 +661,13 @@ export default function PlansPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t('plans.title')}</h1>
-        <button onClick={openInlineNew} style={btnStyle('#6c63ff')} disabled={inlineNew !== null}>{t('plans.add')}</button>
+        <button onClick={openInlineNew} style={btnStyle()} disabled={inlineNew !== null}>{t('plans.add')}</button>
       </div>
 
       {/* Column headers */}
       {!loading && (plans.length > 0 || inlineNew) && (
         <div style={colHeaderStyle}>
+          <div style={{ width: 14, flexShrink: 0 }} />
           <div style={{ flex: 2 }}>{t('plans.col_name')}</div>
           <div style={{ flex: 3 }}>{t('plans.col_description')}</div>
           <div style={{ flex: 2 }}>{t('plans.col_created_by')}</div>
@@ -703,16 +704,17 @@ export default function PlansPage() {
             ];
 
             return (
-              <div key={plan.id} style={cardStyle}>
+              <div key={plan.id} style={cardStyle(isEditing)}>
                 {/* Row header */}
                 <div style={rowStyle} onClick={() => toggleExpand(plan.id)}>
+                  <span style={{ fontSize: 13, color: '#aaa', flexShrink: 0, display: 'inline-block', width: 14, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
                   <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {plan.name}
                   </div>
-                  <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ flex: 3, fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {descText}
                   </div>
-                  <div style={{ flex: 2, fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ flex: 2, fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {plan.created_by_name ?? '—'}
                   </div>
                   <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
@@ -727,7 +729,6 @@ export default function PlansPage() {
                       label={t(`status.${plan.enrollment_status}`)}
                     />
                   </div>
-                  <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
                   <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
                     <ContextMenu items={menuItems} ariaLabel={`Actions for ${plan.name}`} />
                   </div>
@@ -735,7 +736,7 @@ export default function PlansPage() {
 
                 {/* Inline edit form */}
                 {isEditing && (
-                  <div style={{ padding: '16px', borderTop: '1px solid #eee' }}>
+                  <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #ececf0)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                       <div>
                         <label style={inlineLabelStyle}>{t('plans.label_name')} *</label>
@@ -817,7 +818,7 @@ export default function PlansPage() {
                     {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
                     <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
                       <button onClick={cancelEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                      <button onClick={() => handleInlineSave(plan)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+                      <button onClick={() => handleInlineSave(plan)} disabled={editSaving} style={btnSmall()}>
                         {editSaving ? t('plans.saving') : t('plans.save_changes')}
                       </button>
                     </div>
@@ -826,11 +827,18 @@ export default function PlansPage() {
 
                 {/* Accordion detail sections (view mode only) */}
                 {isExpanded && !isEditing && (
-                  <div style={{ padding: '0 16px 16px', borderTop: '1px solid #eee' }}>
+                  <div style={{ padding: '0 20px 16px', borderTop: '1px solid var(--gd-card-border, #ececf0)' }}>
                     <SectionHeader title={t('plans.section_status')} />
                     <DetailRow label={t('plans.label_lifecycle_status')} value={t(`status.${plan.lifecycle_status}`)} />
                     <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
-                    <DetailRow label={t('plans.label_member_limit')} value={t(`plans.member_limit_${plan.member_limit}`)} />
+                    <DetailRow
+                      label={t('plans.label_member_limit')}
+                      value={
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#eef0ff', color: '#4b45c6' }}>
+                          {t(`plans.member_limit_${plan.member_limit}`)}
+                        </span>
+                      }
+                    />
                     <DetailRow label={t('plans.members_using_plan')} value={String(plan.member_count)} />
 
                     <SectionHeader
@@ -874,7 +882,7 @@ export default function PlansPage() {
                         </div>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                           <button onClick={cancelBillingEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={() => handleSaveBilling(plan.id)} disabled={billingSaving} style={btnSmall('#6c63ff')}>
+                          <button onClick={() => handleSaveBilling(plan.id)} disabled={billingSaving} style={btnSmall()}>
                             {billingSaving ? t('plans.saving') : t('plans.save_changes')}
                           </button>
                         </div>
@@ -914,7 +922,7 @@ export default function PlansPage() {
                         ))}
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
                           <button onClick={() => setCentersForPlanId(null)} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={handleSaveCenters} style={btnSmall('#6c63ff')}>{t('plans.save_changes')}</button>
+                          <button onClick={handleSaveCenters} style={btnSmall()}>{t('plans.save_changes')}</button>
                         </div>
                       </div>
                     ) : (plan.centers ?? []).length === 0 ? (
@@ -988,7 +996,7 @@ export default function PlansPage() {
                         </div>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                           <button onClick={() => setAllowanceForPlanId(null)} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={handleSaveAllowance} style={btnSmall('#6c63ff')}>{t('plans.save_changes')}</button>
+                          <button onClick={handleSaveAllowance} style={btnSmall()}>{t('plans.save_changes')}</button>
                         </div>
                       </div>
                     )}
@@ -996,9 +1004,9 @@ export default function PlansPage() {
                       <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_allowances')}</p>
                     ) : (
                       (plan.allowances ?? []).map((a) => (
-                        <div key={a.id} style={{ ...detailRowStyle, alignItems: 'center' }}>
-                          <span style={labelStyle}>{a.activity_type_name}</span>
-                          <span style={valueStyle}>
+                        <div key={a.id} style={benefitRowStyle}>
+                          <span style={benefitNameStyle}>{a.activity_type_name}</span>
+                          <span style={benefitValueStyle}>
                             {a.allowance_type === 'unlimited'
                               ? t('plans.unlimited')
                               : `${a.session_count} sessions / ${fmtBillingInterval(a.recurrence_interval ?? 1, a.recurrence_unit ?? 'month')}`}
@@ -1058,14 +1066,14 @@ export default function PlansPage() {
                           <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_charge_benefits')}</p>
                         ) : (
                           (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').map((cb) => (
-                            <div key={cb.id} style={detailRowStyle}>
-                              <span style={labelStyle}>
+                            <div key={cb.id} style={benefitRowStyle}>
+                              <span style={benefitNameStyle}>
                                 {cb.gym_charge_name}
                                 {cb.gym_charge_availability === 'unavailable' && (
-                                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 3 }}>Unavailable</span>
+                                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 4 }}>Unavailable</span>
                                 )}
                               </span>
-                              <span style={valueStyle}>{cb.action}{cb.value != null ? ` — ${cb.value}` : ''}</span>
+                              <span style={benefitValueStyle}>{cb.action}{cb.value != null ? ` — ${cb.value}` : ''}</span>
                             </div>
                           ))
                         )}
@@ -1120,7 +1128,7 @@ export default function PlansPage() {
                         </div>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                           <button onClick={closePriceForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={handleSavePrice} style={btnSmall('#6c63ff')}>{t('plans.save_changes')}</button>
+                          <button onClick={handleSavePrice} style={btnSmall()}>{t('plans.save_changes')}</button>
                         </div>
                       </div>
                     )}
@@ -1128,9 +1136,9 @@ export default function PlansPage() {
                       <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_prices')}</p>
                     ) : (
                       (plan.price_history ?? []).map((row) => (
-                        <div key={row.id} style={{ ...detailRowStyle, alignItems: 'center' }}>
-                          <span style={labelStyle}>{String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}</span>
-                          <span style={valueStyle}>€{parseFloat(row.price).toFixed(2)}</span>
+                        <div key={row.id} style={benefitRowStyle}>
+                          <span style={benefitNameStyle}>{String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}</span>
+                          <span style={benefitValueStyle}>€{parseFloat(row.price).toFixed(2)}</span>
                           <div style={{ display: 'flex', gap: 4 }}>
                             <button onClick={() => openEditPrice(plan.id, row)} style={linkBtn}>{t('plans.edit')}</button>
                             <button onClick={() => handleDeletePrice(plan.id, row.id)} style={dangerLinkBtn}>✕</button>
@@ -1176,14 +1184,14 @@ export default function PlansPage() {
 
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #eee', margin: '16px 0 8px', paddingBottom: 4 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--gd-card-border, #eee)', margin: '16px 0 8px', paddingBottom: 6 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</span>
       {action}
     </div>
   );
 }
 
-function DetailRow({ label, value, description }: { label: string; value: string; description?: string }) {
+function DetailRow({ label, value, description }: { label: string; value: React.ReactNode; description?: string }) {
   return (
     <div>
       <div style={detailRowStyle}>
@@ -1197,31 +1205,49 @@ function DetailRow({ label, value, description }: { label: string; value: string
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const cardStyle: React.CSSProperties = {
-  border: '1px solid #e2e2e6', borderRadius: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)',
-};
+const cardStyle = (editing: boolean): React.CSSProperties => ({
+  border: editing ? '1.5px solid #4b45c6' : '1px solid var(--gd-card-border, #ececf0)',
+  borderRadius: 10,
+  overflow: 'hidden',
+  background: 'var(--gd-card-bg, #ffffff)',
+});
 
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
   cursor: 'pointer', userSelect: 'none',
 };
 
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', padding: '6px 16px', gap: 10,
-  fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
-  marginBottom: 4,
+  display: 'flex', alignItems: 'center', padding: '4px 14px 6px', gap: 12,
+  fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em',
 };
 
 const detailRowStyle: React.CSSProperties = {
-  display: 'flex', gap: 8, padding: '3px 0', fontSize: 13,
+  display: 'flex', gap: 12, padding: '4px 0', fontSize: 13.5,
 };
 
 const labelStyle: React.CSSProperties = {
-  width: 200, flexShrink: 0, color: '#666',
+  width: 200, flexShrink: 0, color: '#888',
 };
 
 const valueStyle: React.CSSProperties = {
-  color: '#111', flex: 1,
+  color: '#222', flex: 1,
+};
+
+// "Benefit"-style rows (Allowances, Charge Benefits, Price History): name left, muted value trailing —
+// mirrors Training Plan Templates' workout/exercise row layout (TrainingPlanTree.tsx BlockRow).
+const benefitRowStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',
+  borderBottom: '1px solid var(--gd-card-border, #f4f4f6)',
+};
+
+const benefitNameStyle: React.CSSProperties = {
+  fontWeight: 600, fontSize: 14, color: '#222', flex: 1, minWidth: 0,
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+
+const benefitValueStyle: React.CSSProperties = {
+  fontSize: 12.5, color: '#888', flexShrink: 0,
 };
 
 const inlineLabelStyle: React.CSSProperties = {
@@ -1243,7 +1269,7 @@ const inlineSelectStyle: React.CSSProperties = {
 };
 
 const linkBtn: React.CSSProperties = {
-  background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#6c63ff', padding: '0 2px',
+  background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--brand, #6c63ff)', padding: '0 2px',
 };
 
 const dangerLinkBtn: React.CSSProperties = {
