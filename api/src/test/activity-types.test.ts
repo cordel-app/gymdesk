@@ -483,6 +483,226 @@ describe('audit metadata', () => {
   });
 });
 
+// ── public_event (#481) ─────────────────────────────────────────────────────
+
+describe('public_event', () => {
+  it('defaults to true when omitted on create', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Public Event Default', duration_minutes: 30, max_capacity: 10 });
+    expect(res.status).toBe(201);
+    expect(res.body.public_event).toBeTruthy();
+  });
+
+  it('can be set to false explicitly on create', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Public Event False', duration_minutes: 30, max_capacity: 10, public_event: false });
+    expect(res.status).toBe(201);
+    expect(res.body.public_event).toBeFalsy();
+  });
+
+  it('can be flipped false via PUT and back to true', async () => {
+    const createRes = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Public Event Toggle', duration_minutes: 30, max_capacity: 10 });
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.public_event).toBeTruthy();
+    const id = createRes.body.id;
+
+    const putRes = await request
+      .put(`${BASE}/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ public_event: false });
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.public_event).toBeFalsy();
+
+    const putBackRes = await request
+      .put(`${BASE}/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ public_event: true });
+    expect(putBackRes.status).toBe(200);
+    expect(putBackRes.body.public_event).toBeTruthy();
+  });
+
+  it('rejects a non-boolean public_event', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Public Event Bad', duration_minutes: 30, max_capacity: 10, public_event: 'yes' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── Eligible plans (#481) ────────────────────────────────────────────────────
+
+describe('GET/PUT /activity-types/:id/eligible-plans', () => {
+  let epGymId: string;
+  let epActivityTypeId: number;
+  let planAId: number;
+  let planBId: number;
+
+  beforeAll(async () => {
+    epGymId = await createTestGym('AT Eligible Plans Gym');
+    await createTestMembership(epGymId, 'admin');
+
+    const atRes = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId)
+      .send({ name: 'Restricted Class', duration_minutes: 45, max_capacity: 8, public_event: false });
+    expect(atRes.status).toBe(201);
+    epActivityTypeId = atRes.body.id;
+
+    const { insertId: pA } = await db.query(
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, 'Plan A', 'active', 'staff_only')`,
+      [epGymId],
+    );
+    planAId = pA;
+    const { insertId: pB } = await db.query(
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, 'Plan B', 'active', 'staff_only')`,
+      [epGymId],
+    );
+    planBId = pB;
+  });
+
+  it('returns an empty array when no plans are configured', async () => {
+    const res = await request
+      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('404s GET for a non-existent activity type', async () => {
+    const res = await request
+      .get(`${BASE}/999999/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('404s PUT for a non-existent activity type', async () => {
+    const res = await request
+      .put(`${BASE}/999999/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId)
+      .send({ membership_plan_ids: [planAId] });
+    expect(res.status).toBe(404);
+  });
+
+  it('400s when a plan id belongs to another gym', async () => {
+    const otherGymId = await createTestGym('AT Eligible Plans Other Gym');
+    await createTestMembership(otherGymId, 'admin');
+    const { insertId: foreignPlanId } = await db.query(
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, 'Foreign Plan', 'active', 'staff_only')`,
+      [otherGymId],
+    );
+
+    const res = await request
+      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId)
+      .send({ membership_plan_ids: [foreignPlanId] });
+    expect(res.status).toBe(400);
+  });
+
+  it('400s for a completely invalid plan id', async () => {
+    const res = await request
+      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId)
+      .send({ membership_plan_ids: [999999] });
+    expect(res.status).toBe(400);
+  });
+
+  it('sets eligible plans and GET reflects them, ordered by name', async () => {
+    const putRes = await request
+      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId)
+      .send({ membership_plan_ids: [planBId, planAId] });
+    expect(putRes.status).toBe(204);
+
+    const getRes = await request
+      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.map((p: any) => p.name)).toEqual(['Plan A', 'Plan B']);
+    expect(getRes.body.map((p: any) => p.id).sort()).toEqual([planAId, planBId].sort());
+  });
+
+  it('replace-all semantics: a second PUT fully replaces the previous set', async () => {
+    const putRes = await request
+      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId)
+      .send({ membership_plan_ids: [planAId] });
+    expect(putRes.status).toBe(204);
+
+    const getRes = await request
+      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body).toHaveLength(1);
+    expect(getRes.body[0].id).toBe(planAId);
+  });
+
+  it('an empty list clears all eligible plans', async () => {
+    const putRes = await request
+      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId)
+      .send({ membership_plan_ids: [] });
+    expect(putRes.status).toBe(204);
+
+    const getRes = await request
+      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', epGymId);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body).toEqual([]);
+  });
+
+  it('returns 404 when reading eligible-plans for an activity type from another gym', async () => {
+    const gymD = await createTestGym('AT Eligible Plans Gym D');
+    await createTestMembership(gymD, 'admin');
+    const res = await request
+      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymD);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 403 for a non-admin role on PUT eligible-plans', async () => {
+    const fdGymId = await createTestGym('AT Eligible Plans FD Gym');
+    await createTestMembership(fdGymId, 'front_desk');
+    // Insert directly since front_desk cannot POST /activity-types.
+    const { insertId: fdActivityTypeId } = await db.query(
+      `INSERT INTO activity_types (gym_id, name, max_capacity, status, public_event) VALUES (?, 'FD Test AT', 10, 'active', 0)`,
+      [fdGymId],
+    );
+    const res = await request
+      .put(`${BASE}/${fdActivityTypeId}/eligible-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', fdGymId)
+      .send({ membership_plan_ids: [] });
+    expect(res.status).toBe(403);
+  });
+});
+
 // ── Duplicate ──────────────────────────────────────────────────────────────
 
 describe('POST /activity-types/:id/duplicate', () => {

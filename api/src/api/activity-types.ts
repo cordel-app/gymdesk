@@ -75,6 +75,58 @@ activityTypesRouter.get('/:id', async (req, res) => {
   res.json({ ...rows[0], schedule_rules: rules.map(formatRule) });
 });
 
+// #481: which Membership Plans may book this activity type when it is not
+// a public event. Irrelevant when public_event = true, but always readable
+// so the admin UI can populate the multi-select once staff turns it off.
+activityTypesRouter.get('/:id/eligible-plans', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rows: existing } = await db.query(
+    'SELECT id FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
+  const { rows } = await db.query(
+    `SELECT mp.id, mp.name, mp.lifecycle_status
+     FROM activity_type_eligible_plans atep
+     JOIN membership_plans mp ON mp.id = atep.membership_plan_id
+     WHERE atep.activity_type_id = ? AND atep.gym_id = ?
+     ORDER BY mp.name ASC`,
+    [req.params.id, gymId],
+  );
+  res.json(rows);
+});
+
+activityTypesRouter.put('/:id/eligible-plans', requireRole('admin'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const activityTypeId = String(req.params.id);
+  const { rows: existing } = await db.query(
+    'SELECT id FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [activityTypeId, gymId],
+  );
+  if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
+
+  const ids: number[] = Array.isArray(req.body.membership_plan_ids) ? req.body.membership_plan_ids : [];
+
+  if (ids.length > 0) {
+    const marks = ids.map(() => '?').join(',');
+    const { rows: validPlans } = await db.query(
+      `SELECT id FROM membership_plans WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${marks})`,
+      [gymId, ...ids],
+    );
+    if (validPlans.length !== new Set(ids).size) {
+      return res.status(400).json({ error: 'One or more membership_plan_ids are invalid for this gym' });
+    }
+  }
+
+  await db.query('DELETE FROM activity_type_eligible_plans WHERE activity_type_id = ? AND gym_id = ?', [activityTypeId, gymId]);
+  if (ids.length > 0) {
+    const values = ids.map(() => '(?, ?, ?)').join(', ');
+    const params = ids.flatMap((id) => [activityTypeId, id, gymId]);
+    await db.query(`INSERT INTO activity_type_eligible_plans (activity_type_id, membership_plan_id, gym_id) VALUES ${values}`, params);
+  }
+  res.status(204).send();
+});
+
 function validate(body: any) {
   const duration = body.duration_minutes != null ? parseInt(body.duration_minutes, 10) : null;
   const capacity = body.max_capacity != null ? parseInt(body.max_capacity, 10) : null;
@@ -84,6 +136,7 @@ function validate(body: any) {
   if (intensity !== null && (isNaN(intensity) || intensity < 1 || intensity > 5)) return 'intensity_level must be between 1 and 5';
   if (body.status && !STATUSES.includes(body.status)) return `status must be one of: ${STATUSES.join(', ')}`;
   if ('is_shareable' in body && body.is_shareable !== undefined && typeof body.is_shareable !== 'boolean' && body.is_shareable !== 0 && body.is_shareable !== 1) return 'is_shareable must be a boolean';
+  if ('public_event' in body && body.public_event !== undefined && typeof body.public_event !== 'boolean' && body.public_event !== 0 && body.public_event !== 1) return 'public_event must be a boolean';
   return null;
 }
 
@@ -110,7 +163,7 @@ async function validateSpace(gymId: string, spaceId: number | null, centerId: nu
 activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
-          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable } = req.body;
+          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event } = req.body;
   if (!name?.trim() || duration_minutes == null || max_capacity == null) {
     return res.status(400).json({ error: 'name, duration_minutes and max_capacity are required' });
   }
@@ -122,13 +175,18 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const spaceErr = await validateSpace(gymId, spaceId, centerId);
   if (spaceErr) return res.status(400).json({ error: spaceErr });
 
+  // #481: public_event defaults to true when omitted — see migration 139 for
+  // the backward-compatibility rationale (existing activity types must stay
+  // bookable by anyone unless staff explicitly opts into the restriction).
+  const publicEvent = public_event !== undefined ? (public_event ? 1 : 0) : 1;
+
   try {
     const { insertId } = await db.query(
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
-        default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable,
+        default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
         created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
       [gymId, name.trim(), description ?? null,
        parseInt(duration_minutes, 10),
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
@@ -136,6 +194,7 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
        status ?? 'active',
        spaceId, default_trainer_membership_id ?? null, centerId, color ?? null,
        is_shareable ? 1 : 0,
+       publicEvent,
        gymMembershipId ?? null, gymMembershipId ?? null],
     );
     const { rows } = await db.query(`${SELECT} WHERE at.id = ?`, [insertId]);
@@ -151,7 +210,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   const { gymId, gymMembershipId } = getTenantContext(req);
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
-          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable } = req.body;
+          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event } = req.body;
 
   const centerId = 'default_center_id' in req.body
     ? (default_center_id ? parseInt(default_center_id, 10) : null)
@@ -189,6 +248,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         default_center_id              = IF(?, ?, default_center_id),
         color                          = IF(?, ?, color),
         is_shareable                   = IF(?, ?, is_shareable),
+        public_event                   = IF(?, ?, public_event),
         modified_at                    = UTC_TIMESTAMP(),
         modified_by_membership_id      = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -204,6 +264,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         'default_center_id' in req.body ? 1 : 0, centerId ?? null,
         'color' in req.body ? 1 : 0, color ?? null,
         'is_shareable' in req.body ? 1 : 0, is_shareable ? 1 : 0,
+        'public_event' in req.body ? 1 : 0, public_event ? 1 : 0,
         gymMembershipId ?? null,
         req.params.id, gymId,
       ],

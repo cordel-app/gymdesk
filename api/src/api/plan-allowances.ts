@@ -14,7 +14,11 @@ import { getPackageIntent } from './package-credits';
  * Center validation is also applied here: if membership_plan_centers rows exist
  * for the plan, the booking's center must be in that set.
  */
-registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, centerId) => {
+registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, centerId, opts) => {
+  // #481: staff override bypasses center-coverage/allowance checks the same
+  // way `force` already bypasses the capacity check.
+  if (opts?.overrideAccess) return;
+
   // Resolve the member's active membership plan — either as the Membership's
   // owner or as a Member covered by a multi-member Membership (#374).
   const { rows: memberships } = await tx.query(
