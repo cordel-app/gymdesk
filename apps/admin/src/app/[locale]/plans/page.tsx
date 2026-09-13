@@ -41,7 +41,7 @@ interface Allowance {
 interface Center { id: number; name: string; }
 interface PriceRow { id: number; price: string; valid_from: string; valid_to: string | null; }
 interface ActivityType { id: number; name: string; }
-interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; availability: string; }
+interface GymCharge { id: number; name: string; charge_type_name: string | null; charge_type_code: string | null; amount: string | null; availability: string; }
 interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
 interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; }
 
@@ -1034,7 +1034,7 @@ export default function PlansPage() {
                             </div>
                             {gymCharges.map((gc) => (
                               <div key={gc.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '3px 12px', alignItems: 'center', padding: '2px 0' }}>
-                                <span style={{ fontSize: 13 }}>{gc.charge_type_name}</span>
+                                <span style={{ fontSize: 13 }}>{gc.name}</span>
                                 <select
                                   value={cbDraft[gc.id]?.action ?? 'no_benefit'}
                                   onChange={(e) => setCbDraft((prev) => ({ ...prev, [gc.id]: { ...prev[gc.id], action: e.target.value, value: '' } }))}
