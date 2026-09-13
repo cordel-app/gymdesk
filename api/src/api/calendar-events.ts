@@ -689,6 +689,7 @@ const EVENT_SELECT = `
     at.name   AS activity_type_name,
     at.color  AS activity_type_color,
     sp.name   AS space_name,
+    c.name    AS center_name,
     gm.name   AS trainer_name,
     gm2.name  AS created_by_name,
     gm3.name  AS modified_by_name,
@@ -696,11 +697,21 @@ const EVENT_SELECT = `
   FROM calendar_events ce
   LEFT JOIN activity_types  at   ON at.id   = ce.activity_type_id
   LEFT JOIN spaces           sp  ON sp.id   = ce.space_id
+  LEFT JOIN centers          c   ON c.id    = ce.center_id
   LEFT JOIN gym_memberships gm   ON gm.id   = ce.trainer_membership_id
   LEFT JOIN gym_memberships gm2  ON gm2.id  = ce.created_by_membership_id
   LEFT JOIN gym_memberships gm3  ON gm3.id  = ce.modified_by_membership_id
   LEFT JOIN gym_memberships gm4  ON gm4.id  = ce.deleted_by_membership_id
 `;
+
+/** Validates that a center_id (when provided) belongs to the current gym and isn't soft-deleted. */
+async function isValidCenterId(gymId: string, centerId: number): Promise<boolean> {
+  const { rows } = await db.query(
+    'SELECT 1 FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [centerId, gymId],
+  );
+  return rows.length > 0;
+}
 
 export const calendarEventsRouter = Router();
 
@@ -735,7 +746,7 @@ calendarEventsRouter.get('/:id', async (req, res) => {
 calendarEventsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
-    title, activity_type_id, space_id, trainer_membership_id, color,
+    title, activity_type_id, space_id, center_id, trainer_membership_id, color,
     starts_at, ends_at, all_day, description, status,
   } = req.body;
 
@@ -747,6 +758,9 @@ calendarEventsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, 
   }
   if (status && !EVENT_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${EVENT_STATUSES.join(', ')}` });
+  }
+  if (center_id && !(await isValidCenterId(gymId, center_id))) {
+    return res.status(400).json({ error: 'center_id not found for this gym' });
   }
 
   if (space_id) {
@@ -761,10 +775,10 @@ calendarEventsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, 
   try {
     const { insertId } = await db.query(
       `INSERT INTO calendar_events
-       (gym_id, kind, title, activity_type_id, space_id, trainer_membership_id, color,
+       (gym_id, kind, title, activity_type_id, space_id, center_id, trainer_membership_id, color,
         starts_at, ends_at, all_day, description, status, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, 'event', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, title.trim(), activity_type_id ?? null, space_id ?? null,
+       VALUES (?, 'event', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, title.trim(), activity_type_id ?? null, space_id ?? null, center_id ?? null,
        trainer_membership_id ?? null, color ?? null,
        starts_at, ends_at, all_day ? 1 : 0,
        description ?? null, status ?? 'scheduled',
@@ -787,7 +801,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
   if (existing.length === 0) return res.status(404).json({ error: 'Calendar event not found' });
 
   const {
-    title, activity_type_id, space_id, trainer_membership_id, color,
+    title, activity_type_id, space_id, center_id, trainer_membership_id, color,
     starts_at, ends_at, all_day, description, status,
   } = req.body;
 
@@ -799,6 +813,9 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
   }
   if (status && !EVENT_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${EVENT_STATUSES.join(', ')}` });
+  }
+  if ('center_id' in req.body && center_id && !(await isValidCenterId(gymId, center_id))) {
+    return res.status(400).json({ error: 'center_id not found for this gym' });
   }
 
   const resolvedSpaceId   = 'space_id'              in req.body ? (space_id ?? null)              : existing[0].space_id;
@@ -820,6 +837,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
         title                  = COALESCE(?, title),
         activity_type_id       = IF(?, ?, activity_type_id),
         space_id               = IF(?, ?, space_id),
+        center_id              = IF(?, ?, center_id),
         trainer_membership_id  = IF(?, ?, trainer_membership_id),
         color                  = IF(?, ?, color),
         starts_at              = COALESCE(?, starts_at),
@@ -833,6 +851,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
         title?.trim() ?? null,
         'activity_type_id'      in req.body ? 1 : 0, activity_type_id ?? null,
         'space_id'              in req.body ? 1 : 0, space_id ?? null,
+        'center_id'             in req.body ? 1 : 0, center_id ?? null,
         'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
         'color'                 in req.body ? 1 : 0, color ?? null,
         starts_at ?? null,

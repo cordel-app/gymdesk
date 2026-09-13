@@ -13,6 +13,7 @@ interface ActivityType {
   default_trainer_membership_id: number | null;
 }
 interface Space { id: number; name: string }
+interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
 
 export interface EventMeta {
@@ -30,6 +31,7 @@ interface Props {
   initialForm: CalendarEventForm;
   activityTypes: ActivityType[];
   spaces: Space[];
+  centers: Center[];
   trainers: Trainer[];
   onSave: (form: CalendarEventForm) => Promise<void>;
   onDelete: () => Promise<void>;
@@ -64,7 +66,7 @@ function formatDateTime(iso: string | null): string | null {
 }
 
 export function EventDetailsPanel({
-  open, editing, initialForm, activityTypes, spaces, trainers,
+  open, editing, initialForm, activityTypes, spaces, centers, trainers,
   onSave, onDelete, onClose, canWrite,
 }: Props) {
   const t = useTranslations('calendar');
@@ -224,6 +226,12 @@ export function EventDetailsPanel({
         <select value={form.space_id} onChange={(e) => field('space_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
           <option value="">—</option>
           {spaces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+
+        <div style={{ marginTop: 12 }}><FormLabel>{t('event_center')}</FormLabel></div>
+        <select value={form.center_id} onChange={(e) => field('center_id', e.target.value)} style={selectStyle} disabled={!canWrite || busy}>
+          <option value="">—</option>
+          {centers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
 
         <div style={{ marginTop: 12 }}><FormLabel>{t('event_trainer')}</FormLabel></div>

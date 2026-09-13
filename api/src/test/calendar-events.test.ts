@@ -14,6 +14,8 @@ let otherGymId: string;
 let fdGymId: string;  // gym where TEST_USER_ID is front_desk
 let spaceId: number;
 let trainerMembershipId: number;
+let centerId: number;
+let otherGymCenterId: number;
 
 const BASE = '/calendar-events';
 const FROM = '2025-01-01T00:00:00';
@@ -48,6 +50,17 @@ beforeAll(async () => {
   );
   trainerMembershipId = tm[0].id;
 
+  // Centers for center_id tests
+  const { insertId: cid } = await db.query(
+    `INSERT INTO centers (gym_id, name, status) VALUES (?, 'Q Sport Centro', 'active')`,
+    [gymId],
+  );
+  centerId = cid;
+  const { insertId: ocid } = await db.query(
+    `INSERT INTO centers (gym_id, name, status) VALUES (?, 'Other Gym Center', 'active')`,
+    [otherGymId],
+  );
+  otherGymCenterId = ocid;
 });
 
 afterAll(async () => {
@@ -126,6 +139,28 @@ describe('POST /calendar-events', () => {
     expect(res.status).toBe(201);
     expect(res.body.space_id).toBe(spaceId);
     expect(res.body.space_name).toBe('Studio A');
+  });
+
+  it('creates an event with a center', async () => {
+    const res = await request.post(BASE).set(headers()).send({
+      title: 'Hirox Evolution',
+      center_id: centerId,
+      starts_at: '2025-07-02T08:00:00',
+      ends_at:   '2025-07-02T09:00:00',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.center_id).toBe(centerId);
+    expect(res.body.center_name).toBe('Q Sport Centro');
+  });
+
+  it('returns 400 when center_id belongs to another gym', async () => {
+    const res = await request.post(BASE).set(headers()).send({
+      title: 'Cross-gym center',
+      center_id: otherGymCenterId,
+      starts_at: '2025-07-03T08:00:00',
+      ends_at:   '2025-07-03T09:00:00',
+    });
+    expect(res.status).toBe(400);
   });
 });
 
@@ -209,6 +244,52 @@ describe('PUT /calendar-events/:id', () => {
 
     const res = await request.put(`${BASE}/${other.body.id}`).set(headers(gymId)).send({ title: 'Try' });
     expect(res.status).toBe(404);
+  });
+
+  it('sets and clears center_id independently of other fields', async () => {
+    const created = await request.post(BASE).set(headers()).send({
+      title: 'Center Edit',
+      starts_at: '2025-04-03T10:00:00',
+      ends_at:   '2025-04-03T11:00:00',
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+
+    const withCenter = await request.put(`${BASE}/${id}`).set(headers()).send({ center_id: centerId });
+    expect(withCenter.status).toBe(200);
+    expect(withCenter.body.center_id).toBe(centerId);
+    expect(withCenter.body.center_name).toBe('Q Sport Centro');
+    // Title from creation must be untouched by a center-only update.
+    expect(withCenter.body.title).toBe('Center Edit');
+
+    const cleared = await request.put(`${BASE}/${id}`).set(headers()).send({ center_id: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.center_id).toBeNull();
+  });
+
+  it('returns 400 when updating to a center_id from another gym', async () => {
+    const created = await request.post(BASE).set(headers()).send({
+      title: 'Center Cross-gym Edit',
+      starts_at: '2025-04-04T10:00:00',
+      ends_at:   '2025-04-04T11:00:00',
+    });
+    const res = await request.put(`${BASE}/${created.body.id}`).set(headers()).send({ center_id: otherGymCenterId });
+    expect(res.status).toBe(400);
+  });
+
+  it('updates trainer and center together without tripping the trainer conflict check incorrectly', async () => {
+    const created = await request.post(BASE).set(headers()).send({
+      title: 'Trainer + Center',
+      starts_at: '2025-04-05T10:00:00',
+      ends_at:   '2025-04-05T11:00:00',
+    });
+    const res = await request.put(`${BASE}/${created.body.id}`).set(headers()).send({
+      trainer_membership_id: trainerMembershipId,
+      center_id: centerId,
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.trainer_membership_id).toBe(trainerMembershipId);
+    expect(res.body.center_id).toBe(centerId);
   });
 
   it('returns 409 on drag/drop when the target slot conflicts', async () => {
