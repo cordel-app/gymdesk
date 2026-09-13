@@ -17,7 +17,8 @@ type EntityType =
   | 'training_plan_template'
   | 'nutrition_plan_template'
   | 'theme'
-  | 'activity_type';
+  | 'activity_type'
+  | 'professional_service';
 
 const VALID_ENTITY_TYPES: EntityType[] = [
   'member',
@@ -32,6 +33,7 @@ const VALID_ENTITY_TYPES: EntityType[] = [
   'nutrition_plan_template',
   'theme',
   'activity_type',
+  'professional_service',
 ];
 
 const SORT_COLUMNS: Record<string, string> = {
@@ -175,6 +177,17 @@ function branchFor(type: EntityType, gymId: string): UnionBranch {
              LEFT JOIN gym_memberships gm_d ON gm_d.id = at.deleted_by_membership_id
              LEFT JOIN gym_memberships gm_c ON gm_c.id = at.created_by_membership_id
              WHERE at.gym_id = ? AND at.deleted_at IS NOT NULL`,
+        params: [gymId],
+      };
+    case 'professional_service':
+      return {
+        sql: `SELECT 'professional_service' AS entity_type, ps.id, ps.name, ps.description,
+               gm_d.name AS deleted_by_name, ps.deleted_at,
+               ps.created_at, gm_c.name AS created_by_name
+             FROM professional_services ps
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = ps.deleted_by_membership_id
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = ps.created_by_membership_id
+             WHERE ps.gym_id = ? AND ps.is_system = 0 AND ps.deleted_at IS NOT NULL`,
         params: [gymId],
       };
   }
@@ -382,6 +395,16 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
              LEFT JOIN gym_memberships db2 ON db2.id = at.deleted_by_membership_id
              WHERE at.id = ? AND at.gym_id = ? AND at.deleted_at IS NOT NULL`;
       break;
+    case 'professional_service':
+      sql = `SELECT ps.id, ps.name, ps.description, ps.is_system, ps.system_key,
+                    ps.created_at, ps.updated_at, ps.deleted_at,
+                    gm_c.name AS created_by_name, gm_u.name AS updated_by_name, gm_d.name AS deleted_by_name
+             FROM professional_services ps
+             LEFT JOIN gym_memberships gm_c ON gm_c.id = ps.created_by_membership_id
+             LEFT JOIN gym_memberships gm_u ON gm_u.id = ps.updated_by_membership_id
+             LEFT JOIN gym_memberships gm_d ON gm_d.id = ps.deleted_by_membership_id
+             WHERE ps.id = ? AND ps.gym_id = ? AND ps.is_system = 0 AND ps.deleted_at IS NOT NULL`;
+      break;
   }
 
   const { rows } = await db.query(sql, [id, gymId]);
@@ -449,6 +472,9 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
     case 'activity_type':
       sql = `UPDATE activity_types SET deleted_at = NULL, deleted_by_membership_id = NULL, status = 'active' WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
       checkDeletedCondition = 'deleted_at IS NOT NULL';
+      break;
+    case 'professional_service':
+      sql = `UPDATE professional_services SET deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NOT NULL`;
       break;
   }
 

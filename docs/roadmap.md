@@ -252,6 +252,29 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   name resolving through `GET/PUT /charge-benefits`, the enriched
   `GET /membership-plans/:id` and `GET /membership-plans` responses, and the
   `sellable_items` catalog on the enriched plan.
+- **#484 (done)**: Professional Services — new `professional_services` table
+  (migration 140; global system rows with `gym_id = NULL`, or gym-owned custom
+  rows) representing a stable catalog of services a gym offers (Personal
+  Training Individual, Personal Training Duo, Group Class, Nutrition
+  Coaching, Physiotherapy seeded as system rows), deliberately independent
+  from Activities/Sellable Items/Plans/Staff Roles (all out of scope for this
+  ticket); new `gym_professional_services` join table holds the per-gym
+  active/inactive state so the same system service can be enabled in one gym
+  and disabled in another without touching the global row, seeded for every
+  existing gym by the migration and for new/duplicated gyms in `gyms.ts`; new
+  `/professional-services` router under the ORGANIZATION module gate
+  (GET/GET:id open to any ORGANIZATION read role, POST/PUT/activate/
+  deactivate/duplicate/DELETE `requireRole('admin')`) — system records can be
+  activated/deactivated/duplicated but never edited or deleted (403), custom
+  records support full CRUD with soft-delete; `recycle-bin.ts` extended with
+  the `professional_service` entity type (custom records only); new admin
+  page at `/professional-services` (Organization nav group) using the
+  expandable-row/inline-CRUD pattern (no `CrudModal`), with a System badge,
+  Activate/Deactivate/Duplicate/Delete context-menu actions, and Delete
+  hidden for system rows; i18n `professional_services` namespace + `nav.
+  professional_services` key added in en/es/ca; `professional-services.test.ts`
+  covering tenant isolation, auth/role gating, happy path, system-record
+  protection, and per-gym-independent activation state.
 
 ## Decisions
 

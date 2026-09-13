@@ -199,6 +199,11 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
        VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
       [id],
     );
+    await db.query(
+      `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at)
+       SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
+      [id],
+    );
     await seedSystemPtPackage(id);
     const { rows } = await db.query(
       `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
@@ -343,6 +348,11 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   await db.query(
     `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
      VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
+    [newId],
+  );
+  await db.query(
+    `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at)
+     SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
     [newId],
   );
   await seedSystemPtPackage(newId);
