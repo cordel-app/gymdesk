@@ -2421,6 +2421,7 @@
     "event_ends": "Ends",
     "event_all_day": "All Day",
     "event_space": "Space",
+    "event_center": "Center",
     "event_trainer": "Trainer",
     "event_status": "Status",
     "event_capacity": "Capacity",

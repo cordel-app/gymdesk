@@ -19,6 +19,7 @@ export interface CalendarEventForm {
   title: string;
   activity_type_id: string;
   space_id: string;
+  center_id: string;
   trainer_membership_id: string;
   color: string;
   starts_at: string;
@@ -202,6 +203,6 @@ export function toDateLocal(d: Date): string {
 }
 
 export const EMPTY_FORM: CalendarEventForm = {
-  title: '', activity_type_id: '', space_id: '', trainer_membership_id: '',
+  title: '', activity_type_id: '', space_id: '', center_id: '', trainer_membership_id: '',
   color: '', starts_at: '', ends_at: '', all_day: false, description: '', status: 'scheduled',
 };

@@ -25,6 +25,7 @@ interface ActivityType {
   default_trainer_membership_id: number | null;
 }
 interface Space { id: number; name: string }
+interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
 
 type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
@@ -72,6 +73,7 @@ export default function CalendarPage() {
 
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
+  const [centers, setCenters] = useState<Center[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
@@ -105,6 +107,10 @@ export default function CalendarPage() {
       setSpaces(sp);
       setTrainers(tr);
     }).catch((err: any) => toast(err.message));
+
+    // Centers is a feature-gated module (organization.centers) — some gyms
+    // don't have it enabled, so this fetch is independent and non-fatal.
+    apiFetch<Center[]>('/centers').then(setCenters).catch(() => {});
   }, [activeGymId, gymLoading]);
 
   // #418: Operating Hours & Holidays — fetched once for the grey-out background.
@@ -214,6 +220,7 @@ export default function CalendarPage() {
       title:                 e.title,
       activity_type_id:      e.activity_type_id ? String(e.activity_type_id) : '',
       space_id:              e.space_id ? String(e.space_id) : '',
+      center_id:             e.center_id ? String(e.center_id) : '',
       trainer_membership_id: e.trainer_membership_id ? String(e.trainer_membership_id) : '',
       color:                 e.color ?? '',
       starts_at:             allDay ? toDateLocal(new Date(e.starts_at)) : toDateTimeLocal(new Date(e.starts_at)),
@@ -240,6 +247,7 @@ export default function CalendarPage() {
       title:                 form.title.trim(),
       activity_type_id:      form.activity_type_id ? Number(form.activity_type_id) : null,
       space_id:              form.space_id ? Number(form.space_id) : null,
+      center_id:             form.center_id ? Number(form.center_id) : null,
       trainer_membership_id: form.trainer_membership_id ? Number(form.trainer_membership_id) : null,
       color:                 form.color || null,
       starts_at:             form.all_day ? `${form.starts_at}T00:00:00` : form.starts_at,
@@ -559,6 +567,7 @@ export default function CalendarPage() {
                 initialForm={initialForm}
                 activityTypes={activityTypes}
                 spaces={spaces}
+                centers={centers}
                 trainers={trainers}
                 onSave={handleSave}
                 onDelete={handleDelete}
