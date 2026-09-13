@@ -34,6 +34,7 @@ interface ActivityType {
   default_trainer_name: string | null;
   color: string | null;
   status: 'active' | 'inactive';
+  public_event: boolean;
   created_at: string;
   created_by_membership_id: number | null;
   created_by_name: string | null;
@@ -62,6 +63,7 @@ interface ScheduleRule {
 interface Center { id: number; name: string; }
 interface Space { id: number; name: string; center_id: number; }
 interface Trainer { gym_membership_id: number; name: string; }
+interface MembershipPlan { id: number; name: string; lifecycle_status: string; }
 
 const STATUSES = ['active', 'inactive'] as const;
 const RULE_TYPES = ['one_off', 'weekly', 'monthly'] as const;
@@ -79,6 +81,7 @@ const emptyEditForm = {
   default_space_id: '',
   default_trainer_membership_id: '',
   color: '',
+  public_event: true,
 };
 type EditForm = typeof emptyEditForm;
 
@@ -122,16 +125,19 @@ export default function ActivityTypesPage() {
   const [centers, setCenters] = useState<Center[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
+  const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [rulesMap, setRulesMap] = useState<Map<number, ScheduleRule[]>>(new Map());
   const [loadingRules, setLoadingRules] = useState<Set<number>>(new Set());
+  const [eligiblePlansMap, setEligiblePlansMap] = useState<Map<number, MembershipPlan[]>>(new Map());
 
   // Edit general fields
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm);
+  const [editSelectedPlans, setEditSelectedPlans] = useState<Set<number>>(new Set());
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -166,15 +172,17 @@ export default function ActivityTypesPage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [at, ct, sp, tr] = await Promise.all([
+      const [at, ct, sp, tr, mp] = await Promise.all([
         apiFetch<ActivityType[]>(`/activity-types${statusFilter ? `?status=${statusFilter}` : ''}`),
         apiFetch<Center[]>('/centers'),
         apiFetch<Space[]>('/spaces'),
         apiFetch<Trainer[]>('/trainers'),
+        apiFetch<MembershipPlan[]>('/membership-plans?lifecycle_status=active'),
       ]);
-      setRows(at); setCenters(ct); setSpaces(sp); setTrainers(tr);
-      // Clear rules cache on reload
+      setRows(at); setCenters(ct); setSpaces(sp); setTrainers(tr); setMembershipPlans(mp);
+      // Clear rules/eligible-plans cache on reload
       setRulesMap(new Map());
+      setEligiblePlansMap(new Map());
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -197,6 +205,9 @@ export default function ActivityTypesPage() {
     if (!rulesMap.has(id)) {
       await fetchRules(id);
     }
+    if (!eligiblePlansMap.has(id)) {
+      await fetchEligiblePlans(id);
+    }
   }
 
   async function fetchRules(id: number) {
@@ -208,6 +219,18 @@ export default function ActivityTypesPage() {
       setRulesMap((prev) => new Map([...prev, [id, []]]));
     } finally {
       setLoadingRules((prev) => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  }
+
+  // #481: which Membership Plans may book this activity type when it is not public.
+  async function fetchEligiblePlans(id: number): Promise<MembershipPlan[]> {
+    try {
+      const plans = await apiFetch<MembershipPlan[]>(`/activity-types/${id}/eligible-plans`);
+      setEligiblePlansMap((prev) => new Map([...prev, [id, plans]]));
+      return plans;
+    } catch {
+      setEligiblePlansMap((prev) => new Map([...prev, [id, []]]));
+      return [];
     }
   }
 
@@ -257,10 +280,13 @@ export default function ActivityTypesPage() {
       default_space_id: row.default_space_id ? String(row.default_space_id) : '',
       default_trainer_membership_id: row.default_trainer_membership_id ? String(row.default_trainer_membership_id) : '',
       color: row.color ?? '',
+      public_event: row.public_event,
     });
     setEditError(null);
     setExpanded((prev) => new Set([...prev, row.id]));
     if (!rulesMap.has(row.id)) await fetchRules(row.id);
+    const plans = eligiblePlansMap.get(row.id) ?? (await fetchEligiblePlans(row.id));
+    setEditSelectedPlans(new Set(plans.map((p) => p.id)));
   }
 
   function cancelEdit() {
@@ -288,7 +314,12 @@ export default function ActivityTypesPage() {
           default_trainer_membership_id: editForm.default_trainer_membership_id
             ? parseInt(editForm.default_trainer_membership_id, 10) : null,
           color: editForm.color || null,
+          public_event: editForm.public_event,
         }),
+      });
+      await apiFetch(`/activity-types/${row.id}/eligible-plans`, {
+        method: 'PUT',
+        body: JSON.stringify({ membership_plan_ids: Array.from(editSelectedPlans) }),
       });
       setEditingId(null);
       load();
@@ -671,7 +702,7 @@ export default function ActivityTypesPage() {
     const isEditing = editingId === row.id;
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetails(row) },
+      { label: t('details'), onClick: () => { setDetails(row); if (!eligiblePlansMap.has(row.id)) fetchEligiblePlans(row.id); } },
       { label: t('edit'), onClick: () => openEdit(row) },
       { label: t('duplicate'), onClick: () => handleDuplicate(row) },
       { label: t('delete'), onClick: () => setDeleting(row), danger: true },
@@ -777,6 +808,48 @@ export default function ActivityTypesPage() {
               </div>
             </div>
 
+            <SectionHeader title={t('section_booking_access')} />
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={editForm.public_event}
+                  onChange={(e) => setEditForm({ ...editForm, public_event: e.target.checked })}
+                  style={{ width: 15, height: 15 }}
+                />
+                {t('label_public_event')}
+              </label>
+              <p style={{ fontSize: 12.5, color: '#888', margin: '4px 0 0' }}>
+                {editForm.public_event ? t('public_event_hint_public') : t('public_event_hint_restricted')}
+              </p>
+            </div>
+            {!editForm.public_event && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={inlineLabelStyle}>{t('label_eligible_plans')}</label>
+                {membershipPlans.length === 0 ? (
+                  <p style={{ fontSize: 13, color: '#888', margin: '4px 0' }}>{t('no_membership_plans')}</p>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                    {membershipPlans.map((p) => (
+                      <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+                        <input
+                          type="checkbox"
+                          checked={editSelectedPlans.has(p.id)}
+                          onChange={(e) => {
+                            const next = new Set(editSelectedPlans);
+                            if (e.target.checked) next.add(p.id); else next.delete(p.id);
+                            setEditSelectedPlans(next);
+                          }}
+                          style={{ width: 15, height: 15 }}
+                        />
+                        {p.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {editError && <p style={errorStyle}>{editError}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 16 }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
@@ -803,6 +876,23 @@ export default function ActivityTypesPage() {
               <DetailRow label={t('label_default_space')} value={row.default_space_name ?? '—'} />
               <DetailRow label={t('label_default_trainer')} value={row.default_trainer_name ?? '—'} />
             </div>
+
+            <SectionHeader title={t('section_booking_access')} />
+            <DetailRow label={t('label_public_event')} value={row.public_event ? t('public_event_yes') : t('public_event_no')} />
+            {!row.public_event && (
+              <div style={{ margin: '4px 0 10px' }}>
+                <span style={{ ...inlineLabelStyle, marginBottom: 6, display: 'block' }}>{t('label_eligible_plans')}</span>
+                {(eligiblePlansMap.get(row.id) ?? []).length === 0 ? (
+                  <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic', margin: 0 }}>{t('no_eligible_plans')}</p>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {(eligiblePlansMap.get(row.id) ?? []).map((p) => (
+                      <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {renderScheduleSection(row)}
           </div>
@@ -949,6 +1039,25 @@ export default function ActivityTypesPage() {
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#333' }}>
                 {(rulesMap.get(details.id) ?? []).map((r) => <li key={r.id}>{ruleLabel(r)}</li>)}
               </ul>
+            )}
+            <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+            <div style={detailSectionLabelStyle}>{t('section_booking_access')}</div>
+            <ModalDetail label={t('label_public_event')} value={details.public_event ? t('public_event_yes') : t('public_event_no')} />
+            {!details.public_event && (
+              <div>
+                <span style={detailLabelStyle}>{t('label_eligible_plans')}</span>
+                <div style={{ marginTop: 4 }}>
+                  {(eligiblePlansMap.get(details.id) ?? []).length === 0 ? (
+                    <p style={{ margin: 0, fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('no_eligible_plans')}</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {(eligiblePlansMap.get(details.id) ?? []).map((p) => (
+                        <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={detailSectionLabelStyle}>{t('section_metadata')}</div>

@@ -55,6 +55,12 @@ const btnBase: React.CSSProperties = {
   fontWeight: 600, cursor: 'pointer', border: 'none',
 };
 
+// #481: staff-override-able access-hook rejections (eligibility + entitlement).
+// Mirrors the existing over-capacity "book anyway" pattern below — on one of
+// these, offer a confirm-and-retry with `override_eligibility: true` rather
+// than a hard failure toast.
+const OVERRIDABLE_ACCESS_CODES = ['plan_not_eligible', 'plan_required', 'allowance_exhausted', 'center_not_covered'];
+
 function fmt(iso: string) {
   const d = new Date(iso);
   return d.toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
@@ -83,6 +89,9 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
   const [addConfirmMsg, setAddConfirmMsg] = useState<string | null>(null);
   const [addOverCapacity, setAddOverCapacity] = useState(false);
   const [adding, setAdding] = useState(false);
+  // #481: staff-override confirm for an access-hook rejection (eligibility/entitlement).
+  const [accessOverrideError, setAccessOverrideError] = useState<{ code: string; message: string } | null>(null);
+  const [overriding, setOverriding] = useState(false);
 
   // Cancel flow
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -164,9 +173,41 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
       setAddMode('none');
       await load();
     } catch (err: any) {
-      toast(err.message ?? 'Failed to add member');
+      // #481: eligibility/entitlement rejections offer a staff override instead
+      // of a hard failure, mirroring the existing over-capacity confirm above.
+      const code = err.body?.code;
+      if (code && OVERRIDABLE_ACCESS_CODES.includes(code)) {
+        setAccessOverrideError({ code, message: err.message ?? 'This member cannot be added to this event.' });
+      } else {
+        toast(err.message ?? 'Failed to add member');
+      }
     } finally {
       setAdding(false);
+    }
+  }
+
+  // #481: retry the same add request with override_eligibility, after staff
+  // confirms past the eligibility/entitlement warning.
+  async function confirmOverrideAdd() {
+    if (!selectedMember || !session) return;
+    setOverriding(true);
+    try {
+      const body: Record<string, any> = {
+        member_id: selectedMember.id, class_session_id: session.id, override_eligibility: true,
+      };
+      if (addMode === 'enroll' && addOverCapacity) body.force = true;
+      if (addMode === 'waitlist') body.waitlist = true;
+      await apiFetch('/bookings', { method: 'POST', body: JSON.stringify(body) });
+      setAccessOverrideError(null);
+      setSelectedMember(null);
+      setAddConfirmMsg(null);
+      setAddOverCapacity(false);
+      setAddMode('none');
+      await load();
+    } catch (err: any) {
+      toast(err.message ?? 'Failed to add member');
+    } finally {
+      setOverriding(false);
     }
   }
 
@@ -568,6 +609,44 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
                 style={{ ...btnBase, background: '#f3f4f6', color: '#374151', flex: 1 }}
               >
                 Keep member
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* #481: eligibility/entitlement override confirmation overlay */}
+      {accessOverrideError && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9998,
+          background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'var(--gd-card-bg, #fff)', borderRadius: 10, padding: 24,
+            width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8, color: '#b45309' }}>⚠ Booking restriction</div>
+            <div style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>
+              {accessOverrideError.message}
+            </div>
+            <div style={{ fontSize: 13, color: '#374151', marginBottom: 16 }}>
+              Do you want to add them anyway?
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={confirmOverrideAdd}
+                disabled={overriding}
+                style={{ ...btnBase, background: '#b45309', color: '#fff', flex: 1, opacity: overriding ? 0.6 : 1 }}
+              >
+                {overriding ? 'Adding…' : 'Add anyway'}
+              </button>
+              <button
+                onClick={() => setAccessOverrideError(null)}
+                disabled={overriding}
+                style={{ ...btnBase, background: '#f3f4f6', color: '#374151', flex: 1 }}
+              >
+                Cancel
               </button>
             </div>
           </div>

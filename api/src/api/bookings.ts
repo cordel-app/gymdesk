@@ -35,7 +35,7 @@ const SELECT = `
 // booking transaction with the tx handle; must throw an Error with a message
 // the router can surface as a translated string.
 export interface AccessHook {
-  (tx: Tx, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null): Promise<void>;
+  (tx: Tx, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null, opts?: { overrideAccess?: boolean }): Promise<void>;
 }
 const accessHooks: AccessHook[] = [];
 export function registerBookingAccessHook(fn: AccessHook) { accessHooks.push(fn); }
@@ -79,6 +79,7 @@ export async function bookMemberOnSession(
   force = false,
   forceWaitlist = false,
   existingTx?: Tx,
+  overrideAccess = false,
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
@@ -93,7 +94,7 @@ export async function bookMemberOnSession(
     if (session[0].status !== 'scheduled') throw Object.assign(new Error('Session is not open for bookings'), { status: 400 });
 
     for (const hook of accessHooks) {
-      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id);
+      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id, { overrideAccess });
     }
 
     const { rows: nextRows } = await tx.query(
@@ -205,7 +206,7 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
 
 bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { member_id, class_session_id, force, waitlist } = req.body;
+  const { member_id, class_session_id, force, waitlist, override_eligibility } = req.body;
   if (!member_id || !class_session_id) {
     return res.status(400).json({ error: 'member_id and class_session_id are required' });
   }
@@ -216,11 +217,14 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
   try {
-    const result = await bookMemberOnSession(gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist));
+    const result = await bookMemberOnSession(
+      gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist),
+      undefined, Boolean(override_eligibility),
+    );
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     res.status(201).json({ ...rows[0], over_capacity: result.over_capacity });
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
     handleDupEntry(err, res, next, 'This member already has an active booking for this session.');
   }
 });

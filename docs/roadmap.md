@@ -212,6 +212,30 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   Removed the `nav.schedule` key and the entire top-level `schedule.*` i18n block from
   `apps/admin/locales/base/{en,ca,es}.json`. No backend/API changes — `bookings.ts` and
   `shared-training-requests.ts` are untouched.
+- **#481 (done)**: Eligible Membership Plans + Public Event on Activity Types —
+  migration 139 adds `activity_types.public_event TINYINT NOT NULL DEFAULT 1`
+  (defaults true for backward compatibility — every pre-existing/zero-config
+  activity type stays bookable by anyone) and join table
+  `activity_type_eligible_plans` (gym_id/activity_type_id/membership_plan_id,
+  inverse semantics of `membership_plan_centers`: the join table only gates
+  bookings when `public_event=false`). New `GET`/`PUT /activity-types/:id/eligible-plans`
+  (replace-all, mirrors `spaces.ts`'s `/:id/activity-types`). New
+  `api/src/api/activity-eligibility.ts` registers a `registerBookingAccessHook`
+  enforcing this at booking time — independent from `plan-allowances`/
+  `package-credits` entitlement checks — registered before both in `app.ts`.
+  Added a generic staff-override mechanism spanning both hook families:
+  `AccessHook`'s optional `opts?: { overrideAccess }`, `bookMemberOnSession`'s
+  trailing `overrideAccess` param, `POST /bookings`'s `override_eligibility` body
+  field (main booking hook loop only, not waitlist promotion), and matching
+  bypass checks in `plan-allowances.ts` and `activity-eligibility.ts`;
+  `POST /bookings`'s error response now also includes `code`. Admin Activity
+  Type editor gets a "Booking Access" section (Public Event checkbox + Eligible
+  Membership Plans checkbox multi-select, Spaces-style) in the inline edit
+  form, read-only expanded row, and Details modal; `ClassSessionDetailPanel`
+  gets a confirm-and-retry override flow for `plan_not_eligible`/`plan_required`/
+  `allowance_exhausted`/`center_not_covered`, mirroring the existing
+  over-capacity "book anyway" pattern. Tests added to `activity-types.test.ts`
+  and `bookings.test.ts`.
 
 ## Decisions
 

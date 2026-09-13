@@ -20,6 +20,10 @@ import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
 import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-rules';
 import { classSessionsRouter } from './api/calendar-events';
+// Side-effect import: registers the booking access hook for activity-type eligibility
+// (public_event / activity_type_eligible_plans). Must be imported BEFORE plan-allowances
+// so an ineligible member is rejected before entitlement is even evaluated (#481).
+import './api/activity-eligibility';
 // Side-effect import: registers the booking access hook for plan allowances + center validation.
 import './api/plan-allowances';
 import { classPackagesRouter } from './api/class-packages';
