@@ -90,6 +90,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.activity_types',
         featureKey: 'organization.activity_types',
       },
+      {
+        href: '/{{locale}}/professional-services',
+        labelKey: 'nav.professional_services',
+        featureKey: 'organization.professional_services',
+      },
     ],
   },
   {

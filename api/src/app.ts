@@ -19,6 +19,7 @@ import { spacesRouter } from './api/spaces';
 import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
 import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-rules';
+import { professionalServicesRouter } from './api/professional-services';
 import { classSessionsRouter } from './api/calendar-events';
 // Side-effect import: registers the booking access hook for activity-type eligibility
 // (public_event / activity_type_eligible_plans). Must be imported BEFORE plan-allowances
@@ -194,6 +195,7 @@ app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORG
 app.use('/staff/:staffId/centers', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), staffCentersRouter);
 app.use('/activity-types', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypesRouter);
 app.use('/activity-types/:activityTypeId/schedule-rules', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.activity_types'), activityTypeScheduleRulesRouter);
+app.use('/professional-services', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.professional_services'), professionalServicesRouter);
 app.use('/class-packages', requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.class_packages'), classPackagesRouter);
 app.use('/centers',       requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.centers'), centersRouter);
 app.use('/trainer-availability', requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), trainerAvailabilityRouter);
