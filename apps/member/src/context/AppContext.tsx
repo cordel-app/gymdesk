@@ -73,7 +73,7 @@ const AppContext = createContext<AppContextValue>({
 export function AppProvider({ children }: { children: ReactNode; gymId?: string | null }) {
   const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
-  const { session: impersonationSession } = useImpersonation();
+  const { session: impersonationSession, ready: impersonationReady } = useImpersonation();
   const impersonateAs = impersonationSession?.effectiveUserId ?? null;
   const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
 
@@ -108,15 +108,16 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     setActiveCenterIdState(storedId && data.find((c) => c.id === storedId) ? storedId : fallback);
   }, [buildHeaders]);
 
-  const loadMemberData = useCallback(async (token: string, resolvedGymId: string) => {
+  const loadMemberData = useCallback(async (token: string, resolvedGymId: string, isCancelled?: () => boolean) => {
     const res = await fetch('/api/proxy/me/profile', {
       headers: buildHeaders(token, resolvedGymId),
     });
-    if (!res.ok) return false;
+    if (isCancelled?.() || !res.ok) return false;
     setMember(await res.json());
     setIsLinked(true);
 
     await loadCenters(token, resolvedGymId);
+    if (isCancelled?.()) return true;
 
     const notifRes = await fetch('/api/proxy/me/notifications/count', {
       headers: buildHeaders(token, resolvedGymId),
@@ -129,6 +130,11 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }, [loadCenters, buildHeaders]);
 
   useEffect(() => {
+    // Wait until sessionStorage impersonation state is known — otherwise a refresh
+    // while impersonating fires /me/profile as a bare superadmin (role: admin → 403)
+    // and Home's Next Booking / Membership widgets spin forever (#415).
+    if (!impersonationReady) return;
+
     if (!isSignedIn || !user) {
       setLoading(false);
       return;
@@ -139,6 +145,10 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     let cancelled = false;
     setLoading(true);
     setIsLinked(false);
+    setMember(null);
+    setCenters([]);
+    setActiveCenterIdState(null);
+    setUnreadNotifications(0);
 
     async function loadAll() {
       try {
@@ -167,15 +177,20 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
           return;
         }
 
-        // Pick the active gym: last saved choice (if still valid) or alphabetically first
+        // Prefer the impersonated member's gym, then last saved choice, then first.
         const savedId = typeof window !== 'undefined' ? localStorage.getItem(ACTIVE_GYM_KEY) : null;
-        const defaultGym = gymList.find((g) => g.id === savedId) ?? gymList[0];
+        const preferredId = impersonationSession?.gymId ?? savedId;
+        const defaultGym = gymList.find((g) => g.id === preferredId) ?? gymList[0];
 
         setGymId(defaultGym.id);
         setGymName(defaultGym.name);
         setTheme(defaultGym.theme ?? null);
 
-        await loadMemberData(token, defaultGym.id);
+        // Bare superadmins have no member identity — /me/profile is requireRole('member')
+        // and returns 403. Skip it until they impersonate a member.
+        if (impersonateAs || !isSuperadmin) {
+          await loadMemberData(token, defaultGym.id, () => cancelled);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -185,7 +200,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     return () => {
       cancelled = true;
     };
-  }, [isSignedIn, user?.id, impersonateAs]);
+  }, [impersonationReady, isSignedIn, user?.id, impersonateAs, impersonationSession?.gymId, isSuperadmin]);
 
   const switchGym = useCallback(async (id: string) => {
     const gym = gyms.find((g) => g.id === id);
@@ -202,8 +217,8 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     if (typeof window !== 'undefined') localStorage.setItem(ACTIVE_GYM_KEY, id);
 
     const token = await getToken();
-    if (token) await loadMemberData(token, id);
-  }, [gyms, getToken, loadMemberData]);
+    if (token && (impersonateAs || !isSuperadmin)) await loadMemberData(token, id);
+  }, [gyms, getToken, loadMemberData, impersonateAs, isSuperadmin]);
 
   const fetchUnreadCount = useCallback(async () => {
     if (!gymId) return;

@@ -291,14 +291,17 @@
     "stop_button": "Detener suplantación",
     "stopped": "Suplantación finalizada.",
     "button_impersonate": "Suplantar",
-    "dialog_title": "Suplantar un usuario",
+    "dialog_title": "Suplantar un miembro",
     "search_placeholder": "Buscar por nombre…",
     "searching": "Buscando…",
-    "search_empty": "No se encontraron usuarios activos.",
+    "search_empty": "No se encontraron miembros activos.",
     "type_member": "Miembro",
     "type_staff": "Personal",
     "cancel": "Cancelar",
-    "error_start": "No se pudo iniciar la suplantación."
+    "error_start": "No se pudo iniciar la suplantación.",
+    "home_prompt_title": "Modo soporte",
+    "home_prompt": "Usa Suplantar en la barra de arriba para ver la cuenta de un miembro. El calendario, las reservas y el resto de la app de miembros permanecen inactivos hasta entonces.",
+    "error_profile": "No se pudo cargar el perfil de este miembro."
   },
   "nutrition": {
     "title": "Mi Nutrición",

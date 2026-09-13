@@ -53,7 +53,7 @@ function attachTheme(row: any) {
     tokens: typeof theme_tokens === 'string' ? JSON.parse(theme_tokens) : (theme_tokens ?? null),
   } : null;
   // #417: platform-wide flag (same for every gym on this deployment), not a
-  // per-row DB column — lets the admin UI hide/disable the init action.
+  // per-row DB column — lets the admin UI disable the init action.
   return { ...rest, theme, storage_configured: isStorageConfigured() };
 }
 

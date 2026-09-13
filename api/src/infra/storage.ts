@@ -8,11 +8,15 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
  * Every gym gets its own folder prefix inside the single shared bucket.
  */
 
-// The folder structure every gym's prefix gets initialized with (#417).
+// Folder-marker keys under `<gym_id>-<gym_name>/` (#417). Parents are written
+// as well as leaves so the R2 browser shows the exact tree from the ticket.
 const GYM_FOLDERS = [
+  'Nutrition/',
   'Nutrition/Images/',
+  'Exercises/',
   'Exercises/Images/',
   'Exercises/Videos/',
+  'Branding/',
   'Branding/Logo/',
   'Branding/Images/',
   'Members/',
@@ -70,10 +74,11 @@ export function buildGymFolderPrefix(gymId: string, gymName: string): string {
 export async function initializeGymBucket(folderPrefix: string): Promise<void> {
   const { bucket } = getConfig();
   const client = getClient();
-  for (const folder of GYM_FOLDERS) {
+  const keys = [`${folderPrefix}/`, ...GYM_FOLDERS.map((folder) => `${folderPrefix}/${folder}`)];
+  for (const key of keys) {
     await client.send(new PutObjectCommand({
       Bucket: bucket,
-      Key: `${folderPrefix}/${folder}`,
+      Key: key,
       Body: '',
     }));
   }

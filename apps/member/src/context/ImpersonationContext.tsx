@@ -17,6 +17,10 @@ export interface ImpersonationSession {
 interface ImpersonationContextValue {
   session: ImpersonationSession | null;
   isImpersonating: boolean;
+  /** False until sessionStorage has been read. AppContext must wait on this
+   *  so a refresh while impersonating doesn't fire /me/profile as a bare
+   *  superadmin (403) before the session is restored (#415). */
+  ready: boolean;
   startImpersonation: (session: ImpersonationSession) => void;
   stopImpersonation: () => void;
 }
@@ -24,18 +28,21 @@ interface ImpersonationContextValue {
 const ImpersonationContext = createContext<ImpersonationContextValue>({
   session: null,
   isImpersonating: false,
+  ready: false,
   startImpersonation: () => {},
   stopImpersonation: () => {},
 });
 
 export function ImpersonationProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<ImpersonationSession | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem(STORAGE_KEY);
       if (stored) setSession(JSON.parse(stored));
     } catch {}
+    setReady(true);
   }, []);
 
   const startImpersonation = useCallback((s: ImpersonationSession) => {
@@ -52,6 +59,7 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
     <ImpersonationContext.Provider value={{
       session,
       isImpersonating: session !== null,
+      ready,
       startImpersonation,
       stopImpersonation,
     }}>

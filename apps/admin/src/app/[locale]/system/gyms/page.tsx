@@ -381,19 +381,21 @@ export default function SystemGymsPage() {
                 <DetailRow label={t('storage_folder')} value={gym.storage_folder_prefix ?? '—'} />
               </>
             )}
-            {!gym.storage_configured ? (
+            {!gym.storage_configured && (
               <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c0392b' }}>{t('storage_not_configured')}</p>
-            ) : (
-              <div style={{ marginTop: 8 }}>
-                <button
-                  onClick={() => handleInitializeStorage(gym)}
-                  disabled={initializingStorageId === gym.id}
-                  style={btnSmall('#444')}
-                >
-                  {initializingStorageId === gym.id ? t('initializing_storage') : t('btn_initialize_storage')}
-                </button>
-              </div>
             )}
+            <div style={{ marginTop: 8 }}>
+              <button
+                onClick={() => handleInitializeStorage(gym)}
+                disabled={!gym.storage_configured || initializingStorageId === gym.id}
+                style={{
+                  ...btnSmall('#444'),
+                  ...(!gym.storage_configured ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
+                }}
+              >
+                {initializingStorageId === gym.id ? t('initializing_storage') : t('btn_initialize_storage')}
+              </button>
+            </div>
 
             <SectionHeader title={t('section_notes')} />
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('notes_placeholder')}</p>
