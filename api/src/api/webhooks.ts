@@ -152,13 +152,17 @@ paymentWebhookRouter.post(
             [payload.providerRef, pr.id],
           );
 
-          const { rows: beRows } = await tx.query<{ id: number }>(
+          // db.query()'s wrapper puts insertId at the top level for an
+          // INSERT (rows is [] — there's nothing to select), not nested
+          // under rows — reading it off rows here always came back
+          // undefined, which crashed the next UPDATE's bind params and
+          // rolled back this whole transaction on every real completion.
+          const { insertId: billingEventId } = await tx.query(
             `INSERT INTO billing_events
                (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
              VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
             [pr.gym_id, pr.user_membership_id, pr.member_id, pr.amount, pr.charge_type_id],
           );
-          const billingEventId = (beRows as any).insertId as number;
 
           await tx.query(
             `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
@@ -197,12 +201,20 @@ paymentWebhookRouter.post(
         });
 
         req.log.info({ orderId: payload.orderId, paymentRequestId: pr.id }, 'Payment webhook: completed');
-      } else {
+      } else if (payload.status === 'failed' || payload.status === 'expired') {
         await db.query(
           `UPDATE payment_requests SET status = ?, provider_ref = ? WHERE id = ?`,
-          [payload.status === 'failed' ? 'failed' : 'expired', payload.providerRef, pr.id],
+          [payload.status, payload.providerRef, pr.id],
         );
-        req.log.info({ orderId: payload.orderId, status: payload.status }, 'Payment webhook: non-success status');
+        req.log.info({ orderId: payload.orderId, status: payload.status }, 'Payment webhook: terminal non-success status');
+      } else {
+        // 'pending' is an intermediate status (Monei's AUTHORIZED/PENDING/
+        // PROCESSING all map here) — not terminal. Leaving payment_requests
+        // untouched keeps it eligible for the eventual completed/failed/
+        // expired webhook: the guard above skips any row whose status isn't
+        // 'pending', so flipping it here on an intermediate event would
+        // permanently strand the row before the real outcome arrives.
+        req.log.info({ orderId: payload.orderId, status: payload.status }, 'Payment webhook: intermediate status, no update');
       }
 
       return res.status(200).json({ received: true });
