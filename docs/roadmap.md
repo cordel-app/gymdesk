@@ -198,6 +198,18 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `resolveStaffCenters()` (members' `resolveMemberCenters()` equivalent). Frontend adds a
   Centers subsection (checkboxes + default `<select>`, hidden for single-center gyms,
   matching the Members page's `showCenters` pattern) to the consolidated view.
+- **#437 (done)**: UI cleanup — removed the admin `[locale]/schedule/` page (and its
+  `SessionRosterPanel`/`SharedTrainingPanel` sub-components) plus its nav entry
+  (`navigationGroups.ts`'s Calendar group `nav.schedule`/`calendar.schedule` item),
+  per the issue's answered clarification that scheduling is now managed from the
+  Calendar page rather than a separate section. Session create/edit/cancel/roster
+  is already fully covered by the Calendar page's `ClassSessionDetailPanel`
+  (unaffected by this change); shared-training request approval
+  (`SharedTrainingPanel`'s Approve/Reject UI) has no replacement admin UI yet — see
+  `docs/architecture.md`'s "Planned: CalendarEvent Unification" (#360 stage 4) note.
+  Removed the `nav.schedule` key and the entire top-level `schedule.*` i18n block from
+  `apps/admin/locales/base/{en,ca,es}.json`. No backend/API changes — `bookings.ts` and
+  `shared-training-requests.ts` are untouched.
 
 ## Decisions
 
