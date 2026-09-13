@@ -475,7 +475,6 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
       break;
     case 'professional_service':
       sql = `UPDATE professional_services SET deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NOT NULL`;
-      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
   }
 
