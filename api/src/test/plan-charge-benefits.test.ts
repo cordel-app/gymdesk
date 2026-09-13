@@ -27,6 +27,17 @@ async function createGymCharge(gymId: string, chargeTypeId: number): Promise<num
   return insertId;
 }
 
+// #483: custom Sellable Items have no charge_type_id — they carry their own
+// gym_charges.name directly, unlike the legacy charge-type-backed rows above.
+async function createCustomSellableItem(gymId: string, name: string): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO gym_charges (gym_id, name, type, status, is_system, currency, tax_behavior)
+     VALUES (?, ?, 'service', 'active', 0, 'EUR', 'inclusive')`,
+    [gymId, name],
+  );
+  return insertId;
+}
+
 async function createPlan(gymId: string, createdBy: number): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, created_by)
@@ -161,6 +172,9 @@ describe('Plan Charge Benefits', () => {
       expect(waive).toBeDefined();
       expect(waive.action).toBe('waive');
       expect(waive.value).toBeNull();
+      // #483: name-resolution fallback — charge-type-backed items have no own
+      // gym_charges.name, so gym_charge_name must fall back to charge_types.name.
+      expect(waive.gym_charge_name).toBe('Membership Fee');
 
       const pct = res.body.find((cb: any) => cb.gym_charge_code === 'registration_fee');
       expect(pct).toBeDefined();
@@ -251,6 +265,70 @@ describe('Plan Charge Benefits', () => {
       const found = res.body.find((p: any) => p.id === planId);
       expect(found).toBeDefined();
       expect(Array.isArray(found.charge_benefits)).toBe(true);
+    });
+  });
+
+  // ─── Custom Sellable Items (#483 regression) ─────────────────────────────────
+  // Custom Sellable Items have no charge_type_id, so the legacy
+  // COALESCE(gym_charges.name, charge_types.name) fallback must resolve to the
+  // item's own name rather than silently returning null.
+
+  describe('Custom Sellable Item linked through gym_charge_id', () => {
+    let customItemId: number;
+
+    beforeAll(async () => {
+      customItemId = await createCustomSellableItem(gymId, 'Personal Training Premium');
+      await request
+        .put(`/membership-plans/${planId}/charge-benefits`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send([{ gym_charge_id: customItemId, action: 'waive', value: null }]);
+    });
+
+    it('PUT response resolves the custom item name', async () => {
+      const res = await request
+        .get(`/membership-plans/${planId}/charge-benefits`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const benefit = res.body.find((cb: any) => cb.gym_charge_id === customItemId);
+      expect(benefit).toBeDefined();
+      expect(benefit.gym_charge_name).toBe('Personal Training Premium');
+    });
+
+    it('name is present in the enriched plan (GET /:id) after reload', async () => {
+      const res = await request
+        .get(`/membership-plans/${planId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const benefit = res.body.charge_benefits.find((cb: any) => cb.gym_charge_id === customItemId);
+      expect(benefit).toBeDefined();
+      expect(benefit.gym_charge_name).toBe('Personal Training Premium');
+    });
+
+    it('name is present in the enriched plan list (GET /)', async () => {
+      const res = await request
+        .get('/membership-plans')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const plan = res.body.find((p: any) => p.id === planId);
+      const benefit = plan.charge_benefits.find((cb: any) => cb.gym_charge_id === customItemId);
+      expect(benefit).toBeDefined();
+      expect(benefit.gym_charge_name).toBe('Personal Training Premium');
+    });
+
+    it('the full sellable_items catalog on the enriched plan also carries the name', async () => {
+      const res = await request
+        .get(`/membership-plans/${planId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const item = res.body.sellable_items.find((si: any) => si.id === customItemId);
+      expect(item).toBeDefined();
+      expect(item.name).toBe('Personal Training Premium');
+      expect(item.charge_type_name).toBeNull();
     });
   });
 });

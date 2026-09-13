@@ -236,6 +236,22 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `allowance_exhausted`/`center_not_covered`, mirroring the existing
   over-capacity "book anyway" pattern. Tests added to `activity-types.test.ts`
   and `bookings.test.ts`.
+- **#483 (done)**: Fix missing Sellable Item names in Membership Plan Charge
+  Benefits — the backend name resolution (`membership-plans.ts`'s
+  `COALESCE(gym_charges.name, charge_types.name) AS gym_charge_name`, used by
+  `enrichPlan` and both `/:id/charge-benefits` endpoints) was already correct
+  for custom Sellable Items (`gym_charges.charge_type_id IS NULL`, `name` set
+  directly at creation). The actual bug was in the admin Charge Benefits
+  editor (`apps/admin/.../plans/page.tsx`): the row-selector list (populated
+  from `GET /sellable-items`, the full catalog) rendered `gc.charge_type_name`
+  — a field only populated via the legacy `charge_types` LEFT JOIN — instead
+  of the item's own `gc.name`, so any custom Sellable Item (no `charge_type_id`)
+  showed a blank label while configuring a benefit. Fixed by adding `name` to
+  the frontend `GymCharge` type and rendering it instead. Regression tests
+  added to `plan-charge-benefits.test.ts` covering a custom Sellable Item's
+  name resolving through `GET/PUT /charge-benefits`, the enriched
+  `GET /membership-plans/:id` and `GET /membership-plans` responses, and the
+  `sellable_items` catalog on the enriched plan.
 
 ## Decisions
 
