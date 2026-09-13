@@ -669,9 +669,6 @@ export default function ActivityTypesPage() {
   function renderRow(row: ActivityType) {
     const isExpanded = expanded.has(row.id);
     const isEditing = editingId === row.id;
-    const descText = row.description
-      ? row.description.length > 60 ? row.description.slice(0, 60) + '…' : row.description
-      : '—';
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetails(row) },
@@ -694,17 +691,20 @@ export default function ActivityTypesPage() {
             )}
             {row.name}
           </div>
-          <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {descText}
+          <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
+            {fmtDate(row.created_at)}
           </div>
-          <div style={{ minWidth: 110, fontSize: 13, color: '#555', flexShrink: 0 }}>
-            {row.duration_minutes} min · {row.max_capacity} cap.
+          <div style={{ minWidth: 110, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {row.created_by_name ?? '—'}
+          </div>
+          <div style={{ minWidth: 90, flexShrink: 0 }}>
+            <StatusBadge status={row.status} label={tStatus(row.status)} />
           </div>
           <div style={{ minWidth: 120, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.default_center_name ?? '—'}
           </div>
-          <div style={{ minWidth: 90, flexShrink: 0 }}>
-            <StatusBadge status={row.status} label={tStatus(row.status)} />
+          <div style={{ minWidth: 120, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {row.default_trainer_name ?? '—'}
           </div>
           <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
           <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
@@ -805,14 +805,6 @@ export default function ActivityTypesPage() {
             </div>
 
             {renderScheduleSection(row)}
-
-            <SectionHeader title={t('section_metadata')} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 32px' }}>
-              <DetailRow label={t('meta_created_by')} value={row.created_by_name ?? '—'} />
-              <DetailRow label={t('meta_created_at')} value={fmtDate(row.created_at)} />
-              <DetailRow label={t('meta_modified_by')} value={row.modified_by_name ?? '—'} />
-              <DetailRow label={t('meta_modified_at')} value={fmtDateTime(row.modified_at)} />
-            </div>
           </div>
         )}
       </div>
@@ -891,10 +883,11 @@ export default function ActivityTypesPage() {
       {(rows.length > 0 || inlineNew) && (
         <div style={colHeaderStyle}>
           <div style={{ flex: 2 }}>{t('col_name')}</div>
-          <div style={{ flex: 3 }}>{t('label_description')}</div>
-          <div style={{ minWidth: 110 }}>Duration / Cap.</div>
-          <div style={{ minWidth: 120 }}>{t('col_default_center')}</div>
+          <div style={{ minWidth: 100 }}>{t('col_created_at')}</div>
+          <div style={{ minWidth: 110 }}>{t('col_created_by')}</div>
           <div style={{ minWidth: 90 }}>{t('col_status')}</div>
+          <div style={{ minWidth: 120 }}>{t('col_default_center')}</div>
+          <div style={{ minWidth: 120 }}>{t('col_default_trainer')}</div>
           <div style={{ minWidth: 68 }} />
         </div>
       )}
@@ -932,7 +925,12 @@ export default function ActivityTypesPage() {
               <ModalDetail label={t('label_duration')} value={`${details.duration_minutes} min`} />
               <ModalDetail label={t('label_capacity')} value={String(details.max_capacity)} />
               <ModalDetail label={t('label_intensity')} value={details.intensity_level ? String(details.intensity_level) : '—'} />
-              <ModalDetail label={t('label_status')} value={tStatus(details.status)} />
+              <div>
+                <span style={detailLabelStyle}>{t('label_status')}</span>
+                <div style={{ marginTop: 4 }}>
+                  <StatusBadge status={details.status} label={tStatus(details.status)} />
+                </div>
+              </div>
               <ModalDetail label={t('label_default_center')} value={details.default_center_name ?? '—'} />
               <ModalDetail label={t('label_default_space')} value={details.default_space_name ?? '—'} />
               <ModalDetail label={t('label_default_trainer')} value={details.default_trainer_name ?? '—'} />
@@ -959,6 +957,8 @@ export default function ActivityTypesPage() {
               <ModalDetail label={t('meta_created_at')} value={fmtDate(details.created_at)} />
               <ModalDetail label={t('meta_modified_by')} value={details.modified_by_name ?? '—'} />
               <ModalDetail label={t('meta_modified_at')} value={fmtDateTime(details.modified_at)} />
+              <ModalDetail label={t('meta_deleted_by')} value={details.deleted_by_name ?? '—'} />
+              <ModalDetail label={t('meta_deleted_at')} value={fmtDateTime(details.deleted_at)} />
             </div>
           </div>
         )}
