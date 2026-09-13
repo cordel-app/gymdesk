@@ -68,7 +68,7 @@ async function createActivityType(gymId: string, maxCapacity: number): Promise<n
   return insertId;
 }
 
-async function createSession(gymId: string, activityTypeId: number, centerId: number, whenSql: string): Promise<number> {
+async function createSession(gymId: string, activityTypeId: number, centerId: number | null, whenSql: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO calendar_events (gym_id, center_id, kind, title, activity_type_id, starts_at, ends_at, status)
      VALUES (?, ?, 'session', 'Test Session', ?, ${whenSql}, DATE_ADD(${whenSql}, INTERVAL 1 HOUR), 'scheduled')`,
@@ -90,6 +90,8 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
   let futureSessionInCenterA: number;
   let futureSessionInCenterB: number;
   let pastSessionInCenterA: number;
+  let futureSessionNoCenter: number;
+  let pastSessionNoCenter: number;
   let memberId: number;
 
   beforeAll(async () => {
@@ -104,6 +106,12 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
     futureSessionInCenterA = await createSession(gymId, activityTypeId, centerAId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY)');
     futureSessionInCenterB = await createSession(gymId, activityTypeId, centerBId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY)');
     pastSessionInCenterA = await createSession(gymId, activityTypeId, centerAId, 'DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)');
+    // #478: a schedule-rule-materialized session whose activity type has no
+    // default_center_id ends up with center_id = NULL. It isn't tied to any
+    // one center, so it must remain visible to a member regardless of which
+    // center(s) they're assigned to — not silently excluded by center scoping.
+    futureSessionNoCenter = await createSession(gymId, activityTypeId, null, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 DAY)');
+    pastSessionNoCenter = await createSession(gymId, activityTypeId, null, 'DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY)');
 
     const { insertId: mId } = await db.query(
       `INSERT INTO members (gym_id, name, email) VALUES (?, 'Bookings Member', ?)`,
@@ -126,6 +134,18 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
       `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, attendance_status)
        VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), 'present')`,
       [gymId, centerAId, memberId, pastSessionInCenterA],
+    );
+    // Bookings on a NULL-center session mirror bookMemberOnSession(), which
+    // copies calendar_events.center_id onto the booking row verbatim.
+    await db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, attendance_status)
+       VALUES (?, NULL, ?, ?, 'booked', UTC_TIMESTAMP(), 'pending')`,
+      [gymId, memberId, futureSessionNoCenter],
+    );
+    await db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, attendance_status)
+       VALUES (?, NULL, ?, ?, 'booked', UTC_TIMESTAMP(), 'present')`,
+      [gymId, memberId, pastSessionNoCenter],
     );
   });
 
@@ -159,6 +179,18 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
       const sessionIds = (res.body as any[]).map((b) => b.class_session_id);
       expect(sessionIds).toEqual(expect.arrayContaining([futureSessionInCenterA, pastSessionInCenterA]));
       expect(res.body[0].class_name).toBe('Test Class');
+    });
+
+    it('#478: still returns a booking on a session with no center (center_id NULL), despite the member being assigned only to Center A', async () => {
+      const res = await request
+        .get('/me/bookings')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .set('x-impersonate-as', `member:${memberId}`);
+
+      expect(res.status).toBe(200);
+      const sessionIds = (res.body as any[]).map((b) => b.class_session_id);
+      expect(sessionIds).toEqual(expect.arrayContaining([futureSessionNoCenter, pastSessionNoCenter]));
     });
 
     it('under impersonation with an explicit x-center-id, only returns bookings in that center', async () => {
@@ -208,6 +240,18 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
       expect(entityIds).not.toContain(futureSessionInCenterB);
       expect(entityIds).not.toContain(pastSessionInCenterA);
     });
+
+    it('#478: still returns a future booking on a session with no center, despite the member being assigned only to Center A', async () => {
+      const res = await request
+        .get('/me/upcoming')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .set('x-impersonate-as', `member:${memberId}`);
+
+      expect(res.status).toBe(200);
+      const entityIds = (res.body as any[]).map((b) => b.entity_id);
+      expect(entityIds).toContain(futureSessionNoCenter);
+    });
   });
 
   describe('GET /me/activity-history', () => {
@@ -233,6 +277,18 @@ describe('/me/bookings, /me/upcoming, /me/activity-history — impersonation + c
       expect(entityIds).not.toContain(futureSessionInCenterA);
       const pastItem = items.find((b) => b.entity_id === pastSessionInCenterA);
       expect(pastItem.attendance_status).toBe('present');
+    });
+
+    it('#478: still returns a past session with no center, despite the member being assigned only to Center A', async () => {
+      const res = await request
+        .get('/me/activity-history')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .set('x-impersonate-as', `member:${memberId}`);
+
+      expect(res.status).toBe(200);
+      const entityIds = (res.body.items as any[]).map((b) => b.entity_id);
+      expect(entityIds).toContain(pastSessionNoCenter);
     });
 
     it('rejects an x-center-id the impersonated member is not assigned to', async () => {

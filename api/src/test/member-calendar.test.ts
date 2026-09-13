@@ -19,6 +19,7 @@ let nonShareableActivityTypeId: number;
 let shareableSessionId: number;
 let nonShareableSessionId: number;
 let noSharedBookingSessionId: number;
+let noCenterSessionId: number;
 
 async function createCenter(gid: string): Promise<number> {
   const { insertId } = await db.query(
@@ -50,7 +51,7 @@ async function createActivityType(gid: string, isShareable: 0 | 1, capacity = 10
 async function createSession(
   gid: string,
   actTypeId: number,
-  cid: number,
+  cid: number | null,
   allowsShared: 0 | 1,
 ): Promise<number> {
   const { insertId } = await db.query(
@@ -95,6 +96,12 @@ beforeAll(async () => {
   nonShareableSessionId = await createSession(gymId, nonShareableActivityTypeId, centerId, 1);
   // Session with shareable activity type but allows_shared_booking=0 — triggers 409 on POST.
   noSharedBookingSessionId = await createSession(gymId, shareableActivityTypeId, centerId, 0);
+  // #478: a schedule-rule-materialized session whose activity type has no
+  // default_center_id ends up with center_id = NULL. It must still show up
+  // in the member's schedule instead of being silently excluded by center
+  // scoping (the member here is only implicitly scoped to `centerId` via the
+  // single-center fallback in centerContext.ts).
+  noCenterSessionId = await createSession(gymId, shareableActivityTypeId, null, 1);
 });
 
 afterAll(async () => {
@@ -158,6 +165,16 @@ describe('GET /me/schedule', () => {
     expect(session.availability_state).toBe('AVAILABLE');
     expect(session.is_shareable).toBe(true);
     expect(session.allows_shared_booking).toBe(true);
+  });
+
+  it('#478: still returns a session with no center (center_id NULL) even though the member is scoped to a specific center', async () => {
+    const res = await request
+      .get('/me/schedule')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const session = (res.body as any[]).find((s: any) => s.id === noCenterSessionId);
+    expect(session).toBeDefined();
   });
 
   it('filters sessions by ?activity_type_id', async () => {
