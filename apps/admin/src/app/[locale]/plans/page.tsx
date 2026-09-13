@@ -45,6 +45,15 @@ interface GymCharge { id: number; name: string; charge_type_name: string | null;
 interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
 interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; }
 
+// #485: read-only, dynamically computed by the backend — never persisted.
+interface ForecastLine {
+  label: string;
+  amount: number;
+  benefit?: { action: 'waive' | 'percentage_discount' | 'fixed_discount'; value: number | null };
+}
+interface ForecastEvent { date: string; description: string; total: number; lines: ForecastLine[]; }
+interface BillingForecast { available: boolean; reason: string | null; currency: string; events: ForecastEvent[]; }
+
 interface Plan {
   id: number;
   name: string;
@@ -70,6 +79,7 @@ interface Plan {
   tax_rate_percent: string | null;
   amount_excl_tax: number | null;
   amount_incl_tax: number | null;
+  billing_forecast: BillingForecast;
 }
 
 const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
@@ -1146,6 +1156,39 @@ export default function PlansPage() {
                         </div>
                       ))
                     )}
+
+                    <SectionHeader title={t('plans.section_billing_forecast')} />
+                    {plan.billing_forecast?.available ? (
+                      <>
+                        <p style={{ fontSize: 12, color: '#888', margin: '4px 0 10px', fontStyle: 'italic' }}>
+                          ⚠ {t('plans.billing_forecast_disclaimer')}
+                        </p>
+                        {plan.billing_forecast.events.map((ev, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              padding: '8px 0',
+                              borderBottom: i < plan.billing_forecast.events.length - 1 ? '1px solid var(--gd-card-border, #f0f0f0)' : 'none',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+                              <span>{ev.date} — {ev.description}</span>
+                              <strong style={{ flexShrink: 0 }}>€{ev.total.toFixed(2)} {t('plans.forecast_total')}</strong>
+                            </div>
+                            {ev.lines.map((line, j) => (
+                              <div key={j} style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
+                                • {line.label}: €{line.amount.toFixed(2)}
+                                {line.benefit && ` (${forecastBenefitLabel(line.benefit, t)})`}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>
+                        {plan.billing_forecast?.reason ?? t('plans.billing_forecast_unavailable')}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -1189,6 +1232,17 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
       {action}
     </div>
   );
+}
+
+// #485: renders e.g. "benefit — waive" / "benefit — 50% discount" / "benefit — €15 discount".
+function forecastBenefitLabel(
+  benefit: NonNullable<ForecastLine['benefit']>,
+  t: (key: string) => string,
+): string {
+  const prefix = t('plans.forecast_benefit_prefix');
+  if (benefit.action === 'waive') return `${prefix} — ${t('plans.cb_action_waive').toLowerCase()}`;
+  if (benefit.action === 'percentage_discount') return `${prefix} — ${benefit.value}% ${t('plans.forecast_discount')}`;
+  return `${prefix} — €${benefit.value} ${t('plans.forecast_discount')}`;
 }
 
 function DetailRow({ label, value, description }: { label: string; value: React.ReactNode; description?: string }) {

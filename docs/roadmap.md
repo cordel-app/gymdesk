@@ -275,6 +275,27 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   professional_services` key added in en/es/ca; `professional-services.test.ts`
   covering tenant isolation, auth/role gating, happy path, system-record
   protection, and per-gym-independent activation state.
+- **#485 (done)**: Add Membership Plan Pricing and Billing Events Forecast —
+  read-only, dynamically-calculated projection of a Plan's next 10 billing
+  events (price + `billing_policies.recurring_billing_interval`/`_unit` +
+  `plan_charge_benefits`), never persisted (no new table/migration). New pure
+  module `domain/billingForecast.ts` (`computeBillingForecast`,
+  `applyChargeBenefit`) reuses `billing.ts`'s existing `advanceBillingDate`
+  for date math instead of a second billing-cadence implementation.
+  `enrichPlan` embeds the result as `billing_forecast` on every Plan returned
+  by `GET /membership-plans` and `GET /membership-plans/:id`, so it
+  recalculates automatically whenever price/billing-policy/charge-benefits
+  are saved; also exposed standalone as `GET /membership-plans/:id/
+  billing-forecast` (thin wrapper over the same computation) per the
+  ticket's API requirement. Deliberately excludes Promotions — a forecast
+  with no price/billing policy configured returns `{ available: false,
+  reason }` rather than guessing. Admin UI: new read-only "Billing Events
+  Forecast" section at the bottom of the Plans expanded row (below Price
+  History), with a "does not include promotions" disclaimer and no
+  create/edit/delete controls. Unit tests for the pure forecast module
+  (`billing-forecast.test.ts`) + integration tests for the new endpoint and
+  the embedded field in `membership-plans.test.ts` (tenant isolation, auth,
+  happy path with benefits, unavailable state, no billing-event side effects).
 
 ## Decisions
 
