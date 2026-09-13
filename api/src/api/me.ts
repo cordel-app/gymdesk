@@ -350,11 +350,13 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?'];
     const params: any[] = [gymId, memberId];
     if (centerId != null) {
-      where.push('ce.center_id = ?');
+      // See the matching comment in GET /me/schedule (#478): a NULL center_id
+      // occurrence isn't tied to a specific center and must stay visible.
+      where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(centerId);
     } else if (allowedCenterIds) {
       if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
       params.push(...allowedCenterIds);
     }
     const { rows } = await db.query(
@@ -428,11 +430,17 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
 
     const { centerId, allowedCenterIds } = getCenterContext(req);
     if (centerId != null) {
-      where.push('ce.center_id = ?');
+      // A NULL center_id means the occurrence (or its activity type) was never
+      // assigned to a specific center — e.g. a schedule-rule-materialized
+      // session whose activity type has no default_center_id set. Such an
+      // occurrence isn't tied to any one center, so it must stay visible
+      // regardless of which center is selected/assigned, instead of silently
+      // vanishing from every member's calendar (#478).
+      where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(centerId);
     } else if (allowedCenterIds) {
       if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
       params.push(...allowedCenterIds);
     }
 
@@ -1307,11 +1315,13 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
     ];
     const params: any[] = [gymId, memberId, now, future];
     if (centerId != null) {
-      where.push('ce.center_id = ?');
+      // See the matching comment in GET /me/schedule (#478): a NULL center_id
+      // occurrence isn't tied to a specific center and must stay visible.
+      where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(centerId);
     } else if (allowedCenterIds) {
       if (allowedCenterIds.length === 0) return res.json([]);
-      where.push(`ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
       params.push(...allowedCenterIds);
     }
 
@@ -1350,11 +1360,13 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     const where: string[] = ['ceb.gym_id = ?', 'ceb.member_id = ?', 'ce.starts_at < ?'];
     const params: any[] = [gymId, memberId, cutoff];
     if (centerId != null) {
-      where.push('ce.center_id = ?');
+      // See the matching comment in GET /me/schedule (#478): a NULL center_id
+      // occurrence isn't tied to a specific center and must stay visible.
+      where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
       params.push(centerId);
     } else if (allowedCenterIds) {
       if (allowedCenterIds.length === 0) return res.json({ items: [], limit, offset });
-      where.push(`ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')})`);
+      where.push(`(ce.center_id IS NULL OR ce.center_id IN (${allowedCenterIds.map(() => '?').join(',')}))`);
       params.push(...allowedCenterIds);
     }
 
