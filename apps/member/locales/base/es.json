@@ -317,7 +317,10 @@
       "lunch": "Comida",
       "snack": "Merienda",
       "dinner": "Cena",
-      "antes_de_dormir": "Antes de dormir"
+      "antes_de_dormir": "Antes de dormir",
+      "two_three_hours_before_training": "2-3 horas antes del entrenamiento",
+      "immediately_before_training": "Inmediatamente antes del entrenamiento",
+      "immediately_after_training": "Inmediatamente después del entrenamiento"
     }
   }
 }

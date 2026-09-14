@@ -948,6 +948,20 @@ describe('meals', () => {
     expect(res.status).toBe(400);
   });
 
+  it.each([
+    'two_three_hours_before_training',
+    'immediately_before_training',
+    'immediately_after_training',
+  ])('accepts the training-related meal_type %s', async (mealType) => {
+    const res = await request
+      .post(`/member-nutrition-plans/${plan.id}/days/${dayId}/meals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ meal_type: mealType });
+    expect(res.status).toBe(201);
+    expect(res.body.meal_type).toBe(mealType);
+  });
+
   it('updates a meal', async () => {
     const addRes = await request
       .post(`/member-nutrition-plans/${plan.id}/days/${dayId}/meals`)

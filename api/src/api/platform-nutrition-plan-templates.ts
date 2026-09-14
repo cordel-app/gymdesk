@@ -11,6 +11,7 @@ const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 const MEAL_TYPES = [
   'recien_levantado', 'breakfast', 'media_manana',
   'lunch', 'snack', 'dinner', 'antes_de_dormir',
+  'two_three_hours_before_training', 'immediately_before_training', 'immediately_after_training',
 ] as const;
 const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other', 'additional'] as const;
 const NUTRITION_GOALS = [
