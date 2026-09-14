@@ -38,8 +38,23 @@ vi.mock('@clerk/backend', async (importOriginal) => {
 // Track items created via the API (gym_id IS NULL) — cleanupTestGyms won't touch them.
 const createdItemIds: number[] = [];
 
+let mainDishId: number;
+let sideId: number;
+let sauceId: number;
+let drinkId: number;
+let dessertId: number;
+
+async function getCategoryId(slug: string): Promise<number> {
+  const { rows } = await db.query<{ id: number }>('SELECT id FROM nutrition_library_categories WHERE slug = ?', [slug]);
+  return rows[0]?.id;
+}
+
 beforeAll(async () => {
-  // No gym required for superadmin-only routes.
+  mainDishId = await getCategoryId('main_dish');
+  sideId = await getCategoryId('side');
+  sauceId = await getCategoryId('sauce');
+  drinkId = await getCategoryId('drink');
+  dessertId = await getCategoryId('dessert');
 });
 
 afterAll(async () => {
@@ -67,7 +82,7 @@ describe('auth guard', () => {
   it('returns 401 without auth on POST /platform/nutrition-library', async () => {
     const res = await request
       .post('/platform/nutrition-library')
-      .send({ name: 'X', category: 'main_dish' });
+      .send({ name: 'X', category_ids: [1] });
     expect(res.status).toBe(401);
   });
 });
@@ -103,10 +118,10 @@ describe('platform nutrition library CRUD', () => {
     const res = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: `PNL Chicken ${uniqueSuffix}`, category: 'main_dish' });
+      .send({ name: `PNL Chicken ${uniqueSuffix}`, category_ids: [mainDishId] });
     expect(res.status).toBe(201);
     expect(res.body.name).toBe(`PNL Chicken ${uniqueSuffix}`);
-    expect(res.body.category).toBe('main_dish');
+    expect(res.body.categories.map((c: any) => c.id)).toEqual([mainDishId]);
     expect(res.body.status).toBe('active');
     itemId = res.body.id;
     createdItemIds.push(itemId);
@@ -135,13 +150,13 @@ describe('platform nutrition library CRUD', () => {
     expect(found).toBeDefined();
   });
 
-  it('filters by ?category= and returns only matching items', async () => {
+  it('filters by ?category_id= and returns only matching items', async () => {
     const res = await request
-      .get('/platform/nutrition-library?category=main_dish')
+      .get(`/platform/nutrition-library?category_id=${mainDishId}`)
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
     for (const item of res.body.items) {
-      expect(item.category).toBe('main_dish');
+      expect(item.categories.some((c: any) => c.id === mainDishId)).toBe(true);
     }
     const found = res.body.items.find((i: any) => i.id === itemId);
     expect(found).toBeDefined();
@@ -165,16 +180,25 @@ describe('platform nutrition library CRUD', () => {
       .send({ name: `PNL Chicken Updated ${uniqueSuffix}` });
     expect(res.status).toBe(200);
     expect(res.body.name).toBe(`PNL Chicken Updated ${uniqueSuffix}`);
-    expect(res.body.category).toBe('main_dish');
+    expect(res.body.categories.map((c: any) => c.id)).toEqual([mainDishId]);
   });
 
-  it('updates the category and returns 200', async () => {
+  it('replaces categories and returns 200', async () => {
     const res = await request
       .put(`/platform/nutrition-library/${itemId}`)
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ category: 'side' });
+      .send({ category_ids: [sideId] });
     expect(res.status).toBe(200);
-    expect(res.body.category).toBe('side');
+    expect(res.body.categories.map((c: any) => c.id)).toEqual([sideId]);
+  });
+
+  it('assigns multiple categories to the same item (e.g. peas: main dish + side)', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: [mainDishId, sideId] });
+    expect(res.status).toBe(200);
+    expect(res.body.categories.map((c: any) => c.id).sort()).toEqual([mainDishId, sideId].sort());
   });
 
   it('soft-deletes the item and hides it from the default list', async () => {
@@ -242,88 +266,189 @@ describe('platform nutrition library validation', () => {
     const res = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ category: 'main_dish' });
+      .send({ category_ids: [mainDishId] });
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when creating without a category', async () => {
+  it('returns 400 when creating without any category', async () => {
     const res = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: `PNL No Category ${Date.now()}` });
+      .send({ name: `PNL No Category ${Date.now()}`, category_ids: [] });
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when creating with an invalid category', async () => {
+  it('returns 400 when creating with an invalid category id', async () => {
     const res = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: `PNL Bad Category ${Date.now()}`, category: 'vegetable' });
+      .send({ name: `PNL Bad Category ${Date.now()}`, category_ids: [999999] });
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when listing with an invalid ?category value', async () => {
+  it('returns 400 when listing with a non-numeric ?category_id value', async () => {
     const res = await request
-      .get('/platform/nutrition-library?category=invalid')
+      .get('/platform/nutrition-library?category_id=invalid')
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when updating with an invalid category', async () => {
+  it('returns 400 when updating with an invalid category id', async () => {
     // Create a valid item first
     const createRes = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: `PNL Valid For BadUpdate ${Date.now()}`, category: 'drink' });
+      .send({ name: `PNL Valid For BadUpdate ${Date.now()}`, category_ids: [drinkId] });
     expect(createRes.status).toBe(201);
     createdItemIds.push(createRes.body.id);
 
     const res = await request
       .put(`/platform/nutrition-library/${createRes.body.id}`)
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ category: 'veggie' });
+      .send({ category_ids: [999999] });
     expect(res.status).toBe(400);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Duplicate
+// Duplicate — uniqueness is now scoped to (gym, name) only, not category
 // ---------------------------------------------------------------------------
 
 describe('platform nutrition library duplicate', () => {
-  it('returns 409 when creating an item with the same name and category', async () => {
+  it('returns 409 when creating an item with the same name, regardless of category', async () => {
     const uniqueName = `PNL Dup Item ${Date.now()}`;
 
     const first = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: uniqueName, category: 'drink' });
+      .send({ name: uniqueName, category_ids: [drinkId] });
     expect(first.status).toBe(201);
     createdItemIds.push(first.body.id);
 
     const second = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: uniqueName, category: 'drink' });
+      .send({ name: uniqueName, category_ids: [dessertId] });
     expect(second.status).toBe(409);
   });
 
-  it('allows same name under a different category', async () => {
-    const uniqueName = `PNL Same Name DiffCat ${Date.now()}`;
-
+  it('allows a different name with the same categories', async () => {
     const first = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: uniqueName, category: 'sauce' });
+      .send({ name: `PNL Sauce A ${Date.now()}`, category_ids: [sauceId] });
     expect(first.status).toBe(201);
     createdItemIds.push(first.body.id);
 
     const second = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: uniqueName, category: 'dessert' });
+      .send({ name: `PNL Sauce B ${Date.now()}`, category_ids: [sauceId] });
     expect(second.status).toBe(201);
     createdItemIds.push(second.body.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Categories catalogue
+// ---------------------------------------------------------------------------
+
+describe('GET /platform/nutrition-library/categories', () => {
+  it('returns the seeded categories', async () => {
+    const res = await request
+      .get('/platform/nutrition-library/categories')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    const slugs = res.body.map((c: any) => c.slug);
+    expect(slugs).toEqual(expect.arrayContaining(['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other']));
+  });
+
+  it('returns 401 without auth', async () => {
+    const res = await request.get('/platform/nutrition-library/categories');
+    expect(res.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Categories assignment (multi-category, e.g. peas = main_dish + side)
+// ---------------------------------------------------------------------------
+
+describe('categories assignment', () => {
+  let itemId: number;
+  const suffix = `${Date.now()}-cat`;
+
+  beforeAll(async () => {
+    const createRes = await request
+      .post('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `Peas ${suffix}`, category_ids: [mainDishId] });
+    expect(createRes.status).toBe(201);
+    itemId = createRes.body.id;
+    createdItemIds.push(itemId);
+  });
+
+  it('PUT /:id/categories assigns multiple categories and returns them', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/categories`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: [mainDishId, sideId] });
+    expect(res.status).toBe(200);
+    expect(res.body.categories).toHaveLength(2);
+    const ids = res.body.categories.map((c: any) => c.id).sort();
+    expect(ids).toEqual([mainDishId, sideId].sort());
+  });
+
+  it('GET /platform/nutrition-library includes all assigned categories per item', async () => {
+    const res = await request
+      .get('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    const found = res.body.items.find((i: any) => i.id === itemId);
+    expect(found).toBeDefined();
+    expect(found.categories).toHaveLength(2);
+  });
+
+  it('PUT /:id/categories replaces (not appends) on second call', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/categories`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: [sideId] });
+    expect(res.status).toBe(200);
+    expect(res.body.categories).toHaveLength(1);
+    expect(res.body.categories[0].id).toBe(sideId);
+  });
+
+  it('PUT /:id/categories returns 400 for an empty array (at least one category required)', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/categories`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/categories returns 400 for invalid category_ids', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/categories`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: [99999] });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/categories returns 400 when category_ids is not an array', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/categories`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: mainDishId });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/categories returns 404 for unknown item', async () => {
+    const res = await request
+      .put('/platform/nutrition-library/999999/categories')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: [mainDishId] });
+    expect(res.status).toBe(404);
   });
 });
 
@@ -332,15 +457,14 @@ describe('platform nutrition library duplicate', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /platform/nutrition-library/nutritional-qualities', () => {
-  it('returns the seeded qualities', async () => {
+  it('returns the seeded qualities, including fat and fiber', async () => {
     const res = await request
       .get('/platform/nutrition-library/nutritional-qualities')
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
     const slugs = res.body.map((q: any) => q.slug);
-    expect(slugs).toContain('protein');
-    expect(slugs).toContain('carbohydrate');
+    expect(slugs).toEqual(expect.arrayContaining(['protein', 'carbohydrate', 'fat', 'fiber']));
   });
 
   it('returns 401 without auth', async () => {
@@ -357,6 +481,8 @@ describe('nutritional qualities assignment', () => {
   let itemId: number;
   let proteinId: number;
   let carbId: number;
+  let fatId: number;
+  let fiberId: number;
   const suffix = `${Date.now()}-nq`;
 
   beforeAll(async () => {
@@ -364,7 +490,7 @@ describe('nutritional qualities assignment', () => {
     const createRes = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: `NQ Lentils ${suffix}`, category: 'main_dish' });
+      .send({ name: `NQ Lentils ${suffix}`, category_ids: [mainDishId] });
     expect(createRes.status).toBe(201);
     itemId = createRes.body.id;
     createdItemIds.push(itemId);
@@ -376,16 +502,29 @@ describe('nutritional qualities assignment', () => {
     expect(qualRes.status).toBe(200);
     proteinId = qualRes.body.find((q: any) => q.slug === 'protein').id;
     carbId    = qualRes.body.find((q: any) => q.slug === 'carbohydrate').id;
+    fatId     = qualRes.body.find((q: any) => q.slug === 'fat').id;
+    fiberId   = qualRes.body.find((q: any) => q.slug === 'fiber').id;
   });
 
   it('POST with quality_ids returns item with qualities', async () => {
     const res = await request
       .post('/platform/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
-      .send({ name: `NQ Chicken ${suffix}`, category: 'main_dish', quality_ids: [proteinId] });
+      .send({ name: `NQ Chicken ${suffix}`, category_ids: [mainDishId], quality_ids: [proteinId] });
     expect(res.status).toBe(201);
     expect(res.body.qualities).toHaveLength(1);
     expect(res.body.qualities[0].slug).toBe('protein');
+    createdItemIds.push(res.body.id);
+  });
+
+  it('POST with fat and fiber quality_ids returns them', async () => {
+    const res = await request
+      .post('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `NQ Avocado ${suffix}`, category_ids: [sideId], quality_ids: [fatId, fiberId] });
+    expect(res.status).toBe(201);
+    const slugs = res.body.qualities.map((q: any) => q.slug).sort();
+    expect(slugs).toEqual(['fat', 'fiber']);
     createdItemIds.push(res.body.id);
   });
 

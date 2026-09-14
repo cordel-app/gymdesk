@@ -33,14 +33,22 @@ beforeAll(async () => {
   memberId = mRows[0].id;
 
   const { insertId } = await db.query(
-    `INSERT INTO nutrition_library_items (gym_id, category, name, status)
-     VALUES (NULL, 'main_dish', 'Grilled Chicken', 'active')`,
+    `INSERT INTO nutrition_library_items (gym_id, name, status)
+     VALUES (NULL, 'Grilled Chicken', 'active')`,
   );
   libraryItemId = insertId;
+  const { rows: catRows } = await db.query<{ id: number }>(
+    "SELECT id FROM nutrition_library_categories WHERE slug = 'main_dish'",
+  );
+  await db.query(
+    'INSERT INTO nutrition_library_item_categories (item_id, category_id) VALUES (?, ?)',
+    [libraryItemId, catRows[0].id],
+  );
 });
 
 afterAll(async () => {
   await cleanupTestGyms();
+  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [libraryItemId]);
   await db.end();
 });
 

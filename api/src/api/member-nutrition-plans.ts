@@ -359,7 +359,7 @@ memberNutritionPlansRouter.get('/:id/hierarchy', async (req, res, next) => {
     }));
 
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM member_nutrition_plan_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.member_nutrition_plan_id = ? AND r.gym_id = ?
@@ -684,7 +684,7 @@ memberNutritionPlansRouter.post('/:id/restrictions', requireModuleWrite('NUTRITI
       [gymId, id, Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM member_nutrition_plan_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.id = ?`,
