@@ -2382,6 +2382,7 @@
     "search_empty": "No s'han trobat usuaris actius.",
     "type_member": "Membre",
     "type_staff": "Personal",
+    "unnamed_staff": "Membre del personal sense nom",
     "cancel": "Cancel·lar",
     "error_start": "No s'ha pogut iniciar la suplantació.",
     "error_search": "No s'ha pogut completar la cerca. Si us plau, torneu-ho a intentar.",

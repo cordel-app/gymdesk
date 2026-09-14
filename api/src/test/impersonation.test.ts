@@ -245,6 +245,45 @@ describe('GET /platform/impersonation/targets', () => {
     await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [namelessStaffId]);
   });
 
+  it('excludes members when type=staff is requested (Admin app impersonation dialog — #504)', async () => {
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: '', type: 'staff' });
+
+    expect(res.status).toBe(200);
+    const types = res.body.map((u: any) => u.type);
+    expect(types).not.toContain('member');
+    const ids = res.body.map((u: any) => u.id);
+    expect(ids).toContain(STAFF_ID);
+    expect(ids).not.toContain(`member:${linkedMemberId}`);
+    expect(ids).not.toContain(`member:${unlinkedMemberId}`);
+  });
+
+  it('excludes staff when type=member is requested (Member app impersonation dialog)', async () => {
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: '', type: 'member' });
+
+    expect(res.status).toBe(200);
+    const types = res.body.map((u: any) => u.type);
+    expect(types).not.toContain('staff');
+    const ids = res.body.map((u: any) => u.id);
+    expect(ids).not.toContain(STAFF_ID);
+    expect(ids).toContain(`member:${linkedMemberId}`);
+  });
+
+  it('returns 400 for an invalid type value', async () => {
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, type: 'admin' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/type/);
+  });
+
   it('does not include deleted members', async () => {
     const { insertId } = await db.query(
       `INSERT INTO members (gym_id, name, email, deleted_at)
