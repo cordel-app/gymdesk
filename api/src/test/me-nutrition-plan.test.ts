@@ -48,6 +48,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await cleanupTestGyms();
+  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [libraryItemId]);
   await db.end();
 });
 
