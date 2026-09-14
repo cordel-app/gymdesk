@@ -1129,6 +1129,102 @@ describe('GET /membership-plans/:id/charge-benefits', () => {
   });
 });
 
+// ─── GET /membership-plans/:id/billing-forecast (#485) ────────────────────────
+
+async function setPlanPrice(gymId: string, planId: number, price: number): Promise<void> {
+  await db.query(
+    `INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from) VALUES (?, ?, ?, CURDATE())`,
+    [gymId, planId, price],
+  );
+}
+
+async function setBillingPolicy(
+  gymId: string,
+  planId: number,
+  interval: number,
+  unit: string,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+     VALUES (?, ?, ?, ?)`,
+    [gymId, planId, interval, unit],
+  );
+}
+
+describe('GET /membership-plans/:id/billing-forecast', () => {
+  let gymId: string;
+  let otherGymId: string;
+  let planId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Billing Forecast Gym');
+    await createTestMembership(gymId, 'admin');
+    otherGymId = await createTestGym('Plans Billing Forecast Gym B');
+    planId = await createPlan(gymId, { name: 'Forecast Plan' });
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const res = await request.get(`/membership-plans/${planId}/billing-forecast`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 when the plan belongs to a different gym', async () => {
+    const otherPlanId = await createPlan(otherGymId, { name: 'Other Gym Forecast Plan' });
+    const res = await request
+      .get(`/membership-plans/${otherPlanId}/billing-forecast`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('reports unavailable when the plan has no price or billing policy', async () => {
+    const bareId = await createPlan(gymId, { name: 'Bare Forecast Plan' });
+    const res = await request
+      .get(`/membership-plans/${bareId}/billing-forecast`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(false);
+    expect(res.body.events).toEqual([]);
+  });
+
+  it('returns the next 10 events reflecting the plan price and benefits, without creating any billing events', async () => {
+    await setPlanPrice(gymId, planId, 60);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const gymChargeId = await createGymCharge(gymId);
+    await db.query('UPDATE gym_charges SET amount = 40 WHERE id = ?', [gymChargeId]);
+    await addPlanChargeBenefit(gymId, planId, gymChargeId, 'percentage_discount', 50);
+
+    const { rows: beforeRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
+
+    const res = await request
+      .get(`/membership-plans/${planId}/billing-forecast`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(true);
+    expect(res.body.currency).toBe('EUR');
+    expect(res.body.events).toHaveLength(10);
+    const [event] = res.body.events;
+    expect(event.total).toBe(80);
+    expect(event.lines.some((l: any) => l.label === 'Forecast Plan' && l.amount === 60)).toBe(true);
+    expect(event.lines.some((l: any) => l.amount === 20 && l.benefit?.action === 'percentage_discount')).toBe(true);
+
+    const { rows: afterRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
+    expect(Number(afterRows[0].n)).toBe(Number(beforeRows[0].n));
+  });
+
+  it('embeds the same forecast on GET /membership-plans/:id as billing_forecast', async () => {
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.billing_forecast.available).toBe(true);
+    expect(res.body.billing_forecast.events).toHaveLength(10);
+  });
+});
+
 // ─── POST /membership-plans/:id/assign (#376 — instantiate a Plan into a Membership) ──
 
 describe('POST /membership-plans/:id/assign', () => {

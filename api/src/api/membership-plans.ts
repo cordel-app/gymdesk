@@ -7,6 +7,7 @@ import { effectivePrice, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT a
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { computePriceFields, validateTaxRateId } from './sellable-items';
+import { computeBillingForecast } from '../domain/billingForecast';
 
 interface PlanRow {
   id: number;
@@ -60,6 +61,7 @@ interface ChargeBenefitRow {
   gym_charge_code: string;
   gym_charge_name: string;
   gym_charge_availability: string;
+  gym_charge_amount: string | null;
   action: string;
   value: string | null;
 }
@@ -129,7 +131,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     ).then(r => Number(r.rows[0].n)),
     db.query<ChargeBenefitRow>(
       `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
-              gc.status AS gym_charge_status
+              gc.status AS gym_charge_status, gc.amount AS gym_charge_amount
        FROM plan_charge_benefits pcb
        JOIN gym_charges gc ON gc.id = pcb.gym_charge_id AND gc.deleted_at IS NULL
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -174,11 +176,25 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     tax_behavior: plan.tax_behavior,
   });
 
+  const billingPolicy = bpRows[0] ?? null;
+  const billingForecast = computeBillingForecast({
+    planName: plan.name,
+    price: currentPrice ? parseFloat(currentPrice.price) : null,
+    recurringBillingInterval: billingPolicy ? billingPolicy.recurring_billing_interval : null,
+    recurringBillingUnit: (billingPolicy ? billingPolicy.recurring_billing_unit : null) as any,
+    benefitLines: chargeBenefits.map(cb => ({
+      label: cb.gym_charge_name,
+      amount: cb.gym_charge_amount != null ? parseFloat(cb.gym_charge_amount) : null,
+      action: cb.action as any,
+      value: cb.value != null ? parseFloat(cb.value) : null,
+    })),
+  });
+
   return {
     ...plan,
     current_price: currentPrice ? currentPrice.price : null,
     price_history: prices,
-    billing_policy: bpRows[0] ?? null,
+    billing_policy: billingPolicy,
     allowances,
     centers,
     member_count: memberCount,
@@ -187,6 +203,8 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     tax_rate_name: taxRate ? taxRate.name : null,
     tax_rate_percent: taxRate ? taxRate.rate_percent : null,
     ...priceFields,
+    // #485: read-only, dynamically computed — never persisted (see docs/architecture.md).
+    billing_forecast: { ...billingForecast, currency: 'EUR' },
   };
 }
 
@@ -682,6 +700,21 @@ membershipPlansRouter.put('/:id/billing-policy', requireRole('admin'), async (re
   } catch (err) {
     next(err);
   }
+});
+
+// ─── Billing Events Forecast (#485) ────────────────────────────────────────────
+// Read-only, dynamically calculated — never persisted. Reuses the same
+// calculation `enrichPlan` embeds as `billing_forecast` on every Plan.
+
+membershipPlansRouter.get('/:id/billing-forecast', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query<PlanRow>(
+    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
+  const enriched = await enrichPlan(rows[0], gymId) as { billing_forecast: unknown };
+  res.json(enriched.billing_forecast);
 });
 
 // ─── Allowances ───────────────────────────────────────────────────────────────
