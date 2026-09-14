@@ -153,7 +153,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
     }));
 
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
@@ -477,7 +477,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/restrictions', requireSuperadmin,
   try {
     if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
     const { rows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
@@ -506,7 +506,7 @@ platformNutritionPlanTemplatesRouter.post('/:id/restrictions', requireSuperadmin
       [id, Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.id = ?`,

@@ -225,12 +225,12 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
 
     const { rows: restrictionRows } = await db.query(
       gymIdFilter
-        ? `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+        ? `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
            FROM nutrition_plan_template_restrictions r
            JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
            WHERE r.nutrition_plan_template_id = ? AND r.gym_id = ?
            ORDER BY r.position ASC`
-        : `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+        : `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
            FROM nutrition_plan_template_restrictions r
            JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
            WHERE r.nutrition_plan_template_id = ? AND r.gym_id IS NULL
@@ -881,7 +881,7 @@ nutritionPlanTemplatesRouter.get('/:id/restrictions', async (req, res, next) => 
   try {
     if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Nutrition plan template not found' });
     const { rows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.nutrition_plan_template_id = ? AND r.gym_id = ?
@@ -911,7 +911,7 @@ nutritionPlanTemplatesRouter.post('/:id/restrictions', requireModuleWrite('NUTRI
       [gymId, id, Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.id = ?`,
@@ -943,7 +943,7 @@ nutritionPlanTemplatesRouter.put('/:id/restrictions/:rid', requireModuleWrite('N
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Restriction not found' });
     const { rows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, nli.category AS item_category
+      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM nutrition_plan_template_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.id = ?`,

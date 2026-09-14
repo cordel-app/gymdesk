@@ -14,6 +14,14 @@ let gymId: string;
 let accountantGymId: string;
 let otherGymId: string;
 let libraryItemId: number;
+let mainDishId: number;
+let sideId: number;
+let sauceId: number;
+
+async function getCategoryId(slug: string): Promise<number> {
+  const { rows } = await db.query<{ id: number }>('SELECT id FROM nutrition_library_categories WHERE slug = ?', [slug]);
+  return rows[0]?.id;
+}
 
 beforeAll(async () => {
   gymId = await createTestGym('NL Test Gym');
@@ -28,13 +36,18 @@ beforeAll(async () => {
   otherGymId = await createTestGym('NL Other Gym');
   await createTestMembership(otherGymId, 'admin');
 
+  mainDishId = await getCategoryId('main_dish');
+  sideId = await getCategoryId('side');
+  sauceId = await getCategoryId('sauce');
+
   // Insert a global (system) library item — gym_id IS NULL — cleaned up manually below
   // since cleanupTestGyms only deletes rows scoped to the created test gyms.
   const { insertId } = await db.query(
-    "INSERT INTO nutrition_library_items (gym_id, name, category, status) VALUES (NULL, 'NL Test Chicken', 'main_dish', 'active')",
+    "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (NULL, 'NL Test Chicken', 'active')",
     [],
   );
   libraryItemId = insertId;
+  await db.query('INSERT INTO nutrition_library_item_categories (item_id, category_id) VALUES (?, ?)', [libraryItemId, mainDishId]);
 });
 
 afterAll(async () => {
@@ -69,11 +82,39 @@ describe('GET /nutrition-library — module access', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Categories / nutritional qualities catalogues
+// ---------------------------------------------------------------------------
+
+describe('GET /nutrition-library/categories', () => {
+  it('returns the global category catalogue', async () => {
+    const res = await request
+      .get('/nutrition-library/categories')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.some((c: any) => c.slug === 'main_dish')).toBe(true);
+    expect(res.body.some((c: any) => c.slug === 'side')).toBe(true);
+  });
+});
+
+describe('GET /nutrition-library/nutritional-qualities', () => {
+  it('includes fat and fiber alongside protein and carbohydrate', async () => {
+    const res = await request
+      .get('/nutrition-library/nutritional-qualities')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const slugs = res.body.map((q: any) => q.slug);
+    expect(slugs).toEqual(expect.arrayContaining(['protein', 'carbohydrate', 'fat', 'fiber']));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Happy path — list, search, filter, pagination
 // ---------------------------------------------------------------------------
 
 describe('GET /nutrition-library — happy path', () => {
-  it('returns paginated items including system (gym_id null) items', async () => {
+  it('returns paginated items including system (gym_id null) items, with categories', async () => {
     const res = await request
       .get('/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -84,18 +125,18 @@ describe('GET /nutrition-library — happy path', () => {
     const item = res.body.items.find((i: any) => i.id === libraryItemId);
     expect(item).toBeDefined();
     expect(item.name).toBe('NL Test Chicken');
-    expect(item.category).toBe('main_dish');
+    expect(item.categories.map((c: any) => c.slug)).toEqual(['main_dish']);
     expect(item.gym_id).toBeNull();
   });
 
-  it('filters by ?category=main_dish and returns only main_dish items', async () => {
+  it('filters by ?category_id= and returns only items with that category', async () => {
     const res = await request
-      .get('/nutrition-library?category=main_dish')
+      .get(`/nutrition-library?category_id=${mainDishId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     for (const item of res.body.items) {
-      expect(item.category).toBe('main_dish');
+      expect(item.categories.some((c: any) => c.id === mainDishId)).toBe(true);
     }
     const item = res.body.items.find((i: any) => i.id === libraryItemId);
     expect(item).toBeDefined();
@@ -111,9 +152,9 @@ describe('GET /nutrition-library — happy path', () => {
     expect(item).toBeDefined();
   });
 
-  it('returns 400 for an invalid ?category value', async () => {
+  it('returns 400 for an invalid ?category_id value', async () => {
     const res = await request
-      .get('/nutrition-library?category=invalid')
+      .get('/nutrition-library?category_id=not-a-number')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
@@ -126,7 +167,7 @@ describe('GET /nutrition-library — happy path', () => {
 
 describe('POST /nutrition-library — gym-owned items', () => {
   it('returns 401 without auth', async () => {
-    const res = await request.post('/nutrition-library').send({ name: 'X', category: 'main_dish' });
+    const res = await request.post('/nutrition-library').send({ name: 'X', category_ids: [mainDishId] });
     expect(res.status).toBe(401);
   });
 
@@ -135,20 +176,31 @@ describe('POST /nutrition-library — gym-owned items', () => {
       .post('/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', accountantGymId)
-      .send({ name: 'Accountant Item', category: 'main_dish' });
+      .send({ name: 'Accountant Item', category_ids: [mainDishId] });
     expect(res.status).toBe(403);
   });
 
-  it('creates a gym-owned item as admin and returns 201', async () => {
+  it('creates a gym-owned item with a single category and returns 201', async () => {
     const res = await request
       .post('/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: `Gym Item ${Date.now()}`, category: 'side' });
+      .send({ name: `Gym Item ${Date.now()}`, category_ids: [sideId] });
     expect(res.status).toBe(201);
-    expect(res.body.category).toBe('side');
+    expect(res.body.categories.map((c: any) => c.id)).toEqual([sideId]);
     expect(res.body.gym_id).toBe(gymId);
     expect(res.body.image_url).toBeNull();
+  });
+
+  it('creates a gym-owned item with multiple categories (e.g. peas: main dish + side)', async () => {
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Peas ${Date.now()}`, category_ids: [mainDishId, sideId] });
+    expect(res.status).toBe(201);
+    const ids = res.body.categories.map((c: any) => c.id).sort();
+    expect(ids).toEqual([mainDishId, sideId].sort());
   });
 
   it('creates a gym-owned item with an image_url and returns it', async () => {
@@ -156,9 +208,21 @@ describe('POST /nutrition-library — gym-owned items', () => {
       .post('/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: `Gym Item With Image ${Date.now()}`, category: 'side', image_url: 'https://r2.example/img.png' });
+      .send({ name: `Gym Item With Image ${Date.now()}`, category_ids: [sideId], image_url: 'https://r2.example/img.png' });
     expect(res.status).toBe(201);
     expect(res.body.image_url).toBe('https://r2.example/img.png');
+  });
+
+  it('creates a gym-owned item with nutritional qualities and returns them', async () => {
+    const { rows } = await db.query<{ id: number }>("SELECT id FROM nutritional_qualities WHERE slug IN ('fat', 'fiber')");
+    const qualityIds = rows.map((r) => r.id);
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `High Fiber Item ${Date.now()}`, category_ids: [sideId], quality_ids: qualityIds });
+    expect(res.status).toBe(201);
+    expect(res.body.qualities.map((q: any) => q.id).sort()).toEqual(qualityIds.sort());
   });
 
   it('returns 400 when creating without a name', async () => {
@@ -166,8 +230,43 @@ describe('POST /nutrition-library — gym-owned items', () => {
       .post('/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ category: 'main_dish' });
+      .send({ category_ids: [mainDishId] });
     expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when creating without any category', async () => {
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `No Category ${Date.now()}`, category_ids: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when creating with an invalid category id', async () => {
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Bad Category ${Date.now()}`, category_ids: [999999] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 409 when creating an item with a name that already exists for this gym', async () => {
+    const name = `Duplicate Name ${Date.now()}`;
+    const first = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name, category_ids: [mainDishId] });
+    expect(first.status).toBe(201);
+
+    const second = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name, category_ids: [sideId] });
+    expect(second.status).toBe(409);
   });
 });
 
@@ -180,7 +279,7 @@ describe('PUT /nutrition-library/:id — gym-owned items only', () => {
       .post('/nutrition-library')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: `Editable Item ${suffix}`, category: 'sauce' });
+      .send({ name: `Editable Item ${suffix}`, category_ids: [sauceId] });
     expect(res.status).toBe(201);
     ownItemId = res.body.id;
   });
@@ -211,6 +310,25 @@ describe('PUT /nutrition-library/:id — gym-owned items only', () => {
       .send({ name: `Editable Item Updated ${suffix}` });
     expect(res.status).toBe(200);
     expect(res.body.name).toBe(`Editable Item Updated ${suffix}`);
+  });
+
+  it('replaces categories on own gym item, adding a second category', async () => {
+    const res = await request
+      .put(`/nutrition-library/${ownItemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ category_ids: [sauceId, mainDishId] });
+    expect(res.status).toBe(200);
+    expect(res.body.categories.map((c: any) => c.id).sort()).toEqual([sauceId, mainDishId].sort());
+  });
+
+  it('returns 400 when replacing categories with an empty array', async () => {
+    const res = await request
+      .put(`/nutrition-library/${ownItemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ category_ids: [] });
+    expect(res.status).toBe(400);
   });
 
   it('sets image_url on own gym item and returns it', async () => {
