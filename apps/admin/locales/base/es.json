@@ -2355,6 +2355,7 @@
     "search_empty": "No se encontraron usuarios activos.",
     "type_member": "Miembro",
     "type_staff": "Personal",
+    "unnamed_staff": "Miembro del personal sin nombre",
     "cancel": "Cancelar",
     "error_start": "No se pudo iniciar la suplantación.",
     "error_search": "No se pudo completar la búsqueda. Por favor, inténtalo de nuevo.",

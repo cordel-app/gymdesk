@@ -11,7 +11,8 @@ import { useToast } from '@/components/Toast';
 interface Target {
   id: string;
   name: string;
-  type: 'member' | 'staff';
+  email?: string | null;
+  type: 'staff';
   role: string;
   status?: string;
   gymId: string;
@@ -41,7 +42,7 @@ export function ImpersonationDialog({ onClose }: Props) {
     setSearchError(null);
     try {
       const results = await apiFetch<Target[]>(
-        `/platform/impersonation/targets?q=${encodeURIComponent(q)}&gym_id=${activeGymId}`,
+        `/platform/impersonation/targets?q=${encodeURIComponent(q)}&gym_id=${activeGymId}&type=staff`,
       );
       setTargets(results);
     } catch (err) {
@@ -136,48 +137,57 @@ export function ImpersonationDialog({ onClose }: Props) {
               {t('search_empty')}
             </div>
           )}
-          {targets.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => handleImpersonate(c)}
-              disabled={starting === c.id}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-                width: '100%', padding: '12px 20px', border: 'none',
-                background: 'none', cursor: 'pointer', textAlign: 'left',
-                borderBottom: '1px solid var(--border, #f0f0f0)',
-                opacity: starting && starting !== c.id ? 0.5 : 1,
-              }}
-            >
-              <div style={{
-                width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                background: c.type === 'member' ? '#dbeafe' : '#dcfce7',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 14, fontWeight: 600,
-                color: c.type === 'member' ? '#1d4ed8' : '#15803d',
-              }}>
-                {c.name.charAt(0).toUpperCase()}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {c.name}
+          {targets.map((c) => {
+            // Staff granted via an existing Clerk user without a name/email fall back to their
+            // raw technical user_id as `name` (see impersonation.ts) — never show that as the
+            // primary label (#504); show a human-readable placeholder with the id as secondary info.
+            const isUnnamed = c.name === c.id;
+            const displayName = isUnnamed ? t('unnamed_staff') : c.name;
+            const secondary = [t('type_staff'), c.role, c.status, isUnnamed ? c.id : c.email]
+              .filter(Boolean)
+              .join(' · ');
+
+            return (
+              <button
+                key={c.id}
+                onClick={() => handleImpersonate(c)}
+                disabled={starting === c.id}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  width: '100%', padding: '12px 20px', border: 'none',
+                  background: 'none', cursor: 'pointer', textAlign: 'left',
+                  borderBottom: '1px solid var(--border, #f0f0f0)',
+                  opacity: starting && starting !== c.id ? 0.5 : 1,
+                }}
+              >
+                <div style={{
+                  width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                  background: '#dcfce7',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 14, fontWeight: 600,
+                  color: '#15803d',
+                }}>
+                  {displayName.charAt(0).toUpperCase()}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)', marginTop: 2 }}>
-                  {c.type === 'member'
-                    ? t('type_member')
-                    : [t('type_staff'), c.role, c.status].filter(Boolean).join(' · ')}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {displayName}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted, #6b7280)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {secondary}
+                  </div>
                 </div>
-              </div>
-              <div style={{
-                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-                background: c.type === 'member' ? '#dbeafe' : '#dcfce7',
-                color: c.type === 'member' ? '#1d4ed8' : '#15803d',
-                flexShrink: 0,
-              }}>
-                {c.type === 'member' ? t('type_member') : t('type_staff')}
-              </div>
-            </button>
-          ))}
+                <div style={{
+                  fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                  background: '#dcfce7',
+                  color: '#15803d',
+                  flexShrink: 0,
+                }}>
+                  {t('type_staff')}
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         <div style={{ padding: '12px 20px', display: 'flex', justifyContent: 'flex-end' }}>

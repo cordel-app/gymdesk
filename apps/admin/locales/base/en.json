@@ -2423,6 +2423,7 @@
     "search_empty": "No active users found.",
     "type_member": "Member",
     "type_staff": "Staff",
+    "unnamed_staff": "Unnamed staff member",
     "cancel": "Cancel",
     "error_start": "Could not start impersonation.",
     "error_search": "Unable to complete search. Please try again.",

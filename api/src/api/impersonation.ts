@@ -5,18 +5,25 @@ import { db } from '../infra/db';
 export const impersonationRouter = Router();
 
 /**
- * GET /platform/impersonation/targets?q=<search>&gym_id=<id>
+ * GET /platform/impersonation/targets?q=<search>&gym_id=<id>&type=<staff|member>
  * Superadmin-only. Returns active members + staff for the given gym, excluding
  * the caller. Staff discovery is entirely database-driven (gym_memberships) —
- * no Clerk lookup. Used by the Impersonate dialog.
+ * no Clerk lookup. Used by both the Admin app's Impersonate dialog (which must
+ * only ever see `type=staff` results — #504) and the Member app's impersonation
+ * dialog (which only wants `type=member`). `type` is optional and, when
+ * omitted, preserves the original combined behavior for backward compatibility.
  * Members are eligible regardless of whether they have a Clerk account.
  */
 impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) => {
   const adminId = req.auth!.userId;
   const gymId = req.query.gym_id as string | undefined;
   const q = ((req.query.q as string) ?? '').trim();
+  const type = req.query.type as string | undefined;
 
   if (!gymId) return res.status(400).json({ error: 'gym_id query param required' });
+  if (type && !['staff', 'member'].includes(type)) {
+    return res.status(400).json({ error: 'type must be "staff" or "member"' });
+  }
 
   try {
     const like = `%${q}%`;
@@ -27,10 +34,10 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
     // filter excludes those rows entirely, since `NULL LIKE anything` is NULL, not true — so they
     // never appeared in this list even for an empty search. Fall back to email, then user_id, for
     // both matching and display so every staff row is always findable.
-    const { rows: staffRows } = await db.query<{
-      user_id: string; name: string; role: string; gym_id: string; status: string;
+    const staffRows = type === 'member' ? [] : (await db.query<{
+      user_id: string; name: string; email: string | null; role: string; gym_id: string; status: string;
     }>(
-      `SELECT gm.user_id, COALESCE(gm.name, gm.email, gm.user_id) AS name, gm.role, gm.gym_id, gm.status
+      `SELECT gm.user_id, COALESCE(gm.name, gm.email, gm.user_id) AS name, gm.email, gm.role, gm.gym_id, gm.status
        FROM gym_memberships gm
        WHERE gm.gym_id = ?
          AND gm.user_id != ?
@@ -39,13 +46,13 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
        ORDER BY name ASC
        LIMIT 50`,
       [gymId, adminId, like],
-    );
+    )).rows;
 
     // Members: all active (non-deleted) members in this gym regardless of Clerk account
-    const { rows: memberRows } = await db.query<{
-      id: number; name: string; gym_id: string; clerk_user_id: string | null;
+    const memberRows = type === 'staff' ? [] : (await db.query<{
+      id: number; name: string; email: string | null; gym_id: string; clerk_user_id: string | null;
     }>(
-      `SELECT m.id, m.name, m.gym_id, m.clerk_user_id
+      `SELECT m.id, m.name, m.email, m.gym_id, m.clerk_user_id
        FROM members m
        WHERE m.gym_id = ?
          AND m.deleted_at IS NULL
@@ -53,13 +60,13 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
        ORDER BY m.name ASC
        LIMIT 50`,
       [gymId, like],
-    );
+    )).rows;
 
     // Staff targets come straight from gym_memberships — no Clerk lookup. Superadmins
     // are excluded because they carry no gym_memberships row (see tenantContext.ts:
     // "gymMembershipId: null for superadmins with no membership row").
     const staffFiltered = staffRows.map((s) => (
-      { id: s.user_id, name: s.name, type: 'staff', role: s.role, status: s.status, gymId: s.gym_id }
+      { id: s.user_id, name: s.name, email: s.email, type: 'staff', role: s.role, status: s.status, gymId: s.gym_id }
     ));
 
     // Exclude caller from members list (if the superadmin also has a member row)
@@ -71,6 +78,7 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
       .map((m) => ({
         id: `member:${m.id}`,
         name: m.name,
+        email: m.email,
         type: 'member' as const,
         role: 'member',
         gymId: m.gym_id,

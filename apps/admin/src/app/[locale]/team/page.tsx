@@ -61,7 +61,7 @@ export default function TeamPage() {
     try {
       const res = await apiFetch<{ id: string; name: string; role: string; gym_id: string; gymIds: string[] }>(
         `/platform/impersonation/${member.user_id}`,
-        { method: 'POST' },
+        { method: 'POST', body: JSON.stringify({ targetType: 'staff' }) },
       );
       const authenticatorName =
         user?.fullName ||
