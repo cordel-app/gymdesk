@@ -60,17 +60,24 @@ exports.up = async (knex) => {
     // Maps every id that will be merged away → the canonical id (MIN(id) in
     // its group) it's merged into. Empty when there are no duplicates.
     await knex.raw('DROP TEMPORARY TABLE IF EXISTS nli_dedup_map');
+    // Prefer an active row as canonical over a soft-deleted one (falling back
+    // to lowest id as a tiebreaker) — otherwise, if the lower-id row in a
+    // duplicate group happened to be `status='deleted'`, the surviving *active*
+    // row would be the one hard-deleted below, silently vanishing from every
+    // `WHERE status != 'deleted'` list despite still being referenced by
+    // meal plans/restrictions repointed onto it.
     await knex.raw(`
       CREATE TEMPORARY TABLE nli_dedup_map AS
-      SELECT nli.id AS old_id, grp.canonical_id
-      FROM nutrition_library_items nli
-      JOIN (
-        SELECT COALESCE(gym_id, '') AS gym_key, name, MIN(id) AS canonical_id
+      SELECT old_id, canonical_id FROM (
+        SELECT id AS old_id,
+               FIRST_VALUE(id) OVER (
+                 PARTITION BY COALESCE(gym_id, ''), name
+                 ORDER BY (status = 'active') DESC, id ASC
+               ) AS canonical_id,
+               COUNT(*) OVER (PARTITION BY COALESCE(gym_id, ''), name) AS group_size
         FROM nutrition_library_items
-        GROUP BY COALESCE(gym_id, ''), name
-        HAVING COUNT(*) > 1
-      ) grp ON COALESCE(nli.gym_id, '') = grp.gym_key AND nli.name = grp.name
-      WHERE nli.id <> grp.canonical_id
+      ) ranked
+      WHERE group_size > 1 AND old_id <> canonical_id
     `);
 
     // Backfill categories using the canonical id for any item being merged
