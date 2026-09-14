@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
+import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
 
 const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
 
@@ -55,7 +56,7 @@ promotionsRouter.get('/', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT p.id, p.gym_id, p.name, p.description, p.starts_at, p.ends_at,
               p.stackable, p.lifecycle_status, p.created_at, p.deleted_at,
-              p.free_months, p.paid_months, p.bonus_months,
+              p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
               p.created_by_membership_id,
               gm.name AS created_by_name
        FROM promotions p
@@ -81,6 +82,37 @@ promotionsRouter.get('/created-by-options', async (req, res, next) => {
     );
     res.json(rows);
   } catch (err) { next(err); }
+});
+
+function parseNonNegativeInt(v: unknown): number | null {
+  if (v === undefined || v === null || v === '') return 0;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0) return null;
+  return n;
+}
+
+// Non-persisted forecast preview — computed from whatever config values are
+// passed in, so the frontend can preview unsaved edits without duplicating
+// the Free/Pay/Prepaid/Bonus/Regular classification logic itself.
+promotionsRouter.get('/timeline', async (req, res) => {
+  const free = parseNonNegativeInt(req.query.free_months);
+  const paid = parseNonNegativeInt(req.query.paid_months);
+  const payBeforehand = parseNonNegativeInt(req.query.pay_beforehand_months);
+  const bonus = parseNonNegativeInt(req.query.bonus_months);
+  if (free === null || paid === null || payBeforehand === null || bonus === null) {
+    return res.status(400).json({
+      error: 'free_months, paid_months, pay_beforehand_months and bonus_months must be non-negative integers',
+    });
+  }
+  const err = validatePayBeforehandMonths(paid, payBeforehand);
+  if (err) return res.status(400).json({ error: err });
+
+  const anchorDate = typeof req.query.anchor_date === 'string' ? req.query.anchor_date : undefined;
+  const result = computePromotionTimeline(
+    { freeMonths: free, paidMonths: paid, payBeforehandMonths: payBeforehand, bonusMonths: bonus },
+    anchorDate,
+  );
+  res.json(result);
 });
 
 promotionsRouter.get('/:id', async (req, res, next) => {
@@ -127,17 +159,19 @@ function validateBody(body: any) {
 promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, starts_at, ends_at, stackable, lifecycle_status,
-          free_months, paid_months, bonus_months } = req.body;
+          free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
   if (!name?.trim() || !starts_at || !ends_at) {
     return res.status(400).json({ error: 'name, starts_at and ends_at are required' });
   }
   const err = validateBody(req.body); if (err) return res.status(400).json({ error: err });
+  const pbErr = validatePayBeforehandMonths(paid_months ?? 0, pay_beforehand_months ?? 0);
+  if (pbErr) return res.status(400).json({ error: pbErr });
   try {
     const row = await insertAndFetch(
       `INSERT INTO promotions
          (gym_id, name, description, starts_at, ends_at, stackable, lifecycle_status,
-          created_by_membership_id, free_months, paid_months, bonus_months)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          created_by_membership_id, free_months, paid_months, bonus_months, pay_beforehand_months)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         gymId, name.trim(), description ?? null,
         new Date(starts_at), new Date(ends_at),
@@ -147,6 +181,7 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
         free_months ?? null,
         paid_months ?? null,
         bonus_months ?? null,
+        pay_beforehand_months ?? 0,
       ],
       'SELECT * FROM promotions WHERE id = ?',
       (id) => [id],
@@ -160,19 +195,31 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const err = validateBody(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, starts_at, ends_at, stackable, lifecycle_status,
-          free_months, paid_months, bonus_months } = req.body;
+          free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
   try {
+    const { rows: existingRows } = await db.query(
+      "SELECT paid_months, pay_beforehand_months FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
+      [req.params.id, gymId],
+    );
+    if (existingRows.length === 0) return res.status(404).json({ error: 'Promotion not found' });
+    const effectivePaidMonths = 'paid_months' in req.body ? (paid_months ?? 0) : (existingRows[0].paid_months ?? 0);
+    const effectivePayBeforehandMonths = 'pay_beforehand_months' in req.body
+      ? (pay_beforehand_months ?? 0) : (existingRows[0].pay_beforehand_months ?? 0);
+    const pbErr = validatePayBeforehandMonths(effectivePaidMonths, effectivePayBeforehandMonths);
+    if (pbErr) return res.status(400).json({ error: pbErr });
+
     const { rowCount } = await db.query(
       `UPDATE promotions SET
-        name             = COALESCE(?, name),
-        description      = IF(?, ?, description),
-        starts_at        = COALESCE(?, starts_at),
-        ends_at          = COALESCE(?, ends_at),
-        stackable        = IF(?, ?, stackable),
-        lifecycle_status = COALESCE(?, lifecycle_status),
-        free_months      = IF(?, ?, free_months),
-        paid_months      = IF(?, ?, paid_months),
-        bonus_months     = IF(?, ?, bonus_months)
+        name                  = COALESCE(?, name),
+        description           = IF(?, ?, description),
+        starts_at             = COALESCE(?, starts_at),
+        ends_at               = COALESCE(?, ends_at),
+        stackable             = IF(?, ?, stackable),
+        lifecycle_status      = COALESCE(?, lifecycle_status),
+        free_months           = IF(?, ?, free_months),
+        paid_months           = IF(?, ?, paid_months),
+        bonus_months          = IF(?, ?, bonus_months),
+        pay_beforehand_months = IF(?, ?, pay_beforehand_months)
        WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
       [
         name?.trim() ?? null,
@@ -184,6 +231,7 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         'free_months' in req.body ? 1 : 0, free_months ?? null,
         'paid_months' in req.body ? 1 : 0, paid_months ?? null,
         'bonus_months' in req.body ? 1 : 0, bonus_months ?? null,
+        'pay_beforehand_months' in req.body ? 1 : 0, pay_beforehand_months ?? 0,
         req.params.id, gymId,
       ],
     );
@@ -235,12 +283,12 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       const { insertId } = await tx.query(
         `INSERT INTO promotions
            (gym_id, name, description, starts_at, ends_at, stackable, lifecycle_status,
-            created_by_membership_id, free_months, paid_months, bonus_months)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_by_membership_id, free_months, paid_months, bonus_months, pay_beforehand_months)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId, copyName, src.description, src.starts_at, src.ends_at,
           src.stackable, src.lifecycle_status, gymMembershipId ?? null,
-          src.free_months, src.paid_months, src.bonus_months,
+          src.free_months, src.paid_months, src.bonus_months, src.pay_beforehand_months,
         ],
       );
       newId = insertId;

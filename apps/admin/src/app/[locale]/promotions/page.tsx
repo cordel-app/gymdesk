@@ -28,7 +28,17 @@ interface Promo {
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
+  pay_beforehand_months: number | null;
 }
+
+type PromotionTimelineStatus = 'free_promotion' | 'pay_promotion' | 'prepaid_promotion' | 'bonus_promotion' | 'pay_regular';
+interface PromotionTimelinePeriod {
+  period: number;
+  status: PromotionTimelineStatus;
+  startsOn: string;
+  endsOn: string | null;
+}
+interface PromotionTimelineResponse { periods: PromotionTimelinePeriod[] }
 
 interface MembershipPlan { id: number; name: string }
 interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; availability: string }
@@ -67,17 +77,10 @@ function fmtDate(d: Date, locale: string) {
   return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// Add N calendar months to a date
-function addMonths(d: Date, n: number): Date {
-  const result = new Date(d);
-  result.setMonth(result.getMonth() + n);
-  return result;
-}
-
-function subtractDay(d: Date): Date {
-  const result = new Date(d);
-  result.setDate(result.getDate() - 1);
-  return result;
+// Parse a YYYY-MM-DD string (as returned by the /promotions/timeline endpoint) as a local Date
+function parseDateStr(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 function emptyEditForm(promo?: Promo) {
@@ -90,6 +93,7 @@ function emptyEditForm(promo?: Promo) {
     lifecycle_status: (promo?.lifecycle_status ?? 'active') as 'active' | 'inactive',
     free_months: promo?.free_months != null ? String(promo.free_months) : '',
     paid_months: promo?.paid_months != null ? String(promo.paid_months) : '',
+    pay_beforehand_months: promo?.pay_beforehand_months != null ? String(promo.pay_beforehand_months) : '',
     bonus_months: promo?.bonus_months != null ? String(promo.bonus_months) : '',
   };
 }
@@ -140,6 +144,9 @@ export default function PromotionsPage() {
   const [detailFor, setDetailFor] = useState<Promo | null>(null);
   const [deleting, setDeleting] = useState<Promo | null>(null);
 
+  const [timeline, setTimeline] = useState<PromotionTimelineResponse | null>(null);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
+
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   // Sellable items = charge types that are not gym charges
@@ -156,6 +163,36 @@ export default function PromotionsPage() {
   useEffect(() => {
     if (!gymLoading && isAdmin) load();
   }, [activeGymId, gymLoading, statusFilter, search]);
+
+  // Live forecast preview — recalculated by the backend (not duplicated here)
+  // whenever the unsaved Billing & Duration fields change.
+  useEffect(() => {
+    if (editingId === null) { setTimeline(null); setTimelineError(null); return; }
+    const { free_months, paid_months, pay_beforehand_months, bonus_months } = editForm;
+    if (!free_months && !paid_months && !pay_beforehand_months && !bonus_months) {
+      setTimeline(null);
+      setTimelineError(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({
+          free_months: free_months || '0',
+          paid_months: paid_months || '0',
+          pay_beforehand_months: pay_beforehand_months || '0',
+          bonus_months: bonus_months || '0',
+        });
+        const data = await apiFetch<PromotionTimelineResponse>(`/promotions/timeline?${qs.toString()}`);
+        setTimeline(data);
+        setTimelineError(null);
+      } catch (err: any) {
+        setTimeline(null);
+        setTimelineError(err.message ?? t('error_generic'));
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId, editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months]);
 
   async function loadLookups() {
     try {
@@ -278,6 +315,7 @@ export default function PromotionsPage() {
         lifecycle_status: editForm.lifecycle_status,
         free_months: editForm.free_months !== '' ? parseInt(editForm.free_months, 10) : null,
         paid_months: editForm.paid_months !== '' ? parseInt(editForm.paid_months, 10) : null,
+        pay_beforehand_months: editForm.pay_beforehand_months !== '' ? parseInt(editForm.pay_beforehand_months, 10) : 0,
         bonus_months: editForm.bonus_months !== '' ? parseInt(editForm.bonus_months, 10) : null,
       };
 
@@ -424,46 +462,38 @@ export default function PromotionsPage() {
   if (gymLoading || !isAdmin) return null;
 
   // ─── Timeline preview ─────────────────────────────────────────────────────
+  // The Free/Pay/Prepaid/Bonus/Regular classification is computed by the
+  // backend (GET /promotions/timeline, see api/src/domain/promotionTimeline.ts)
+  // — this only renders whatever periods it returns, using stable status keys
+  // to pick the translated label/billing text and row styling.
 
-  function renderTimeline(fm: EditForm) {
-    const free = parseInt(fm.free_months, 10) || 0;
-    const paid = parseInt(fm.paid_months, 10) || 0;
-    const bonus = parseInt(fm.bonus_months, 10) || 0;
-    if (free === 0 && paid === 0 && bonus === 0) return null;
+  const STATUS_LABEL_KEYS: Record<PromotionTimelineStatus, string> = {
+    free_promotion: 'timeline_free',
+    pay_promotion: 'timeline_pay_promo',
+    prepaid_promotion: 'timeline_prepaid_promo',
+    bonus_promotion: 'timeline_bonus',
+    pay_regular: 'timeline_pay_regular',
+  };
+  const STATUS_BILLING_KEYS: Record<PromotionTimelineStatus, string> = {
+    free_promotion: 'timeline_no_charge',
+    pay_promotion: 'timeline_promo_price',
+    prepaid_promotion: 'timeline_promo_price',
+    bonus_promotion: 'timeline_no_charge',
+    pay_regular: 'timeline_regular_price',
+  };
 
-    // Hypothetical enrollment = first of current month
-    const now = new Date();
-    const enrollment = new Date(now.getFullYear(), now.getMonth(), 1);
-    const enrollmentStr = fmtDate(enrollment, locale);
-
-    type Row = { period: number; from: Date; to: Date | null; status: string; billing: string };
-    const timelineRows: Row[] = [];
-    let cursor = new Date(enrollment);
-    let period = 1;
-
-    for (let i = 0; i < free; i++) {
-      const from = new Date(cursor);
-      const next = addMonths(cursor, 1);
-      timelineRows.push({ period, from, to: subtractDay(next), status: t('timeline_free'), billing: t('timeline_no_charge') });
-      cursor = next;
-      period++;
+  function renderTimeline() {
+    if (timelineError) {
+      return (
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_timeline')}</p>
+          <p style={{ margin: 0, fontSize: 12, color: '#c0392b' }}>{timelineError}</p>
+        </div>
+      );
     }
-    for (let i = 0; i < paid; i++) {
-      const from = new Date(cursor);
-      const next = addMonths(cursor, 1);
-      timelineRows.push({ period, from, to: subtractDay(next), status: t('timeline_paid_promo'), billing: t('timeline_promo_price') });
-      cursor = next;
-      period++;
-    }
-    for (let i = 0; i < bonus; i++) {
-      const from = new Date(cursor);
-      const next = addMonths(cursor, 1);
-      timelineRows.push({ period, from, to: subtractDay(next), status: t('timeline_bonus'), billing: t('timeline_no_charge') });
-      cursor = next;
-      period++;
-    }
-    // Regular pricing row
-    timelineRows.push({ period, from: cursor, to: null, status: t('timeline_paid_regular'), billing: t('timeline_regular_price') });
+    if (!timeline || timeline.periods.length === 0) return null;
+
+    const enrollmentStr = fmtDate(parseDateStr(timeline.periods[0].startsOn), locale);
 
     return (
       <div style={subSectionSt}>
@@ -480,20 +510,22 @@ export default function PromotionsPage() {
               </tr>
             </thead>
             <tbody>
-              {timelineRows.map((row, idx) => {
-                const isFree = row.status === t('timeline_free') || row.status === t('timeline_bonus');
-                const isRegular = row.status === t('timeline_paid_regular');
+              {timeline.periods.map((row) => {
+                const isFree = row.status === 'free_promotion' || row.status === 'bonus_promotion';
+                const isRegular = row.status === 'pay_regular';
                 const bg = isFree ? '#f0fdf4' : isRegular ? '#f9fafb' : '#fefce8';
+                const statusLabel = t(STATUS_LABEL_KEYS[row.status] as any);
+                const billingLabel = t(STATUS_BILLING_KEYS[row.status] as any);
                 return (
-                  <tr key={idx} style={{ background: bg }}>
-                    <td style={tdSt}>{row.to ? row.period : `${row.period}+`}</td>
+                  <tr key={row.period} style={{ background: bg }}>
+                    <td style={tdSt}>{row.endsOn ? row.period : `${row.period}+`}</td>
                     <td style={tdSt}>
-                      {row.to
-                        ? `${fmtDate(row.from, locale)} – ${fmtDate(row.to, locale)}`
-                        : `From ${fmtDate(row.from, locale)}`}
+                      {row.endsOn
+                        ? `${fmtDate(parseDateStr(row.startsOn), locale)} – ${fmtDate(parseDateStr(row.endsOn), locale)}`
+                        : `From ${fmtDate(parseDateStr(row.startsOn), locale)}`}
                     </td>
-                    <td style={{ ...tdSt, fontWeight: 500 }}>{row.status}</td>
-                    <td style={{ ...tdSt, color: isFree ? '#166534' : isRegular ? '#666' : '#854d0e' }}>{row.billing}</td>
+                    <td style={{ ...tdSt, fontWeight: 500 }}>{statusLabel}</td>
+                    <td style={{ ...tdSt, color: isFree ? '#166534' : isRegular ? '#666' : '#854d0e' }}>{billingLabel}</td>
                   </tr>
                 );
               })}
@@ -582,7 +614,7 @@ export default function PromotionsPage() {
         {/* Billing & Duration */}
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_billing_duration')}</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0 16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
             <div>
               <label style={inlineLabelSt}>{t('label_free_months')}</label>
               <input type="number" min="0" value={editForm.free_months} onChange={(e) => setEditForm({ ...editForm, free_months: e.target.value })} style={inlineInputSt} placeholder="0" />
@@ -592,11 +624,15 @@ export default function PromotionsPage() {
               <input type="number" min="0" value={editForm.paid_months} onChange={(e) => setEditForm({ ...editForm, paid_months: e.target.value })} style={inlineInputSt} placeholder="0" />
             </div>
             <div>
+              <label style={inlineLabelSt}>{t('label_pay_beforehand_months')}</label>
+              <input type="number" min="0" value={editForm.pay_beforehand_months} onChange={(e) => setEditForm({ ...editForm, pay_beforehand_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+            <div>
               <label style={inlineLabelSt}>{t('label_bonus_months')}</label>
               <input type="number" min="0" value={editForm.bonus_months} onChange={(e) => setEditForm({ ...editForm, bonus_months: e.target.value })} style={inlineInputSt} placeholder="0" />
             </div>
           </div>
-          {renderTimeline(editForm)}
+          {renderTimeline()}
         </div>
 
         {/* Charge Benefits */}
@@ -720,6 +756,7 @@ export default function PromotionsPage() {
 
     const free = promo.free_months ?? 0;
     const paid = promo.paid_months ?? 0;
+    const payBeforehand = promo.pay_beforehand_months ?? 0;
     const bonus = promo.bonus_months ?? 0;
 
     return (
@@ -732,6 +769,7 @@ export default function PromotionsPage() {
             <div style={{ display: 'flex', gap: 24, fontSize: 13, flexWrap: 'wrap' }}>
               {free > 0 && <span><strong>{t('label_free_months')}:</strong> {free}</span>}
               {paid > 0 && <span><strong>{t('label_paid_months')}:</strong> {paid}</span>}
+              {payBeforehand > 0 && <span><strong>{t('label_pay_beforehand_months')}:</strong> {payBeforehand}</span>}
               {bonus > 0 && <span><strong>{t('label_bonus_months')}:</strong> {bonus}</span>}
             </div>
           </div>
