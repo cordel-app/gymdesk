@@ -16,6 +16,7 @@ const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'additional'] as const;
 const MEAL_TYPES = [
   'recien_levantado', 'breakfast', 'media_manana',
   'lunch', 'snack', 'dinner', 'antes_de_dormir',
+  'two_three_hours_before_training', 'immediately_before_training', 'immediately_after_training',
 ] as const;
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',

@@ -321,6 +321,17 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   (`promotion-timeline.test.ts`, covering the ticket's worked examples) +
   integration tests in `promotions.test.ts` (CRUD/validation for the new
   field, duplicate copies it, the new endpoint's happy path/validation/auth).
+  - **Nutrition Plan Templates: training-related meal types (#502)**: `meal_type`
+    on `nutrition_plan_template_meals` and `member_nutrition_plan_meals` now
+    accepts 3 additional values — `two_three_hours_before_training`,
+    `immediately_before_training`, `immediately_after_training` — alongside
+    the existing 7 (migration 143, guarded drop-and-recreate `CHECK`
+    constraint widening, same idempotent pattern as migration 123). Backend
+    `MEAL_TYPES` whitelist updated in all three routers that validate it
+    (`nutrition-plan-templates.ts`, `platform-nutrition-plan-templates.ts`,
+    `member-nutrition-plans.ts`); admin `NutritionPlanTree.tsx` meal-type
+    selector updated to match. New `tree_meal_type_*` keys added to admin
+    en/es/ca locales and `meal_type.*` keys added to member en/es/ca locales.
 
 ## Decisions
 

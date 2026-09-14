@@ -317,7 +317,10 @@
       "lunch": "Dinar",
       "snack": "Berenar",
       "dinner": "Sopar",
-      "antes_de_dormir": "Abans de dormir"
+      "antes_de_dormir": "Abans de dormir",
+      "two_three_hours_before_training": "2-3 hores abans de l'entrenament",
+      "immediately_before_training": "Immediatament abans de l'entrenament",
+      "immediately_after_training": "Immediatament després de l'entrenament"
     }
   }
 }
