@@ -50,6 +50,11 @@ describe('Auth', () => {
     const res = await request.post('/promotions').set('x-gym-id', gymId).send({});
     expect(res.status).toBe(401);
   });
+
+  it('GET /promotions/timeline → 401 without token', async () => {
+    const res = await request.get('/promotions/timeline').set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
 });
 
 // ─── Tenant isolation ─────────────────────────────────────────────────────────
@@ -151,6 +156,173 @@ describe('Promotion CRUD with new field names', () => {
     expect(res.status).toBe(200);
     expect(res.body.free_months).toBe(2);
     expect(res.body.paid_months).toBe(3);
+  });
+});
+
+// ─── Pay Beforehand (#486) ─────────────────────────────────────────────────────
+
+describe('Pay Beforehand', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Pay Beforehand Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('existing Promotions default pay_beforehand_months to 0', async () => {
+    const promoId = await createPromo(gymId, 'Legacy Promo');
+    const res = await request
+      .get(`/promotions/${promoId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.pay_beforehand_months).toBe(0);
+  });
+
+  it('POST /promotions creates with pay_beforehand_months', async () => {
+    const res = await request
+      .post('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        name: 'Prepaid Promo',
+        starts_at: '2026-08-01',
+        ends_at: '2026-08-31',
+        paid_months: 3,
+        pay_beforehand_months: 2,
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.pay_beforehand_months).toBe(2);
+  });
+
+  it('POST /promotions rejects pay_beforehand_months > paid_months', async () => {
+    const res = await request
+      .post('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        name: 'Invalid Promo',
+        starts_at: '2026-08-01',
+        ends_at: '2026-08-31',
+        paid_months: 2,
+        pay_beforehand_months: 3,
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /promotions rejects pay_beforehand_months > 0 when paid_months is 0', async () => {
+    const res = await request
+      .post('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        name: 'Invalid Promo 2',
+        starts_at: '2026-08-01',
+        ends_at: '2026-08-31',
+        paid_months: 0,
+        pay_beforehand_months: 1,
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /promotions/:id validates pay_beforehand_months against the existing paid_months', async () => {
+    const promoId = await createPromo(gymId, 'Combo Promo');
+    await request
+      .put(`/promotions/${promoId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ paid_months: 2 });
+
+    const badRes = await request
+      .put(`/promotions/${promoId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ pay_beforehand_months: 3 });
+    expect(badRes.status).toBe(400);
+
+    const okRes = await request
+      .put(`/promotions/${promoId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ pay_beforehand_months: 2 });
+    expect(okRes.status).toBe(200);
+    expect(okRes.body.pay_beforehand_months).toBe(2);
+  });
+
+  it('duplicate copies pay_beforehand_months', async () => {
+    const created = await request
+      .post('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        name: 'Dup Source',
+        starts_at: '2026-08-01',
+        ends_at: '2026-08-31',
+        paid_months: 3,
+        pay_beforehand_months: 1,
+      });
+    const dup = await request
+      .post(`/promotions/${created.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(dup.status).toBe(201);
+    expect(dup.body.pay_beforehand_months).toBe(1);
+  });
+});
+
+// ─── Timeline / Forecast endpoint (#486) ───────────────────────────────────────
+
+describe('GET /promotions/timeline', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Timeline Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('matches the ticket\'s canonical example (free=1, paid=3, pay_beforehand=2, bonus=1)', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({ free_months: 1, paid_months: 3, pay_beforehand_months: 2, bonus_months: 1, anchor_date: '2026-01-01' })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.periods.map((p: any) => p.status)).toEqual([
+      'free_promotion',
+      'prepaid_promotion',
+      'prepaid_promotion',
+      'pay_promotion',
+      'bonus_promotion',
+      'pay_regular',
+    ]);
+  });
+
+  it('rejects pay_beforehand_months greater than paid_months', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({ paid_months: 1, pay_beforehand_months: 2 })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects negative/non-integer query params', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({ paid_months: -1 })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('defaults missing params to 0 and returns just the regular period', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.periods).toHaveLength(1);
+    expect(res.body.periods[0].status).toBe('pay_regular');
   });
 });
 

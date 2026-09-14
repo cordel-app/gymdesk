@@ -296,6 +296,31 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   (`billing-forecast.test.ts`) + integration tests for the new endpoint and
   the embedded field in `membership-plans.test.ts` (tenant isolation, auth,
   happy path with benefits, unavailable state, no billing-event side effects).
+- **#486 (done)**: Add Pay Beforehand and Improve Promotion Forecast — new
+  `pay_beforehand_months` column on `promotions` (migration 141, unsigned int,
+  `NOT NULL DEFAULT 0` so existing Promotions keep their current forecast
+  behavior) selects how many of `paid_months` are already paid beforehand;
+  validated on POST/PUT as `0 <= pay_beforehand_months <= paid_months`
+  (a PUT that patches only one of the two fields validates against the
+  other's current DB value). The Free/Pay/Prepaid/Bonus/Regular forecast
+  classification — previously duplicated client-side — now lives in the new
+  pure module `domain/promotionTimeline.ts` (`computePromotionTimeline`,
+  `validatePayBeforehandMonths`), never persisted, exposed as a config-only
+  preview endpoint `GET /promotions/timeline` (query params, not tied to a
+  saved Promotion id) so the admin page's live example-timeline can call the
+  backend for the classification rule instead of re-implementing it. New
+  statuses (stable keys, translated in the frontend): `free_promotion`,
+  `pay_promotion`, `prepaid_promotion`, `bonus_promotion`, `pay_regular`
+  (terminal, open-ended) — user-facing labels are "Free (promotion)" / "Pay
+  (promotion)" / "Prepaid (promotion)" / "Bonus (promotion)" / "Pay
+  (regular)", replacing the old "Paid (promotion)"/"Paid (regular)" wording.
+  Admin UI: new "Pay Beforehand (months)" input in the Billing & Duration
+  section; the example timeline is now fetched from `GET /promotions/
+  timeline` (debounced on every unsaved field change) instead of computed
+  inline. Unit tests for the pure timeline module
+  (`promotion-timeline.test.ts`, covering the ticket's worked examples) +
+  integration tests in `promotions.test.ts` (CRUD/validation for the new
+  field, duplicate copies it, the new endpoint's happy path/validation/auth).
 
 ## Decisions
 

@@ -21,6 +21,7 @@ interface PromoDetail {
   deleted_by_name: string | null;
   free_months: number | null;
   paid_months: number | null;
+  pay_beforehand_months: number | null;
   bonus_months: number | null;
 }
 
@@ -68,6 +69,9 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
               <>
                 {field(t('detail_free_months'), detail.free_months != null ? String(detail.free_months) : null)}
                 {field(t('detail_paid_months'), detail.paid_months != null ? String(detail.paid_months) : null)}
+                {detail.pay_beforehand_months
+                  ? field(t('detail_pay_beforehand_months'), String(detail.pay_beforehand_months))
+                  : null}
                 {field(t('detail_bonus_months'), detail.bonus_months != null ? String(detail.bonus_months) : null)}
               </>
             )}
