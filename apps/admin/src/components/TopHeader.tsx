@@ -59,10 +59,11 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
           <span style={{ display: 'block', width: 22, height: 2, background: 'currentColor', borderRadius: 2 }} />
           <span style={{ display: 'block', width: 22, height: 2, background: 'currentColor', borderRadius: 2 }} />
         </button>
-        {logoSrc ? (
+        {logoSrc && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={logoSrc} alt={activeGym?.name ?? 'Gymdesk'} style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
-        ) : (
+        )}
+        {(!logoSrc || !theme?.logo_contains_gym_name) && (
           <strong style={{ fontSize: 18 }}>
             {activeGym?.name ?? 'Gymdesk'}
           </strong>

@@ -29,6 +29,7 @@ interface Theme {
   type: 'system' | 'custom';
   has_logo: boolean;
   logo_updated_at: string | null;
+  logo_contains_gym_name: boolean;
   tokens: ThemeTokens;
   created_at: string;
   modified_at: string | null;
@@ -118,6 +119,7 @@ function emptyEditForm(theme?: Theme) {
     name: theme?.name ?? '',
     description: theme?.description ?? '',
     status: (theme?.status ?? 'active') as string,
+    logoContainsGymName: theme?.logo_contains_gym_name ?? false,
     tokens: theme?.tokens ?? DEFAULT_TOKENS,
   };
 }
@@ -304,7 +306,12 @@ export default function ThemesPage() {
       if (id === NEW_ID) {
         await apiFetch('/platform/themes', {
           method: 'POST',
-          body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null, status: editForm.status }),
+          body: JSON.stringify({
+            name: editForm.name.trim(),
+            description: editForm.description.trim() || null,
+            status: editForm.status,
+            logo_contains_gym_name: editForm.logoContainsGymName,
+          }),
         });
         setHasNewRow(false);
         setExpandedId(null);
@@ -316,6 +323,7 @@ export default function ThemesPage() {
             name: editForm.name.trim(),
             description: editForm.description.trim() || null,
             status: editForm.status,
+            logo_contains_gym_name: editForm.logoContainsGymName,
             tokens: editForm.tokens,
           }),
         });
@@ -502,6 +510,15 @@ export default function ThemesPage() {
                     )}
                   </div>
                   <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editForm.logoContainsGymName}
+                      onChange={(e) => setEditForm({ ...editForm, logoContainsGymName: e.target.checked })}
+                    />
+                    {t('logo_contains_gym_name')}
+                  </label>
                 </>
               )}
             </div>
@@ -622,6 +639,7 @@ export default function ThemesPage() {
     type: 'system',
     has_logo: false,
     logo_updated_at: null,
+    logo_contains_gym_name: false,
     tokens: DEFAULT_TOKENS,
     created_at: '',
     modified_at: null,

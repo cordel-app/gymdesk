@@ -74,6 +74,31 @@ describe('GET /me/gyms', () => {
     expect(gym).toHaveProperty('theme'); // may be null if no theme assigned
   });
 
+  it('surfaces theme.logo_contains_gym_name (#488)', async () => {
+    await db.query(
+      `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at)
+       VALUES (UUID(), NULL, 'Me Gyms Theme Flag Test', 'active', 1, '{}', UTC_TIMESTAMP())`,
+    );
+    const { rows: th } = await db.query<{ id: string }>(
+      "SELECT id FROM themes WHERE gym_id IS NULL AND name = 'Me Gyms Theme Flag Test' LIMIT 1",
+    );
+    const themeId = th[0].id;
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [themeId, gymA]);
+
+    try {
+      const res = await request
+        .get('/me/gyms')
+        .set('Authorization', TEST_AUTH_HEADER);
+
+      expect(res.status).toBe(200);
+      const gym = (res.body as any[]).find((g) => g.id === gymA);
+      expect(gym.theme.logo_contains_gym_name).toBe(true);
+    } finally {
+      await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymA]);
+      await db.query('DELETE FROM themes WHERE id = ?', [themeId]);
+    }
+  });
+
   it('tenant isolation — member cannot use an unauthorized x-gym-id on a scoped route', async () => {
     // TEST_USER_ID is NOT in gymB; tenantContext must reject the request
     const res = await request

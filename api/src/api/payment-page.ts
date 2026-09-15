@@ -29,13 +29,17 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
                 g.name AS gym_name,
                 m.name AS member_name,
                 bp.recurring_billing_interval,
-                bp.recurring_billing_unit
+                bp.recurring_billing_unit,
+                t.id AS theme_id, t.logo_mime AS theme_logo_mime,
+                t.logo_updated_at AS theme_logo_updated_at,
+                t.logo_contains_gym_name AS theme_logo_contains_gym_name
          FROM payment_requests pr
          JOIN gyms g ON g.id = pr.gym_id
          JOIN members m ON m.id = pr.member_id
          JOIN user_memberships um ON um.id = pr.user_membership_id
          LEFT JOIN billing_policies bp
            ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
+         LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
          WHERE pr.page_token = ?
            AND pr.page_token_expires > UTC_TIMESTAMP()
            AND pr.status = 'pending'
@@ -62,6 +66,10 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
         ? `${row.recurring_billing_interval} ${row.recurring_billing_unit}`
         : null;
 
+    const logoUrl = row.theme_id && row.theme_logo_mime
+      ? `/themes/${row.theme_id}/logo${row.theme_logo_updated_at ? `?v=${encodeURIComponent(row.theme_logo_updated_at)}` : ''}`
+      : null;
+
     res.json({
       paymentId: row.provider_ref,
       amount: Number(row.amount),
@@ -69,6 +77,8 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       gymName: row.gym_name,
       memberName: row.member_name,
       billingInterval,
+      logoUrl,
+      logoContainsGymName: !!row.theme_logo_contains_gym_name,
       okUrl: process.env.PAYMENT_OK_URL ?? '',
       koUrl: process.env.PAYMENT_KO_URL ?? '',
     });

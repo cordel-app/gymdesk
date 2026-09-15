@@ -27,6 +27,7 @@ interface Theme {
   is_base: boolean;
   has_logo: boolean;
   logo_updated_at: string | null;
+  logo_contains_gym_name: boolean;
   tokens: ThemeTokens;
   created_at: string;
   modified_at: string | null;
@@ -118,7 +119,7 @@ type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments' | 'advanc
 const ALL_SECTIONS: SectionKey[] = ['assignments', 'branding', 'colors', 'typography', 'advanced'];
 const CENTERS_INITIAL_LIMIT = 10;
 
-const emptyForm = { name: '', description: '', tokens: DEFAULT_TOKENS };
+const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
 
 export default function GymThemesPage() {
   const t = useTranslations('gym_themes');
@@ -209,7 +210,7 @@ export default function GymThemesPage() {
     setExpandedId(theme.id);
     setOpenSections(new Set<SectionKey>(['assignments']));
     const tokens = theme.tokens ?? DEFAULT_TOKENS;
-    setEditForm({ name: theme.name, description: theme.description ?? '', tokens });
+    setEditForm({ name: theme.name, description: theme.description ?? '', logoContainsGymName: theme.logo_contains_gym_name, tokens });
     origTokensRef.current = tokens;
     setEditError(null);
     setEditLogoFile(null);
@@ -342,7 +343,11 @@ export default function GymThemesPage() {
     try {
       await apiFetch(`/system/themes/${theme.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ name: editForm.name.trim(), description: editForm.description.trim() || null }),
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          description: editForm.description.trim() || null,
+          logo_contains_gym_name: editForm.logoContainsGymName,
+        }),
       });
       if (editLogoFile) {
         const token = await getToken();
@@ -538,6 +543,14 @@ export default function GymThemesPage() {
                 )}
               </div>
               <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={editForm.logoContainsGymName}
+                  onChange={(e) => setEditForm({ ...editForm, logoContainsGymName: e.target.checked })}
+                />
+                {t('logo_contains_gym_name')}
+              </label>
               <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
                 <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
                 <button onClick={() => handleBrandingSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>{saving ? t('saving') : t('save_changes')}</button>

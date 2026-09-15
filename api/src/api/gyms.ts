@@ -17,6 +17,7 @@ const THEME_JOIN = `
 const THEME_SELECT = `
   , t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
     t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+    t.logo_contains_gym_name AS theme_logo_contains_gym_name,
     t.tokens AS theme_tokens
 `;
 
@@ -43,13 +44,14 @@ async function seedSystemPtPackage(gymId: string) {
 }
 
 function attachTheme(row: any) {
-  const { theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at, theme_tokens, ...rest } = row;
+  const { theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at, theme_logo_contains_gym_name, theme_tokens, ...rest } = row;
   const theme = theme_id_val ? {
     id: theme_id_val,
     name: theme_name,
     status: theme_status,
     has_logo: !!theme_logo_mime,
     logo_updated_at: theme_logo_updated_at,
+    logo_contains_gym_name: !!theme_logo_contains_gym_name,
     tokens: typeof theme_tokens === 'string' ? JSON.parse(theme_tokens) : (theme_tokens ?? null),
   } : null;
   // #417: platform-wide flag (same for every gym on this deployment), not a
