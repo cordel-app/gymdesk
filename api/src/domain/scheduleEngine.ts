@@ -108,11 +108,52 @@ function toUtcDatetime(dateStr: string, timeStr: string, timezone: string): stri
   return dt.toUTC().toFormat("yyyy-MM-dd HH:mm:ss");
 }
 
+function timeToMinutes(time: string): number {
+  const [h, m] = time.slice(0, 5).split(':').map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTime(minutes: number): string {
+  const h = Math.floor(minutes / 60).toString().padStart(2, '0');
+  const m = (minutes % 60).toString().padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+/**
+ * #482: slice a `start`–`end` availability window into `durationMinutes`-sized
+ * bookable slots, one per full-duration segment. A trailing remainder that
+ * doesn't fill a whole slot is dropped rather than stretching the last slot
+ * beyond the configured window. When `durationMinutes` is null/invalid
+ * (legacy rows created before the column was mandatory), the whole window is
+ * returned as a single segment — the pre-#482 behavior.
+ */
+export function computeSlotSegments(
+  start: string,
+  end: string,
+  durationMinutes: number | null,
+): Array<{ start: string; end: string }> {
+  const startStr = start.slice(0, 5);
+  const endStr = end.slice(0, 5);
+  if (durationMinutes == null || !Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    return [{ start: startStr, end: endStr }];
+  }
+
+  const startMin = timeToMinutes(startStr);
+  const endMin = timeToMinutes(endStr);
+  const segments: Array<{ start: string; end: string }> = [];
+  let cursor = startMin;
+  while (cursor + durationMinutes <= endMin) {
+    segments.push({ start: minutesToTime(cursor), end: minutesToTime(cursor + durationMinutes) });
+    cursor += durationMinutes;
+  }
+  return segments;
+}
+
 export async function materializeScheduleRule(ruleId: number, gymTimezone: string): Promise<void> {
   const { rows: ruleRows } = await db.query(
     `SELECT r.*, at.name AS activity_type_name,
             at.default_space_id, at.default_trainer_membership_id, at.color, at.max_capacity,
-            at.default_center_id, at.gym_id
+            at.default_center_id, at.gym_id, at.duration_minutes
      FROM activity_type_schedule_rules r
      JOIN activity_types at ON at.id = r.activity_type_id
      WHERE r.id = ?`,
@@ -138,30 +179,41 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     color: string | null;
     max_capacity: number;
     gym_id: string;
+    duration_minutes: number | null;
   };
 
   const occurrences = occurrenceDatesForRule(rule);
   if (occurrences.length === 0) return;
 
   const nowStr = DateTime.utc().toFormat('yyyy-MM-dd HH:mm:ss');
-  const rows = occurrences.map(({ date }) => ({
-    gym_id: rule.gym_id,
-    center_id: rule.default_center_id ?? null,
-    kind: 'session',
-    title: rule.activity_type_name,
-    activity_type_id: rule.activity_type_id,
-    space_id: rule.default_space_id ?? null,
-    trainer_membership_id: rule.default_trainer_membership_id ?? null,
-    color: rule.color ?? null,
-    capacity: rule.max_capacity,
-    starts_at: toUtcDatetime(date, rule.start_time, gymTimezone),
-    ends_at: toUtcDatetime(date, rule.end_time, gymTimezone),
-    all_day: 0,
-    status: 'scheduled',
-    schedule_rule_id: rule.id,
-    created_at: nowStr,
-    updated_at: nowStr,
-  }));
+  const rows = occurrences.flatMap(({ date }) => {
+    // #482: weekly rules slice their availability window into duration_minutes-sized
+    // bookable slots (e.g. Personal Training availability); other rule types keep the
+    // existing one-event-per-occurrence behavior.
+    const segments = rule.type === 'weekly'
+      ? computeSlotSegments(rule.start_time, rule.end_time, rule.duration_minutes)
+      : [{ start: rule.start_time, end: rule.end_time }];
+
+    return segments.map((seg) => ({
+      gym_id: rule.gym_id,
+      center_id: rule.default_center_id ?? null,
+      kind: 'session',
+      title: rule.activity_type_name,
+      activity_type_id: rule.activity_type_id,
+      space_id: rule.default_space_id ?? null,
+      trainer_membership_id: rule.default_trainer_membership_id ?? null,
+      color: rule.color ?? null,
+      capacity: rule.max_capacity,
+      starts_at: toUtcDatetime(date, seg.start, gymTimezone),
+      ends_at: toUtcDatetime(date, seg.end, gymTimezone),
+      all_day: 0,
+      status: 'scheduled',
+      schedule_rule_id: rule.id,
+      created_at: nowStr,
+      updated_at: nowStr,
+    }));
+  });
+  if (rows.length === 0) return;
 
   // Bulk insert in chunks to stay under MySQL max_allowed_packet
   const CHUNK = 200;

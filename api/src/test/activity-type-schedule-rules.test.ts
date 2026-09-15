@@ -861,3 +861,208 @@ describe('member_ids assignment (#366)', () => {
     });
   });
 });
+
+// ── #482: weekly rule slot slicing ──────────────────────────────────────────
+// A `weekly` rule's start_time–end_time availability window is sliced into
+// activity_types.duration_minutes-sized bookable calendar_events (e.g. Personal
+// Training availability), instead of materializing a single event spanning the
+// whole window.
+
+describe('weekly rule slot slicing (#482)', () => {
+  let slotActivityTypeId: number;
+
+  beforeAll(async () => {
+    const res = await request
+      .post('/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Personal Training SR', duration_minutes: 60, max_capacity: 1, status: 'active' });
+    expect(res.status).toBe(201);
+    slotActivityTypeId = res.body.id;
+  });
+
+  it('slices a 4-hour window into four 60-minute slots', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(slotActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: week.start,
+        end_date: week.end,
+        weekdays: [1], // Monday
+        start_time: '16:00',
+        end_time: '20:00',
+      });
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.slot_warning).toBeNull();
+    const ruleId = createRes.body.id;
+
+    const { rows } = await db.query(
+      `SELECT starts_at, ends_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL ORDER BY starts_at`,
+      [ruleId],
+    );
+    expect(rows.length).toBe(4);
+    // starts_at/ends_at are stored in UTC after timezone conversion; assert
+    // consecutive 60-minute boundaries rather than absolute clock times.
+    for (let i = 0; i < rows.length; i++) {
+      const starts = new Date(rows[i].starts_at).getTime();
+      const ends = new Date(rows[i].ends_at).getTime();
+      expect(ends - starts).toBe(60 * 60 * 1000);
+      if (i > 0) expect(starts).toBe(new Date(rows[i - 1].ends_at).getTime());
+    }
+  });
+
+  it('drops a non-divisible remainder and returns a slot_warning', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(slotActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: week.start,
+        end_date: week.end,
+        weekdays: [2], // Tuesday
+        start_time: '15:00',
+        end_time: '16:30', // 90 minutes / 60-minute duration -> one slot, 30 min dropped
+      });
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.slot_warning).toMatch(/doesn't divide evenly/);
+    const ruleId = createRes.body.id;
+
+    const { rows } = await db.query(
+      `SELECT starts_at, ends_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(rows.length).toBe(1);
+    const starts = new Date(rows[0].starts_at).getTime();
+    const ends = new Date(rows[0].ends_at).getTime();
+    expect(ends - starts).toBe(60 * 60 * 1000);
+  });
+
+  it('generates zero slots and warns when duration exceeds the window', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(slotActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: week.start,
+        end_date: week.end,
+        weekdays: [3], // Wednesday
+        start_time: '15:00',
+        end_time: '15:30', // 30 minutes, shorter than the 60-minute duration
+      });
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.slot_warning).toMatch(/longer than this availability window/);
+    const ruleId = createRes.body.id;
+
+    const { rows } = await db.query(
+      `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(rows.length).toBe(0);
+  });
+
+  it('does not slice one_off rules', async () => {
+    const res = await request
+      .post(rulesBase(slotActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'one_off',
+        start_date: tomorrowStr(),
+        start_time: '09:00',
+        end_time: '11:00', // 120 minutes — would slice into 2 slots if this were weekly
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.slot_warning).toBeNull();
+
+    const { rows } = await db.query(
+      `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [res.body.id],
+    );
+    expect(rows.length).toBe(1);
+  });
+
+  it('falls back to a single full-window slot when duration_minutes is null (legacy data)', async () => {
+    const { insertId: legacyActivityTypeId } = await db.query(
+      `INSERT INTO activity_types (gym_id, name, duration_minutes, max_capacity, status) VALUES (?, 'Legacy No-Duration SR', NULL, 10, 'active')`,
+      [gymId],
+    );
+
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(legacyActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: week.start,
+        end_date: week.end,
+        weekdays: [4], // Thursday
+        start_time: '10:00',
+        end_time: '11:30',
+      });
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.slot_warning).toBeNull();
+    const ruleId = createRes.body.id;
+
+    const { rows } = await db.query(
+      `SELECT starts_at, ends_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(rows.length).toBe(1);
+    const starts = new Date(rows[0].starts_at).getTime();
+    const ends = new Date(rows[0].ends_at).getTime();
+    expect(ends - starts).toBe(90 * 60 * 1000);
+  });
+
+  it('re-slices on PUT when the window or duration-relevant fields change', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(slotActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: week.start,
+        end_date: week.end,
+        weekdays: [5], // Friday
+        start_time: '16:00',
+        end_time: '18:00', // 2 slots of 60 min
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const before = await db.query(
+      `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(before.rows.length).toBe(2);
+
+    const putRes = await request
+      .put(`/activity-types/${slotActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly',
+        start_date: week.start,
+        end_date: week.end,
+        weekdays: [5],
+        start_time: '16:00',
+        end_time: '19:00', // now 3 slots of 60 min
+      });
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.slot_warning).toBeNull();
+
+    const after = await db.query(
+      `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(after.rows.length).toBe(3);
+  });
+});
