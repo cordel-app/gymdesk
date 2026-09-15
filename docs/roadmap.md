@@ -452,25 +452,59 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   Payment app's `nginx.conf` gained a `/themes/` proxy location (alongside
   the existing `/payment-page/` one) so the logo image stays same-origin
   under its CSP `img-src 'self'`.
-- **#489 stage 1 (in progress — foundation)**: Improve Theme Color System —
+- **#489 stage 1 (done — foundation)**: Improve Theme Color System —
   staged rollout agreed on the issue thread (1: foundation, 2: new semantic
   color tokens + delete the Advanced section by redistributing its settings
   into the appropriate sections, 3: wire shared components to the new
-  tokens, 4: Member Web + Pay theming parity, 5: tests + docs). This PR is
-  stage 1 only: extracted the byte-identical `validateTokens()`/
-  `defaultTokens()`/`HEX_RE`/`FONT_STACKS` duplicated verbatim across
-  `api/src/api/themes.ts` and `api/src/api/gym-themes.ts` into a new shared
-  `api/src/domain/themeTokens.ts` (same pattern as `domain/muscles.ts`), and
-  fixed a UI categorization bug: `cardBorder` is already a standard,
-  validated color (not an Advanced one) but both Admin theme editors
-  (`[locale]/themes/page.tsx` and `[locale]/system/themes/page.tsx`)
-  rendered its control under the "Advanced" section — moved into the
-  standard Colors section's `group_application` group next to
-  `cardBackground`; no data-model change. The originally proposed
-  interim "wire `tokens.advanced` to CSS variables" step was dropped from
-  this stage since the agreed plan now deletes the Advanced section
-  outright in stage 2 rather than keeping it wired — that work would have
-  been thrown away immediately after. Stages 2–5 remain.
+  tokens, 4: Member Web + Pay theming parity, 5: tests + docs). Extracted
+  the byte-identical `validateTokens()`/`defaultTokens()`/`HEX_RE`/
+  `FONT_STACKS` duplicated verbatim across `api/src/api/themes.ts` and
+  `api/src/api/gym-themes.ts` into a new shared `api/src/domain/themeTokens.ts`
+  (same pattern as `domain/muscles.ts`), and fixed a UI categorization bug:
+  `cardBorder` is already a standard, validated color (not an Advanced one)
+  but both Admin theme editors (`[locale]/themes/page.tsx` and
+  `[locale]/system/themes/page.tsx`) rendered its control under the
+  "Advanced" section — moved into the standard Colors section's
+  `group_application` group next to `cardBackground`; no data-model change.
+  The originally proposed interim "wire `tokens.advanced` to CSS variables"
+  step was dropped from this stage since the agreed plan now deletes the
+  Advanced section outright in stage 2 rather than keeping it wired — that
+  work would have been thrown away immediately after.
+- **#489 stage 2 (in progress — new semantic tokens)**: added the five new
+  `colors.*` fields from the ticket to the shared `themeTokens.ts`
+  (`secondaryTextColor`, `mutedTextColor`, `separatorColor`,
+  `inputBorderColor`, `inputBackgroundColor`) and to the Admin frontend's
+  `apps/admin/src/lib/themeTokens.ts`. Per §19, `textColor` is *aliased* to
+  "Primary Text Color" in the editor rather than replaced — same persisted
+  field, no migration needed. Per the issue thread's naming answer, the new
+  generic `separatorColor` is labeled "Application Separator Color" and the
+  existing header-scoped one relabeled "Header Separator Color" so the two
+  are no longer ambiguous (§7). `applyTokens()` in both Admin theme editors
+  now also wires the previously dead `--gd-text-muted`, `--gd-border` and
+  `--gd-input-bg` CSS variables (already referenced by `cordel/feature-flags`,
+  `financials/taxes`, `financials/sellable-items`, `professional-services`,
+  `calendar/MemberSearchInput`, `calendar/EventDetailsPanel`) to the new
+  fields, plus a new `--gd-input-border`/`--gd-text-secondary` pair for
+  stage 3 to consume — with a `?? DEFAULT_TOKENS.colors.*` fallback so
+  Themes/Centers persisted before this stage (missing the new keys) don't
+  render `undefined` custom properties. Both Admin theme editors reorganized
+  their Colors section per the ticket's §11 target structure: new **Text**
+  (`textColor`, `secondaryTextColor`, `mutedTextColor`), **Separators**
+  (`separatorColor`) and **Inputs** (`inputBackgroundColor`,
+  `inputBorderColor`) groups, alongside the existing Application/Header/
+  Sidebar/Navigation/Buttons/Status/Links groups; the theme-load merge in
+  both editors now deep-merges `colors` with `DEFAULT_TOKENS.colors` so an
+  old theme's color pickers show sensible values (and get migrated to the
+  full field set on next save) instead of rendering blank/black. New i18n
+  keys added to `themes`/`gym_themes` in en/es/ca. **Deleting the Advanced
+  section by redistributing its ~50 settings into per-component sections
+  (header, sidebar, cards, global, etc., per the issue thread's answer) is
+  deliberately left for a follow-up**: unlike the additive work above, that
+  redistribution has no existing agreed per-attribute mapping (the thread
+  only gave example section names, not a full mapping of the 12
+  `ADVANCED_ATTRIBUTES` groups), so guessing one here risked an
+  unreviewable diff; it's tracked as the remainder of stage 2. Stages 3–5
+  remain, in addition to that remainder.
 
 ## Decisions
 

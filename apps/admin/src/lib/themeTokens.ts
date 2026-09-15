@@ -15,9 +15,14 @@ export interface ThemeTokens {
   colors: {
     // Application
     pageBackground: string;
-    textColor: string;
+    textColor: string; // "Primary Text Color" in the editor
+    secondaryTextColor: string;
+    mutedTextColor: string;
     cardBackground: string;
     cardBorder: string;
+    separatorColor: string;
+    inputBorderColor: string;
+    inputBackgroundColor: string;
     // Header
     headerBackground: string;
     headerText: string;
@@ -205,8 +210,13 @@ export const DEFAULT_TOKENS: ThemeTokens = {
   colors: {
     pageBackground:               '#f5f5f5',
     textColor:                    '#111827',
+    secondaryTextColor:           '#374151',
+    mutedTextColor:               '#6b7280',
     cardBackground:               '#ffffff',
     cardBorder:                   '#e5e7eb',
+    separatorColor:               '#e5e7eb',
+    inputBorderColor:             '#d1d5db',
+    inputBackgroundColor:         '#ffffff',
     headerBackground:             '#1a1a2e',
     headerText:                   '#ffffff',
     headerSeparatorColor:         '#6c63ff',
@@ -248,8 +258,14 @@ export function applyTokens(tokens: ThemeTokens) {
   // Application
   el.style.setProperty('--gd-app-bg',               c.pageBackground);
   el.style.setProperty('--gd-text',                 c.textColor);
+  // Fall back to defaults for themes persisted before #489 stage 2 added these fields.
+  el.style.setProperty('--gd-text-secondary',       c.secondaryTextColor ?? DEFAULT_TOKENS.colors.secondaryTextColor);
+  el.style.setProperty('--gd-text-muted',           c.mutedTextColor ?? DEFAULT_TOKENS.colors.mutedTextColor);
   el.style.setProperty('--gd-card-bg',              c.cardBackground);
   el.style.setProperty('--gd-card-border',          c.cardBorder);
+  el.style.setProperty('--gd-border',               c.separatorColor ?? DEFAULT_TOKENS.colors.separatorColor);
+  el.style.setProperty('--gd-input-border',         c.inputBorderColor ?? DEFAULT_TOKENS.colors.inputBorderColor);
+  el.style.setProperty('--gd-input-bg',             c.inputBackgroundColor ?? DEFAULT_TOKENS.colors.inputBackgroundColor);
   // Header
   el.style.setProperty('--gd-header-bg',            c.headerBackground);
   el.style.setProperty('--gd-header-text',          c.headerText);

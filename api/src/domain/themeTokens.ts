@@ -25,9 +25,14 @@ export function defaultTokens() {
     },
     colors: {
       pageBackground:               '#f5f5f5',
-      textColor:                    '#111827',
+      textColor:                    '#111827', // "Primary Text Color" in the editor — same field, relabeled per #489 §19 (alias, not a new column)
+      secondaryTextColor:           '#374151',
+      mutedTextColor:               '#6b7280',
       cardBackground:               '#ffffff',
       cardBorder:                   '#e5e7eb',
+      separatorColor:               '#e5e7eb',
+      inputBorderColor:             '#d1d5db',
+      inputBackgroundColor:         '#ffffff',
       headerBackground:             '#1a1a2e',
       headerText:                   '#ffffff',
       headerSeparatorColor:         '#6c63ff',
@@ -59,7 +64,9 @@ export function validateTokens(tokens: any): string | null {
   const { colors, typography } = tokens;
   if (colors) {
     const hexFields = [
-      'pageBackground', 'textColor', 'cardBackground', 'cardBorder',
+      'pageBackground', 'textColor', 'secondaryTextColor', 'mutedTextColor',
+      'cardBackground', 'cardBorder', 'separatorColor',
+      'inputBorderColor', 'inputBackgroundColor',
       'headerBackground', 'headerText', 'headerSeparatorColor',
       'sidebarBackground', 'sidebarText',
       'sidebarSelectedItemBackground', 'sidebarSelectedItemText', 'sidebarHoverBackground',

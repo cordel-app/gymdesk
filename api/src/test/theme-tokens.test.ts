@@ -23,6 +23,24 @@ describe('validateTokens()', () => {
     expect(err).toBe('colors.textColor must be a hex color like #rrggbb');
   });
 
+  it('validates the #489 stage-2 semantic tokens (secondary/muted text, separator, input border/background)', () => {
+    expect(validateTokens({
+      colors: {
+        secondaryTextColor: '#374151',
+        mutedTextColor: '#6b7280',
+        separatorColor: '#e5e7eb',
+        inputBorderColor: '#d1d5db',
+        inputBackgroundColor: '#ffffff',
+      },
+    })).toBeNull();
+
+    expect(validateTokens({ colors: { secondaryTextColor: 'nope' } })).toBe('colors.secondaryTextColor must be a hex color like #rrggbb');
+    expect(validateTokens({ colors: { mutedTextColor: 'nope' } })).toBe('colors.mutedTextColor must be a hex color like #rrggbb');
+    expect(validateTokens({ colors: { separatorColor: 'nope' } })).toBe('colors.separatorColor must be a hex color like #rrggbb');
+    expect(validateTokens({ colors: { inputBorderColor: 'nope' } })).toBe('colors.inputBorderColor must be a hex color like #rrggbb');
+    expect(validateTokens({ colors: { inputBackgroundColor: 'nope' } })).toBe('colors.inputBackgroundColor must be a hex color like #rrggbb');
+  });
+
   it('rejects headerSeparatorHeight outside 0-20', () => {
     expect(validateTokens({ colors: { headerSeparatorHeight: 21 } })).toMatch(/headerSeparatorHeight/);
     expect(validateTokens({ colors: { headerSeparatorHeight: -1 } })).toMatch(/headerSeparatorHeight/);
