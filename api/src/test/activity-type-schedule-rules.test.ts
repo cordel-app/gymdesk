@@ -820,7 +820,7 @@ describe('member_ids assignment (#366)', () => {
       ruleId = createRes.body.id;
     });
 
-    it('PUT with no member_ids key still returns 200', async () => {
+    it('PUT with no member_ids key still returns 200 (window shift needs confirm_cancel_booked since member C is already booked — see #482)', async () => {
       const res = await request
         .put(`/activity-types/${activityTypeId}/schedule-rules/${ruleId}`)
         .set('Authorization', TEST_AUTH_HEADER)
@@ -830,6 +830,7 @@ describe('member_ids assignment (#366)', () => {
           start_date: tomorrowStr(),
           start_time: '18:30',
           end_time: '19:30',
+          confirm_cancel_booked: true,
           // member_ids intentionally omitted
         });
       expect(res.status).toBe(200);
@@ -1064,5 +1065,272 @@ describe('weekly rule slot slicing (#482)', () => {
       [ruleId],
     );
     expect(after.rows.length).toBe(3);
+  });
+});
+
+// ── #482: preserving booked occurrences on rule edit/delete ────────────────
+// Editing or deleting a schedule rule must never silently cancel an already-
+// booked future occurrence. One that no longer fits the new/removed window
+// requires explicit staff confirmation (`confirm_cancel_booked`) before
+// anything is touched; one that still fits the new window is always
+// preserved untouched (never cancelled/regenerated).
+
+async function waitForNotification(memberId: number, entityId: number): Promise<any> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const { rows } = await db.query(
+      `SELECT * FROM member_notifications WHERE member_id = ? AND type = 'event_cancelled' AND entity_id = ?`,
+      [memberId, entityId],
+    );
+    if (rows.length > 0) return rows[0];
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return null;
+}
+
+describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
+  let preserveActivityTypeId: number;
+
+  beforeAll(async () => {
+    const res = await request
+      .post('/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Preserve SR', duration_minutes: 60, max_capacity: 10, status: 'active' });
+    expect(res.status).toBe(201);
+    preserveActivityTypeId = res.body.id;
+  });
+
+  it('PUT narrowing/moving the window away from a booked occurrence blocks with 409 and touches nothing', async () => {
+    const week = upcomingMonSunWeek();
+    const memberId = await insertTestMember(gymId, 'block-put');
+
+    const createRes = await request
+      .post(rulesBase(preserveActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [1], start_time: '16:00', end_time: '17:00', // Monday, single 60-min slot
+        member_ids: [memberId],
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows: eventRows } = await db.query(
+      `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(eventRows.length).toBe(1);
+    const eventId = eventRows[0].id;
+
+    const putRes = await request
+      .put(`/activity-types/${preserveActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [1], start_time: '18:00', end_time: '19:00', // moved away entirely
+      });
+    expect(putRes.status).toBe(409);
+    expect(putRes.body.error).toBe('booked_occurrences_impacted');
+    expect(putRes.body.member_count).toBe(1);
+    expect(putRes.body.impacted_occurrences).toHaveLength(1);
+    expect(putRes.body.impacted_occurrences[0].id).toBe(eventId);
+
+    // Nothing was touched: the rule row and the booked occurrence are unchanged.
+    const { rows: ruleRows } = await db.query(
+      `SELECT start_time FROM activity_type_schedule_rules WHERE id = ?`,
+      [ruleId],
+    );
+    expect(String(ruleRows[0].start_time).slice(0, 5)).toBe('16:00');
+
+    const { rows: bookingRows } = await db.query(
+      `SELECT status FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ?`,
+      [eventId, memberId],
+    );
+    expect(bookingRows[0].status).toBe('booked');
+    const { rows: eventAfter } = await db.query(`SELECT status FROM calendar_events WHERE id = ?`, [eventId]);
+    expect(eventAfter[0].status).toBe('scheduled');
+  });
+
+  it('PUT with confirm_cancel_booked:true proceeds, cancels the impacted occurrence, and notifies the affected member', async () => {
+    const week = upcomingMonSunWeek();
+    const memberId = await insertTestMember(gymId, 'confirm-put');
+
+    const createRes = await request
+      .post(rulesBase(preserveActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [2], start_time: '16:00', end_time: '17:00', // Tuesday
+        member_ids: [memberId],
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows: eventRows } = await db.query(
+      `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    const eventId = eventRows[0].id;
+
+    const putRes = await request
+      .put(`/activity-types/${preserveActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [2], start_time: '18:00', end_time: '19:00',
+        confirm_cancel_booked: true,
+      });
+    expect(putRes.status).toBe(200);
+
+    const { rows: eventAfter } = await db.query(
+      `SELECT status, deleted_at FROM calendar_events WHERE id = ?`,
+      [eventId],
+    );
+    expect(eventAfter[0].status).toBe('cancelled');
+    expect(eventAfter[0].deleted_at).not.toBeNull();
+
+    const notification = await waitForNotification(memberId, eventId);
+    expect(notification).not.toBeNull();
+    expect(notification.entity_type).toBe('session');
+  });
+
+  it('PUT widening the window around a booked occurrence preserves it untouched — no confirmation needed, no duplicate slot', async () => {
+    const week = upcomingMonSunWeek();
+    const memberId = await insertTestMember(gymId, 'preserve-put');
+
+    const createRes = await request
+      .post(rulesBase(preserveActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [3], start_time: '16:00', end_time: '17:00', // Wednesday, single 60-min slot
+        member_ids: [memberId],
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows: before } = await db.query(
+      `SELECT id, starts_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(before.length).toBe(1);
+    const preservedEventId = before[0].id;
+    const preservedStartsAt = before[0].starts_at;
+
+    // Widen 16:00–17:00 to 15:00–18:00: the booked 16:00–17:00 slot still fits,
+    // so it must not be cancelled/regenerated — no confirm_cancel_booked needed.
+    const putRes = await request
+      .put(`/activity-types/${preserveActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [3], start_time: '15:00', end_time: '18:00',
+      });
+    expect(putRes.status).toBe(200);
+
+    const { rows: after } = await db.query(
+      `SELECT id, starts_at, status, deleted_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL ORDER BY starts_at`,
+      [ruleId],
+    );
+    // 3 slots total (15–16, 16–17, 17–18); the middle one is the exact same
+    // preserved row (same id), not a freshly regenerated duplicate.
+    expect(after.length).toBe(3);
+    const preserved = after.find((r: any) => r.id === preservedEventId);
+    expect(preserved).toBeDefined();
+    expect(preserved.status).toBe('scheduled');
+    expect(new Date(preserved.starts_at).getTime()).toBe(new Date(preservedStartsAt).getTime());
+    // No other row shares its exact start time (dedup — no overlapping duplicate slot).
+    const sameStart = after.filter((r: any) => new Date(r.starts_at).getTime() === new Date(preservedStartsAt).getTime());
+    expect(sameStart.length).toBe(1);
+
+    const { rows: bookingRows } = await db.query(
+      `SELECT status FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ?`,
+      [preservedEventId, memberId],
+    );
+    expect(bookingRows[0].status).toBe('booked');
+  });
+
+  it('DELETE with a booked future occurrence blocks with 409 unless ?confirm_cancel_booked=true, then notifies on confirm', async () => {
+    const week = upcomingMonSunWeek();
+    const memberId = await insertTestMember(gymId, 'delete-guard');
+
+    const createRes = await request
+      .post(rulesBase(preserveActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [4], start_time: '16:00', end_time: '17:00', // Thursday
+        member_ids: [memberId],
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows: eventRows } = await db.query(
+      `SELECT id FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    const eventId = eventRows[0].id;
+
+    const blockedRes = await request
+      .delete(`/activity-types/${preserveActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(blockedRes.status).toBe(409);
+    expect(blockedRes.body.error).toBe('booked_occurrences_impacted');
+
+    const { rows: ruleStillThere } = await db.query(
+      `SELECT id FROM activity_type_schedule_rules WHERE id = ?`,
+      [ruleId],
+    );
+    expect(ruleStillThere.length).toBe(1);
+
+    const confirmedRes = await request
+      .delete(`/activity-types/${preserveActivityTypeId}/schedule-rules/${ruleId}?confirm_cancel_booked=true`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(confirmedRes.status).toBe(204);
+
+    const { rows: ruleGone } = await db.query(
+      `SELECT id FROM activity_type_schedule_rules WHERE id = ?`,
+      [ruleId],
+    );
+    expect(ruleGone.length).toBe(0);
+
+    const { rows: eventAfter } = await db.query(
+      `SELECT status, deleted_at FROM calendar_events WHERE id = ?`,
+      [eventId],
+    );
+    expect(eventAfter[0].status).toBe('cancelled');
+    expect(eventAfter[0].deleted_at).not.toBeNull();
+
+    const notification = await waitForNotification(memberId, eventId);
+    expect(notification).not.toBeNull();
+  });
+
+  it('DELETE with no booked occurrences proceeds immediately without confirmation', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(preserveActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [5], start_time: '16:00', end_time: '17:00', // Friday, unbooked
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const res = await request
+      .delete(`/activity-types/${preserveActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(204);
   });
 });

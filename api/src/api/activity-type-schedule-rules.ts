@@ -1,7 +1,16 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
-import { materializeScheduleRule, cancelFutureOccurrences, computeSlotSegments } from '../domain/scheduleEngine';
+import {
+  materializeScheduleRule,
+  cancelFutureOccurrences,
+  computeSlotSegments,
+  findBookedFutureOccurrences,
+  partitionBookedFutureOccurrences,
+  type RuleWindowConfig,
+  type BookedOccurrence,
+} from '../domain/scheduleEngine';
+import { sendBulkNotification } from '../infra/notifications';
 import { DateTime } from 'luxon';
 
 const TYPES = ['one_off', 'weekly', 'monthly'] as const;
@@ -15,10 +24,26 @@ export const activityTypeScheduleRulesRouter = Router({ mergeParams: true });
 
 async function resolveActivityType(activityTypeId: string, gymId: string) {
   const { rows } = await db.query(
-    'SELECT id, duration_minutes FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    'SELECT id, name, duration_minutes FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [activityTypeId, gymId],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * #482: notify every member holding a booking on an occurrence that a rule
+ * edit/delete is about to cancel — one `event_cancelled` notification per
+ * occurrence, mirroring the existing class-session cancel flow
+ * (`calendar-events.ts`'s `classSessionsRouter.post('/:id/cancel')`).
+ */
+function notifyImpactedOccurrences(gymId: string, activityTypeName: string, occurrences: BookedOccurrence[], reason: string): void {
+  for (const occ of occurrences) {
+    sendBulkNotification(gymId, occ.member_ids, 'event_cancelled', 'session', occ.id, {
+      title: activityTypeName,
+      starts_at: occ.starts_at.toISOString(),
+      reason,
+    });
+  }
 }
 
 /**
@@ -265,7 +290,7 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   }
 
   const { rows: existing } = await db.query(
-    'SELECT id FROM activity_type_schedule_rules WHERE id = ? AND activity_type_id = ? AND gym_id = ?',
+    'SELECT * FROM activity_type_schedule_rules WHERE id = ? AND activity_type_id = ? AND gym_id = ?',
     [ruleId, activityTypeId, gymId],
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Schedule rule not found' });
@@ -282,6 +307,60 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   const { type, start_date, end_date, weekday, ordinal, start_time, end_time } = req.body;
   const weekdays = resolveWeekdays(req.body);
 
+  const newConfig: RuleWindowConfig = {
+    type,
+    start_date,
+    end_date: type === 'one_off' ? null : end_date,
+    weekday: type === 'monthly' ? Number(weekday) : null,
+    weekdays: type === 'weekly' ? weekdays : null,
+    ordinal: type === 'monthly' ? ordinal : null,
+    start_time: start_time.slice(0, 5),
+    end_time: end_time.slice(0, 5),
+  };
+
+  const gymTimezone = await getGymTimezone(gymId);
+
+  // #482: the booked-occurrence protection below is about *availability* changes
+  // (day/time), not about staff reassigning which members are auto-booked to an
+  // unchanged window (#366) — that's an intentional swap, not a side effect of
+  // narrowing/moving the window, so it keeps the pre-#482 unconditional
+  // cancel-and-regenerate behavior when the window itself didn't change.
+  const existingRule = existing[0];
+  const existingConfig: RuleWindowConfig = {
+    type: existingRule.type,
+    start_date: fmtDate(existingRule.start_date)!,
+    end_date: existingRule.end_date != null ? fmtDate(existingRule.end_date) : null,
+    weekday: existingRule.weekday,
+    weekdays: parseWeekdays(existingRule.weekdays),
+    ordinal: existingRule.ordinal,
+    start_time: typeof existingRule.start_time === 'string' ? existingRule.start_time.slice(0, 5) : existingRule.start_time,
+    end_time: typeof existingRule.end_time === 'string' ? existingRule.end_time.slice(0, 5) : existingRule.end_time,
+  };
+  const windowUnchanged = existingConfig.type === newConfig.type
+    && existingConfig.start_date === newConfig.start_date
+    && existingConfig.end_date === newConfig.end_date
+    && existingConfig.weekday === newConfig.weekday
+    && JSON.stringify(existingConfig.weekdays) === JSON.stringify(newConfig.weekdays)
+    && existingConfig.ordinal === newConfig.ordinal
+    && existingConfig.start_time === newConfig.start_time
+    && existingConfig.end_time === newConfig.end_time;
+
+  // #482: never silently cancel an already-booked future occurrence. One that no
+  // longer fits the new window needs explicit staff confirmation before this
+  // edit touches anything; one that still fits is always preserved untouched.
+  const { preserved, impacted } = windowUnchanged
+    ? { preserved: [] as BookedOccurrence[], impacted: [] as BookedOccurrence[] }
+    : await partitionBookedFutureOccurrences(Number(ruleId), newConfig, gymTimezone);
+  if (impacted.length > 0 && req.body.confirm_cancel_booked !== true) {
+    const memberCount = new Set(impacted.flatMap((o) => o.member_ids)).size;
+    return res.status(409).json({
+      error: 'booked_occurrences_impacted',
+      message: `This change would cancel ${impacted.length} already-booked occurrence(s) affecting ${memberCount} member(s). Resend with confirm_cancel_booked: true to proceed — affected members will be notified.`,
+      impacted_occurrences: impacted.map((o) => ({ id: o.id, starts_at: o.starts_at, ends_at: o.ends_at, member_count: o.member_ids.length })),
+      member_count: memberCount,
+    });
+  }
+
   await db.query(
     `UPDATE activity_type_schedule_rules SET
        type = ?, start_date = ?, end_date = ?, weekday = ?, weekdays = ?, ordinal = ?,
@@ -290,12 +369,12 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
     [
       type,
       start_date,
-      type === 'one_off' ? null : end_date,
-      type === 'monthly' ? Number(weekday) : null,
+      newConfig.end_date,
+      newConfig.weekday,
       type === 'weekly' ? JSON.stringify(weekdays) : null,
-      type === 'monthly' ? ordinal : null,
-      start_time.slice(0, 5),
-      end_time.slice(0, 5),
+      newConfig.ordinal,
+      newConfig.start_time,
+      newConfig.end_time,
       ruleId,
     ],
   );
@@ -303,11 +382,16 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   // `member_ids` omitted from the request body leaves the current assignment untouched.
   if (memberIds) await setRuleMembers(gymId, Number(ruleId), memberIds);
 
-  // Cancel future events for this rule, then regenerate — re-materialization
-  // re-books the (possibly updated) assigned Members on the new occurrences.
-  await cancelFutureOccurrences(Number(ruleId));
-  const gymTimezone = await getGymTimezone(gymId);
+  // Cancel future events for this rule — preserving booked occurrences that still
+  // fit the new window — then regenerate. Re-materialization re-books the
+  // (possibly updated) assigned Members on the new occurrences and skips slots
+  // that already exist as preserved rows.
+  await cancelFutureOccurrences(Number(ruleId), { preserveIds: preserved.map((o) => o.id) });
   await materializeScheduleRule(Number(ruleId), gymTimezone);
+
+  if (impacted.length > 0) {
+    notifyImpactedOccurrences(gymId, activityType.name, impacted, 'The availability schedule for this activity was changed');
+  }
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);
   const currentMemberIds = memberIds ?? (await getRuleMemberIdsByRule([Number(ruleId)])).get(Number(ruleId)) ?? [];
@@ -320,7 +404,8 @@ activityTypeScheduleRulesRouter.delete('/:ruleId', requireRole('admin'), async (
   const { gymId } = getTenantContext(req);
   const activityTypeId = (req.params as any).activityTypeId as string;
   const { ruleId } = req.params;
-  if (!(await resolveActivityType(activityTypeId, gymId))) {
+  const activityType = await resolveActivityType(activityTypeId, gymId);
+  if (!activityType) {
     return res.status(404).json({ error: 'Activity type not found' });
   }
 
@@ -330,9 +415,28 @@ activityTypeScheduleRulesRouter.delete('/:ruleId', requireRole('admin'), async (
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Schedule rule not found' });
 
+  // #482: deleting the rule removes its whole availability window, so every
+  // still-booked future occurrence is by definition impacted — same
+  // confirm-then-notify guard as the PUT edit path.
+  const booked = await findBookedFutureOccurrences(Number(ruleId));
+  if (booked.length > 0 && req.query.confirm_cancel_booked !== 'true') {
+    const memberCount = new Set(booked.flatMap((o) => o.member_ids)).size;
+    return res.status(409).json({
+      error: 'booked_occurrences_impacted',
+      message: `Deleting this availability would cancel ${booked.length} already-booked occurrence(s) affecting ${memberCount} member(s). Resend with ?confirm_cancel_booked=true to proceed — affected members will be notified.`,
+      impacted_occurrences: booked.map((o) => ({ id: o.id, starts_at: o.starts_at, ends_at: o.ends_at, member_count: o.member_ids.length })),
+      member_count: memberCount,
+    });
+  }
+
   // Cancel future calendar events first (preserve past)
   await cancelFutureOccurrences(Number(ruleId));
 
   await db.query('DELETE FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);
+
+  if (booked.length > 0) {
+    notifyImpactedOccurrences(gymId, activityType.name, booked, 'The availability schedule for this activity was removed');
+  }
+
   res.status(204).send();
 });
