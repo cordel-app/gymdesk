@@ -333,6 +333,26 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
     `member-nutrition-plans.ts`); admin `NutritionPlanTree.tsx` meal-type
     selector updated to match. New `tree_meal_type_*` keys added to admin
     en/es/ca locales and `meal_type.*` keys added to member en/es/ca locales.
+- **#487 stage 1 (done)**: Configurable Membership Fee Benefit on Promotion
+  Period Benefits — staged rollout, this PR delivers stage 1 only (schema +
+  validation + inline admin UI); stages 2-4 (shared calc function, wiring
+  into real billing via `computeFinalPrice`, Forecast/timeline surface) are
+  separate future PRs. `promotion_period_benefits` gains nullable
+  `action VARCHAR(30)` + `value DECIMAL(10,2)` (migration 144), mirroring
+  `promotion_charge_benefits`'s existing action/value CHECK
+  (`no_benefit`/`waive`/`percentage_discount`/`fixed_discount`/`fixed_price`);
+  both columns nullable with no backfill, so existing (non-Membership-Fee)
+  period benefit rows are unaffected. Validated in `validatePeriodBenefit()`
+  across all four write paths in `promotion-details.ts`
+  (`PUT`/`POST /period-benefits`, `PUT /period-benefits/:pbId`, `GET` just
+  returns the columns) plus the duplicate endpoint in `promotions.ts` (which
+  also now copies `duration_months`, a pre-existing gap). Admin UI: the
+  Period Benefits row for Membership Fee gets the same inline Action
+  selector + dynamic Value input as Charge Benefits (switching actions
+  clears the value), reusing the existing `cb_action_*` i18n keys — no new
+  locale strings needed. Extended `promotions.test.ts` with round-trip,
+  validation-boundary, backward-compatibility, tenant-isolation and auth
+  coverage for the new columns.
 
 ## Decisions
 
