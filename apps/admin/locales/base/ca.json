@@ -1973,6 +1973,7 @@
       "update_rule": "Actualitzar regla",
       "saving": "Desant…",
       "cancel": "Cancel·lar",
+      "confirm_cancel_booked": "Cancel·lar sessió(ns) reservada(es) i continuar",
       "no_rules": "Sense regles d'horari.",
       "delete_rule": "Eliminar",
       "edit_rule": "Editar",
