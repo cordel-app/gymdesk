@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
 
 /**
  * P4.4: apply/revoke promotions on a user_membership.
@@ -21,18 +22,18 @@ export const membershipPromotionsRouter = Router({ mergeParams: true });
 
 async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number) {
   const { rows: umRows } = await tx.query(
-    `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price, um.final_price,
-            p.base_price AS plan_base_price
+    `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price, um.final_price
      FROM user_memberships um
-     JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.id = ? AND um.gym_id = ?`,
     [userMembershipId, gymId],
   );
   if (umRows.length === 0) return null;
   const um = umRows[0];
-  // Start from base_price snapshot on the membership (preserves the plan-price
-  // window semantics from P1.3), fall back to plan.base_price.
-  let price = parseFloat(um.base_price ?? um.plan_base_price);
+  // base_price is snapshotted onto the membership at assignment time (see
+  // effectivePrice() in user-memberships.ts) and is never null — membership_plans
+  // itself has carried no price column since migration 058, so there is no plan
+  // fallback to join for.
+  let price = parseFloat(um.base_price);
 
   const { rows: cbRows } = await tx.query(
     `SELECT pcb.value, pcb.action AS action_code, ct.code AS charge_code
@@ -45,12 +46,9 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
     [userMembershipId],
   );
   for (const cb of cbRows) {
-    if (cb.action_code === 'waive') price = 0;
-    else if (cb.action_code === 'percentage_discount') price -= price * (parseFloat(cb.value) / 100);
-    else if (cb.action_code === 'fixed_discount') price -= parseFloat(cb.value);
+    price = applyPeriodBenefit(price, cb.action_code as PromotionBenefitAction, cb.value != null ? parseFloat(cb.value) : null);
   }
-  if (price < 0) price = 0;
-  return { price: Math.round(price * 100) / 100, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };
+  return { price, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };
 }
 
 export async function applyPromotionToMembership(

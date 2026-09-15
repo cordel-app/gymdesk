@@ -671,11 +671,18 @@ describe('Charge benefits — fixed_price action', () => {
     gymId = await createTestGym('CB Gym');
     await createTestMembership(gymId, 'admin');
     promoId = await createPromo(gymId, 'CB Promo');
-    const { rows } = await db.query<{ id: number }>(
-      "SELECT id FROM gym_charges WHERE gym_id = ? AND availability = 'available' LIMIT 1",
-      [gymId],
+    // createTestGym does a raw INSERT INTO gyms, bypassing POST /gyms's
+    // gym_charges seeding — insert one directly so this describe block
+    // actually exercises the endpoint (#487 stage 2: this block previously
+    // always no-opped via the `if (!gymChargeId) return` guards below, since
+    // gymChargeId was always undefined).
+    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
+    const { insertId } = await db.query(
+      `INSERT INTO gym_charges (gym_id, charge_type_id, amount, currency, billing_frequency, availability)
+       VALUES (?, ?, 0, 'EUR', 'month', 'available')`,
+      [gymId, membershipFeeTypeId],
     );
-    gymChargeId = rows[0]?.id;
+    gymChargeId = insertId;
   });
 
   it('PUT /charge-benefits accepts fixed_price action', async () => {

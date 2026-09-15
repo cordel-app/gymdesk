@@ -353,6 +353,42 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   locale strings needed. Extended `promotions.test.ts` with round-trip,
   validation-boundary, backward-compatibility, tenant-isolation and auth
   coverage for the new columns.
+- **#487 stage 2 (done)**: shared calc function for Promotion Charge/Period
+  Benefit actions, and closes the pre-existing `fixed_price` gap in real
+  billing — stages 3-4 (wiring Period Benefits' `frequency`/`duration_months`
+  window into `computeFinalPrice`, Forecast/timeline surface) remain separate
+  future PRs. New `applyPeriodBenefit(amount, action, value)` in
+  `api/src/domain/promotionBenefits.ts` is the single place that turns an
+  action/value pair into a resulting amount for the 5 stable actions
+  (`no_benefit`/`waive`/`percentage_discount`/`fixed_discount`/`fixed_price`),
+  clamped at 0 — mirrors `billingForecast.ts`'s `applyChargeBenefit`, but that
+  function is for the unrelated Plan Charge Benefits forecast (ticket #485,
+  explicitly excludes promotions) so it was left untouched. `computeFinalPrice`
+  in `membership-promotions.ts` now calls the shared function instead of its
+  own inline `if`/`else`, which adds the `fixed_price` branch it was missing.
+  While wiring this up, found and fixed two pre-existing bugs blocking any
+  real use of Promotion Charge Benefits on `membership_fee`: (1)
+  `computeFinalPrice`'s query selected `p.base_price` from `membership_plans`,
+  a column migration 058 dropped in favor of `membership_plan_prices` —
+  every call 500'd; fixed by reading `user_memberships.base_price` (the
+  snapshot `effectivePrice()` always sets at assignment time) directly,
+  no plan join needed. (2) `promotion_charge_benefits`'s `action` CHECK was
+  never actually widened to allow `fixed_price`: migration 102 dropped
+  `pcb_action_check` and re-added it with 5 values, but the constraint that
+  existed at the time (from migration 092) was actually named
+  `chk_prcb_action` — the misnamed `DROP` silently no-opped, leaving the
+  stale 4-value constraint active alongside the new one, and MySQL enforces
+  all CHECK constraints, so every `fixed_price` charge benefit was silently
+  rejected since 102 shipped. New migration 145 drops the stale constraint.
+  New `promotion-benefits.test.ts` (unit, no DB) covers all 5 actions.
+  New `membership-promotions.test.ts` (integration) exercises the real
+  `POST /user-memberships/:id/promotions` endpoint for all 4 non-trivial
+  actions including `fixed_price`, plus auth/tenant-isolation coverage this
+  router previously had none of; `helpers.ts`'s `cleanupTestGyms` extended
+  to delete `user_membership_promotions` and `billing_events` (the former
+  needed first — its `promotion_id` FK is `RESTRICT`, and it was blocking
+  the existing `DELETE FROM promotions` cleanup step for any test creating
+  applied promotions).
 - **#482 (done)**: Add Recurring Availability Hours and Bookable Slots to
   Activities — 4-stage rollout agreed in the issue thread, landed as #519
   (weekly rule windows sliced into `duration_minutes`-sized bookable
