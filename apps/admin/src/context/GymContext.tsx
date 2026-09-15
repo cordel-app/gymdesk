@@ -12,6 +12,7 @@ export interface GymTheme {
   status: string;
   has_logo: boolean;
   logo_updated_at: string | null;
+  logo_contains_gym_name: boolean;
   tokens: Record<string, any> | null;
 }
 

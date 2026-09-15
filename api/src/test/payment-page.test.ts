@@ -102,9 +102,39 @@ describe('GET /payment-page/token/:token', () => {
     expect(res.body.amount).toBeCloseTo(29.99);
     expect(res.body.currency).toBe('EUR');
     expect(res.body.billingInterval).toBe('1 month');
+    expect(res.body.logoUrl).toBeNull();
+    expect(res.body.logoContainsGymName).toBe(false);
     expect(res.body).not.toHaveProperty('id');
     expect(res.body).not.toHaveProperty('gym_id');
     expect(res.body).not.toHaveProperty('member_id');
+  });
+
+  it('includes logoUrl and logoContainsGymName when the gym has a theme with a logo (#488)', async () => {
+    await db.query(
+      `INSERT INTO themes (id, gym_id, name, status, logo_mime, logo_bytes, logo_contains_gym_name, tokens, created_at)
+       VALUES (UUID(), NULL, 'Payment Logo Theme', 'active', 'image/png', UNHEX('89504e47'), 1, '{}', UTC_TIMESTAMP())`,
+    );
+    const { rows: themeRows } = await db.query<{ id: string }>(
+      "SELECT id FROM themes WHERE gym_id IS NULL AND name = 'Payment Logo Theme' LIMIT 1",
+    );
+    const themeId = themeRows[0].id;
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [themeId, gymId]);
+
+    try {
+      const pageToken = crypto.randomUUID();
+      await insertPendingRequest({
+        gymId, userMembershipId, memberId, chargeTypeId,
+        pageToken, providerRef: 'pay_monei_logo',
+      });
+
+      const res = await request.get(`/payment-page/token/${pageToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.logoUrl).toContain(`/themes/${themeId}/logo`);
+      expect(res.body.logoContainsGymName).toBe(true);
+    } finally {
+      await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+      await db.query('DELETE FROM themes WHERE id = ?', [themeId]);
+    }
   });
 
   it('consumes the token so a second request returns 404', async () => {

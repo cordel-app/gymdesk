@@ -238,6 +238,32 @@ describe('POST /platform/themes', () => {
       });
     expect(res.status).toBe(400);
   });
+
+  it('defaults logo_contains_gym_name to false when omitted', async () => {
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Logo Flag Default' });
+    expect(res.status).toBe(201);
+    expect(res.body.logo_contains_gym_name).toBe(false);
+  });
+
+  it('accepts logo_contains_gym_name: true on creation', async () => {
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Logo Flag True', logo_contains_gym_name: true });
+    expect(res.status).toBe(201);
+    expect(res.body.logo_contains_gym_name).toBe(true);
+  });
+
+  it('returns 400 when logo_contains_gym_name is not a boolean', async () => {
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Logo Flag Bad', logo_contains_gym_name: 'yes' });
+    expect(res.status).toBe(400);
+  });
 });
 
 // ─── PUT /platform/themes/:id ────────────────────────────────────────────────
@@ -304,6 +330,38 @@ describe('PUT /platform/themes/:id', () => {
     } finally {
       await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
     }
+  });
+
+  it('persists logo_contains_gym_name and returns it in the response', async () => {
+    const res = await request
+      .put(`/platform/themes/${putThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ logo_contains_gym_name: true });
+    expect(res.status).toBe(200);
+    expect(res.body.logo_contains_gym_name).toBe(true);
+
+    const { rows } = await db.query<{ logo_contains_gym_name: number }>(
+      'SELECT logo_contains_gym_name FROM themes WHERE id = ?',
+      [putThemeId],
+    );
+    expect(!!rows[0].logo_contains_gym_name).toBe(true);
+  });
+
+  it('leaves logo_contains_gym_name unchanged when omitted from the update', async () => {
+    const res = await request
+      .put(`/platform/themes/${putThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ status: 'active' });
+    expect(res.status).toBe(200);
+    expect(res.body.logo_contains_gym_name).toBe(true);
+  });
+
+  it('returns 400 when logo_contains_gym_name is not a boolean', async () => {
+    const res = await request
+      .put(`/platform/themes/${putThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ logo_contains_gym_name: 'true' });
+    expect(res.status).toBe(400);
   });
 });
 

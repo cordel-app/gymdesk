@@ -107,6 +107,7 @@ function shapeTheme(row: any) {
     type: row.gym_id === null ? 'system' : 'custom',
     has_logo: !!row.logo_mime,
     is_system_default: !!row.is_system_default,
+    logo_contains_gym_name: !!row.logo_contains_gym_name,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
   };
 }
@@ -144,7 +145,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const sql = `
     SELECT
       t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-      t.logo_mime, t.logo_updated_at, t.tokens, t.created_at, t.modified_at, t.deleted_at,
+      t.logo_mime, t.logo_updated_at, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
       (
         SELECT COUNT(DISTINCT gg.id)
         FROM gyms gg
@@ -164,7 +165,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
 themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
     `SELECT t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-            t.logo_mime, t.logo_updated_at, t.tokens, t.created_at, t.modified_at, t.deleted_at,
+            t.logo_mime, t.logo_updated_at, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
             (
               SELECT COUNT(DISTINCT gg.id) FROM gyms gg
               LEFT JOIN centers cc ON cc.gym_id = gg.id AND cc.deleted_at IS NULL
@@ -201,13 +202,17 @@ themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 themesRouter.post('/', requireSuperadmin, async (req, res) => {
-  const { name, description, tokens, status } = req.body;
+  const { name, description, tokens, status, logo_contains_gym_name } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
 
   const ALLOWED_CREATE_STATUSES = ['draft', 'active'];
   const resolvedStatus = status ?? 'draft';
   if (!ALLOWED_CREATE_STATUSES.includes(resolvedStatus)) {
     return res.status(400).json({ error: `status must be one of: ${ALLOWED_CREATE_STATUSES.join(', ')}` });
+  }
+
+  if (logo_contains_gym_name !== undefined && typeof logo_contains_gym_name !== 'boolean') {
+    return res.status(400).json({ error: 'logo_contains_gym_name must be a boolean' });
   }
 
   // Enforce name uniqueness among non-deleted rows.
@@ -223,11 +228,11 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
 
   const id = randomUUID();
   await db.query(
-    'INSERT INTO themes (id, gym_id, is_system_default, name, description, status, tokens, created_at) VALUES (?, NULL, 0, ?, ?, ?, ?, UTC_TIMESTAMP())',
-    [id, name.trim(), description?.trim() ?? null, resolvedStatus, JSON.stringify(mergedTokens)],
+    'INSERT INTO themes (id, gym_id, is_system_default, name, description, status, logo_contains_gym_name, tokens, created_at) VALUES (?, NULL, 0, ?, ?, ?, ?, ?, UTC_TIMESTAMP())',
+    [id, name.trim(), description?.trim() ?? null, resolvedStatus, logo_contains_gym_name ?? false, JSON.stringify(mergedTokens)],
   );
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [id],
   );
   recordAudit(req, { action: 'create', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });
@@ -237,14 +242,17 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
 // ─── Update name / tokens / status ───────────────────────────────────────────
 
 themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
-  const { name, description, tokens, status } = req.body;
+  const { name, description, tokens, status, logo_contains_gym_name } = req.body;
   const ALLOWED_STATUSES = ['draft', 'active', 'inactive'];
   if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
   }
+  if (logo_contains_gym_name !== undefined && typeof logo_contains_gym_name !== 'boolean') {
+    return res.status(400).json({ error: 'logo_contains_gym_name must be a boolean' });
+  }
 
   const { rows: existingRows } = await db.query(
-    'SELECT id, name, status, tokens, logo_mime, logo_updated_at, deleted_at FROM themes WHERE id = ? AND gym_id IS NULL',
+    'SELECT id, name, status, tokens, logo_mime, logo_updated_at, logo_contains_gym_name, deleted_at FROM themes WHERE id = ? AND gym_id IS NULL',
     [req.params.id],
   );
   if (existingRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
@@ -283,15 +291,16 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
 
   await db.query(
     `UPDATE themes SET
-       name        = COALESCE(?, name),
-       description = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
-       status      = COALESCE(?, status),
-       tokens      = ?
+       name                   = COALESCE(?, name),
+       description            = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
+       status                 = COALESCE(?, status),
+       logo_contains_gym_name = COALESCE(?, logo_contains_gym_name),
+       tokens                 = ?
      WHERE id = ?`,
-    [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, JSON.stringify(tokensMerged), req.params.id],
+    [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), req.params.id],
   );
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current), next: shapeTheme(rows[0]) });
@@ -323,7 +332,7 @@ themesRouter.post(
       [body, mime, req.params.id],
     );
     const { rows } = await db.query(
-      'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+      'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
       [req.params.id],
     );
     res.json(shapeTheme(rows[0]));
@@ -337,7 +346,7 @@ themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
   await db.query('UPDATE themes SET logo_bytes = NULL, logo_mime = NULL, logo_updated_at = NULL WHERE id = ?', [req.params.id]);
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [req.params.id],
   );
   res.json(shapeTheme(rows[0]));
@@ -347,7 +356,7 @@ themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
 
 themesRouter.post('/clone/:sourceId', requireSuperadmin, async (req, res) => {
   const { rows: source } = await db.query(
-    'SELECT id, name, tokens FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
+    'SELECT id, name, tokens, logo_contains_gym_name FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
     [req.params.sourceId],
   );
   if (source.length === 0) return res.status(404).json({ error: 'Theme not found' });
@@ -364,11 +373,11 @@ themesRouter.post('/clone/:sourceId', requireSuperadmin, async (req, res) => {
   const id = randomUUID();
   const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
   await db.query(
-    "INSERT INTO themes (id, gym_id, is_system_default, name, status, tokens, created_at) VALUES (?, NULL, 0, ?, 'draft', ?, UTC_TIMESTAMP())",
-    [id, baseName, tokens],
+    "INSERT INTO themes (id, gym_id, is_system_default, name, status, logo_contains_gym_name, tokens, created_at) VALUES (?, NULL, 0, ?, 'draft', ?, ?, UTC_TIMESTAMP())",
+    [id, baseName, src.logo_contains_gym_name, tokens],
   );
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
     [id],
   );
   recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });

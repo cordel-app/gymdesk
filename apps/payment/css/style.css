@@ -40,6 +40,13 @@ h1 {
   font-size: 22px;
 }
 
+.gym-logo {
+  display: block;
+  max-height: 40px;
+  width: auto;
+  margin: 0 0 8px;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   font-size: 13px;

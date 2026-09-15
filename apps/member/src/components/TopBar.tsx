@@ -15,7 +15,7 @@ export function TopBar() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations();
-  const { isLinked, unreadNotifications } = useApp();
+  const { isLinked, unreadNotifications, theme, gymName } = useApp();
 
   if (pathname.includes('/sign-in') || pathname.includes('/sign-up')) return null;
   if (!isLinked) return null;
@@ -23,6 +23,10 @@ export function TopBar() {
   const homePath = `/${locale}`;
   const isHome = pathname === homePath;
   const isProfile = pathname.startsWith(`${homePath}/profile`);
+
+  const logoSrc = theme?.has_logo
+    ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
+    : null;
 
   return (
     <div style={{
@@ -34,7 +38,15 @@ export function TopBar() {
       borderBottom: 'var(--gd-header-sep-height, 1px) solid var(--gd-header-sep-color, #e5e5e5)',
     }}>
       {isHome ? (
-        <span />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {logoSrc && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoSrc} alt={gymName ?? ''} style={{ height: 24, width: 'auto', objectFit: 'contain' }} />
+          )}
+          {(!logoSrc || !theme?.logo_contains_gym_name) && gymName && (
+            <strong style={{ fontSize: 15, color: 'var(--gd-text, #18181b)' }}>{gymName}</strong>
+          )}
+        </div>
       ) : (
         <button
           onClick={() => router.push(homePath)}

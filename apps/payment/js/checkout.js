@@ -3,6 +3,7 @@
 
   var errorEl = document.getElementById('error');
   var checkoutEl = document.getElementById('checkout');
+  var gymLogoEl = document.getElementById('gym-logo');
   var gymNameEl = document.getElementById('gym-name');
   var memberNameEl = document.getElementById('member-name');
   var amountEl = document.getElementById('amount');
@@ -64,6 +65,15 @@
     okUrl = data.okUrl || '';
     koUrl = data.koUrl || '';
 
+    if (data.logoUrl) {
+      gymLogoEl.src = data.logoUrl;
+      gymLogoEl.alt = data.gymName || '';
+      gymLogoEl.hidden = false;
+    } else {
+      gymLogoEl.hidden = true;
+    }
+    // The name renders next to the logo unless the logo already contains it.
+    gymNameEl.hidden = !!(data.logoUrl && data.logoContainsGymName);
     gymNameEl.textContent = data.gymName || '';
     memberNameEl.textContent = data.memberName || '';
     amountEl.textContent = formatAmount(data.amount, data.currency);

@@ -73,6 +73,7 @@ const GYM_THEME_SELECT = `
   g.id, g.name,
   t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
   t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+  t.logo_contains_gym_name AS theme_logo_contains_gym_name,
   t.tokens AS theme_tokens
 `;
 
@@ -83,6 +84,7 @@ function mapGymRow(row: any) {
     status: row.theme_status,
     has_logo: !!row.theme_logo_mime,
     logo_updated_at: row.theme_logo_updated_at,
+    logo_contains_gym_name: !!row.theme_logo_contains_gym_name,
     tokens: typeof row.theme_tokens === 'string' ? JSON.parse(row.theme_tokens) : (row.theme_tokens ?? null),
   } : null;
   return { id: row.id, name: row.name, theme };
@@ -115,6 +117,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
         `SELECT g.id, g.name,
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+                t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM members m
          JOIN gyms g ON g.id = m.gym_id
@@ -131,6 +134,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
         `SELECT g.id, g.name,
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+                t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM gym_memberships gm
          JOIN gyms g ON g.id = gm.gym_id
@@ -146,6 +150,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
         `SELECT g.id, g.name,
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+                t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM members m
          JOIN gym_memberships gm ON gm.gym_id = m.gym_id AND gm.user_id = m.clerk_user_id

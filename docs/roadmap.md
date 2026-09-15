@@ -408,6 +408,25 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   with a `ConfirmDialog` that resubmits with `confirm_cancel_booked: true`
   once staff confirms. No frontend test added — `apps/admin` has no test
   harness in this repo (no vitest/testing-library configured).
+- **#488 (done)**: Added `logo_contains_gym_name` (migration 146) — a single
+  boolean on `themes`, shared by Base and Customer Themes, describing whether
+  the configured logo already contains the gym's name. Threaded through every
+  theme-shaped API response (`themes.ts`, `gym-themes.ts`, `me.ts`'s
+  `GYM_THEME_SELECT`/`mapGymRow` used by `/me/gym` + `/me/gyms`, `gyms.ts`'s
+  `THEME_SELECT`/`attachTheme` used by the admin gym list) and on the public
+  `GET /payment-page/token/:token` response (`logoUrl`, `logoContainsGymName`,
+  via a new `LEFT JOIN themes`). Admin UI: checkbox directly under the Logo
+  field on both the Base Theme and Customer Theme editors. Per the scoping
+  answer on the issue thread, this also builds first-time logo+name header
+  rendering where none existed: Admin's `TopHeader.tsx` (previously a pure
+  logo-XOR-name toggle, now renders both unless the flag suppresses the name),
+  Member Web's `TopBar.tsx` home-screen slot (no logo/name rendering existed
+  there before), and the Payment app's `checkout.html`/`checkout.js` (new
+  `<img id="gym-logo">`, gated by the flag) — the Cloudflare logo-upload
+  feature itself is deferred to a follow-up ticket per the same thread.
+  Payment app's `nginx.conf` gained a `/themes/` proxy location (alongside
+  the existing `/payment-page/` one) so the logo image stays same-origin
+  under its CSP `img-src 'self'`.
 
 ## Decisions
 

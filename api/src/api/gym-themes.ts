@@ -61,11 +61,12 @@ function shapeTheme(row: any) {
     ...rest,
     is_base: row.gym_id === null,
     has_logo: !!row.logo_mime,
+    logo_contains_gym_name: !!row.logo_contains_gym_name,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
   };
 }
 
-const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, tokens, created_at, modified_at, deleted_at';
+const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at, deleted_at';
 
 async function checkGymThemeProtected(id: string, gymId: string): Promise<{ isGymDefault: boolean; centerCount: number }> {
   const { rows: gymRefs } = await db.query<{ cnt: number }>(
@@ -132,9 +133,9 @@ gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
       const id = randomUUID();
       const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
       await db.query(
-        `INSERT INTO themes (id, gym_id, name, status, tokens, created_at)
-         VALUES (?, ?, ?, 'draft', ?, UTC_TIMESTAMP())`,
-        [id, gymId, baseName, tokens],
+        `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at)
+         VALUES (?, ?, ?, 'draft', ?, ?, UTC_TIMESTAMP())`,
+        [id, gymId, baseName, src.logo_contains_gym_name, tokens],
       );
 
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [id]);
@@ -157,10 +158,13 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
       if (existingRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
       const current = existingRows[0];
 
-      const { name, description, tokens, status } = req.body;
+      const { name, description, tokens, status, logo_contains_gym_name } = req.body;
       const ALLOWED_STATUSES = ['draft', 'active', 'inactive'];
       if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
         return res.status(400).json({ error: `status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
+      }
+      if (logo_contains_gym_name !== undefined && typeof logo_contains_gym_name !== 'boolean') {
+        return res.status(400).json({ error: 'logo_contains_gym_name must be a boolean' });
       }
 
       // Block status downgrade when theme is assigned
@@ -195,12 +199,13 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
 
       await db.query(
         `UPDATE themes SET
-           name        = COALESCE(?, name),
-           description = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
-           status      = COALESCE(?, status),
-           tokens      = ?
+           name                   = COALESCE(?, name),
+           description            = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
+           status                 = COALESCE(?, status),
+           logo_contains_gym_name = COALESCE(?, logo_contains_gym_name),
+           tokens                 = ?
          WHERE id = ? AND gym_id = ?`,
-        [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, JSON.stringify(tokensMerged), req.params.id, gymId],
+        [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), req.params.id, gymId],
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
       recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current), next: shapeTheme(rows[0]) });
