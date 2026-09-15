@@ -253,6 +253,101 @@ export async function partitionBookedFutureOccurrences(
   return { preserved, impacted };
 }
 
+/**
+ * #482: does `a`'s recurrence pattern (weekday-set + date range + time-of-day
+ * window) overlap with `b`'s? Used to warn staff that two rules would double-book
+ * the same space or trainer, before either rule is materialized into
+ * `calendar_events`.
+ *
+ * This is a structural, weekday-level comparison — not an exact date-by-date
+ * expansion — so `monthly` rules are compared by their configured weekday only
+ * (ignoring `ordinal`), which can over-warn (e.g. "first Monday" vs "third
+ * Monday" of the month) but never under-warns. That's the right tradeoff for a
+ * non-blocking warning.
+ */
+export function rulesOverlap(a: RuleWindowConfig, b: RuleWindowConfig): boolean {
+  const aStart = a.start_time.slice(0, 5);
+  const aEnd = a.end_time.slice(0, 5);
+  const bStart = b.start_time.slice(0, 5);
+  const bEnd = b.end_time.slice(0, 5);
+  if (aStart >= bEnd || bStart >= aEnd) return false;
+
+  const rangeEnd = (c: RuleWindowConfig) => (c.type === 'one_off' ? c.start_date : (c.end_date ?? '9999-12-31'));
+  if (a.start_date > rangeEnd(b) || b.start_date > rangeEnd(a)) return false;
+
+  const weekdaysOf = (c: RuleWindowConfig): number[] => {
+    if (c.type === 'weekly') return c.weekdays ?? [];
+    if (c.type === 'monthly') return c.weekday != null ? [c.weekday] : [];
+    return [DateTime.fromISO(c.start_date, { zone: 'utc' }).weekday % 7]; // one_off
+  };
+  const aDays = new Set(weekdaysOf(a));
+  return weekdaysOf(b).some((d) => aDays.has(d));
+}
+
+export interface OverlapCandidate {
+  id: number;
+  activity_type_id: number;
+  activity_type_name: string;
+  default_space_id: number | null;
+  default_trainer_membership_id: number | null;
+  config: RuleWindowConfig;
+}
+
+function rowToWindowConfig(row: any): RuleWindowConfig {
+  return {
+    type: row.type,
+    start_date: row.start_date instanceof Date ? row.start_date.toISOString().slice(0, 10) : String(row.start_date).slice(0, 10),
+    end_date: row.end_date == null ? null
+      : row.end_date instanceof Date ? row.end_date.toISOString().slice(0, 10) : String(row.end_date).slice(0, 10),
+    weekday: row.weekday,
+    weekdays: row.weekdays == null ? null
+      : Array.isArray(row.weekdays) ? row.weekdays.map(Number)
+      : ((): number[] => { try { return JSON.parse(row.weekdays).map(Number); } catch { return []; } })(),
+    ordinal: row.ordinal,
+    start_time: typeof row.start_time === 'string' ? row.start_time.slice(0, 5) : row.start_time,
+    end_time: typeof row.end_time === 'string' ? row.end_time.slice(0, 5) : row.end_time,
+  };
+}
+
+/**
+ * #482: every other active schedule rule in this gym whose parent Activity Type
+ * resolves to the same space and/or the same trainer as `spaceId`/`trainerMembershipId`
+ * (the rule being created/edited). Callers pair this with `rulesOverlap` against
+ * each candidate's `config` to decide which ones actually conflict in time.
+ */
+export async function findOverlappingRules(
+  gymId: string,
+  excludeRuleId: number | null,
+  spaceId: number | null,
+  trainerMembershipId: number | null,
+): Promise<OverlapCandidate[]> {
+  if (spaceId == null && trainerMembershipId == null) return [];
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+  if (spaceId != null) { conditions.push('at.default_space_id = ?'); params.push(spaceId); }
+  if (trainerMembershipId != null) { conditions.push('at.default_trainer_membership_id = ?'); params.push(trainerMembershipId); }
+
+  const { rows } = await db.query(
+    `SELECT r.id, r.activity_type_id, at.name AS activity_type_name,
+            at.default_space_id, at.default_trainer_membership_id,
+            r.type, r.start_date, r.end_date, r.weekday, r.weekdays, r.ordinal, r.start_time, r.end_time
+     FROM activity_type_schedule_rules r
+     JOIN activity_types at ON at.id = r.activity_type_id AND at.deleted_at IS NULL
+     WHERE r.gym_id = ? AND (${conditions.join(' OR ')}) AND r.id != COALESCE(?, 0)`,
+    [gymId, ...params, excludeRuleId],
+  );
+
+  return rows.map((row: any): OverlapCandidate => ({
+    id: row.id,
+    activity_type_id: row.activity_type_id,
+    activity_type_name: row.activity_type_name,
+    default_space_id: row.default_space_id,
+    default_trainer_membership_id: row.default_trainer_membership_id,
+    config: rowToWindowConfig(row),
+  }));
+}
+
 export async function materializeScheduleRule(ruleId: number, gymTimezone: string): Promise<void> {
   const { rows: ruleRows } = await db.query(
     `SELECT r.*, at.name AS activity_type_name,

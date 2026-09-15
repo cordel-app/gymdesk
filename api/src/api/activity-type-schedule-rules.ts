@@ -7,6 +7,8 @@ import {
   computeSlotSegments,
   findBookedFutureOccurrences,
   partitionBookedFutureOccurrences,
+  findOverlappingRules,
+  rulesOverlap,
   type RuleWindowConfig,
   type BookedOccurrence,
 } from '../domain/scheduleEngine';
@@ -24,7 +26,8 @@ export const activityTypeScheduleRulesRouter = Router({ mergeParams: true });
 
 async function resolveActivityType(activityTypeId: string, gymId: string) {
   const { rows } = await db.query(
-    'SELECT id, name, duration_minutes FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    `SELECT id, name, duration_minutes, default_space_id, default_trainer_membership_id
+     FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
     [activityTypeId, gymId],
   );
   return rows[0] ?? null;
@@ -77,6 +80,39 @@ function computeSlotWarning(
   }
 
   return null;
+}
+
+/**
+ * #482: warn (non-blocking) when a rule's window overlaps another rule in this
+ * gym that resolves to the same space or the same trainer (both inherited from
+ * each rule's Activity Type — `activity_type_schedule_rules` has no space/trainer
+ * of its own). Mirrors `computeSlotWarning`'s shape: a single advisory string or
+ * null, surfaced alongside the saved rule rather than blocking the save.
+ */
+async function computeOverlapWarning(
+  gymId: string,
+  excludeRuleId: number | null,
+  activityType: { default_space_id: number | null; default_trainer_membership_id: number | null },
+  config: RuleWindowConfig,
+): Promise<string | null> {
+  const candidates = await findOverlappingRules(
+    gymId, excludeRuleId, activityType.default_space_id, activityType.default_trainer_membership_id,
+  );
+  const overlapping = candidates.filter((c) => rulesOverlap(config, c.config));
+
+  const spaceConflicts = activityType.default_space_id == null ? [] : overlapping.filter((c) => c.default_space_id === activityType.default_space_id);
+  const trainerConflicts = activityType.default_trainer_membership_id == null ? [] : overlapping.filter((c) => c.default_trainer_membership_id === activityType.default_trainer_membership_id);
+
+  const messages: string[] = [];
+  if (spaceConflicts.length > 0) {
+    const names = [...new Set(spaceConflicts.map((c) => c.activity_type_name))].join(', ');
+    messages.push(`This schedule overlaps with the same space used by: ${names}.`);
+  }
+  if (trainerConflicts.length > 0) {
+    const names = [...new Set(trainerConflicts.map((c) => c.activity_type_name))].join(', ');
+    messages.push(`This schedule overlaps with the same trainer assigned to: ${names}.`);
+  }
+  return messages.length > 0 ? messages.join(' ') : null;
 }
 
 async function getGymTimezone(gymId: string): Promise<string> {
@@ -276,7 +312,17 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [insertId]);
   const slot_warning = computeSlotWarning(type, start_time, end_time, activityType.duration_minutes);
-  res.status(201).json({ ...formatRule(rows[0]), member_ids: memberIds ?? [], slot_warning });
+  const overlap_warning = await computeOverlapWarning(gymId, insertId, activityType, {
+    type,
+    start_date,
+    end_date: type === 'one_off' ? null : end_date,
+    weekday: type === 'monthly' ? Number(weekday) : null,
+    weekdays: type === 'weekly' ? weekdays : null,
+    ordinal: type === 'monthly' ? ordinal : null,
+    start_time: start_time.slice(0, 5),
+    end_time: end_time.slice(0, 5),
+  });
+  res.status(201).json({ ...formatRule(rows[0]), member_ids: memberIds ?? [], slot_warning, overlap_warning });
 });
 
 // PUT /activity-types/:activityTypeId/schedule-rules/:ruleId
@@ -396,7 +442,8 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);
   const currentMemberIds = memberIds ?? (await getRuleMemberIdsByRule([Number(ruleId)])).get(Number(ruleId)) ?? [];
   const slot_warning = computeSlotWarning(type, start_time, end_time, activityType.duration_minutes);
-  res.json({ ...formatRule(rows[0]), member_ids: currentMemberIds, slot_warning });
+  const overlap_warning = await computeOverlapWarning(gymId, Number(ruleId), activityType, newConfig);
+  res.json({ ...formatRule(rows[0]), member_ids: currentMemberIds, slot_warning, overlap_warning });
 });
 
 // DELETE /activity-types/:activityTypeId/schedule-rules/:ruleId
