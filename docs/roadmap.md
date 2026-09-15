@@ -452,6 +452,25 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   Payment app's `nginx.conf` gained a `/themes/` proxy location (alongside
   the existing `/payment-page/` one) so the logo image stays same-origin
   under its CSP `img-src 'self'`.
+- **#489 stage 1 (in progress — foundation)**: Improve Theme Color System —
+  staged rollout agreed on the issue thread (1: foundation, 2: new semantic
+  color tokens + delete the Advanced section by redistributing its settings
+  into the appropriate sections, 3: wire shared components to the new
+  tokens, 4: Member Web + Pay theming parity, 5: tests + docs). This PR is
+  stage 1 only: extracted the byte-identical `validateTokens()`/
+  `defaultTokens()`/`HEX_RE`/`FONT_STACKS` duplicated verbatim across
+  `api/src/api/themes.ts` and `api/src/api/gym-themes.ts` into a new shared
+  `api/src/domain/themeTokens.ts` (same pattern as `domain/muscles.ts`), and
+  fixed a UI categorization bug: `cardBorder` is already a standard,
+  validated color (not an Advanced one) but both Admin theme editors
+  (`[locale]/themes/page.tsx` and `[locale]/system/themes/page.tsx`)
+  rendered its control under the "Advanced" section — moved into the
+  standard Colors section's `group_application` group next to
+  `cardBackground`; no data-model change. The originally proposed
+  interim "wire `tokens.advanced` to CSS variables" step was dropped from
+  this stage since the agreed plan now deletes the Advanced section
+  outright in stage 2 rather than keeping it wired — that work would have
+  been thrown away immediately after. Stages 2–5 remain.
 
 ## Decisions
 
