@@ -16,10 +16,24 @@
  *
  * This drops the stale constraint so `pcb_action_check` is the sole action
  * gate, matching the behavior the API has assumed since 102.
+ *
+ * down() is a best-effort dev/staging rollback only: MySQL validates existing
+ * rows when a CHECK is added, so once any `fixed_price` row exists (the whole
+ * point of this fix) down() will fail to re-add the 4-value constraint and
+ * silently no-op (caught below) rather than error. Don't rely on it in prod.
  */
 
 exports.up = async (knex) => {
   await knex.raw('ALTER TABLE promotion_charge_benefits DROP CHECK chk_prcb_action').catch(() => {});
+
+  const [rows] = await knex.raw(
+    `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'promotion_charge_benefits'
+       AND CONSTRAINT_NAME = 'chk_prcb_action'`,
+  );
+  if (rows.length > 0) {
+    throw new Error('chk_prcb_action still present after DROP CHECK — investigate before proceeding');
+  }
 };
 
 exports.down = async (knex) => {
