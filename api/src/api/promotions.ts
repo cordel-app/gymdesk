@@ -310,8 +310,10 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       );
       for (const pb of pbs) {
         await tx.query(
-          'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [gymId, newId, pb.charge_type_id, pb.quantity, pb.frequency_interval, pb.frequency_unit, pb.enabled],
+          `INSERT INTO promotion_period_benefits
+             (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, newId, pb.charge_type_id, pb.quantity, pb.frequency_interval, pb.frequency_unit, pb.duration_months, pb.enabled, pb.action, pb.value],
         );
       }
 
