@@ -131,71 +131,72 @@ export const DEFAULT_ADVANCED: Record<string, string | number | boolean> = {
   transitionSpeed: 'normal',
 };
 
+// Per #489 stage 2 (remainder): these attributes no longer live under a
+// standalone "Advanced" section. Each `group` below is one of the same
+// section keys COLOR_GROUPS uses in the theme editor pages, so the editor
+// renders a component's colors and its fine-grained attributes together.
 export const ADVANCED_ATTRIBUTES: AdvancedAttribute[] = [
-  // Overlays
-  { key: 'modalBackground',         labelKey: 'adv_modal_bg',                group: 'adv_group_overlays',    type: 'color' },
-  // Layout
-  { key: 'uiDensity',               labelKey: 'adv_ui_density',              group: 'adv_group_layout',      type: 'select', options: ['compact', 'comfortable', 'spacious'] },
-  { key: 'contentMaxWidth',         labelKey: 'adv_content_max_width',       group: 'adv_group_layout',      type: 'text' },
-  { key: 'pageHorizontalPadding',   labelKey: 'adv_page_h_padding',          group: 'adv_group_layout',      type: 'text' },
-  { key: 'pageVerticalSpacing',     labelKey: 'adv_page_v_spacing',          group: 'adv_group_layout',      type: 'text' },
-  { key: 'sectionSpacing',          labelKey: 'adv_section_spacing',         group: 'adv_group_layout',      type: 'text' },
-  { key: 'componentSpacingScale',   labelKey: 'adv_component_spacing',       group: 'adv_group_layout',      type: 'text' },
-  // Shape
-  { key: 'globalBorderRadius',      labelKey: 'adv_global_radius',           group: 'adv_group_shape',       type: 'text' },
-  { key: 'cardBorderRadius',        labelKey: 'adv_card_radius',             group: 'adv_group_shape',       type: 'text' },
-  { key: 'buttonBorderRadius',      labelKey: 'adv_btn_radius',              group: 'adv_group_shape',       type: 'text' },
-  { key: 'inputBorderRadius',       labelKey: 'adv_input_radius',            group: 'adv_group_shape',       type: 'text' },
-  { key: 'modalBorderRadius',       labelKey: 'adv_modal_radius',            group: 'adv_group_shape',       type: 'text' },
-  { key: 'dropdownBorderRadius',    labelKey: 'adv_dropdown_radius',         group: 'adv_group_shape',       type: 'text' },
-  { key: 'defaultBorderWidth',      labelKey: 'adv_default_border_width',    group: 'adv_group_shape',       type: 'text' },
-  // Shadows
-  { key: 'cardShadow',              labelKey: 'adv_card_shadow',             group: 'adv_group_shadows',     type: 'select', options: ['none', 'small', 'medium', 'large'] },
-  { key: 'modalShadow',             labelKey: 'adv_modal_shadow',            group: 'adv_group_shadows',     type: 'select', options: ['none', 'small', 'medium', 'large'] },
-  { key: 'dropdownShadow',          labelKey: 'adv_dropdown_shadow',         group: 'adv_group_shadows',     type: 'select', options: ['none', 'small', 'medium', 'large'] },
-  { key: 'popoverShadow',           labelKey: 'adv_popover_shadow',          group: 'adv_group_shadows',     type: 'select', options: ['none', 'small', 'medium', 'large'] },
-  // Button Colors
-  { key: 'primaryBtnHoverBg',       labelKey: 'adv_primary_btn_hover_bg',    group: 'adv_group_btn_colors',  type: 'color' },
-  { key: 'primaryBtnActiveBg',      labelKey: 'adv_primary_btn_active_bg',   group: 'adv_group_btn_colors',  type: 'color' },
-  { key: 'secondaryBtnHoverBg',     labelKey: 'adv_secondary_btn_hover_bg',  group: 'adv_group_btn_colors',  type: 'color' },
-  { key: 'disabledBtnBg',           labelKey: 'adv_disabled_btn_bg',         group: 'adv_group_btn_colors',  type: 'color' },
-  { key: 'disabledBtnText',         labelKey: 'adv_disabled_btn_text',       group: 'adv_group_btn_colors',  type: 'color' },
-  // Form Colors
-  { key: 'inputFocusBorderColor',   labelKey: 'adv_input_focus_border',      group: 'adv_group_form_colors', type: 'color' },
-  { key: 'inputErrorBorderColor',   labelKey: 'adv_input_error_border',      group: 'adv_group_form_colors', type: 'color' },
-  { key: 'inputDisabledBg',         labelKey: 'adv_input_disabled_bg',       group: 'adv_group_form_colors', type: 'color' },
-  // Feedback
-  { key: 'successBg',               labelKey: 'adv_success_bg',              group: 'adv_group_feedback',    type: 'color' },
-  { key: 'warningBg',               labelKey: 'adv_warning_bg',              group: 'adv_group_feedback',    type: 'color' },
-  { key: 'errorBg',                 labelKey: 'adv_error_bg',                group: 'adv_group_feedback',    type: 'color' },
-  { key: 'infoBg',                  labelKey: 'adv_info_bg',                 group: 'adv_group_feedback',    type: 'color' },
-  // Navigation
-  { key: 'sidebarWidth',            labelKey: 'adv_sidebar_width',           group: 'adv_group_nav',         type: 'text' },
-  { key: 'sidebarItemHeight',       labelKey: 'adv_sidebar_item_height',     group: 'adv_group_nav',         type: 'text' },
-  { key: 'sidebarItemSpacing',      labelKey: 'adv_sidebar_item_spacing',    group: 'adv_group_nav',         type: 'text' },
-  { key: 'selectedItemRadius',      labelKey: 'adv_selected_item_radius',    group: 'adv_group_nav',         type: 'text' },
-  { key: 'headerHeight',            labelKey: 'adv_header_height',           group: 'adv_group_nav',         type: 'text' },
-  { key: 'headerSpacing',           labelKey: 'adv_header_spacing',          group: 'adv_group_nav',         type: 'text' },
-  // Tables
-  { key: 'tableRowHeight',          labelKey: 'adv_table_row_height',        group: 'adv_group_tables',      type: 'text' },
-  { key: 'tableHeaderHeight',       labelKey: 'adv_table_header_height',     group: 'adv_group_tables',      type: 'text' },
-  { key: 'cellPadding',             labelKey: 'adv_cell_padding',            group: 'adv_group_tables',      type: 'text' },
-  { key: 'rowHoverBg',              labelKey: 'adv_row_hover_bg',            group: 'adv_group_tables',      type: 'color' },
-  { key: 'selectedRowBg',           labelKey: 'adv_selected_row_bg',         group: 'adv_group_tables',      type: 'color' },
+  // Application (global / not specific to one component)
+  { key: 'modalBackground',         labelKey: 'adv_modal_bg',                group: 'group_application',     type: 'color' },
+  { key: 'modalBorderRadius',       labelKey: 'adv_modal_radius',            group: 'group_application',     type: 'text' },
+  { key: 'modalShadow',             labelKey: 'adv_modal_shadow',            group: 'group_application',     type: 'select', options: ['none', 'small', 'medium', 'large'] },
+  { key: 'popoverShadow',           labelKey: 'adv_popover_shadow',          group: 'group_application',     type: 'select', options: ['none', 'small', 'medium', 'large'] },
+  { key: 'uiDensity',               labelKey: 'adv_ui_density',              group: 'group_application',     type: 'select', options: ['compact', 'comfortable', 'spacious'] },
+  { key: 'contentMaxWidth',         labelKey: 'adv_content_max_width',       group: 'group_application',     type: 'text' },
+  { key: 'pageHorizontalPadding',   labelKey: 'adv_page_h_padding',          group: 'group_application',     type: 'text' },
+  { key: 'pageVerticalSpacing',     labelKey: 'adv_page_v_spacing',          group: 'group_application',     type: 'text' },
+  { key: 'sectionSpacing',          labelKey: 'adv_section_spacing',         group: 'group_application',     type: 'text' },
+  { key: 'componentSpacingScale',   labelKey: 'adv_component_spacing',       group: 'group_application',     type: 'text' },
+  { key: 'globalBorderRadius',      labelKey: 'adv_global_radius',           group: 'group_application',     type: 'text' },
+  { key: 'defaultBorderWidth',      labelKey: 'adv_default_border_width',    group: 'group_application',     type: 'text' },
+  { key: 'animationsEnabled',       labelKey: 'adv_animations_enabled',      group: 'group_application',     type: 'boolean' },
+  { key: 'transitionSpeed',         labelKey: 'adv_transition_speed',        group: 'group_application',     type: 'select', options: ['fast', 'normal', 'slow'] },
+  // Cards
+  { key: 'cardBorderRadius',        labelKey: 'adv_card_radius',             group: 'group_cards',           type: 'text' },
+  { key: 'cardShadow',              labelKey: 'adv_card_shadow',             group: 'group_cards',           type: 'select', options: ['none', 'small', 'medium', 'large'] },
+  // Inputs
+  { key: 'inputBorderRadius',       labelKey: 'adv_input_radius',            group: 'group_inputs',          type: 'text' },
+  { key: 'inputFocusBorderColor',   labelKey: 'adv_input_focus_border',      group: 'group_inputs',          type: 'color' },
+  { key: 'inputErrorBorderColor',   labelKey: 'adv_input_error_border',      group: 'group_inputs',          type: 'color' },
+  { key: 'inputDisabledBg',         labelKey: 'adv_input_disabled_bg',       group: 'group_inputs',          type: 'color' },
+  { key: 'inputHeight',             labelKey: 'adv_input_height',            group: 'group_inputs',          type: 'text' },
+  { key: 'inputHorizontalPadding',  labelKey: 'adv_input_h_padding',         group: 'group_inputs',          type: 'text' },
+  { key: 'inputLabelSpacing',       labelKey: 'adv_input_label_spacing',     group: 'group_inputs',          type: 'text' },
+  { key: 'inputBorderWidth',        labelKey: 'adv_input_border_width',      group: 'group_inputs',          type: 'text' },
+  { key: 'focusRingWidth',          labelKey: 'adv_focus_ring_width',        group: 'group_inputs',          type: 'text' },
+  // Header
+  { key: 'headerHeight',            labelKey: 'adv_header_height',           group: 'group_header',          type: 'text' },
+  { key: 'headerSpacing',           labelKey: 'adv_header_spacing',          group: 'group_header',          type: 'text' },
+  // Sidebar
+  { key: 'sidebarWidth',            labelKey: 'adv_sidebar_width',           group: 'group_sidebar',         type: 'text' },
+  { key: 'sidebarItemHeight',       labelKey: 'adv_sidebar_item_height',     group: 'group_sidebar',         type: 'text' },
+  { key: 'sidebarItemSpacing',      labelKey: 'adv_sidebar_item_spacing',    group: 'group_sidebar',         type: 'text' },
+  { key: 'selectedItemRadius',      labelKey: 'adv_selected_item_radius',    group: 'group_sidebar',         type: 'text' },
+  // Navigation (dropdowns)
+  { key: 'dropdownBorderRadius',    labelKey: 'adv_dropdown_radius',         group: 'group_navigation',      type: 'text' },
+  { key: 'dropdownShadow',          labelKey: 'adv_dropdown_shadow',         group: 'group_navigation',      type: 'select', options: ['none', 'small', 'medium', 'large'] },
   // Buttons
-  { key: 'buttonHeight',            labelKey: 'adv_button_height',           group: 'adv_group_buttons',     type: 'text' },
-  { key: 'buttonHorizontalPadding', labelKey: 'adv_button_h_padding',        group: 'adv_group_buttons',     type: 'text' },
-  { key: 'buttonFontWeight',        labelKey: 'adv_button_font_weight',      group: 'adv_group_buttons',     type: 'text' },
-  { key: 'buttonTextTransform',     labelKey: 'adv_button_text_transform',   group: 'adv_group_buttons',     type: 'select', options: ['none', 'uppercase', 'capitalize'] },
-  // Forms
-  { key: 'inputHeight',             labelKey: 'adv_input_height',            group: 'adv_group_forms',       type: 'text' },
-  { key: 'inputHorizontalPadding',  labelKey: 'adv_input_h_padding',         group: 'adv_group_forms',       type: 'text' },
-  { key: 'inputLabelSpacing',       labelKey: 'adv_input_label_spacing',     group: 'adv_group_forms',       type: 'text' },
-  { key: 'inputBorderWidth',        labelKey: 'adv_input_border_width',      group: 'adv_group_forms',       type: 'text' },
-  { key: 'focusRingWidth',          labelKey: 'adv_focus_ring_width',        group: 'adv_group_forms',       type: 'text' },
-  // Animations
-  { key: 'animationsEnabled',       labelKey: 'adv_animations_enabled',      group: 'adv_group_animations',  type: 'boolean' },
-  { key: 'transitionSpeed',         labelKey: 'adv_transition_speed',        group: 'adv_group_animations',  type: 'select', options: ['fast', 'normal', 'slow'] },
+  { key: 'buttonBorderRadius',      labelKey: 'adv_btn_radius',              group: 'group_buttons',         type: 'text' },
+  { key: 'primaryBtnHoverBg',       labelKey: 'adv_primary_btn_hover_bg',    group: 'group_buttons',         type: 'color' },
+  { key: 'primaryBtnActiveBg',      labelKey: 'adv_primary_btn_active_bg',   group: 'group_buttons',         type: 'color' },
+  { key: 'secondaryBtnHoverBg',     labelKey: 'adv_secondary_btn_hover_bg',  group: 'group_buttons',         type: 'color' },
+  { key: 'disabledBtnBg',           labelKey: 'adv_disabled_btn_bg',         group: 'group_buttons',         type: 'color' },
+  { key: 'disabledBtnText',         labelKey: 'adv_disabled_btn_text',       group: 'group_buttons',         type: 'color' },
+  { key: 'buttonHeight',            labelKey: 'adv_button_height',           group: 'group_buttons',         type: 'text' },
+  { key: 'buttonHorizontalPadding', labelKey: 'adv_button_h_padding',        group: 'group_buttons',         type: 'text' },
+  { key: 'buttonFontWeight',        labelKey: 'adv_button_font_weight',      group: 'group_buttons',         type: 'text' },
+  { key: 'buttonTextTransform',     labelKey: 'adv_button_text_transform',   group: 'group_buttons',         type: 'select', options: ['none', 'uppercase', 'capitalize'] },
+  // Status / feedback
+  { key: 'successBg',               labelKey: 'adv_success_bg',              group: 'group_status',          type: 'color' },
+  { key: 'warningBg',               labelKey: 'adv_warning_bg',              group: 'group_status',          type: 'color' },
+  { key: 'errorBg',                 labelKey: 'adv_error_bg',                group: 'group_status',          type: 'color' },
+  { key: 'infoBg',                  labelKey: 'adv_info_bg',                 group: 'group_status',          type: 'color' },
+  // Tables
+  { key: 'tableRowHeight',          labelKey: 'adv_table_row_height',        group: 'group_tables',          type: 'text' },
+  { key: 'tableHeaderHeight',       labelKey: 'adv_table_header_height',     group: 'group_tables',          type: 'text' },
+  { key: 'cellPadding',             labelKey: 'adv_cell_padding',            group: 'group_tables',          type: 'text' },
+  { key: 'rowHoverBg',              labelKey: 'adv_row_hover_bg',            group: 'group_tables',          type: 'color' },
+  { key: 'selectedRowBg',           labelKey: 'adv_selected_row_bg',         group: 'group_tables',          type: 'color' },
 ];
 
 export const DEFAULT_TOKENS: ThemeTokens = {

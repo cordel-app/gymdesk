@@ -53,6 +53,11 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
     groupKey: 'group_application',
     fields: [
       { key: 'pageBackground', labelKey: 'label_page_bg' },
+    ],
+  },
+  {
+    groupKey: 'group_cards',
+    fields: [
       { key: 'cardBackground', labelKey: 'label_card_bg' },
       { key: 'cardBorder', labelKey: 'label_card_border' },
     ],
@@ -129,9 +134,15 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
       { key: 'linkHoverColor', labelKey: 'label_link_hover_color' },
     ],
   },
+  {
+    // No dedicated colors of its own — holds only the table-density attributes
+    // formerly under the standalone "Advanced" section (#489 stage 2).
+    groupKey: 'group_tables',
+    fields: [],
+  },
 ];
 
-type SectionKey = 'general' | 'colors' | 'typography' | 'advanced';
+type SectionKey = 'general' | 'colors' | 'typography';
 
 const NEW_ID = 'new';
 
@@ -455,7 +466,7 @@ export default function ThemesPage() {
     return (
       <div style={{ padding: '16px 24px 20px', borderTop: '1px solid #eee' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
-          {COLOR_GROUPS.map(({ groupKey, fields }) => (
+          {COLOR_GROUPS.filter(({ fields }) => fields.length > 0).map(({ groupKey, fields }) => (
             <div key={groupKey}>
               <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -578,6 +589,12 @@ export default function ThemesPage() {
                       />
                     </div>
                   )}
+                  <ThemeAdvancedSection
+                    group={groupKey}
+                    advanced={editForm.tokens.advanced ?? {}}
+                    onChange={(next) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, advanced: next } }))}
+                    namespace="themes"
+                  />
                 </div>
               ))}
             </div>
@@ -613,16 +630,6 @@ export default function ThemesPage() {
                   );
                 })}
               </div>
-            </div>
-          ))}
-
-          {!isNew && renderSection('advanced', t('section_advanced'), (
-            <div>
-              <ThemeAdvancedSection
-                advanced={editForm.tokens.advanced ?? {}}
-                onChange={(next) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, advanced: next } }))}
-                namespace="themes"
-              />
             </div>
           ))}
         </div>
