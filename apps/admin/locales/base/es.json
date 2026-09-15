@@ -1946,6 +1946,7 @@
       "update_rule": "Actualizar regla",
       "saving": "Guardando…",
       "cancel": "Cancelar",
+      "confirm_cancel_booked": "Cancelar sesión(es) reservada(s) y continuar",
       "no_rules": "Sin reglas de horario.",
       "delete_rule": "Eliminar",
       "edit_rule": "Editar",

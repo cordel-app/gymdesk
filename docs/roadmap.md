@@ -353,6 +353,25 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   locale strings needed. Extended `promotions.test.ts` with round-trip,
   validation-boundary, backward-compatibility, tenant-isolation and auth
   coverage for the new columns.
+- **#482 (done)**: Add Recurring Availability Hours and Bookable Slots to
+  Activities — 4-stage rollout agreed in the issue thread, landed as #519
+  (weekly rule windows sliced into `duration_minutes`-sized bookable
+  `calendar_events`, non-blocking `slot_warning` when a window doesn't
+  divide evenly), #520 (rule edit/delete preserve already-booked future
+  occurrences instead of blind cancel+regenerate; a booked occurrence that
+  no longer fits blocks with `409 booked_occurrences_impacted` until staff
+  confirms, then cancels and notifies affected members via the existing
+  in-app `member_notifications` channel — no email, since the codebase has
+  no mailer infrastructure), #521 (non-blocking `overlap_warning` when a
+  rule's window overlaps another rule sharing the same space or trainer),
+  and this stage (Admin UI): no new Availability section was needed since
+  the existing generic weekly-rule form (multi-weekday + start/end time,
+  reused across any Activity Type) already produces the sliced slots; the
+  Activity Types admin page now surfaces `slot_warning`/`overlap_warning`
+  as info toasts on save and handles the `409` rule edit/delete response
+  with a `ConfirmDialog` that resubmits with `confirm_cancel_booked: true`
+  once staff confirms. No frontend test added — `apps/admin` has no test
+  harness in this repo (no vitest/testing-library configured).
 
 ## Decisions
 

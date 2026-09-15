@@ -2005,6 +2005,7 @@
       "update_rule": "Update rule",
       "saving": "Saving…",
       "cancel": "Cancel",
+      "confirm_cancel_booked": "Cancel booked slot(s) & continue",
       "no_rules": "No schedule rules yet.",
       "delete_rule": "Delete",
       "edit_rule": "Edit",

@@ -161,6 +161,12 @@ export default function ActivityTypesPage() {
   const [addRuleMembers, setAddRuleMembers] = useState<MemberResult[]>([]);
   const [editRuleMembers, setEditRuleMembers] = useState<MemberResult[]>([]);
 
+  // #482: booked-occurrence protection — a PUT/DELETE that would cancel an
+  // already-booked future occurrence comes back as 409 booked_occurrences_impacted;
+  // these hold the confirmation prompt until staff explicitly proceeds.
+  const [editRuleConflict, setEditRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
+  const [deleteRuleConflict, setDeleteRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
+
   useEffect(() => {
     if (gymLoading) return;
     if (!isAdmin) { router.replace(`/${locale}`); return; }
@@ -372,6 +378,15 @@ export default function ActivityTypesPage() {
     setRuleError(null);
   }
 
+  // #482: slot_warning/overlap_warning are non-blocking advisories the API
+  // computes alongside the save (window doesn't divide evenly by the
+  // activity's duration, or it overlaps another rule's space/trainer) —
+  // surfaced as info toasts rather than blocking the save.
+  function showRuleWarnings(saved: { slot_warning?: string | null; overlap_warning?: string | null }) {
+    if (saved.slot_warning) toast(saved.slot_warning, 'info');
+    if (saved.overlap_warning) toast(saved.overlap_warning, 'info');
+  }
+
   async function saveAddRule(actId: number) {
     if (addRuleForm.type === 'weekly' && addRuleForm.weekdays.length === 0) {
       setRuleError(ts('error_weekday_required'));
@@ -379,7 +394,7 @@ export default function ActivityTypesPage() {
     }
     setRuleSaving(true); setRuleError(null);
     try {
-      await apiFetch(`/activity-types/${actId}/schedule-rules`, {
+      const saved = await apiFetch<{ slot_warning: string | null; overlap_warning: string | null }>(`/activity-types/${actId}/schedule-rules`, {
         method: 'POST',
         body: JSON.stringify({
           type: addRuleForm.type,
@@ -396,6 +411,7 @@ export default function ActivityTypesPage() {
       });
       setAddingRuleFor(null);
       await fetchRules(actId);
+      showRuleWarnings(saved);
     } catch (err: any) {
       setRuleError(err.message ?? t('error_generic'));
     } finally {
@@ -406,6 +422,7 @@ export default function ActivityTypesPage() {
   async function openEditRule(rule: ScheduleRule) {
     setAddingRuleFor(null);
     setEditingRuleId(rule.id);
+    setEditRuleConflict(null);
     setEditRuleForm({
       type: rule.type,
       start_date: rule.start_date,
@@ -431,16 +448,17 @@ export default function ActivityTypesPage() {
   function cancelEditRule() {
     setEditingRuleId(null);
     setRuleError(null);
+    setEditRuleConflict(null);
   }
 
-  async function saveEditRule(actId: number, ruleId: number) {
+  async function saveEditRule(actId: number, ruleId: number, confirmCancelBooked = false) {
     if (editRuleForm.type === 'weekly' && editRuleForm.weekdays.length === 0) {
       setRuleError(ts('error_weekday_required'));
       return;
     }
     setRuleSaving(true); setRuleError(null);
     try {
-      await apiFetch(`/activity-types/${actId}/schedule-rules/${ruleId}`, {
+      const saved = await apiFetch<{ slot_warning: string | null; overlap_warning: string | null }>(`/activity-types/${actId}/schedule-rules/${ruleId}`, {
         method: 'PUT',
         body: JSON.stringify({
           type: editRuleForm.type,
@@ -453,27 +471,49 @@ export default function ActivityTypesPage() {
           start_time: editRuleForm.start_time,
           end_time: editRuleForm.end_time,
           member_ids: editRuleMembers.map((m) => m.id),
+          ...(confirmCancelBooked ? { confirm_cancel_booked: true } : {}),
         }),
       });
       setEditingRuleId(null);
+      setEditRuleConflict(null);
       await fetchRules(actId);
+      showRuleWarnings(saved);
     } catch (err: any) {
-      setRuleError(err.message ?? t('error_generic'));
+      if (err.status === 409 && err.body?.error === 'booked_occurrences_impacted') {
+        setEditRuleConflict({ actId, ruleId, message: err.body.message ?? err.message });
+      } else {
+        setRuleError(err.message ?? t('error_generic'));
+      }
     } finally {
       setRuleSaving(false);
     }
   }
 
-  async function deleteRule(actId: number, ruleId: number) {
+  function confirmEditRuleConflict() {
+    if (!editRuleConflict) return;
+    saveEditRule(editRuleConflict.actId, editRuleConflict.ruleId, true);
+  }
+
+  async function deleteRule(actId: number, ruleId: number, confirmCancelBooked = false) {
     try {
-      await apiFetch(`/activity-types/${actId}/schedule-rules/${ruleId}`, { method: 'DELETE' });
+      await apiFetch(`/activity-types/${actId}/schedule-rules/${ruleId}${confirmCancelBooked ? '?confirm_cancel_booked=true' : ''}`, { method: 'DELETE' });
+      setDeleteRuleConflict(null);
       setRulesMap((prev) => {
         const rules = (prev.get(actId) ?? []).filter((r) => r.id !== ruleId);
         return new Map([...prev, [actId, rules]]);
       });
     } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
+      if (err.status === 409 && err.body?.error === 'booked_occurrences_impacted') {
+        setDeleteRuleConflict({ actId, ruleId, message: err.body.message ?? err.message });
+      } else {
+        toast(err.message ?? t('error_generic'));
+      }
     }
+  }
+
+  function confirmDeleteRuleConflict() {
+    if (!deleteRuleConflict) return;
+    deleteRule(deleteRuleConflict.actId, deleteRuleConflict.ruleId, true);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1081,6 +1121,27 @@ export default function ActivityTypesPage() {
         cancelLabel={t('cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
+      />
+
+      {/* #482: booked-occurrence impact confirm — schedule rule edit */}
+      <ConfirmDialog
+        open={editRuleConflict !== null}
+        message={editRuleConflict?.message ?? ''}
+        confirmLabel={ts('confirm_cancel_booked')}
+        cancelLabel={ts('cancel')}
+        onConfirm={confirmEditRuleConflict}
+        onCancel={() => setEditRuleConflict(null)}
+        busy={ruleSaving}
+      />
+
+      {/* #482: booked-occurrence impact confirm — schedule rule delete */}
+      <ConfirmDialog
+        open={deleteRuleConflict !== null}
+        message={deleteRuleConflict?.message ?? ''}
+        confirmLabel={ts('confirm_cancel_booked')}
+        cancelLabel={ts('cancel')}
+        onConfirm={confirmDeleteRuleConflict}
+        onCancel={() => setDeleteRuleConflict(null)}
       />
     </div>
   );
