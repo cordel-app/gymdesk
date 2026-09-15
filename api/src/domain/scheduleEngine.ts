@@ -16,6 +16,19 @@ export interface ScheduleRule {
   end_time: string;
 }
 
+/** #482: the subset of a rule's fields that determine its availability window — used to
+ * check whether an already-booked occurrence still fits a rule *before* it's saved. */
+export interface RuleWindowConfig {
+  type: 'one_off' | 'weekly' | 'monthly';
+  start_date: string;
+  end_date: string | null;
+  weekday: number | null;
+  weekdays: number[] | null;
+  ordinal: 'first' | 'second' | 'third' | 'fourth' | 'fifth' | 'last' | null;
+  start_time: string; // HH:MM
+  end_time: string; // HH:MM
+}
+
 const ORDINAL_MAP: Record<string, number> = {
   first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
 };
@@ -149,6 +162,97 @@ export function computeSlotSegments(
   return segments;
 }
 
+/**
+ * #482: does a specific local occurrence (date + local start/end time) still fall
+ * within `config`'s availability window? Used to tell whether an already-booked
+ * occurrence survives a rule edit unchanged, or is "impacted" (would fall outside
+ * the new configuration and therefore needs staff confirmation to cancel).
+ */
+function occurrenceFitsConfig(
+  config: RuleWindowConfig,
+  localDate: string,
+  localStartTime: string,
+  localEndTime: string,
+): boolean {
+  if (localStartTime < config.start_time.slice(0, 5) || localEndTime > config.end_time.slice(0, 5)) return false;
+
+  if (config.type === 'one_off') {
+    return localDate === config.start_date;
+  }
+
+  if (!config.end_date || localDate < config.start_date || localDate > config.end_date) return false;
+
+  const d = DateTime.fromISO(localDate, { zone: 'utc' });
+  const ruleWeekday = d.weekday % 7; // luxon 1=Mon…7=Sun -> 0=Sun…6=Sat
+
+  if (config.type === 'weekly') {
+    return (config.weekdays ?? []).includes(ruleWeekday);
+  }
+
+  if (config.type === 'monthly') {
+    if (config.weekday == null || ruleWeekday !== config.weekday || !config.ordinal) return false;
+    const occ = config.ordinal === 'last'
+      ? lastWeekdayOfMonth(d.year, d.month, config.weekday)
+      : nthWeekdayOfMonth(d.year, d.month, config.weekday, ORDINAL_MAP[config.ordinal]);
+    return occ?.toISODate() === localDate;
+  }
+
+  return false;
+}
+
+export interface BookedOccurrence {
+  id: number;
+  starts_at: Date;
+  ends_at: Date;
+  member_ids: number[];
+}
+
+/** #482: every future, non-cancelled occurrence of this rule that has at least one
+ * active ('booked') booking, with the ids of the members holding those bookings. */
+export async function findBookedFutureOccurrences(ruleId: number): Promise<BookedOccurrence[]> {
+  const { rows } = await db.query(
+    `SELECT ce.id, ce.starts_at, ce.ends_at, ceb.member_id
+     FROM calendar_events ce
+     JOIN calendar_event_bookings ceb ON ceb.calendar_event_id = ce.id AND ceb.status = 'booked'
+     WHERE ce.schedule_rule_id = ? AND ce.starts_at > UTC_TIMESTAMP() AND ce.deleted_at IS NULL`,
+    [ruleId],
+  );
+  const byEvent = new Map<number, BookedOccurrence>();
+  for (const r of rows) {
+    let occ = byEvent.get(r.id);
+    if (!occ) {
+      occ = { id: r.id, starts_at: r.starts_at, ends_at: r.ends_at, member_ids: [] };
+      byEvent.set(r.id, occ);
+    }
+    occ.member_ids.push(r.member_id);
+  }
+  return [...byEvent.values()];
+}
+
+/**
+ * #482: split a rule's currently-booked future occurrences into those that still
+ * fit `newConfig`'s availability window (must be preserved as-is — never
+ * cancelled/regenerated, so their `calendar_event_id` relationships never break)
+ * and those that don't ("impacted" — cancelling them requires explicit staff
+ * confirmation, per the design agreed on the issue thread).
+ */
+export async function partitionBookedFutureOccurrences(
+  ruleId: number,
+  newConfig: RuleWindowConfig,
+  gymTimezone: string,
+): Promise<{ preserved: BookedOccurrence[]; impacted: BookedOccurrence[] }> {
+  const booked = await findBookedFutureOccurrences(ruleId);
+  const preserved: BookedOccurrence[] = [];
+  const impacted: BookedOccurrence[] = [];
+  for (const occ of booked) {
+    const start = DateTime.fromJSDate(occ.starts_at, { zone: 'utc' }).setZone(gymTimezone);
+    const end = DateTime.fromJSDate(occ.ends_at, { zone: 'utc' }).setZone(gymTimezone);
+    const fits = occurrenceFitsConfig(newConfig, start.toFormat('yyyy-MM-dd'), start.toFormat('HH:mm'), end.toFormat('HH:mm'));
+    (fits ? preserved : impacted).push(occ);
+  }
+  return { preserved, impacted };
+}
+
 export async function materializeScheduleRule(ruleId: number, gymTimezone: string): Promise<void> {
   const { rows: ruleRows } = await db.query(
     `SELECT r.*, at.name AS activity_type_name,
@@ -215,10 +319,22 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
   });
   if (rows.length === 0) return;
 
+  // #482: skip re-generating a slot that already exists as a non-cancelled row for
+  // this rule — namely a booked occurrence preserved across a rule edit (see
+  // `partitionBookedFutureOccurrences`) — so re-materialization never inserts a
+  // duplicate/overlapping calendar_events row at the same time.
+  const { rows: existingRows } = await db.query(
+    'SELECT starts_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL',
+    [rule.id],
+  );
+  const existingStarts = new Set(existingRows.map((r: any) => new Date(r.starts_at).getTime()));
+  const newRows = rows.filter((r) => !existingStarts.has(new Date(`${r.starts_at.replace(' ', 'T')}Z`).getTime()));
+  if (newRows.length === 0) return;
+
   // Bulk insert in chunks to stay under MySQL max_allowed_packet
   const CHUNK = 200;
-  for (let i = 0; i < rows.length; i += CHUNK) {
-    const chunk = rows.slice(i, i + CHUNK);
+  for (let i = 0; i < newRows.length; i += CHUNK) {
+    const chunk = newRows.slice(i, i + CHUNK);
     await db.query(
       `INSERT INTO calendar_events
          (gym_id, center_id, kind, title, activity_type_id, space_id, trainer_membership_id, color,
@@ -232,7 +348,7 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     );
   }
 
-  await bookAssignedMembersOnNewOccurrences(rule.id, rule.gym_id, rows.map((r) => r.starts_at));
+  await bookAssignedMembersOnNewOccurrences(rule.id, rule.gym_id, newRows.map((r) => r.starts_at));
 }
 
 /**
@@ -271,12 +387,19 @@ async function bookAssignedMembersOnNewOccurrences(ruleId: number, gymId: string
   }
 }
 
-export async function cancelFutureOccurrences(ruleId: number): Promise<void> {
+export async function cancelFutureOccurrences(
+  ruleId: number,
+  options?: { preserveIds?: number[] },
+): Promise<void> {
+  const preserveIds = options?.preserveIds ?? [];
+  const preserveClause = preserveIds.length > 0
+    ? ` AND id NOT IN (${preserveIds.map(() => '?').join(',')})`
+    : '';
   await db.query(
     `UPDATE calendar_events
      SET status = 'cancelled', deleted_at = UTC_TIMESTAMP()
-     WHERE schedule_rule_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL`,
-    [ruleId],
+     WHERE schedule_rule_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL${preserveClause}`,
+    [ruleId, ...preserveIds],
   );
 }
 
