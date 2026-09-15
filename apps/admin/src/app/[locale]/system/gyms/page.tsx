@@ -387,11 +387,8 @@ export default function SystemGymsPage() {
             <div style={{ marginTop: 8 }}>
               <button
                 onClick={() => handleInitializeStorage(gym)}
-                disabled={!gym.storage_configured || initializingStorageId === gym.id}
-                style={{
-                  ...btnSmall('#444'),
-                  ...(!gym.storage_configured ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
-                }}
+                disabled={initializingStorageId === gym.id}
+                style={btnSmall('#444')}
               >
                 {initializingStorageId === gym.id ? t('initializing_storage') : t('btn_initialize_storage')}
               </button>
