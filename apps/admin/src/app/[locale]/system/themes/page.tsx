@@ -53,9 +53,29 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
     groupKey: 'group_application',
     fields: [
       { key: 'pageBackground', labelKey: 'label_page_bg' },
-      { key: 'textColor', labelKey: 'label_text_color' },
       { key: 'cardBackground', labelKey: 'label_card_bg' },
       { key: 'cardBorder', labelKey: 'label_card_border' },
+    ],
+  },
+  {
+    groupKey: 'group_text',
+    fields: [
+      { key: 'textColor', labelKey: 'label_text_color' },
+      { key: 'secondaryTextColor', labelKey: 'label_secondary_text_color' },
+      { key: 'mutedTextColor', labelKey: 'label_muted_text_color' },
+    ],
+  },
+  {
+    groupKey: 'group_separators',
+    fields: [
+      { key: 'separatorColor', labelKey: 'label_separator_color' },
+    ],
+  },
+  {
+    groupKey: 'group_inputs',
+    fields: [
+      { key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
+      { key: 'inputBorderColor', labelKey: 'label_input_border_color' },
     ],
   },
   {
@@ -121,7 +141,13 @@ function emptyEditForm(theme?: Theme) {
     description: theme?.description ?? '',
     status: (theme?.status ?? 'active') as string,
     logoContainsGymName: theme?.logo_contains_gym_name ?? false,
-    tokens: theme?.tokens ?? DEFAULT_TOKENS,
+    // Merge with defaults so themes saved before #489 stage 2 (missing the newer
+    // semantic color fields) still populate every color picker with a sensible value.
+    tokens: {
+      ...DEFAULT_TOKENS,
+      ...theme?.tokens,
+      colors: { ...DEFAULT_TOKENS.colors, ...theme?.tokens?.colors },
+    },
   };
 }
 type EditForm = ReturnType<typeof emptyEditForm>;
