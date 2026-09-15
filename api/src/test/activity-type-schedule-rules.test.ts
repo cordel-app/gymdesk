@@ -1334,3 +1334,208 @@ describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
     expect(res.status).toBe(204);
   });
 });
+
+// ── #482: overlap warnings between rules (same space/trainer) ──────────────
+// activity_type_schedule_rules has no space/trainer of its own — both are
+// inherited from the parent Activity Type's default_space_id /
+// default_trainer_membership_id. A non-blocking `overlap_warning` is surfaced
+// on POST/PUT when another rule in the gym, resolving to the same space or
+// trainer, has a weekday+time window that overlaps this one.
+
+describe('overlap warnings between rules (#482)', () => {
+  let spaceId: number;
+  let trainerMembershipId: number;
+  let spaceActivityTypeA: number;
+  let spaceActivityTypeB: number;
+  let trainerActivityTypeC: number;
+  let trainerActivityTypeD: number;
+  let unrelatedActivityTypeId: number;
+
+  beforeAll(async () => {
+    const { insertId: centerId } = await db.query(
+      `INSERT INTO centers (gym_id, name) VALUES (?, 'Overlap Test Center')`,
+      [gymId],
+    );
+
+    const spaceRes = await request
+      .post('/spaces')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Overlap Test Space', capacity: 4, center_id: centerId });
+    expect(spaceRes.status).toBe(201);
+    spaceId = spaceRes.body.id;
+
+    const trainerUserId = `overlap-trainer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    await createTestMembership(gymId, 'trainer_performance', trainerUserId);
+    const { rows: trainerRows } = await db.query(
+      `SELECT id FROM gym_memberships WHERE gym_id = ? AND user_id = ?`,
+      [gymId, trainerUserId],
+    );
+    trainerMembershipId = trainerRows[0].id;
+
+    const makeActivityType = async (name: string, extra: Record<string, unknown>) => {
+      const res = await request
+        .post('/activity-types')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name, duration_minutes: 60, max_capacity: 10, status: 'active', ...extra });
+      expect(res.status).toBe(201);
+      return res.body.id as number;
+    };
+
+    spaceActivityTypeA = await makeActivityType('Overlap Space A', { default_space_id: spaceId });
+    spaceActivityTypeB = await makeActivityType('Overlap Space B', { default_space_id: spaceId });
+    trainerActivityTypeC = await makeActivityType('Overlap Trainer C', { default_trainer_membership_id: trainerMembershipId });
+    trainerActivityTypeD = await makeActivityType('Overlap Trainer D', { default_trainer_membership_id: trainerMembershipId });
+    unrelatedActivityTypeId = await makeActivityType('Overlap Unrelated', {});
+  });
+
+  it('POST with no other rules yet returns overlap_warning: null', async () => {
+    const week = upcomingMonSunWeek();
+    const res = await request
+      .post(rulesBase(spaceActivityTypeA))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [1], start_time: '16:00', end_time: '17:00', // Monday
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.overlap_warning).toBeNull();
+  });
+
+  it('POST a rule on another Activity Type sharing the same space, at an overlapping time, warns', async () => {
+    const week = upcomingMonSunWeek();
+    const res = await request
+      .post(rulesBase(spaceActivityTypeB))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [1], start_time: '16:30', end_time: '17:30', // Monday, overlaps 16:00–17:00
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.overlap_warning).toContain('same space');
+    expect(res.body.overlap_warning).toContain('Overlap Space A');
+  });
+
+  it('POST a rule on the same space Activity Type but a non-overlapping time does not warn', async () => {
+    const week = upcomingMonSunWeek();
+    const res = await request
+      .post(rulesBase(spaceActivityTypeB))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [1], start_time: '20:00', end_time: '21:00', // Monday, after both existing windows
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.overlap_warning).toBeNull();
+  });
+
+  it('POST a rule on the same space Activity Type but a different weekday does not warn', async () => {
+    const week = upcomingMonSunWeek();
+    const res = await request
+      .post(rulesBase(spaceActivityTypeB))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [3], start_time: '16:00', end_time: '17:00', // Wednesday — A only runs Monday
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.overlap_warning).toBeNull();
+  });
+
+  it('POST a rule on another Activity Type sharing the same trainer, at an overlapping time, warns', async () => {
+    const week = upcomingMonSunWeek();
+    const createC = await request
+      .post(rulesBase(trainerActivityTypeC))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [2], start_time: '10:00', end_time: '11:00', // Tuesday
+      });
+    expect(createC.status).toBe(201);
+    expect(createC.body.overlap_warning).toBeNull();
+
+    const createD = await request
+      .post(rulesBase(trainerActivityTypeD))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [2], start_time: '10:30', end_time: '11:30', // Tuesday, overlaps
+      });
+    expect(createD.status).toBe(201);
+    expect(createD.body.overlap_warning).toContain('same trainer');
+    expect(createD.body.overlap_warning).toContain('Overlap Trainer C');
+  });
+
+  it('POST a rule on an Activity Type with no default space/trainer never warns', async () => {
+    const week = upcomingMonSunWeek();
+    const res = await request
+      .post(rulesBase(unrelatedActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [1], start_time: '16:00', end_time: '17:00', // same day/time as spaceActivityTypeA's rule
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.overlap_warning).toBeNull();
+  });
+
+  it('PUT moving a rule into an overlapping window surfaces overlap_warning', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(spaceActivityTypeB))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [4], start_time: '09:00', end_time: '10:00', // Thursday, no conflict yet
+      });
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.overlap_warning).toBeNull();
+    const ruleId = createRes.body.id;
+
+    const putRes = await request
+      .put(`/activity-types/${spaceActivityTypeB}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [1], start_time: '16:00', end_time: '17:00', // moved onto Activity Type A's Monday window
+      });
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.overlap_warning).toContain('same space');
+    expect(putRes.body.overlap_warning).toContain('Overlap Space A');
+  });
+
+  it('PUT does not warn about a rule overlapping only itself', async () => {
+    const week = upcomingMonSunWeek();
+    const createRes = await request
+      .post(rulesBase(trainerActivityTypeC))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [5], start_time: '12:00', end_time: '13:00', // Friday, isolated
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const putRes = await request
+      .put(`/activity-types/${trainerActivityTypeC}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: week.start, end_date: week.end,
+        weekdays: [5], start_time: '12:00', end_time: '13:30', // same rule, slightly widened
+      });
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.overlap_warning).toBeNull();
+  });
+});

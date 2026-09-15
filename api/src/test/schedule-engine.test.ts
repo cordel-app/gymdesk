@@ -1,8 +1,8 @@
-// Unit tests for domain/scheduleEngine.ts's computeSlotSegments (#482).
-// Pure function, no DB/HTTP dependency.
+// Unit tests for domain/scheduleEngine.ts's computeSlotSegments and rulesOverlap (#482).
+// Pure functions, no DB/HTTP dependency.
 
 import { describe, expect, it } from 'vitest';
-import { computeSlotSegments } from '../domain/scheduleEngine';
+import { computeSlotSegments, rulesOverlap, type RuleWindowConfig } from '../domain/scheduleEngine';
 
 describe('computeSlotSegments', () => {
   it('slices an evenly-divisible window into duration-sized slots', () => {
@@ -59,5 +59,93 @@ describe('computeSlotSegments', () => {
       { start: '16:00', end: '17:00' },
       { start: '17:00', end: '18:00' },
     ]);
+  });
+});
+
+describe('rulesOverlap', () => {
+  function weekly(overrides: Partial<RuleWindowConfig> = {}): RuleWindowConfig {
+    return {
+      type: 'weekly',
+      start_date: '2026-01-05', // a Monday
+      end_date: '2026-01-11', // the following Sunday
+      weekday: null,
+      weekdays: [1], // Monday
+      ordinal: null,
+      start_time: '16:00',
+      end_time: '17:00',
+      ...overrides,
+    };
+  }
+
+  it('overlaps when weekday, date range, and time window all intersect', () => {
+    const a = weekly({ start_time: '16:00', end_time: '17:00' });
+    const b = weekly({ start_time: '16:30', end_time: '17:30' });
+    expect(rulesOverlap(a, b)).toBe(true);
+  });
+
+  it('does not overlap when time windows are adjacent but not intersecting', () => {
+    const a = weekly({ start_time: '16:00', end_time: '17:00' });
+    const b = weekly({ start_time: '17:00', end_time: '18:00' });
+    expect(rulesOverlap(a, b)).toBe(false);
+  });
+
+  it('does not overlap when weekdays differ', () => {
+    const a = weekly({ weekdays: [1] }); // Monday
+    const b = weekly({ weekdays: [2] }); // Tuesday
+    expect(rulesOverlap(a, b)).toBe(false);
+  });
+
+  it('overlaps when weekday sets share at least one day', () => {
+    const a = weekly({ weekdays: [1, 3] }); // Mon, Wed
+    const b = weekly({ weekdays: [3, 5] }); // Wed, Fri
+    expect(rulesOverlap(a, b)).toBe(true);
+  });
+
+  it('does not overlap when date ranges do not intersect', () => {
+    const a = weekly({ start_date: '2026-01-05', end_date: '2026-01-11' });
+    const b = weekly({ start_date: '2026-02-02', end_date: '2026-02-08' });
+    expect(rulesOverlap(a, b)).toBe(false);
+  });
+
+  it('treats a null end_date as open-ended for overlap purposes', () => {
+    const a = weekly({ start_date: '2026-01-05', end_date: null });
+    const b = weekly({ start_date: '2026-06-01', end_date: '2026-06-07' });
+    expect(rulesOverlap(a, b)).toBe(true);
+  });
+
+  it('compares a one_off rule by the weekday derived from its start_date', () => {
+    const oneOff: RuleWindowConfig = {
+      type: 'one_off',
+      start_date: '2026-01-05', // Monday
+      end_date: null,
+      weekday: null,
+      weekdays: null,
+      ordinal: null,
+      start_time: '16:30',
+      end_time: '17:30',
+    };
+    const weeklyMonday = weekly({ start_time: '16:00', end_time: '17:00' });
+    expect(rulesOverlap(oneOff, weeklyMonday)).toBe(true);
+
+    const weeklyTuesday = weekly({ weekdays: [2], start_time: '16:00', end_time: '17:00' });
+    expect(rulesOverlap(oneOff, weeklyTuesday)).toBe(false);
+  });
+
+  it('compares a monthly rule by its configured weekday, ignoring ordinal', () => {
+    const monthly: RuleWindowConfig = {
+      type: 'monthly',
+      start_date: '2026-01-01',
+      end_date: '2026-12-31',
+      weekday: 1, // Monday
+      weekdays: null,
+      ordinal: 'first',
+      start_time: '16:00',
+      end_time: '17:00',
+    };
+    const weeklyMonday = weekly({ start_time: '16:30', end_time: '17:30' });
+    expect(rulesOverlap(monthly, weeklyMonday)).toBe(true);
+
+    const weeklyTuesday = weekly({ weekdays: [2] });
+    expect(rulesOverlap(monthly, weeklyTuesday)).toBe(false);
   });
 });
