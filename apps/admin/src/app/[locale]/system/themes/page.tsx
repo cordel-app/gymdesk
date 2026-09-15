@@ -55,6 +55,7 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
       { key: 'pageBackground', labelKey: 'label_page_bg' },
       { key: 'textColor', labelKey: 'label_text_color' },
       { key: 'cardBackground', labelKey: 'label_card_bg' },
+      { key: 'cardBorder', labelKey: 'label_card_border' },
     ],
   },
   {
@@ -591,15 +592,6 @@ export default function ThemesPage() {
 
           {!isNew && renderSection('advanced', t('section_advanced'), (
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #f0f0f0' }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{t('label_card_border')}</span>
-                <input
-                  type="color"
-                  value={editForm.tokens.colors.cardBorder}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, colors: { ...prev.tokens.colors, cardBorder: e.target.value } } }))}
-                  style={{ width: 40, height: 30, border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                />
-              </div>
               <ThemeAdvancedSection
                 advanced={editForm.tokens.advanced ?? {}}
                 onChange={(next) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, advanced: next } }))}

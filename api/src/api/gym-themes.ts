@@ -4,6 +4,7 @@ import express from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { validateTokens } from '../domain/themeTokens';
 
 // ─── Gym-admin theme management ───────────────────────────────────────────────
 
@@ -11,49 +12,6 @@ export const gymThemesRouter = Router();
 
 const ALLOWED_MIME_TYPES = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/webp'];
 const LOGO_MAX_BYTES = 512 * 1024;
-
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-const FONT_STACKS = [
-  'system-ui, -apple-system, sans-serif',
-  'Georgia, "Times New Roman", serif',
-  '"Courier New", Courier, monospace',
-  'Arial, Helvetica, sans-serif',
-  '"Trebuchet MS", sans-serif',
-];
-
-function validateTokens(tokens: any): string | null {
-  if (!tokens || typeof tokens !== 'object') return 'tokens must be an object';
-  const { colors, typography } = tokens;
-  if (colors) {
-    const hexFields = [
-      'pageBackground', 'textColor', 'cardBackground', 'cardBorder',
-      'headerBackground', 'headerText', 'headerSeparatorColor',
-      'sidebarBackground', 'sidebarText',
-      'sidebarSelectedItemBackground', 'sidebarSelectedItemText', 'sidebarHoverBackground',
-      'dropdownBackground', 'dropdownText', 'dropdownHoverBackground',
-      'primaryButton', 'primaryButtonText', 'secondaryButton', 'secondaryButtonText',
-      'statusSuccess', 'statusWarning', 'statusError', 'statusInfo',
-      'linkColor', 'linkHoverColor',
-    ];
-    for (const f of hexFields) {
-      if (colors[f] !== undefined && !HEX_RE.test(colors[f])) return `colors.${f} must be a hex color like #rrggbb`;
-    }
-    if (colors.headerSeparatorHeight !== undefined) {
-      const h = Number(colors.headerSeparatorHeight);
-      if (!Number.isInteger(h) || h < 0 || h > 20) return 'colors.headerSeparatorHeight must be an integer 0–20';
-    }
-  }
-  if (typography) {
-    const levels = ['h1','h2','h3','body','small'];
-    for (const lv of levels) {
-      if (!typography[lv]) continue;
-      const { fontFamily, color } = typography[lv];
-      if (fontFamily !== undefined && !FONT_STACKS.includes(fontFamily)) return `typography.${lv}.fontFamily must be one of the allowed stacks`;
-      if (color !== undefined && !HEX_RE.test(color)) return `typography.${lv}.color must be a hex color`;
-    }
-  }
-  return null;
-}
 
 function shapeTheme(row: any) {
   const { logo_bytes: _lb, ...rest } = row;

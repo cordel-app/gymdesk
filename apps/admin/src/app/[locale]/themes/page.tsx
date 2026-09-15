@@ -59,6 +59,7 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
       { key: 'pageBackground',  labelKey: 'label_page_bg' },
       { key: 'textColor',       labelKey: 'label_text_color' },
       { key: 'cardBackground',  labelKey: 'label_card_bg' },
+      { key: 'cardBorder',      labelKey: 'label_card_border' },
     ],
   },
   {
@@ -645,19 +646,6 @@ export default function GymThemesPage() {
 
           {renderSection(t('section_advanced'), 'advanced', (
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #f0f0f0' }}>
-                <span style={{ fontSize: 13, fontWeight: 500 }}>{t('label_card_border')}</span>
-                <input
-                  type="color"
-                  value={editForm.tokens.colors.cardBorder}
-                  onChange={(e) => {
-                    const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, cardBorder: e.target.value } };
-                    setEditForm({ ...editForm, tokens: next });
-                    if (!isBase) scheduleTokenSave(next);
-                  }}
-                  style={{ width: 40, height: 30, border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                />
-              </div>
               <ThemeAdvancedSection
                 advanced={advanced}
                 onChange={(next) => {
