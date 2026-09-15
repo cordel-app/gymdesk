@@ -1,7 +1,8 @@
 // Tests for membership-promotions.ts (apply/revoke promotions on a
 // user_membership) — in particular that `computeFinalPrice` correctly applies
 // `promotion_charge_benefits` for the 'membership_fee' charge type, including
-// the `fixed_price` action added in #487 stage 2 (previously unimplemented).
+// the `fixed_price` action added in #487 stage 2 (previously unimplemented),
+// and `promotion_period_benefits` (#487 stage 3), gated by `duration_months`.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -82,6 +83,31 @@ async function setChargeBenefit(gymId: string, promoId: number, gymChargeId: num
   );
 }
 
+async function setPeriodBenefit(
+  gymId: string,
+  promoId: number,
+  chargeTypeId: number,
+  action: string | null,
+  value: number | null,
+  opts: { durationMonths?: number | null; enabled?: boolean } = {},
+) {
+  const { durationMonths = null, enabled = true } = opts;
+  await db.query(
+    `INSERT INTO promotion_period_benefits
+       (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
+     VALUES (?, ?, ?, 1, 1, 'month', ?, ?, ?, ?)`,
+    [gymId, promoId, chargeTypeId, durationMonths, enabled ? 1 : 0, action, value],
+  );
+}
+
+async function backdateAppliedAt(umId: number, promoId: number, monthsAgo: number) {
+  await db.query(
+    `UPDATE user_membership_promotions SET applied_at = applied_at - INTERVAL ? MONTH
+     WHERE user_membership_id = ? AND promotion_id = ?`,
+    [monthsAgo, umId, promoId],
+  );
+}
+
 // ─── Charge benefit actions applied to real billing ───────────────────────────
 
 describe('POST /user-memberships/:id/promotions — charge benefit calc', () => {
@@ -145,6 +171,115 @@ describe('POST /user-memberships/:id/promotions — charge benefit calc', () => 
     const res = await applyAndGetFinalPrice('fixed_discount', 500);
     expect(res.status).toBe(201);
     expect(Number(res.body.final_price)).toBe(0);
+  });
+});
+
+// ─── Period benefit actions applied to real billing (#487 stage 3) ────────────
+
+describe('POST /user-memberships/:id/promotions — period benefit calc', () => {
+  let gymId: string;
+  let membershipFeeTypeId: number;
+  let otherChargeTypeId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MP Period Gym');
+    await createTestMembership(gymId, 'admin');
+    membershipFeeTypeId = await getChargeTypeId('membership_fee');
+    otherChargeTypeId = await getChargeTypeId('personal_training');
+  });
+
+  async function setup(basePrice = 100) {
+    const planId = await createPlan(gymId, `PB-Plan-${Date.now()}-${Math.random()}`);
+    const memberId = await createMember(gymId, `PB-Member-${Date.now()}`);
+    const umId = await createUserMembership(gymId, memberId, planId, basePrice);
+    const promoId = await createPromo(gymId, `PB-Promo-${Date.now()}-${Math.random()}`, true);
+    await targetPlan(gymId, promoId, planId);
+    return { umId, promoId };
+  }
+
+  async function apply(umId: number, promoId: number) {
+    return request
+      .post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ promotion_id: promoId });
+  }
+
+  it('a waive period benefit on membership_fee zeroes the final price', async () => {
+    const { umId, promoId } = await setup();
+    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'waive', null);
+    const res = await apply(umId, promoId);
+    expect(res.status).toBe(201);
+    expect(Number(res.body.final_price)).toBe(0);
+  });
+
+  it('a fixed_price period benefit within its duration_months window applies', async () => {
+    const { umId, promoId } = await setup();
+    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_price', 60, { durationMonths: 3 });
+    const res = await apply(umId, promoId);
+    expect(res.status).toBe(201);
+    expect(Number(res.body.final_price)).toBe(60);
+  });
+
+  it('a null duration_months never expires', async () => {
+    const { umId, promoId } = await setup();
+    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 20, { durationMonths: null });
+    const applied = await apply(umId, promoId);
+    expect(Number(applied.body.final_price)).toBe(80);
+    await backdateAppliedAt(umId, promoId, 120);
+    // Trigger a fresh recompute via a second stackable promotion, per how
+    // computeFinalPrice is invoked today (no scheduled job — see stage 3
+    // comment in membership-promotions.ts).
+    const { promoId: promoId2 } = await setup();
+    // re-target the same membership/plan for the trivial trigger promo
+    await db.query('UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?', [umId, promoId2]);
+    const res = await apply(umId, promoId2);
+    expect(res.status).toBe(201);
+    expect(Number(res.body.final_price)).toBe(80);
+  });
+
+  it('a period benefit whose duration_months window has lapsed is excluded on the next recompute', async () => {
+    const { umId, promoId } = await setup();
+    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'waive', null, { durationMonths: 3 });
+    const applied = await apply(umId, promoId);
+    expect(Number(applied.body.final_price)).toBe(0);
+
+    await backdateAppliedAt(umId, promoId, 6);
+
+    // Trigger a fresh recompute via a second stackable promotion targeting
+    // the same plan.
+    const { promoId: promoId2 } = await setup();
+    await db.query('UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?', [umId, promoId2]);
+    const res = await apply(umId, promoId2);
+    expect(res.status).toBe(201);
+    expect(Number(res.body.final_price)).toBe(100);
+  });
+
+  it('a disabled period benefit has no effect', async () => {
+    const { umId, promoId } = await setup();
+    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'waive', null, { enabled: false });
+    const res = await apply(umId, promoId);
+    expect(res.status).toBe(201);
+    expect(Number(res.body.final_price)).toBe(100);
+  });
+
+  it('a period benefit for a different charge type has no effect on the membership fee', async () => {
+    const { umId, promoId } = await setup();
+    await setPeriodBenefit(gymId, promoId, otherChargeTypeId, 'waive', null);
+    const res = await apply(umId, promoId);
+    expect(res.status).toBe(201);
+    expect(Number(res.body.final_price)).toBe(100);
+  });
+
+  it('charge and period benefits on membership_fee stack', async () => {
+    const { umId, promoId } = await setup();
+    const membershipFeeGymChargeId = await createGymCharge(gymId, membershipFeeTypeId);
+    await setChargeBenefit(gymId, promoId, membershipFeeGymChargeId, 'fixed_discount', 20);
+    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'percentage_discount', 50);
+    const res = await apply(umId, promoId);
+    expect(res.status).toBe(201);
+    // charge benefit first: 100 - 20 = 80, then period benefit: 80 * 0.5 = 40
+    expect(Number(res.body.final_price)).toBe(40);
   });
 });
 

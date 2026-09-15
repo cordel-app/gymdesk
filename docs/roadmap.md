@@ -389,6 +389,31 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   needed first — its `promotion_id` FK is `RESTRICT`, and it was blocking
   the existing `DELETE FROM promotions` cleanup step for any test creating
   applied promotions).
+- **#487 stage 3 (done)**: wires Membership Fee Period Benefits into real
+  billing — stage 4 (Forecast/timeline surface) remains a separate future
+  PR. `computeFinalPrice` (`membership-promotions.ts`) now also queries
+  `promotion_period_benefits` for the applied promotion(s), filtered to
+  `charge_types.code = 'membership_fee'` and `enabled = 1`, and applies each
+  via the shared `applyPeriodBenefit` (stage 2) after the existing Charge
+  Benefit loop, so the two stack. Unlike Charge Benefits (which apply
+  unconditionally for as long as the promotion is applied), a Period
+  Benefit is additionally gated by its `duration_months` window, counted
+  from `user_membership_promotions.applied_at`: active while
+  `applied_at + duration_months months > NOW()`, or always active when
+  `duration_months IS NULL`. `quantity`/`frequency_interval`/`frequency_unit`
+  are intentionally not part of this gate — they describe how a count-based
+  benefit (e.g. free sessions) recurs, not whether the Membership Fee action
+  itself is in effect. `computeFinalPrice` only runs at existing mutation
+  points (assignment, promotion apply/revoke) — there is still no scheduled
+  job that reverts `final_price` on its own the moment a `duration_months`
+  window lapses without a new mutation; that remains a possible future
+  stage, not added here since the ticket thread's question about it wasn't
+  answered either way. Extended `membership-promotions.test.ts` with
+  coverage for: waive/fixed_price/fixed_discount period benefits taking
+  effect, a `null duration_months` never expiring, a benefit past its
+  `duration_months` window being excluded on the next recompute, a
+  `enabled=0` benefit being a no-op, a benefit on a non-`membership_fee`
+  charge type being ignored, and Charge + Period benefits stacking.
 - **#482 (done)**: Add Recurring Availability Hours and Bookable Slots to
   Activities — 4-stage rollout agreed in the issue thread, landed as #519
   (weekly rule windows sliced into `duration_minutes`-sized bookable

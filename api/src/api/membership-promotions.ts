@@ -8,8 +8,12 @@ import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionB
  * P4.4: apply/revoke promotions on a user_membership.
  *
  * Server recomputes final_price from the plan's base_price + charge benefits
- * on the 'membership_fee' charge type across all currently-applied promos.
- * Recomputation is server-only; the ledger records an 'adjustment' event.
+ * and (#487 stage 3) Membership Fee period benefits, across all
+ * currently-applied promos. Recomputation is server-only; the ledger records
+ * an 'adjustment' event. Recomputation only happens at these mutation points
+ * (assignment, promotion apply/revoke) — there is no scheduled job that
+ * reverts final_price on its own once a period benefit's duration_months
+ * window lapses without a new mutation; that's a possible future stage 4/5.
  */
 
 const SELECT = `
@@ -48,6 +52,28 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   for (const cb of cbRows) {
     price = applyPeriodBenefit(price, cb.action_code as PromotionBenefitAction, cb.value != null ? parseFloat(cb.value) : null);
   }
+
+  // #487 stage 3: Period Benefits' action/value (stage 1) now affects real
+  // billing too, gated by `duration_months` counted from when the promotion
+  // was applied (`ump.applied_at`) — unlike Charge Benefits, which apply for
+  // as long as the promotion itself is applied. A NULL duration_months means
+  // no expiration. `quantity`/`frequency_interval`/`frequency_unit` are left
+  // alone here: they describe how a count-based benefit (e.g. free sessions)
+  // recurs, not whether the Membership Fee action is currently in effect.
+  const { rows: ppbRows } = await tx.query(
+    `SELECT ppb.value, ppb.action AS action_code
+     FROM user_membership_promotions ump
+     JOIN promotion_period_benefits ppb ON ppb.promotion_id = ump.promotion_id
+     JOIN charge_types ct ON ct.id = ppb.charge_type_id
+     WHERE ump.user_membership_id = ? AND ump.status = 'applied'
+       AND ct.code = 'membership_fee' AND ppb.enabled = 1 AND ppb.action IS NOT NULL
+       AND (ppb.duration_months IS NULL OR ump.applied_at + INTERVAL ppb.duration_months MONTH > NOW())`,
+    [userMembershipId],
+  );
+  for (const ppb of ppbRows) {
+    price = applyPeriodBenefit(price, ppb.action_code as PromotionBenefitAction, ppb.value != null ? parseFloat(ppb.value) : null);
+  }
+
   return { price, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };
 }
 
