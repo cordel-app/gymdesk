@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
-import { materializeScheduleRule, cancelFutureOccurrences } from '../domain/scheduleEngine';
+import { materializeScheduleRule, cancelFutureOccurrences, computeSlotSegments } from '../domain/scheduleEngine';
 import { DateTime } from 'luxon';
 
 const TYPES = ['one_off', 'weekly', 'monthly'] as const;
@@ -15,10 +15,43 @@ export const activityTypeScheduleRulesRouter = Router({ mergeParams: true });
 
 async function resolveActivityType(activityTypeId: string, gymId: string) {
   const { rows } = await db.query(
-    'SELECT id FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    'SELECT id, duration_minutes FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [activityTypeId, gymId],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * #482: for a weekly availability rule, warn (non-blocking) when the
+ * start_time–end_time window doesn't slice evenly into the activity's
+ * duration_minutes — either because a trailing remainder is dropped, or
+ * because the duration is longer than the window so no slot fits at all.
+ */
+function computeSlotWarning(
+  type: string,
+  startTime: string,
+  endTime: string,
+  durationMinutes: number | null,
+): string | null {
+  if (type !== 'weekly' || durationMinutes == null) return null;
+
+  const segments = computeSlotSegments(startTime, endTime, durationMinutes);
+  const toMinutes = (t: string) => {
+    const [h, m] = t.slice(0, 5).split(':').map(Number);
+    return h * 60 + m;
+  };
+  const windowMinutes = toMinutes(endTime) - toMinutes(startTime);
+
+  if (segments.length === 0) {
+    return `The activity's duration (${durationMinutes} min) is longer than this availability window (${windowMinutes} min); no bookable slots will be generated. Adjust the start time, end time, or duration.`;
+  }
+
+  const remainder = windowMinutes - segments.length * durationMinutes;
+  if (remainder > 0) {
+    return `This window doesn't divide evenly by the activity's ${durationMinutes}-minute duration: the last ${remainder} minute(s) after ${segments[segments.length - 1].end} won't be used for a bookable slot. Adjust the start time, end time, or duration to use the full window.`;
+  }
+
+  return null;
 }
 
 async function getGymTimezone(gymId: string): Promise<string> {
@@ -176,7 +209,8 @@ activityTypeScheduleRulesRouter.get('/', async (req, res) => {
 activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const activityTypeId = (req.params as any).activityTypeId as string;
-  if (!(await resolveActivityType(activityTypeId, gymId))) {
+  const activityType = await resolveActivityType(activityTypeId, gymId);
+  if (!activityType) {
     return res.status(404).json({ error: 'Activity type not found' });
   }
 
@@ -216,7 +250,8 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
   await materializeScheduleRule(insertId, gymTimezone);
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [insertId]);
-  res.status(201).json({ ...formatRule(rows[0]), member_ids: memberIds ?? [] });
+  const slot_warning = computeSlotWarning(type, start_time, end_time, activityType.duration_minutes);
+  res.status(201).json({ ...formatRule(rows[0]), member_ids: memberIds ?? [], slot_warning });
 });
 
 // PUT /activity-types/:activityTypeId/schedule-rules/:ruleId
@@ -224,7 +259,8 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   const { gymId } = getTenantContext(req);
   const activityTypeId = (req.params as any).activityTypeId as string;
   const { ruleId } = req.params;
-  if (!(await resolveActivityType(activityTypeId, gymId))) {
+  const activityType = await resolveActivityType(activityTypeId, gymId);
+  if (!activityType) {
     return res.status(404).json({ error: 'Activity type not found' });
   }
 
@@ -275,7 +311,8 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);
   const currentMemberIds = memberIds ?? (await getRuleMemberIdsByRule([Number(ruleId)])).get(Number(ruleId)) ?? [];
-  res.json({ ...formatRule(rows[0]), member_ids: currentMemberIds });
+  const slot_warning = computeSlotWarning(type, start_time, end_time, activityType.duration_minutes);
+  res.json({ ...formatRule(rows[0]), member_ids: currentMemberIds, slot_warning });
 });
 
 // DELETE /activity-types/:activityTypeId/schedule-rules/:ruleId
