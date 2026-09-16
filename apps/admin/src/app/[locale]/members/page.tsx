@@ -79,6 +79,7 @@ export default function MembersPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [centerFilter, setCenterFilter] = useState<string>(searchParams.get('centerId') ?? '');
   const [searchQuery, setSearchQuery] = useState<string>(searchParams.get('q') ?? '');
+  const [documentFilter, setDocumentFilter] = useState<string>(searchParams.get('nif_nie_passport') ?? '');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>(searchParams.get('payment_status') ?? '');
   const [enrollmentStatusFilter, setEnrollmentStatusFilter] = useState<string>(searchParams.get('enrollment_status') ?? '');
   const [loading, setLoading] = useState(true);
@@ -117,10 +118,11 @@ export default function MembersPage() {
     const p = new URLSearchParams();
     if (centerFilter) p.set('centerId', centerFilter);
     if (searchQuery.trim()) p.set('q', searchQuery.trim());
+    if (documentFilter.trim()) p.set('nif_nie_passport', documentFilter.trim());
     if (paymentStatusFilter) p.set('payment_status', paymentStatusFilter);
     if (enrollmentStatusFilter) p.set('enrollment_status', enrollmentStatusFilter);
     return p;
-  }, [centerFilter, searchQuery, paymentStatusFilter, enrollmentStatusFilter]);
+  }, [centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter]);
 
   async function load() {
     if (!activeGymId) {
@@ -146,9 +148,9 @@ export default function MembersPage() {
 
   useEffect(() => {
     if (!gymLoading) load();
-  }, [activeGymId, gymLoading, centerFilter, searchQuery, paymentStatusFilter, enrollmentStatusFilter]);
+  }, [activeGymId, gymLoading, centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter]);
 
-  function syncUrl(updates: { centerId?: string; q?: string; payment_status?: string; enrollment_status?: string }) {
+  function syncUrl(updates: { centerId?: string; q?: string; nif_nie_passport?: string; payment_status?: string; enrollment_status?: string }) {
     const p = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(updates)) {
       if (v) p.set(k, v); else p.delete(k);
@@ -165,6 +167,11 @@ export default function MembersPage() {
   function handleSearch(v: string) {
     setSearchQuery(v);
     syncUrl({ q: v });
+  }
+
+  function handleDocumentFilter(v: string) {
+    setDocumentFilter(v);
+    syncUrl({ nif_nie_passport: v });
   }
 
   function handlePaymentFilter(v: string) {
@@ -406,6 +413,10 @@ export default function MembersPage() {
       ),
     },
     {
+      header: t('members.col_document'),
+      render: (m) => m.nif_nie_passport || '—',
+    },
+    {
       header: t('members.col_payment_status'),
       width: 120,
       render: (m) => m.payment_status
@@ -446,6 +457,14 @@ export default function MembersPage() {
           onChange={(e) => handleSearch(e.target.value)}
           placeholder={t('members.placeholder_search')}
           style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 200 }}
+        />
+        <input
+          type="search"
+          value={documentFilter}
+          onChange={(e) => handleDocumentFilter(e.target.value)}
+          placeholder={t('members.label_document')}
+          aria-label={t('members.label_document')}
+          style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 160 }}
         />
         {showCenters && (
           <select
