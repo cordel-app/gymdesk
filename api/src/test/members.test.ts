@@ -726,3 +726,162 @@ describe('PUT /members/:id — profile fields (#346)', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ─── nif_nie_passport (#513) ──────────────────────────────────────────────────
+
+describe('POST /members — nif_nie_passport', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Document Create Gym');
+    await createTestMembership(gymId, 'admin');
+    // A single center lets resolveMemberCenters fall back to it automatically.
+    await db.query(`INSERT INTO centers (gym_id, name) VALUES (?, 'Main Center')`, [gymId]);
+  });
+
+  it('creates a member with a valid NIF and it round-trips through GET', async () => {
+    const email = `doc-nif-${Date.now()}@test.com`;
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Nif Member', email, nif_nie_passport: '12345678Z' });
+    expect(res.status).toBe(201);
+    expect(res.body.nif_nie_passport).toBe('12345678Z');
+
+    const getRes = await request
+      .get(`/members/${res.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.nif_nie_passport).toBe('12345678Z');
+  });
+
+  it('creates a member with a valid NIE and normalizes to uppercase', async () => {
+    const email = `doc-nie-${Date.now()}@test.com`;
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Nie Member', email, nif_nie_passport: 'x1234567l' });
+    expect(res.status).toBe(201);
+    expect(res.body.nif_nie_passport).toBe('X1234567L');
+  });
+
+  it('creates a member with a valid passport value', async () => {
+    const email = `doc-passport-${Date.now()}@test.com`;
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Passport Member', email, nif_nie_passport: 'AB1234567' });
+    expect(res.status).toBe(201);
+    expect(res.body.nif_nie_passport).toBe('AB1234567');
+  });
+
+  it('creates a member with no document value (null)', async () => {
+    const email = `doc-none-${Date.now()}@test.com`;
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc None Member', email });
+    expect(res.status).toBe(201);
+    expect(res.body.nif_nie_passport).toBeNull();
+  });
+
+  it('returns 400 with a structured error for an NIF with a bad control letter and does not persist it', async () => {
+    const email = `doc-bad-nif-${Date.now()}@test.com`;
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Bad Nif Member', email, nif_nie_passport: '12345678A' });
+    expect(res.status).toBe(400);
+    expect(typeof res.body.error).toBe('string');
+
+    const { rows } = await db.query('SELECT id FROM members WHERE email = ?', [email]);
+    expect(rows.length).toBe(0);
+  });
+
+  it('returns 400 for a whitespace-only document value', async () => {
+    const email = `doc-ws-${Date.now()}@test.com`;
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Whitespace Member', email, nif_nie_passport: '   ' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /members/:id — nif_nie_passport', () => {
+  let gymId: string;
+  let memberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Document Update Gym');
+    await createTestMembership(gymId, 'admin');
+    memberId = await createMember(gymId);
+  });
+
+  it('sets a valid NIF on update', async () => {
+    const res = await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Update Member', nif_nie_passport: '12345678Z' });
+    expect(res.status).toBe(200);
+    expect(res.body.nif_nie_passport).toBe('12345678Z');
+  });
+
+  it('rejects an update with an invalid NIE control letter and leaves the stored value unchanged', async () => {
+    const res = await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Update Member', nif_nie_passport: 'X1234567A' });
+    expect(res.status).toBe(400);
+    expect(typeof res.body.error).toBe('string');
+
+    const { rows } = await db.query<{ nif_nie_passport: string | null }>(
+      'SELECT nif_nie_passport FROM members WHERE id = ?',
+      [memberId],
+    );
+    expect(rows[0].nif_nie_passport).toBe('12345678Z');
+  });
+
+  it('rejects an unsupported-character passport-shaped value', async () => {
+    const res = await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Update Member', nif_nie_passport: 'AB-123 456!' });
+    expect(res.status).toBe(400);
+  });
+
+  it('clears the document value when an empty string is sent', async () => {
+    const res = await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Update Member', nif_nie_passport: '' });
+    expect(res.status).toBe(200);
+    expect(res.body.nif_nie_passport).toBeNull();
+  });
+
+  it('does not affect other members when updating this field', async () => {
+    const otherMemberId = await createMember(gymId);
+    await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Doc Update Member', nif_nie_passport: 'AB1234567' });
+
+    const { rows } = await db.query<{ nif_nie_passport: string | null }>(
+      'SELECT nif_nie_passport FROM members WHERE id = ?',
+      [otherMemberId],
+    );
+    expect(rows[0].nif_nie_passport).toBeNull();
+  });
+});

@@ -15,6 +15,7 @@ interface MemberDetail {
   address: string | null;
   emergency_contact: string | null;
   notes: string | null;
+  nif_nie_passport: string | null;
   created_at: string;
   created_by_name: string | null;
   modified_at: string | null;
@@ -61,6 +62,7 @@ export function MemberDetailModal({ memberId, memberName, onClose }: {
             {field(t('label_gender'), detail.gender)}
             {field(t('label_address'), detail.address)}
             {field(t('label_emergency_contact'), detail.emergency_contact)}
+            {field(t('label_document'), detail.nif_nie_passport)}
             {field(t('label_notes'), detail.notes)}
 
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>

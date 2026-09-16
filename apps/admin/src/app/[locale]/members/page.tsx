@@ -16,6 +16,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MemberExpandedRow } from './MemberExpandedRow';
 import { MemberDetailModal } from './MemberDetailModal';
 import { MemberEditForm, MemberEditFormValues } from './MemberEditForm';
+import { validateDocumentId } from '@/lib/documentId';
 
 interface Plan {
   id: number;
@@ -33,6 +34,7 @@ interface Member {
   address: string | null;
   emergency_contact: string | null;
   notes: string | null;
+  nif_nie_passport: string | null;
   fare_id: number | null;
   fare_name: string | null;
   clerk_user_id: string | null;
@@ -47,6 +49,7 @@ const emptyForm = {
   email: '',
   phone: '',
   fare_id: '',
+  nif_nie_passport: '',
 };
 
 const emptyEditForm: MemberEditFormValues = {
@@ -57,6 +60,7 @@ const emptyEditForm: MemberEditFormValues = {
   address: '',
   emergency_contact: '',
   notes: '',
+  nif_nie_passport: '',
 };
 
 const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired'] as const;
@@ -206,6 +210,10 @@ export default function MembersPage() {
       if (assignedCenterIds.size === 0) { setError(t('members.error_no_center')); return; }
       if (defaultCenterId == null || !assignedCenterIds.has(defaultCenterId)) { setError(t('members.error_default_not_assigned')); return; }
     }
+    if (!validateDocumentId(form.nif_nie_passport).valid) {
+      setError(t('members.error_document_invalid'));
+      return;
+    }
     setSaving(true);
     setError(null);
 
@@ -215,6 +223,7 @@ export default function MembersPage() {
         email: form.email.trim(),
         phone: form.phone.trim() || null,
         fare_id: form.fare_id ? parseInt(form.fare_id) : null,
+        nif_nie_passport: form.nif_nie_passport.trim() || null,
       };
       if (showCenters) {
         body.center_ids = Array.from(assignedCenterIds);
@@ -245,6 +254,7 @@ export default function MembersPage() {
       address: m.address ?? '',
       emergency_contact: m.emergency_contact ?? '',
       notes: m.notes ?? '',
+      nif_nie_passport: m.nif_nie_passport ?? '',
     });
     setEditError(null);
     setExpandedMemberIds((prev) => {
@@ -286,6 +296,10 @@ export default function MembersPage() {
       if (editAssignedCenterIds.size === 0) { setEditError(t('members.error_no_center')); return; }
       if (editDefaultCenterId == null || !editAssignedCenterIds.has(editDefaultCenterId)) { setEditError(t('members.error_default_not_assigned')); return; }
     }
+    if (!validateDocumentId(editForm.nif_nie_passport).valid) {
+      setEditError(t('members.error_document_invalid'));
+      return;
+    }
     setEditSaving(true);
     setEditError(null);
     try {
@@ -298,6 +312,7 @@ export default function MembersPage() {
         address: editForm.address.trim() || null,
         emergency_contact: editForm.emergency_contact.trim() || null,
         notes: editForm.notes.trim() || null,
+        nif_nie_passport: editForm.nif_nie_passport.trim() || null,
       };
       await apiFetch(`/members/${editedId}`, { method: 'PUT', body: JSON.stringify(body) });
       if (showCenters) {
@@ -505,6 +520,10 @@ export default function MembersPage() {
             <label style={labelStyle}>{t('members.label_phone')}</label>
             <input style={inputStyle} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={t('members.placeholder_phone')} />
 
+            <label style={labelStyle}>{t('members.label_document')}</label>
+            <input style={inputStyle} value={form.nif_nie_passport} onChange={(e) => setForm({ ...form, nif_nie_passport: e.target.value })} placeholder={t('members.placeholder_document')} />
+            <p style={helpTextStyle}>{t('members.help_document')}</p>
+
             {plans.length > 0 && (
               <>
                 <label style={labelStyle}>{t('members.label_fare')}</label>
@@ -580,3 +599,4 @@ const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, backgro
 const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 460, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: 14, fontWeight: 500, marginBottom: 4, marginTop: 14, color: '#333' };
 const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box' };
+const helpTextStyle: React.CSSProperties = { margin: '4px 0 0', fontSize: 12.5, color: '#888' };

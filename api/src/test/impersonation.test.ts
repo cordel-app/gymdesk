@@ -300,6 +300,27 @@ describe('GET /platform/impersonation/targets', () => {
     const ids = res.body.map((u: any) => u.id);
     expect(ids).not.toContain(`member:${insertId}`);
   });
+
+  it('does not include staff from a different gym (tenant isolation — #504)', async () => {
+    const gymB = await createTestGym('Targets Test Gym B');
+    const otherGymStaffId = 'impersonation-other-gym-staff-id';
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES (?, ?, 'admin', 'active', 'Javier Otro Gimnasio')`,
+      [otherGymStaffId, gymB],
+    );
+
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: '', type: 'staff' });
+
+    expect(res.status).toBe(200);
+    const ids = res.body.map((u: any) => u.id);
+    expect(ids).not.toContain(otherGymStaffId);
+
+    await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [otherGymStaffId]);
+  });
 });
 
 // ─── POST /platform/impersonation/stop ───────────────────────────────────────

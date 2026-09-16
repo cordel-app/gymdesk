@@ -101,7 +101,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems, taxRateRows] = await Promise.all([
+  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems, taxRateRows, promotionCount] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
       [plan.id, gymId],
@@ -156,6 +156,14 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
           'SELECT name, rate_percent FROM tax_rates WHERE id = ? AND gym_id = ?',
           [plan.tax_rate_id, gymId],
         ).then(r => r.rows),
+    // #512: promotion count for the Membership Plan Details modal's compact summary.
+    db.query(
+      `SELECT COUNT(*) AS n
+       FROM promotion_membership_plans pmp
+       JOIN promotions p ON p.id = pmp.promotion_id
+       WHERE pmp.membership_plan_id = ? AND pmp.gym_id = ? AND p.deleted_at IS NULL`,
+      [plan.id, gymId],
+    ).then(r => Number(r.rows[0].n)),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -198,6 +206,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     allowances,
     centers,
     member_count: memberCount,
+    promotion_count: promotionCount,
     charge_benefits: chargeBenefits,
     sellable_items: sellableItems,
     tax_rate_name: taxRate ? taxRate.name : null,
