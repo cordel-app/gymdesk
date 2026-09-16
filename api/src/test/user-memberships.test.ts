@@ -495,6 +495,103 @@ function isoDate(offsetDays: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// ─── GET /user-memberships — nif_nie_passport filter (#516) ────────────────────
+
+describe('GET /user-memberships — nif_nie_passport filter', () => {
+  let gymId: string;
+  let nifId: number;
+  let nifMemberId: number;
+  let nieId: number;
+  let noDocumentId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM NIF Filter Gym');
+    await createTestMembership(gymId, 'admin');
+
+    const planId = await createPlan(gymId);
+
+    nifMemberId = await createMember(gymId, 'UM Filter NIF');
+    await db.query('UPDATE members SET nif_nie_passport = ? WHERE id = ?', ['12345678Z', nifMemberId]);
+    nifId = await createUserMembershipDirect(gymId, nifMemberId, planId, 'active');
+
+    const nieMemberId = await createMember(gymId, 'UM Filter NIE');
+    await db.query('UPDATE members SET nif_nie_passport = ? WHERE id = ?', ['X1234567L', nieMemberId]);
+    nieId = await createUserMembershipDirect(gymId, nieMemberId, planId, 'active');
+
+    const noDocumentMemberId = await createMember(gymId, 'UM Filter No Document');
+    noDocumentId = await createUserMembershipDirect(gymId, noDocumentMemberId, planId, 'active');
+  });
+
+  it('performs a partial, case-insensitive match against the related member document', async () => {
+    const res = await request
+      .get('/user-memberships?nif_nie_passport=12345678z')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(nifId);
+    expect(ids).not.toContain(nieId);
+    expect(ids).not.toContain(noDocumentId);
+  });
+
+  it('matches a fragment without requiring the full document value', async () => {
+    const res = await request
+      .get('/user-memberships?nif_nie_passport=X123')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(nieId);
+    expect(ids).not.toContain(nifId);
+  });
+
+  it('returns all rows when the filter is absent', async () => {
+    const res = await request
+      .get('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.id);
+    expect(ids).toContain(nifId);
+    expect(ids).toContain(nieId);
+    expect(ids).toContain(noDocumentId);
+  });
+
+  it('returns no rows when nothing matches', async () => {
+    const res = await request
+      .get('/user-memberships?nif_nie_passport=nomatch999')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('combines with other active filters', async () => {
+    const matching = await request
+      .get(`/user-memberships?nif_nie_passport=12345678Z&member_id=${nifMemberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(matching.status).toBe(200);
+    expect(matching.body.map((r: any) => r.id)).toEqual([nifId]);
+
+    const nonMatching = await request
+      .get(`/user-memberships?nif_nie_passport=12345678Z&member_id=${nifId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(nonMatching.status).toBe(200);
+    expect(nonMatching.body.length).toBe(0);
+  });
+
+  it('includes the related member document in the response', async () => {
+    const res = await request
+      .get(`/user-memberships?nif_nie_passport=12345678Z`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body[0].member_nif_nie_passport).toBe('12345678Z');
+  });
+});
+
 // ─── GET /user-memberships/:id ────────────────────────────────────────────────
 
 describe('GET /user-memberships/:id', () => {

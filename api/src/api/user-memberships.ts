@@ -34,6 +34,7 @@ export const LIST_SELECT = `
   SELECT um.*,
          m.name AS member_name,
          m.email AS member_email,
+         m.nif_nie_passport AS member_nif_nie_passport,
          p.name AS plan_name,
          p.member_limit AS plan_member_limit,
          CASE
@@ -60,6 +61,9 @@ function memberLimitCount(limit: string | null | undefined): number {
 //     which has no equivalent in the raw `status` column — hence the separate param).
 //   - member_id: unchanged.
 //   - start_date/end_date: date-range overlap against starts_at/ends_at.
+//   - nif_nie_passport (#516): partial, case-insensitive text search against the related
+//     Member's identification document — never validated, never converted to a number
+//     (preserves leading zeros / alphanumeric passports), mirroring the #515 members.ts filter.
 userMembershipsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const q = parseQuery(req, res, z.object({
@@ -68,6 +72,7 @@ userMembershipsRouter.get('/', async (req, res) => {
     member_id: z.coerce.number().int().positive().optional(),
     start_date: z.string().regex(DATE_RE, 'start_date must be YYYY-MM-DD').optional(),
     end_date: z.string().regex(DATE_RE, 'end_date must be YYYY-MM-DD').optional(),
+    nif_nie_passport: z.string().trim().min(1).optional(),
   }));
   if (!q) return;
 
@@ -77,6 +82,7 @@ userMembershipsRouter.get('/', async (req, res) => {
   if (q.member_id !== undefined) { inner += ' AND um.member_id = ?'; params.push(q.member_id); }
   if (q.start_date) { inner += ' AND (um.ends_at IS NULL OR um.ends_at >= ?)'; params.push(q.start_date); }
   if (q.end_date) { inner += ' AND um.starts_at <= ?'; params.push(q.end_date); }
+  if (q.nif_nie_passport) { inner += ' AND m.nif_nie_passport LIKE ?'; params.push(`%${q.nif_nie_passport}%`); }
 
   // lifecycle_status is a SELECT-list alias (a CASE expression), so it's filtered via an
   // outer query over a derived table rather than reusing it directly in the inner WHERE.

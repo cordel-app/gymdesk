@@ -2624,10 +2624,12 @@
     "col_ends_at": "Fecha de Fin",
     "col_status": "Estado",
     "open_ended": "Sin fecha de fin",
+    "label_document": "NIF/NIE/Pasaporte",
     "filter_status": "Estado",
     "filter_member": "Socio",
     "filter_from": "Desde",
     "filter_to": "Hasta",
+    "filter_document": "NIF/NIE/Pasaporte",
     "filter_clear": "Borrar filtros"
   },
   "taxes": {

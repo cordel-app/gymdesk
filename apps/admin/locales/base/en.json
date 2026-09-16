@@ -2692,10 +2692,12 @@
     "col_ends_at": "End Date",
     "col_status": "Status",
     "open_ended": "Open-ended",
+    "label_document": "NIF/NIE/Passport",
     "filter_status": "Status",
     "filter_member": "Member",
     "filter_from": "From",
     "filter_to": "To",
+    "filter_document": "NIF/NIE/Passport",
     "filter_clear": "Clear filters"
   },
   "taxes": {
