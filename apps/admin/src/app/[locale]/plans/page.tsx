@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { AssignPlanModal } from './AssignPlanModal';
+import { PlanDetailModal } from './PlanDetailModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -177,6 +178,9 @@ export default function PlansPage() {
   // Assign Plan to Member(s) (#376)
   const [assigningPlan, setAssigningPlan] = useState<Plan | null>(null);
 
+  // Details modal (#512) — separate from the accordion expand/collapse toggle
+  const [detailFor, setDetailFor] = useState<Plan | null>(null);
+
   // Price sub-form (inline, per plan)
   const [priceForm, setPriceForm] = useState({ price: '', valid_from: '', valid_to: '' });
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
@@ -261,9 +265,6 @@ export default function PlansPage() {
     });
   }
 
-  function showDetails(id: number) {
-    setExpanded((prev) => new Set([...prev, id]));
-  }
 
   // ─── Inline edit ────────────────────────────────────────────────────────────
 
@@ -706,7 +707,7 @@ export default function PlansPage() {
               : '—';
 
             const menuItems: ContextMenuItem[] = [
-              { label: t('plans.details'), onClick: () => showDetails(plan.id) },
+              { label: t('plans.details'), onClick: () => setDetailFor(plan) },
               { label: t('plans.edit'), onClick: () => openInlineEdit(plan) },
               { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan) },
               { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan) },
@@ -1206,6 +1207,15 @@ export default function PlansPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />
+
+      {/* Plan Details modal (#512) */}
+      {detailFor && (
+        <PlanDetailModal
+          planId={detailFor.id}
+          planName={detailFor.name}
+          onClose={() => setDetailFor(null)}
+        />
+      )}
 
       {/* Assign Plan to Member(s) (#376) */}
       {assigningPlan && (

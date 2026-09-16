@@ -682,7 +682,21 @@
     "label_current_price": "Precio actual",
     "tax_rate_default": "Predeterminado del gimnasio",
     "tax_behavior_inclusive": "Impuesto incluido en el precio",
-    "tax_behavior_exclusive": "Impuesto añadido al precio"
+    "tax_behavior_exclusive": "Impuesto añadido al precio",
+    "details_section_summary": "Resumen",
+    "details_summary_promotions": "Promociones",
+    "details_summary_pricing": "Precio",
+    "details_summary_benefits": "Beneficios",
+    "details_summary_duration": "Duración",
+    "details_summary_billing": "Facturación",
+    "details_summary_enrollment": "Inscripción",
+    "details_price": "Precio",
+    "details_duration": "Duración",
+    "details_billing_frequency": "Frecuencia de facturación",
+    "details_section_benefits": "Beneficios",
+    "details_section_promotions": "Promociones",
+    "details_no_benefits": "Sin beneficios configurados.",
+    "details_no_promotions": "Sin promociones aplicadas."
   },
   "prices": {
     "title": "Precios",

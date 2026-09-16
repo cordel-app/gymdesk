@@ -750,7 +750,21 @@
     "label_current_price": "Current price",
     "tax_rate_default": "Gym default",
     "tax_behavior_inclusive": "Tax included in price",
-    "tax_behavior_exclusive": "Tax added to price"
+    "tax_behavior_exclusive": "Tax added to price",
+    "details_section_summary": "Summary",
+    "details_summary_promotions": "Promotions",
+    "details_summary_pricing": "Pricing",
+    "details_summary_benefits": "Benefits",
+    "details_summary_duration": "Duration",
+    "details_summary_billing": "Billing",
+    "details_summary_enrollment": "Enrollment",
+    "details_price": "Price",
+    "details_duration": "Duration",
+    "details_billing_frequency": "Billing Frequency",
+    "details_section_benefits": "Benefits",
+    "details_section_promotions": "Promotions",
+    "details_no_benefits": "No benefits configured.",
+    "details_no_promotions": "No promotions applied."
   },
   "prices": {
     "title": "Prices",

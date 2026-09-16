@@ -329,6 +329,43 @@ describe('GET /membership-plans/:id', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
   });
+
+  // #512: Membership Plan Details modal summary needs a promotion count/list.
+  it('returns promotions and promotion_count for a plan with no targeting promotions', async () => {
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.promotion_count).toBe(0);
+    expect(res.body.promotions).toEqual([]);
+  });
+
+  it('includes active promotions that target the plan and excludes deleted ones', async () => {
+    const { insertId: activePromoId } = await db.query(
+      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status)
+       VALUES (?, 'Active Promo', '2026-01-01', '2099-12-31', 'active')`,
+      [gymId],
+    );
+    const { insertId: deletedPromoId } = await db.query(
+      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status)
+       VALUES (?, 'Deleted Promo', '2026-01-01', '2099-12-31', 'deleted')`,
+      [gymId],
+    );
+    await db.query(
+      'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?), (?, ?, ?)',
+      [gymId, activePromoId, planId, gymId, deletedPromoId, planId],
+    );
+
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.promotion_count).toBe(1);
+    expect(res.body.promotions).toHaveLength(1);
+    expect(res.body.promotions[0]).toMatchObject({ id: activePromoId, name: 'Active Promo', lifecycle_status: 'active' });
+  });
 });
 
 // ─── POST /membership-plans ───────────────────────────────────────────────────
