@@ -156,7 +156,10 @@ export function ImpersonationDialog({ onClose }: Props) {
             // primary label (#504); show a human-readable placeholder with the id as secondary info.
             const isUnnamed = c.name === c.id;
             const displayName = isUnnamed ? t('unnamed_staff') : c.name;
-            const secondary = [t('type_staff'), c.role, c.status, isUnnamed ? c.id : c.email]
+            // Translate the auth role — never show the raw enum value (e.g. "front_desk"),
+            // which is a technical key, not a user-facing label.
+            const roleLabel = t(`role_${c.role}` as any);
+            const secondary = [roleLabel, c.status, isUnnamed ? c.id : c.email]
               .filter(Boolean)
               .join(' · ');
 
