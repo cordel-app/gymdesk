@@ -22,9 +22,9 @@ export function StatusFilter({ value, onChange, options, allLabel }: StatusFilte
       style={{
         padding: '8px 12px',
         borderRadius: 6,
-        border: '1px solid #ccc',
+        border: '1px solid var(--gd-input-border, #d1d5db)',
         fontSize: 14,
-        background: '#fff',
+        background: 'var(--gd-input-bg, #ffffff)',
         cursor: 'pointer',
       }}
     >

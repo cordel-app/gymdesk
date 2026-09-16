@@ -49,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           const s = STYLES[t.type];
           return (
             <div key={t.id} className="toast-item" style={{
-              background: '#fff',
+              background: 'var(--gd-card-bg, #ffffff)',
               border: `1px solid ${s.border}`,
               borderLeft: `4px solid ${s.border}`,
               borderRadius: 8,
@@ -70,14 +70,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               }}>
                 {s.icon}
               </span>
-              <span style={{ fontSize: 14, flex: 1, color: '#222', lineHeight: 1.45 }}>
+              <span style={{ fontSize: 14, flex: 1, color: 'var(--gd-text, #111827)', lineHeight: 1.45 }}>
                 {t.message}
               </span>
               <button
                 onClick={() => dismiss(t.id)}
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#aaa', fontSize: 18, padding: 0, lineHeight: 1,
+                  color: 'var(--gd-text-muted, #6b7280)', fontSize: 18, padding: 0, lineHeight: 1,
                   flexShrink: 0, marginTop: -1,
                 }}
                 aria-label="Dismiss"
