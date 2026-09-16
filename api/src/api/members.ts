@@ -4,6 +4,18 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, handleDupEntry } from '../infra/db-helpers';
+import { validateDocumentId, maskDocumentId } from '../domain/documentId';
+
+/**
+ * #513: never write the raw nif_nie_passport value into audit_logs — mask it
+ * first. The rest of the row is left as-is (no other member field is masked
+ * today; recordAudit's own doc comment notes it just dumps previous/next
+ * verbatim, so this is a deliberate, narrow exception for this one field).
+ */
+function forAudit<T extends { nif_nie_passport?: string | null }>(row: T): T {
+  if (!row || row.nif_nie_passport == null) return row;
+  return { ...row, nif_nie_passport: maskDocumentId(row.nif_nie_passport) };
+}
 
 /**
  * #59: resolve a member's center assignment for creation. Mirrors
@@ -147,17 +159,20 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 
 membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { name, email, phone, fare_id, center_ids, default_center_id } = req.body;
+  const { name, email, phone, fare_id, center_ids, default_center_id, nif_nie_passport } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
 
   const centers = await resolveMemberCenters(gymId, center_ids, default_center_id);
   if ('error' in centers) return res.status(400).json({ error: centers.error });
 
+  const docCheck = validateDocumentId(nif_nie_passport);
+  if (!docCheck.valid) return res.status(400).json({ error: docCheck.message });
+
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO members (name, email, phone, membership_plan_id, gym_id, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-        [name, email, phone ?? null, fare_id ?? null, gymId, gymMembershipId ?? null],
+        'INSERT INTO members (name, email, phone, membership_plan_id, gym_id, created_by, nif_nie_passport) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [name, email, phone ?? null, fare_id ?? null, gymId, gymMembershipId ?? null, docCheck.normalized],
       );
       for (const centerId of centers.ids) {
         await tx.query(
@@ -169,7 +184,7 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
       return insertId;
     });
     const { rows } = await db.query('SELECT * FROM members WHERE id = ?', [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'member', entityId: insertId, next: rows[0] });
+    recordAudit(req, { action: 'create', entityType: 'member', entityId: insertId, next: forAudit(rows[0]) });
     res.status(201).json(rows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A member with this email already exists.');
@@ -179,7 +194,11 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
 membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   // email is intentionally excluded — Clerk sync is out of scope (#346 §5.1)
-  const { name, phone, date_of_birth, gender, address, emergency_contact, notes } = req.body;
+  const { name, phone, date_of_birth, gender, address, emergency_contact, notes, nif_nie_passport } = req.body;
+
+  const docCheck = validateDocumentId(nif_nie_passport);
+  if (!docCheck.valid) return res.status(400).json({ error: docCheck.message });
+
   try {
     const { rowCount } = await db.query(
       `UPDATE members SET
@@ -190,6 +209,7 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
         address           = ?,
         emergency_contact = ?,
         notes             = ?,
+        nif_nie_passport  = ?,
         modified_at       = UTC_TIMESTAMP(),
         modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -201,6 +221,7 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
         address ?? null,
         emergency_contact ?? null,
         notes ?? null,
+        docCheck.normalized,
         gymMembershipId ?? null,
         req.params.id, gymId,
       ],
@@ -210,7 +231,7 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
       'SELECT * FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
-    recordAudit(req, { action: 'update', entityType: 'member', entityId: req.params.id, next: rows[0] });
+    recordAudit(req, { action: 'update', entityType: 'member', entityId: req.params.id, next: forAudit(rows[0]) });
     res.json(rows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A member with this email already exists.');

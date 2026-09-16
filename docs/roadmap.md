@@ -637,6 +637,36 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   those pickers are now `readOnly`, matching the existing "read-only" hint
   text. No migration, no new endpoints — reuses the existing Theme update
   API per the ticket.
+- **#513 (done)**: Add NIF/NIE/Passport Field to Members with Document
+  Validation — migration 147 adds nullable `members.nif_nie_passport
+  VARCHAR(20)` (no uniqueness constraint, no index — #515 will add search/
+  filter on it later). New pure-function validator
+  `api/src/domain/documentId.ts` (`validateDocumentId`, `maskDocumentId`)
+  implements NIF (8 digits + mod-23 control letter against
+  `TRWAGMYFPDXBNJZSQVHLCKE`), NIE (X/Y/Z→0/1/2 prefix + 7 digits, same
+  control-letter algorithm), and Passport (alphanumeric, 3–20 chars, no
+  control letter) with type auto-detection (NIE shape → NIF shape →
+  Passport) — a value with NIF/NIE shape but a bad control letter is
+  rejected outright, never silently downgraded to Passport; a
+  whitespace-only value is rejected, an empty/`null` value clears the
+  field. Mirrored verbatim at `apps/admin/src/lib/documentId.ts` for
+  client-side feedback, following the existing no-shared-package
+  mirroring convention (`themeTokens.ts`, `permissions.ts`) since this
+  repo has no built package between `api/` and `apps/admin/`. `POST`/`PUT
+  /members` validate and persist the normalized value, returning
+  `400 { error }` on invalid input without writing it; `GET /members` and
+  `GET /members/:id` already returned it via their existing `SELECT *`.
+  Audit: reuses the existing `recordAudit()` create/update calls, but
+  masks the value (`maskDocumentId` — all but the last 4 characters) in
+  the `next` payload so the raw document number is never written to
+  `audit_logs`. Admin UI: field added to the Members Add modal, the
+  inline `MemberEditForm` (with immediate inline validation error/help
+  text), and `MemberDetailModal`, labeled "NIF/NIE/Passport"; i18n keys
+  added to en/es/ca. New unit test file `document-id.test.ts` (24 tests,
+  no DB) plus `members.test.ts` additions covering create/update with
+  valid NIF/NIE/Passport values, rejection of bad control letters and
+  whitespace-only input with a structured error and no persisted row, and
+  round-trip through GET.
 
 ## Decisions
 

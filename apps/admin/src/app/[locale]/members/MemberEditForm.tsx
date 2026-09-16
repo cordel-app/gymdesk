@@ -4,6 +4,7 @@ import React from 'react';
 import { useTranslations } from 'next-intl';
 import { btnStyle } from '@/components/ui';
 import type { CenterOption } from '@/context/CenterContext';
+import { validateDocumentId } from '@/lib/documentId';
 
 export interface MemberEditFormValues {
   name: string;
@@ -13,6 +14,7 @@ export interface MemberEditFormValues {
   address: string;
   emergency_contact: string;
   notes: string;
+  nif_nie_passport: string;
 }
 
 export function MemberEditForm({
@@ -35,6 +37,8 @@ export function MemberEditForm({
   onCancel: () => void;
 }) {
   const t = useTranslations('members');
+  const docCheck = validateDocumentId(form.nif_nie_passport);
+  const showDocError = form.nif_nie_passport !== '' && !docCheck.valid;
 
   return (
     <div style={panel}>
@@ -94,6 +98,20 @@ export function MemberEditForm({
             placeholder={t('placeholder_emergency_contact')}
           />
         </div>
+        <div>
+          <label style={inlineLabelStyle}>{t('label_document')}</label>
+          <input
+            style={inlineInputStyle}
+            value={form.nif_nie_passport}
+            onChange={(e) => onChange({ ...form, nif_nie_passport: e.target.value })}
+            placeholder={t('placeholder_document')}
+          />
+          {showDocError ? (
+            <p style={fieldErrorStyle}>{t('error_document_invalid')}</p>
+          ) : (
+            <p style={helpTextStyle}>{t('help_document')}</p>
+          )}
+        </div>
         <div style={{ gridColumn: '1 / -1' }}>
           <label style={inlineLabelStyle}>{t('label_notes')}</label>
           <textarea
@@ -139,7 +157,7 @@ export function MemberEditForm({
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, paddingTop: 14, borderTop: '1px solid #ececf0' }}>
         <button onClick={onCancel} style={cancelBtnStyle} disabled={saving}>{t('cancel')}</button>
-        <button onClick={onSave} style={btnStyle()} disabled={saving}>
+        <button onClick={onSave} style={btnStyle()} disabled={saving || showDocError}>
           {saving ? t('saving') : t('save_changes')}
         </button>
       </div>
@@ -154,4 +172,6 @@ const sectionLabelStyle: React.CSSProperties = {
 };
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4, marginTop: 10 };
 const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
+const helpTextStyle: React.CSSProperties = { margin: '4px 0 0', fontSize: 12, color: '#888' };
+const fieldErrorStyle: React.CSSProperties = { margin: '4px 0 0', fontSize: 12, color: '#c0392b' };
 const cancelBtnStyle: React.CSSProperties = { background: '#fff', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
