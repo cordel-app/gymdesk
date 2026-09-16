@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { useUser } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
@@ -36,29 +36,42 @@ export function ImpersonationDialog({ onClose }: Props) {
   const [starting, setStarting] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
 
+  // Guards against out-of-order responses: with two separate effects previously
+  // triggering overlapping requests (one immediate on mount/gym-change, one
+  // debounced on every keystroke), a slower unfiltered request could resolve
+  // after a faster filtered one and silently clobber it with the wrong list
+  // (#504 — search appeared broken / showed unrelated staff). Only the response
+  // for the most recently issued request is ever applied.
+  const searchSeq = useRef(0);
+
   const search = useCallback(async (q: string) => {
     if (!activeGymId) return;
+    const seq = ++searchSeq.current;
     setLoading(true);
     setSearchError(null);
     try {
       const results = await apiFetch<Target[]>(
         `/platform/impersonation/targets?q=${encodeURIComponent(q)}&gym_id=${activeGymId}&type=staff`,
       );
+      if (seq !== searchSeq.current) return;
       setTargets(results);
     } catch (err) {
+      if (seq !== searchSeq.current) return;
       setTargets([]);
       setSearchError(t('error_search'));
     } finally {
-      setLoading(false);
+      if (seq === searchSeq.current) setLoading(false);
     }
   }, [activeGymId, apiFetch, t]);
 
+  // Single effect drives every search: an empty query (initial load or gym
+  // change) fires immediately, a typed query debounces. Consolidated into one
+  // effect (rather than a separate immediate-on-mount effect) so there is only
+  // ever one in-flight request path to reason about.
   useEffect(() => {
-    const timer = setTimeout(() => search(query), 300);
+    const timer = setTimeout(() => search(query), query ? 300 : 0);
     return () => clearTimeout(timer);
   }, [query, search]);
-
-  useEffect(() => { search(''); }, [search]);
 
   async function handleImpersonate(target: Target) {
     if (starting) return;
