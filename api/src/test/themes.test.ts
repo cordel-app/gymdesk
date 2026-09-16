@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
+import { defaultTokens as defaultTokensFixture } from '../domain/themeTokens';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -401,6 +402,84 @@ describe('PUT /platform/themes/:id/set-system-default', () => {
       .put('/platform/themes/00000000-0000-0000-0000-000000000000/set-system-default')
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── Semantic color tokens (#489 stage 5) ────────────────────────────────────
+
+describe('Semantic color tokens (#489)', () => {
+  beforeAll(() => mockAsSuperadmin());
+
+  it('persists and returns the stage-2 semantic color fields on create', async () => {
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({
+        name: 'Test Base Theme Semantic Colors',
+        tokens: {
+          ...defaultTokensFixture(),
+          colors: {
+            ...defaultTokensFixture().colors,
+            secondaryTextColor: '#123456',
+            mutedTextColor: '#654321',
+            separatorColor: '#abcdef',
+            inputBorderColor: '#111111',
+            inputBackgroundColor: '#222222',
+            headerSeparatorColor: '#333333',
+          },
+        },
+      });
+    expect(res.status).toBe(201);
+    expect(res.body.tokens.colors).toMatchObject({
+      secondaryTextColor: '#123456',
+      mutedTextColor: '#654321',
+      separatorColor: '#abcdef',
+      inputBorderColor: '#111111',
+      inputBackgroundColor: '#222222',
+    });
+    // Application separator and header separator remain independent settings (#489 §7).
+    expect(res.body.tokens.colors.separatorColor).not.toBe(res.body.tokens.colors.headerSeparatorColor);
+
+    const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [res.body.id]);
+    const persisted = typeof rows[0].tokens === 'string' ? JSON.parse(rows[0].tokens) : rows[0].tokens;
+    expect(persisted.colors.separatorColor).toBe('#abcdef');
+  });
+
+  it('round-trips an unrecognized `advanced` map unchanged on update (no duplication/loss of existing values)', async () => {
+    const create = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Advanced Roundtrip' });
+    const themeId = create.body.id;
+
+    const advanced = { uiDensity: 'compact', inputFocusBorderColor: '#6c63ff', customLegacyKey: 'kept-as-is' };
+    const putRes = await request
+      .put(`/platform/themes/${themeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ tokens: { ...defaultTokensFixture(), advanced } });
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.tokens.advanced).toEqual(advanced);
+
+    const getRes = await request
+      .get(`/platform/themes/${themeId}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(getRes.body.tokens.advanced).toEqual(advanced);
+  });
+
+  it('accepts and returns a legacy/partial tokens shape missing the newer semantic fields (migrates safely)', async () => {
+    const res = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Legacy Tokens', tokens: { colors: { pageBackground: '#f5f5f5', textColor: '#111827' } } });
+    expect(res.status).toBe(201);
+    expect(res.body.tokens.colors.pageBackground).toBe('#f5f5f5');
+    expect(res.body.tokens.colors.secondaryTextColor).toBeUndefined();
+
+    const getRes = await request
+      .get(`/platform/themes/${res.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.tokens.colors.pageBackground).toBe('#f5f5f5');
   });
 });
 
