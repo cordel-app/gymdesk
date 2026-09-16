@@ -441,7 +441,7 @@ describe('Semantic color tokens (#489)', () => {
     expect(res.body.tokens.colors.separatorColor).not.toBe(res.body.tokens.colors.headerSeparatorColor);
 
     const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [res.body.id]);
-    const persisted = JSON.parse(rows[0].tokens);
+    const persisted = typeof rows[0].tokens === 'string' ? JSON.parse(rows[0].tokens) : rows[0].tokens;
     expect(persisted.colors.separatorColor).toBe('#abcdef');
   });
 

@@ -126,7 +126,8 @@ describe('Semantic color tokens (#489)', () => {
     });
 
     const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [customThemeId]);
-    expect(JSON.parse(rows[0].tokens).colors.separatorColor).toBe('#abcdef');
+    const persisted = typeof rows[0].tokens === 'string' ? JSON.parse(rows[0].tokens) : rows[0].tokens;
+    expect(persisted.colors.separatorColor).toBe('#abcdef');
   });
 
   it('round-trips an `advanced` map unchanged on update (no duplication/loss of existing values)', async () => {
