@@ -526,6 +526,41 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   and 12 `adv_group_*` i18n keys from `themes`/`gym_themes` in en/es/ca.
   Stages 3–5 remain (wiring shared components to consume these attributes,
   Member Web + Pay theming parity, tests/docs).
+- **#489 stage 3 (done — shared components wired to global tokens)**: per the
+  issue thread's answer ("Shared components should land into the global
+  section"), wired the Admin app's shared, widely-imported component library
+  to consume the global `--gd-*` CSS variables (`--gd-text`,
+  `--gd-text-secondary`, `--gd-text-muted`, `--gd-border`, `--gd-card-bg`,
+  `--gd-app-bg`, `--gd-input-bg`, `--gd-input-border`, and the pre-existing
+  `--gd-dropdown-bg`/`--gd-dropdown-text`/`--gd-dropdown-hover-bg`) instead of
+  hardcoded hex, each with a `var(--gd-x, <default-token-hex>)` fallback so
+  unthemed contexts render identically to before:
+  - `DataTable.tsx` (9 consumers) — header row and expanded-row background,
+    row/expanded-row separators, card background, chevron and loading/empty
+    text now theme-driven.
+  - `ui.tsx`'s `modalStyle`, `CrudModal.tsx`'s `FormInput`/`FormLabel` (28
+    consumers), `Toast.tsx` (53 consumers), `ContextMenu.tsx` (31 consumers),
+    `StatusFilter.tsx` (20 consumers) and `MultiSelectFilter.tsx` (5
+    consumers) — input/card/popover backgrounds, borders and secondary/muted
+    text converted. `ContextMenu`'s and `MultiSelectFilter`'s dropdown panels
+    use the existing Navigation-group dropdown tokens
+    (`--gd-dropdown-bg`/`--gd-dropdown-text`/`--gd-dropdown-hover-bg`), which
+    is a closer semantic match than the generic card tokens. Destructive/danger
+    text (`#c0392b`) and status colors (toast border/icon) are intentionally
+    left as-is — out of scope for this ticket's five neutral tokens.
+  - Deliberately **not** touched: the long tail of one-off, page-level inline
+    styling (`calendar/EventDetailsPanel`, `calendar/MemberSearchInput`,
+    `financials/taxes`, `financials/sellable-items`, `professional-services`,
+    `cordel/feature-flags`, plus 10+ other pages found to have 3+ repeated
+    hardcoded border/background occurrences) — these are already partially
+    wired from stage 2 and are not "shared components" per the ticket's own
+    scoping instruction (§17: "Do not attempt to rewrite every visual
+    component in the platform as part of this ticket. Focus on standard/shared
+    components"). Tracked as follow-up cleanup, not part of this stage.
+  - No data-model, API, or migration change — pure CSS-variable consumption
+    in existing component styles. Stages 4–5 remain (Member Web + Pay theming
+    parity — `apps/member`'s `ThemeProvider` doesn't yet emit these tokens at
+    all; tests/docs for the full semantic system).
 - **#492 (done)**: Add Explicit Save / Cancel Workflow to Theme Editor with
   Live Preview — per the issue thread's scoping answers, consolidated Base
   Themes (`[locale]/system/themes/`) and Customer Themes (`[locale]/themes/`)
