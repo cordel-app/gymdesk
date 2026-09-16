@@ -28,8 +28,8 @@ export function DataTable<T>({
   columns, rows, rowKey, loading, loadingText, emptyText,
   renderExpanded, expandedRowKeys, onToggleExpand,
 }: DataTableProps<T>) {
-  if (loading) return <p style={{ color: '#666' }}>{loadingText}</p>;
-  if (rows.length === 0) return <p style={{ color: '#666' }}>{emptyText}</p>;
+  if (loading) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{loadingText}</p>;
+  if (rows.length === 0) return <p style={{ color: 'var(--gd-text-muted, #6b7280)' }}>{emptyText}</p>;
 
   const expandable = !!renderExpanded;
   const totalCols = columns.length + (expandable ? 1 : 0);
@@ -37,7 +37,7 @@ export function DataTable<T>({
   return (
     <table style={tableStyle}>
       <thead>
-        <tr style={{ background: '#f0f0f0', textAlign: 'left' }}>
+        <tr style={{ background: 'var(--gd-app-bg, #f0f0f0)', textAlign: 'left' }}>
           {expandable && <th style={{ ...th, width: 44 }} aria-hidden />}
           {columns.map((col, i) => (
             <th key={i} style={col.width !== undefined ? { ...th, width: col.width } : th}>{col.header}</th>
@@ -50,7 +50,7 @@ export function DataTable<T>({
           const isExpanded = expandable && !!expandedRowKeys?.has(key);
           return (
             <React.Fragment key={key}>
-              <tr style={{ borderTop: '1px solid #eee' }}>
+              <tr style={{ borderTop: '1px solid var(--gd-border, #e5e7eb)' }}>
                 {expandable && (
                   <td style={{ ...td, textAlign: 'center' }}>
                     <button
@@ -80,8 +80,8 @@ export function DataTable<T>({
   );
 }
 
-const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' };
+const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: 'var(--gd-card-bg, #ffffff)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' };
 const th: React.CSSProperties = { padding: '12px 16px', fontWeight: 600, fontSize: 15 };
 const td: React.CSSProperties = { padding: '12px 16px', fontSize: 15 };
-const chevronStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: '#888', fontSize: 12, padding: 4, lineHeight: 1 };
-const expandedCell: React.CSSProperties = { padding: 0, background: '#fafafc', borderTop: '1px solid #eee' };
+const chevronStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gd-text-muted, #6b7280)', fontSize: 12, padding: 4, lineHeight: 1 };
+const expandedCell: React.CSSProperties = { padding: 0, background: 'var(--gd-app-bg, #f5f5f5)', borderTop: '1px solid var(--gd-border, #e5e7eb)' };

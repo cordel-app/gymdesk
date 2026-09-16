@@ -46,7 +46,7 @@ export function MultiSelectFilter({ label, options, selected, onChange }: MultiS
       {open && (
         <div style={panelStyle}>
           {options.length === 0 ? (
-            <div style={{ padding: '8px 12px', fontSize: 13, color: '#888' }}>—</div>
+            <div style={{ padding: '8px 12px', fontSize: 13, color: 'var(--gd-text-muted, #6b7280)' }}>—</div>
           ) : (
             options.map((opt) => (
               <label key={opt.value} style={optionRowStyle}>
@@ -74,9 +74,9 @@ export function MultiSelectFilter({ label, options, selected, onChange }: MultiS
 const triggerStyle = (active: boolean): React.CSSProperties => ({
   display: 'flex', alignItems: 'center', gap: 4,
   padding: '8px 12px', borderRadius: 6,
-  border: `1px solid ${active ? 'var(--brand, #6c63ff)' : '#ccc'}`,
-  background: '#fff', fontSize: 14, cursor: 'pointer',
-  color: active ? 'var(--brand, #6c63ff)' : '#333',
+  border: `1px solid ${active ? 'var(--brand, #6c63ff)' : 'var(--gd-input-border, #d1d5db)'}`,
+  background: 'var(--gd-input-bg, #ffffff)', fontSize: 14, cursor: 'pointer',
+  color: active ? 'var(--brand, #6c63ff)' : 'var(--gd-text-secondary, #374151)',
 });
 
 const countBadgeStyle: React.CSSProperties = {
@@ -86,7 +86,7 @@ const countBadgeStyle: React.CSSProperties = {
 
 const panelStyle: React.CSSProperties = {
   position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 20,
-  background: '#fff', border: '1px solid #ddd', borderRadius: 8,
+  background: 'var(--gd-dropdown-bg, #ffffff)', border: '1px solid var(--gd-border, #e5e7eb)', borderRadius: 8,
   boxShadow: '0 4px 16px rgba(0,0,0,0.12)', padding: 6, minWidth: 200,
   maxHeight: 280, overflowY: 'auto',
 };
@@ -98,6 +98,6 @@ const optionRowStyle: React.CSSProperties = {
 
 const clearRowStyle: React.CSSProperties = {
   display: 'block', width: '100%', textAlign: 'left', marginTop: 4,
-  padding: '7px 8px', borderRadius: 6, border: 'none', borderTop: '1px solid #eee',
+  padding: '7px 8px', borderRadius: 6, border: 'none', borderTop: '1px solid var(--gd-border, #e5e7eb)',
   background: 'none', color: '#c0392b', fontSize: 13, cursor: 'pointer',
 };
