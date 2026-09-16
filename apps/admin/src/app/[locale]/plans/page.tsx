@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { AssignPlanModal } from './AssignPlanModal';
+import { PlanDetailModal } from './PlanDetailModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ interface Plan {
   member_limit: '1' | '2' | 'family';
   current_price: string | null;
   member_count: number;
+  promotion_count: number;
   billing_policy: BillingPolicy | null;
   allowances: Allowance[];
   centers: Center[];
@@ -177,6 +179,9 @@ export default function PlansPage() {
   // Assign Plan to Member(s) (#376)
   const [assigningPlan, setAssigningPlan] = useState<Plan | null>(null);
 
+  // Details modal (#512)
+  const [detailFor, setDetailFor] = useState<Plan | null>(null);
+
   // Price sub-form (inline, per plan)
   const [priceForm, setPriceForm] = useState({ price: '', valid_from: '', valid_to: '' });
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
@@ -259,10 +264,6 @@ export default function PlansPage() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }
-
-  function showDetails(id: number) {
-    setExpanded((prev) => new Set([...prev, id]));
   }
 
   // ─── Inline edit ────────────────────────────────────────────────────────────
@@ -706,7 +707,7 @@ export default function PlansPage() {
               : '—';
 
             const menuItems: ContextMenuItem[] = [
-              { label: t('plans.details'), onClick: () => showDetails(plan.id) },
+              { label: t('plans.details'), onClick: () => setDetailFor(plan) },
               { label: t('plans.edit'), onClick: () => openInlineEdit(plan) },
               { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan) },
               { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan) },
@@ -1218,6 +1219,11 @@ export default function PlansPage() {
             load();
           }}
         />
+      )}
+
+      {/* Details modal (#512) — read-only, independent from the row's expand/collapse state */}
+      {detailFor && (
+        <PlanDetailModal plan={detailFor} onClose={() => setDetailFor(null)} />
       )}
     </div>
   );

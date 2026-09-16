@@ -682,7 +682,18 @@
     "label_current_price": "Preu actual",
     "tax_rate_default": "Per defecte del gimnàs",
     "tax_behavior_inclusive": "Impost inclòs en el preu",
-    "tax_behavior_exclusive": "Impost afegit al preu"
+    "tax_behavior_exclusive": "Impost afegit al preu",
+    "details_unknown": "—",
+    "details_summary_promotions": "Promocions",
+    "details_summary_pricing": "Preu",
+    "details_summary_benefits": "Beneficis",
+    "details_summary_duration": "Durada",
+    "details_summary_billing": "Facturació",
+    "details_summary_enrollment": "Inscripció",
+    "details_duration": "Durada",
+    "details_billing_frequency": "Freqüència de facturació",
+    "details_benefits": "Beneficis",
+    "details_promotions": "Promocions"
   },
   "prices": {
     "title": "Preus",

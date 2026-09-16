@@ -92,6 +92,21 @@ async function createGymCharge(gymId: string): Promise<number> {
   return insertId;
 }
 
+// #512: creates a promotion and links it to a plan via promotion_membership_plans,
+// so enrichPlan()'s promotion_count can be exercised.
+async function createPromoTargetingPlan(gymId: string, planId: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status)
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active')`,
+    [gymId, `Plan Detail Promo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`],
+  );
+  await db.query(
+    'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+    [gymId, insertId, planId],
+  );
+  return insertId;
+}
+
 async function addPlanChargeBenefit(
   gymId: string,
   planId: number,
@@ -283,6 +298,23 @@ describe('GET /membership-plans', () => {
     expect(typeof plan.member_count).toBe('number');
     expect(plan).toHaveProperty('price_history');
     expect(Array.isArray(plan.price_history)).toBe(true);
+  });
+
+  it('enriched response includes promotion_count reflecting targeting promotions', async () => {
+    const untouched = await request
+      .get('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(untouched.body.find((p: any) => p.id === planId).promotion_count).toBe(0);
+
+    await createPromoTargetingPlan(gymId, planId);
+    await createPromoTargetingPlan(gymId, planId);
+
+    const res = await request
+      .get('/membership-plans')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.body.find((p: any) => p.id === planId).promotion_count).toBe(2);
   });
 });
 
