@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { defaultTokens } from '../domain/themeTokens';
 import { cleanupTestGyms, createTestGym, request } from './helpers';
 
 afterAll(async () => {
@@ -104,9 +105,48 @@ describe('GET /payment-page/token/:token', () => {
     expect(res.body.billingInterval).toBe('1 month');
     expect(res.body.logoUrl).toBeNull();
     expect(res.body.logoContainsGymName).toBe(false);
+    expect(res.body.themeColors).toBeNull();
     expect(res.body).not.toHaveProperty('id');
     expect(res.body).not.toHaveProperty('gym_id');
     expect(res.body).not.toHaveProperty('member_id');
+  });
+
+  it('includes themeColors when the gym has a theme with color tokens (#489 stage 4)', async () => {
+    const tokens = defaultTokens();
+    tokens.colors.pageBackground = '#111111';
+    tokens.colors.primaryButton = '#222222';
+    await db.query(
+      `INSERT INTO themes (id, gym_id, name, status, tokens, created_at)
+       VALUES (UUID(), NULL, 'Payment Colors Theme', 'active', ?, UTC_TIMESTAMP())`,
+      [JSON.stringify(tokens)],
+    );
+    const { rows: themeRows } = await db.query<{ id: string }>(
+      "SELECT id FROM themes WHERE gym_id IS NULL AND name = 'Payment Colors Theme' LIMIT 1",
+    );
+    const themeId = themeRows[0].id;
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [themeId, gymId]);
+
+    try {
+      const pageToken = crypto.randomUUID();
+      await insertPendingRequest({
+        gymId, userMembershipId, memberId, chargeTypeId,
+        pageToken, providerRef: 'pay_monei_colors',
+      });
+
+      const res = await request.get(`/payment-page/token/${pageToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.themeColors).toMatchObject({
+        pageBackground: '#111111',
+        primaryButton: '#222222',
+        cardBackground: tokens.colors.cardBackground,
+        textColor: tokens.colors.textColor,
+      });
+      // Internal-only token fields (typography, advanced) must not leak.
+      expect(res.body.themeColors).not.toHaveProperty('sidebarBackground');
+    } finally {
+      await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+      await db.query('DELETE FROM themes WHERE id = ?', [themeId]);
+    }
   });
 
   it('includes logoUrl and logoContainsGymName when the gym has a theme with a logo (#488)', async () => {
@@ -131,6 +171,7 @@ describe('GET /payment-page/token/:token', () => {
       expect(res.status).toBe(200);
       expect(res.body.logoUrl).toContain(`/themes/${themeId}/logo`);
       expect(res.body.logoContainsGymName).toBe(true);
+      expect(res.body.themeColors).toBeNull();
     } finally {
       await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
       await db.query('DELETE FROM themes WHERE id = ?', [themeId]);

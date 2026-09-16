@@ -1,11 +1,15 @@
 :root {
   --bg: #f4f4f5;
   --card: #ffffff;
+  --card-border: #e4e4e7;
   --text: #18181b;
   --muted: #52525b;
   --accent: #4f46e5;
+  --accent-text: #ffffff;
   --danger: #b91c1c;
   --border: #e4e4e7;
+  --input-border: #e4e4e7;
+  --input-bg: #ffffff;
   --radius: 12px;
 }
 
@@ -30,7 +34,7 @@ body {
   width: 100%;
   max-width: 420px;
   background: var(--card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--card-border);
   border-radius: var(--radius);
   padding: 28px 24px;
 }
@@ -88,7 +92,8 @@ h1 {
 
 .card-input {
   min-height: 48px;
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   padding: 8px 10px;
   margin-bottom: 10px;
@@ -116,7 +121,7 @@ button {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;

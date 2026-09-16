@@ -35,6 +35,30 @@
     window.location.href = '/error.html';
   }
 
+  // #489 stage 4: paint the gym's theme colors onto the CSS variables
+  // style.css defines. Missing/legacy fields just leave that variable at its
+  // stylesheet default, so an old theme (or no theme) renders unchanged.
+  function applyThemeColors(colors) {
+    if (!colors) return;
+    var el = document.documentElement;
+    var map = {
+      '--bg': colors.pageBackground,
+      '--card': colors.cardBackground,
+      '--card-border': colors.cardBorder,
+      '--text': colors.textColor,
+      '--muted': colors.mutedTextColor,
+      '--accent': colors.primaryButton,
+      '--accent-text': colors.primaryButtonText,
+      '--danger': colors.statusError,
+      '--border': colors.separatorColor,
+      '--input-border': colors.inputBorderColor,
+      '--input-bg': colors.inputBackgroundColor,
+    };
+    for (var name in map) {
+      if (map[name]) el.style.setProperty(name, map[name]);
+    }
+  }
+
   async function loadToken() {
     var token = getQueryParam('token');
     if (!token) {
@@ -64,6 +88,8 @@
     paymentId = data.paymentId;
     okUrl = data.okUrl || '';
     koUrl = data.koUrl || '';
+
+    applyThemeColors(data.themeColors);
 
     if (data.logoUrl) {
       gymLogoEl.src = data.logoUrl;

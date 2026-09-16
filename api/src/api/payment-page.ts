@@ -32,7 +32,8 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
                 bp.recurring_billing_unit,
                 t.id AS theme_id, t.logo_mime AS theme_logo_mime,
                 t.logo_updated_at AS theme_logo_updated_at,
-                t.logo_contains_gym_name AS theme_logo_contains_gym_name
+                t.logo_contains_gym_name AS theme_logo_contains_gym_name,
+                t.tokens AS theme_tokens
          FROM payment_requests pr
          JOIN gyms g ON g.id = pr.gym_id
          JOIN members m ON m.id = pr.member_id
@@ -70,6 +71,27 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       ? `/themes/${row.theme_id}/logo${row.theme_logo_updated_at ? `?v=${encodeURIComponent(row.theme_logo_updated_at)}` : ''}`
       : null;
 
+    // #489 stage 4: only the color tokens the checkout page actually renders
+    // with — not the full tokens blob (typography/advanced aren't used here).
+    const parsedTokens = row.theme_tokens
+      ? (typeof row.theme_tokens === 'string' ? JSON.parse(row.theme_tokens) : row.theme_tokens)
+      : null;
+    const themeColors = parsedTokens?.colors
+      ? {
+          pageBackground: parsedTokens.colors.pageBackground,
+          cardBackground: parsedTokens.colors.cardBackground,
+          cardBorder: parsedTokens.colors.cardBorder,
+          textColor: parsedTokens.colors.textColor,
+          mutedTextColor: parsedTokens.colors.mutedTextColor,
+          primaryButton: parsedTokens.colors.primaryButton,
+          primaryButtonText: parsedTokens.colors.primaryButtonText,
+          statusError: parsedTokens.colors.statusError,
+          separatorColor: parsedTokens.colors.separatorColor,
+          inputBorderColor: parsedTokens.colors.inputBorderColor,
+          inputBackgroundColor: parsedTokens.colors.inputBackgroundColor,
+        }
+      : null;
+
     res.json({
       paymentId: row.provider_ref,
       amount: Number(row.amount),
@@ -79,6 +101,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       billingInterval,
       logoUrl,
       logoContainsGymName: !!row.theme_logo_contains_gym_name,
+      themeColors,
       okUrl: process.env.PAYMENT_OK_URL ?? '',
       koUrl: process.env.PAYMENT_KO_URL ?? '',
     });
