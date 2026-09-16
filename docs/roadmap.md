@@ -719,6 +719,28 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   case-insensitive partial match, fragment match, leading-zero
   preservation, no control-letter/length requirement, no-match empty
   array, tenant isolation, combining with `q`, and the auth guard).
+- **#516 (done)**: Add NIF/NIE/Passport to Assigned Plans — extends #410/
+  #411's `GET /user-memberships` (already `JOIN`s `members AS m`) rather
+  than introducing a duplicate field: `LIST_SELECT` adds
+  `m.nif_nie_passport AS member_nif_nie_passport`, and the list endpoint
+  gains a `nif_nie_passport` query param — trimmed, matched via
+  `m.nif_nie_passport LIKE '%term%'` in the filter's inner `WHERE`
+  (unlike `lifecycle_status`, this doesn't need the outer derived-table
+  indirection since it's a plain joined column, not a `CASE` alias) —
+  mirroring #515's `members.ts` filter verbatim: no document validation
+  applied, leading zeros preserved, case-insensitive via MySQL 8's default
+  collation. No migration: reuses the `members.nif_nie_passport` column
+  from #513. Admin `financials/assigned-plans` page: the Member column
+  now shows the related Member's `NIF/NIE/Passport` as a secondary line
+  under the name (`—` when absent), and a new text filter input added to
+  the existing filter bar (`nif_nie_passport` param, wired through
+  `load()`/`hasFilters`/`clearFilters` alongside the other filters); new
+  `label_document`/`filter_document` i18n keys in en/es/ca reusing the
+  existing "NIF/NIE/Passport" wording. `user-memberships.test.ts` gains a
+  6-test `nif_nie_passport filter (#516)` block (case-insensitive partial
+  match, fragment match, absent-filter passthrough, no-match empty array,
+  combining with `member_id`, and the joined field appearing in the
+  response).
 
 ## Decisions
 

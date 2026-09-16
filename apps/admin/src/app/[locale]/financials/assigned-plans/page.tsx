@@ -14,6 +14,7 @@ type LifecycleStatus = 'pending' | 'active' | 'paused' | 'expired' | 'cancelled'
 interface AssignedPlan {
   id: number;
   member_name: string;
+  member_nif_nie_passport: string | null;
   plan_name: string | null;
   starts_at: string;
   ends_at: string | null;
@@ -132,6 +133,7 @@ export default function AssignedPlansPage() {
   const [memberName, setMemberName] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [documentFilter, setDocumentFilter] = useState('');
 
   const load = useCallback(async () => {
     if (!activeGymId) return;
@@ -143,6 +145,7 @@ export default function AssignedPlansPage() {
       if (memberId) params.set('member_id', String(memberId));
       if (startDate) params.set('start_date', startDate);
       if (endDate) params.set('end_date', endDate);
+      if (documentFilter.trim()) params.set('nif_nie_passport', documentFilter.trim());
       const qs = params.toString();
       const data = await apiFetch<AssignedPlan[]>(`/user-memberships${qs ? `?${qs}` : ''}`);
       setRows(data);
@@ -152,11 +155,11 @@ export default function AssignedPlansPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGymId, statusFilter, memberId, startDate, endDate]);
+  }, [activeGymId, statusFilter, memberId, startDate, endDate, documentFilter]);
 
   useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
 
-  const hasFilters = statusFilter.length > 0 || !!memberId || !!startDate || !!endDate;
+  const hasFilters = statusFilter.length > 0 || !!memberId || !!startDate || !!endDate || !!documentFilter;
 
   function clearFilters() {
     setStatusFilter([]);
@@ -164,6 +167,7 @@ export default function AssignedPlansPage() {
     setMemberName('');
     setStartDate('');
     setEndDate('');
+    setDocumentFilter('');
   }
 
   return (
@@ -216,6 +220,19 @@ export default function AssignedPlansPage() {
             style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
           />
         </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
+            {t('assigned_plans_page.filter_document')}
+          </label>
+          <input
+            type="search"
+            value={documentFilter}
+            onChange={(e) => setDocumentFilter(e.target.value)}
+            placeholder={t('assigned_plans_page.filter_document')}
+            aria-label={t('assigned_plans_page.filter_document')}
+            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, minWidth: 160 }}
+          />
+        </div>
         {hasFilters && (
           <button
             onClick={clearFilters}
@@ -250,7 +267,12 @@ export default function AssignedPlansPage() {
             )}
             {rows.map((row) => (
               <tr key={row.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name}</td>
+                <td style={{ padding: '8px 12px', fontWeight: 500 }}>
+                  {row.member_name}
+                  <div style={{ fontWeight: 400, fontSize: 12, color: '#6b7280' }}>
+                    {t('assigned_plans_page.label_document')}: {row.member_nif_nie_passport || '—'}
+                  </div>
+                </td>
                 <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
                 <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.starts_at)}</td>
                 <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
