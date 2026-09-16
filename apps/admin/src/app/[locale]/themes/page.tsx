@@ -57,6 +57,11 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
     groupKey: 'group_application',
     fields: [
       { key: 'pageBackground',  labelKey: 'label_page_bg' },
+    ],
+  },
+  {
+    groupKey: 'group_cards',
+    fields: [
       { key: 'cardBackground',  labelKey: 'label_card_bg' },
       { key: 'cardBorder',      labelKey: 'label_card_border' },
     ],
@@ -133,11 +138,17 @@ const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors
       { key: 'linkHoverColor', labelKey: 'label_link_hover_color' },
     ],
   },
+  {
+    // No dedicated colors of its own — holds only the table-density attributes
+    // formerly under the standalone "Advanced" section (#489 stage 2).
+    groupKey: 'group_tables',
+    fields: [],
+  },
 ];
 
-type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments' | 'advanced';
-// Assignments first, then Branding → Colors → Typography → Advanced
-const ALL_SECTIONS: SectionKey[] = ['assignments', 'branding', 'colors', 'typography', 'advanced'];
+type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments';
+// Assignments first, then Branding → Colors → Typography
+const ALL_SECTIONS: SectionKey[] = ['assignments', 'branding', 'colors', 'typography'];
 const CENTERS_INITIAL_LIMIT = 10;
 
 const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
@@ -539,7 +550,7 @@ export default function GymThemesPage() {
     if (expandedId !== theme.id) return null;
     const isBase = theme.is_base;
     const advanced = editForm.tokens.advanced ?? {};
-    const sections: SectionKey[] = isBase ? ['assignments', 'advanced'] : ALL_SECTIONS;
+    const sections: SectionKey[] = isBase ? ['assignments', 'colors'] : ALL_SECTIONS;
 
     return (
       <div style={{ padding: '0 24px 20px', borderTop: '1px solid #eee' }}>
@@ -622,6 +633,16 @@ export default function GymThemesPage() {
                       />
                     </div>
                   )}
+                  <ThemeAdvancedSection
+                    group={groupKey}
+                    advanced={advanced}
+                    onChange={(next) => {
+                      const tokens = { ...editForm.tokens, advanced: next };
+                      setEditForm({ ...editForm, tokens });
+                      if (!isBase) scheduleTokenSave(tokens);
+                    }}
+                    namespace="gym_themes"
+                  />
                 </div>
               ))}
               {tokenSaving && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
@@ -666,21 +687,6 @@ export default function GymThemesPage() {
                   );
                 })}
               </div>
-              {tokenSaving && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
-            </div>
-          ))}
-
-          {renderSection(t('section_advanced'), 'advanced', (
-            <div>
-              <ThemeAdvancedSection
-                advanced={advanced}
-                onChange={(next) => {
-                  const tokens = { ...editForm.tokens, advanced: next };
-                  setEditForm({ ...editForm, tokens });
-                  if (!isBase) scheduleTokenSave(tokens);
-                }}
-                namespace="gym_themes"
-              />
               {tokenSaving && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
             </div>
           ))}

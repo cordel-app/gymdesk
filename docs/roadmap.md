@@ -470,7 +470,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   step was dropped from this stage since the agreed plan now deletes the
   Advanced section outright in stage 2 rather than keeping it wired — that
   work would have been thrown away immediately after.
-- **#489 stage 2 (in progress — new semantic tokens)**: added the five new
+- **#489 stage 2 (done — new semantic tokens + Advanced section retired)**: added the five new
   `colors.*` fields from the ticket to the shared `themeTokens.ts`
   (`secondaryTextColor`, `mutedTextColor`, `separatorColor`,
   `inputBorderColor`, `inputBackgroundColor`) and to the Admin frontend's
@@ -496,15 +496,36 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   both editors now deep-merges `colors` with `DEFAULT_TOKENS.colors` so an
   old theme's color pickers show sensible values (and get migrated to the
   full field set on next save) instead of rendering blank/black. New i18n
-  keys added to `themes`/`gym_themes` in en/es/ca. **Deleting the Advanced
-  section by redistributing its ~50 settings into per-component sections
-  (header, sidebar, cards, global, etc., per the issue thread's answer) is
-  deliberately left for a follow-up**: unlike the additive work above, that
-  redistribution has no existing agreed per-attribute mapping (the thread
-  only gave example section names, not a full mapping of the 12
-  `ADVANCED_ATTRIBUTES` groups), so guessing one here risked an
-  unreviewable diff; it's tracked as the remainder of stage 2. Stages 3–5
-  remain, in addition to that remainder.
+  keys added to `themes`/`gym_themes` in en/es/ca.
+
+  **Remainder of stage 2 (this PR)**: retired the standalone "Advanced"
+  section per the issue thread's answer ("delete the advanced and add every
+  setting into each appropriate section: header, calendar, side, cards,
+  global, etc"). Each of the ~52 `ADVANCED_ATTRIBUTES` entries
+  (`apps/admin/src/lib/themeTokens.ts`) now carries one of the same `group`
+  keys the standard color groups use, instead of its own `adv_group_*` key:
+  Header- and Sidebar-specific attributes (e.g. `headerHeight`,
+  `sidebarWidth`) moved into **Header**/**Sidebar**; button/input/status
+  attributes (e.g. `primaryBtnHoverBg`, `inputFocusBorderColor`,
+  `successBg`) joined the existing **Buttons**/**Inputs**/**Status** color
+  groups; dropdown-shape attributes joined **Navigation**. Two groups had no
+  existing color-group home: a new **Cards** group (which also absorbs the
+  existing `cardBackground`/`cardBorder` colors, previously miscategorized
+  under Application) holds `cardBorderRadius`/`cardShadow`, and a new
+  colorless **Tables** group holds the five table-density attributes.
+  Everything else with no single-component owner (layout, spacing, global
+  shape/shadow/overlay/animation settings) joined **Application**.
+  `ThemeAdvancedSection` (`apps/admin/src/components/ThemeAdvancedSection.tsx`)
+  now renders one group's attributes at a time via a required `group` prop,
+  called from inside each `COLOR_GROUPS` iteration in both Admin theme
+  editor pages right after that group's color pickers, instead of once for
+  every group inside a separate collapsible section — so a component's
+  colors and its fine-grained attributes now live together. No data-model
+  change: `advanced` stays the same free-form JSON map, only which UI
+  section renders each key changed. Removed the now-unused `section_advanced`
+  and 12 `adv_group_*` i18n keys from `themes`/`gym_themes` in en/es/ca.
+  Stages 3–5 remain (wiring shared components to consume these attributes,
+  Member Web + Pay theming parity, tests/docs).
 
 ## Decisions
 
