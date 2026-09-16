@@ -561,6 +561,50 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
     in existing component styles. Stages 4–5 remain (Member Web + Pay theming
     parity — `apps/member`'s `ThemeProvider` doesn't yet emit these tokens at
     all; tests/docs for the full semantic system).
+- **#489 stage 4 (done — Member Web + Pay theming parity)**: per the issue
+  thread's answer ("Yes, changes in theme should impact members and pay
+  applications"), extended the full `--gd-*` token set to the other two
+  theme-consuming apps.
+  - **Member Web**: `apps/member`'s `ThemeProvider` was a hand-maintained
+    subset of Admin's — it only ever set ~10 of the ~30 `--gd-*` variables
+    (no `--gd-card-bg`, `--gd-card-border`, `--gd-text-secondary`,
+    `--gd-text-muted`, `--gd-border`, `--gd-input-*`, `--gd-dropdown-*`,
+    `--gd-primary/secondary-btn*`, `--gd-status-*`, `--gd-link*`), so
+    components that already referenced those names (`GymSwitcher.tsx`'s
+    `--gd-card-bg`/`--gd-card-border`) were silently stuck on their hardcoded
+    fallback regardless of theme. New `apps/member/src/lib/themeTokens.ts`
+    mirrors `apps/admin/src/lib/themeTokens.ts`'s `ThemeTokens` shape,
+    `DEFAULT_TOKENS`, and `applyTokens()` byte-for-byte (member has no editor,
+    so the admin-only `tokensEqual`/`getLiveTokens` draft helpers are
+    omitted); `ThemeProvider.tsx` now calls this full `applyTokens()` instead
+    of its old ~10-variable subset. Member Web has no center-level theme
+    override today (`/me/centers` doesn't return `theme_tokens`), so unlike
+    Admin's center-then-gym-then-default chain, this only resolves
+    gym-theme-then-default — that parity gap is unrelated to this ticket.
+  - **Pay**: the public `GET /payment-page/token/:token` endpoint
+    (`api/src/api/payment-page.ts`) previously returned only `logoUrl`/
+    `logoContainsGymName` from the gym's theme. It now also returns a new
+    `themeColors` field — a curated subset of `tokens.colors` (page/card
+    background, card border, primary/muted text, primary button + its text,
+    status error, separator, input border/background) picked to match what
+    `checkout.html` actually renders; `null` when the gym has no theme or the
+    theme predates tokens with a `colors` key. Deliberately not the full
+    tokens blob (typography/`advanced` aren't used on this page, and this is
+    an unauthenticated endpoint — no reason to widen it further than
+    display needs). `apps/payment/js/checkout.js` applies these via a new
+    `applyThemeColors()` that `setProperty`s the CSS variables
+    `apps/payment/css/style.css` already defines; `style.css` gained
+    `--card-border` (previously the same generic `--border` as the consent
+    box) and `--input-border`/`--input-bg`/`--accent-text` (previously a
+    hardcoded `#fff` button text color) so the Monei card-input container and
+    the card's own border can be themed independently of the page's generic
+    divider color, matching Admin/Member's existing
+    cardBorder/separatorColor/inputBorderColor/inputBackgroundColor
+    distinction. Every new variable keeps its current hardcoded value as the
+    CSS default, so an unthemed or legacy-theme checkout page renders
+    identically to before.
+  - No migration — `tokens` is an existing JSON column on `themes`; no schema
+    change. Stage 5 (tests + docs for the full semantic system) remains.
 - **#492 (done)**: Add Explicit Save / Cancel Workflow to Theme Editor with
   Live Preview — per the issue thread's scoping answers, consolidated Base
   Themes (`[locale]/system/themes/`) and Customer Themes (`[locale]/themes/`)
