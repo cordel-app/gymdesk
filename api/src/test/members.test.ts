@@ -370,6 +370,118 @@ describe('Members — search (#326)', () => {
   });
 });
 
+// ─── nif_nie_passport filter (#515) ──────────────────────────────────────────
+
+describe('Members — nif_nie_passport filter (#515)', () => {
+  let gymId: string;
+  let otherGymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Document Filter Test Gym');
+    await createTestMembership(gymId, 'admin');
+
+    await db.query(
+      `INSERT INTO members (gym_id, name, email, nif_nie_passport) VALUES
+       (?, 'Nia Fuentes', 'nia@example.com', '12345678Z'),
+       (?, 'Nora Estrada', 'nora@example.com', 'X1234567L'),
+       (?, 'Pablo Ibarra', 'pablo@example.com', 'AB0012345'),
+       (?, 'No Document', 'nodoc@example.com', NULL)`,
+      [gymId, gymId, gymId, gymId],
+    );
+
+    otherGymId = await createTestGym('Other Document Gym');
+    await db.query(
+      `INSERT INTO members (gym_id, name, email, nif_nie_passport) VALUES (?, 'Other Gym Member', 'other-doc@example.com', '12345678Z')`,
+      [otherGymId],
+    );
+  });
+
+  it('returns all members when the filter is absent', async () => {
+    const res = await request
+      .get('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('performs a partial, case-insensitive match', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=12345678z')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].nif_nie_passport).toBe('12345678Z');
+  });
+
+  it('matches a fragment of the document without requiring the full value', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=1234')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const names = res.body.map((m: any) => m.name);
+    expect(names).toContain('Nia Fuentes');
+    expect(names).toContain('Nora Estrada');
+  });
+
+  it('preserves leading zeros in the search term', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=0012')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].name).toBe('Pablo Ibarra');
+  });
+
+  it('does not require a valid NIF/NIE control letter or full length', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=X123')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.some((m: any) => m.name === 'Nora Estrada')).toBe(true);
+  });
+
+  it('returns empty array when no document matches', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=zzznomatch999')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('tenant isolation — does not return other gym members', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=12345678Z')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.every((m: any) => m.gym_id === gymId)).toBe(true);
+    expect(res.body.some((m: any) => m.email === 'other-doc@example.com')).toBe(false);
+  });
+
+  it('combines with other active filters', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=1234&q=Nia')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].name).toBe('Nia Fuentes');
+  });
+
+  it('unauthenticated request returns 401', async () => {
+    const res = await request
+      .get('/members?nif_nie_passport=1234')
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+});
+
 // ─── DELETE /members/:id — soft-delete and recycle-bin integration ────────────
 
 describe('DELETE /members/:id', () => {

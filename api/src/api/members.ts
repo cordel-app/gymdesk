@@ -56,6 +56,7 @@ membersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const centerId = req.query.centerId ? Number(req.query.centerId) : null;
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : null;
+  const nifNiePassportFilter = typeof req.query.nif_nie_passport === 'string' ? req.query.nif_nie_passport.trim() : null;
   const paymentStatusFilter = typeof req.query.payment_status === 'string' ? req.query.payment_status : null;
   const enrollmentStatusFilter = typeof req.query.enrollment_status === 'string' ? req.query.enrollment_status : null;
   const joins: string[] = [];
@@ -68,6 +69,12 @@ membersRouter.get('/', async (req, res) => {
   if (q) {
     where.push('(m.name LIKE ? OR m.email LIKE ?)');
     params.push(`%${q}%`, `%${q}%`);
+  }
+  // #515: partial, case-insensitive text search — never validated as a document,
+  // never converted to a number (preserves leading zeros / alphanumeric passports).
+  if (nifNiePassportFilter) {
+    where.push('m.nif_nie_passport LIKE ?');
+    params.push(`%${nifNiePassportFilter}%`);
   }
   // enrollment_status filter: applied as HAVING since it's a subquery alias
   const having: string[] = [];

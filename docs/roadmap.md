@@ -692,6 +692,33 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   valid NIF/NIE/Passport values, rejection of bad control letters and
   whitespace-only input with a structured error and no persisted row, and
   round-trip through GET.
+- **#515 (done)**: Display and Filter by NIF/NIE/Passport in Members —
+  builds on #513's `members.nif_nie_passport` column (no index added: the
+  filter is a leading-wildcard `LIKE '%term%'` contains-search, which a
+  B-tree index can't serve any better than a full scan, matching the
+  existing unindexed `q` name/email filter). `GET /members` gains a
+  `nif_nie_passport` query param — trimmed, matched via a plain
+  `LIKE '%...%'` against the column (MySQL 8's default
+  `utf8mb4_0900_ai_ci` collation is already case-insensitive, so no
+  `LOWER()` wrapping is needed, mirroring the existing `q` filter); no
+  document validation is applied to the search term, so incomplete or
+  invalid fragments still match, and leading zeros are preserved (the
+  value is never parsed as a number). Unlike `q`, this filter isn't capped
+  at 20 rows — it behaves like the existing `payment_status`/
+  `enrollment_status` filters, returning the full matching set. Admin
+  Members page: new fixed "NIF/NIE/Passport" column (`—` when absent,
+  matching the existing empty-value convention) and a new text filter
+  input next to the name/email search box, wired through the same
+  `buildParams`/`syncUrl` URL-persistence pattern as the other filters;
+  reuses the existing `label_document` translation ("NIF/NIE/Passport")
+  for both the column header and the filter's placeholder/`aria-label`
+  rather than introducing a separate label. No new permission model —
+  `GET /members` was already gated behind `requireModuleAccess('MEMBERS')`
+  and already returned the raw field via `SELECT m.*`. `members.test.ts`
+  gains a 9-test `nif_nie_passport filter (#515)` block (absent filter,
+  case-insensitive partial match, fragment match, leading-zero
+  preservation, no control-letter/length requirement, no-match empty
+  array, tenant isolation, combining with `q`, and the auth guard).
 
 ## Decisions
 
