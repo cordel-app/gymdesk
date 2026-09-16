@@ -1,6 +1,7 @@
 // Tests for gym-themes.ts router (/system/themes — gym-admin customer theme CRUD)
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { defaultTokens as defaultTokensFixture } from '../domain/themeTokens';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -90,6 +91,61 @@ describe('PUT /system/themes/:id', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ logo_contains_gym_name: 'true' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── Semantic color tokens (#489 stage 5) ────────────────────────────────────
+
+describe('Semantic color tokens (#489)', () => {
+  it('persists and returns the stage-2 semantic color fields for a customer theme', async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        tokens: {
+          ...defaultTokensFixture(),
+          colors: {
+            ...defaultTokensFixture().colors,
+            secondaryTextColor: '#123456',
+            mutedTextColor: '#654321',
+            separatorColor: '#abcdef',
+            inputBorderColor: '#111111',
+            inputBackgroundColor: '#222222',
+          },
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.colors).toMatchObject({
+      secondaryTextColor: '#123456',
+      mutedTextColor: '#654321',
+      separatorColor: '#abcdef',
+      inputBorderColor: '#111111',
+      inputBackgroundColor: '#222222',
+    });
+
+    const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [customThemeId]);
+    expect(JSON.parse(rows[0].tokens).colors.separatorColor).toBe('#abcdef');
+  });
+
+  it('round-trips an `advanced` map unchanged on update (no duplication/loss of existing values)', async () => {
+    const advanced = { uiDensity: 'compact', inputFocusBorderColor: '#6c63ff', customLegacyKey: 'kept-as-is' };
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { ...defaultTokensFixture(), advanced } });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.advanced).toEqual(advanced);
+  });
+
+  it('rejects an invalid hex color on a customer theme (tenant-owned validation still applies)', async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { colors: { separatorColor: 'not-a-hex' } } });
     expect(res.status).toBe(400);
   });
 });

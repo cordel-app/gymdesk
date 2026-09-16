@@ -605,6 +605,31 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
     identically to before.
   - No migration — `tokens` is an existing JSON column on `themes`; no schema
     change. Stage 5 (tests + docs for the full semantic system) remains.
+- **#489 stage 5 (done — tests + docs; epic complete)**: closed out the
+  ticket's §20 testing checklist for the pieces this repo can actually
+  exercise. `api/src/domain/themeTokens.ts` (validation of the five stage-2
+  semantic fields, partial/legacy tokens shapes) already had unit coverage
+  from stages 1–2. This stage adds HTTP-level integration coverage in
+  `api/src/test/themes.test.ts` (Base Themes) and
+  `api/src/test/gym-themes.test.ts` (Customer Themes): the new
+  `secondaryTextColor`/`mutedTextColor`/`separatorColor`/
+  `inputBorderColor`/`inputBackgroundColor` fields persist and round-trip
+  through POST/PUT/GET; `separatorColor` and `headerSeparatorColor` persist
+  as independent values (§7); an existing `tokens.advanced` map round-trips
+  byte-for-byte through an update that doesn't touch it, confirming the
+  data layer neither duplicates nor drops promoted/legacy Advanced values;
+  and a legacy/partial `tokens.colors` shape (missing the newer fields)
+  still validates, persists and reads back without error, matching how a
+  pre-stage-2 Theme actually looks in the database (§19's migration
+  requirement — no backfill needed since the API never required
+  completeness). No frontend test harness exists in this repo to
+  automate Admin/Member Web/Pay's *visual* consumption of these tokens
+  (consistent with prior UI-only PRs in this series, e.g. #526/#528/#529);
+  that verification remains manual, as called out in each stage's PR test
+  plan. Docs were already kept current stage-by-stage (this roadmap entry
+  and `docs/architecture.md`'s Theming section); no further doc changes were
+  needed beyond this entry. All five stages of the staged plan agreed on the
+  issue thread are now merged — closes #489.
 - **#492 (done)**: Add Explicit Save / Cancel Workflow to Theme Editor with
   Live Preview — per the issue thread's scoping answers, consolidated Base
   Themes (`[locale]/system/themes/`) and Customer Themes (`[locale]/themes/`)
