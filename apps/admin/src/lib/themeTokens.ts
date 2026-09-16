@@ -251,6 +251,25 @@ export const FONT_STACKS: { label: string; value: string }[] = [
   { label: 'Trebuchet',      value: '"Trebuchet MS", sans-serif' },
 ];
 
+// Draft/live-preview support for the Theme editors (#492): compares a draft
+// against the last-persisted tokens to drive the Save/Cancel dirty state.
+export function tokensEqual(a: ThemeTokens, b: ThemeTokens): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+// The tokens actually painting the current app chrome right now — same
+// resolution order as ThemeProvider (center theme > gym theme > defaults).
+// Used to restore the real CSS variables when a Theme editor's live preview
+// is cancelled or finishes, regardless of which theme was being edited.
+export function getLiveTokens(
+  activeGymThemeTokens: ThemeTokens | null | undefined,
+  centers: { id: number; theme_tokens: Record<string, any> | null }[],
+  activeCenterId: number | null,
+): ThemeTokens {
+  const activeCenter = centers.find((c) => c.id === (activeCenterId ?? (centers.length === 1 ? centers[0].id : null)));
+  return ((activeCenter?.theme_tokens ?? activeGymThemeTokens) ?? DEFAULT_TOKENS) as ThemeTokens;
+}
+
 export function applyTokens(tokens: ThemeTokens) {
   const el = document.documentElement;
   const c = tokens.colors;

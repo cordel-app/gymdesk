@@ -561,6 +561,38 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
     in existing component styles. Stages 4–5 remain (Member Web + Pay theming
     parity — `apps/member`'s `ThemeProvider` doesn't yet emit these tokens at
     all; tests/docs for the full semantic system).
+- **#492 (done)**: Add Explicit Save / Cancel Workflow to Theme Editor with
+  Live Preview — per the issue thread's scoping answers, consolidated Base
+  Themes (`[locale]/system/themes/`) and Customer Themes (`[locale]/themes/`)
+  onto one shared editor implementation (`apps/admin/src/components/
+  ThemeTokensEditor.tsx`: `COLOR_GROUPS`, `ThemeColorsEditor`,
+  `ThemeTypographyEditor`, replacing the byte-identical Colors/Typography
+  JSX each page had duplicated) rather than building a second, different
+  mechanism. Base Themes already had an explicit draft with Save/Cancel but
+  no live preview; Customer Themes' Colors/Typography/Advanced instead
+  auto-saved via a 600ms-debounced `PUT` per field change (`#188`) — both
+  are gone, replaced by: every field edits an in-memory draft only;
+  Colors/Typography/Advanced changes call `applyTokens()` directly against
+  the live app chrome for immediate feedback (per the thread's answer, no
+  sandboxed preview surface); a single Save persists the whole draft
+  (branding + `tokens`) in one request; Cancel discards the draft and
+  restores whatever tokens are actually live right now via the new
+  `getLiveTokens()`/`tokensEqual()` helpers in `lib/themeTokens.ts` (same
+  center-then-gym-then-default resolution `ThemeProvider` already uses),
+  independent of which theme was being edited. Per the thread's answer,
+  logo removal ("clear logo") is now deferred the same way: it only sets a
+  pending-removal flag on the draft, and the `DELETE /logo` call fires on
+  Save (previously an immediate delete on click, the one other
+  immediate-persistence gap on both pages). Save is disabled while the
+  draft matches the last-persisted state; both pages gained the same
+  `beforeunload` + confirm-discard-before-switching-theme guard already
+  used by Members/Training Plans. Fixed a latent bug found while unifying
+  the two pages: Customer Themes rendered Base Themes' color pickers as
+  interactive and wired to the same autosave path, but `gym-themes.ts`'s
+  `PUT` only matches `gym_id`-owned rows, so every edit 404'd silently —
+  those pickers are now `readOnly`, matching the existing "read-only" hint
+  text. No migration, no new endpoints — reuses the existing Theme update
+  API per the ticket.
 
 ## Decisions
 

@@ -7,6 +7,7 @@ import { useLocale } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal } from '@/components/CrudModal';
@@ -14,9 +15,9 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
-import { ThemeAdvancedSection } from '@/components/ThemeAdvancedSection';
+import { COLOR_GROUPS, ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { btnStyle, btnSmall } from '@/components/ui';
-import { DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
+import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,101 +47,6 @@ interface ThemeDetail extends Theme {
 
 const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 const EDITABLE_STATUSES = ['draft', 'active', 'inactive'] as const;
-const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
-
-const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors']; labelKey: string }[] }[] = [
-  {
-    groupKey: 'group_application',
-    fields: [
-      { key: 'pageBackground', labelKey: 'label_page_bg' },
-    ],
-  },
-  {
-    groupKey: 'group_cards',
-    fields: [
-      { key: 'cardBackground', labelKey: 'label_card_bg' },
-      { key: 'cardBorder', labelKey: 'label_card_border' },
-    ],
-  },
-  {
-    groupKey: 'group_text',
-    fields: [
-      { key: 'textColor', labelKey: 'label_text_color' },
-      { key: 'secondaryTextColor', labelKey: 'label_secondary_text_color' },
-      { key: 'mutedTextColor', labelKey: 'label_muted_text_color' },
-    ],
-  },
-  {
-    groupKey: 'group_separators',
-    fields: [
-      { key: 'separatorColor', labelKey: 'label_separator_color' },
-    ],
-  },
-  {
-    groupKey: 'group_inputs',
-    fields: [
-      { key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
-      { key: 'inputBorderColor', labelKey: 'label_input_border_color' },
-    ],
-  },
-  {
-    groupKey: 'group_header',
-    fields: [
-      { key: 'headerBackground', labelKey: 'label_header_bg' },
-      { key: 'headerText', labelKey: 'label_header_text' },
-      { key: 'headerSeparatorColor', labelKey: 'label_header_sep_color' },
-    ],
-  },
-  {
-    groupKey: 'group_sidebar',
-    fields: [
-      { key: 'sidebarBackground', labelKey: 'label_sidebar_bg' },
-      { key: 'sidebarText', labelKey: 'label_sidebar_text' },
-      { key: 'sidebarSelectedItemBackground', labelKey: 'label_sidebar_sel_bg' },
-      { key: 'sidebarSelectedItemText', labelKey: 'label_sidebar_sel_text' },
-      { key: 'sidebarHoverBackground', labelKey: 'label_sidebar_hover_bg' },
-    ],
-  },
-  {
-    groupKey: 'group_navigation',
-    fields: [
-      { key: 'dropdownBackground', labelKey: 'label_dropdown_bg' },
-      { key: 'dropdownText', labelKey: 'label_dropdown_text' },
-      { key: 'dropdownHoverBackground', labelKey: 'label_dropdown_hover_bg' },
-    ],
-  },
-  {
-    groupKey: 'group_buttons',
-    fields: [
-      { key: 'primaryButton', labelKey: 'label_primary_btn' },
-      { key: 'primaryButtonText', labelKey: 'label_primary_btn_text' },
-      { key: 'secondaryButton', labelKey: 'label_secondary_btn' },
-      { key: 'secondaryButtonText', labelKey: 'label_secondary_btn_text' },
-    ],
-  },
-  {
-    groupKey: 'group_status',
-    fields: [
-      { key: 'statusSuccess', labelKey: 'label_status_success' },
-      { key: 'statusWarning', labelKey: 'label_status_warning' },
-      { key: 'statusError', labelKey: 'label_status_error' },
-      { key: 'statusInfo', labelKey: 'label_status_info' },
-    ],
-  },
-  {
-    groupKey: 'group_links',
-    fields: [
-      { key: 'linkColor', labelKey: 'label_link_color' },
-      { key: 'linkHoverColor', labelKey: 'label_link_hover_color' },
-    ],
-  },
-  {
-    // No dedicated colors of its own — holds only the table-density attributes
-    // formerly under the standalone "Advanced" section (#489 stage 2).
-    groupKey: 'group_tables',
-    fields: [],
-  },
-];
 
 type SectionKey = 'general' | 'colors' | 'typography';
 
@@ -212,7 +118,8 @@ export default function ThemesPage() {
   const router = useRouter();
   const { getToken } = useAuth();
   const { apiFetch } = useApiClient();
-  const { isSuperadmin, loading: gymLoading } = useGym();
+  const { activeGym, isSuperadmin, loading: gymLoading } = useGym();
+  const { centers, activeCenterId } = useCenter();
   const { toast } = useToast();
 
   const [themes, setThemes] = useState<Theme[]>([]);
@@ -230,7 +137,12 @@ export default function ThemesPage() {
 
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
+  const [logoRemovePending, setLogoRemovePending] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  // Draft snapshot the current editForm is compared against for the dirty
+  // state (#492) — set when entering edit mode, cleared once Save succeeds.
+  const origFormRef = useRef<EditForm | null>(null);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   const [deleting, setDeleting] = useState<Theme | null>(null);
   const [detailsTheme, setDetailsTheme] = useState<ThemeDetail | null>(null);
@@ -277,61 +189,121 @@ export default function ThemesPage() {
     }
   }
 
-  async function handleLogoRemove(themeId: string) {
-    try {
-      await apiFetch(`/platform/themes/${themeId}/logo`, { method: 'DELETE' });
-      setEditLogoPreview(null);
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    }
+  // Deferred — the actual DELETE only fires on Save (#492), so editing the
+  // logo never mutates the persisted Theme until the user commits the draft.
+  function queueLogoRemove() {
+    setEditLogoFile(null);
+    setEditLogoPreview(null);
+    setLogoRemovePending(true);
   }
 
   function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setEditLogoFile(file);
+    setLogoRemovePending(false);
     const reader = new FileReader();
     reader.onload = (ev) => setEditLogoPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
   }
 
+  // ─── Draft / live preview (#492) ───────────────────────────────────────────
+
+  // The tokens actually painting the app chrome right now, independent of
+  // which theme (if any) is being edited — the restore point for Cancel.
+  function currentLiveTokens(): ThemeTokens {
+    return getLiveTokens(activeGym?.theme?.tokens as ThemeTokens | undefined, centers, activeCenterId);
+  }
+
+  function isDirty(): boolean {
+    if (editingId === null || !origFormRef.current) return false;
+    const orig = origFormRef.current;
+    return (
+      editForm.name !== orig.name ||
+      editForm.description !== orig.description ||
+      editForm.status !== orig.status ||
+      editForm.logoContainsGymName !== orig.logoContainsGymName ||
+      !tokensEqual(editForm.tokens, orig.tokens) ||
+      editLogoFile !== null ||
+      logoRemovePending
+    );
+  }
+
+  // Draft-only — never persists. Live preview is applied immediately so the
+  // user sees the effect without waiting for Save.
+  function updateTokens(next: ThemeTokens) {
+    setEditForm((prev) => ({ ...prev, tokens: next }));
+    applyTokens(next);
+  }
+
+  function guardUnsaved(action: () => void) {
+    if (isDirty()) setPendingAction(() => action);
+    else action();
+  }
+
+  useEffect(() => {
+    if (!isDirty()) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editForm, editLogoFile, logoRemovePending, editingId]);
+
   // ─── Expand / Edit ─────────────────────────────────────────────────────────
 
   function toggleExpand(id: string) {
     if (editingId === id) return;
-    setExpandedId((prev) => (prev === id ? null : id));
+    guardUnsaved(() => {
+      if (editingId !== null) { applyTokens(currentLiveTokens()); setEditingId(null); }
+      setExpandedId((prev) => (prev === id ? null : id));
+    });
   }
 
   function enterEdit(theme: Theme) {
-    setExpandedId(theme.id);
-    setEditingId(theme.id);
-    setEditForm(emptyEditForm(theme));
-    setEditError(null);
-    setEditLogoFile(null);
-    setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
-    setOpenSections(new Set(['general']));
+    guardUnsaved(() => {
+      setExpandedId(theme.id);
+      setEditingId(theme.id);
+      const form = emptyEditForm(theme);
+      setEditForm(form);
+      origFormRef.current = form;
+      setEditError(null);
+      setEditLogoFile(null);
+      setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
+      setLogoRemovePending(false);
+      setOpenSections(new Set(['general']));
+    });
   }
 
   function cancelEdit() {
+    applyTokens(currentLiveTokens());
+    const theme = themes.find((th) => th.id === editingId);
     if (editingId === NEW_ID) {
       setHasNewRow(false);
       setExpandedId(null);
+    } else if (theme) {
+      setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
     }
     setEditingId(null);
     setEditError(null);
+    setEditLogoFile(null);
+    setLogoRemovePending(false);
   }
 
   // ─── New Theme (temp row) ──────────────────────────────────────────────────
 
   function handleNew() {
     if (hasNewRow) return;
-    setHasNewRow(true);
-    setExpandedId(NEW_ID);
-    setEditingId(NEW_ID);
-    setEditForm(emptyEditForm());
-    setEditError(null);
-    setOpenSections(new Set(['general']));
+    guardUnsaved(() => {
+      setHasNewRow(true);
+      setExpandedId(NEW_ID);
+      setEditingId(NEW_ID);
+      const form = emptyEditForm();
+      setEditForm(form);
+      origFormRef.current = form;
+      setEditError(null);
+      setLogoRemovePending(false);
+      setOpenSections(new Set(['general']));
+    });
   }
 
   // ─── Save ──────────────────────────────────────────────────────────────────
@@ -365,8 +337,17 @@ export default function ThemesPage() {
             tokens: editForm.tokens,
           }),
         });
-        if (editLogoFile) await uploadLogo(id);
-        setEditingId(null);
+        if (editLogoFile) {
+          await uploadLogo(id);
+        } else if (logoRemovePending) {
+          await apiFetch(`/platform/themes/${id}/logo`, { method: 'DELETE' });
+        }
+        // Stay on the editor with a clean draft rather than collapsing back
+        // to the read-only view — the user may keep iterating (#492).
+        origFormRef.current = { ...editForm, name: editForm.name.trim(), description: editForm.description.trim() };
+        setEditForm(origFormRef.current);
+        setEditLogoFile(null);
+        setLogoRemovePending(false);
       }
       load();
     } catch (err: any) {
@@ -533,16 +514,7 @@ export default function ThemesPage() {
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" onClick={() => editFileInputRef.current?.click()} style={btnSmall('#444')}>{t('logo_upload')}</button>
                     {editLogoPreview && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditLogoFile(null);
-                          setEditLogoPreview(null);
-                          const theme = themes.find((th) => th.id === id);
-                          if (theme?.has_logo) handleLogoRemove(id);
-                        }}
-                        style={btnSmall('#c0392b')}
-                      >
+                      <button type="button" onClick={queueLogoRemove} style={btnSmall('#c0392b')}>
                         {t('logo_clear')}
                       </button>
                     )}
@@ -563,80 +535,21 @@ export default function ThemesPage() {
           ))}
 
           {!isNew && renderSection('colors', t('section_colors'), (
-            <div>
-              {COLOR_GROUPS.map(({ groupKey, fields }) => (
-                <div key={groupKey} style={{ marginBottom: 20 }}>
-                  <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
-                  {fields.map(({ key, labelKey }) => (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
-                      <input
-                        type="color"
-                        value={editForm.tokens.colors[key] as string}
-                        onChange={(e) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, colors: { ...prev.tokens.colors, [key]: e.target.value } } }))}
-                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                      />
-                    </div>
-                  ))}
-                  {groupKey === 'group_header' && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-                      <input
-                        type="number" min={0} max={20}
-                        value={editForm.tokens.colors.headerSeparatorHeight}
-                        onChange={(e) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, colors: { ...prev.tokens.colors, headerSeparatorHeight: Number(e.target.value) } } }))}
-                        style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-                      />
-                    </div>
-                  )}
-                  <ThemeAdvancedSection
-                    group={groupKey}
-                    advanced={editForm.tokens.advanced ?? {}}
-                    onChange={(next) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, advanced: next } }))}
-                    namespace="themes"
-                  />
-                </div>
-              ))}
-            </div>
+            <ThemeColorsEditor tokens={editForm.tokens} onChange={updateTokens} namespace="themes" t={t} />
           ))}
 
           {!isNew && renderSection('typography', t('section_typography'), (
-            <div>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('tab_typography')}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
-                {TYPO_LEVELS.map((lv) => {
-                  const typo = editForm.tokens.typography[lv];
-                  return (
-                    <>
-                      <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
-                      <select
-                        key={`${lv}-font`}
-                        value={typo.fontFamily}
-                        onChange={(e) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, typography: { ...prev.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } } }))}
-                        style={selectStyle}
-                      >
-                        {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                      </select>
-                      <input
-                        key={`${lv}-color`}
-                        type="color"
-                        value={typo.color}
-                        onChange={(e) => setEditForm((prev) => ({ ...prev, tokens: { ...prev.tokens, typography: { ...prev.tokens.typography, [lv]: { ...typo, color: e.target.value } } } }))}
-                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                      />
-                    </>
-                  );
-                })}
-              </div>
-            </div>
+            <ThemeTypographyEditor tokens={editForm.tokens} onChange={updateTokens} t={t} />
           ))}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end', borderTop: '1px solid #eee', paddingTop: 16 }}>
           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={() => handleSave(id)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+          <button
+            onClick={() => handleSave(id)}
+            disabled={editSaving || !isDirty()}
+            style={{ ...btnSmall('#6c63ff'), opacity: (editSaving || !isDirty()) ? 0.5 : 1, cursor: (editSaving || !isDirty()) ? 'not-allowed' : 'pointer' }}
+          >
             {editSaving ? t('saving') : t('save_changes')}
           </button>
         </div>
@@ -844,6 +757,20 @@ export default function ThemesPage() {
         cancelLabel={t('cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
+      />
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        message={t('unsaved_changes')}
+        confirmLabel={t('unsaved_discard')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          const action = pendingAction!;
+          setPendingAction(null);
+          cancelEdit();
+          action();
+        }}
+        onCancel={() => setPendingAction(null)}
       />
     </div>
   );

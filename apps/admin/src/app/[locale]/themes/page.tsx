@@ -14,9 +14,9 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { ThemeAdvancedSection } from '@/components/ThemeAdvancedSection';
+import { COLOR_GROUPS, ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { btnStyle, btnSmall } from '@/components/ui';
-import { DEFAULT_TOKENS, FONT_STACKS, applyTokens, type ThemeTokens } from '@/lib/themeTokens';
+import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
 interface Theme {
   id: string;
@@ -50,101 +50,6 @@ interface UnassignedCenter {
 }
 
 const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
-const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
-
-const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens['colors']; labelKey: string }[] }[] = [
-  {
-    groupKey: 'group_application',
-    fields: [
-      { key: 'pageBackground',  labelKey: 'label_page_bg' },
-    ],
-  },
-  {
-    groupKey: 'group_cards',
-    fields: [
-      { key: 'cardBackground',  labelKey: 'label_card_bg' },
-      { key: 'cardBorder',      labelKey: 'label_card_border' },
-    ],
-  },
-  {
-    groupKey: 'group_text',
-    fields: [
-      { key: 'textColor',          labelKey: 'label_text_color' },
-      { key: 'secondaryTextColor', labelKey: 'label_secondary_text_color' },
-      { key: 'mutedTextColor',     labelKey: 'label_muted_text_color' },
-    ],
-  },
-  {
-    groupKey: 'group_separators',
-    fields: [
-      { key: 'separatorColor', labelKey: 'label_separator_color' },
-    ],
-  },
-  {
-    groupKey: 'group_inputs',
-    fields: [
-      { key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
-      { key: 'inputBorderColor',     labelKey: 'label_input_border_color' },
-    ],
-  },
-  {
-    groupKey: 'group_header',
-    fields: [
-      { key: 'headerBackground',     labelKey: 'label_header_bg' },
-      { key: 'headerText',           labelKey: 'label_header_text' },
-      { key: 'headerSeparatorColor', labelKey: 'label_header_sep_color' },
-    ],
-  },
-  {
-    groupKey: 'group_sidebar',
-    fields: [
-      { key: 'sidebarBackground',             labelKey: 'label_sidebar_bg' },
-      { key: 'sidebarText',                   labelKey: 'label_sidebar_text' },
-      { key: 'sidebarSelectedItemBackground', labelKey: 'label_sidebar_sel_bg' },
-      { key: 'sidebarSelectedItemText',       labelKey: 'label_sidebar_sel_text' },
-      { key: 'sidebarHoverBackground',        labelKey: 'label_sidebar_hover_bg' },
-    ],
-  },
-  {
-    groupKey: 'group_navigation',
-    fields: [
-      { key: 'dropdownBackground',      labelKey: 'label_dropdown_bg' },
-      { key: 'dropdownText',            labelKey: 'label_dropdown_text' },
-      { key: 'dropdownHoverBackground', labelKey: 'label_dropdown_hover_bg' },
-    ],
-  },
-  {
-    groupKey: 'group_buttons',
-    fields: [
-      { key: 'primaryButton',       labelKey: 'label_primary_btn' },
-      { key: 'primaryButtonText',   labelKey: 'label_primary_btn_text' },
-      { key: 'secondaryButton',     labelKey: 'label_secondary_btn' },
-      { key: 'secondaryButtonText', labelKey: 'label_secondary_btn_text' },
-    ],
-  },
-  {
-    groupKey: 'group_status',
-    fields: [
-      { key: 'statusSuccess', labelKey: 'label_status_success' },
-      { key: 'statusWarning', labelKey: 'label_status_warning' },
-      { key: 'statusError',   labelKey: 'label_status_error' },
-      { key: 'statusInfo',    labelKey: 'label_status_info' },
-    ],
-  },
-  {
-    groupKey: 'group_links',
-    fields: [
-      { key: 'linkColor',      labelKey: 'label_link_color' },
-      { key: 'linkHoverColor', labelKey: 'label_link_hover_color' },
-    ],
-  },
-  {
-    // No dedicated colors of its own — holds only the table-density attributes
-    // formerly under the standalone "Advanced" section (#489 stage 2).
-    groupKey: 'group_tables',
-    fields: [],
-  },
-];
 
 type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments';
 // Assignments first, then Branding → Colors → Typography
@@ -173,13 +78,15 @@ export default function GymThemesPage() {
   const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['assignments']));
   const [editForm, setEditForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [tokenSaving, setTokenSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
+  const [logoRemovePending, setLogoRemovePending] = useState(false);
   const editFileInputRef = useRef<HTMLInputElement>(null);
-  const tokenSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const origTokensRef = useRef<ThemeTokens | null>(null);
+  // Draft snapshot the current editForm is compared against for the dirty
+  // state (#492) — set when a row is expanded for editing, cleared on Save.
+  const origFormRef = useRef<typeof emptyForm | null>(null);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   const [statusSaving, setStatusSaving] = useState<string | null>(null);
 
@@ -229,33 +136,29 @@ export default function GymThemesPage() {
     return `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`;
   }
 
-  function isExpandedThemeActive(): boolean {
-    if (!expandedId) return false;
-    const effectiveCenterId = activeCenterId ?? (centers.length === 1 ? centers[0].id : null);
-    const activeCenter = effectiveCenterId !== null ? centers.find((c) => c.id === effectiveCenterId) : null;
-    if (activeCenter?.theme_id) return activeCenter.theme_id === expandedId;
-    return expandedId === activeGym?.theme?.id;
-  }
-
   function openExpand(theme: Theme) {
-    if (expandedId === theme.id) { setExpandedId(null); return; }
-    setExpandedId(theme.id);
-    setOpenSections(new Set<SectionKey>(['assignments']));
-    // Merge with defaults so themes saved before #489 stage 2 (missing the newer
-    // semantic color fields) still populate every color picker with a sensible value.
-    const tokens: ThemeTokens = {
-      ...DEFAULT_TOKENS,
-      ...theme.tokens,
-      colors: { ...DEFAULT_TOKENS.colors, ...theme.tokens?.colors },
-    };
-    setEditForm({ name: theme.name, description: theme.description ?? '', logoContainsGymName: theme.logo_contains_gym_name, tokens });
-    origTokensRef.current = tokens;
-    setEditError(null);
-    setEditLogoFile(null);
-    setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
-    setAssignments(null);
-    setCentersSearch('');
-    setShowAllCenters(false);
+    guardUnsaved(() => {
+      if (expandedId === theme.id) { applyTokens(currentLiveTokens()); setExpandedId(null); return; }
+      setExpandedId(theme.id);
+      setOpenSections(new Set<SectionKey>(['assignments']));
+      // Merge with defaults so themes saved before #489 stage 2 (missing the newer
+      // semantic color fields) still populate every color picker with a sensible value.
+      const tokens: ThemeTokens = {
+        ...DEFAULT_TOKENS,
+        ...theme.tokens,
+        colors: { ...DEFAULT_TOKENS.colors, ...theme.tokens?.colors },
+      };
+      const form = { name: theme.name, description: theme.description ?? '', logoContainsGymName: theme.logo_contains_gym_name, tokens };
+      setEditForm(form);
+      origFormRef.current = form;
+      setEditError(null);
+      setEditLogoFile(null);
+      setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
+      setLogoRemovePending(false);
+      setAssignments(null);
+      setCentersSearch('');
+      setShowAllCenters(false);
+    });
   }
 
   function toggleSection(section: SectionKey) {
@@ -350,31 +253,33 @@ export default function GymThemesPage() {
     }
   }
 
-  function scheduleTokenSave(tokens: ThemeTokens) {
-    if (!expandedId) return;
-    // Apply immediately so the user sees changes without waiting for the save round-trip.
-    if (isExpandedThemeActive()) applyTokens(tokens);
-    if (tokenSaveTimer.current) clearTimeout(tokenSaveTimer.current);
-    const themeId = expandedId;
-    tokenSaveTimer.current = setTimeout(async () => {
-      setTokenSaving(true);
-      try {
-        await apiFetch(`/system/themes/${themeId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ tokens }),
-        });
-        origTokensRef.current = tokens;
-        await Promise.all([refreshGyms(), refreshCenters()]);
-      } catch (err: any) {
-        toast(err.message ?? t('error_generic'));
-        if (origTokensRef.current) applyTokens(origTokensRef.current);
-      } finally {
-        setTokenSaving(false);
-      }
-    }, 600);
+  // The tokens actually painting the app chrome right now, independent of
+  // which theme (if any) is being edited — the restore point for Cancel.
+  function currentLiveTokens(): ThemeTokens {
+    return getLiveTokens(activeGym?.theme?.tokens as ThemeTokens | undefined, centers, activeCenterId);
   }
 
-  async function handleBrandingSave(theme: Theme) {
+  function isDirty(): boolean {
+    if (!expandedId || !origFormRef.current) return false;
+    const orig = origFormRef.current;
+    return (
+      editForm.name !== orig.name ||
+      editForm.description !== orig.description ||
+      editForm.logoContainsGymName !== orig.logoContainsGymName ||
+      !tokensEqual(editForm.tokens, orig.tokens) ||
+      editLogoFile !== null ||
+      logoRemovePending
+    );
+  }
+
+  // Draft-only — never persists. Live preview is applied immediately so the
+  // user sees the effect without waiting for Save (#492).
+  function updateTokens(next: ThemeTokens) {
+    setEditForm((prev) => ({ ...prev, tokens: next }));
+    applyTokens(next);
+  }
+
+  async function handleSaveAll(theme: Theme) {
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
     setSaving(true);
     setEditError(null);
@@ -385,6 +290,7 @@ export default function GymThemesPage() {
           name: editForm.name.trim(),
           description: editForm.description.trim() || null,
           logo_contains_gym_name: editForm.logoContainsGymName,
+          tokens: editForm.tokens,
         }),
       });
       if (editLogoFile) {
@@ -398,8 +304,14 @@ export default function GymThemesPage() {
           const json = await res.json().catch(() => ({}));
           throw new Error(json.error ?? 'Logo upload failed');
         }
+      } else if (logoRemovePending) {
+        await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
       }
-      await Promise.all([load(), refreshGyms()]);
+      origFormRef.current = { ...editForm, name: editForm.name.trim(), description: editForm.description.trim() };
+      setEditForm(origFormRef.current);
+      setEditLogoFile(null);
+      setLogoRemovePending(false);
+      await Promise.all([load(), refreshGyms(), refreshCenters()]);
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
     } finally {
@@ -407,24 +319,39 @@ export default function GymThemesPage() {
     }
   }
 
-  async function handleLogoRemove(theme: Theme) {
-    try {
-      await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
-      setEditLogoPreview(null);
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    }
+  function handleCancelEdit() {
+    applyTokens(currentLiveTokens());
+    setExpandedId(null);
+  }
+
+  function queueLogoRemove() {
+    setEditLogoFile(null);
+    setEditLogoPreview(null);
+    setLogoRemovePending(true);
   }
 
   function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     setEditLogoFile(file);
+    setLogoRemovePending(false);
     const reader = new FileReader();
     reader.onload = (ev) => setEditLogoPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
   }
+
+  function guardUnsaved(action: () => void) {
+    if (isDirty()) setPendingAction(() => action);
+    else action();
+  }
+
+  useEffect(() => {
+    if (!isDirty()) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editForm, editLogoFile, logoRemovePending, expandedId]);
 
   function openClone(theme: Theme) {
     setCloning(theme);
@@ -461,11 +388,6 @@ export default function GymThemesPage() {
   }
 
   if (gymLoading || !isAdmin) return null;
-
-  const selectStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 12px', borderRadius: 6,
-    border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff',
-  };
 
   function renderSection(title: string, key: SectionKey, content: React.ReactNode) {
     const open = openSections.has(key);
@@ -549,8 +471,8 @@ export default function GymThemesPage() {
   function renderInlineEditor(theme: Theme) {
     if (expandedId !== theme.id) return null;
     const isBase = theme.is_base;
-    const advanced = editForm.tokens.advanced ?? {};
     const sections: SectionKey[] = isBase ? ['assignments', 'colors'] : ALL_SECTIONS;
+    const dirty = isDirty();
 
     return (
       <div style={{ padding: '0 24px 20px', borderTop: '1px solid #eee' }}>
@@ -577,7 +499,7 @@ export default function GymThemesPage() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => editFileInputRef.current?.click()} style={btnSmall('#444')}>{t('logo_upload')}</button>
                 {editLogoPreview && (
-                  <button type="button" onClick={() => { setEditLogoFile(null); setEditLogoPreview(null); if (theme.has_logo) handleLogoRemove(theme); }} style={btnSmall('#c0392b')}>{t('logo_clear')}</button>
+                  <button type="button" onClick={queueLogoRemove} style={btnSmall('#c0392b')}>{t('logo_clear')}</button>
                 )}
               </div>
               <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
@@ -589,112 +511,28 @@ export default function GymThemesPage() {
                 />
                 {t('logo_contains_gym_name')}
               </label>
-              <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-                <button onClick={() => handleBrandingSave(theme)} disabled={saving} style={btnSmall('#6c63ff')}>{saving ? t('saving') : t('save_changes')}</button>
-              </div>
             </div>
           ))}
 
           {sections.includes('colors') && renderSection(t('section_colors'), 'colors', (
-            <div>
-              {COLOR_GROUPS.map(({ groupKey, fields }) => (
-                <div key={groupKey} style={{ marginBottom: 20 }}>
-                  <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
-                  {fields.map(({ key, labelKey }) => (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey as any)}</span>
-                      <input
-                        type="color"
-                        value={editForm.tokens.colors[key] as string}
-                        onChange={(e) => {
-                          const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, [key]: e.target.value } };
-                          setEditForm({ ...editForm, tokens: next });
-                          scheduleTokenSave(next);
-                        }}
-                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                      />
-                    </div>
-                  ))}
-                  {groupKey === 'group_header' && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={20}
-                        value={editForm.tokens.colors.headerSeparatorHeight}
-                        onChange={(e) => {
-                          const next = { ...editForm.tokens, colors: { ...editForm.tokens.colors, headerSeparatorHeight: Number(e.target.value) } };
-                          setEditForm({ ...editForm, tokens: next });
-                          scheduleTokenSave(next);
-                        }}
-                        style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-                      />
-                    </div>
-                  )}
-                  <ThemeAdvancedSection
-                    group={groupKey}
-                    advanced={advanced}
-                    onChange={(next) => {
-                      const tokens = { ...editForm.tokens, advanced: next };
-                      setEditForm({ ...editForm, tokens });
-                      if (!isBase) scheduleTokenSave(tokens);
-                    }}
-                    namespace="gym_themes"
-                  />
-                </div>
-              ))}
-              {tokenSaving && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
-            </div>
+            <ThemeColorsEditor tokens={editForm.tokens} onChange={updateTokens} namespace="gym_themes" t={t} readOnly={isBase} />
           ))}
 
           {sections.includes('typography') && renderSection(t('section_typography'), 'typography', (
-            <div>
-              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_level')}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_font')}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_color')}</span>
-                {TYPO_LEVELS.map((lv) => {
-                  const typo = editForm.tokens.typography[lv];
-                  return (
-                    <>
-                      <span key={`${lv}-label`} style={{ fontSize: 13 }}>{lv}</span>
-                      <select
-                        key={`${lv}-font`}
-                        value={typo.fontFamily}
-                        onChange={(e) => {
-                          const next = { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } };
-                          setEditForm({ ...editForm, tokens: next });
-                          scheduleTokenSave(next);
-                        }}
-                        style={selectStyle}
-                      >
-                        {FONT_STACKS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                      </select>
-                      <input
-                        key={`${lv}-color`}
-                        type="color"
-                        value={typo.color}
-                        onChange={(e) => {
-                          const next = { ...editForm.tokens, typography: { ...editForm.tokens.typography, [lv]: { ...typo, color: e.target.value } } };
-                          setEditForm({ ...editForm, tokens: next });
-                          scheduleTokenSave(next);
-                        }}
-                        style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
-                      />
-                    </>
-                  );
-                })}
-              </div>
-              {tokenSaving && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('saving')}</p>}
-            </div>
+            <ThemeTypographyEditor tokens={editForm.tokens} onChange={updateTokens} t={t} />
           ))}
         </div>
 
-        {isBase && (
+        {isBase ? (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
             <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', borderTop: '1px solid #eee', paddingTop: 16 }}>
+            <button onClick={handleCancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+            <button onClick={() => handleSaveAll(theme)} disabled={saving || !dirty} style={{ ...btnSmall('#6c63ff'), opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? 'not-allowed' : 'pointer' }}>
+              {saving ? t('saving') : t('save_changes')}
+            </button>
           </div>
         )}
       </div>
@@ -838,6 +676,20 @@ export default function GymThemesPage() {
       </CrudModal>
 
       <ConfirmDialog open={deleting !== null} message={t('confirm_delete')} confirmLabel={t('delete')} cancelLabel={t('cancel')} onConfirm={handleDelete} onCancel={() => setDeleting(null)} />
+
+      <ConfirmDialog
+        open={pendingAction !== null}
+        message={t('unsaved_changes')}
+        confirmLabel={t('unsaved_discard')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => {
+          const action = pendingAction!;
+          setPendingAction(null);
+          handleCancelEdit();
+          action();
+        }}
+        onCancel={() => setPendingAction(null)}
+      />
     </div>
   );
 }
