@@ -73,8 +73,8 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
               key={i}
               role="menuitem"
               onClick={() => { setOpen(false); item.onClick(); }}
-              style={{ ...itemStyle, color: item.danger ? '#c0392b' : '#333' }}
-              onMouseEnter={(e) => { (e.currentTarget.style.background = '#f4f4f6'); }}
+              style={{ ...itemStyle, color: item.danger ? '#c0392b' : 'var(--gd-dropdown-text, #111827)' }}
+              onMouseEnter={(e) => { (e.currentTarget.style.background = 'var(--gd-dropdown-hover-bg, #f5f5f5)'); }}
               onMouseLeave={(e) => { (e.currentTarget.style.background = 'transparent'); }}
             >
               {item.label}
@@ -88,11 +88,11 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
 
 const triggerStyle: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, lineHeight: 1,
-  color: '#666', padding: '2px 8px', borderRadius: 4,
+  color: 'var(--gd-text-muted, #6b7280)', padding: '2px 8px', borderRadius: 4,
 };
 const menuStyle: React.CSSProperties = {
   minWidth: 200,
-  background: '#fff', border: '1px solid #e2e2e6', borderRadius: 8,
+  background: 'var(--gd-dropdown-bg, #ffffff)', border: '1px solid var(--gd-border, #e5e7eb)', borderRadius: 8,
   boxShadow: '0 6px 20px rgba(0,0,0,0.14)', padding: 4, zIndex: 1000,
 };
 const itemStyle: React.CSSProperties = {
