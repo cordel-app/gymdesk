@@ -22,8 +22,8 @@ afterAll(async () => {
  */
 async function seedGymCharges(gymId: string): Promise<void> {
   await db.query(
-    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, is_system, created_at)
-     SELECT ?, id, 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, name, type, is_system, created_at)
+     SELECT ?, id, name, 'fee', 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
     [gymId],
   );
 }
@@ -108,6 +108,23 @@ describe('GET /sellable-items', () => {
       .set('x-gym-id', gymReadOnly);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
+  });
+
+  // #543: charge-type-based system items must always have a name/type — a
+  // NULL name/type renders as a blank name + "type_null" in the admin UI.
+  it('returns non-null name/type for every charge-type-based system item', async () => {
+    const res = await request
+      .get('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const systemItems = (res.body as Array<{ charge_type_id: number | null; name: string | null; type: string | null }>)
+      .filter((item) => item.charge_type_id !== null);
+    expect(systemItems.length).toBeGreaterThan(0);
+    for (const item of systemItems) {
+      expect(item.name).not.toBeNull();
+      expect(item.type).toBe('fee');
+    }
   });
 });
 
