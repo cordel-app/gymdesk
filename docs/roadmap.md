@@ -859,6 +859,25 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `billing_events` rows today), no UI or creation-flow entry point creates a
   `draft` row yet, and full Benefits/Usage accounting for the Close warning
   and the expanded card lands with the Billing Events/Benefits stage.
+- **#543 (done)**: Fix Sellable Items showing a blank name + `type_null` for
+  the 6 charge-type-based system items (Registration Fee, Insurance Fee,
+  etc.) on every gym created or duplicated since migration 102 added
+  `gym_charges.name`/`type` — that migration's backfill only ran once, on
+  existing rows, but the runtime provisioning inserts in `gyms.ts`
+  (`POST /platform/gyms` and `POST /platform/gyms/:id/duplicate`) were never
+  updated to also populate `name`/`type` from `charge_types` when seeding
+  those rows for new/duplicated gyms, so they shipped with both columns
+  NULL. `sellable-items.ts` passes `name`/`type` straight through without a
+  fallback, and the admin Sellable Items page's `t(\`type_${item.type}\`)`
+  falls back to next-intl's default missing-key string `type_null` when
+  `item.type` is `null` (the blank name reads as "System" only because the
+  adjacent System badge sits right next to it). Fixed both `gyms.ts` inserts
+  to select `name`/`'fee'` from `charge_types` alongside `charge_type_id`
+  (mirroring migration 102's original backfill), and added migration 151 to
+  repair the already-affected rows (scoped to `name IS NULL`/
+  `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
+  untouched). Regression tests added to `gyms.test.ts` (both provisioning
+  paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
 
 ## Decisions
 

@@ -190,6 +190,32 @@ describe('POST /platform/gyms', () => {
       amount: null,
     });
   });
+
+  // #543: the charge-type-based system Sellable Items (Registration Fee,
+  // Insurance Fee, etc.) must get name/type populated from charge_types at
+  // seed time — previously left NULL, rendering as a blank name + "type_null".
+  it('seeds charge-type-based system items with name/type populated from charge_types', async () => {
+    const res = await platformCreateGym({ name: 'Charge Type Name Seed Test Gym' });
+    expect(res.status).toBe(201);
+
+    const { rows: chargeTypeRows } = await db.query(
+      `SELECT id, name FROM charge_types WHERE is_gym_charge = 1`,
+    );
+    expect(chargeTypeRows.length).toBeGreaterThan(0);
+
+    const { rows } = await db.query(
+      `SELECT name, type FROM gym_charges WHERE gym_id = ? AND charge_type_id IS NOT NULL`,
+      [res.body.id],
+    );
+    expect(rows).toHaveLength(chargeTypeRows.length);
+    for (const row of rows) {
+      expect(row.name).not.toBeNull();
+      expect(row.type).toBe('fee');
+    }
+    const seededNames = rows.map((r: { name: string }) => r.name).sort();
+    const chargeTypeNames = chargeTypeRows.map((r: { name: string }) => r.name).sort();
+    expect(seededNames).toEqual(chargeTypeNames);
+  });
 });
 
 // ─── GET /platform/gyms ───────────────────────────────────────────────────────
@@ -432,5 +458,25 @@ describe('POST /platform/gyms/:id/duplicate', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ is_system: 1, status: 'active', enrollment_status: 'staff_only' });
+  });
+
+  // #543: same regression as the create-gym seeding, on the duplicate path.
+  it('also seeds charge-type-based system items with name/type populated', async () => {
+    const sourceRes = await platformCreateGym({ name: 'Source For Charge Type Name Dup' });
+    const res = await request
+      .post(`/platform/gyms/${sourceRes.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(201);
+    if (res.body?.id) extraGymIds.push(res.body.id);
+
+    const { rows } = await db.query(
+      `SELECT name, type FROM gym_charges WHERE gym_id = ? AND charge_type_id IS NOT NULL`,
+      [res.body.id],
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.name).not.toBeNull();
+      expect(row.type).toBe('fee');
+    }
   });
 });

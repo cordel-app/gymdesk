@@ -191,9 +191,12 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
       "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
       [id, name],
     );
+    // #543: name/type must be seeded from charge_types here too — they're
+    // the Sellable Items catalogue columns (added by migration 102 as a
+    // one-time backfill), not generated from charge_type_id at read time.
     await db.query(
-      `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, is_system, created_at)
-       SELECT ?, id, 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+      `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, name, type, is_system, created_at)
+       SELECT ?, id, name, 'fee', 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
       [id],
     );
     await db.query(
@@ -342,9 +345,11 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
     "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
     [newId, newName],
   );
+  // #543: name/type must be seeded from charge_types here too — see the
+  // matching comment on the POST /gyms insert above.
   await db.query(
-    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, created_at)
-     SELECT ?, id, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, name, type, created_at)
+     SELECT ?, id, name, 'fee', UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
     [newId],
   );
   await db.query(
