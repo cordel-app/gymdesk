@@ -6,10 +6,12 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
+import { DataTable, type Column } from '@/components/DataTable';
+import { AssignedPlanExpandedRow } from './AssignedPlanExpandedRow';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LifecycleStatus = 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
+type LifecycleStatus = 'draft' | 'awaiting_payment' | 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
 
 interface AssignedPlan {
   id: number;
@@ -23,7 +25,7 @@ interface AssignedPlan {
 
 interface MemberHit { id: number; name: string; email: string }
 
-const LIFECYCLE_STATUSES: LifecycleStatus[] = ['pending', 'active', 'paused', 'expired', 'cancelled'];
+const LIFECYCLE_STATUSES: LifecycleStatus[] = ['draft', 'awaiting_payment', 'pending', 'active', 'paused', 'expired', 'cancelled'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -126,6 +128,7 @@ export default function AssignedPlansPage() {
   const [rows, setRows] = useState<AssignedPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   // Filter state (#411)
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
@@ -160,6 +163,42 @@ export default function AssignedPlansPage() {
   useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
 
   const hasFilters = statusFilter.length > 0 || !!memberId || !!startDate || !!endDate || !!documentFilter;
+
+  function toggleExpand(row: AssignedPlan) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
+      return next;
+    });
+  }
+
+  const columns: Column<AssignedPlan>[] = [
+    {
+      header: t('assigned_plans_page.col_member'),
+      render: (row) => (
+        <>
+          <div style={{ fontWeight: 500 }}>{row.member_name}</div>
+          <div style={{ fontWeight: 400, fontSize: 12, color: '#6b7280' }}>
+            {t('assigned_plans_page.label_document')}: {row.member_nif_nie_passport || '—'}
+          </div>
+        </>
+      ),
+    },
+    { header: t('assigned_plans_page.col_plan'), render: (row) => <span style={{ color: '#6b7280' }}>{row.plan_name ?? '—'}</span> },
+    { header: t('assigned_plans_page.col_starts_at'), render: (row) => <span style={{ whiteSpace: 'nowrap' }}>{fmtDate(row.starts_at)}</span> },
+    {
+      header: t('assigned_plans_page.col_ends_at'),
+      render: (row) => (
+        <span style={{ whiteSpace: 'nowrap' }}>
+          {row.ends_at ? fmtDate(row.ends_at) : t('assigned_plans_page.open_ended')}
+        </span>
+      ),
+    },
+    {
+      header: t('assigned_plans_page.col_status'),
+      render: (row) => <StatusBadge status={row.lifecycle_status} label={t(`status.${row.lifecycle_status}`)} />,
+    },
+  ];
 
   function clearFilters() {
     setStatusFilter([]);
@@ -243,48 +282,20 @@ export default function AssignedPlansPage() {
         )}
       </div>
 
-      {loading && <p style={{ color: '#888', fontSize: 14 }}>{t('assigned_plans_page.loading')}</p>}
       {error && <p style={{ color: 'red', fontSize: 14 }}>{error}</p>}
 
-      {!loading && !error && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #e5e7eb', textAlign: 'left' }}>
-              <th style={{ padding: '8px 12px' }}>{t('assigned_plans_page.col_member')}</th>
-              <th style={{ padding: '8px 12px' }}>{t('assigned_plans_page.col_plan')}</th>
-              <th style={{ padding: '8px 12px' }}>{t('assigned_plans_page.col_starts_at')}</th>
-              <th style={{ padding: '8px 12px' }}>{t('assigned_plans_page.col_ends_at')}</th>
-              <th style={{ padding: '8px 12px' }}>{t('assigned_plans_page.col_status')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={5} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
-                  {hasFilters ? t('assigned_plans_page.no_matches') : t('assigned_plans_page.empty')}
-                </td>
-              </tr>
-            )}
-            {rows.map((row) => (
-              <tr key={row.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '8px 12px', fontWeight: 500 }}>
-                  {row.member_name}
-                  <div style={{ fontWeight: 400, fontSize: 12, color: '#6b7280' }}>
-                    {t('assigned_plans_page.label_document')}: {row.member_nif_nie_passport || '—'}
-                  </div>
-                </td>
-                <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
-                <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.starts_at)}</td>
-                <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                  {row.ends_at ? fmtDate(row.ends_at) : t('assigned_plans_page.open_ended')}
-                </td>
-                <td style={{ padding: '8px 12px' }}>
-                  <StatusBadge status={row.lifecycle_status} label={t(`status.${row.lifecycle_status}`)} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {!error && (
+        <DataTable
+          columns={columns}
+          rows={rows}
+          rowKey={(row) => row.id}
+          loading={loading}
+          loadingText={t('assigned_plans_page.loading')}
+          emptyText={hasFilters ? t('assigned_plans_page.no_matches') : t('assigned_plans_page.empty')}
+          expandedRowKeys={expandedIds}
+          onToggleExpand={toggleExpand}
+          renderExpanded={(row) => <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={load} />}
+        />
       )}
     </div>
   );
