@@ -741,6 +741,36 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   match, fragment match, absent-filter passthrough, no-match empty array,
   combining with `member_id`, and the joined field appearing in the
   response).
+- **#511 stage 4 of 5 (done — Assigned Plans page frontend)**: builds on
+  stages 1-3 above; the last stage with user-visible scope for this epic
+  (stage 5's wrap-up work was already folded into stages 1-3, as noted
+  below). `financials/assigned-plans/page.tsx` rows are now expandable via
+  the shared `DataTable` component (the Members-page pattern) instead of a
+  flat table; expanding a row mounts the new `AssignedPlanExpandedRow.tsx`,
+  which fetches stage 3's `GET /user-memberships/:id` expanded detail and
+  renders members, pricing/billing config, benefit usage, applied
+  promotions, and the Billing Events view directly in the card — Created/
+  Modified audit metadata is deliberately left out of the card and shown
+  only in the new `AssignedPlanDetailsModal.tsx` (mirrors
+  `PromotionDetailModal`'s field/value + Audit-section layout, fed from the
+  already-loaded detail rather than a second fetch). A per-row
+  `ContextMenu` exposes Details (always), Edit (`draft`/`awaiting_payment`
+  only — extended past the ticket's original Awaiting-Payment-only scope
+  since `draft` didn't exist when §6's matrix was written, and the issue
+  thread's Q1 answer explicitly allows configuring a draft before Submit),
+  Submit (`draft` only), Pause (`active` only), Reactivate (`paused` only),
+  and Close (`awaiting_payment`/`active`/`paused`, admin-only). Edit
+  switches the card into an inline Save/Cancel form (starts_at/ends_at/
+  final_price/discount_reason/discount_expires_at — the fields `PUT /:id`
+  actually accepts), matching `MemberExpandedRow`'s inline-edit shape
+  rather than a modal. Close always confirms first, then — on a `409
+  unused_value_impacted` response — shows a second confirmation listing the
+  returned `warnings` before resending with `confirm: true`. `StatusBadge`
+  and the `status.*` locale namespace gained an `awaiting_payment` entry
+  (en/es/ca); a new `apps/admin/src/test/assigned-plans-locales.test.ts`
+  (mirrors `member-locales.test.ts` from #540/#563) guards the
+  `assigned_plans_page.*` key set staying complete across all three
+  locales. This closes out Assigned Plans Management (#511) end to end.
 - **#511 stage 3 of 5 (done — Expanded detail + Billing Events endpoint)**:
   builds on stages 1-2 below. `GET /user-memberships/:id` is now the
   "expanded card" endpoint (mirroring `enrichPlan()`'s pattern in
