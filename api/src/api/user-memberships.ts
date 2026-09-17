@@ -6,12 +6,28 @@ import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
 
-const STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
+// #511 (stage 1 — Assigned Plans lifecycle): 'draft' and 'awaiting_payment' are
+// new, pre-activation statuses. The ticket's "Closed" action maps onto the
+// existing 'cancelled' value rather than introducing a new terminal status.
+const STATUSES = ['draft', 'awaiting_payment', 'active', 'paused', 'cancelled', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
+
+// #511 §10 — the allowed status transitions, enforced by both PUT /:id (when
+// `status` is set directly) and the dedicated /submit, /close, /pause and
+// /reactivate actions below. 'expired' has no forward transitions here: it's
+// only ever reached by assign-new-plan's supersede logic, never by request.
+const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
+  draft: ['awaiting_payment', 'cancelled'],
+  awaiting_payment: ['active', 'cancelled'],
+  active: ['paused', 'cancelled'],
+  paused: ['active', 'cancelled'],
+  cancelled: [],
+  expired: [],
+};
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['pending', 'active', 'paused', 'expired', 'cancelled'] as const;
+const LIFECYCLE_STATUSES = ['draft', 'awaiting_payment', 'pending', 'active', 'paused', 'expired', 'cancelled'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -38,7 +54,7 @@ export const LIST_SELECT = `
          p.name AS plan_name,
          p.member_limit AS plan_member_limit,
          CASE
-           WHEN um.status IN ('paused', 'cancelled', 'expired') THEN um.status
+           WHEN um.status IN ('draft', 'awaiting_payment', 'paused', 'cancelled', 'expired') THEN um.status
            WHEN um.starts_at > CURDATE() THEN 'pending'
            WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
            ELSE 'active'
@@ -214,12 +230,18 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
     const { userId } = getTenantContext(req);
     // Ledger row (P1.6): status flips emit status_changed in the same
     // transaction as the update. FOR UPDATE pins the previous status.
-    const found = await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const { rows: current } = await tx.query(
         'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
         [req.params.id, gymId],
       );
-      if (current.length === 0) return false;
+      if (current.length === 0) return { kind: 'not_found' } as const;
+      // #511 §10 — validate any direct status flip against the transition table,
+      // same as the dedicated /submit, /close, /pause and /reactivate actions.
+      if (status && status !== current[0].status
+          && !ALLOWED_TRANSITIONS[current[0].status as Status].includes(status as Status)) {
+        return { kind: 'invalid_transition', from: current[0].status } as const;
+      }
       await tx.query(
         `UPDATE user_memberships SET
           starts_at            = COALESCE(?, starts_at),
@@ -246,9 +268,12 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           source: sourceForRole(role), actorUserId: userId,
         });
       }
-      return true;
+      return { kind: 'ok' } as const;
     });
-    if (!found) return res.status(404).json({ error: 'Membership not found' });
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (result.kind === 'invalid_transition') {
+      return res.status(400).json({ error: `Cannot transition a membership from '${result.from}' to '${status}'` });
+    }
     const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
     recordAudit(req, { action: 'update', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
@@ -359,6 +384,130 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   } catch (err: any) {
     handleDupEntry(err, res, next, 'This member already has an active membership.');
   }
+});
+
+// ─── Lifecycle actions (#511 stage 1 — Assigned Plans status model) ───────────
+// submit/pause/reactivate share the same shape: lock the row, check the
+// current status against an allow-list, flip it, and record both a
+// billing_events status_changed row and an audit_logs entry. Close (below) is
+// bespoke — it needs an unused-value warning/confirm step and stamps
+// closed_at — so it isn't folded into this helper.
+async function transitionMembership(
+  req: any, res: any, action: string, targetStatus: Status, allowedFrom: readonly Status[],
+) {
+  const { gymId, userId, role } = getTenantContext(req);
+  const result = await db.transaction(async (tx) => {
+    const { rows: current } = await tx.query(
+      'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+      [req.params.id, gymId],
+    );
+    if (current.length === 0) return { kind: 'not_found' } as const;
+    const prev = current[0];
+    if (!allowedFrom.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
+    await tx.query('UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?', [targetStatus, prev.id, gymId]);
+    await recordStatusChange(tx, {
+      gymId, userMembershipId: prev.id, memberId: prev.member_id,
+      previousStatus: prev.status, newStatus: targetStatus,
+      source: sourceForRole(role), actorUserId: userId,
+    });
+    return { kind: 'ok' } as const;
+  });
+
+  if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+  if (result.kind === 'invalid') {
+    return res.status(400).json({ error: `Cannot ${action} a membership with status '${result.from}'` });
+  }
+  const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
+  recordAudit(req, { action, entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
+  res.json(rows[0]);
+}
+
+// Submit (#511 Q1): draft -> awaiting_payment. Persisted future Billing
+// Events are materialized starting with this ticket's Billing Events stage —
+// submitting today only flips the status, which has no financial effect on
+// its own since nothing in the running system pre-creates future
+// billing_events rows yet (billing.ts only ever charges what's due the day
+// the billing run executes).
+userMembershipsRouter.post('/:id/submit', requireModuleWrite('PAYMENTS'), async (req, res) => {
+  await transitionMembership(req, res, 'submit', 'awaiting_payment', ['draft']);
+});
+
+userMembershipsRouter.post('/:id/pause', requireModuleWrite('PAYMENTS'), async (req, res) => {
+  await transitionMembership(req, res, 'pause', 'paused', ['active']);
+});
+
+userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), async (req, res) => {
+  await transitionMembership(req, res, 'reactivate', 'active', ['paused']);
+});
+
+// Close (#511 §7): admin-only, mirroring DELETE's existing cancel restriction
+// (both permanently end a membership). Unlike DELETE, Close first checks for
+// unused value that would be lost and requires explicit confirmation before
+// proceeding (409 + `confirm: true` to resend, same contract as
+// activity-type-schedule-rules.ts's confirm_cancel_booked guard), and stamps
+// closed_at separately from the admin-settable `ends_at`.
+//
+// Full benefit/usage accounting (free months, PT classes, credits remaining)
+// arrives with this ticket's Billing Events / Benefits stage — today the only
+// concretely trackable pending obligation is a scheduled MIT charge
+// (`next_billing_date`).
+const CLOSEABLE_FROM: readonly Status[] = ['awaiting_payment', 'active', 'paused'];
+
+userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const confirm = req.body?.confirm === true;
+
+  const { rows: currentRows } = await db.query(
+    `SELECT id, status, next_billing_date,
+            (next_billing_date IS NOT NULL AND next_billing_date >= CURDATE()) AS has_pending_billing
+     FROM user_memberships WHERE id = ? AND gym_id = ?`,
+    [req.params.id, gymId],
+  );
+  if (currentRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
+  const current = currentRows[0];
+  if (!CLOSEABLE_FROM.includes(current.status)) {
+    return res.status(400).json({ error: `Cannot close a membership with status '${current.status}'` });
+  }
+
+  const warnings: string[] = [];
+  if (Number(current.has_pending_billing) === 1) {
+    warnings.push(`1 pending billing event on ${current.next_billing_date}`);
+  }
+  if (warnings.length > 0 && !confirm) {
+    return res.status(409).json({
+      error: 'unused_value_impacted',
+      message: `Closing this Assigned Plan will remove access to: ${warnings.join(', ')}. Resend with confirm: true to proceed.`,
+      warnings,
+    });
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const { rows: locked } = await tx.query(
+      'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+      [req.params.id, gymId],
+    );
+    if (locked.length === 0) return { kind: 'not_found' } as const;
+    const prev = locked[0];
+    if (!CLOSEABLE_FROM.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
+    await tx.query(
+      "UPDATE user_memberships SET status = 'cancelled', closed_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?",
+      [prev.id, gymId],
+    );
+    await recordStatusChange(tx, {
+      gymId, userMembershipId: prev.id, memberId: prev.member_id,
+      previousStatus: prev.status, newStatus: 'cancelled',
+      source: sourceForRole(role), actorUserId: userId,
+    });
+    return { kind: 'ok' } as const;
+  });
+
+  if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+  if (result.kind === 'invalid') {
+    return res.status(400).json({ error: `Cannot close a membership with status '${result.from}'` });
+  }
+  const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
+  recordAudit(req, { action: 'close', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
+  res.json(rows[0]);
 });
 
 // ─── Covered Members (#374 — multi-member Membership Plans) ───────────────────
