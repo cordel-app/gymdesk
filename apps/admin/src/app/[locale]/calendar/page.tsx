@@ -16,6 +16,7 @@ import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from
 import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
 import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
+import { getCalendarEventStatusColor } from '@/lib/calendarEventColors';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -29,9 +30,6 @@ interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
 
 type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
-
-const DEFAULT_EVENT_COLOR = '#6c63ff';
-const DEFAULT_SESSION_COLOR = '#8b5cf6';
 
 function formatHM(d: Date): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -148,8 +146,8 @@ export default function CalendarPage() {
             start: e.starts_at,
             end: e.ends_at,
             allDay: !!e.all_day,
-            backgroundColor: e.activity_type_color || e.color || DEFAULT_EVENT_COLOR,
-            borderColor:     e.activity_type_color || e.color || DEFAULT_EVENT_COLOR,
+            backgroundColor: getCalendarEventStatusColor(e.status),
+            borderColor:     getCalendarEventStatusColor(e.status),
             editable: true,
             extendedProps: { ...e, _type: 'event' },
           }));
@@ -159,8 +157,8 @@ export default function CalendarPage() {
             start: s.starts_at,
             end: s.ends_at,
             allDay: false,
-            backgroundColor: s.activity_type_color || DEFAULT_SESSION_COLOR,
-            borderColor:     s.activity_type_color || DEFAULT_SESSION_COLOR,
+            backgroundColor: getCalendarEventStatusColor(s.status),
+            borderColor:     getCalendarEventStatusColor(s.status),
             // Sessions use a different time-change flow; disable FC drag/resize
             editable: false,
             extendedProps: { ...s, _type: 'session' },
