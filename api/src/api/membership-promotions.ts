@@ -51,7 +51,10 @@ type LiveBenefits = Pick<PromotionSnapshot, 'charge_benefits' | 'period_benefits
 // GET / handler's live-join fallback for rows applied before migration 149
 // (snapshot IS NULL) — those never got a snapshot, so their benefit
 // breakdown can only be read from the promotion's *current* definition.
-async function fetchLiveBenefits(exec: Queryable, promotionId: number): Promise<LiveBenefits> {
+// Exported for reuse by user-memberships.ts's Billing Events range
+// computation (#511 stage 3), which needs the same Membership Fee
+// charge/period benefits for legacy (snapshot IS NULL) promotion applications.
+export async function fetchLiveBenefits(exec: Queryable, promotionId: number): Promise<LiveBenefits> {
   const { rows: chargeBenefits } = await exec.query(
     `SELECT ct.code AS charge_type_code, ct.name AS charge_type_name, pcb.action, pcb.value
      FROM promotion_charge_benefits pcb
@@ -280,14 +283,21 @@ export async function applyPromotionToMembership(
   });
 }
 
-membershipPromotionsRouter.get('/', async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const umId = (req.params as any).id;
+// #511 (stage 3): shared by GET / here and GET /user-memberships/:id's
+// expanded-detail response (see user-memberships.ts), so both surfaces list
+// exactly the same applied-promotions data instead of duplicating the query.
+export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
   const { rows } = await db.query(
     `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC`,
     [umId, gymId],
   );
-  res.json(await Promise.all(rows.map(withSnapshot)));
+  return Promise.all(rows.map(withSnapshot));
+}
+
+membershipPromotionsRouter.get('/', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const umId = (req.params as any).id;
+  res.json(await fetchAppliedPromotions(gymId, umId));
 });
 
 membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
@@ -385,8 +395,13 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
   const promotionId = parseInt(String(req.params.promotionId), 10);
   try {
     const result = await db.transaction(async (tx) => {
+      // #511 (stage 3): revoked_at stamps precisely when this promotion
+      // stopped affecting billing, so the Billing Events range calculation
+      // (assignedPlanBillingEvents.ts) can tell which persisted events fell
+      // inside vs. outside its applied window, independent of the row's
+      // `status` (kept for backward compatibility / existing callers).
       const { rowCount } = await tx.query(
-        "UPDATE user_membership_promotions SET status = 'revoked' WHERE user_membership_id = ? AND promotion_id = ? AND gym_id = ? AND status = 'applied'",
+        "UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP() WHERE user_membership_id = ? AND promotion_id = ? AND gym_id = ? AND status = 'applied'",
         [umId, promotionId, gymId],
       );
       if (rowCount === 0) return null;

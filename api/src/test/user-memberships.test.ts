@@ -98,6 +98,132 @@ async function latestStatusChangeEvent(gymId: string, userMembershipId: number):
   return rows[0] ?? null;
 }
 
+// ─── Helpers for expanded detail + Billing Events (#511 stage 3) ──────────────
+
+async function setBillingPolicy(gymId: string, planId: number, interval: number, unit: string): Promise<void> {
+  await db.query(
+    `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+     VALUES (?, ?, ?, ?)`,
+    [gymId, planId, interval, unit],
+  );
+}
+
+async function getChargeTypeId(code: string): Promise<number> {
+  const { rows } = await db.query('SELECT id FROM charge_types WHERE code = ?', [code]);
+  return rows[0].id;
+}
+
+async function createPromotion(gymId: string, planId: number, name: string): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable)
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 0)`,
+    [gymId, name],
+  );
+  await db.query(
+    'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+    [gymId, insertId, planId],
+  );
+  return insertId;
+}
+
+async function setPromotionPeriodBenefit(
+  gymId: string,
+  promoId: number,
+  chargeTypeId: number,
+  action: string,
+  value: number | null,
+  durationMonths: number | null,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO promotion_period_benefits
+       (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
+     VALUES (?, ?, ?, 1, 1, 'month', ?, 1, ?, ?)`,
+    [gymId, promoId, chargeTypeId, durationMonths, action, value],
+  );
+}
+
+async function applyPromotionViaApi(gymId: string, umId: number, promotionId: number) {
+  return request
+    .post(`/user-memberships/${umId}/promotions`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ promotion_id: promotionId });
+}
+
+async function createActivityType(gymId: string, name = 'UM Yoga'): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO activity_types (gym_id, name) VALUES (?, ?)`,
+    [gymId, name],
+  );
+  return insertId;
+}
+
+async function addPlanAllowance(
+  gymId: string,
+  planId: number,
+  activityTypeId: number,
+  sessionCount: number,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO plan_allowances (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
+     VALUES (?, ?, ?, 'session_count', ?, 1, 'month')`,
+    [gymId, planId, activityTypeId, sessionCount],
+  );
+}
+
+async function createCenter(gymId: string): Promise<number> {
+  const { insertId } = await db.query(`INSERT INTO centers (gym_id, name) VALUES (?, ?)`, [gymId, `UM-Center-${Date.now()}`]);
+  return insertId;
+}
+
+async function createCalendarEvent(gymId: string, centerId: number, activityTypeId: number): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO calendar_events (gym_id, center_id, kind, title, activity_type_id, starts_at, ends_at, status)
+     VALUES (?, ?, 'session', 'UM Test Session', ?, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 23 HOUR), 'scheduled')`,
+    [gymId, centerId, activityTypeId],
+  );
+  return insertId;
+}
+
+async function createUsageBooking(gymId: string, centerId: number, memberId: number, eventId: number): Promise<void> {
+  await db.query(
+    `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
+     VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
+    [gymId, centerId, memberId, eventId],
+  );
+}
+
+// Direct-insert fixture carrying an explicit base_price/starts_at/ends_at —
+// createUserMembershipDirect above always uses CURDATE()/29.99, which isn't
+// controllable enough for deterministic Billing Events range assertions.
+async function createUserMembershipWithPrice(
+  gymId: string, memberId: number, planId: number,
+  status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired',
+  basePrice: number, startsAt: string, endsAt: string | null = null,
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price, final_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [gymId, memberId, planId, status, startsAt, endsAt, basePrice, basePrice],
+  );
+  await db.query(
+    'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
+    [gymId, insertId, memberId],
+  );
+  return insertId;
+}
+
+async function insertBillingEvent(
+  gymId: string, umId: number, memberId: number, eventType: string, amount: number, createdAt: string,
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO billing_events (gym_id, user_membership_id, member_id, event_type, source, amount, created_at)
+     VALUES (?, ?, ?, ?, 'system', ?, ?)`,
+    [gymId, umId, memberId, eventType, amount, createdAt],
+  );
+  return insertId;
+}
+
 // ─── Auth and access guards ───────────────────────────────────────────────────
 
 describe('Auth and access guards', () => {
@@ -1762,6 +1888,40 @@ describe('POST /user-memberships/:id/close', () => {
     expect(rows[0].status).toBe('cancelled');
     expect(rows[0].closed_at).not.toBeNull();
   });
+
+  // #511 (stage 3): the unused-value check now also reuses the same
+  // loadActivityAllowancesUsage helper GET /:id's `activity_allowances`
+  // section calls, so a session_count allowance with sessions still
+  // remaining in its current recurrence window warns too, on top of the
+  // pre-existing pending-billing check above.
+  it('returns 409 with a warning when a session_count allowance still has sessions remaining', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const activityTypeId = await createActivityType(gymId);
+    await addPlanAllowance(gymId, planId, activityTypeId, 4);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    await setNextBillingDate(umId, null);
+
+    const centerId = await createCenter(gymId);
+    const eventId = await createCalendarEvent(gymId, centerId, activityTypeId);
+    await createUsageBooking(gymId, centerId, memberId, eventId);
+
+    const res = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('unused_value_impacted');
+    expect(res.body.warnings.some((w: string) => w.includes('3 unused'))).toBe(true);
+
+    const confirmed = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ confirm: true });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.status).toBe('cancelled');
+  });
 });
 
 // ─── GET /user-memberships/:id — audit metadata (#511 stage 2) ───────────────
@@ -1877,5 +2037,311 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
     expect(row.created_by_name).toBeUndefined();
     expect(row.modified_by_name).toBeUndefined();
     expect(row.modified_at).toBeUndefined();
+  });
+});
+
+// ─── GET /user-memberships/:id — expanded detail (#511 stage 3) ──────────────
+
+describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Expanded Detail Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('includes members, billing_policy, charge_benefits, activity_allowances and promotions', async () => {
+    const owner = await createMember(gymId, 'UM Expanded Owner');
+    const partner = await createMember(gymId, 'UM Expanded Partner');
+    const planId = await createPlan(gymId, '2');
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const activityTypeId = await createActivityType(gymId);
+    await addPlanAllowance(gymId, planId, activityTypeId, 4);
+    const umId = await createUserMembershipDirect(gymId, owner, planId, 'active');
+    await request
+      .post(`/user-memberships/${umId}/members`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: partner });
+
+    const centerId = await createCenter(gymId);
+    const eventId = await createCalendarEvent(gymId, centerId, activityTypeId);
+    await createUsageBooking(gymId, centerId, owner, eventId);
+
+    const res = await request
+      .get(`/user-memberships/${umId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+
+    expect(res.body.members).toHaveLength(2);
+    expect(res.body.members.map((m: any) => m.member_id).sort()).toEqual([owner, partner].sort());
+
+    expect(res.body.billing_policy).toMatchObject({ recurring_billing_interval: 1, recurring_billing_unit: 'month' });
+
+    expect(Array.isArray(res.body.charge_benefits)).toBe(true);
+
+    const allowance = res.body.activity_allowances.find((a: any) => a.activity_type_id === activityTypeId);
+    expect(allowance).toBeDefined();
+    expect(allowance.allocated).toBe(4);
+    expect(allowance.used).toBe(1);
+    expect(allowance.remaining).toBe(3);
+
+    expect(Array.isArray(res.body.promotions)).toBe(true);
+
+    expect(res.body.billing_events).toBeDefined();
+    expect(res.body.billing_events.projected).toBe(false);
+  });
+
+  it('reports a draft plan Billing Events view as a projection (projected: true)', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
+
+    const res = await request
+      .get(`/user-memberships/${umId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.billing_events.available).toBe(true);
+    expect(res.body.billing_events.projected).toBe(true);
+    expect(res.body.billing_events.events.length).toBeGreaterThan(0);
+    expect(res.body.billing_events.events.every((e: any) => e.projected === true)).toBe(true);
+  });
+
+  it('returns 404 for a non-existent membership', async () => {
+    const res = await request
+      .get('/user-memberships/9999999')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── GET /user-memberships/:id/billing-events (#511 stage 3, issue thread Q2) ─
+// Range rule: all events affected by an applied promotion, plus the events
+// covering the following two calendar months after the last one; with no
+// applicable promotion, the next two calendar months from the billing start
+// date. Drafts (never persisted to billing_events) get a computed
+// projection instead of a query.
+
+describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Billing Events Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    const res = await request.get(`/user-memberships/${umId}/billing-events`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 for a non-existent membership', async () => {
+    const res = await request
+      .get('/user-memberships/9999999/billing-events')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 accessing a gym B membership with gym A credentials', async () => {
+    const gymOther = await createTestGym('UM Billing Events Other Gym');
+    await createTestMembership(gymOther, 'admin', 'other-clerk-user-id');
+    const otherMemberId = await createMember(gymOther);
+    const otherPlanId = await createPlan(gymOther);
+    const otherUmId = await createUserMembershipDirect(gymOther, otherMemberId, otherPlanId, 'active');
+    const res = await request
+      .get(`/user-memberships/${otherUmId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('reports unavailable for a draft plan with no billing policy configured', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
+    const res = await request
+      .get(`/user-memberships/${umId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(false);
+    expect(res.body.events).toEqual([]);
+  });
+
+  it('projects the next 2 calendar months for a draft plan with no applicable promotions', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
+
+    const res = await request
+      .get(`/user-memberships/${umId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.projected).toBe(true);
+    expect(res.body.range_start).toBe('2026-01-01');
+    expect(res.body.range_end).toBe('2026-03-01');
+    expect(res.body.events.map((e: any) => e.date)).toEqual(['2026-02-01', '2026-03-01']);
+    expect(res.body.events.every((e: any) => Number(e.amount) === 40 && !e.promotion_affected)).toBe(true);
+  });
+
+  it('extends a draft plan projection 2 months past the last event affected by an applied promotion', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
+    const promoId = await createPromotion(gymId, planId, `Draft-Promo-${Date.now()}`);
+    await setPromotionPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 10, 2);
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
+    const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
+    expect(applyRes.status).toBe(201);
+    // The promotion's duration_months window is counted from its applied_at —
+    // pin it to the plan's billing start so the projected cycle dates line
+    // up deterministically with the assertions below.
+    await db.query(
+      'UPDATE user_membership_promotions SET applied_at = ? WHERE user_membership_id = ? AND promotion_id = ?',
+      ['2026-01-01', umId, promoId],
+    );
+
+    const res = await request
+      .get(`/user-memberships/${umId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.projected).toBe(true);
+    // Promotion covers 2026-02-01 (< 2026-01-01 + 2 months expiry) only.
+    expect(res.body.range_end).toBe('2026-04-01');
+    expect(res.body.events.map((e: any) => e.date)).toEqual(['2026-02-01', '2026-03-01', '2026-04-01']);
+    const first = res.body.events[0];
+    expect(first.promotion_affected).toBe(true);
+    expect(Number(first.amount)).toBe(30);
+    expect(res.body.events[1].promotion_affected).toBe(false);
+    expect(res.body.events[2].promotion_affected).toBe(false);
+  });
+
+  it('queries the persisted ledger for a submitted plan and covers the next 2 calendar months with no promotions', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01');
+    await insertBillingEvent(gymId, umId, memberId, 'status_changed', 0, '2026-01-01 10:00:00');
+    await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 40, '2026-02-01 10:00:00');
+    // Outside the [2026-01-01, 2026-03-01] range with no promotions applied.
+    await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 40, '2026-05-01 10:00:00');
+
+    const res = await request
+      .get(`/user-memberships/${umId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.projected).toBe(false);
+    expect(res.body.range_start).toBe('2026-01-01');
+    expect(res.body.range_end).toBe('2026-03-01');
+    expect(res.body.events.map((e: any) => e.event_type)).toEqual(['status_changed', 'recurring_payment']);
+    expect(res.body.events.every((e: any) => !e.promotion_affected)).toBe(true);
+  });
+
+  it('tags persisted events within an applied promotion window and extends the range past the last one', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
+    const promoId = await createPromotion(gymId, planId, `Submitted-Promo-${Date.now()}`);
+    await setPromotionPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 10, null);
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01');
+    const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
+    expect(applyRes.status).toBe(201);
+    // Still-applied (no revoked_at) -> an open-ended window from applied_at.
+    await db.query(
+      'UPDATE user_membership_promotions SET applied_at = ? WHERE user_membership_id = ? AND promotion_id = ?',
+      ['2026-02-01', umId, promoId],
+    );
+    // Applying the promotion for real also recorded its own 'adjustment'
+    // billing_events row at the (real, present-day) moment it was applied —
+    // clear it so this test's assertions only reflect the explicit fixture
+    // events below, at their controlled dates.
+    await db.query("DELETE FROM billing_events WHERE user_membership_id = ? AND event_type = 'adjustment'", [umId]);
+
+    await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 40, '2026-01-01 10:00:00');
+    await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 30, '2026-02-01 10:00:00');
+    await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 30, '2026-05-01 10:00:00');
+
+    const res = await request
+      .get(`/user-memberships/${umId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    // Last promotion-affected event is 2026-05-01 (still open-ended) -> range_end = 2026-07-01.
+    expect(res.body.range_end).toBe('2026-07-01');
+    expect(res.body.events.map((e: any) => e.created_at ? String(e.created_at).slice(0, 10) : null))
+      .toEqual(['2026-01-01', '2026-02-01', '2026-05-01']);
+    expect(res.body.events[0].promotion_affected).toBe(false);
+    expect(res.body.events[1].promotion_affected).toBe(true);
+    expect(res.body.events[2].promotion_affected).toBe(true);
+  });
+
+  it('excludes events after a promotion is revoked from the tagged/last-affected calculation', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
+    const promoId = await createPromotion(gymId, planId, `Revoked-Promo-${Date.now()}`);
+    await setPromotionPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 10, null);
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01');
+    const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
+    expect(applyRes.status).toBe(201);
+    const revokeRes = await request
+      .delete(`/user-memberships/${umId}/promotions/${promoId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(revokeRes.status).toBe(200);
+    await db.query(
+      'UPDATE user_membership_promotions SET applied_at = ?, revoked_at = ? WHERE user_membership_id = ? AND promotion_id = ?',
+      ['2026-01-01', '2026-02-01', umId, promoId],
+    );
+    // Applying/revoking for real also recorded their own 'adjustment'
+    // billing_events rows at the (real, present-day) moment they happened —
+    // clear them so this test's assertions only reflect the explicit
+    // fixture events below, at their controlled dates.
+    await db.query("DELETE FROM billing_events WHERE user_membership_id = ? AND event_type = 'adjustment'", [umId]);
+
+    await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 30, '2026-01-15 10:00:00');
+    // After revoked_at -> not promotion-affected, and (being the only
+    // promotion-affected event) the range stops 2 months after 2026-01-15.
+    await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 40, '2026-06-01 10:00:00');
+
+    const res = await request
+      .get(`/user-memberships/${umId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.range_end).toBe('2026-03-15');
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0].promotion_affected).toBe(true);
+  });
+
+  it('returns fewer events when the plan ends before the full range', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01', '2026-01-20');
+    await insertBillingEvent(gymId, umId, memberId, 'status_changed', 0, '2026-01-01 10:00:00');
+
+    const res = await request
+      .get(`/user-memberships/${umId}/billing-events`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.range_end).toBe('2026-01-20');
+    expect(res.body.events).toHaveLength(1);
   });
 });
