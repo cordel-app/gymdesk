@@ -306,6 +306,17 @@ export default function SellableItemsPage() {
     }
   }
 
+  // ─── Duplicate ──────────────────────────────────────────────────────────────
+
+  async function handleDuplicate(item: SellableItem) {
+    try {
+      await apiFetch(`/sellable-items/${item.id}/duplicate`, { method: 'POST' });
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
   // ─── Activate / Deactivate ───────────────────────────────────────────────────
 
   async function handleActivate(item: SellableItem) {
@@ -431,6 +442,7 @@ export default function SellableItemsPage() {
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetails(item) },
       { label: t('edit'), onClick: () => openEdit(item) },
+      { label: t('duplicate'), onClick: () => handleDuplicate(item) },
       item.status === 'active'
         ? { label: t('deactivate'), onClick: () => handleDeactivate(item) }
         : { label: t('activate'), onClick: () => handleActivate(item) },

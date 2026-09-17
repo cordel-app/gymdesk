@@ -773,3 +773,169 @@ describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── POST /sellable-items/:id/duplicate (#545) ───────────────────────────────
+
+describe('POST /sellable-items/:id/duplicate', () => {
+  let gymId: string;
+  let gymOther: string;
+  let gymAccountant: string;
+  let customSourceId: number;
+  let systemSourceId: number | undefined;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Charges Duplicate Gym');
+    await createTestMembership(gymId, 'admin');
+    await seedGymCharges(gymId);
+    systemSourceId = await firstChargeId(gymId);
+
+    gymOther = await createTestGym('Charges Duplicate Other Gym');
+    await createTestMembership(gymOther, 'admin');
+    await seedGymCharges(gymOther);
+
+    gymAccountant = await createTestGym('Charges Duplicate Accountant Gym');
+    await createTestMembership(gymAccountant, 'accountant');
+
+    const create = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        name: 'Original Custom Item',
+        type: 'sessions',
+        units: 10,
+        description: 'Ten-session pack',
+        amount: 150,
+        billing_frequency: 'once',
+        status: 'active',
+        enrollment_status: 'staff_only',
+        notes: 'Internal notes',
+        package_information: 'Valid for 90 days',
+        validity_days: 90,
+      });
+    expect(create.status).toBe(201);
+    customSourceId = create.body.id;
+  });
+
+  it('returns 401 without auth', async () => {
+    const res = await request.post(`/sellable-items/${customSourceId}/duplicate`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for a non-admin role', async () => {
+    const chargeId = await firstChargeId(gymAccountant);
+    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    const res = await request
+      .post(`/sellable-items/${chargeId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymAccountant);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when the source item belongs to a different gym (tenant isolation)', async () => {
+    const res = await request
+      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymOther);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a non-existent source item', async () => {
+    const res = await request
+      .post('/sellable-items/999999/duplicate')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('duplicates a custom item: new id, "Copy of" name, copied fields, original unchanged', async () => {
+    const dup = await request
+      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(dup.status).toBe(201);
+
+    // New unique id, not the source's.
+    expect(dup.body.id).not.toBe(customSourceId);
+    // Duplicate-name convention.
+    expect(dup.body.name).toBe('Copy of Original Custom Item');
+    // Current gym/tenant, current user as creator.
+    expect(dup.body.gym_id).toBe(gymId);
+    expect(dup.body.created_by_name).toBeTruthy();
+    // Always created as a custom item.
+    expect(dup.body.is_system).toBe(0);
+    // Copied configuration fields, including status/enrollment visibility.
+    expect(dup.body.type).toBe('sessions');
+    expect(dup.body.units).toBe(10);
+    expect(dup.body.description).toBe('Ten-session pack');
+    expect(parseFloat(dup.body.amount)).toBeCloseTo(150, 2);
+    expect(dup.body.billing_frequency).toBe('once');
+    expect(dup.body.status).toBe('active');
+    expect(dup.body.enrollment_status).toBe('staff_only');
+    expect(dup.body.notes).toBe('Internal notes');
+    expect(dup.body.package_information).toBe('Valid for 90 days');
+    expect(dup.body.validity_days).toBe(90);
+
+    // Original item is completely unchanged.
+    const original = await request
+      .get(`/sellable-items/${customSourceId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(original.status).toBe(200);
+    expect(original.body.name).toBe('Original Custom Item');
+    expect(original.body.id).toBe(customSourceId);
+  });
+
+  it('duplicating a system item creates an independent custom item, leaving the system item untouched', async () => {
+    if (!systemSourceId) return; // no is_gym_charge rows in this DB — skip gracefully
+
+    const dup = await request
+      .post(`/sellable-items/${systemSourceId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(dup.status).toBe(201);
+    expect(dup.body.id).not.toBe(systemSourceId);
+    expect(dup.body.is_system).toBe(0);
+
+    const original = await request
+      .get(`/sellable-items/${systemSourceId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(original.body.is_system).toBe(1);
+    expect(original.body.id).toBe(systemSourceId);
+  });
+
+  it('does not carry over historical/transactional linkage (charge_type_id, class_package_id) from the source', async () => {
+    const dup = await request
+      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(dup.status).toBe(201);
+    const { rows } = await db.query<{ charge_type_id: number | null; class_package_id: number | null }>(
+      'SELECT charge_type_id, class_package_id FROM gym_charges WHERE id = ?',
+      [dup.body.id],
+    );
+    expect(rows[0].charge_type_id).toBeNull();
+    expect(rows[0].class_package_id).toBeNull();
+  });
+
+  it('duplicating twice does not mutate the original and produces two independent rows', async () => {
+    const first = await request
+      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    const second = await request
+      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(first.body.id).not.toBe(second.body.id);
+
+    const original = await request
+      .get(`/sellable-items/${customSourceId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(original.body.name).toBe('Original Custom Item');
+  });
+});
