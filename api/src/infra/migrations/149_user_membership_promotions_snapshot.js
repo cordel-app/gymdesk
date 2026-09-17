@@ -10,15 +10,22 @@
  * description, stackable flag, campaign dates and its full set of charge /
  * period / included benefits as they existed at that moment.
  *
- * Existing rows are left with `snapshot = NULL` — the API falls back to the
- * live `promotions` join for those (pre-existing) applied promotions, since
- * there is no way to reconstruct what their configuration looked like at
- * the (unrecorded) time they were applied.
+ * Existing rows are left with `snapshot = NULL` — the API falls back to a
+ * live join against `promotions`/`promotion_charge_benefits`/
+ * `promotion_period_benefits`/`promotion_included_benefits` for those
+ * (pre-existing) applied promotions, since there is no way to reconstruct
+ * what their configuration looked like at the (unrecorded) time they were
+ * applied.
+ *
+ * No `.after(...)` position is specified — appending the column (like
+ * sibling migrations 130/148) keeps this eligible for MySQL 8's
+ * ALGORITHM=INSTANT regardless of exact patch version, unlike an
+ * arbitrary-position ADD COLUMN (INSTANT-at-position needs >= 8.0.29).
  */
 exports.up = async (knex) => {
   if (!(await knex.schema.hasColumn('user_membership_promotions', 'snapshot'))) {
     await knex.schema.alterTable('user_membership_promotions', (t) => {
-      t.json('snapshot').nullable().after('status');
+      t.json('snapshot').nullable();
     });
   }
 };

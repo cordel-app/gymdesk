@@ -1763,3 +1763,119 @@ describe('POST /user-memberships/:id/close', () => {
     expect(rows[0].closed_at).not.toBeNull();
   });
 });
+
+// ─── GET /user-memberships/:id — audit metadata (#511 stage 2) ───────────────
+// created_by_name/modified_by_name/modified_at are derived from audit_logs
+// (loadAuditMetadata) and only ever added on this single-resource GET, not on
+// the list endpoint. The mocked Clerk user resolves to actorName 'Test User'
+// (see setup.ts), which is what recordAudit stamps onto every audit_logs row
+// written by TEST_USER_ID.
+
+describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Audit Metadata Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('sets created_by_name and leaves modified_by_name/modified_at null right after creation', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const createRes = await request
+      .post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-01' });
+    expect(createRes.status).toBe(201);
+    const umId = createRes.body.id;
+
+    // recordAudit is fire-and-forget -- wait for the 'create' row to land
+    // before asserting on the audit-derived fields.
+    const auditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'create');
+    expect(auditRow).not.toBeNull();
+
+    const res = await request
+      .get(`/user-memberships/${umId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.created_by_name).toBe('Test User');
+    expect(res.body.modified_by_name).toBeNull();
+    expect(res.body.modified_at).toBeNull();
+  });
+
+  it('sets modified_by_name/modified_at after a mutation (pause), while created_by_name still reflects creation', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const createRes = await request
+      .post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-01' });
+    expect(createRes.status).toBe(201);
+    const umId = createRes.body.id;
+    await waitForAuditLog(gymId, 'user_membership', umId, 'create');
+
+    const pauseRes = await request
+      .post(`/user-memberships/${umId}/pause`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(pauseRes.status).toBe(200);
+    const pauseAuditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'pause');
+    expect(pauseAuditRow).not.toBeNull();
+
+    const res = await request
+      .get(`/user-memberships/${umId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.created_by_name).toBe('Test User');
+    expect(res.body.modified_by_name).toBe('Test User');
+    expect(res.body.modified_at).not.toBeNull();
+  });
+
+  it('sets modified_by_name/modified_at after a PUT edit as well', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+
+    const putRes = await request
+      .put(`/user-memberships/${umId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ status: 'paused' });
+    expect(putRes.status).toBe(200);
+    const putAuditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'update');
+    expect(putAuditRow).not.toBeNull();
+
+    const res = await request
+      .get(`/user-memberships/${umId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    // createUserMembershipDirect is a raw DB insert (no 'create' audit row),
+    // so created_by_name has no audit history to report -- only the
+    // modified_* fields from the PUT are exercised here.
+    expect(res.body.created_by_name).toBeNull();
+    expect(res.body.modified_by_name).toBe('Test User');
+    expect(res.body.modified_at).not.toBeNull();
+  });
+
+  it('does not include audit metadata fields on the list endpoint', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+
+    const res = await request
+      .get('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.id === umId);
+    expect(row).toBeDefined();
+    expect(row.created_by_name).toBeUndefined();
+    expect(row.modified_by_name).toBeUndefined();
+    expect(row.modified_at).toBeUndefined();
+  });
+});

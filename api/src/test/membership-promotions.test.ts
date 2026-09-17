@@ -285,6 +285,112 @@ describe('POST /user-memberships/:id/promotions — period benefit calc', () => 
 
 // ─── Auth / tenant isolation ────────────────────────────────────────────────
 
+// ─── Snapshot immutability (#511 stage 2) ──────────────────────────────────
+// Applying a promotion now stores a point-in-time snapshot of its
+// name/description/stackable/benefits (buildPromotionSnapshot). GET
+// /user-memberships/:id/promotions must keep showing that snapshot for an
+// already-applied row even after the promotion itself is later
+// renamed/edited -- only a row with no snapshot (pre-#511 data) falls back
+// to the live `promotions` join.
+
+describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 stage 2)', () => {
+  let gymId: string;
+  let membershipFeeGymChargeId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MP Snapshot Gym');
+    await createTestMembership(gymId, 'admin');
+    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
+    membershipFeeGymChargeId = await createGymCharge(gymId, membershipFeeTypeId);
+  });
+
+  it('keeps promotion_name/description/stackable/charge_benefits frozen after the promotion is later edited', async () => {
+    const planId = await createPlan(gymId, `Snap-Plan-${Date.now()}`);
+    const memberId = await createMember(gymId, 'Snap Member');
+    const umId = await createUserMembership(gymId, memberId, planId, 100);
+    const promoId = await createPromo(gymId, 'Original Promo Name', false);
+    await db.query('UPDATE promotions SET description = ? WHERE id = ?', ['Original description', promoId]);
+    await targetPlan(gymId, promoId, planId);
+    await setChargeBenefit(gymId, promoId, membershipFeeGymChargeId, 'fixed_discount', 10);
+
+    const applyRes = await request
+      .post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ promotion_id: promoId });
+    expect(applyRes.status).toBe(201);
+
+    // Confirm a snapshot was actually persisted at apply time.
+    const { rows: snapRows } = await db.query(
+      'SELECT snapshot FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ?',
+      [umId, promoId],
+    );
+    expect(snapRows[0].snapshot).not.toBeNull();
+
+    // Now edit the promotion's own definition -- rename it, change its
+    // description, flip stackable, and swap its charge benefit's action/value.
+    await db.query(
+      'UPDATE promotions SET name = ?, description = ?, stackable = 1 WHERE id = ?',
+      ['Renamed Promo', 'New description', promoId],
+    );
+    await db.query(
+      "UPDATE promotion_charge_benefits SET action = 'fixed_price', value = 999 WHERE promotion_id = ?",
+      [promoId],
+    );
+
+    const listRes = await request
+      .get(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(listRes.status).toBe(200);
+    const row = listRes.body.find((r: any) => r.promotion_id === promoId);
+    expect(row).toBeDefined();
+
+    // Still reflects what was granted at apply time, not the since-edited promotion.
+    expect(row.promotion_name).toBe('Original Promo Name');
+    expect(row.promotion_description).toBe('Original description');
+    expect(Boolean(row.stackable)).toBe(false);
+    expect(row.charge_benefits).toHaveLength(1);
+    expect(row.charge_benefits[0].action).toBe('fixed_discount');
+    expect(Number(row.charge_benefits[0].value)).toBe(10);
+    expect(row.charge_benefits[0].charge_type_code).toBe('membership_fee');
+    expect(row.period_benefits).toEqual([]);
+    expect(row.included_benefits).toEqual([]);
+  });
+
+  it('falls back to the live promotion fields with empty benefit arrays for a legacy row with no snapshot', async () => {
+    const planId = await createPlan(gymId, `Legacy-Plan-${Date.now()}`);
+    const memberId = await createMember(gymId, 'Legacy Member');
+    const umId = await createUserMembership(gymId, memberId, planId, 100);
+    const promoId = await createPromo(gymId, 'Legacy Promo Name', false);
+    await targetPlan(gymId, promoId, planId);
+    await setChargeBenefit(gymId, promoId, membershipFeeGymChargeId, 'fixed_discount', 15);
+
+    // Simulate a promotion applied before #511 stage 2 -- inserted directly
+    // with snapshot = NULL, bypassing the router's buildPromotionSnapshot call.
+    await db.query(
+      "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', NULL)",
+      [gymId, umId, promoId, 'legacy-actor'],
+    );
+
+    // Rename the promotion after the fact -- a legacy row has no snapshot to
+    // protect, so it must reflect this live value instead.
+    await db.query('UPDATE promotions SET name = ? WHERE id = ?', ['Renamed Legacy Promo', promoId]);
+
+    const listRes = await request
+      .get(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(listRes.status).toBe(200);
+    const row = listRes.body.find((r: any) => r.promotion_id === promoId);
+    expect(row).toBeDefined();
+    expect(row.promotion_name).toBe('Renamed Legacy Promo');
+    expect(row.charge_benefits).toEqual([]);
+    expect(row.period_benefits).toEqual([]);
+    expect(row.included_benefits).toEqual([]);
+  });
+});
+
 describe('POST /user-memberships/:id/promotions — auth', () => {
   let gymId: string;
   let gymNoAccess: string;
