@@ -741,6 +741,41 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   match, fragment match, absent-filter passthrough, no-match empty array,
   combining with `member_id`, and the joined field appearing in the
   response).
+- **#511 stage 1 of 5 (in progress — Status model + backend transitions)**:
+  first stage of Assigned Plans Management (see the issue thread for the
+  audited 5-stage plan and its Q&A). `user_memberships.status` gains two
+  pre-activation values, `draft` and `awaiting_payment` (migration 148 widens
+  the `user_memberships_status_check` CHECK constraint and adds a nullable
+  `closed_at DATETIME`, stamped by the new Close action independently of the
+  pre-existing, admin-settable `ends_at`); the ticket's "Closed" action maps
+  onto the existing `cancelled` value rather than a new terminal status. A new
+  `ALLOWED_TRANSITIONS` table in `user-memberships.ts` enforces the ticket's
+  §10 rules (`draft`→`awaiting_payment`/`cancelled`,
+  `awaiting_payment`→`active`/`cancelled`, `active`↔`paused`/→`cancelled`,
+  `paused`→`cancelled`; `expired` has no forward transitions — only ever
+  reached by `assign-new-plan`'s supersede logic) — `PUT /:id` now validates
+  any direct `status` flip against it (400 on an invalid transition) on top
+  of its existing admin-only `cancelled` guard. Four new action endpoints on
+  `/user-memberships/:id`: `POST /submit` (`draft`→`awaiting_payment`,
+  `requireModuleWrite('PAYMENTS')`), `POST /pause` (`active`→`paused`),
+  `POST /reactivate` (`paused`→`active`), and `POST /close`
+  (`requireRole('admin')`, mirroring `DELETE`'s existing cancel restriction —
+  `awaiting_payment`/`active`/`paused`→`cancelled`, stamps `closed_at`).
+  Close first checks for unused value that would be lost and returns
+  `409 {error: 'unused_value_impacted', message, warnings}` unless the
+  request body includes `confirm: true` (same warn-then-confirm contract as
+  `activity-type-schedule-rules.ts`'s `confirm_cancel_booked`) — today that
+  check is limited to a scheduled MIT charge (`next_billing_date >=
+  CURDATE()`), since per-membership benefit/usage accounting doesn't exist
+  yet. Deliberately out of scope for this stage (left for later stages per
+  the issue thread): submitting a draft doesn't materialize persisted
+  Billing Events yet (nothing in the running system pre-creates future
+  `billing_events` rows today), no UI or creation-flow entry point creates a
+  `draft` row yet, and full Benefits/Usage accounting for the Close warning
+  and the expanded card lands with the Billing Events/Benefits stage.
+  Stages 2–5 (promotion snapshot + audit-derived Modified by/at, expanded
+  detail + Billing Events endpoint, the Assigned Plans page frontend, tests +
+  docs) remain.
 
 ## Decisions
 
