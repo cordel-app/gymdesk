@@ -139,19 +139,24 @@ gymUsersRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
       // Insert or update
       if (existing_row) {
-        // Update existing row
+        // Update existing row. name is optional on this form (re-granting a
+        // different role doesn't require retyping it) — COALESCE so a blank
+        // field never clobbers a name saved earlier.
         await db.query(
-          'UPDATE gym_memberships SET role = ? WHERE id = ?',
-          [role, existing_row.id],
+          'UPDATE gym_memberships SET role = ?, name = COALESCE(?, name) WHERE id = ?',
+          [role, name, existing_row.id],
         );
         recordAudit(req, { action: 'change_role', entityType: 'gym_user', entityId: String(existing_row.id), previous: { role: existing_row.role }, next: { role } });
       } else {
-        // Insert new row
+        // Insert new row. Persist the admin-entered name (#504: granting an
+        // existing Clerk user previously dropped it entirely, leaving name/email
+        // both NULL — the row then displayed and searched only by its raw Clerk
+        // user_id everywhere, including the Admin impersonation dialog).
         const { insertId } = await db.query(
-          'INSERT INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, ?)',
-          [existing.id, gymId, role],
+          'INSERT INTO gym_memberships (user_id, gym_id, role, name) VALUES (?, ?, ?, ?)',
+          [existing.id, gymId, role, name],
         );
-        recordAudit(req, { action: 'grant', entityType: 'gym_user', entityId: String(insertId), next: { email, role } });
+        recordAudit(req, { action: 'grant', entityType: 'gym_user', entityId: String(insertId), next: { email, role, name } });
       }
 
       const { rows: updated } = await db.query<any>(

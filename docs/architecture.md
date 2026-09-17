@@ -359,8 +359,8 @@ Unlike Team, a `members` row is the record of truth (name, contact, plan, billin
 ### Team invite + auto-link flow (`gym-users`)
 
 Admins manage coaches/staff/admins from the **Team** page. `POST /gym-users`:
-- If Clerk already knows the email → insert/update a `gym_memberships` row directly.
-- If not → create a Clerk invitation carrying `publicMetadata.gym_invite = { gym_id, role }`, and insert an `invited` placeholder row.
+- If Clerk already knows the email → insert/update a `gym_memberships` row directly, persisting the admin-entered `name` (`COALESCE(?, name)` on an update, so re-granting a different role without retyping a name never clobbers one saved earlier — #504: this path used to insert only `user_id`/`gym_id`/`role`, silently dropping the name and leaving the row displayable/searchable only by its raw Clerk user ID everywhere, including the Admin impersonation dialog).
+- If not → create a Clerk invitation carrying `publicMetadata.gym_invite = { gym_id, role }`, and insert an `invited` placeholder row (this path already stored `name`/`email`).
 - On the invitee's first admin-app sign-in, `POST /gym-users/link` reads that metadata, materializes/activates the row, and clears the metadata.
 
 Guards: self-edit blocked (can't change your own role or remove yourself), and last-admin protection (can't demote/remove the sole remaining admin). All team mutations call `recordAudit`. `POST /gym-users/:id/reinvite` creates a new Clerk invitation and **overwrites** the stored `invitation_id` with it — the previous id becomes stale/unrevocable the moment a new invitation is issued, so leaving it in place would make a later removal revoke the wrong (already-superseded) invitation while the actually-live one stayed active.
