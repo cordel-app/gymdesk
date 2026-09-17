@@ -741,7 +741,34 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   match, fragment match, absent-filter passthrough, no-match empty array,
   combining with `member_id`, and the joined field appearing in the
   response).
-- **#511 stage 1 of 5 (in progress — Status model + backend transitions)**:
+- **#511 stage 2 of 5 (in progress — Promotion snapshot + audit-derived
+  Modified by/at)**: builds on stage 1 below. `user_membership_promotions`
+  gains a nullable `snapshot` JSON column (migration 149), populated by a new
+  `buildPromotionSnapshot()` in `membership-promotions.ts` at the moment a
+  promotion is applied (both `applyPromotionToMembership()` and
+  `POST /user-memberships/:id/promotions`) — it captures the promotion's
+  name/description/stackable/dates/free-paid-bonus months plus its full set
+  of `promotion_charge_benefits`/`promotion_period_benefits`/
+  `promotion_included_benefits` rows (joined to `charge_types` for a stable
+  code/name), mirroring the existing `user_membership_charge_benefits`
+  assignment-time snapshot pattern (#376) as a single JSON column rather than
+  relational rows, since this is purely a display/history concern. A new
+  `withSnapshot()` overlays the snapshot (when present) onto
+  `GET /user-memberships/:id/promotions` rows in place of the live
+  `promotions` join, so renaming a promotion or changing its benefits after
+  the fact no longer rewrites what an already-applied Assigned Plan shows;
+  legacy pre-migration rows (`snapshot IS NULL`) keep falling back to the
+  live join. Separately, `GET /user-memberships/:id` gains audit-derived
+  `created_by_name`/`modified_by_name`/`modified_at` (new `loadAuditMetadata`
+  helper querying `audit_logs`, mirroring the existing `promotions.ts`/
+  `themes.ts` `:id` pattern) — "modified" is the latest action of any kind
+  after creation (edit, submit, close, pause, reactivate, apply/revoke
+  promotion, add/remove member), `null` until the first one happens.
+  Deliberately not added to `LIST_SELECT`/the list endpoint or the expanded
+  card: the ticket requires this audit metadata only in the Details modal.
+  Stages 3–5 (expanded detail + Billing Events endpoint, the Assigned Plans
+  page frontend, remaining tests + docs) remain.
+- **#511 stage 1 of 5 (done — Status model + backend transitions)**:
   first stage of Assigned Plans Management (see the issue thread for the
   audited 5-stage plan and its Q&A). `user_memberships.status` gains two
   pre-activation values, `draft` and `awaiting_payment` (migration 148 widens
@@ -773,9 +800,6 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `billing_events` rows today), no UI or creation-flow entry point creates a
   `draft` row yet, and full Benefits/Usage accounting for the Close warning
   and the expanded card lands with the Billing Events/Benefits stage.
-  Stages 2–5 (promotion snapshot + audit-derived Modified by/at, expanded
-  detail + Billing Events endpoint, the Assigned Plans page frontend, tests +
-  docs) remain.
 
 ## Decisions
 

@@ -113,11 +113,49 @@ userMembershipsRouter.get('/', async (req, res) => {
   res.json(rows);
 });
 
+// #511 (stage 2 — Assigned Plan Details modal): `created_by`/`modified_by`
+// are derived from audit_logs rather than stored on user_memberships itself,
+// mirroring the existing promotions.ts / themes.ts `:id` pattern. "Modified"
+// means the latest action of any kind after creation — edit, submit, close,
+// pause, reactivate, apply/revoke promotion, add/remove member — never just
+// 'update', per the ticket's requirement that it reflect the last change
+// regardless of which action produced it. Deliberately not added to
+// LIST_SELECT/the expanded card: the ticket requires this audit metadata be
+// shown only in the Details modal, so it's queried just for this single-row
+// read instead of costing every list row a correlated subquery.
+// 'assign_new_plan' is the alternate creation entry point (#412 — supersede
+// a member's current plan) alongside plain 'create'; both count as this
+// row's creation, never as a later "modification" of it.
+const CREATION_ACTIONS = ['create', 'assign_new_plan'];
+
+async function loadAuditMetadata(gymId: string, userMembershipId: string | number) {
+  const [{ rows: createdRows }, { rows: modifiedRows }] = await Promise.all([
+    db.query(
+      `SELECT actor_name, created_at FROM audit_logs
+       WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action IN (?, ?)
+       ORDER BY created_at ASC LIMIT 1`,
+      [gymId, String(userMembershipId), ...CREATION_ACTIONS],
+    ),
+    db.query(
+      `SELECT actor_name, created_at FROM audit_logs
+       WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action NOT IN (?, ?)
+       ORDER BY created_at DESC LIMIT 1`,
+      [gymId, String(userMembershipId), ...CREATION_ACTIONS],
+    ),
+  ]);
+  return {
+    created_by_name: createdRows[0]?.actor_name ?? null,
+    modified_by_name: modifiedRows[0]?.actor_name ?? null,
+    modified_at: modifiedRows[0]?.created_at ?? null,
+  };
+}
+
 userMembershipsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
-  res.json(rows[0]);
+  const audit = await loadAuditMetadata(gymId, req.params.id);
+  res.json({ ...rows[0], ...audit });
 });
 
 // Returns the price + plan_price_id that applies to `date` for a plan; falls

@@ -17,12 +17,122 @@ import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionB
  */
 
 const SELECT = `
-  SELECT ump.*, p.name AS promotion_name, p.stackable, p.starts_at, p.ends_at
+  SELECT ump.*, p.name AS promotion_name, p.description AS promotion_description,
+         p.stackable, p.starts_at, p.ends_at
   FROM user_membership_promotions ump
   JOIN promotions p ON p.id = ump.promotion_id
 `;
 
 export const membershipPromotionsRouter = Router({ mergeParams: true });
+
+interface PromotionSnapshot {
+  name: string;
+  description: string | null;
+  stackable: boolean;
+  starts_at: string;
+  ends_at: string;
+  free_months: number | null;
+  paid_months: number | null;
+  bonus_months: number | null;
+  charge_benefits: Array<{ charge_type_code: string; charge_type_name: string; action: string; value: number | null }>;
+  period_benefits: Array<{
+    charge_type_code: string; charge_type_name: string; quantity: number;
+    frequency_interval: number; frequency_unit: string; enabled: boolean;
+    action: string | null; value: number | null; duration_months: number | null;
+  }>;
+  included_benefits: Array<{ charge_type_code: string; charge_type_name: string; quantity: number }>;
+}
+
+// #511 (stage 2): captures everything needed to reproduce what a promotion
+// granted at the moment it's applied to an Assigned Plan, so a later edit to
+// the promotion's own definition (rename, discount change, deactivation)
+// never rewrites the Assigned Plan's historical record. Mirrors the existing
+// `user_membership_charge_benefits` assignment-time snapshot pattern (#376),
+// just as a single JSON column instead of relational rows, since this data
+// is display/history-only and never joined against for business logic.
+async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number): Promise<PromotionSnapshot | null> {
+  const { rows: promoRows } = await tx.query(
+    `SELECT name, description, stackable, starts_at, ends_at, free_months, paid_months, bonus_months
+     FROM promotions WHERE id = ? AND gym_id = ?`,
+    [promotionId, gymId],
+  );
+  if (promoRows.length === 0) return null;
+  const promo = promoRows[0];
+
+  const { rows: chargeBenefits } = await tx.query(
+    `SELECT ct.code AS charge_type_code, ct.name AS charge_type_name, pcb.action, pcb.value
+     FROM promotion_charge_benefits pcb
+     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
+     JOIN charge_types ct ON ct.id = gc.charge_type_id
+     WHERE pcb.promotion_id = ?`,
+    [promotionId],
+  );
+
+  const { rows: periodBenefits } = await tx.query(
+    `SELECT ct.code AS charge_type_code, ct.name AS charge_type_name,
+            ppb.quantity, ppb.frequency_interval, ppb.frequency_unit, ppb.enabled,
+            ppb.action, ppb.value, ppb.duration_months
+     FROM promotion_period_benefits ppb
+     JOIN charge_types ct ON ct.id = ppb.charge_type_id
+     WHERE ppb.promotion_id = ?`,
+    [promotionId],
+  );
+
+  const { rows: includedBenefits } = await tx.query(
+    `SELECT ct.code AS charge_type_code, ct.name AS charge_type_name, pib.quantity
+     FROM promotion_included_benefits pib
+     JOIN charge_types ct ON ct.id = pib.charge_type_id
+     WHERE pib.promotion_id = ?`,
+    [promotionId],
+  );
+
+  return {
+    name: promo.name,
+    description: promo.description ?? null,
+    stackable: !!promo.stackable,
+    starts_at: promo.starts_at,
+    ends_at: promo.ends_at,
+    free_months: promo.free_months ?? null,
+    paid_months: promo.paid_months ?? null,
+    bonus_months: promo.bonus_months ?? null,
+    charge_benefits: chargeBenefits.map((r: any) => ({
+      charge_type_code: r.charge_type_code, charge_type_name: r.charge_type_name,
+      action: r.action, value: r.value != null ? parseFloat(r.value) : null,
+    })),
+    period_benefits: periodBenefits.map((r: any) => ({
+      charge_type_code: r.charge_type_code, charge_type_name: r.charge_type_name,
+      quantity: r.quantity, frequency_interval: r.frequency_interval, frequency_unit: r.frequency_unit,
+      enabled: !!r.enabled, action: r.action ?? null, value: r.value != null ? parseFloat(r.value) : null,
+      duration_months: r.duration_months ?? null,
+    })),
+    included_benefits: includedBenefits.map((r: any) => ({
+      charge_type_code: r.charge_type_code, charge_type_name: r.charge_type_name, quantity: r.quantity,
+    })),
+  };
+}
+
+// Merges a row's `snapshot` (if present — only populated going forward, see
+// migration 149) over its live-joined promotion fields, so historically
+// applied promotions display what was actually granted rather than the
+// promotion's current, possibly since-edited, definition.
+function withSnapshot(row: any) {
+  const snap = row.snapshot as PromotionSnapshot | null;
+  if (!snap) return { ...row, charge_benefits: [], period_benefits: [], included_benefits: [] };
+  return {
+    ...row,
+    promotion_name: snap.name,
+    promotion_description: snap.description,
+    stackable: snap.stackable,
+    starts_at: snap.starts_at,
+    ends_at: snap.ends_at,
+    free_months: snap.free_months,
+    paid_months: snap.paid_months,
+    bonus_months: snap.bonus_months,
+    charge_benefits: snap.charge_benefits,
+    period_benefits: snap.period_benefits,
+    included_benefits: snap.included_benefits,
+  };
+}
 
 async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number) {
   const { rows: umRows } = await tx.query(
@@ -120,10 +230,11 @@ export async function applyPromotionToMembership(
       if (existing.length > 0) throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
     }
 
+    const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
     try {
       await tx.query(
-        "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status) VALUES (?, ?, ?, ?, 'applied')",
-        [gymId, umId, promotionId, userId],
+        "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', ?)",
+        [gymId, umId, promotionId, userId, snapshot != null ? JSON.stringify(snapshot) : null],
       );
     } catch (e: any) {
       if (e.code === 'ER_DUP_ENTRY') throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
@@ -156,7 +267,7 @@ membershipPromotionsRouter.get('/', async (req, res) => {
     `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC`,
     [umId, gymId],
   );
-  res.json(rows);
+  res.json(rows.map(withSnapshot));
 });
 
 membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
@@ -207,10 +318,11 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
       }
 
       // Insert row (unique constraint catches double-apply)
+      const snapshot = await buildPromotionSnapshot(tx, gymId, promotion_id);
       try {
         await tx.query(
-          "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status) VALUES (?, ?, ?, ?, 'applied')",
-          [gymId, umId, promotion_id, userId],
+          "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', ?)",
+          [gymId, umId, promotion_id, userId, snapshot != null ? JSON.stringify(snapshot) : null],
         );
       } catch (e: any) {
         if (e.code === 'ER_DUP_ENTRY') throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
