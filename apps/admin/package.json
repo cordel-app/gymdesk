@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 8081",
     "build": "next build",
-    "start": "next start -p 8081"
+    "start": "next start -p 8081",
+    "test": "vitest run"
   },
   "dependencies": {
     "@clerk/localizations": "4.11.0",
@@ -27,6 +28,7 @@
     "@types/node": "20.19.43",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
   }
 }
