@@ -41,11 +41,14 @@ async function createMember(gymId: string, name = 'UM Test Member'): Promise<num
 // Direct-insert fixture: creates a user_memberships row plus its owner row in
 // user_membership_members, mirroring what POST /user-memberships does — used
 // whenever a test needs an existing Membership without exercising POST itself.
+// #511 stage 1: 'draft' and 'awaiting_payment' added to the status union so
+// fixtures can seed a membership at any point in the new pre-activation
+// lifecycle, without touching any of this function's existing call sites.
 async function createUserMembershipDirect(
   gymId: string,
   memberId: number,
   planId: number,
-  status: 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
+  status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
@@ -57,6 +60,42 @@ async function createUserMembershipDirect(
     [gymId, insertId, memberId],
   );
   return insertId;
+}
+
+// recordAudit() is fire-and-forget (not awaited by the router), so poll briefly
+// rather than assuming the row exists the instant the HTTP response returns
+// (mirrors the identical helper in centers.test.ts).
+async function waitForAuditLog(
+  gymId: string,
+  entityType: string,
+  entityId: number,
+  action: string,
+  timeoutMs = 2000,
+): Promise<Record<string, unknown> | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { rows } = await db.query(
+      `SELECT * FROM audit_logs WHERE gym_id = ? AND entity_type = ? AND entity_id = ? AND action = ?
+       ORDER BY id DESC LIMIT 1`,
+      [gymId, entityType, String(entityId), action],
+    );
+    if (rows.length > 0) return rows[0] as Record<string, unknown>;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
+}
+
+// Latest billing_events 'status_changed' row for a membership — recordStatusChange
+// runs inside the same transaction as the status flip, so (unlike audit_logs) this
+// is available synchronously once the HTTP response has been returned.
+async function latestStatusChangeEvent(gymId: string, userMembershipId: number): Promise<any | null> {
+  const { rows } = await db.query(
+    `SELECT * FROM billing_events
+     WHERE gym_id = ? AND user_membership_id = ? AND event_type = 'status_changed'
+     ORDER BY id DESC LIMIT 1`,
+    [gymId, userMembershipId],
+  );
+  return rows[0] ?? null;
 }
 
 // ─── Auth and access guards ───────────────────────────────────────────────────
@@ -1212,5 +1251,515 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymRO);
     expect(res.status).toBe(403);
+  });
+});
+
+// ─── PUT /user-memberships/:id — status transitions (#511 §10) ───────────────
+// ALLOWED_TRANSITIONS: draft -> awaiting_payment|cancelled; awaiting_payment ->
+// active|cancelled; active -> paused|cancelled; paused -> active|cancelled;
+// cancelled/expired -> (none). Validated for any direct `status` set via PUT.
+
+describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Transitions Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  async function seedAndPut(fromStatus: Parameters<typeof createUserMembershipDirect>[3], toStatus: string) {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, fromStatus);
+    const res = await request
+      .put(`/user-memberships/${umId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ status: toStatus });
+    return { res, umId };
+  }
+
+  it('allows draft -> awaiting_payment', async () => {
+    const { res } = await seedAndPut('draft', 'awaiting_payment');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('awaiting_payment');
+  });
+
+  it('allows awaiting_payment -> active', async () => {
+    const { res } = await seedAndPut('awaiting_payment', 'active');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
+  });
+
+  it('allows paused -> active', async () => {
+    const { res } = await seedAndPut('paused', 'active');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
+  });
+
+  it('rejects awaiting_payment -> paused with a 400 and an explanatory message', async () => {
+    const { res } = await seedAndPut('awaiting_payment', 'paused');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/awaiting_payment/);
+    expect(res.body.error).toMatch(/paused/);
+  });
+
+  it('rejects draft -> active (must go through awaiting_payment)', async () => {
+    const { res } = await seedAndPut('draft', 'active');
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects any transition out of cancelled', async () => {
+    const { res } = await seedAndPut('cancelled', 'active');
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects any transition out of expired', async () => {
+    const { res } = await seedAndPut('expired', 'active');
+    expect(res.status).toBe(400);
+  });
+
+  it('leaves the stored status unchanged after a rejected transition', async () => {
+    const { res, umId } = await seedAndPut('awaiting_payment', 'paused');
+    expect(res.status).toBe(400);
+    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('awaiting_payment');
+  });
+});
+
+// ─── POST /user-memberships/:id/submit (#511) ─────────────────────────────────
+
+describe('POST /user-memberships/:id/submit', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Submit Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'draft');
+    const res = await request.post(`/user-memberships/${umId}/submit`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when a read-only role (accountant) attempts to submit', async () => {
+    const gymRO = await createTestGym('UM Submit RO Gym');
+    await createTestMembership(gymRO, 'accountant');
+    const memberId = await createMember(gymRO);
+    const planId = await createPlan(gymRO);
+    const umId = await createUserMembershipDirect(gymRO, memberId, planId, 'draft');
+    const res = await request
+      .post(`/user-memberships/${umId}/submit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymRO);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when submitting a gym B membership with gym A credentials', async () => {
+    const gymOther = await createTestGym('UM Submit Other Gym');
+    await createTestMembership(gymOther, 'admin', 'other-clerk-user-id');
+    const memberId = await createMember(gymOther);
+    const planId = await createPlan(gymOther);
+    const otherUmId = await createUserMembershipDirect(gymOther, memberId, planId, 'draft');
+    const res = await request
+      .post(`/user-memberships/${otherUmId}/submit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a non-existent membership', async () => {
+    const res = await request
+      .post('/user-memberships/9999999/submit')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when submitting from any status other than draft', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    const res = await request
+      .post(`/user-memberships/${umId}/submit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/active/);
+  });
+
+  it('transitions draft -> awaiting_payment, recording a billing_events row and an audit log', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'draft');
+    const res = await request
+      .post(`/user-memberships/${umId}/submit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('awaiting_payment');
+
+    const event = await latestStatusChangeEvent(gymId, umId);
+    expect(event).not.toBeNull();
+    expect(event.previous_status).toBe('draft');
+    expect(event.new_status).toBe('awaiting_payment');
+
+    const auditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'submit');
+    expect(auditRow).not.toBeNull();
+  });
+});
+
+// ─── POST /user-memberships/:id/pause (#511) ──────────────────────────────────
+
+describe('POST /user-memberships/:id/pause', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Pause Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    const res = await request.post(`/user-memberships/${umId}/pause`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when a read-only role (accountant) attempts to pause', async () => {
+    const gymRO = await createTestGym('UM Pause RO Gym');
+    await createTestMembership(gymRO, 'accountant');
+    const memberId = await createMember(gymRO);
+    const planId = await createPlan(gymRO);
+    const umId = await createUserMembershipDirect(gymRO, memberId, planId, 'active');
+    const res = await request
+      .post(`/user-memberships/${umId}/pause`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymRO);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when pausing a gym B membership with gym A credentials', async () => {
+    const gymOther = await createTestGym('UM Pause Other Gym');
+    await createTestMembership(gymOther, 'admin', 'other-clerk-user-id');
+    const memberId = await createMember(gymOther);
+    const planId = await createPlan(gymOther);
+    const otherUmId = await createUserMembershipDirect(gymOther, memberId, planId, 'active');
+    const res = await request
+      .post(`/user-memberships/${otherUmId}/pause`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a non-existent membership', async () => {
+    const res = await request
+      .post('/user-memberships/9999999/pause')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when pausing from any status other than active', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'draft');
+    const res = await request
+      .post(`/user-memberships/${umId}/pause`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/draft/);
+  });
+
+  it('transitions active -> paused, recording a billing_events row and an audit log', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    const res = await request
+      .post(`/user-memberships/${umId}/pause`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('paused');
+
+    const event = await latestStatusChangeEvent(gymId, umId);
+    expect(event).not.toBeNull();
+    expect(event.previous_status).toBe('active');
+    expect(event.new_status).toBe('paused');
+
+    const auditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'pause');
+    expect(auditRow).not.toBeNull();
+  });
+});
+
+// ─── POST /user-memberships/:id/reactivate (#511) ─────────────────────────────
+
+describe('POST /user-memberships/:id/reactivate', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Reactivate Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'paused');
+    const res = await request.post(`/user-memberships/${umId}/reactivate`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when a read-only role (accountant) attempts to reactivate', async () => {
+    const gymRO = await createTestGym('UM Reactivate RO Gym');
+    await createTestMembership(gymRO, 'accountant');
+    const memberId = await createMember(gymRO);
+    const planId = await createPlan(gymRO);
+    const umId = await createUserMembershipDirect(gymRO, memberId, planId, 'paused');
+    const res = await request
+      .post(`/user-memberships/${umId}/reactivate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymRO);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when reactivating a gym B membership with gym A credentials', async () => {
+    const gymOther = await createTestGym('UM Reactivate Other Gym');
+    await createTestMembership(gymOther, 'admin', 'other-clerk-user-id');
+    const memberId = await createMember(gymOther);
+    const planId = await createPlan(gymOther);
+    const otherUmId = await createUserMembershipDirect(gymOther, memberId, planId, 'paused');
+    const res = await request
+      .post(`/user-memberships/${otherUmId}/reactivate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a non-existent membership', async () => {
+    const res = await request
+      .post('/user-memberships/9999999/reactivate')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when reactivating from any status other than paused', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    const res = await request
+      .post(`/user-memberships/${umId}/reactivate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/active/);
+  });
+
+  it('transitions paused -> active, recording a billing_events row and an audit log', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'paused');
+    const res = await request
+      .post(`/user-memberships/${umId}/reactivate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('active');
+
+    const event = await latestStatusChangeEvent(gymId, umId);
+    expect(event).not.toBeNull();
+    expect(event.previous_status).toBe('paused');
+    expect(event.new_status).toBe('active');
+
+    const auditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'reactivate');
+    expect(auditRow).not.toBeNull();
+  });
+});
+
+// ─── POST /user-memberships/:id/close (#511 §7) ───────────────────────────────
+// Admin-only, mirroring DELETE's cancel restriction. Closeable from
+// awaiting_payment/active/paused; warns (409) + requires `confirm: true` when
+// next_billing_date is today or in the future; closes immediately otherwise.
+
+describe('POST /user-memberships/:id/close', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Close Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  async function setNextBillingDate(umId: number, dateExpr: string | null) {
+    if (dateExpr === null) {
+      await db.query('UPDATE user_memberships SET next_billing_date = NULL WHERE id = ?', [umId]);
+    } else {
+      await db.query(`UPDATE user_memberships SET next_billing_date = ${dateExpr} WHERE id = ?`, [umId]);
+    }
+  }
+
+  it('returns 401 without an Authorization header', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    const res = await request.post(`/user-memberships/${umId}/close`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when a non-admin role (front_desk) attempts to close', async () => {
+    const gymFD = await createTestGym('UM Close FrontDesk Gym');
+    await createTestMembership(gymFD, 'front_desk');
+    const memberId = await createMember(gymFD);
+    const planId = await createPlan(gymFD);
+    const umId = await createUserMembershipDirect(gymFD, memberId, planId, 'active');
+    const res = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymFD);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when closing a gym B membership with gym A credentials', async () => {
+    const gymOther = await createTestGym('UM Close Other Gym');
+    await createTestMembership(gymOther, 'admin', 'other-clerk-user-id');
+    const memberId = await createMember(gymOther);
+    const planId = await createPlan(gymOther);
+    const otherUmId = await createUserMembershipDirect(gymOther, memberId, planId, 'active');
+    const res = await request
+      .post(`/user-memberships/${otherUmId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a non-existent membership', async () => {
+    const res = await request
+      .post('/user-memberships/9999999/close')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it.each(['draft', 'cancelled', 'expired'] as const)(
+    'returns 400 when closing from status %s',
+    async (status) => {
+      const memberId = await createMember(gymId);
+      const planId = await createPlan(gymId);
+      const umId = await createUserMembershipDirect(gymId, memberId, planId, status);
+      const res = await request
+        .post(`/user-memberships/${umId}/close`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(new RegExp(status));
+    },
+  );
+
+  it('closes immediately (no confirm needed) when there is no pending next_billing_date', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    await setNextBillingDate(umId, null);
+
+    const res = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('cancelled');
+
+    const { rows } = await db.query('SELECT status, closed_at FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('cancelled');
+    expect(rows[0].closed_at).not.toBeNull();
+
+    const event = await latestStatusChangeEvent(gymId, umId);
+    expect(event).not.toBeNull();
+    expect(event.previous_status).toBe('active');
+    expect(event.new_status).toBe('cancelled');
+
+    const auditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'close');
+    expect(auditRow).not.toBeNull();
+  });
+
+  it('closes immediately when next_billing_date is in the past', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    await setNextBillingDate(umId, 'DATE_SUB(CURDATE(), INTERVAL 1 DAY)');
+
+    const res = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('cancelled');
+  });
+
+  it('returns 409 with unused_value_impacted + warnings when next_billing_date is today, and does not close', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    await setNextBillingDate(umId, 'CURDATE()');
+
+    const res = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('unused_value_impacted');
+    expect(Array.isArray(res.body.warnings)).toBe(true);
+    expect(res.body.warnings.length).toBeGreaterThan(0);
+    expect(res.body.message).toEqual(expect.any(String));
+
+    const { rows } = await db.query('SELECT status, closed_at FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('active');
+    expect(rows[0].closed_at).toBeNull();
+  });
+
+  it('returns 409 when next_billing_date is in the future, and does not close', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'paused');
+    await setNextBillingDate(umId, 'DATE_ADD(CURDATE(), INTERVAL 7 DAY)');
+
+    const res = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('unused_value_impacted');
+
+    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('paused');
+  });
+
+  it('closes when confirm: true is sent despite a pending next_billing_date', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
+    await setNextBillingDate(umId, 'DATE_ADD(CURDATE(), INTERVAL 7 DAY)');
+
+    const warned = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(warned.status).toBe(409);
+
+    const res = await request
+      .post(`/user-memberships/${umId}/close`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ confirm: true });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('cancelled');
+
+    const { rows } = await db.query('SELECT status, closed_at FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('cancelled');
+    expect(rows[0].closed_at).not.toBeNull();
   });
 });
