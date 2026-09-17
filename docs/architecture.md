@@ -621,6 +621,8 @@ calendar_event_shared_training_requests               (replaces shared_training_
 
 **Frontend**: the admin Calendar page's `_type`-branching (#326) is unchanged in this stage. The separate `[locale]/schedule/` page was removed by #437 (ahead of a full stage 4) rather than collapsed into a detail panel — session management now lives solely in the Calendar page's `ClassSessionDetailPanel`; shared-training request approval still needs a home there.
 
+**Event color (#541)**: the Calendar page colors both `calendar_events` and `class_sessions` blocks exclusively from the persisted `status` column, via the centralized `getCalendarEventStatusColor()` map in `apps/admin/src/lib/calendarEventColors.ts` — replacing the prior `activity_type.color`/per-event `color`-based fill. Reuse that map (don't hand-roll a new status→color lookup) for any future calendar-adjacent status display.
+
 **Migration**: hard cutover, as decided (no dual-write/backfill — see decisions.md #10): stage 3 repointed every router at the new tables directly, with no data migration from `class_sessions`/`bookings`/`shared_training_requests` (there was no production data to preserve). Stage 5 (cleanup, not yet done) drops `class_sessions`, `bookings`, `shared_training_requests`, and `calendar_event_series`.
 
 ---
