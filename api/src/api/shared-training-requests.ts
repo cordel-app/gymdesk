@@ -243,7 +243,7 @@ export async function validateRequest(
     `SELECT ce.id, ce.status, ce.allows_shared_booking, at.is_shareable
      FROM calendar_events ce
      JOIN activity_types at ON at.id = ce.activity_type_id
-     WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL`,
+     WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL`,
     [calendarEventId, gymId],
   );
   if (sessionRows.length === 0) return { status: 404, message: 'Session not found' };

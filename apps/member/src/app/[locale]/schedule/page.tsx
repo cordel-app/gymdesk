@@ -25,12 +25,10 @@ interface Session {
   my_booking_id: number | null;
   access_locked: boolean;
   can_cancel: boolean;
-  kind: 'session';
 }
 
 interface PastBooking {
   booking_id: number;
-  kind: 'session';
   entity_id: number;
   title: string;
   starts_at: string;
@@ -72,7 +70,7 @@ export default function MemberSchedulePage() {
     const toStr = to.toISOString();
     try {
       const sessionData = await apiFetch<Session[]>(`/me/schedule?to=${toStr}`);
-      setSessions(sessionData.map((s) => ({ ...s, kind: 'session' as const })));
+      setSessions(sessionData);
     } catch (err: any) { setLoadError(err.message ?? t('common.error')); }
     finally { setLoading(false); }
   }

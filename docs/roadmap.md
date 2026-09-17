@@ -878,6 +878,32 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
+- **#503 (in progress — stage 1 of a 9-stage plan agreed on the issue
+  thread)**: Members App — Align Calendar Event Information with Admin
+  Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
+  `calendar_events.kind ENUM('session','event')` (added by the #360
+  unification) and both its CHECK constraints. `bookMemberOnSession`
+  (`bookings.ts`) no longer gates bookings on `kind` — every `calendar_events`
+  row is bookable at the primitive/API level, per the issue thread's explicit
+  "no separate logic for sessions versus events." All dependent queries
+  updated: `me.ts` (`/me/schedule`, `/me/upcoming`, `/me/activity-history`),
+  `shared-training-requests.ts`, `scheduleEngine.ts`, `centers.ts`
+  (`DEPENDENT_TABLES` center-delete guard), `audit-registry.ts`, and
+  `calendar-events.ts`. The admin-facing `classSessionsRouter`/
+  `calendarEventsRouter` split is *not* merged by this stage — it now
+  partitions by `activity_type_id` (`IS NOT NULL` vs `IS NULL`) instead of
+  `kind`, an exhaustive, mutually-exclusive split equivalent to the old one,
+  so the admin Calendar page's dual-fetch needed no change. See
+  `docs/decisions.md` #11 and `docs/architecture.md`'s "Planned: CalendarEvent
+  Unification" section for the full rationale, including the two explicitly
+  deferred gaps: merging the two admin detail panels (`ClassSessionDetailPanel`
+  vs `EventDetailsPanel` — no UI design has been specified for this yet), and
+  extending member-facing discovery to rows without an `activity_type_id`
+  (the plan's stage 5, "Unified member read model"). Remaining stages
+  (waitlist mode, activity→event field propagation, member calendar UI,
+  Home/My Bookings updates, member notifications, tests/docs) are tracked on
+  #503 and land as separate PRs, each `Related to #503` until the final stage
+  closes it.
 
 ## Decisions
 

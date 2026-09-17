@@ -1,10 +1,22 @@
 /**
- * #360 stage 3: unified CalendarEvent routers.
+ * #360 stage 3 / #503 stage 1: unified CalendarEvent routers.
  *
- * Both routers share the calendar_events table differentiated by the `kind`
- * column added in migration 134:
- *   - classSessionsRouter  → kind = 'session'  (was api/class-sessions.ts)
- *   - calendarEventsRouter → kind = 'event'    (original calendar-events.ts)
+ * Both routers share the calendar_events table. The `kind` discriminator
+ * added in migration 134 was removed in #503 stage 1 — every calendar_event
+ * is now equally bookable (see bookings.ts's bookMemberOnSession, which no
+ * longer gates on kind). The two routers keep their existing, separate
+ * endpoint sets for now (merging the admin-facing session-management UI
+ * with the plain-event CRUD UI is a bigger, unresolved UI design question
+ * left for a later stage), but partition calendar_events using the
+ * already-existing `activity_type_id` column instead of the dropped `kind`
+ * column — matching the data model confirmed on the issue thread
+ * (activity_types → 0..N calendar_events; a manually created calendar entry
+ * has activity_type_id = NULL; an occurrence of an activity type does not):
+ *   - classSessionsRouter  → activity_type_id IS NOT NULL  (was api/class-sessions.ts)
+ *   - calendarEventsRouter → activity_type_id IS NULL      (original calendar-events.ts)
+ * This preserves the existing, mutually-exclusive partition the admin
+ * Calendar page's dual-fetch (#326) relies on to render each occurrence
+ * exactly once, with no frontend change required.
  *
  * Bookings for sessions live in calendar_event_bookings (migration 132).
  */
@@ -49,6 +61,10 @@ async function checkConflict(
  * class_sessions-backed query so stage-4 frontend migration starts from a
  * stable baseline.  Key aliases:
  *   ce.capacity → max_capacity_override   (old field name kept for compat)
+ *
+ * The JOIN to activity_types is INNER — it doubles as the "this is a session,
+ * not a plain calendar entry" filter now that `kind` is gone, since every
+ * session row has a non-null activity_type_id.
  */
 const SESSION_SELECT = `
   SELECT ce.*,
@@ -77,7 +93,7 @@ const SESSION_SELECT = `
                AND ce2.space_id = ce.space_id
                AND ce2.starts_at = ce.starts_at
                AND ce2.ends_at = ce.ends_at
-               AND ce2.kind = 'session'
+               AND ce2.activity_type_id IS NOT NULL
                AND ce2.status <> 'cancelled'
                AND ce2.deleted_at IS NULL
            )
@@ -100,7 +116,7 @@ export const classSessionsRouter = Router();
 classSessionsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { from, to, status, center_id, activity_type_id, space_id, trainer_membership_id } = req.query as Record<string, string | undefined>;
-  const where: string[] = ["ce.gym_id = ?", "ce.kind = 'session'", 'ce.deleted_at IS NULL'];
+  const where: string[] = ["ce.gym_id = ?", 'ce.deleted_at IS NULL'];
   const params: any[] = [gymId];
   if (from)                 { where.push('ce.starts_at >= ?');              params.push(from); }
   if (to)                   { where.push('ce.starts_at <= ?');              params.push(to); }
@@ -119,7 +135,7 @@ classSessionsRouter.get('/', async (req, res) => {
 classSessionsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL`,
+    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL`,
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -229,7 +245,6 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
            JOIN spaces sp ON sp.id = ce.space_id
            WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
              AND ce.starts_at = ? AND ce.ends_at = ?
-             AND ce.kind = 'session'
              AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL
            FOR UPDATE`,
           [gymId, trainerId, spaceIdVal, startsAtDate, endsAtDate],
@@ -257,9 +272,9 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
 
         const { insertId } = await tx.query(
           `INSERT INTO calendar_events
-           (gym_id, center_id, kind, title, activity_type_id, trainer_membership_id, space_id,
+           (gym_id, center_id, title, activity_type_id, trainer_membership_id, space_id,
             starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
-           VALUES (?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
            startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
         );
@@ -280,9 +295,9 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
     const row = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO calendar_events
-         (gym_id, center_id, kind, title, activity_type_id, trainer_membership_id, space_id,
+         (gym_id, center_id, title, activity_type_id, trainer_membership_id, space_id,
           starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, 'session', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
          startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
       );
@@ -311,7 +326,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
     const { rows: existingRows } = await db.query(
       `SELECT ce.center_id, ce.trainer_membership_id AS cur_trainer, ce.space_id AS cur_space,
               ce.starts_at AS cur_starts, ce.ends_at AS cur_ends, ce.activity_type_id AS cur_activity
-       FROM calendar_events ce WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL`,
+       FROM calendar_events ce WHERE ce.id = ? AND ce.gym_id = ? AND ce.activity_type_id IS NOT NULL AND ce.deleted_at IS NULL`,
       [req.params.id, gymId],
     );
     if (existingRows.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -348,7 +363,6 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
            JOIN spaces sp ON sp.id = ce.space_id
            WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
              AND ce.starts_at = ? AND ce.ends_at = ?
-             AND ce.kind = 'session'
              AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL
              AND ce.id <> ?
            FOR UPDATE`,
@@ -384,7 +398,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
             ends_at               = COALESCE(?, ends_at),
             capacity              = IF(?, ?, capacity),
             modified_by_membership_id = ?
-           WHERE id = ? AND gym_id = ? AND kind = 'session'`,
+           WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
           [
             activity_type_id ?? null,
             'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
@@ -400,7 +414,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
       });
 
       const { rows } = await db.query(
-        `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+        `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
         [req.params.id, gymId],
       );
       return res.json(rows[0]);
@@ -416,7 +430,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
         capacity               = IF(?, ?, capacity),
         allows_shared_booking  = IF(?, ?, allows_shared_booking),
         modified_by_membership_id = ?
-       WHERE id = ? AND gym_id = ? AND kind = 'session'`,
+       WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
       [
         activity_type_id ?? null,
         'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
@@ -432,7 +446,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Session not found' });
     const { rows } = await db.query(
-      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
       [req.params.id, gymId],
     );
     res.json(rows[0]);
@@ -450,7 +464,7 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'
   try {
     const { rows: sessionRows } = await db.query(
       `SELECT ce.id, ce.trainer_membership_id, ce.space_id, ce.starts_at, ce.ends_at
-       FROM calendar_events ce WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL`,
+       FROM calendar_events ce WHERE ce.id = ? AND ce.gym_id = ? AND ce.activity_type_id IS NOT NULL AND ce.deleted_at IS NULL`,
       [req.params.id, gymId],
     );
     if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -461,7 +475,7 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'
         `SELECT COUNT(*) AS cnt FROM calendar_events ce
          WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
            AND ce.starts_at = ? AND ce.ends_at = ?
-           AND ce.kind = 'session'
+           AND ce.activity_type_id IS NOT NULL
            AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL AND ce.id <> ?`,
         [gymId, session.trainer_membership_id, session.space_id, session.starts_at, session.ends_at, req.params.id],
       );
@@ -475,13 +489,13 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'
 
     await db.query(
       `UPDATE calendar_events SET allows_shared_booking = ?, modified_by_membership_id = ?
-       WHERE id = ? AND gym_id = ? AND kind = 'session'`,
+       WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
       [authorized ? 1 : 0, gymMembershipId, req.params.id, gymId],
     );
 
     recordAudit(req, { action: 'update', entityType: 'class_session', entityId: req.params.id, next: { allows_shared_booking: authorized } });
     const { rows } = await db.query(
-      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
       [req.params.id, gymId],
     );
     res.json(rows[0]);
@@ -497,14 +511,14 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('TRAINING'), async (r
     `SELECT ce.id, ce.starts_at, at.name AS title
      FROM calendar_events ce
      JOIN activity_types at ON at.id = ce.activity_type_id
-     WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL`,
+     WHERE ce.id = ? AND ce.gym_id = ? AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL`,
     [req.params.id, gymId],
   );
   if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
 
   const session = sessionRows[0];
   const { rowCount } = await db.query(
-    "UPDATE calendar_events SET status = 'cancelled', cancellation_reason = ? WHERE id = ? AND gym_id = ? AND kind = 'session'",
+    "UPDATE calendar_events SET status = 'cancelled', cancellation_reason = ? WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL",
     [reason, req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
@@ -529,7 +543,7 @@ classSessionsRouter.post('/:id/bulk-present',
   async (req, res) => {
     const { gymId, gymMembershipId } = getTenantContext(req);
     const { rows: session } = await db.query(
-      "SELECT id FROM calendar_events WHERE id = ? AND gym_id = ? AND kind = 'session' AND deleted_at IS NULL",
+      "SELECT id FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL",
       [req.params.id, gymId],
     );
     if (session.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -586,7 +600,7 @@ classSessionsRouter.post('/:id/walk-in',
       });
 
       const { rows } = await db.query(
-        `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+        `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
         [req.params.id, gymId],
       );
       res.status(201).json({ booking_id: bookingId, session: rows[0] });
@@ -610,7 +624,7 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('TRAINING')
   }
 
   const { rows: prev } = await db.query(
-    "SELECT effective_trainer_membership_id FROM calendar_events WHERE id = ? AND gym_id = ? AND kind = 'session' AND deleted_at IS NULL",
+    "SELECT effective_trainer_membership_id FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL",
     [req.params.id, gymId],
   );
   if (prev.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -620,7 +634,7 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('TRAINING')
      SET effective_trainer_membership_id = ?,
          effective_trainer_confirmed_at  = IF(? IS NOT NULL, UTC_TIMESTAMP(), effective_trainer_confirmed_at),
          modified_by_membership_id = ?
-     WHERE id = ? AND gym_id = ? AND kind = 'session'`,
+     WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
     [trainer_membership_id ?? null, trainer_membership_id ?? null, gymMembershipId, req.params.id, gymId],
   );
 
@@ -633,7 +647,7 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('TRAINING')
   });
 
   const { rows } = await db.query(
-    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
     [req.params.id, gymId],
   );
   res.json(rows[0]);
@@ -643,7 +657,7 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('TRAINING'), async 
   const { gymId, gymMembershipId } = getTenantContext(req);
 
   const { rows: sessionRows } = await db.query(
-    "SELECT id, status, trainer_membership_id, effective_trainer_membership_id FROM calendar_events WHERE id = ? AND gym_id = ? AND kind = 'session' AND deleted_at IS NULL",
+    "SELECT id, status, trainer_membership_id, effective_trainer_membership_id FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL",
     [req.params.id, gymId],
   );
   if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -669,13 +683,13 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('TRAINING'), async 
   }
 
   await db.query(
-    "UPDATE calendar_events SET status = 'completed', modified_by_membership_id = ? WHERE id = ? AND gym_id = ? AND kind = 'session'",
+    "UPDATE calendar_events SET status = 'completed', modified_by_membership_id = ? WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL",
     [gymMembershipId, req.params.id, gymId],
   );
 
   recordAudit(req, { action: 'complete', entityType: 'class_session', entityId: req.params.id, next: { status: 'completed' } });
   const { rows } = await db.query(
-    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session'`,
+    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
     [req.params.id, gymId],
   );
   res.json(rows[0]);
@@ -720,7 +734,7 @@ calendarEventsRouter.get('/', async (req, res) => {
   const { from, to, space_id, activity_type_id, trainer_membership_id } = req.query;
 
   const params: any[] = [gymId];
-  let sql = `${EVENT_SELECT} WHERE ce.gym_id = ? AND ce.kind = 'event' AND ce.deleted_at IS NULL`;
+  let sql = `${EVENT_SELECT} WHERE ce.gym_id = ? AND ce.activity_type_id IS NULL AND ce.deleted_at IS NULL`;
 
   if (from)                 { sql += ' AND ce.ends_at >= ?';              params.push(from); }
   if (to)                   { sql += ' AND ce.starts_at <= ?';            params.push(to); }
@@ -736,7 +750,7 @@ calendarEventsRouter.get('/', async (req, res) => {
 calendarEventsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    `${EVENT_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'event' AND ce.deleted_at IS NULL`,
+    `${EVENT_SELECT} WHERE ce.id = ? AND ce.gym_id = ? AND ce.activity_type_id IS NULL AND ce.deleted_at IS NULL`,
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Calendar event not found' });
@@ -775,9 +789,9 @@ calendarEventsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, 
   try {
     const { insertId } = await db.query(
       `INSERT INTO calendar_events
-       (gym_id, kind, title, activity_type_id, space_id, center_id, trainer_membership_id, color,
+       (gym_id, title, activity_type_id, space_id, center_id, trainer_membership_id, color,
         starts_at, ends_at, all_day, description, status, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, 'event', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, title.trim(), activity_type_id ?? null, space_id ?? null, center_id ?? null,
        trainer_membership_id ?? null, color ?? null,
        starts_at, ends_at, all_day ? 1 : 0,
@@ -795,7 +809,7 @@ calendarEventsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, 
 calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { rows: existing } = await db.query(
-    "SELECT * FROM calendar_events WHERE id = ? AND gym_id = ? AND kind = 'event' AND deleted_at IS NULL",
+    "SELECT * FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL",
     [req.params.id, gymId],
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Calendar event not found' });
@@ -846,7 +860,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
         description            = IF(?, ?, description),
         status                 = COALESCE(?, status),
         modified_by_membership_id = ?
-       WHERE id = ? AND gym_id = ? AND kind = 'event' AND deleted_at IS NULL`,
+       WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL`,
       [
         title?.trim() ?? null,
         'activity_type_id'      in req.body ? 1 : 0, activity_type_id ?? null,
@@ -874,14 +888,14 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
 calendarEventsRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { rows: existing } = await db.query(
-    "SELECT title FROM calendar_events WHERE id = ? AND gym_id = ? AND kind = 'event' AND deleted_at IS NULL",
+    "SELECT title FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL",
     [req.params.id, gymId],
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Calendar event not found' });
 
   await db.query(
     `UPDATE calendar_events SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
-     WHERE id = ? AND gym_id = ? AND kind = 'event'`,
+     WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL`,
     [gymMembershipId ?? null, req.params.id, gymId],
   );
   recordAudit(req, { action: 'delete', entityType: 'calendar_event', entityId: req.params.id, entityName: existing[0].title });

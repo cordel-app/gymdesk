@@ -396,7 +396,6 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     return segments.map((seg) => ({
       gym_id: rule.gym_id,
       center_id: rule.default_center_id ?? null,
-      kind: 'session',
       title: rule.activity_type_name,
       activity_type_id: rule.activity_type_id,
       space_id: rule.default_space_id ?? null,
@@ -432,11 +431,11 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
     const chunk = newRows.slice(i, i + CHUNK);
     await db.query(
       `INSERT INTO calendar_events
-         (gym_id, center_id, kind, title, activity_type_id, space_id, trainer_membership_id, color,
+         (gym_id, center_id, title, activity_type_id, space_id, trainer_membership_id, color,
           capacity, starts_at, ends_at, all_day, status, schedule_rule_id, created_at, updated_at)
-       VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`,
+       VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`,
       chunk.flatMap((r) => [
-        r.gym_id, r.center_id, r.kind, r.title, r.activity_type_id, r.space_id,
+        r.gym_id, r.center_id, r.title, r.activity_type_id, r.space_id,
         r.trainer_membership_id, r.color, r.capacity,
         r.starts_at, r.ends_at, r.all_day, r.status, r.schedule_rule_id, r.created_at, r.updated_at,
       ]),
