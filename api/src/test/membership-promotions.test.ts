@@ -358,7 +358,7 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
     expect(row.included_benefits).toEqual([]);
   });
 
-  it('falls back to the live promotion fields with empty benefit arrays for a legacy row with no snapshot', async () => {
+  it('falls back to a live join of the current promotion + benefits for a legacy row with no snapshot', async () => {
     const planId = await createPlan(gymId, `Legacy-Plan-${Date.now()}`);
     const memberId = await createMember(gymId, 'Legacy Member');
     const umId = await createUserMembership(gymId, memberId, planId, 100);
@@ -373,9 +373,14 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
       [gymId, umId, promoId, 'legacy-actor'],
     );
 
-    // Rename the promotion after the fact -- a legacy row has no snapshot to
-    // protect, so it must reflect this live value instead.
+    // Edit the promotion (and its charge benefit) after the fact -- a legacy
+    // row has no snapshot to protect, so unlike the snapshotted case above,
+    // it must reflect these live edits rather than what applied_at originally saw.
     await db.query('UPDATE promotions SET name = ? WHERE id = ?', ['Renamed Legacy Promo', promoId]);
+    await db.query(
+      "UPDATE promotion_charge_benefits SET action = 'fixed_price', value = 42 WHERE promotion_id = ?",
+      [promoId],
+    );
 
     const listRes = await request
       .get(`/user-memberships/${umId}/promotions`)
@@ -385,7 +390,9 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
     const row = listRes.body.find((r: any) => r.promotion_id === promoId);
     expect(row).toBeDefined();
     expect(row.promotion_name).toBe('Renamed Legacy Promo');
-    expect(row.charge_benefits).toEqual([]);
+    expect(row.charge_benefits).toHaveLength(1);
+    expect(row.charge_benefits[0].action).toBe('fixed_price');
+    expect(Number(row.charge_benefits[0].value)).toBe(42);
     expect(row.period_benefits).toEqual([]);
     expect(row.included_benefits).toEqual([]);
   });
