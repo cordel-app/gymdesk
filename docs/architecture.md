@@ -278,6 +278,27 @@ System-wide singleton (single row, id=1, CHECK id=1). Not a per-tenant table —
 
 `billing_events.event_type` CHECK extended with `recurring_payment` and `failed_billing`. `payment_requests.source` CHECK extended with `billing_run`.
 
+### Assigned Plans — expanded detail + Billing Events (#511 stage 3, migration 150)
+
+`GET /user-memberships/:id` is now the "expanded card" endpoint for an Assigned Plan (mirrors `enrichPlan()`'s pattern in `membership-plans.ts` — everything the Details modal needs in one call, rather than several separate per-section requests). Beyond the plain `user_memberships` row + audit metadata (stage 2), it also embeds:
+- `members` — every covered Member (owner + additional, #374), via the existing `MEMBERS_SELECT`.
+- `billing_policy` — the plan's `billing_policies` row (recurring/initial cadence, auto-renew).
+- `charge_benefits` — the assignment-time Plan Charge Benefit snapshot (`user_membership_charge_benefits`, migration 130), joined for display.
+- `activity_allowances` — the plan's `plan_allowances` rows with allocated/used/remaining for `session_count` allowances, usage aggregated across every covered Member's bookings in the current recurrence window (a display aggregate — real booking-time enforcement in `activity-eligibility.ts` still checks each Member independently).
+- `promotions` — applied promotions with their stage-2 snapshot overlay, via the same `fetchAppliedPromotions()` also used by `GET /:id/promotions`.
+- `billing_events` — the Billing Events view (below).
+
+`GET /user-memberships/:id/billing-events` exposes that last section on its own (a lighter, single-section fetch), computed by the same `computeBillingEventsView()` the `:id` response embeds it from.
+
+**Billing Events range rule** (per the #511 issue thread's Q2 answer, implemented in `domain/assignedPlanBillingEvents.ts` — pure, unit-tested, no DB dependency): show all billing events affected by a promotion applied to the plan, plus the events covering the following two calendar months after the last one; with no applicable promotion, the next two calendar months from the plan's `starts_at`. Clamped to `ends_at` when the plan ends first.
+- **`draft`** plans never write to `billing_events` — the view is a non-persisted projection from the plan's recurring billing cadence (`billing_policies`) and its currently-applied promotions' Membership Fee benefits, capped at 36 months out as a safety net for an indefinite (no `duration_months`, never-revoked) promotion, which would otherwise push the range forward forever.
+- Every other status queries the real, persisted `billing_events` ledger and only ever tags (`promotion_affected: true/false`) and filters it — amounts are never recomputed, preserving historical values.
+- The response's top-level `projected: true/false` (and per-event on the draft path) lets the frontend distinguish a draft's preview from a submitted plan's persisted events.
+
+`user_membership_promotions.revoked_at` (nullable `DATETIME`, migration 150) is stamped when a promotion is revoked (`DELETE /user-memberships/:id/promotions/:promotionId`) — together with `applied_at`, it defines the `[applied_at, revoked_at]` window used to tag whether a given billing event (or projected cycle) was affected by that promotion, independent of the row's `status`. Migration 150 also adds a `billing_events (user_membership_id, created_at)` composite index, since the range calculation reads every ledger row for one membership ordered by `created_at`.
+
+The Close action's unused-value check (stage 1) now reuses the same `activity_allowances` usage helper instead of only its original pending-`next_billing_date` check, so a `session_count` allowance with sessions still remaining also warns before closing.
+
 ---
 
 ## Backend Route Registration (`index.ts`)

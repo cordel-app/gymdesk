@@ -741,7 +741,37 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   match, fragment match, absent-filter passthrough, no-match empty array,
   combining with `member_id`, and the joined field appearing in the
   response).
-- **#511 stage 2 of 5 (in progress — Promotion snapshot + audit-derived
+- **#511 stage 3 of 5 (done — Expanded detail + Billing Events endpoint)**:
+  builds on stages 1-2 below. `GET /user-memberships/:id` is now the
+  "expanded card" endpoint (mirroring `enrichPlan()`'s pattern in
+  `membership-plans.ts`), additionally embedding `members`, `billing_policy`,
+  the assignment-time `charge_benefits` snapshot, `activity_allowances`
+  (allocated/used/remaining, aggregated across covered Members), `promotions`
+  (via the same `fetchAppliedPromotions()` now also used by
+  `GET /:id/promotions`), and a `billing_events` Billing Events view — also
+  exposed on its own via `GET /:id/billing-events`. The range rule (issue
+  thread Q2): all billing events affected by a promotion applied to the
+  plan, plus the events covering the following two calendar months after the
+  last one; with no applicable promotion, the next two calendar months from
+  the plan's `starts_at`; clamped to `ends_at`. Computed by the new, pure
+  `domain/assignedPlanBillingEvents.ts` (unit-tested, no DB dependency):
+  `draft` plans (which never write to `billing_events`) get a non-persisted
+  projection from the plan's billing cadence + currently-applied promotions
+  (capped at 36 months for an indefinite, never-revoked promotion); every
+  other status queries the real, persisted ledger and only ever tags
+  (`promotion_affected`) and filters it, preserving historical values. A
+  top-level (and per-event, for drafts) `projected: true/false` flag lets the
+  frontend distinguish a draft's preview from a submitted plan's persisted
+  events. Migration 150 adds `user_membership_promotions.revoked_at`
+  (nullable `DATETIME`, stamped on revoke) — together with `applied_at`, the
+  `[applied_at, revoked_at]` window used to tag whether a billing event/cycle
+  was promotion-affected — plus a `billing_events (user_membership_id,
+  created_at)` composite index for the range query. The Close action's
+  unused-value check (stage 1) now reuses the same `activity_allowances`
+  usage helper instead of only its original pending-`next_billing_date`
+  check. Stage 4 (the Assigned Plans page frontend) remains; stage 5's
+  wrap-up work was folded into stages 1-3 as it was for #560/#561.
+- **#511 stage 2 of 5 (done — Promotion snapshot + audit-derived
   Modified by/at)**: builds on stage 1 below. `user_membership_promotions`
   gains a nullable `snapshot` JSON column (migration 149), populated by a new
   `buildPromotionSnapshot()` in `membership-promotions.ts` at the moment a
@@ -766,8 +796,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   promotion, add/remove member), `null` until the first one happens.
   Deliberately not added to `LIST_SELECT`/the list endpoint or the expanded
   card: the ticket requires this audit metadata only in the Details modal.
-  Stages 3–5 (expanded detail + Billing Events endpoint, the Assigned Plans
-  page frontend, remaining tests + docs) remain.
+  Stage 3 (expanded detail + Billing Events endpoint) landed next, see above.
 - **#511 stage 1 of 5 (done — Status model + backend transitions)**:
   first stage of Assigned Plans Management (see the issue thread for the
   audited 5-stage plan and its Q&A). `user_memberships.status` gains two

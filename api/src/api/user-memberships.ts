@@ -5,6 +5,15 @@ import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
+import { fetchAppliedPromotions, fetchLiveBenefits } from './membership-promotions';
+import {
+  AppliedPromotionForBilling,
+  BillingUnit,
+  MembershipFeeBenefit,
+  PromotionApplicationWindow,
+  projectDraftBillingEvents,
+  selectPersistedBillingEventsInRange,
+} from '../domain/assignedPlanBillingEvents';
 
 // #511 (stage 1 — Assigned Plans lifecycle): 'draft' and 'awaiting_payment' are
 // new, pre-activation statuses. The ticket's "Closed" action maps onto the
@@ -150,12 +159,209 @@ async function loadAuditMetadata(gymId: string, userMembershipId: string | numbe
   };
 }
 
+// ─── Expanded detail + Billing Events (#511 stage 3) ──────────────────────────
+// GET /:id below embeds everything the expanded card / Details modal needs in
+// one call (members, billing config, benefit usage, applied promotions, the
+// Billing Events view) — mirroring `enrichPlan()` in membership-plans.ts,
+// this codebase's existing pattern for an "expanded card" endpoint, rather
+// than the Members-page pattern of several separate per-section requests.
+// GET /:id/promotions (membership-promotions.ts) and GET /:id/billing-events
+// (below) stay mounted too, both now backed by the same helpers, for callers
+// that only need one section (e.g. a lighter refetch after apply/revoke).
+
+// mysql2 may return DATE/DATETIME columns as Date objects rather than
+// strings depending on the connection's timezone config (see the identical
+// note in membership-plans.ts's enrichPlan) — normalize to YYYY-MM-DD before
+// any string date comparison in the Billing Events range calculation.
+function toDateOnly(v: unknown): string {
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+}
+
+async function loadBillingPolicy(gymId: string, planId: number | null) {
+  if (!planId) return null;
+  const { rows } = await db.query(
+    'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
+    [planId, gymId],
+  );
+  return rows[0] ?? null;
+}
+
+// Assignment-time snapshot of Plan Charge Benefits (migration 130) — unlike
+// plan_charge_benefits, gym_charge_id here has no ON DELETE CASCADE and the
+// live join deliberately doesn't filter deleted_at, so a benefit survives
+// display even after its underlying gym_charge is later retired.
+async function loadChargeBenefitsSnapshot(gymId: string, umId: number) {
+  const { rows } = await db.query(
+    `SELECT umcb.*, ct.code AS charge_type_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
+            gc.amount AS gym_charge_amount
+     FROM user_membership_charge_benefits umcb
+     LEFT JOIN gym_charges gc ON gc.id = umcb.gym_charge_id
+     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+     WHERE umcb.user_membership_id = ? AND umcb.gym_id = ?`,
+    [umId, gymId],
+  );
+  return rows;
+}
+
+// Benefits + usage (#511 stage 3): plan_allowances rows for this Membership's
+// plan, with allocated/used/remaining for 'session_count' allowances. Usage
+// is aggregated across every covered Member (owner + additional Members,
+// #374) sharing this Membership, since the ticket asks for usage "per
+// benefit" on the expanded card rather than a further per-Member breakdown —
+// real booking-time enforcement (activity-eligibility.ts) still checks each
+// Member's own bookings independently; this is a display-only aggregate.
+async function loadActivityAllowancesUsage(gymId: string, planId: number | null, memberIds: number[]) {
+  if (!planId || memberIds.length === 0) return [];
+  const { rows: allowances } = await db.query(
+    `SELECT pa.*, at.name AS activity_type_name
+     FROM plan_allowances pa
+     JOIN activity_types at ON at.id = pa.activity_type_id
+     WHERE pa.membership_plan_id = ? AND pa.gym_id = ?`,
+    [planId, gymId],
+  );
+  return Promise.all(allowances.map(async (a: any) => {
+    if (a.allowance_type !== 'session_count') {
+      return {
+        activity_type_id: a.activity_type_id, activity_type_name: a.activity_type_name,
+        allowance_type: a.allowance_type, allocated: null, used: null, remaining: null,
+        recurrence_interval: a.recurrence_interval, recurrence_unit: a.recurrence_unit,
+      };
+    }
+    const interval = a.recurrence_interval ?? 1;
+    const unit = (a.recurrence_unit ?? 'month') as string;
+    const memberPlaceholders = memberIds.map(() => '?').join(',');
+    // Mirrors plan-allowances.ts's own recurrence-window query, aggregated
+    // across every covered Member instead of a single one.
+    const { rows: usageRows } = await db.query(
+      `SELECT COUNT(*) AS n FROM calendar_event_bookings ceb
+       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+       WHERE ceb.gym_id = ? AND ceb.member_id IN (${memberPlaceholders})
+         AND ce.activity_type_id = ? AND ceb.status NOT IN ('cancelled')
+         AND ceb.created_at >= DATE_SUB(NOW(), INTERVAL ? ${unit.toUpperCase()})`,
+      [gymId, ...memberIds, a.activity_type_id, interval],
+    );
+    const used = Number(usageRows[0].n);
+    const allocated = a.session_count as number | null;
+    return {
+      activity_type_id: a.activity_type_id, activity_type_name: a.activity_type_name,
+      allowance_type: a.allowance_type, allocated, used,
+      remaining: allocated != null ? Math.max(allocated - used, 0) : null,
+      recurrence_interval: a.recurrence_interval, recurrence_unit: a.recurrence_unit,
+    };
+  }));
+}
+
+// Every promotion ever applied to this plan (applied or revoked), with just
+// the Membership Fee charge/period benefits the Billing Events range
+// calculation needs — from the #511-stage-2 snapshot when present, falling
+// back to a live join for pre-migration-149 rows (mirrors withSnapshot's
+// fallback in membership-promotions.ts).
+async function loadPromotionApplications(
+  gymId: string, umId: number,
+): Promise<Array<AppliedPromotionForBilling & { status: string }>> {
+  const { rows } = await db.query(
+    `SELECT promotion_id, status, applied_at, revoked_at, snapshot
+     FROM user_membership_promotions WHERE user_membership_id = ? AND gym_id = ?`,
+    [umId, gymId],
+  );
+  return Promise.all(rows.map(async (row: any) => {
+    const snap = row.snapshot as { charge_benefits: any[]; period_benefits: any[] } | null;
+    const live = snap ? null : await fetchLiveBenefits(db, row.promotion_id);
+    const chargeBenefits = snap?.charge_benefits ?? live!.charge_benefits;
+    const periodBenefits = snap?.period_benefits ?? live!.period_benefits;
+    const membershipFeeBenefits: MembershipFeeBenefit[] = [
+      ...chargeBenefits
+        .filter((b) => b.charge_type_code === 'membership_fee')
+        .map((b): MembershipFeeBenefit => ({ kind: 'charge', action: b.action, value: b.value })),
+      ...periodBenefits
+        .filter((b) => b.charge_type_code === 'membership_fee')
+        .map((b): MembershipFeeBenefit => ({
+          kind: 'period', action: b.action, value: b.value,
+          enabled: !!b.enabled, durationMonths: b.duration_months ?? null,
+        })),
+    ];
+    return {
+      status: row.status as string,
+      appliedAt: toDateOnly(row.applied_at),
+      revokedAt: row.revoked_at != null ? toDateOnly(row.revoked_at) : null,
+      membershipFeeBenefits,
+    };
+  }));
+}
+
+// The Billing Events view (#511 Q2) for one Assigned Plan — see
+// domain/assignedPlanBillingEvents.ts for the range rules. `draft` plans
+// never write to billing_events, so their view is a pure projection from the
+// plan's billing cadence + currently-applied promotions; every other status
+// queries the real, persisted ledger and only ever tags/filters it.
+async function computeBillingEventsView(gymId: string, um: {
+  id: number; membership_plan_id: number | null; status: string;
+  base_price: string | number | null; starts_at: unknown; ends_at: unknown;
+}) {
+  const billingStart = toDateOnly(um.starts_at);
+  const endsAt = um.ends_at != null ? toDateOnly(um.ends_at) : null;
+  const applications = await loadPromotionApplications(gymId, um.id);
+  const windows: PromotionApplicationWindow[] = applications.map((p) => ({ appliedAt: p.appliedAt, revokedAt: p.revokedAt }));
+
+  if (um.status === 'draft') {
+    const billingPolicy = await loadBillingPolicy(gymId, um.membership_plan_id);
+    return projectDraftBillingEvents({
+      billingStart, endsAt,
+      basePrice: Number(um.base_price ?? 0),
+      recurringInterval: billingPolicy?.recurring_billing_interval ?? null,
+      recurringUnit: (billingPolicy?.recurring_billing_unit ?? null) as BillingUnit | null,
+      promotions: applications.filter((p) => p.status === 'applied'),
+    });
+  }
+
+  const { rows: beRows } = await db.query(
+    `SELECT id, event_type, charge_type_id, previous_status, new_status, source, amount, notes, created_at
+     FROM billing_events WHERE gym_id = ? AND user_membership_id = ? ORDER BY created_at ASC, id ASC`,
+    [gymId, um.id],
+  );
+  const events = beRows.map((r: any) => ({ ...r, date: toDateOnly(r.created_at) }));
+  return selectPersistedBillingEventsInRange({ billingStart, endsAt, promotionWindows: windows, events });
+}
+
 userMembershipsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
-  const audit = await loadAuditMetadata(gymId, req.params.id);
-  res.json({ ...rows[0], ...audit });
+  const um = rows[0];
+
+  const [audit, members, billingPolicy, chargeBenefits, promotions] = await Promise.all([
+    loadAuditMetadata(gymId, req.params.id),
+    db.query(MEMBERS_SELECT, [req.params.id, gymId]).then((r) => r.rows),
+    loadBillingPolicy(gymId, um.membership_plan_id),
+    loadChargeBenefitsSnapshot(gymId, um.id),
+    fetchAppliedPromotions(gymId, um.id),
+  ]);
+  const activityAllowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, members.map((m: any) => m.member_id));
+  const billingEvents = await computeBillingEventsView(gymId, um);
+
+  res.json({
+    ...um, ...audit,
+    members,
+    billing_policy: billingPolicy,
+    charge_benefits: chargeBenefits,
+    activity_allowances: activityAllowances,
+    promotions,
+    billing_events: billingEvents,
+  });
+});
+
+// A lighter, single-section fetch for callers that only need the Billing
+// Events view (e.g. re-fetching just this section after applying/revoking a
+// promotion, without re-fetching the whole expanded card) — computed by the
+// same computeBillingEventsView() the :id response above embeds it from.
+userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    'SELECT id, membership_plan_id, status, base_price, starts_at, ends_at FROM user_memberships WHERE id = ? AND gym_id = ?',
+    [req.params.id, gymId],
+  );
+  if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
+  res.json(await computeBillingEventsView(gymId, rows[0]));
 });
 
 // Returns the price + plan_price_id that applies to `date` for a plan; falls
@@ -484,19 +690,37 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // proceeding (409 + `confirm: true` to resend, same contract as
 // activity-type-schedule-rules.ts's confirm_cancel_booked guard), and stamps
 // closed_at separately from the admin-settable `ends_at`.
-//
-// Full benefit/usage accounting (free months, PT classes, credits remaining)
-// arrives with this ticket's Billing Events / Benefits stage — today the only
-// concretely trackable pending obligation is a scheduled MIT charge
-// (`next_billing_date`).
 const CLOSEABLE_FROM: readonly Status[] = ['awaiting_payment', 'active', 'paused'];
+
+// #511 (stage 3): now reuses loadActivityAllowancesUsage (the same helper
+// GET /:id's expanded `activity_allowances` section calls) instead of only
+// the stage-1 pending-billing check, so a session_count allowance with
+// sessions still remaining in its current recurrence window also counts as
+// unused value about to be lost.
+async function computeUnusedValueWarnings(
+  gymId: string,
+  um: { id: number; membership_plan_id: number | null; next_billing_date: unknown; has_pending_billing: number | boolean },
+): Promise<string[]> {
+  const warnings: string[] = [];
+  if (Number(um.has_pending_billing) === 1) {
+    warnings.push(`1 pending billing event on ${um.next_billing_date}`);
+  }
+  const { rows: memberRows } = await db.query(MEMBERS_SELECT, [um.id, gymId]);
+  const allowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, memberRows.map((m: any) => m.member_id));
+  for (const a of allowances) {
+    if (a.allowance_type === 'session_count' && a.remaining != null && a.remaining > 0) {
+      warnings.push(`${a.remaining} unused ${a.activity_type_name} session(s) remaining`);
+    }
+  }
+  return warnings;
+}
 
 userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) => {
   const { gymId, userId, role } = getTenantContext(req);
   const confirm = req.body?.confirm === true;
 
   const { rows: currentRows } = await db.query(
-    `SELECT id, status, next_billing_date,
+    `SELECT id, status, membership_plan_id, next_billing_date,
             (next_billing_date IS NOT NULL AND next_billing_date >= CURDATE()) AS has_pending_billing
      FROM user_memberships WHERE id = ? AND gym_id = ?`,
     [req.params.id, gymId],
@@ -507,10 +731,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     return res.status(400).json({ error: `Cannot close a membership with status '${current.status}'` });
   }
 
-  const warnings: string[] = [];
-  if (Number(current.has_pending_billing) === 1) {
-    warnings.push(`1 pending billing event on ${current.next_billing_date}`);
-  }
+  const warnings = await computeUnusedValueWarnings(gymId, current);
   if (warnings.length > 0 && !confirm) {
     return res.status(409).json({
       error: 'unused_value_impacted',
