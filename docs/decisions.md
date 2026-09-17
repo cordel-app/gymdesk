@@ -4,6 +4,16 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 11. Drop the calendar_events.kind discriminator (#503, 2026-09-17)
+
+**Decision**: the `kind ENUM('session','event')` column added by the #360 unification (migration 134) is removed (migration 152). Every `calendar_events` row is now equally bookable at the primitive/API level — `bookMemberOnSession` no longer gates on `kind`. This was requested explicitly on the #503 issue thread: "There must be no separate logic for sessions versus events."
+
+- The admin-facing `classSessionsRouter`/`calendarEventsRouter` split (`calendar-events.ts`) is **not** merged by this decision — it now partitions `calendar_events` by `activity_type_id` (`IS NOT NULL` vs `IS NULL`) instead of `kind`, preserving the same mutually-exclusive split the admin Calendar page's dual-fetch relies on. Fully merging the two admin detail panels (`ClassSessionDetailPanel` vs `EventDetailsPanel`) into one UI is an open design question, not yet specified, left for a later #503 stage.
+- Member-facing discovery (`/me/schedule`, `/me/upcoming`, `/me/activity-history`) still implicitly requires `activity_type_id IS NOT NULL` (via `INNER JOIN activity_types`) — extending it to rows without an activity type is explicitly a later stage of the #503 plan ("Unified member read model"), not part of this decision.
+- Do not reintroduce a session/event (or similar) discriminator column as a workaround for admin UI branching — that was explicitly ruled out on the issue thread. If the admin UI split needs its own signal going forward, that's a product decision to make explicitly, not to infer from a renamed flag.
+
+---
+
 ## 10. CalendarEvent unification — design decisions (#360, 2026-09-06)
 
 **Decision**: `class_sessions` (with its `bookings`, waitlist, attendance, and package-credit integration) will be unified onto `calendar_events` as the single canonical scheduled/bookable entity — see [architecture.md](architecture.md)'s "Planned: CalendarEvent Unification" section for the target shape. This entry settles the three open questions from the #360 clarification thread; it does not itself implement the migration.
@@ -26,8 +36,8 @@ Short record of the settled choices that are not obvious from the code. Don't re
 **Decision**: the `events` and `event_bookings` tables, all related API endpoints, and all frontend surfaces were permanently removed. Any scheduled occurrence must be represented as a Calendar item (using `calendar_events`) with an appropriate type — not as a new standalone entity.
 
 **Consequences**:
-- Do not reintroduce `Event` as a standalone entity. If differentiation is needed (workshop, appointment, special activity), add a `type` column to `calendar_events` rather than creating a new table.
-- `GET /me/upcoming` and `GET /me/activity-history` return session bookings only.
+- Do not reintroduce `Event` as a standalone entity. If differentiation is needed (workshop, appointment, special activity), differentiate through existing columns (e.g. `activity_type_id`) rather than creating a new table — see #11 above, which additionally rules out a dedicated discriminator *column* for this on `calendar_events`.
+- `GET /me/upcoming` and `GET /me/activity-history` return bookings for occurrences of an activity type (`activity_type_id IS NOT NULL`) — in practice every booking today, since `bookMemberOnSession` requires the caller to reach the occurrence through `/me/schedule`, which has the same requirement (see #11).
 - The `member_notifications` table retains the `event_cancelled`/`event_updated` type values as dead historical rows; no new notifications of those types will be written.
 
 ---

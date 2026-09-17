@@ -38,17 +38,28 @@ async function createMember(gymId: string): Promise<number> {
   return insertId as number;
 }
 
-// #436 fix: calendar_events is only a dependency for kind='session' rows
-// (the materialised class-session occurrences); kind='event' rows must not block.
+async function createActivityType(gymId: string): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO activity_types (gym_id, name, duration_minutes, max_capacity)
+     VALUES (?, 'Test Activity', 60, 10)`,
+    [gymId],
+  );
+  return insertId as number;
+}
+
+// #436 / #503 fix: calendar_events is only a dependency for occurrences of an
+// activity type (activity_type_id IS NOT NULL — the materialised class-session
+// occurrences); manually created calendar entries (activity_type_id IS NULL)
+// must not block.
 async function createCalendarEvent(
   gymId: string,
   centerId: number,
-  kind: 'session' | 'event',
+  activityTypeId: number | null,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO calendar_events (gym_id, center_id, kind, title, starts_at, ends_at)
+    `INSERT INTO calendar_events (gym_id, center_id, activity_type_id, title, starts_at, ends_at)
      VALUES (?, ?, ?, 'Test Occurrence', NOW(), DATE_ADD(NOW(), INTERVAL 1 HOUR))`,
-    [gymId, centerId, kind],
+    [gymId, centerId, activityTypeId],
   );
   return insertId as number;
 }
@@ -516,9 +527,10 @@ describe('DELETE /centers/:id', () => {
     expect(rows[0].deleted_at).toBeNull();
   });
 
-  it('returns 409 "it still has class sessions" when a calendar_events row with kind=session references the center', async () => {
+  it('returns 409 "it still has class sessions" when a calendar_events row with an activity_type_id references the center', async () => {
     const centerId = await createCenter(gymId);
-    await createCalendarEvent(gymId, centerId, 'session');
+    const activityTypeId = await createActivityType(gymId);
+    await createCalendarEvent(gymId, centerId, activityTypeId);
 
     const res = await request
       .delete(`/centers/${centerId}`)
@@ -528,9 +540,9 @@ describe('DELETE /centers/:id', () => {
     expect(res.body.error).toBe('Cannot delete center: it still has class sessions.');
   });
 
-  it('does not block deletion when the only calendar_events row is kind=event', async () => {
+  it('does not block deletion when the only calendar_events row has no activity_type_id', async () => {
     const centerId = await createCenter(gymId);
-    await createCalendarEvent(gymId, centerId, 'event');
+    await createCalendarEvent(gymId, centerId, null);
 
     const res = await request
       .delete(`/centers/${centerId}`)

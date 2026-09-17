@@ -87,7 +87,7 @@ export async function bookMemberOnSession(
               COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
        FROM calendar_events ce
        JOIN activity_types at ON at.id = ce.activity_type_id
-       WHERE ce.id = ? AND ce.gym_id = ? AND ce.kind = 'session' AND ce.deleted_at IS NULL FOR UPDATE`,
+       WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL FOR UPDATE`,
       [sessionId, gymId],
     );
     if (session.length === 0) throw Object.assign(new Error('Session not found'), { status: 404 });

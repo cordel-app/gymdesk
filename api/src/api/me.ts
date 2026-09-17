@@ -428,7 +428,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const from = (req.query.from as string) || new Date().toISOString();
     const to = req.query.to as string | undefined;
     const activityTypeId = req.query.activity_type_id as string | undefined;
-    const where: string[] = ["ce.gym_id = ?", "ce.kind = 'session'", "ce.status = 'scheduled'", "ce.deleted_at IS NULL", "ce.starts_at >= ?"];
+    const where: string[] = ["ce.gym_id = ?", "ce.status = 'scheduled'", "ce.deleted_at IS NULL", "ce.starts_at >= ?"];
     const params: any[] = [gymId, from];
     if (to) { where.push('ce.starts_at <= ?'); params.push(to); }
     if (activityTypeId) { where.push('ce.activity_type_id = ?'); params.push(activityTypeId); }
@@ -466,7 +466,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 WHEN ce.trainer_membership_id IS NOT NULL AND ce.space_id IS NOT NULL
                 THEN (
                   SELECT COUNT(*) FROM calendar_events ce2
-                  WHERE ce2.gym_id = ce.gym_id AND ce2.kind = 'session'
+                  WHERE ce2.gym_id = ce.gym_id AND ce2.activity_type_id IS NOT NULL
                     AND ce2.trainer_membership_id = ce.trainer_membership_id
                     AND ce2.space_id = ce.space_id
                     AND ce2.starts_at = ce.starts_at AND ce2.ends_at = ce.ends_at
@@ -1331,7 +1331,7 @@ meRouter.get('/upcoming', requireRole('member'), requireFeatureEnabled('member_w
     }
 
     const { rows: sessionRows } = await db.query(
-      `SELECT ceb.id AS booking_id, 'session' AS kind,
+      `SELECT ceb.id AS booking_id,
               ce.id AS entity_id, at.name AS title, sp.name AS space_name,
               tm.name AS trainer_name, ce.starts_at, ce.ends_at
        FROM calendar_event_bookings ceb
@@ -1376,7 +1376,7 @@ meRouter.get('/activity-history', requireRole('member'), requireFeatureEnabled('
     }
 
     const { rows: sessionRows } = await db.query(
-      `SELECT ceb.id AS booking_id, 'session' AS kind,
+      `SELECT ceb.id AS booking_id,
               ce.id AS entity_id, at.name AS title,
               ce.starts_at, ce.ends_at, ceb.status AS booking_status,
               ceb.attendance_status, ceb.cancelled_at

@@ -70,7 +70,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
         `SELECT at.name AS class_type_name, ce.starts_at
          FROM calendar_events ce
          JOIN activity_types at ON at.id = ce.activity_type_id
-         WHERE ce.id = ? AND ce.kind = 'session'`,
+         WHERE ce.id = ?`,
         [id],
       );
       if (!rows[0]) return null;

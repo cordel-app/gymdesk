@@ -361,9 +361,10 @@ describe('POST schedule-rule weekly multi-day', () => {
     expect(dates).not.toContain(week.sun);
   });
 
-  // #360 stage 3: materialized occurrences are bookable CalendarEvents —
-  // kind='session' and capacity backfilled from the activity type.
-  it('materialized occurrences carry kind=session and the activity type\'s capacity', async () => {
+  // #360 stage 3 / #503 stage 1: materialized occurrences are bookable
+  // CalendarEvents — activity_type_id is set and capacity is backfilled
+  // from the activity type.
+  it('materialized occurrences carry activity_type_id and the activity type\'s capacity', async () => {
     const week = upcomingMonSunWeek();
     const createRes = await request
       .post(rulesBase(activityTypeId))
@@ -381,12 +382,12 @@ describe('POST schedule-rule weekly multi-day', () => {
     const ruleId = createRes.body.id;
 
     const { rows } = await db.query(
-      "SELECT kind, capacity FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL",
+      "SELECT activity_type_id, capacity FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL",
       [ruleId],
     );
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
-      expect(row.kind).toBe('session');
+      expect(row.activity_type_id).toBe(activityTypeId);
       expect(row.capacity).toBe(15); // activityTypeId's max_capacity, set in beforeAll
     }
   });

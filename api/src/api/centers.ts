@@ -14,14 +14,15 @@ export const centersRouter = Router();
 // only "dependent" via their non-deleted rows; calendar_event_bookings (like
 // the legacy `bookings` table it replaced, see #360 stage 3) has no soft
 // delete — cancellation is tracked via `status`, not `deleted_at` — so every
-// row counts. calendar_events also holds one-off Activities/CalendarEvents
-// (`kind = 'event'`); only the session occurrences (`kind = 'session'`) that
-// used to live in the now-merged `class_sessions` table are a dependency here.
+// row counts. calendar_events also holds one-off manually created calendar
+// entries (`activity_type_id IS NULL`, #503 stage 1); only occurrences of an
+// activity type (`activity_type_id IS NOT NULL`) — what used to live in the
+// now-merged `class_sessions` table — are a dependency here.
 // `rooms` was renamed to `spaces` in migration 067.
 const DEPENDENT_TABLES: Array<[string, string, boolean, string, string?]> = [
   ['member_centers', 'center_id', true, 'member centers'],
   ['spaces', 'center_id', true, 'spaces'],
-  ['calendar_events', 'center_id', true, 'class sessions', "kind = 'session'"],
+  ['calendar_events', 'center_id', true, 'class sessions', 'activity_type_id IS NOT NULL'],
   ['calendar_event_bookings', 'center_id', false, 'bookings'],
   ['trainer_availability', 'center_id', true, 'trainer availability'],
 ];

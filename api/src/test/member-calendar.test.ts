@@ -56,8 +56,8 @@ async function createSession(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO calendar_events
-       (gym_id, center_id, kind, title, activity_type_id, starts_at, ends_at, status, allows_shared_booking)
-     VALUES (?, ?, 'session', 'Test Session', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+       (gym_id, center_id, title, activity_type_id, starts_at, ends_at, status, allows_shared_booking)
+     VALUES (?, ?, 'Test Session', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
              DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled', ?)`,
     [gid, cid, actTypeId, allowsShared],
   );
