@@ -830,6 +830,8 @@
     "section_period_benefits": "Beneficis periòdics",
     "no_period_benefits": "Sense beneficis de període.",
     "add_period_benefit": "+ Afegir benefici de període",
+    "section_membership_fee_benefits": "Beneficis de quota de soci",
+    "no_membership_fee_benefit": "No hi ha cap benefici de quota de soci configurat.",
     "col_charge_type": "Concepte",
     "col_action": "Acció",
     "col_value": "Valor",
