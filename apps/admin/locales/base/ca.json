@@ -2691,7 +2691,10 @@
     "tax_behavior_exclusive": "Exclusiu (l'impost s'afegeix al preu)",
     "taxIncluded": "(IVA inclòs)",
     "taxExcluded": "(IVA no inclòs)",
-    "exempt": "Exempt"
+    "exempt": "Exempt",
+    "section_professional_services": "Serveis Professionals",
+    "label_professional_services": "Serveis Professionals",
+    "professional_services_empty": "No hi ha Serveis Professionals seleccionats."
   },
   "assigned_plans_page": {
     "title": "Plans Assignats",
