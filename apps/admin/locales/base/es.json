@@ -151,7 +151,7 @@
     "placeholder_emergency_contact": "Nombre y teléfono",
     "placeholder_notes": "Notas internas…",
     "placeholder_document": "ej. 12345678Z",
-    "help_document": "Opcional. NIF, NIE o número de pasaporte español.",
+    "help_document": "Opcional. NIF, NIE o número de pasaporte.",
     "error_document_invalid": "Introduce un NIF, NIE o número de pasaporte válido.",
     "col_audit": "Auditoría",
     "col_created_by": "Creado por",
