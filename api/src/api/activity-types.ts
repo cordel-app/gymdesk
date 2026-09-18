@@ -9,6 +9,9 @@ import {
 } from '../domain/scheduleEngine';
 
 const STATUSES = ['active', 'inactive'] as const;
+// #503 stage 2: 'disabled' = no waitlist, 'open' = accepting, 'closed' = enabled
+// but not accepting right now. Occurrences may override it per calendar event.
+const WAITLIST_MODES = ['disabled', 'open', 'closed'] as const;
 
 function fmtDate(v: any): string | null {
   if (v == null) return null;
@@ -135,6 +138,7 @@ function validate(body: any) {
   if (capacity !== null && (isNaN(capacity) || capacity <= 0)) return 'max_capacity must be a positive integer';
   if (intensity !== null && (isNaN(intensity) || intensity < 1 || intensity > 5)) return 'intensity_level must be between 1 and 5';
   if (body.status && !STATUSES.includes(body.status)) return `status must be one of: ${STATUSES.join(', ')}`;
+  if (body.waitlist_mode && !WAITLIST_MODES.includes(body.waitlist_mode)) return `waitlist_mode must be one of: ${WAITLIST_MODES.join(', ')}`;
   if ('is_shareable' in body && body.is_shareable !== undefined && typeof body.is_shareable !== 'boolean' && body.is_shareable !== 0 && body.is_shareable !== 1) return 'is_shareable must be a boolean';
   if ('public_event' in body && body.public_event !== undefined && typeof body.public_event !== 'boolean' && body.public_event !== 0 && body.public_event !== 1) return 'public_event must be a boolean';
   return null;
@@ -163,7 +167,8 @@ async function validateSpace(gymId: string, spaceId: number | null, centerId: nu
 activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
-          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event } = req.body;
+          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
+          waitlist_mode } = req.body;
   if (!name?.trim() || duration_minutes == null || max_capacity == null) {
     return res.status(400).json({ error: 'name, duration_minutes and max_capacity are required' });
   }
@@ -185,8 +190,8 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
         default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
-        created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+        waitlist_mode, created_by_membership_id, modified_at, modified_by_membership_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
       [gymId, name.trim(), description ?? null,
        parseInt(duration_minutes, 10),
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
@@ -195,6 +200,7 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
        spaceId, default_trainer_membership_id ?? null, centerId, color ?? null,
        is_shareable ? 1 : 0,
        publicEvent,
+       waitlist_mode ?? 'disabled',
        gymMembershipId ?? null, gymMembershipId ?? null],
     );
     const { rows } = await db.query(`${SELECT} WHERE at.id = ?`, [insertId]);
@@ -210,7 +216,8 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   const { gymId, gymMembershipId } = getTenantContext(req);
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
-          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event } = req.body;
+          default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
+          waitlist_mode } = req.body;
 
   const centerId = 'default_center_id' in req.body
     ? (default_center_id ? parseInt(default_center_id, 10) : null)
@@ -249,6 +256,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         color                          = IF(?, ?, color),
         is_shareable                   = IF(?, ?, is_shareable),
         public_event                   = IF(?, ?, public_event),
+        waitlist_mode                  = COALESCE(?, waitlist_mode),
         modified_at                    = UTC_TIMESTAMP(),
         modified_by_membership_id      = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -265,6 +273,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         'color' in req.body ? 1 : 0, color ?? null,
         'is_shareable' in req.body ? 1 : 0, is_shareable ? 1 : 0,
         'public_event' in req.body ? 1 : 0, public_event ? 1 : 0,
+        waitlist_mode ?? null,
         gymMembershipId ?? null,
         req.params.id, gymId,
       ],
@@ -315,12 +324,13 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
     const { insertId } = await tx.query(
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
-        default_space_id, default_trainer_membership_id, default_center_id, color,
+        default_space_id, default_trainer_membership_id, default_center_id, color, waitlist_mode,
         created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
       [gymId, `${src.name} (copy)`, src.description, src.duration_minutes,
        src.intensity_level, src.max_capacity, 'active',
        src.default_space_id, src.default_trainer_membership_id, src.default_center_id, src.color,
+       src.waitlist_mode,
        gymMembershipId ?? null, gymMembershipId ?? null],
     );
 

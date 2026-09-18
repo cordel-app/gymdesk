@@ -13,6 +13,7 @@ interface ClassSession {
   effective_trainer_name: string | null;
   space_name: string | null;
   effective_capacity: number;
+  effective_waitlist_mode: 'disabled' | 'open' | 'closed';
   booked_count: number;
   status: string;
 }
@@ -263,6 +264,7 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
   }
 
   const isCancelled = session.status === 'cancelled';
+  const waitlistOpen = session.effective_waitlist_mode === 'open';
 
   return (
     <div style={panelStyle}>
@@ -420,7 +422,12 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
             ))}
           </div>
         )}
-        {canWrite && !isCancelled && addMode !== 'waitlist' && (
+        {canWrite && !isCancelled && !waitlistOpen && (
+          <p style={{ fontSize: 12.5, color: '#6b7280', marginTop: 10 }}>
+            The waiting list for this activity is {session.effective_waitlist_mode === 'closed' ? 'closed' : 'disabled'}.
+          </p>
+        )}
+        {canWrite && !isCancelled && waitlistOpen && addMode !== 'waitlist' && (
           <button
             onClick={() => { setAddMode('waitlist'); setSelectedMember(null); setAddConfirmMsg(null); setAddOverCapacity(false); }}
             style={{ ...btnBase, background: '#f3f4f6', color: '#374151', marginTop: 10, width: '100%' }}

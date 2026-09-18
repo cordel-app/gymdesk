@@ -4,6 +4,17 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 12. Waitlisting is configurable, and off for anything new (#503, 2026-09-18)
+
+**Decision**: the waitlist is a three-state setting — `disabled` / `open` / `closed` — stored on `activity_types.waitlist_mode` with a nullable per-occurrence override on `calendar_events.waitlist_mode` (migration 154). The effective value is `COALESCE(ce.waitlist_mode, at.waitlist_mode)`, mirroring how `ce.capacity` falls back to `at.max_capacity`. Until now waitlisting was unconditional: every over-capacity booking silently became a waitlist row with no way to turn it off.
+
+- A waitlist row is only ever created while the effective mode is `'open'` — this holds for both the automatic over-capacity fallback and a staff member's explicit `waitlist: true` request. Otherwise `bookMemberOnSession` returns 409 (`session_full_waitlist_not_open` / `waitlist_not_open`). Staff who need to seat someone past capacity use `force`, which books directly and never touches the waitlist.
+- Promoting an already-waiting member when a booked slot frees up is deliberately **not** gated: `'closed'` means "not accepting new members", not "abandon the people already queued".
+- The column default ends up `'disabled'`, per the issue thread ("the waitlist should be disabled by default"), but every pre-existing activity type lands on `'open'`: the migration adds the column with `DEFAULT 'open'` (one atomic DDL fills the existing rows) and only then flips the default. A separate `UPDATE` backfill would have been lost silently if the migration aborted after MySQL's implicit commit of the `ADD COLUMN`. Rows created under the old unconditional behavior keep it; only activity types created from here on start with no waitlist. Tests that exercise waitlisting must now ask for `'open'` explicitly.
+- Writing the per-occurrence override is not exposed by the admin API yet — it is read and honored, and the activity-level setting is what the admin UI edits. A later #503 stage owns per-occurrence editing along with propagating activity changes to future events.
+
+---
+
 ## 11. Drop the calendar_events.kind discriminator (#503, 2026-09-17)
 
 **Decision**: the `kind ENUM('session','event')` column added by the #360 unification (migration 134) is removed (migration 152). Every `calendar_events` row is now equally bookable at the primitive/API level — `bookMemberOnSession` no longer gates on `kind`. This was requested explicitly on the #503 issue thread: "There must be no separate logic for sessions versus events."

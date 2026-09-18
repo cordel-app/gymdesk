@@ -71,6 +71,10 @@ bookingsRouter.get('/:id', async (req, res) => {
  * Runs the booking flow inside a transaction; exported so /me/bookings can share it.
  * Pass force=true to allow adding a member even when the session is at capacity
  * (always inserts as 'booked', never waitlisted). Only staff-facing.
+ *
+ * Over-capacity attempts fall back to the waitlist only while the occurrence's
+ * effective waitlist mode (#503 stage 2) is 'open'; under 'disabled'/'closed'
+ * they are rejected with 409 instead.
  */
 export async function bookMemberOnSession(
   gymId: string,
@@ -84,7 +88,8 @@ export async function bookMemberOnSession(
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
       `SELECT ce.id, ce.activity_type_id, ce.status, ce.center_id,
-              COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
+              COALESCE(ce.capacity, at.max_capacity) AS effective_capacity,
+              COALESCE(ce.waitlist_mode, at.waitlist_mode) AS effective_waitlist_mode
        FROM calendar_events ce
        JOIN activity_types at ON at.id = ce.activity_type_id
        WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL FOR UPDATE`,
@@ -103,7 +108,15 @@ export async function bookMemberOnSession(
       [sessionId],
     );
 
+    // #503 stage 2: a waitlist row only exists while the waitlist is open.
+    // Staff needing to add someone past capacity use force instead, which
+    // books directly and never touches the waitlist.
+    const waitlistOpen = session[0].effective_waitlist_mode === 'open';
+
     if (forceWaitlist) {
+      if (!waitlistOpen) {
+        throw Object.assign(new Error('The waitlist for this session is not open'), { status: 409, code: 'waitlist_not_open' });
+      }
       const position = Number(nextRows[0].next);
       const { insertId } = await tx.query(
         `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at)
@@ -129,6 +142,10 @@ export async function bookMemberOnSession(
       const pc = await packageCredits();
       await pc.debitPackageIfClaimed(tx, insertId, gymId);
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
+    }
+
+    if (!waitlistOpen) {
+      throw Object.assign(new Error('This session is full and its waitlist is not open'), { status: 409, code: 'session_full_waitlist_not_open' });
     }
 
     const position = Number(nextRows[0].next);

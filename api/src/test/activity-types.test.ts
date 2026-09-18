@@ -737,3 +737,78 @@ describe('POST /activity-types/:id/duplicate', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ── Waitlist mode (#503 stage 2) ───────────────────────────────────────────
+
+describe('waitlist_mode', () => {
+  it('defaults to disabled when the field is omitted on create', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `WM default ${Date.now()}`, duration_minutes: 45, max_capacity: 8 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.waitlist_mode).toBe('disabled');
+  });
+
+  it('accepts a waitlist_mode on create and returns it', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `WM open ${Date.now()}`, duration_minutes: 45, max_capacity: 8, waitlist_mode: 'open' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.waitlist_mode).toBe('open');
+  });
+
+  it('returns 400 for an unknown waitlist_mode', async () => {
+    const res = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `WM bad ${Date.now()}`, duration_minutes: 45, max_capacity: 8, waitlist_mode: 'paused' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('updates waitlist_mode via PUT and leaves it untouched when omitted', async () => {
+    const created = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `WM update ${Date.now()}`, duration_minutes: 45, max_capacity: 8, waitlist_mode: 'open' });
+
+    const updated = await request
+      .put(`${BASE}/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ waitlist_mode: 'closed' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.waitlist_mode).toBe('closed');
+
+    const renamed = await request
+      .put(`${BASE}/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `WM renamed ${Date.now()}` });
+    expect(renamed.body.waitlist_mode).toBe('closed');
+  });
+
+  it('carries waitlist_mode over to a duplicated activity type', async () => {
+    const created = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `WM dup ${Date.now()}`, duration_minutes: 45, max_capacity: 8, waitlist_mode: 'open' });
+
+    const dup = await request
+      .post(`${BASE}/${created.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+
+    expect(dup.status).toBe(201);
+    expect(dup.body.waitlist_mode).toBe('open');
+  });
+});
