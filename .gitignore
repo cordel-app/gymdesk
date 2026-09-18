@@ -4,3 +4,4 @@ dist/
 .env
 *.log
 *.tsbuildinfo
+.claude/worktrees/
