@@ -37,6 +37,8 @@ interface PromotionTimelinePeriod {
   status: PromotionTimelineStatus;
   startsOn: string;
   endsOn: string | null;
+  billingAction: string | null;
+  billingValue: number | null;
 }
 interface PromotionTimelineResponse { periods: PromotionTimelinePeriod[] }
 
@@ -200,7 +202,11 @@ export default function PromotionsPage() {
           paid_months: paid_months || '0',
           pay_beforehand_months: pay_beforehand_months || '0',
           bonus_months: bonus_months || '0',
+          membership_fee_action: mfDraft?.action || 'no_benefit',
+          membership_fee_enabled: mfDraft?.enabled ? '1' : '0',
         });
+        if (mfDraft?.value != null && mfDraft.value !== '') qs.set('membership_fee_value', mfDraft.value);
+        if (mfDraft?.duration_months != null) qs.set('membership_fee_duration_months', String(mfDraft.duration_months));
         const data = await apiFetch<PromotionTimelineResponse>(`/promotions/timeline?${qs.toString()}`);
         setTimeline(data);
         setTimelineError(null);
@@ -211,7 +217,10 @@ export default function PromotionsPage() {
     }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months]);
+  }, [
+    editingId, editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months,
+    mfDraft?.action, mfDraft?.value, mfDraft?.enabled, mfDraft?.duration_months,
+  ]);
 
   async function loadLookups() {
     try {
@@ -524,13 +533,27 @@ export default function PromotionsPage() {
     bonus_promotion: 'timeline_bonus',
     pay_regular: 'timeline_pay_regular',
   };
-  const STATUS_BILLING_KEYS: Record<PromotionTimelineStatus, string> = {
-    free_promotion: 'timeline_no_charge',
-    pay_promotion: 'timeline_promo_price',
-    prepaid_promotion: 'timeline_promo_price',
-    bonus_promotion: 'timeline_no_charge',
-    pay_regular: 'timeline_regular_price',
-  };
+
+  // Billing column (#552): free/bonus periods are always "No charge" and the
+  // trailing regular period is always "Regular price". A paid promotional
+  // period reflects the promotion's Membership Fee Benefit — `waive` reads
+  // as "No charge" same as a free period, no benefit (or none configured)
+  // reads as "Regular price", and a discount/fixed-price benefit names its
+  // value using the existing currency formatting (a plain "123.45€" suffix,
+  // matching the convention already used elsewhere, e.g. AssignedPlanExpandedRow's fmtMoney).
+  function billingLabelFor(row: PromotionTimelinePeriod): string {
+    if (row.status === 'free_promotion' || row.status === 'bonus_promotion') return t('timeline_no_charge');
+    if (row.status === 'pay_regular') return t('timeline_regular_price');
+    const action = row.billingAction;
+    const value = row.billingValue ?? 0;
+    if (!action || action === 'no_benefit') return t('timeline_regular_price');
+    if (action === 'waive') return t('timeline_no_charge');
+    const base = t('timeline_promo_price');
+    if (action === 'percentage_discount') return `${base} (${value}%)`;
+    if (action === 'fixed_price') return `${base} (${value.toFixed(2)}€)`;
+    if (action === 'fixed_discount') return `${base} (-${value.toFixed(2)}€)`;
+    return base;
+  }
 
   function renderTimeline() {
     if (timelineError) {
@@ -565,7 +588,7 @@ export default function PromotionsPage() {
                 const isRegular = row.status === 'pay_regular';
                 const bg = isFree ? '#f0fdf4' : isRegular ? '#f9fafb' : '#fefce8';
                 const statusLabel = t(STATUS_LABEL_KEYS[row.status] as any);
-                const billingLabel = t(STATUS_BILLING_KEYS[row.status] as any);
+                const billingLabel = billingLabelFor(row);
                 return (
                   <tr key={row.period} style={{ background: bg }}>
                     <td style={tdSt}>{row.endsOn ? row.period : `${row.period}+`}</td>
@@ -583,6 +606,7 @@ export default function PromotionsPage() {
           </table>
         </div>
         <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>{t('timeline_disclaimer')}</p>
+        <p style={{ margin: '4px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>{t('timeline_monthly_billing_disclaimer')}</p>
       </div>
     );
   }
@@ -682,7 +706,6 @@ export default function PromotionsPage() {
               <input type="number" min="0" value={editForm.bonus_months} onChange={(e) => setEditForm({ ...editForm, bonus_months: e.target.value })} style={inlineInputSt} placeholder="0" />
             </div>
           </div>
-          {renderTimeline()}
         </div>
 
         {/* Charge Benefits */}
@@ -853,6 +876,8 @@ export default function PromotionsPage() {
             </div>
           )}
         </div>
+
+        {renderTimeline()}
 
       </div>
     );
