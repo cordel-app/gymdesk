@@ -941,10 +941,36 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   schema change and no frontend change were needed: the Admin UI's existing
   generic 409 `ConfirmDialog` and the member app's existing in-app
   notifications center (`docs/architecture.md`'s Member Notifications row)
-  already cover this. Remaining stages (unified member read model, local
-  filters, member calendar UI, Home/My Bookings updates, tests/docs) are
-  tracked on #503 and land as separate PRs, each `Related to #503` until the
-  final stage closes it.
+  already cover this. Stage 5, "unified member read model": `GET /me/schedule`
+  gains three fields, additive next to the existing `availability_state`
+  (not replaced — the booking-action UI keeps reading that). `status`
+  (`scheduled`/`running`/`completed`/`cancelled`) mirrors `calendar_events
+  .status` except `running`, which is derived live from `now` falling inside
+  `[starts_at, ends_at)` rather than stored, so it never needs a manual
+  staff update. `occupancy_status` (`available`/`few_spots_left`/`full`/
+  `unavailable`) is capacity-only — `few_spots_left` at ≤20% of capacity
+  remaining with a minimum of 1 (so small-capacity activities still report
+  it), `unavailable` when access is locked or the row's own `status` isn't
+  `scheduled`, matching exactly the gate `bookMemberOnSession` enforces so
+  this field never reports a bookable state the booking endpoint would
+  reject. `waitlist_status` is the same `effective_waitlist_mode`
+  (`disabled`/`open`/`closed`) `/me/schedule` already computed, now also
+  exposed under its own name; a new `waitlist_count` aggregate (COUNT of
+  `waitlisted` bookings) is added next to it — an aggregate only, per the
+  issue thread's privacy requirement that waitlist identities are never
+  exposed to members. Pure `computeCalendarEventStatus`/
+  `computeOccupancyStatus` helpers in `me.ts` are unit-tested in
+  `me-calendar-event-status.test.ts`. **Left open**: `/me/schedule`'s `JOIN
+  activity_types` is still an inner join, so manually created
+  `calendar_events` rows (`activity_type_id IS NULL`) remain invisible to
+  members, and `bookMemberOnSession` still can't book them either (same
+  inner join) — closing that gap needs booking-logic changes beyond a read
+  model and isn't part of the agreed stage 5 scope on the issue thread; it's
+  the discovery gap `docs/architecture.md`'s CalendarEvent Unification
+  section flagged against the plan's earlier numbering, now confirmed still
+  open. Remaining stages (local filters, member calendar UI, Home/My
+  Bookings updates, tests/docs) are tracked on #503 and land as separate
+  PRs, each `Related to #503` until the final stage closes it.
 
 ## Decisions
 

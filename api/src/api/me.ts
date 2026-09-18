@@ -54,6 +54,49 @@ export function advanceDate(date: string, interval: number, unit: 'day' | 'week'
   return d.toISOString().slice(0, 10);
 }
 
+export type CalendarEventLifecycleStatus = 'scheduled' | 'running' | 'completed' | 'cancelled';
+export type CalendarEventOccupancyStatus = 'available' | 'few_spots_left' | 'full' | 'unavailable';
+
+/**
+ * #503 stage 5: the calendar event's own lifecycle, independent of the
+ * caller's booking status. `running` is derived live from start/end
+ * timestamps rather than stored, so it never needs a manual staff update.
+ */
+export function computeCalendarEventStatus(
+  dbStatus: string,
+  startsAt: Date | string,
+  endsAt: Date | string,
+  now: Date = new Date(),
+): CalendarEventLifecycleStatus {
+  if (dbStatus === 'cancelled') return 'cancelled';
+  if (dbStatus === 'completed') return 'completed';
+  const starts = new Date(startsAt);
+  const ends = new Date(endsAt);
+  if (now >= starts && now < ends) return 'running';
+  return 'scheduled';
+}
+
+/**
+ * #503 stage 5: capacity/booking availability, independent of the calendar
+ * event's own lifecycle status and of any one member's booking state.
+ * `dbStatus` gates on the same condition bookMemberOnSession enforces
+ * (only `scheduled` rows accept new bookings) so this never reports a
+ * bookable state the booking endpoint would actually reject.
+ */
+export function computeOccupancyStatus(
+  dbStatus: string,
+  accessLocked: boolean,
+  bookedCount: number,
+  capacity: number,
+): CalendarEventOccupancyStatus {
+  if (accessLocked || dbStatus !== 'scheduled') return 'unavailable';
+  const remaining = capacity - bookedCount;
+  if (remaining <= 0) return 'full';
+  const fewSpotsThreshold = Math.max(1, Math.floor(capacity * 0.2));
+  if (remaining <= fewSpotsThreshold) return 'few_spots_left';
+  return 'available';
+}
+
 export const meRouter = Router();
 
 // Called once on first sign-in: links Clerk user to members row and creates gym_memberships entry.
@@ -451,6 +494,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
 
     const { rows } = await db.query(
       `SELECT ce.id, ce.activity_type_id, ce.starts_at, ce.ends_at,
+              ce.status AS event_status,
               ce.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
               at.is_shareable,
@@ -479,6 +523,12 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 SELECT COUNT(*) FROM calendar_event_bookings ceb
                 WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked'
               ) AS booked_count,
+              (
+                -- Aggregate only: #503's privacy requirement means members may
+                -- see the waiting count, never who is on the waitlist.
+                SELECT COUNT(*) FROM calendar_event_bookings ceb
+                WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'waitlisted'
+              ) AS waitlist_count,
               (
                 SELECT ceb.status FROM calendar_event_bookings ceb
                 WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status <> 'cancelled'
@@ -568,6 +618,12 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         spots_left: Math.max(0, cap - booked),
         can_cancel: new Date(r.starts_at) > now,
         availability_state,
+        // #503 stage 5: unified member read model — additive next to
+        // availability_state, which stays as the source of booking-action UI.
+        status: computeCalendarEventStatus(r.event_status, r.starts_at, r.ends_at, now),
+        occupancy_status: computeOccupancyStatus(r.event_status, accessLocked, booked, cap),
+        waitlist_status: r.effective_waitlist_mode,
+        waitlist_count: Number(r.waitlist_count),
       };
     });
     res.json(shaped);
