@@ -23,10 +23,12 @@ exports.up = async (knex) => {
       .references('id').inTable('gyms').onDelete('CASCADE');
     t.integer('sellable_item_id').unsigned().notNullable()
       .references('id').inTable('gym_charges').onDelete('CASCADE');
-    t.integer('professional_service_id').unsigned().notNullable()
+    t.integer('professional_service_id').unsigned().notNullable();
+    t.foreign('professional_service_id', 'sips_service_id_fk')
       .references('id').inTable('professional_services').onDelete('CASCADE');
     t.datetime('created_at').notNullable().defaultTo(knex.raw('(UTC_TIMESTAMP())'));
-    t.integer('created_by_membership_id').unsigned().nullable()
+    t.integer('created_by_membership_id').unsigned().nullable();
+    t.foreign('created_by_membership_id', 'sips_created_by_membership_id_fk')
       .references('id').inTable('gym_memberships').onDelete('SET NULL');
 
     t.unique(['sellable_item_id', 'professional_service_id'], 'sips_item_service_unique');
