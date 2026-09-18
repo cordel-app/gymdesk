@@ -3,6 +3,11 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
+import {
+  loadProfessionalServicesMap,
+  replaceProfessionalServices,
+  validateProfessionalServiceIds,
+} from '../domain/sellableItemProfessionalServices';
 
 export const sellableItemsRouter = Router();
 
@@ -98,6 +103,13 @@ function attachPriceFields(row: any) {
   return { ...row, ...computePriceFields(row) };
 }
 
+// #546: Professional Services can only be linked to Session-type ('sessions') items.
+const SESSION_TYPE = 'sessions';
+
+function attachProfessionalServices(row: any, map: Record<number, { id: number; name: string; is_system: number }[]>) {
+  return { ...row, professional_services: map[row.id] ?? [] };
+}
+
 // ─── GET / ────────────────────────────────────────────────────────────────────
 
 sellableItemsRouter.get('/', async (req, res, next) => {
@@ -132,7 +144,8 @@ sellableItemsRouter.get('/', async (req, res, next) => {
     if (q) { sql += ' AND (gc.name LIKE ? OR gc.description LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
     sql += ' ORDER BY gc.is_system DESC, gc.name ASC';
     const { rows } = await db.query(sql, params);
-    res.json(rows.map(attachPriceFields));
+    const psMap = await loadProfessionalServicesMap(rows.map((r: any) => r.id));
+    res.json(rows.map((r: any) => attachProfessionalServices(attachPriceFields(r), psMap)));
   } catch (err) { next(err); }
 });
 
@@ -146,7 +159,8 @@ sellableItemsRouter.get('/:id', async (req, res, next) => {
       [req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    res.json(attachPriceFields(rows[0]));
+    const psMap = await loadProfessionalServicesMap([rows[0].id]);
+    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err) { next(err); }
 });
 
@@ -156,7 +170,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
     name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
-    package_information, validity_days, tax_rate_id, tax_behavior,
+    package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
   } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -177,40 +191,57 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
     if (taxRateErr) return res.status(400).json({ error: taxRateErr });
 
-    const { insertId } = await db.query(
-      `INSERT INTO gym_charges
-         (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-          is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
-          created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        gymId,
-        name.trim(),
-        type,
-        units != null ? Number(units) : null,
-        description?.trim() || null,
-        amount != null ? parseFloat(amount) : null,
-        billing_frequency || null,
-        status || 'active',
-        enrollment_status || 'public',
-        notes?.trim() || null,
-        package_information?.trim() || null,
-        validity_days != null ? parseInt(validity_days, 10) : null,
-        tax_rate_id != null ? Number(tax_rate_id) : null,
-        tax_behavior || 'inclusive',
+    // #546: Professional Services only apply to Session-type items — for any
+    // other type, ids passed in are silently ignored rather than persisted
+    // (requirement 3: "must not be required" / not applicable for other types).
+    if (type === SESSION_TYPE) {
+      const psErr = await validateProfessionalServiceIds(gymId, professional_service_ids);
+      if (psErr) return res.status(400).json(psErr);
+    }
+
+    const { insertId } = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO gym_charges
+           (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
+            is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            created_by_membership_id, modified_by_membership_id)
+         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          gymId,
+          name.trim(),
+          type,
+          units != null ? Number(units) : null,
+          description?.trim() || null,
+          amount != null ? parseFloat(amount) : null,
+          billing_frequency || null,
+          status || 'active',
+          enrollment_status || 'public',
+          notes?.trim() || null,
+          package_information?.trim() || null,
+          validity_days != null ? parseInt(validity_days, 10) : null,
+          tax_rate_id != null ? Number(tax_rate_id) : null,
+          tax_behavior || 'inclusive',
+          gymMembershipId,
+          gymMembershipId,
+        ],
+      );
+      await replaceProfessionalServices(
+        tx, gymId, insertId,
+        type === SESSION_TYPE && Array.isArray(professional_service_ids) ? professional_service_ids : [],
         gymMembershipId,
-        gymMembershipId,
-      ],
-    );
+      );
+      return { insertId };
+    });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ?`, [insertId]);
+    const psMap = await loadProfessionalServicesMap([insertId]);
     recordAudit(req, {
       action: 'create',
       entityType: 'gym_charge',
       entityId: String(insertId),
       entityName: name.trim(),
-      next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior },
+      next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids },
     });
-    res.status(201).json(attachPriceFields(rows[0]));
+    res.status(201).json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
   }
@@ -229,41 +260,60 @@ sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
     const orig = origRows[0];
     const name = `Copy of ${orig.name ?? ''}`.trim();
 
-    const { insertId } = await db.query(
-      `INSERT INTO gym_charges
-         (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-          is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
-          created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        gymId,
-        name,
-        orig.type,
-        orig.units,
-        orig.description,
-        orig.amount,
-        orig.currency,
-        orig.billing_frequency,
-        orig.status,
-        orig.enrollment_status,
-        orig.notes,
-        orig.package_information,
-        orig.validity_days,
-        orig.tax_rate_id,
-        orig.tax_behavior,
-        gymMembershipId,
-        gymMembershipId,
-      ],
-    );
+    // #546 requirement 11: copy the source item's linked Professional
+    // Services onto the duplicate. `orig` was already fetched scoped to
+    // `gym_id = gymId` above, and every link it carries was itself validated
+    // against this same gym (or a global system service) when it was
+    // originally attached — so duplication, which always stays within one
+    // gym, can never carry over another tenant's relationships.
+    let linkedServiceIds: number[] = [];
+    if (orig.type === SESSION_TYPE) {
+      const origMap = await loadProfessionalServicesMap([orig.id]);
+      linkedServiceIds = (origMap[orig.id] ?? []).map((s) => s.id);
+    }
+
+    const { insertId } = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO gym_charges
+           (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
+            is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            created_by_membership_id, modified_by_membership_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          gymId,
+          name,
+          orig.type,
+          orig.units,
+          orig.description,
+          orig.amount,
+          orig.currency,
+          orig.billing_frequency,
+          orig.status,
+          orig.enrollment_status,
+          orig.notes,
+          orig.package_information,
+          orig.validity_days,
+          orig.tax_rate_id,
+          orig.tax_behavior,
+          gymMembershipId,
+          gymMembershipId,
+        ],
+      );
+      if (linkedServiceIds.length > 0) {
+        await replaceProfessionalServices(tx, gymId, insertId, linkedServiceIds, gymMembershipId);
+      }
+      return { insertId };
+    });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ?`, [insertId]);
+    const psMap = await loadProfessionalServicesMap([insertId]);
     recordAudit(req, {
       action: 'create',
       entityType: 'gym_charge',
       entityId: String(insertId),
       entityName: name,
-      next: { name, type: orig.type, duplicated_from: Number(req.params.id) },
+      next: { name, type: orig.type, duplicated_from: Number(req.params.id), professional_service_ids: linkedServiceIds },
     });
-    res.status(201).json(attachPriceFields(rows[0]));
+    res.status(201).json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
   }
@@ -275,7 +325,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
     description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
-    package_information, validity_days, tax_rate_id, tax_behavior,
+    package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
   } = req.body;
 
   if (billing_frequency && !VALID_FREQUENCIES.includes(billing_frequency)) {
@@ -301,14 +351,39 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     if (taxRateErr) return res.status(400).json({ error: taxRateErr });
 
     const { rows: existing } = await db.query(
-      'SELECT id, is_system, name AS current_name FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT id, is_system, name AS current_name, type AS current_type FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
     const isSystem = existing[0].is_system;
+    // System items can never change type (the UPDATE below no-ops `type` when
+    // isSystem), so their effective type after this write is always the
+    // current one; custom items take the requested type if given.
+    const effectiveType = isSystem ? existing[0].current_type : (type || existing[0].current_type);
 
-    const { rowCount } = await db.query(
-      `UPDATE gym_charges SET
+    // #546 requirement 12/13: Professional Services only apply while the
+    // item's (post-update) type is 'sessions'. If it isn't, any
+    // professional_service_ids sent are ignored and existing links are
+    // cleared below — moving a Session item to another type must not leave
+    // a stale relationship attached. This is a safe clear: the join table
+    // only records a catalog association, never a booking/purchase/billing
+    // record, so nothing downstream references it — no confirmation step
+    // is needed (see docs/architecture.md Sellable Items entry for the
+    // rationale, matching the issue's "pick the simplest safe option"
+    // guidance since no existing confirm-before-destructive-change pattern
+    // applies to this relationship).
+    let professionalServiceIdsToPersist: number[] | undefined;
+    if (effectiveType !== SESSION_TYPE) {
+      professionalServiceIdsToPersist = [];
+    } else if (Array.isArray(professional_service_ids)) {
+      const psErr = await validateProfessionalServiceIds(gymId, professional_service_ids);
+      if (psErr) return res.status(400).json(psErr);
+      professionalServiceIdsToPersist = professional_service_ids;
+    } // else: type is/stays 'sessions' and the request didn't touch the field — leave existing links untouched.
+
+    const { rowCount } = await db.transaction(async (tx) => {
+      const { rowCount } = await tx.query(
+        `UPDATE gym_charges SET
          description               = COALESCE(?, description),
          amount                    = ?,
          billing_frequency         = ?,
@@ -344,22 +419,28 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         isSystem, validity_days != null ? parseInt(validity_days, 10) : null, validity_days != null ? parseInt(validity_days, 10) : null,
         tax_rate_id != null ? Number(tax_rate_id) : null,
         tax_behavior ?? null,
-        gymMembershipId,
-        req.params.id,
-        gymId,
-      ],
-    );
+          gymMembershipId,
+          req.params.id,
+          gymId,
+        ],
+      );
+      if (professionalServiceIdsToPersist !== undefined) {
+        await replaceProfessionalServices(tx, gymId, Number(req.params.id), professionalServiceIdsToPersist, gymMembershipId);
+      }
+      return { rowCount };
+    });
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
 
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
+    const psMap = await loadProfessionalServicesMap([Number(req.params.id)]);
     recordAudit(req, {
       action: 'update',
       entityType: 'gym_charge',
       entityId: String(req.params.id),
       entityName: rows[0]?.name ?? rows[0]?.charge_type_name,
-      next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior },
+      next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids: professionalServiceIdsToPersist },
     });
-    res.json(attachPriceFields(rows[0]));
+    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
   }
@@ -379,8 +460,9 @@ sellableItemsRouter.post('/:id/activate', requireRole('admin'), async (req, res,
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
+    const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'activate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachPriceFields(rows[0]));
+    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err) { next(err); }
 });
 
@@ -398,8 +480,9 @@ sellableItemsRouter.post('/:id/deactivate', requireRole('admin'), async (req, re
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
+    const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'deactivate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachPriceFields(rows[0]));
+    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err) { next(err); }
 });
 

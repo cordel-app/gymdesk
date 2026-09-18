@@ -26,6 +26,15 @@ type ItemStatus = typeof STATUSES[number];
 type EnrollmentStatus = typeof ENROLLMENT_STATUSES[number];
 type Frequency = typeof FREQUENCIES[number];
 
+// #546: Professional Services only apply to Session-type ('sessions') items.
+const SESSION_TYPE: ItemType = 'sessions';
+
+interface LinkedProfessionalService {
+  id: number;
+  name: string;
+  is_system: number;
+}
+
 interface SellableItem {
   id: number;
   gym_id: string;
@@ -53,6 +62,7 @@ interface SellableItem {
   amount_excl_tax: number | null;
   amount_incl_tax: number | null;
   applied_tax_rate: number | null;
+  professional_services: LinkedProfessionalService[];
   deleted_at: string | null;
   created_at: string;
   created_by_membership_id: number | null;
@@ -75,6 +85,7 @@ type EditForm = {
   package_information: string;
   validity_days: string;
   tax_rate_id: string;
+  professionalServiceIds: number[];
 };
 
 type InlineNew = {
@@ -84,6 +95,7 @@ type InlineNew = {
   amount: string;
   billing_frequency: string;
   tax_rate_id: string;
+  professionalServiceIds: number[];
   saving: boolean;
   error: string | null;
 };
@@ -92,6 +104,13 @@ interface TaxRate {
   id: number;
   name: string;
   rate_percent: string;
+  status: 'active' | 'inactive';
+}
+
+interface ProfessionalService {
+  id: number;
+  name: string;
+  is_system: number;
   status: 'active' | 'inactive';
 }
 
@@ -109,6 +128,7 @@ function emptyEditForm(item: SellableItem): EditForm {
     package_information: item.package_information ?? '',
     validity_days: item.validity_days != null ? String(item.validity_days) : '',
     tax_rate_id: item.tax_rate_id != null ? String(item.tax_rate_id) : '',
+    professionalServiceIds: item.professional_services?.map((s) => s.id) ?? [],
   };
 }
 
@@ -140,6 +160,8 @@ export default function SellableItemsPage() {
 
   const [items, setItems] = useState<SellableItem[]>([]);
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
+  const [professionalServices, setProfessionalServices] = useState<ProfessionalService[]>([]);
+  const [professionalServicesLoading, setProfessionalServicesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -171,6 +193,16 @@ export default function SellableItemsPage() {
     apiFetch<TaxRate[]>('/taxes').then(setTaxRates).catch(() => setTaxRates([]));
   }, [activeGymId, gymLoading, isAdmin]);
 
+  // #546: gym-scoped Professional Services catalog, for the type='sessions' multi-select.
+  useEffect(() => {
+    if (gymLoading || !isAdmin || !activeGymId) return;
+    setProfessionalServicesLoading(true);
+    apiFetch<ProfessionalService[]>('/professional-services')
+      .then(setProfessionalServices)
+      .catch(() => setProfessionalServices([]))
+      .finally(() => setProfessionalServicesLoading(false));
+  }, [activeGymId, gymLoading, isAdmin]);
+
   function taxRateOptions(currentId: string) {
     const options = taxRates.filter((tr) => tr.status === 'active');
     if (currentId && !options.some((tr) => String(tr.id) === currentId)) {
@@ -178,6 +210,41 @@ export default function SellableItemsPage() {
       if (current) options.push(current);
     }
     return options;
+  }
+
+  /** Active Professional Services, plus any already-selected inactive ones (mirrors taxRateOptions). */
+  function professionalServiceOptions(selectedIds: number[]) {
+    const options = professionalServices.filter((ps) => ps.status === 'active' || selectedIds.includes(ps.id));
+    return options;
+  }
+
+  function toggleServiceId(ids: number[], id: number): number[] {
+    return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+  }
+
+  function renderProfessionalServiceCheckboxes(selected: number[], onChange: (ids: number[]) => void) {
+    const options = professionalServiceOptions(selected);
+    if (professionalServicesLoading) {
+      return <p style={{ margin: 0, fontSize: 13, color: '#888' }}>{t('loading')}</p>;
+    }
+    if (options.length === 0) {
+      return <p style={{ margin: 0, fontSize: 13, color: '#888' }}>{t('professional_services_empty')}</p>;
+    }
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {options.map((ps) => (
+          <label key={ps.id} style={chipCheckboxLabel(selected.includes(ps.id))}>
+            <input
+              type="checkbox"
+              checked={selected.includes(ps.id)}
+              onChange={() => onChange(toggleServiceId(selected, ps.id))}
+              style={{ marginRight: 6 }}
+            />
+            {ps.name}
+          </label>
+        ))}
+      </div>
+    );
   }
 
   async function load() {
@@ -216,7 +283,7 @@ export default function SellableItemsPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', type: 'fee', units: '', amount: '', billing_frequency: '', tax_rate_id: '', saving: false, error: null });
+    setInlineNew({ name: '', type: 'fee', units: '', amount: '', billing_frequency: '', tax_rate_id: '', professionalServiceIds: [], saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -247,6 +314,7 @@ export default function SellableItemsPage() {
           amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,
           billing_frequency: inlineNew.billing_frequency || null,
           tax_rate_id: inlineNew.tax_rate_id !== '' ? parseInt(inlineNew.tax_rate_id, 10) : null,
+          professional_service_ids: inlineNew.type === SESSION_TYPE ? inlineNew.professionalServiceIds : undefined,
         }),
       });
       setInlineNew(null);
@@ -294,6 +362,7 @@ export default function SellableItemsPage() {
           package_information: editForm.package_information.trim() || null,
           validity_days: editForm.validity_days !== '' ? parseInt(editForm.validity_days, 10) : null,
           tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
+          professional_service_ids: editForm.type === SESSION_TYPE ? editForm.professionalServiceIds : undefined,
         }),
       });
       setEditingId(null);
@@ -422,6 +491,15 @@ export default function SellableItemsPage() {
               </select>
             </div>
           </div>
+          {inlineNew.type === SESSION_TYPE && (
+            <div style={{ marginBottom: 12 }}>
+              <label style={inlineLabelStyle}>{t('label_professional_services')}</label>
+              {renderProfessionalServiceCheckboxes(
+                inlineNew.professionalServiceIds,
+                (ids) => setInlineNew({ ...inlineNew, professionalServiceIds: ids }),
+              )}
+            </div>
+          )}
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
@@ -622,6 +700,16 @@ export default function SellableItemsPage() {
               </div>
             </div>
 
+            {editForm.type === SESSION_TYPE && (
+              <>
+                <SectionHeader title={t('section_professional_services')} />
+                {renderProfessionalServiceCheckboxes(
+                  editForm.professionalServiceIds,
+                  (ids) => setEditForm({ ...editForm, professionalServiceIds: ids }),
+                )}
+              </>
+            )}
+
             {!isSystem && (
               <>
                 <SectionHeader title={t('section_package_info')} />
@@ -671,6 +759,17 @@ export default function SellableItemsPage() {
               label={t('label_tax_rate')}
               value={item.tax_rate_name ? `${item.tax_rate_name} (${item.tax_rate_percent}%)` : t('option_no_tax')}
             />
+
+            {item.type === SESSION_TYPE && (
+              <>
+                <SectionHeader title={t('section_professional_services')} />
+                <p style={{ margin: '4px 0 0', fontSize: 13, color: item.professional_services.length ? '#333' : '#aaa' }}>
+                  {item.professional_services.length
+                    ? item.professional_services.map((s) => s.name).join(', ')
+                    : t('professional_services_empty')}
+                </p>
+              </>
+            )}
 
             {!isSystem && item.package_information && (
               <>
@@ -791,6 +890,17 @@ export default function SellableItemsPage() {
               />
             </div>
 
+            {details.type === SESSION_TYPE && (
+              <>
+                <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
+                <ModalSection title={t('section_professional_services')} />
+                <ModalField
+                  label=""
+                  value={details.professional_services.length ? details.professional_services.map((s) => s.name).join(', ') : t('professional_services_empty')}
+                />
+              </>
+            )}
+
             {details.package_information && (
               <>
                 <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
@@ -899,3 +1009,13 @@ const inlineSelectStyle: React.CSSProperties = {
 };
 
 const errorStyle: React.CSSProperties = { margin: '8px 0 0', fontSize: 13, color: '#c0392b' };
+
+function chipCheckboxLabel(checked: boolean): React.CSSProperties {
+  return {
+    display: 'flex', alignItems: 'center', padding: '4px 12px', borderRadius: 12,
+    border: `1px solid ${checked ? '#bfdbfe' : '#e5e7eb'}`,
+    background: checked ? '#eff6ff' : 'transparent',
+    color: checked ? '#1d4ed8' : 'inherit',
+    cursor: 'pointer', fontSize: 13, fontWeight: 500, userSelect: 'none',
+  };
+}

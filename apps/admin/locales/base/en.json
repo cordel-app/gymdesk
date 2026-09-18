@@ -2685,7 +2685,10 @@
     "tax_behavior_exclusive": "Exclusive (tax added on top)",
     "taxIncluded": "(tax included)",
     "taxExcluded": "(tax excluded)",
-    "exempt": "Exempt"
+    "exempt": "Exempt",
+    "section_professional_services": "Professional Services",
+    "label_professional_services": "Professional Services",
+    "professional_services_empty": "No Professional Services selected."
   },
   "assigned_plans_page": {
     "title": "Assigned Plans",
