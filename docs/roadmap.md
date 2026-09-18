@@ -900,7 +900,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   vs `EventDetailsPanel` — no UI design has been specified for this yet), and
   extending member-facing discovery to rows without an `activity_type_id`
   (the plan's stage 5, "Unified member read model"). Stage 2, "waitlist mode":
-  migration 153 adds `activity_types.waitlist_mode`
+  migration 154 adds `activity_types.waitlist_mode`
   (`disabled`/`open`/`closed`, CHECK-constrained) with a nullable
   per-occurrence override on `calendar_events.waitlist_mode`;
   `bookMemberOnSession` resolves `COALESCE(ce.waitlist_mode,
