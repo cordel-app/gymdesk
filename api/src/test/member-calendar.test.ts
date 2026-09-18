@@ -379,3 +379,100 @@ describe('DELETE /me/shared-training-requests/:id', () => {
     expect(rows[0].status).toBe('cancelled');
   });
 });
+
+// ─── #503 stage 6: GET /me/schedule center/trainer filters + GET /me/trainers ─
+
+describe('#503 stage 6: schedule filters and /me/trainers', () => {
+  let centerB: number;
+  let outsideCenterId: number;
+  let trainerMembershipId: number;
+  let sessionInCenterB: number;
+  let sessionWithTrainer: number;
+
+  beforeAll(async () => {
+    centerB = await createCenter(gymId);
+    outsideCenterId = await createCenter(gymId);
+    // Member is explicitly assigned to centerId and centerB, but not outsideCenterId.
+    await db.query(
+      'INSERT INTO member_centers (gym_id, member_id, center_id) VALUES (?, ?, ?), (?, ?, ?)',
+      [gymId, memberId, centerId, gymId, memberId, centerB],
+    );
+    sessionInCenterB = await createSession(gymId, shareableActivityTypeId, centerB, 1);
+
+    const { insertId: tId } = await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES (?, ?, 'trainer_performance', 'active', 'Filter Trainer')`,
+      [`trainer-${Date.now()}`, gymId],
+    );
+    trainerMembershipId = tId;
+    const { insertId: sId } = await db.query(
+      `INSERT INTO calendar_events
+         (gym_id, center_id, title, activity_type_id, trainer_membership_id, starts_at, ends_at, status)
+       VALUES (?, ?, 'Trainer Session', ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 1 DAY),
+               DATE_ADD(UTC_TIMESTAMP(), INTERVAL 25 HOUR), 'scheduled')`,
+      [gymId, centerId, shareableActivityTypeId, trainerMembershipId],
+    );
+    sessionWithTrainer = sId;
+  });
+
+  it('GET /me/schedule?center_id= narrows to that center, keeping center-less rows visible', async () => {
+    const res = await request
+      .get(`/me/schedule?center_id=${centerB}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = (res.body as any[]).map((s) => s.id);
+    expect(ids).toContain(sessionInCenterB);
+    expect(ids).toContain(noCenterSessionId);
+    expect(ids).not.toContain(shareableSessionId);
+  });
+
+  it('GET /me/schedule?center_id= returns 403 for a center the member is not assigned to', async () => {
+    const res = await request
+      .get(`/me/schedule?center_id=${outsideCenterId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(403);
+  });
+
+  it('GET /me/schedule?trainer_membership_id= narrows to that trainer\'s sessions', async () => {
+    const res = await request
+      .get(`/me/schedule?trainer_membership_id=${trainerMembershipId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const sessions = res.body as any[];
+    expect(sessions.length).toBeGreaterThan(0);
+    for (const s of sessions) expect(s.id).toBe(sessionWithTrainer);
+  });
+
+  it('GET /me/trainers returns 401 without auth', async () => {
+    const res = await request.get('/me/trainers').set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('GET /me/trainers returns 403 when user has a non-member role', async () => {
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: 'admin-user-trainers' } as any);
+    const roleGymId = await createTestGym('Trainers Role Gym');
+    await createTestMembership(roleGymId, 'admin', 'admin-user-trainers');
+    const res = await request
+      .get('/me/trainers')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', roleGymId);
+    expect(res.status).toBe(403);
+  });
+
+  it('GET /me/trainers returns trainer-role gym_memberships with only id + name', async () => {
+    const res = await request
+      .get('/me/trainers')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    const row = (res.body as any[]).find((t: any) => t.id === trainerMembershipId);
+    expect(row).toBeDefined();
+    expect(row.name).toBe('Filter Trainer');
+    expect(row).not.toHaveProperty('role');
+    expect(row).not.toHaveProperty('user_id');
+  });
+});

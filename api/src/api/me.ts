@@ -471,13 +471,31 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const from = (req.query.from as string) || new Date().toISOString();
     const to = req.query.to as string | undefined;
     const activityTypeId = req.query.activity_type_id as string | undefined;
+    const trainerMembershipId = req.query.trainer_membership_id as string | undefined;
     const where: string[] = ["ce.gym_id = ?", "ce.status = 'scheduled'", "ce.deleted_at IS NULL", "ce.starts_at >= ?"];
     const params: any[] = [gymId, from];
     if (to) { where.push('ce.starts_at <= ?'); params.push(to); }
     if (activityTypeId) { where.push('ce.activity_type_id = ?'); params.push(activityTypeId); }
+    if (trainerMembershipId) { where.push('ce.trainer_membership_id = ?'); params.push(trainerMembershipId); }
 
     const { centerId, allowedCenterIds } = getCenterContext(req);
-    if (centerId != null) {
+    // #503 stage 6: an optional calendar-local center filter, independent from
+    // the x-center-id header driving the rest of the app (#478's global
+    // CenterSwitcher). It narrows within — never widens past — the header's
+    // own authorization scoping below, so a member can't request a center
+    // they aren't assigned to by passing this query param.
+    const filterCenterId = req.query.center_id as string | undefined;
+    if (filterCenterId) {
+      const requested = Number(filterCenterId);
+      if (allowedCenterIds && !allowedCenterIds.includes(requested)) {
+        return res.status(403).json({ error: 'You are not assigned to this center' });
+      }
+      if (centerId != null && centerId !== requested) {
+        return res.status(403).json({ error: 'You are not assigned to this center' });
+      }
+      where.push('(ce.center_id IS NULL OR ce.center_id = ?)');
+      params.push(requested);
+    } else if (centerId != null) {
       // A NULL center_id means the occurrence (or its activity type) was never
       // assigned to a specific center — e.g. a schedule-rule-materialized
       // session whose activity type has no default_center_id set. Such an
@@ -627,6 +645,27 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
       };
     });
     res.json(shaped);
+  } catch (err) { next(err); }
+});
+
+/**
+ * #503 stage 6: a lightweight, member-facing trainer list for the calendar's
+ * local filter panel. `/trainers` (api/src/api/trainers.ts) exposes the same
+ * coach-role gym_memberships but is admin-only (requireModuleAccess), so
+ * members need their own read-only view — id + name only, no staff-facing
+ * fields like role/user_id/max_concurrent_groups.
+ */
+meRouter.get('/trainers', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT gm.id, gm.name
+       FROM gym_memberships gm
+       WHERE gm.gym_id = ? AND gm.role IN ('trainer_performance','trainer_perf_nutrition')
+       ORDER BY gm.name ASC`,
+      [gymId],
+    );
+    res.json(rows);
   } catch (err) { next(err); }
 });
 
