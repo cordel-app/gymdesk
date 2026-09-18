@@ -457,6 +457,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               sp.name AS space_name,
               tm.name AS trainer_name,
               COALESCE(ce.capacity, at.max_capacity) AS effective_capacity,
+              COALESCE(ce.waitlist_mode, at.waitlist_mode) AS effective_waitlist_mode,
               CASE
                 WHEN ce.trainer_membership_id IS NOT NULL AND ce.space_id IS NOT NULL
                 THEN LEAST(COALESCE(tm.max_concurrent_groups, 1), COALESCE(sp.max_concurrent_groups, 1))
@@ -551,8 +552,12 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         availability_state = 'SHARED_REQUEST_AVAILABLE';
       } else if (isShareable && allowsShared && extraBooked >= 1) {
         availability_state = 'FULL';
-      } else {
+      } else if (r.effective_waitlist_mode === 'open') {
         availability_state = 'WAITLIST_AVAILABLE';
+      } else {
+        // #503 stage 2: no waitlist to join — bookMemberOnSession would reject
+        // this with a 409, so the member sees a full session with no action.
+        availability_state = 'FULL';
       }
 
       return {

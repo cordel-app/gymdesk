@@ -75,6 +75,7 @@ const SESSION_SELECT = `
          at.duration_minutes AS class_type_duration,
          at.is_shareable,
          COALESCE(ce.capacity, at.max_capacity) AS effective_capacity,
+         COALESCE(ce.waitlist_mode, at.waitlist_mode) AS effective_waitlist_mode,
          sp.name AS space_name,
          gm.name AS trainer_name,
          COALESCE(sp.max_concurrent_groups, 1) AS space_max_concurrent_groups,
