@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
-import { isStorageConfigured, uploadGymImage } from '../infra/storage';
+import { getMissingStorageConfigKeys, isStorageConfigured, uploadGymImage } from '../infra/storage';
 
 /**
  * #417 stage 2/3: generic per-gym image upload endpoint backed by Cloudflare R2.
@@ -36,7 +36,11 @@ async function handleImageUpload(req: express.Request, res: express.Response, fo
   }
 
   if (!isStorageConfigured()) {
-    return res.status(503).json({ error: 'Cloudflare storage has not been configured for this deployment' });
+    const missingConfig = getMissingStorageConfigKeys();
+    return res.status(503).json({
+      error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+      missingConfig,
+    });
   }
 
   const { gymId } = getTenantContext(req);

@@ -156,13 +156,17 @@ describe('Request validation', () => {
 // ─── Storage not configured ─────────────────────────────────────────────────
 
 describe('Storage not configured', () => {
-  it('returns 503 when Cloudflare R2 env vars are not fully set', async () => {
+  it('returns 503 when Cloudflare R2 env vars are not fully set, naming the missing ones', async () => {
     delete process.env.CLOUDFLARE_R2_BUCKET; // isStorageConfigured() -> false
+    delete process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
     const res = await uploadTo(gymId)
       .set('Content-Type', 'image/png')
       .send(Buffer.from('fake-png-bytes'));
     expect(res.status).toBe(503);
-    expect(res.body).toEqual({ error: 'Cloudflare storage has not been configured for this deployment' });
+    expect(res.body).toEqual({
+      error: 'Cloudflare storage has not been configured for this deployment (missing: CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_BUCKET)',
+      missingConfig: ['CLOUDFLARE_R2_ACCESS_KEY_ID', 'CLOUDFLARE_R2_BUCKET'],
+    });
     expect(sendMock).not.toHaveBeenCalled();
   });
 });

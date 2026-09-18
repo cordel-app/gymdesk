@@ -49,6 +49,7 @@ vi.mock('@clerk/backend', async (importOriginal) => {
 // buildGymFolderPrefix()/sanitizeGymFolderName() helpers real so tests can
 // compute the same expected prefix the router computes.
 const mockIsStorageConfigured = vi.hoisted(() => vi.fn().mockReturnValue(true));
+const mockGetMissingStorageConfigKeys = vi.hoisted(() => vi.fn().mockReturnValue([]));
 const mockInitializeGymBucket = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('../infra/storage', async (importOriginal) => {
@@ -56,6 +57,7 @@ vi.mock('../infra/storage', async (importOriginal) => {
   return {
     ...actual,
     isStorageConfigured: mockIsStorageConfigured,
+    getMissingStorageConfigKeys: mockGetMissingStorageConfigKeys,
     initializeGymBucket: mockInitializeGymBucket,
   };
 });
@@ -89,6 +91,7 @@ beforeEach(() => {
     primaryEmailAddressId: null,
   });
   mockIsStorageConfigured.mockReset().mockReturnValue(true);
+  mockGetMissingStorageConfigKeys.mockReset().mockReturnValue([]);
   mockInitializeGymBucket.mockReset().mockResolvedValue(undefined);
 });
 
@@ -145,13 +148,15 @@ describe('gym not found', () => {
 // ─── Storage not configured ────────────────────────────────────────────────────
 
 describe('storage not configured', () => {
-  it('returns 503 when isStorageConfigured() is false', async () => {
+  it('returns 503 when isStorageConfigured() is false, naming the missing env vars', async () => {
     mockIsStorageConfigured.mockReturnValue(false);
+    mockGetMissingStorageConfigKeys.mockReturnValue(['CLOUDFLARE_R2_BUCKET']);
 
     const res = await initStorage(gymId);
     expect(res.status).toBe(503);
     expect(res.body).toEqual({
-      error: 'Cloudflare storage has not been configured for this deployment',
+      error: 'Cloudflare storage has not been configured for this deployment (missing: CLOUDFLARE_R2_BUCKET)',
+      missingConfig: ['CLOUDFLARE_R2_BUCKET'],
     });
     expect(mockInitializeGymBucket).not.toHaveBeenCalled();
 
