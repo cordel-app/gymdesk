@@ -185,11 +185,33 @@ export default function PromotionsPage() {
     if (!gymLoading && isAdmin) load();
   }, [activeGymId, gymLoading, statusFilter, search]);
 
-  // Live forecast preview — recalculated by the backend (not duplicated here)
-  // whenever the unsaved Billing & Duration fields change.
+  // Live forecast preview — recalculated by the backend (not duplicated here).
+  // Shown as soon as a card is opened (view or edit), using the unsaved edit
+  // form while editing that same card, or the promotion's own saved values
+  // otherwise — so the simulation never requires entering edit mode first.
   useEffect(() => {
-    if (editingId === null) { setTimeline(null); setTimelineError(null); return; }
-    const { free_months, paid_months, pay_beforehand_months, bonus_months } = editForm;
+    if (expandedId === null) { setTimeline(null); setTimelineError(null); return; }
+    let free_months: string, paid_months: string, pay_beforehand_months: string, bonus_months: string;
+    let mfAction: string, mfEnabled: boolean, mfValue: string | null, mfDurationMonths: number | null;
+    if (editingId === expandedId) {
+      ({ free_months, paid_months, pay_beforehand_months, bonus_months } = editForm);
+      mfAction = mfDraft?.action || 'no_benefit';
+      mfEnabled = !!mfDraft?.enabled;
+      mfValue = mfDraft?.value ?? null;
+      mfDurationMonths = mfDraft?.duration_months ?? null;
+    } else {
+      const promo = rows.find((r) => r.id === expandedId);
+      if (!promo) { setTimeline(null); setTimelineError(null); return; }
+      free_months = promo.free_months != null ? String(promo.free_months) : '';
+      paid_months = promo.paid_months != null ? String(promo.paid_months) : '';
+      pay_beforehand_months = promo.pay_beforehand_months != null ? String(promo.pay_beforehand_months) : '';
+      bonus_months = promo.bonus_months != null ? String(promo.bonus_months) : '';
+      const savedMf = cachedMf[expandedId] ?? null;
+      mfAction = savedMf?.action || 'no_benefit';
+      mfEnabled = !!savedMf?.enabled;
+      mfValue = savedMf?.value ?? null;
+      mfDurationMonths = savedMf?.duration_months ?? null;
+    }
     if (!free_months && !paid_months && !pay_beforehand_months && !bonus_months) {
       setTimeline(null);
       setTimelineError(null);
@@ -202,11 +224,11 @@ export default function PromotionsPage() {
           paid_months: paid_months || '0',
           pay_beforehand_months: pay_beforehand_months || '0',
           bonus_months: bonus_months || '0',
-          membership_fee_action: mfDraft?.action || 'no_benefit',
-          membership_fee_enabled: mfDraft?.enabled ? '1' : '0',
+          membership_fee_action: mfAction,
+          membership_fee_enabled: mfEnabled ? '1' : '0',
         });
-        if (mfDraft?.value != null && mfDraft.value !== '') qs.set('membership_fee_value', mfDraft.value);
-        if (mfDraft?.duration_months != null) qs.set('membership_fee_duration_months', String(mfDraft.duration_months));
+        if (mfValue != null && mfValue !== '') qs.set('membership_fee_value', mfValue);
+        if (mfDurationMonths != null) qs.set('membership_fee_duration_months', String(mfDurationMonths));
         const data = await apiFetch<PromotionTimelineResponse>(`/promotions/timeline?${qs.toString()}`);
         setTimeline(data);
         setTimelineError(null);
@@ -218,7 +240,8 @@ export default function PromotionsPage() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    editingId, editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months,
+    expandedId, editingId, rows, cachedMf,
+    editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months,
     mfDraft?.action, mfDraft?.value, mfDraft?.enabled, mfDraft?.duration_months,
   ]);
 
@@ -564,7 +587,14 @@ export default function PromotionsPage() {
         </div>
       );
     }
-    if (!timeline || timeline.periods.length === 0) return null;
+    if (!timeline || timeline.periods.length === 0) {
+      return (
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_timeline')}</p>
+          <p style={hintSt}>{t('timeline_empty')}</p>
+        </div>
+      );
+    }
 
     const enrollmentStr = fmtDate(parseDateStr(timeline.periods[0].startsOn), locale);
 
@@ -657,14 +687,6 @@ export default function PromotionsPage() {
               {t('label_stackable')}
             </label>
           </div>
-        </div>
-
-        {editError && <p style={{ margin: '0 0 8px', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 4 }}>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={() => handleSave(promoId)} disabled={editSaving} style={btnSmall('#6c63ff')}>
-            {editSaving ? t('saving') : t('save_changes')}
-          </button>
         </div>
 
         {/* Applicable Plans */}
@@ -877,7 +899,17 @@ export default function PromotionsPage() {
           )}
         </div>
 
+        {/* Example Timeline — shown as soon as the card opens, kept last so
+            Save/Cancel always follow every configuration section. */}
         {renderTimeline()}
+
+        {editError && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={() => handleSave(promoId)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+            {editSaving ? t('saving') : t('save_changes')}
+          </button>
+        </div>
 
       </div>
     );
@@ -1023,6 +1055,10 @@ export default function PromotionsPage() {
               </table>
             )}
         </div>
+
+        {/* Example Timeline — shown as soon as the card opens, using the
+            promotion's saved values (no need to enter edit mode). */}
+        {renderTimeline()}
 
       </div>
     );

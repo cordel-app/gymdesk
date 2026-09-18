@@ -898,6 +898,7 @@
     "label_pay_beforehand_months": "Pay Beforehand",
     "label_bonus_months": "Bonus Duration",
     "section_timeline": "Example Timeline",
+    "timeline_empty": "Set the Billing & Duration fields above to preview an example timeline.",
     "timeline_example_note": "Example: a customer starting on {date}",
     "timeline_disclaimer": "Example only. Dates shown are illustrative and will be recalculated from each customer's actual enrollment date.",
     "timeline_monthly_billing_disclaimer": "This is a simulation assuming that the Membership Plan has a monthly billing period. Actual dates and billing periods may vary depending on the selected plan.",
