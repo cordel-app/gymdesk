@@ -152,7 +152,7 @@
     "placeholder_emergency_contact": "Nom i telèfon",
     "placeholder_notes": "Notes internes…",
     "placeholder_document": "p. ex. 12345678Z",
-    "help_document": "Opcional. NIF, NIE o número de passaport espanyol.",
+    "help_document": "Opcional. NIF, NIE o número de passaport.",
     "error_document_invalid": "Introdueix un NIF, NIE o número de passaport vàlid.",
     "col_audit": "Auditoria",
     "col_created_by": "Creat per",
