@@ -213,6 +213,30 @@ describe('GET /me/schedule', () => {
     expect(session).toBeDefined();
   });
 
+  it('#503 stage 7: each session carries center_id/center_name for the member calendar UI', async () => {
+    const res = await request
+      .get(`/me/schedule?activity_type_id=${shareableActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const session = (res.body as any[]).find((s: any) => s.id === shareableSessionId);
+    expect(session).toBeDefined();
+    expect(session.center_id).toBe(centerId);
+    expect(typeof session.center_name).toBe('string');
+  });
+
+  it('#503 stage 7: center_name is null for a session with no center', async () => {
+    const res = await request
+      .get('/me/schedule')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const session = (res.body as any[]).find((s: any) => s.id === noCenterSessionId);
+    expect(session).toBeDefined();
+    expect(session.center_id).toBeNull();
+    expect(session.center_name).toBeNull();
+  });
+
   it('filters sessions by ?activity_type_id', async () => {
     const res = await request
       .get(`/me/schedule?activity_type_id=${shareableActivityTypeId}`)

@@ -905,7 +905,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
-- **#503 (in progress — stages 1–6 of a 9-stage plan agreed on the issue
+- **#503 (in progress — stages 1–7 of a 9-stage plan agreed on the issue
   thread)**: Members App — Align Calendar Event Information with Admin
   Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
   `calendar_events.kind ENUM('session','event')` (added by the #360
@@ -1010,9 +1010,26 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `/trainers` router is staff-only via `requireModuleAccess('ORGANIZATION')`,
   so it can't be reused as-is). No schema or frontend changes: this stage is
   API-only, per the plan — the member calendar UI stage (stage 7) is what
-  will wire up the actual filter panel. Remaining stages (member calendar
-  UI, Home/My Bookings updates, tests/docs) are tracked on #503 and land as
-  separate PRs, each `Related to #503` until the final stage closes it.
+  will wire up the actual filter panel. Stage 7, "member calendar UI":
+  `GET /me/schedule` gains an additive `LEFT JOIN centers` returning
+  `center_id`/`center_name` (stage 6 could already filter by center but
+  never returned it for display). The `/calendar` page gets a compact
+  Filter button (collapsed by default, per the thread's mobile-space
+  requirement) opening a dropdown panel with independent, combinable
+  Center/Trainer selects wired to stage 6's `center_id`/
+  `trainer_membership_id` query params — the center select defaults once to
+  `AppContext.activeCenterId` (the global `CenterSwitcher`'s current value)
+  but never writes back to it, matching the thread's "calendar-local, never
+  affects other sections" requirement; a dot on the button flags an active
+  filter. The event grid shows an aggregate occupancy count
+  (`booked/capacity`) per cell, and the bottom-sheet detail panel gains the
+  three-badge breakdown from the thread's Q3 answer — `status`,
+  `occupancy_status` (+ count), and (only when not `disabled`)
+  `waitlist_status` with an aggregate `waitlist_count` — additive alongside
+  the existing `availability_state`-keyed action buttons, which are
+  unchanged. Remaining stages (Home/My Bookings updates, tests/docs) are
+  tracked on #503 and land as separate PRs, each `Related to #503` until
+  the final stage closes it.
 
 ## Decisions
 

@@ -13,12 +13,20 @@ import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, ty
 
 interface ActivityType { id: number; name: string; color: string | null }
 
+interface Trainer { id: number; name: string }
+
+type CalendarEventStatus = 'scheduled' | 'running' | 'completed' | 'cancelled';
+type OccupancyStatus = 'available' | 'few_spots_left' | 'full' | 'unavailable';
+type WaitlistStatus = 'disabled' | 'open' | 'closed';
+
 interface ScheduleSession {
   id: number;
   activity_type_id: number;
   class_type_name: string;
   starts_at: string;
   ends_at: string;
+  center_id: number | null;
+  center_name: string | null;
   space_name: string | null;
   trainer_name: string | null;
   effective_capacity: number;
@@ -42,6 +50,12 @@ interface ScheduleSession {
     | 'SHARED_REQUEST_AVAILABLE'
     | 'WAITLIST_AVAILABLE'
     | 'FULL';
+  // #503 stage 5/7: unified read model, additive next to availability_state
+  // (which stays the source of truth for booking-action buttons below).
+  status: CalendarEventStatus;
+  occupancy_status: OccupancyStatus;
+  waitlist_status: WaitlistStatus;
+  waitlist_count: number;
 }
 
 const STATE_COLORS: Record<ScheduleSession['availability_state'], string> = {
@@ -60,14 +74,29 @@ export default function MemberCalendarPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { isLinked, loading: appLoading } = useApp();
+  const { isLinked, loading: appLoading, centers, activeCenterId } = useApp();
 
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
   const dblClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickDateRef = useRef<string | null>(null);
 
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [filterAtId, setFilterAtId] = useState('');
+
+  // #503 stage 7: calendar-local center/trainer filters, independent from the
+  // global CenterSwitcher (#478) — changing these must never affect Home,
+  // Nutrition, Training Plans, My Bookings, or any other section. Default
+  // center is initialized from the current global selection, if any; default
+  // trainer is "all trainers". Kept in a compact panel behind a Filter button
+  // rather than shown permanently, to preserve mobile header space.
+  const [filterCenterId, setFilterCenterId] = useState('');
+  const [filterTrainerId, setFilterTrainerId] = useState('');
+  const [centerDefaultApplied, setCenterDefaultApplied] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+  const [pendingCenterId, setPendingCenterId] = useState('');
+  const [pendingTrainerId, setPendingTrainerId] = useState('');
+
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -80,6 +109,9 @@ export default function MemberCalendarPage() {
     apiFetch<ActivityType[]>('/activity-types?status=active')
       .then(setActivityTypes)
       .catch(() => {});
+    apiFetch<Trainer[]>('/me/trainers')
+      .then(setTrainers)
+      .catch(() => {});
     // #418: Operating Hours & Holidays — greys out closed/out-of-hours slots.
     // Non-fatal if the feature isn't configured/enabled for this gym.
     apiFetch<{ weekly: WeeklyShiftDTO[]; holidays: HolidayDTO[] }>('/me/operating-hours')
@@ -87,12 +119,25 @@ export default function MemberCalendarPage() {
       .catch(() => {});
   }, [appLoading, isLinked, locale]);
 
+  // Apply the global center selection as this filter's default exactly once,
+  // as soon as it becomes known — never again afterward, so a later change to
+  // the global CenterSwitcher doesn't silently override a member's own choice.
+  useEffect(() => {
+    if (!centerDefaultApplied && activeCenterId != null) {
+      setFilterCenterId(String(activeCenterId));
+      setCenterDefaultApplied(true);
+    }
+  }, [activeCenterId, centerDefaultApplied]);
+
   const businessHours = weeklyToBusinessHours(weeklyHours);
+  const filtersActive = !!filterCenterId || !!filterTrainerId;
 
   const fetchEvents = useCallback(
     (info: any, successCb: (events: any[]) => void, failureCb: (err: Error) => void) => {
       const params = new URLSearchParams({ from: info.startStr, to: info.endStr });
       if (filterAtId) params.set('activity_type_id', filterAtId);
+      if (filterCenterId) params.set('center_id', filterCenterId);
+      if (filterTrainerId) params.set('trainer_membership_id', filterTrainerId);
       apiFetch<ScheduleSession[]>(`/me/schedule?${params}`)
         .then((sessions) =>
           successCb([
@@ -110,11 +155,31 @@ export default function MemberCalendarPage() {
         )
         .catch(failureCb);
     },
-    [filterAtId, apiFetch, holidays],
+    [filterAtId, filterCenterId, filterTrainerId, apiFetch, holidays],
   );
 
   function refetch() {
     calendarRef.current?.getApi().refetchEvents();
+  }
+
+  function openFilterPanel() {
+    setPendingCenterId(filterCenterId);
+    setPendingTrainerId(filterTrainerId);
+    setShowFilterPanel(true);
+  }
+
+  function applyFilters() {
+    setFilterCenterId(pendingCenterId);
+    setFilterTrainerId(pendingTrainerId);
+    setShowFilterPanel(false);
+  }
+
+  function clearFilters() {
+    setPendingCenterId('');
+    setPendingTrainerId('');
+    setFilterCenterId('');
+    setFilterTrainerId('');
+    setShowFilterPanel(false);
   }
 
   function handleDateClick(info: any) {
@@ -206,34 +271,115 @@ export default function MemberCalendarPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box' }}>
       {/* Filter bar */}
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', gap: 8, overflowX: 'auto', flexShrink: 0 }}>
-        <button
-          onClick={() => { setFilterAtId(''); }}
-          style={{
-            padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-            border: '1px solid #d1d5db',
-            background: !filterAtId ? 'var(--gd-sidebar-selected-bg, #18181b)' : 'transparent',
-            color:      !filterAtId ? '#fff' : 'inherit',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {t('filter_all')}
-        </button>
-        {activityTypes.map((at) => (
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', gap: 8, flexShrink: 0 }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
-            key={at.id}
-            onClick={() => setFilterAtId(String(at.id))}
+            onClick={() => (showFilterPanel ? setShowFilterPanel(false) : openFilterPanel())}
             style={{
               padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
               border: '1px solid #d1d5db',
-              background: filterAtId === String(at.id) ? (at.color ?? 'var(--gd-sidebar-selected-bg, #18181b)') : 'transparent',
-              color:      filterAtId === String(at.id) ? '#fff' : 'inherit',
+              background: filtersActive ? 'var(--gd-sidebar-selected-bg, #18181b)' : 'transparent',
+              color:      filtersActive ? '#fff' : 'inherit',
+              whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5,
+            }}
+          >
+            {t('filter_button')}
+            {filtersActive && (
+              <span style={{
+                display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+                background: '#f97316',
+              }} />
+            )}
+          </button>
+
+          {showFilterPanel && (
+            <div
+              style={{
+                position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 70,
+                width: 240, background: 'var(--gd-card-bg, #fff)', borderRadius: 10,
+                border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4 }}>
+                  {t('filter_center_label')}
+                </div>
+                <select
+                  value={pendingCenterId}
+                  onChange={(e) => setPendingCenterId(e.target.value)}
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                >
+                  <option value="">{t('filter_all_centers')}</option>
+                  {centers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4 }}>
+                  {t('filter_trainer_label')}
+                </div>
+                <select
+                  value={pendingTrainerId}
+                  onChange={(e) => setPendingTrainerId(e.target.value)}
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                >
+                  <option value="">{t('filter_all_trainers')}</option>
+                  {trainers.map((tr) => (
+                    <option key={tr.id} value={tr.id}>{tr.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  onClick={applyFilters}
+                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: 'none', background: 'var(--gd-sidebar-selected-bg, #18181b)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {t('filter_apply')}
+                </button>
+                <button
+                  onClick={clearFilters}
+                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: 'transparent', fontSize: 12, cursor: 'pointer' }}
+                >
+                  {t('filter_clear')}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+          <button
+            onClick={() => { setFilterAtId(''); }}
+            style={{
+              padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+              border: '1px solid #d1d5db',
+              background: !filterAtId ? 'var(--gd-sidebar-selected-bg, #18181b)' : 'transparent',
+              color:      !filterAtId ? '#fff' : 'inherit',
               whiteSpace: 'nowrap',
             }}
           >
-            {at.name}
+            {t('filter_all')}
           </button>
-        ))}
+          {activityTypes.map((at) => (
+            <button
+              key={at.id}
+              onClick={() => setFilterAtId(String(at.id))}
+              style={{
+                padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                border: '1px solid #d1d5db',
+                background: filterAtId === String(at.id) ? (at.color ?? 'var(--gd-sidebar-selected-bg, #18181b)') : 'transparent',
+                color:      filterAtId === String(at.id) ? '#fff' : 'inherit',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {at.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Calendar */}
@@ -260,6 +406,9 @@ export default function MemberCalendarPage() {
                     {s.trainer_name}
                   </div>
                 )}
+                <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {t('occupancy_count', { booked: s.booked_count, capacity: s.effective_capacity })}
+                </div>
               </div>
             );
           }}
@@ -288,11 +437,25 @@ export default function MemberCalendarPage() {
             <p style={{ margin: '0 0 2px', fontSize: 13, color: '#6b7280' }}>
               {new Date(selected.starts_at).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               {selected.trainer_name ? ` · ${selected.trainer_name}` : ''}
+              {selected.center_name ? ` · ${selected.center_name}` : ''}
               {selected.space_name ? ` · ${selected.space_name}` : ''}
             </p>
-            <p style={{ margin: '0 0 16px', fontSize: 13, color: STATE_COLORS[selected.availability_state], fontWeight: 600 }}>
-              {t(`state_${selected.availability_state.toLowerCase()}` as any)}
-            </p>
+
+            {/* #503 stage 7: the three-badge breakdown agreed on the issue thread —
+                lifecycle status, occupancy status (+ aggregate count), and waitlist
+                (aggregate count only; never member identities), each independent. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 12px' }}>
+              <span style={badgeStyle('#e5e7eb', '#374151')}>{t(`status_${selected.status}`)}</span>
+              <span style={badgeStyle(OCCUPANCY_BADGE_COLORS[selected.occupancy_status], '#fff')}>
+                {t(`occupancy_${selected.occupancy_status}`)} · {t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}
+              </span>
+              {selected.waitlist_status !== 'disabled' && (
+                <span style={badgeStyle('#a855f7', '#fff')}>
+                  {t(`waitlist_${selected.waitlist_status}`)}
+                  {selected.waitlist_count > 0 ? ` · ${t('waitlist_count', { count: selected.waitlist_count })}` : ''}
+                </span>
+              )}
+            </div>
 
             {actionMsg && (
               <p style={{ color: '#ef4444', fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
@@ -348,6 +511,20 @@ export default function MemberCalendarPage() {
       )}
     </div>
   );
+}
+
+const OCCUPANCY_BADGE_COLORS: Record<OccupancyStatus, string> = {
+  available:       '#3b82f6',
+  few_spots_left:  '#f59e0b',
+  full:            '#ef4444',
+  unavailable:     '#9ca3af',
+};
+
+function badgeStyle(bg: string, color: string): React.CSSProperties {
+  return {
+    display: 'inline-block', padding: '3px 9px', borderRadius: 12,
+    fontSize: 11.5, fontWeight: 600, background: bg, color,
+  };
 }
 
 function actionBtn(bg: string): React.CSSProperties {

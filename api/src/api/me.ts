@@ -511,11 +511,16 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     }
 
     const { rows } = await db.query(
+      // #503 stage 7: center_id/center_name are additive display fields for the
+      // member calendar UI (the issue thread's "assigned ... center" requirement)
+      // — center_id was already usable for filtering (stage 6) but never
+      // returned for display.
       `SELECT ce.id, ce.activity_type_id, ce.starts_at, ce.ends_at,
               ce.status AS event_status,
               ce.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
               at.is_shareable,
+              ce.center_id, c.name AS center_name,
               sp.name AS space_name,
               tm.name AS trainer_name,
               COALESCE(ce.capacity, at.max_capacity) AS effective_capacity,
@@ -590,6 +595,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               ) AS access_locked
        FROM calendar_events ce
        JOIN activity_types at ON at.id = ce.activity_type_id
+       LEFT JOIN centers c ON c.id = ce.center_id
        LEFT JOIN spaces sp ON sp.id = ce.space_id
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id
        WHERE ${where.join(' AND ')}
