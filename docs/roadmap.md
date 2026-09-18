@@ -905,7 +905,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
-- **#503 (in progress — stages 1–4 of a 9-stage plan agreed on the issue
+- **#503 (in progress — stages 1–6 of a 9-stage plan agreed on the issue
   thread)**: Members App — Align Calendar Event Information with Admin
   Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
   `calendar_events.kind ENUM('session','event')` (added by the #360
@@ -995,9 +995,24 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   model and isn't part of the agreed stage 5 scope on the issue thread; it's
   the discovery gap `docs/architecture.md`'s CalendarEvent Unification
   section flagged against the plan's earlier numbering, now confirmed still
-  open. Remaining stages (local filters, member calendar UI, Home/My
-  Bookings updates, tests/docs) are tracked on #503 and land as separate
-  PRs, each `Related to #503` until the final stage closes it.
+  open. Stage 6, "local filters": `GET /me/schedule` gains two optional
+  query params, additive next to the existing `x-center-id`-header-driven
+  scoping rather than replacing it — `center_id` narrows results to one
+  center the member is already assigned to (still keeping `center_id IS
+  NULL` rows visible, per #478), returning 403 if the requested center falls
+  outside the header-derived `allowedCenterIds`/`centerId`; `trainer_
+  membership_id` narrows to one trainer's occurrences. Per the issue
+  thread's explicit requirement that this filter stay local to the calendar
+  and never move the global `CenterSwitcher`, both params only affect this
+  one request — no header/session state changes. New `GET /me/trainers`
+  gives members a read-only `{id, name}` list of coach-role
+  `gym_memberships` for the filter panel's trainer dropdown (the existing
+  `/trainers` router is staff-only via `requireModuleAccess('ORGANIZATION')`,
+  so it can't be reused as-is). No schema or frontend changes: this stage is
+  API-only, per the plan — the member calendar UI stage (stage 7) is what
+  will wire up the actual filter panel. Remaining stages (member calendar
+  UI, Home/My Bookings updates, tests/docs) are tracked on #503 and land as
+  separate PRs, each `Related to #503` until the final stage closes it.
 
 ## Decisions
 
