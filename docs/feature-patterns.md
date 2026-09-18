@@ -395,6 +395,24 @@ ALTER TABLE <entity>_centers ADD UNIQUE KEY <entity>_centers_one_default_unique 
 
 4. **Frontend** — `useCenter()` (`@/context/CenterContext`) for the gym's center list; gate the whole UI on `centers.length > 1` (`showCenters`) — a single-center gym never needs to see it, the backend's sole-center fallback handles assignment silently. Checkboxes for `center_ids` + a `<select>` for `default_center_id` (filtered to the checked ids). Fetch the entity's current assignment via `GET /<entities>/:id/centers` when expanding its edit row; submit via `POST /<entities>` (create, centers inline) or `PUT /<entities>/:id/centers` (edit, separate call after the entity's own `PUT`) — see `[locale]/members/page.tsx` or `[locale]/staff/page.tsx`.
 
+---
+
+## Type-Gated M2M Relationship (two existing catalog entities, #546)
+
+A plain many-to-many link between two already-existing gym-scoped catalog entities (not a fresh association entity in its own right — e.g. Sellable Items ↔ Professional Services, #546; also see Nutrition Library's category/quality links, #501/#293), where the relationship is only meaningful while one side's `type`/discriminator field has a specific value.
+
+1. **Join table** — `<a>_<b>`: `gym_id`, `<a>_id FK→a(id) ON DELETE CASCADE`, `<b>_id FK→b(id) ON DELETE CASCADE`, `UNIQUE (<a>_id, <b>_id)`, optional `created_at`/`created_by_membership_id`. No `status`/soft-delete column — presence of the row *is* the relationship; see migration 153 (`sellable_item_professional_services`) or 142 (`nutrition_library_item_categories`). Carries its own `gym_id` even though it's derivable from `<a>_id`, per the hard constraint that every domain table has one and every query filters by it.
+
+2. **Domain helpers**, not inlined in the router — `load<B>Map(aIds): Record<aId, B[]>` (batched `IN (...)` read, used by list/detail GETs), `validate<B>Ids(gymId, ids)` (400 if any id doesn't belong to this gym or the global/system pool), `replace<B>s(tx, gymId, aId, bIds, actorMembershipId)` (`DELETE` then re-`INSERT`, takes the caller's `Tx` so it always runs inside the same transaction as entity A's own insert/update — never a separate round trip). Reference: `domain/sellableItemProfessionalServices.ts`, `domain/nutritionLibrary.ts`.
+
+3. **Type-gating on the write side** — compute entity A's *effective* type after the write (the request's new type if changeable, otherwise its current one — some entities, like Sellable Items' system rows, can never change type). If the effective type doesn't match the gating value, **clear the relationship unconditionally** on that save (simplest safe default when no existing confirm-before-destructive-change pattern applies to the *relationship itself* — check whether one does before assuming this; it did not for #546, since the join table is only a catalog association, never a booking/purchase/billing record). If it does match and the request didn't touch the ids field, leave the existing selection untouched (ordinary partial-update semantics) rather than treating an omitted field as "clear". Never invent an "at least one required" rule unless the domain already has one.
+
+4. **Duplicate/copy actions** — copy the relationship only when the source entity's type matches the gate; no extra validation needed at copy time, since a duplicate always stays within the same gym the source's links were already validated against.
+
+5. **Frontend** — a chip-style checkbox multi-select (`chipCheckboxLabel` styling — blue-tinted when checked), rendered only when the gating field's current form value matches, in both the inline create row and the inline edit form; show it in read-only expanded/Details views too when applicable. Reference: `[locale]/nutrition/nutrition-library/page.tsx`'s category checkboxes, `[locale]/financials/sellable-items/page.tsx`'s Professional Services field. This is a smaller sibling of the "Config-Driven Conditional Form Fields" pattern above — the gating logic here is a single field/value check rather than a type→fields map, so it's written inline rather than factored into its own config module.
+
+---
+
 ## Image Upload Field (per-gym R2 storage, #417)
 
 A domain field that stores an image URL (`exercises.image_url`, `nutrition_library_items.image_url`) is populated by uploading a file, not by pasting a URL. No schema change needed beyond adding the nullable `VARCHAR` column itself — it stays a plain URL; only how it gets populated changes.

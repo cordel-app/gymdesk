@@ -47,6 +47,19 @@ async function createTaxRate(gymId: string, name: string, ratePercent: number): 
   return insertId;
 }
 
+/** Inserts a custom (non-system) professional_services row for a gym directly, mirroring professional-services.test.ts. */
+async function createProfessionalService(gymId: string, name: string): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)`,
+    [gymId, name],
+  );
+  await db.query(
+    `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`,
+    [gymId, insertId],
+  );
+  return insertId;
+}
+
 // ─── GET /sellable-items ─────────────────────────────────────────────────────────
 
 describe('GET /sellable-items', () => {
@@ -937,5 +950,300 @@ describe('POST /sellable-items/:id/duplicate', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(original.body.name).toBe('Original Custom Item');
+  });
+});
+
+// ─── #546: Professional Services linkage on Session-type Sellable Items ────────
+
+describe('Sellable Items — Professional Services linkage (#546)', () => {
+  let gymId: string;
+  let otherGymId: string;
+  let psOne: number;
+  let psTwo: number;
+  let psInOtherGym: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Charges PS Gym');
+    await createTestMembership(gymId, 'admin');
+    psOne = await createProfessionalService(gymId, 'Personal Training');
+    psTwo = await createProfessionalService(gymId, 'Physiotherapy Session');
+
+    otherGymId = await createTestGym('Charges PS Other Gym');
+    await createTestMembership(otherGymId, 'admin');
+    psInOtherGym = await createProfessionalService(otherGymId, 'Other Gym Service');
+  });
+
+  // ── create ────────────────────────────────────────────────────────────────
+
+  it('creates a sessions item with a single linked Professional Service', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'PT Single Session', type: 'sessions', units: 1, professional_service_ids: [psOne] });
+    expect(res.status).toBe(201);
+    expect(res.body.professional_services).toHaveLength(1);
+    expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
+  });
+
+  it('creates a sessions item with multiple linked Professional Services', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Mixed Session Pack', type: 'sessions', units: 10, professional_service_ids: [psOne, psTwo] });
+    expect(res.status).toBe(201);
+    expect(res.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+  });
+
+  it('creates a sessions item with no Professional Services selected (empty is allowed, not required)', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Unassigned Session Pack', type: 'sessions', units: 5 });
+    expect(res.status).toBe(201);
+    expect(res.body.professional_services).toEqual([]);
+  });
+
+  it('ignores professional_service_ids for a non-sessions type (field not applicable)', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Merch Item', type: 'merchandise', professional_service_ids: [psOne] });
+    expect(res.status).toBe(201);
+    expect(res.body.professional_services).toEqual([]);
+  });
+
+  it('returns 400 when a professional_service_id belongs to another gym (tenant isolation)', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Cross Tenant Attempt', type: 'sessions', professional_service_ids: [psInOtherGym] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for a non-existent professional_service_id', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Bogus PS Id', type: 'sessions', professional_service_ids: [9999999] });
+    expect(res.status).toBe(400);
+  });
+
+  // ── read ──────────────────────────────────────────────────────────────────
+
+  it('includes professional_services on GET /sellable-items list', async () => {
+    const created = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Listed Session Item', type: 'sessions', professional_service_ids: [psOne] });
+    expect(created.status).toBe(201);
+
+    const list = await request
+      .get('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    const row = (list.body as Array<{ id: number; professional_services: Array<{ id: number }> }>)
+      .find((r) => r.id === created.body.id);
+    expect(row?.professional_services.map((s) => s.id)).toEqual([psOne]);
+  });
+
+  it('does not include another gym\'s Professional Service data (no cross-tenant leakage)', async () => {
+    const res = await request
+      .get('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', otherGymId);
+    expect(res.status).toBe(200);
+    const ids = (res.body as Array<{ professional_services: Array<{ id: number }> }>)
+      .flatMap((r) => r.professional_services.map((s) => s.id));
+    expect(ids).not.toContain(psOne);
+    expect(ids).not.toContain(psTwo);
+  });
+
+  // ── edit (add/remove) ────────────────────────────────────────────────────
+
+  describe('editing selections on an existing Session item', () => {
+    let itemId: number;
+
+    beforeAll(async () => {
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Editable Session Item', type: 'sessions', professional_service_ids: [psOne] });
+      itemId = created.body.id;
+    });
+
+    it('loads the currently selected Professional Services on GET /:id', async () => {
+      const res = await request
+        .get(`/sellable-items/${itemId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
+    });
+
+    it('adds a second Professional Service via PUT', async () => {
+      const res = await request
+        .put(`/sellable-items/${itemId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [psOne, psTwo] });
+      expect(res.status).toBe(200);
+      expect(res.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+    });
+
+    it('removes a Professional Service via PUT (replace-all semantics)', async () => {
+      const res = await request
+        .put(`/sellable-items/${itemId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [psTwo] });
+      expect(res.status).toBe(200);
+      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psTwo]);
+    });
+
+    it('leaves selections untouched when a PUT omits professional_service_ids entirely', async () => {
+      const res = await request
+        .put(`/sellable-items/${itemId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ notes: 'unrelated update' });
+      expect(res.status).toBe(200);
+      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psTwo]);
+    });
+
+    it('returns 400 and leaves selections unchanged when PUT sends a cross-tenant professional_service_id', async () => {
+      const res = await request
+        .put(`/sellable-items/${itemId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [psInOtherGym] });
+      expect(res.status).toBe(400);
+
+      const after = await request
+        .get(`/sellable-items/${itemId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(after.body.professional_services.map((s: any) => s.id)).toEqual([psTwo]);
+    });
+  });
+
+  // ── type changes ─────────────────────────────────────────────────────────
+
+  describe('type changes', () => {
+    it('clears linked Professional Services when type changes away from sessions', async () => {
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Session To Fee', type: 'sessions', professional_service_ids: [psOne, psTwo] });
+      expect(created.body.professional_services).toHaveLength(2);
+
+      const res = await request
+        .put(`/sellable-items/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ type: 'fee' });
+      expect(res.status).toBe(200);
+      expect(res.body.type).toBe('fee');
+      expect(res.body.professional_services).toEqual([]);
+
+      const { rows } = await db.query(
+        'SELECT COUNT(*) AS cnt FROM sellable_item_professional_services WHERE sellable_item_id = ?',
+        [created.body.id],
+      );
+      expect(rows[0].cnt).toBe(0);
+    });
+
+    it('does not persist professional_service_ids sent alongside a non-sessions type change', async () => {
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Fee Item For Type Change', type: 'fee' });
+
+      const res = await request
+        .put(`/sellable-items/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ type: 'merchandise', professional_service_ids: [psOne] });
+      expect(res.status).toBe(200);
+      expect(res.body.professional_services).toEqual([]);
+    });
+
+    it('shows the field (allows selection) when type changes to sessions, without auto-selecting any service', async () => {
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Fee To Session', type: 'fee' });
+      expect(created.body.professional_services).toEqual([]);
+
+      const toSessions = await request
+        .put(`/sellable-items/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ type: 'sessions' });
+      expect(toSessions.status).toBe(200);
+      expect(toSessions.body.type).toBe('sessions');
+      // No default/auto-selected service — architecture has no such precedent.
+      expect(toSessions.body.professional_services).toEqual([]);
+
+      const withSelection = await request
+        .put(`/sellable-items/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ professional_service_ids: [psOne] });
+      expect(withSelection.status).toBe(200);
+      expect(withSelection.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
+    });
+  });
+
+  // ── duplicate ─────────────────────────────────────────────────────────────
+
+  describe('duplication', () => {
+    it('copies linked Professional Services onto the duplicate of a sessions item', async () => {
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Duplicate Source Session', type: 'sessions', professional_service_ids: [psOne, psTwo] });
+
+      const dup = await request
+        .post(`/sellable-items/${created.body.id}/duplicate`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(dup.status).toBe(201);
+      expect(dup.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+
+      // Original is unaffected.
+      const original = await request
+        .get(`/sellable-items/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(original.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
+    });
+
+    it('does not attach any Professional Services when duplicating a non-sessions item', async () => {
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Duplicate Source Fee', type: 'fee' });
+
+      const dup = await request
+        .post(`/sellable-items/${created.body.id}/duplicate`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(dup.status).toBe(201);
+      expect(dup.body.professional_services).toEqual([]);
+    });
   });
 });

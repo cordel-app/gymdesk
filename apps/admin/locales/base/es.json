@@ -2664,7 +2664,10 @@
     "tax_behavior_exclusive": "Exclusivo (el impuesto se suma al precio)",
     "taxIncluded": "(IVA incluido)",
     "taxExcluded": "(IVA no incluido)",
-    "exempt": "Exento"
+    "exempt": "Exento",
+    "section_professional_services": "Servicios Profesionales",
+    "label_professional_services": "Servicios Profesionales",
+    "professional_services_empty": "No hay Servicios Profesionales seleccionados."
   },
   "assigned_plans_page": {
     "title": "Planes Asignados",
