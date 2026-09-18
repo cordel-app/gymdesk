@@ -460,8 +460,9 @@ sellableItemsRouter.post('/:id/activate', requireRole('admin'), async (req, res,
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
+    const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'activate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachPriceFields(rows[0]));
+    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err) { next(err); }
 });
 
@@ -479,8 +480,9 @@ sellableItemsRouter.post('/:id/deactivate', requireRole('admin'), async (req, re
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
+    const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'deactivate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachPriceFields(rows[0]));
+    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
   } catch (err) { next(err); }
 });
 

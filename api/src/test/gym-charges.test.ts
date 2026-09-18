@@ -60,6 +60,27 @@ async function createProfessionalService(gymId: string, name: string): Promise<n
   return insertId;
 }
 
+/**
+ * Resolves the id of a migration-seeded global system Professional Service
+ * (gym_id IS NULL) by its system_key, mirroring professional-services.test.ts.
+ * createTestGym() bypasses the POST /gyms seeding trigger, so a fresh test
+ * gym has no gym_professional_services row for these — used to verify that
+ * linking a system service does not depend on that per-gym row existing.
+ */
+let _systemServiceIdsBySystemKey: Record<string, number> | null = null;
+async function systemProfessionalServiceId(systemKey: string): Promise<number> {
+  if (!_systemServiceIdsBySystemKey) {
+    const { rows } = await db.query<{ id: number; system_key: string }>(
+      'SELECT id, system_key FROM professional_services WHERE is_system = 1',
+    );
+    _systemServiceIdsBySystemKey = {};
+    for (const row of rows) _systemServiceIdsBySystemKey[row.system_key] = row.id;
+  }
+  const id = _systemServiceIdsBySystemKey[systemKey];
+  if (id === undefined) throw new Error(`No seeded system professional service with system_key=${systemKey}`);
+  return id;
+}
+
 // ─── GET /sellable-items ─────────────────────────────────────────────────────────
 
 describe('GET /sellable-items', () => {
@@ -1244,6 +1265,142 @@ describe('Sellable Items — Professional Services linkage (#546)', () => {
         .set('x-gym-id', gymId);
       expect(dup.status).toBe(201);
       expect(dup.body.professional_services).toEqual([]);
+    });
+  });
+
+  // ── system Professional Services ─────────────────────────────────────────
+
+  describe('linking a global system Professional Service', () => {
+    it('links a system Professional Service without a seeded gym_professional_services row for this gym', async () => {
+      // createTestGym() bypasses the POST /gyms seeding trigger (see the
+      // header comment on seedGymCharges above), so gymId has no
+      // gym_professional_services row at all for this system service yet.
+      // Linking must still succeed: professional_service_ids validation is
+      // keyed off `professional_services.gym_id IS NULL`, not per-gym
+      // enablement.
+      const systemServiceId = await systemProfessionalServiceId('personal_training_individual');
+
+      const res = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'PT With System Service', type: 'sessions', professional_service_ids: [systemServiceId] });
+      expect(res.status).toBe(201);
+      expect(res.body.professional_services).toHaveLength(1);
+      expect(res.body.professional_services[0]).toMatchObject({ id: systemServiceId, is_system: 1 });
+    });
+  });
+
+  // ── input validation ─────────────────────────────────────────────────────
+
+  describe('professional_service_ids input validation', () => {
+    it('returns 400 for a non-integer id in the array', async () => {
+      const res = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Bad Array Element', type: 'sessions', professional_service_ids: ['not-a-number'] });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for a negative id in the array', async () => {
+      const res = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Negative Array Element', type: 'sessions', professional_service_ids: [-1] });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 when professional_service_ids is not an array', async () => {
+      const res = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Not An Array', type: 'sessions', professional_service_ids: psOne });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for a soft-deleted professional_service_id', async () => {
+      const toDelete = await createProfessionalService(gymId, 'Soon Deleted Service');
+      const del = await request
+        .delete(`/professional-services/${toDelete}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(del.status).toBe(204);
+
+      const res = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Deleted PS Attempt', type: 'sessions', professional_service_ids: [toDelete] });
+      expect(res.status).toBe(400);
+    });
+
+    it('dedupes repeated ids in the array instead of erroring', async () => {
+      const res = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Duplicate Ids In Array', type: 'sessions', professional_service_ids: [psOne, psOne] });
+      expect(res.status).toBe(201);
+      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
+    });
+  });
+
+  // ── a linked service is later soft-deleted ───────────────────────────────
+
+  describe('a linked Professional Service is soft-deleted afterwards', () => {
+    it('drops the soft-deleted service from the response without erroring', async () => {
+      const toDelete = await createProfessionalService(gymId, 'Deleted After Linking');
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Item Linked Then Orphaned', type: 'sessions', professional_service_ids: [psOne, toDelete] });
+      expect(created.body.professional_services).toHaveLength(2);
+
+      const del = await request
+        .delete(`/professional-services/${toDelete}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(del.status).toBe(204);
+
+      const res = await request
+        .get(`/sellable-items/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      expect(res.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
+    });
+  });
+
+  // ── activate / deactivate response shape ─────────────────────────────────
+
+  describe('activate / deactivate preserve the professional_services field', () => {
+    it('includes professional_services in the /activate and /deactivate responses', async () => {
+      const created = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: 'Toggle Status Session Item', type: 'sessions', professional_service_ids: [psOne] });
+      expect(created.status).toBe(201);
+
+      const deactivate = await request
+        .post(`/sellable-items/${created.body.id}/deactivate`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(deactivate.status).toBe(200);
+      expect(deactivate.body.status).toBe('inactive');
+      expect(deactivate.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
+
+      const activate = await request
+        .post(`/sellable-items/${created.body.id}/activate`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(activate.status).toBe(200);
+      expect(activate.body.status).toBe('active');
+      expect(activate.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
     });
   });
 });
