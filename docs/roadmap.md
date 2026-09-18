@@ -878,7 +878,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
-- **#503 (in progress — stages 1–2 of a 9-stage plan agreed on the issue
+- **#503 (in progress — stages 1–3 of a 9-stage plan agreed on the issue
   thread)**: Members App — Align Calendar Event Information with Admin
   Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
   `calendar_events.kind ENUM('session','event')` (added by the #360
@@ -913,8 +913,24 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   (en/es/ca), the admin session panel hides "Add to waiting list" when the
   waitlist isn't open, and `/me/schedule` reports `FULL` rather than
   `WAITLIST_AVAILABLE` so members aren't offered a waitlist that would 409.
-  See `docs/decisions.md` #12. Remaining stages (activity→event field
-  propagation, activity end-date handling, unified member read model, local
+  See `docs/decisions.md` #12. Stage 3, "activity → future-event field
+  propagation": `PUT /activity-types/:id` now pushes edits to
+  `default_space_id`/`default_trainer_membership_id`/`default_center_id`/
+  `color`/`max_capacity` onto every not-yet-started `calendar_events` row for
+  that activity type (past occurrences and existing bookings on affected
+  future rows are left untouched — only the listed columns change). No
+  schema change: these are exactly the fields `scheduleEngine.
+  materializeScheduleRule()` already copies onto `calendar_events` at
+  creation time. Since propagation can silently move/reassign already-visible
+  future events, it's gated the same way stage 2's booked-occurrence
+  protection is: `409 {error: 'future_events_impacted', fields,
+  impacted_events, booked_events}` unless the request carries
+  `confirm_propagate: true`, surfaced in the Admin UI via the same
+  `ConfirmDialog` pattern used for the schedule-rules 409. `waitlist_mode` is
+  excluded — it already reaches every event live via the existing
+  `COALESCE` fallback, so there's nothing to propagate. See
+  `docs/architecture.md`'s Activity types row for the full behavior. Remaining
+  stages (activity end-date handling, unified member read model, local
   filters, member calendar UI, Home/My Bookings updates, member
   notifications, tests/docs) are tracked on #503 and land as separate PRs,
   each `Related to #503` until the final stage closes it.

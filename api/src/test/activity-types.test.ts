@@ -238,6 +238,187 @@ describe('PUT /activity-types/:id', () => {
   });
 });
 
+// ── #503 stage 3: propagate default field edits to future calendar_events ──
+
+async function insertPropMember(gymId: string): Promise<number> {
+  const email = `prop-member-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
+  const { insertId } = await db.query(
+    `INSERT INTO members (gym_id, name, email) VALUES (?, 'Prop Member', ?)`,
+    [gymId, email],
+  );
+  return insertId;
+}
+
+describe('PUT /activity-types/:id — propagate to future calendar_events (#503 stage 3)', () => {
+  let propGymId: string;
+  let propActivityTypeId: number;
+  let centerAId: number;
+  let centerBId: number;
+  let spaceAId: number;
+  let spaceBId: number;
+  let trainerAId: number;
+  let trainerBId: number;
+  let pastEventId: number;
+  let futureEventId: number;
+  let futureBookedEventId: number;
+
+  beforeAll(async () => {
+    propGymId = await createTestGym('AT Prop Gym');
+    await createTestMembership(propGymId, 'admin');
+
+    const { insertId: cA } = await db.query(`INSERT INTO centers (gym_id, name, status) VALUES (?, 'Center A', 'active')`, [propGymId]);
+    centerAId = cA;
+    const { insertId: cB } = await db.query(`INSERT INTO centers (gym_id, name, status) VALUES (?, 'Center B', 'active')`, [propGymId]);
+    centerBId = cB;
+    const { insertId: sA } = await db.query(`INSERT INTO spaces (gym_id, name, capacity, status, center_id) VALUES (?, 'Space A', 20, 'active', ?)`, [propGymId, centerAId]);
+    spaceAId = sA;
+    const { insertId: sB } = await db.query(`INSERT INTO spaces (gym_id, name, capacity, status, center_id) VALUES (?, 'Space B', 20, 'active', ?)`, [propGymId, centerBId]);
+    spaceBId = sB;
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name) VALUES (?, ?, 'trainer_performance', 'active', 'Trainer A')`,
+      [`prop-trainer-a-${Date.now()}`, propGymId],
+    );
+    const { rows: tA } = await db.query(`SELECT id FROM gym_memberships WHERE gym_id = ? AND name = 'Trainer A'`, [propGymId]);
+    trainerAId = tA[0].id;
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name) VALUES (?, ?, 'trainer_performance', 'active', 'Trainer B')`,
+      [`prop-trainer-b-${Date.now()}`, propGymId],
+    );
+    const { rows: tB } = await db.query(`SELECT id FROM gym_memberships WHERE gym_id = ? AND name = 'Trainer B'`, [propGymId]);
+    trainerBId = tB[0].id;
+
+    const createRes = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', propGymId)
+      .send({
+        name: 'Propagation Activity', duration_minutes: 60, max_capacity: 10, status: 'active',
+        default_center_id: centerAId, default_space_id: spaceAId, default_trainer_membership_id: trainerAId,
+        color: '#ff0000',
+      });
+    expect(createRes.status).toBe(201);
+    propActivityTypeId = createRes.body.id;
+
+    // A past occurrence — must never be touched by propagation.
+    const { insertId: pastId } = await db.query(
+      `INSERT INTO calendar_events
+        (gym_id, title, activity_type_id, center_id, space_id, trainer_membership_id, color, capacity, starts_at, ends_at)
+       VALUES (?, 'Propagation Activity', ?, ?, ?, ?, '#ff0000', 10, '2020-01-01 10:00:00', '2020-01-01 11:00:00')`,
+      [propGymId, propActivityTypeId, centerAId, spaceAId, trainerAId],
+    );
+    pastEventId = pastId;
+
+    // A future, unbooked occurrence.
+    const { insertId: futId } = await db.query(
+      `INSERT INTO calendar_events
+        (gym_id, title, activity_type_id, center_id, space_id, trainer_membership_id, color, capacity, starts_at, ends_at)
+       VALUES (?, 'Propagation Activity', ?, ?, ?, ?, '#ff0000', 10, '2099-01-01 10:00:00', '2099-01-01 11:00:00')`,
+      [propGymId, propActivityTypeId, centerAId, spaceAId, trainerAId],
+    );
+    futureEventId = futId;
+
+    // A future occurrence with an existing booking — must keep the booking untouched.
+    const { insertId: futBookedId } = await db.query(
+      `INSERT INTO calendar_events
+        (gym_id, title, activity_type_id, center_id, space_id, trainer_membership_id, color, capacity, starts_at, ends_at)
+       VALUES (?, 'Propagation Activity', ?, ?, ?, ?, '#ff0000', 10, '2099-02-01 10:00:00', '2099-02-01 11:00:00')`,
+      [propGymId, propActivityTypeId, centerAId, spaceAId, trainerAId],
+    );
+    futureBookedEventId = futBookedId;
+    const memberId = await insertPropMember(propGymId);
+    await db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, calendar_event_id, member_id, status) VALUES (?, ?, ?, 'booked')`,
+      [propGymId, futureBookedEventId, memberId],
+    );
+  });
+
+  it('returns 409 future_events_impacted without confirm_propagate, naming affected fields and counts', async () => {
+    const res = await request
+      .put(`${BASE}/${propActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', propGymId)
+      .send({
+        default_center_id: centerBId, default_space_id: spaceBId, default_trainer_membership_id: trainerBId,
+        color: '#00ff00', max_capacity: 25,
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('future_events_impacted');
+    expect(res.body.impacted_events).toBe(2);
+    expect(res.body.booked_events).toBe(1);
+    expect(res.body.fields).toEqual(
+      expect.arrayContaining(['Space', 'Trainer', 'Center', 'Color', 'Capacity']),
+    );
+
+    // Nothing should have changed yet — the propagation didn't happen.
+    const { rows } = await db.query('SELECT default_center_id FROM activity_types WHERE id = ?', [propActivityTypeId]);
+    expect(rows[0].default_center_id).toBe(centerAId);
+  });
+
+  it('does not require confirmation for fields that are not propagated (e.g. name/duration)', async () => {
+    const res = await request
+      .put(`${BASE}/${propActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', propGymId)
+      .send({ name: 'Propagation Activity Renamed', duration_minutes: 45 });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Propagation Activity Renamed');
+  });
+
+  it('applies the change to future events and preserves the past event and existing booking once confirmed', async () => {
+    const res = await request
+      .put(`${BASE}/${propActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', propGymId)
+      .send({
+        default_center_id: centerBId, default_space_id: spaceBId, default_trainer_membership_id: trainerBId,
+        color: '#00ff00', max_capacity: 25,
+        confirm_propagate: true,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.default_center_id).toBe(centerBId);
+
+    const { rows: future } = await db.query(
+      'SELECT center_id, space_id, trainer_membership_id, color, capacity FROM calendar_events WHERE id IN (?, ?)',
+      [futureEventId, futureBookedEventId],
+    );
+    for (const row of future) {
+      expect(row.center_id).toBe(centerBId);
+      expect(row.space_id).toBe(spaceBId);
+      expect(row.trainer_membership_id).toBe(trainerBId);
+      expect(row.color).toBe('#00ff00');
+      expect(row.capacity).toBe(25);
+    }
+
+    const { rows: past } = await db.query(
+      'SELECT center_id, space_id, trainer_membership_id, color, capacity FROM calendar_events WHERE id = ?',
+      [pastEventId],
+    );
+    expect(past[0].center_id).toBe(centerAId);
+    expect(past[0].space_id).toBe(spaceAId);
+    expect(past[0].trainer_membership_id).toBe(trainerAId);
+    expect(past[0].color).toBe('#ff0000');
+    expect(past[0].capacity).toBe(10);
+
+    const { rows: booking } = await db.query(
+      `SELECT status FROM calendar_event_bookings WHERE calendar_event_id = ? AND status = 'booked'`,
+      [futureBookedEventId],
+    );
+    expect(booking).toHaveLength(1);
+  });
+
+  it('does not require confirmation and does not touch calendar_events when no propagated field changed', async () => {
+    const res = await request
+      .put(`${BASE}/${propActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', propGymId)
+      .send({
+        default_center_id: centerBId, default_space_id: spaceBId, default_trainer_membership_id: trainerBId,
+        color: '#00ff00', max_capacity: 25,
+      });
+    expect(res.status).toBe(200);
+  });
+});
+
 // ── Soft-delete & restore ──────────────────────────────────────────────────
 
 describe('soft-delete and restore', () => {
