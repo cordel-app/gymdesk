@@ -2006,6 +2006,7 @@
     "meta_deleted_by": "Eliminado por",
     "meta_deleted_at": "Eliminado el",
     "confirm_delete": "¿Desactivar esta actividad? Los eventos de calendario futuros de su horario serán cancelados. Esta acción se puede deshacer desde la Papelera.",
+    "confirm_propagate": "Actualizar eventos futuros",
     "error_required": "Nombre, duración y aforo son obligatorios.",
     "error_generic": "Algo ha ido mal.",
     "cancel": "Cancelar",

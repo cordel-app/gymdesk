@@ -212,12 +212,31 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   }
 });
 
+// #503 stage 3: these are exactly the fields scheduleEngine.materializeScheduleRule()
+// copies onto calendar_events at creation time. Editing them here must propagate to
+// not-yet-started occurrences of this activity type, so the calendar keeps reflecting
+// the activity's current defaults. Past events and existing bookings are never touched.
+const PROPAGATABLE_FIELDS: Array<{ atField: string; ceField: string; label: string }> = [
+  { atField: 'default_space_id', ceField: 'space_id', label: 'Space' },
+  { atField: 'default_trainer_membership_id', ceField: 'trainer_membership_id', label: 'Trainer' },
+  { atField: 'default_center_id', ceField: 'center_id', label: 'Center' },
+  { atField: 'color', ceField: 'color', label: 'Color' },
+  { atField: 'max_capacity', ceField: 'capacity', label: 'Capacity' },
+];
+
 activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
           default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
           waitlist_mode } = req.body;
+
+  const { rows: currentRows } = await db.query(
+    'SELECT * FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (currentRows.length === 0) return res.status(404).json({ error: 'Activity type not found' });
+  const current = currentRows[0];
 
   const centerId = 'default_center_id' in req.body
     ? (default_center_id ? parseInt(default_center_id, 10) : null)
@@ -231,54 +250,101 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   }
   if (spaceId !== undefined) {
     // Resolve effective centerId for cross-validation
-    let effectiveCenterId: number | null | undefined = centerId;
-    if (effectiveCenterId === undefined && centerId === undefined) {
-      // centerId not being changed; fetch current
-      const { rows: cur } = await db.query('SELECT default_center_id FROM activity_types WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
-      effectiveCenterId = cur[0]?.default_center_id ?? null;
-    }
+    const effectiveCenterId = centerId !== undefined ? centerId : current.default_center_id;
     const spaceErr = await validateSpace(gymId, spaceId, effectiveCenterId ?? null);
     if (spaceErr) return res.status(400).json({ error: spaceErr });
   }
 
-  try {
-    const { rowCount } = await db.query(
-      `UPDATE activity_types SET
-        name                           = COALESCE(?, name),
-        description                    = IF(?, ?, description),
-        duration_minutes               = COALESCE(?, duration_minutes),
-        intensity_level                = IF(?, ?, intensity_level),
-        max_capacity                   = COALESCE(?, max_capacity),
-        status                         = COALESCE(?, status),
-        default_space_id               = IF(?, ?, default_space_id),
-        default_trainer_membership_id  = IF(?, ?, default_trainer_membership_id),
-        default_center_id              = IF(?, ?, default_center_id),
-        color                          = IF(?, ?, color),
-        is_shareable                   = IF(?, ?, is_shareable),
-        public_event                   = IF(?, ?, public_event),
-        waitlist_mode                  = COALESCE(?, waitlist_mode),
-        modified_at                    = UTC_TIMESTAMP(),
-        modified_by_membership_id      = ?
-       WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [
-        name?.trim() ?? null,
-        'description' in req.body ? 1 : 0, description ?? null,
-        duration_minutes != null ? parseInt(duration_minutes, 10) : null,
-        'intensity_level' in req.body ? 1 : 0, intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
-        max_capacity != null ? parseInt(max_capacity, 10) : null,
-        status ?? null,
-        'default_space_id' in req.body ? 1 : 0, spaceId ?? null,
-        'default_trainer_membership_id' in req.body ? 1 : 0, default_trainer_membership_id ?? null,
-        'default_center_id' in req.body ? 1 : 0, centerId ?? null,
-        'color' in req.body ? 1 : 0, color ?? null,
-        'is_shareable' in req.body ? 1 : 0, is_shareable ? 1 : 0,
-        'public_event' in req.body ? 1 : 0, public_event ? 1 : 0,
-        waitlist_mode ?? null,
-        gymMembershipId ?? null,
-        req.params.id, gymId,
-      ],
+  const trainerId = 'default_trainer_membership_id' in req.body ? (default_trainer_membership_id ?? null) : undefined;
+  const colorVal = 'color' in req.body ? (color ?? null) : undefined;
+  const capacity = max_capacity != null ? parseInt(max_capacity, 10) : undefined;
+
+  const submitted: Record<string, any> = {
+    default_space_id: spaceId, default_trainer_membership_id: trainerId,
+    default_center_id: centerId, color: colorVal, max_capacity: capacity,
+  };
+  const propagations = PROPAGATABLE_FIELDS.filter(
+    (f) => submitted[f.atField] !== undefined && submitted[f.atField] !== current[f.atField],
+  ).map((f) => ({ ...f, value: submitted[f.atField] }));
+
+  let impactedCount = 0;
+  let bookedCount = 0;
+  if (propagations.length > 0) {
+    const { rows: impact } = await db.query(
+      `SELECT COUNT(*) AS cnt,
+         SUM(CASE WHEN EXISTS (
+           SELECT 1 FROM calendar_event_bookings ceb
+           WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked'
+         ) THEN 1 ELSE 0 END) AS booked_cnt
+       FROM calendar_events ce
+       WHERE ce.activity_type_id = ? AND ce.starts_at > UTC_TIMESTAMP() AND ce.deleted_at IS NULL`,
+      [req.params.id],
     );
-    if (rowCount === 0) return res.status(404).json({ error: 'Activity type not found' });
+    impactedCount = Number(impact[0]?.cnt ?? 0);
+    bookedCount = Number(impact[0]?.booked_cnt ?? 0);
+    if (impactedCount > 0 && req.body.confirm_propagate !== true) {
+      const fields = propagations.map((p) => p.label).join(', ');
+      return res.status(409).json({
+        error: 'future_events_impacted',
+        message: `This change would update ${fields} on ${impactedCount} future event(s)`
+          + `${bookedCount > 0 ? `, ${bookedCount} of which already have bookings` : ''}.`
+          + ' Existing bookings will be preserved. Resend with confirm_propagate: true to proceed.',
+        fields: propagations.map((p) => p.label),
+        impacted_events: impactedCount,
+        booked_events: bookedCount,
+      });
+    }
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      const { rowCount } = await tx.query(
+        `UPDATE activity_types SET
+          name                           = COALESCE(?, name),
+          description                    = IF(?, ?, description),
+          duration_minutes               = COALESCE(?, duration_minutes),
+          intensity_level                = IF(?, ?, intensity_level),
+          max_capacity                   = COALESCE(?, max_capacity),
+          status                         = COALESCE(?, status),
+          default_space_id               = IF(?, ?, default_space_id),
+          default_trainer_membership_id  = IF(?, ?, default_trainer_membership_id),
+          default_center_id              = IF(?, ?, default_center_id),
+          color                          = IF(?, ?, color),
+          is_shareable                   = IF(?, ?, is_shareable),
+          public_event                   = IF(?, ?, public_event),
+          waitlist_mode                  = COALESCE(?, waitlist_mode),
+          modified_at                    = UTC_TIMESTAMP(),
+          modified_by_membership_id      = ?
+         WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+        [
+          name?.trim() ?? null,
+          'description' in req.body ? 1 : 0, description ?? null,
+          duration_minutes != null ? parseInt(duration_minutes, 10) : null,
+          'intensity_level' in req.body ? 1 : 0, intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
+          max_capacity != null ? parseInt(max_capacity, 10) : null,
+          status ?? null,
+          'default_space_id' in req.body ? 1 : 0, spaceId ?? null,
+          'default_trainer_membership_id' in req.body ? 1 : 0, default_trainer_membership_id ?? null,
+          'default_center_id' in req.body ? 1 : 0, centerId ?? null,
+          'color' in req.body ? 1 : 0, color ?? null,
+          'is_shareable' in req.body ? 1 : 0, is_shareable ? 1 : 0,
+          'public_event' in req.body ? 1 : 0, public_event ? 1 : 0,
+          waitlist_mode ?? null,
+          gymMembershipId ?? null,
+          req.params.id, gymId,
+        ],
+      );
+      if (rowCount === 0) throw Object.assign(new Error('Activity type not found'), { statusCode: 404 });
+
+      if (propagations.length > 0) {
+        const setSql = propagations.map((p) => `${p.ceField} = ?`).join(', ');
+        await tx.query(
+          `UPDATE calendar_events SET ${setSql}
+           WHERE activity_type_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL`,
+          [...propagations.map((p) => p.value), req.params.id],
+        );
+      }
+    });
     const { rows } = await db.query(`${SELECT} WHERE at.id = ? AND at.gym_id = ?`, [req.params.id, gymId]);
     const { rows: rules } = await db.query(
       'SELECT * FROM activity_type_schedule_rules WHERE activity_type_id = ? ORDER BY created_at ASC',
@@ -288,6 +354,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     recordAudit(req, { action: 'update', entityType: 'activity_type', entityId: req.params.id, entityName: rows[0].name, next: rows[0] });
     res.json(row);
   } catch (e: any) {
+    if (e.statusCode === 404) return res.status(404).json({ error: e.message });
     handleDupEntry(e, res, next, 'An activity type with this name already exists.');
   }
 });

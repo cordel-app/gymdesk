@@ -170,6 +170,11 @@ export default function ActivityTypesPage() {
   const [editRuleConflict, setEditRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
   const [deleteRuleConflict, setDeleteRuleConflict] = useState<{ actId: number; ruleId: number; message: string } | null>(null);
 
+  // #503 stage 3: editing a field that's copied onto future calendar_events (space,
+  // trainer, center, color, capacity) comes back as 409 future_events_impacted until
+  // staff explicitly confirms the propagation.
+  const [saveConflict, setSaveConflict] = useState<{ row: ActivityType; message: string } | null>(null);
+
   useEffect(() => {
     if (gymLoading) return;
     if (!isAdmin) { router.replace(`/${locale}`); return; }
@@ -304,7 +309,7 @@ export default function ActivityTypesPage() {
     setEditError(null);
   }
 
-  async function handleSave(row: ActivityType) {
+  async function handleSave(row: ActivityType, confirmPropagate = false) {
     if (!editForm.name.trim() || !editForm.duration_minutes.trim() || !editForm.max_capacity.trim()) {
       setEditError(t('error_required')); return;
     }
@@ -326,19 +331,30 @@ export default function ActivityTypesPage() {
           color: editForm.color || null,
           public_event: editForm.public_event,
           waitlist_mode: editForm.waitlist_mode,
+          ...(confirmPropagate ? { confirm_propagate: true } : {}),
         }),
       });
       await apiFetch(`/activity-types/${row.id}/eligible-plans`, {
         method: 'PUT',
         body: JSON.stringify({ membership_plan_ids: Array.from(editSelectedPlans) }),
       });
+      setSaveConflict(null);
       setEditingId(null);
       load();
     } catch (err: any) {
-      setEditError(err.message ?? t('error_generic'));
+      if (err.status === 409 && err.body?.error === 'future_events_impacted') {
+        setSaveConflict({ row, message: err.body.message ?? err.message });
+      } else {
+        setEditError(err.message ?? t('error_generic'));
+      }
     } finally {
       setEditSaving(false);
     }
+  }
+
+  function confirmSaveConflict() {
+    if (!saveConflict) return;
+    handleSave(saveConflict.row, true);
   }
 
   // ─── Duplicate ───────────────────────────────────────────────────────────────
@@ -1162,6 +1178,17 @@ export default function ActivityTypesPage() {
         cancelLabel={ts('cancel')}
         onConfirm={confirmDeleteRuleConflict}
         onCancel={() => setDeleteRuleConflict(null)}
+      />
+
+      {/* #503 stage 3: propagating an edited default field to future calendar_events */}
+      <ConfirmDialog
+        open={saveConflict !== null}
+        message={saveConflict?.message ?? ''}
+        confirmLabel={t('confirm_propagate')}
+        cancelLabel={t('cancel')}
+        onConfirm={confirmSaveConflict}
+        onCancel={() => setSaveConflict(null)}
+        busy={editSaving}
       />
     </div>
   );
