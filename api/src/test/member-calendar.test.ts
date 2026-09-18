@@ -22,9 +22,13 @@ let noSharedBookingSessionId: number;
 let noCenterSessionId: number;
 
 async function createCenter(gid: string): Promise<number> {
+  // Random suffix alongside Date.now(), matching createActivityType() below —
+  // two calls landing in the same millisecond otherwise collide on the
+  // (gym_id, name) UNIQUE constraint (centers_gym_active_name_unique).
+  const name = `Center-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const { insertId } = await db.query(
     'INSERT INTO centers (gym_id, name) VALUES (?, ?)',
-    [gid, `Center-${Date.now()}`],
+    [gid, name],
   );
   return insertId;
 }
