@@ -2009,6 +2009,7 @@
     "meta_deleted_by": "Deleted by",
     "meta_deleted_at": "Deleted at",
     "confirm_delete": "Soft-delete this activity? Future calendar events from its schedule will be cancelled. This action can be undone from the Recycle Bin.",
+    "confirm_propagate": "Update future events",
     "error_required": "Name, duration and capacity are required.",
     "error_generic": "Something went wrong.",
     "cancel": "Cancel",
