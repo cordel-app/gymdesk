@@ -4,6 +4,9 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
+import { PromotionBenefitAction } from '../domain/promotionBenefits';
+
+const MEMBERSHIP_FEE_ACTIONS: PromotionBenefitAction[] = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
 
 const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
 
@@ -107,9 +110,36 @@ promotionsRouter.get('/timeline', async (req, res) => {
   const err = validatePayBeforehandMonths(paid, payBeforehand);
   if (err) return res.status(400).json({ error: err });
 
+  const mfAction = typeof req.query.membership_fee_action === 'string' ? req.query.membership_fee_action : 'no_benefit';
+  if (!MEMBERSHIP_FEE_ACTIONS.includes(mfAction as PromotionBenefitAction)) {
+    return res.status(400).json({ error: `membership_fee_action must be one of: ${MEMBERSHIP_FEE_ACTIONS.join(', ')}` });
+  }
+  const mfEnabled = req.query.membership_fee_enabled === '1' || req.query.membership_fee_enabled === 'true';
+
+  let mfValue: number | null = null;
+  if (typeof req.query.membership_fee_value === 'string' && req.query.membership_fee_value !== '') {
+    mfValue = Number(req.query.membership_fee_value);
+    if (!Number.isFinite(mfValue)) return res.status(400).json({ error: 'membership_fee_value must be a number' });
+  }
+
+  let mfDurationMonths: number | null = null;
+  if (typeof req.query.membership_fee_duration_months === 'string' && req.query.membership_fee_duration_months !== '') {
+    const n = Number(req.query.membership_fee_duration_months);
+    if (!Number.isInteger(n) || n < 1) {
+      return res.status(400).json({ error: 'membership_fee_duration_months must be a positive integer' });
+    }
+    mfDurationMonths = n;
+  }
+
   const anchorDate = typeof req.query.anchor_date === 'string' ? req.query.anchor_date : undefined;
   const result = computePromotionTimeline(
-    { freeMonths: free, paidMonths: paid, payBeforehandMonths: payBeforehand, bonusMonths: bonus },
+    {
+      freeMonths: free, paidMonths: paid, payBeforehandMonths: payBeforehand, bonusMonths: bonus,
+      membershipFeeAction: mfAction as PromotionBenefitAction,
+      membershipFeeValue: mfValue,
+      membershipFeeEnabled: mfEnabled,
+      membershipFeeDurationMonths: mfDurationMonths,
+    },
     anchorDate,
   );
   res.json(result);

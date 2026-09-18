@@ -135,4 +135,65 @@ describe('computePromotionTimeline', () => {
     expect(periods[0].status).toBe('pay_regular');
     expect(periods[0].endsOn).toBeNull();
   });
+
+  it('billingAction/billingValue default to null when no Membership Fee Benefit is configured', () => {
+    const { periods } = computePromotionTimeline(
+      { freeMonths: 1, paidMonths: 2, payBeforehandMonths: 0, bonusMonths: 1 },
+      '2026-01-01',
+    );
+    expect(periods.every((p) => p.billingAction === null && p.billingValue === null)).toBe(true);
+  });
+
+  it('applies the Membership Fee Benefit only to pay_promotion/prepaid_promotion periods', () => {
+    const { periods } = computePromotionTimeline(
+      {
+        freeMonths: 1, paidMonths: 2, payBeforehandMonths: 1, bonusMonths: 1,
+        membershipFeeAction: 'percentage_discount', membershipFeeValue: 50, membershipFeeEnabled: true,
+      },
+      '2026-01-01',
+    );
+    expect(periods.map((p) => ({ status: p.status, billingAction: p.billingAction, billingValue: p.billingValue }))).toEqual([
+      { status: 'free_promotion', billingAction: null, billingValue: null },
+      { status: 'prepaid_promotion', billingAction: 'percentage_discount', billingValue: 50 },
+      { status: 'pay_promotion', billingAction: 'percentage_discount', billingValue: 50 },
+      { status: 'bonus_promotion', billingAction: null, billingValue: null },
+      { status: 'pay_regular', billingAction: null, billingValue: null },
+    ]);
+  });
+
+  it('never applies a disabled Membership Fee Benefit', () => {
+    const { periods } = computePromotionTimeline(
+      {
+        freeMonths: 0, paidMonths: 2, payBeforehandMonths: 0, bonusMonths: 0,
+        membershipFeeAction: 'fixed_price', membershipFeeValue: 10, membershipFeeEnabled: false,
+      },
+      '2026-01-01',
+    );
+    expect(periods.every((p) => p.billingAction === null)).toBe(true);
+  });
+
+  it('never applies a "no_benefit" action even when enabled', () => {
+    const { periods } = computePromotionTimeline(
+      {
+        freeMonths: 0, paidMonths: 2, payBeforehandMonths: 0, bonusMonths: 0,
+        membershipFeeAction: 'no_benefit', membershipFeeValue: null, membershipFeeEnabled: true,
+      },
+      '2026-01-01',
+    );
+    expect(periods.every((p) => p.billingAction === null)).toBe(true);
+  });
+
+  it('stops applying the Membership Fee Benefit once durationMonths elapses from the anchor', () => {
+    const { periods } = computePromotionTimeline(
+      {
+        freeMonths: 0, paidMonths: 3, payBeforehandMonths: 0, bonusMonths: 0,
+        membershipFeeAction: 'waive', membershipFeeValue: null, membershipFeeEnabled: true,
+        membershipFeeDurationMonths: 2,
+      },
+      '2026-01-01',
+    );
+    // 3 pay_promotion periods (Jan, Feb, Mar) — the benefit only covers the
+    // first 2 months from the anchor (Jan, Feb); March is regular billing.
+    expect(periods.map((p) => p.billingAction)).toEqual(['waive', 'waive', null, null]);
+  });
 });
