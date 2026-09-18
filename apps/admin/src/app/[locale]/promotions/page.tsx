@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, btnStyle } from '@/components/ui';
 import { PromotionDetailModal } from './PromotionDetailModal';
+import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,15 @@ interface PromotionTimelinePeriod {
 }
 interface PromotionTimelineResponse { periods: PromotionTimelinePeriod[] }
 
-interface MembershipPlan { id: number; name: string }
+interface MembershipPlan {
+  id: number;
+  name: string;
+  // Secondary identifying info surfaced by GET /membership-plans (enrichPlan) —
+  // shown alongside the name in the Suitable Membership Plans picker (#554).
+  current_price?: string | number | null;
+  enrollment_status?: string | null;
+}
+interface AssociatedPlan { id: number; name: string }
 interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; availability: string }
 interface ChargeBenefit { id: number; gym_charge_id: number; action: string; value: string | null; gym_charge_name: string; gym_charge_availability: string }
 interface ChargeType { id: number; code: string; name: string; is_gym_charge: number }
@@ -126,14 +135,23 @@ export default function PromotionsPage() {
   const [search, setSearch] = useState('');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Active Membership Plans for this tenant — the source of truth for new
+  // selections in the Suitable Membership Plans section (#554). Loaded on its
+  // own (rather than folded into loadLookups' Promise.all below) so it can
+  // show its own loading/empty/error state independent of the other lookups.
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
+  const [plansStatus, setPlansStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
   const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  const [cachedPlans, setCachedPlans] = useState<Record<number, number[]>>({});
+  // Full { id, name } objects for whatever plans are currently associated
+  // with a promotion — from GET /promotions/:id/plans, which is not limited
+  // to active plans, so a plan that has since gone inactive still resolves
+  // to its name instead of falling back to "#<id>" (#554).
+  const [cachedPlans, setCachedPlans] = useState<Record<number, AssociatedPlan[]>>({});
   const [cachedCb, setCachedCb] = useState<Record<number, ChargeBenefit[]>>({});
   const [cachedPb, setCachedPb] = useState<Record<number, PeriodBenefit[]>>({});
   const [cachedIb, setCachedIb] = useState<Record<number, IncludedBenefit[]>>({});
@@ -178,7 +196,7 @@ export default function PromotionsPage() {
   }, [gymLoading, isAdmin]);
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) loadLookups();
+    if (!gymLoading && isAdmin) { loadPlans(); loadOtherLookups(); }
   }, [gymLoading, isAdmin, activeGymId]);
 
   useEffect(() => {
@@ -245,14 +263,28 @@ export default function PromotionsPage() {
     mfDraft?.action, mfDraft?.value, mfDraft?.enabled, mfDraft?.duration_months,
   ]);
 
-  async function loadLookups() {
+  // Source of truth for the Suitable Membership Plans picker (#554): active,
+  // tenant-scoped plans loaded dynamically from the Membership Plans API —
+  // never hardcoded, never duplicated here. Own loading/error state so the
+  // section can show it independent of the other lookups below.
+  async function loadPlans() {
+    setPlansStatus('loading');
     try {
-      const [pl, gc, ct] = await Promise.all([
-        apiFetch<MembershipPlan[]>('/membership-plans?lifecycle_status=active'),
+      const pl = await apiFetch<MembershipPlan[]>('/membership-plans?lifecycle_status=active');
+      setPlans(pl);
+      setPlansStatus('ready');
+    } catch {
+      setPlans([]);
+      setPlansStatus('error');
+    }
+  }
+
+  async function loadOtherLookups() {
+    try {
+      const [gc, ct] = await Promise.all([
         apiFetch<GymCharge[]>('/sellable-items?availability=available'),
         apiFetch<ChargeType[]>('/charge-types'),
       ]);
-      setPlans(pl);
       setGymCharges(gc);
       setChargeTypes(ct);
     } catch { /* non-critical */ }
@@ -278,20 +310,20 @@ export default function PromotionsPage() {
   async function loadSubResources(promoId: number) {
     try {
       const [ap, cb, pb, ib, mf] = await Promise.all([
-        apiFetch<{ id: number }[]>(`/promotions/${promoId}/plans`),
+        apiFetch<AssociatedPlan[]>(`/promotions/${promoId}/plans`),
         apiFetch<ChargeBenefit[]>(`/promotions/${promoId}/charge-benefits`),
         apiFetch<PeriodBenefit[]>(`/promotions/${promoId}/period-benefits`),
         apiFetch<IncludedBenefit[]>(`/promotions/${promoId}/included-benefits`),
         apiFetch<PeriodBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
       ]);
-      setCachedPlans((prev) => ({ ...prev, [promoId]: ap.map((p) => p.id) }));
+      setCachedPlans((prev) => ({ ...prev, [promoId]: ap }));
       setCachedCb((prev) => ({ ...prev, [promoId]: cb }));
       setCachedPb((prev) => ({ ...prev, [promoId]: pb }));
       setCachedIb((prev) => ({ ...prev, [promoId]: ib }));
       setCachedMf((prev) => ({ ...prev, [promoId]: mf }));
-      return { ap: ap.map((p) => p.id), cb, pb, ib, mf };
+      return { ap, cb, pb, ib, mf };
     } catch {
-      return { ap: [], cb: [], pb: [], ib: [], mf: null as PeriodBenefit | null };
+      return { ap: [] as AssociatedPlan[], cb: [], pb: [], ib: [], mf: null as PeriodBenefit | null };
     }
   }
 
@@ -313,7 +345,7 @@ export default function PromotionsPage() {
     setEditForm(emptyEditForm(promo));
     setEditError(null);
     const { ap, cb, pb, ib, mf } = await loadSubResources(promo.id);
-    setPlansDraft(ap);
+    setPlansDraft(ap.map((p) => p.id));
     const cbMap: Record<number, { action: string; value: string }> = {};
     for (const c of cb) cbMap[c.gym_charge_id] = { action: c.action, value: c.value ?? '' };
     setCbDraft(cbMap);
@@ -533,6 +565,33 @@ export default function PromotionsPage() {
     }));
   }
 
+  // ─── Suitable Membership Plans: Select All (#554) ─────────────────────────
+  // Selection math itself lives in lib/suitablePlansSelection.ts (unit
+  // tested there) — this just wires it to component state and to the native
+  // checkbox's `indeterminate` DOM property, which React has no prop for.
+
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const activePlanIds = plans.map((p) => p.id);
+  const allPlansSelected = isAllSelected(activePlanIds, plansDraft);
+  const somePlansSelected = isIndeterminate(activePlanIds, plansDraft);
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = somePlansSelected;
+  }, [somePlansSelected, expandedId, editingId]);
+
+  function toggleSelectAllPlans(checked: boolean) {
+    setPlansDraft((prev) => toggleSelectAll(prev, activePlanIds, checked));
+  }
+
+  function formatPlanSecondaryInfo(p: MembershipPlan): string | null {
+    if (p.current_price != null && p.current_price !== '') {
+      const n = parseFloat(String(p.current_price));
+      if (!isNaN(n)) return `${n.toFixed(2)}€`;
+    }
+    if (p.enrollment_status) return tStatus(p.enrollment_status as any);
+    return null;
+  }
+
   // ─── Search debounce ──────────────────────────────────────────────────────
 
   function handleSearchChange(val: string) {
@@ -689,22 +748,47 @@ export default function PromotionsPage() {
           </div>
         </div>
 
-        {/* Applicable Plans */}
+        {/* Suitable Membership Plans (#554) — which active plans this promotion
+            can be applied to. Backed by promotion_membership_plans; eligibility
+            is enforced server-side both here (active-plan validation on save)
+            and at apply-time (membership-promotions.ts checks this same table). */}
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_applicable_plans')}</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {plans.map((p) => (
-              <label key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={plansDraft.includes(p.id)}
-                  onChange={(e) => setPlansDraft((prev) => e.target.checked ? [...prev, p.id] : prev.filter((id) => id !== p.id))}
-                />
-                {p.name}
-              </label>
-            ))}
-            {plans.length === 0 && <p style={hintSt}>{t('no_applicable_plans')}</p>}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <p style={sectionLabelSt}>{t('section_suitable_plans')}</p>
+            {plansStatus === 'error' && (
+              <button onClick={loadPlans} style={btnSmall('#888')}>{t('retry')}</button>
+            )}
           </div>
+          {plansStatus === 'loading' && <p style={hintSt}>{t('plans_loading')}</p>}
+          {plansStatus === 'error' && <p style={{ margin: 0, fontSize: 13, color: '#c0392b' }}>{t('plans_load_error')}</p>}
+          {plansStatus === 'ready' && plans.length === 0 && <p style={hintSt}>{t('plans_empty')}</p>}
+          {plansStatus === 'ready' && plans.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer', fontWeight: 600, paddingBottom: 4, borderBottom: '1px solid var(--gd-card-border, #eee)' }}>
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={allPlansSelected}
+                  onChange={(e) => toggleSelectAllPlans(e.target.checked)}
+                />
+                {t('select_all')}
+              </label>
+              {plans.map((p) => {
+                const secondary = formatPlanSecondaryInfo(p);
+                return (
+                  <label key={p.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={plansDraft.includes(p.id)}
+                      onChange={(e) => setPlansDraft((prev) => e.target.checked ? [...prev, p.id] : prev.filter((id) => id !== p.id))}
+                    />
+                    <span>{p.name}</span>
+                    {secondary && <span style={{ color: '#999', fontSize: 12 }}>({secondary})</span>}
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Billing & Duration */}
@@ -916,7 +1000,7 @@ export default function PromotionsPage() {
   }
 
   function renderViewSection(promo: Promo) {
-    const ap = cachedPlans[promo.id] ?? [];
+    const associatedPlans = cachedPlans[promo.id] ?? [];
     const cb = cachedCb[promo.id] ?? [];
     const pb = cachedPb[promo.id] ?? [];
     const ib = cachedIb[promo.id] ?? [];
@@ -944,13 +1028,16 @@ export default function PromotionsPage() {
         )}
 
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_applicable_plans')}</p>
-          {ap.length === 0
-            ? <p style={hintSt}>{t('no_applicable_plans')}</p>
-            : ap.map((id) => {
-                const p = plans.find((pl) => pl.id === id);
-                return <p key={id} style={{ margin: '2px 0', fontSize: 13 }}>{p?.name ?? `#${id}`}</p>;
-              })}
+          <p style={sectionLabelSt}>{t('section_suitable_plans')}</p>
+          {associatedPlans.length === 0
+            ? <p style={hintSt}>{t('no_suitable_plans_selected')}</p>
+            // Renders directly off GET /promotions/:id/plans' own {id, name}
+            // rows (source of truth) rather than resolving against the
+            // active-only `plans` list, so a plan that has since gone
+            // inactive still shows its real name instead of "#<id>" (#554).
+            : associatedPlans.map((p) => (
+                <p key={p.id} style={{ margin: '2px 0', fontSize: 13 }}>{p.name}</p>
+              ))}
         </div>
 
         <div style={subSectionSt}>

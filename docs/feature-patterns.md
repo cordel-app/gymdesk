@@ -356,6 +356,35 @@ Rules of thumb:
 
 ---
 
+## Select All Checkbox with Indeterminate State (#554)
+
+A checkbox list (e.g. picking which of several active catalog rows apply to
+something) that offers a "Select All" toggle reflecting checked/unchecked/
+indeterminate. React has no prop for the native `indeterminate` DOM
+property, and the selection math itself is worth unit testing without a
+DOM/component harness (this repo has no `apps/admin` component-test
+infra — see `docs/architecture.md`'s TL;DR and the existing
+`src/test/calendar-event-colors.test.ts`-style pure-logic tests).
+
+1. **Pure helpers in `apps/admin/src/lib/`** — `isAllSelected(displayedIds,
+   selectedIds)`, `isIndeterminate(displayedIds, selectedIds)`, and
+   `toggleSelectAll(selectedIds, displayedIds, checked)`. `displayedIds` is
+   only whatever the list is currently *showing* (e.g. active rows) —
+   never the full selected set — so Select All/deselect-all can never touch
+   a selection the UI isn't rendering a checkbox for (a hidden/legacy
+   association some other field change already carried forward). Unit test
+   these directly: `apps/admin/src/test/suitable-plans-selection.test.ts`.
+2. **Wire to the DOM in the component** — a `useRef<HTMLInputElement>` on
+   the Select All checkbox, set via `useEffect(() => { ref.current
+   .indeterminate = isIndeterminate(...) }, [...])`; `checked` itself is a
+   normal controlled prop off `isAllSelected(...)`.
+
+Reference implementation: `apps/admin/src/lib/suitablePlansSelection.ts` +
+its usage in `[locale]/promotions/page.tsx`'s Suitable Membership Plans
+section.
+
+---
+
 ## Soft Delete Pattern (when needed)
 
 Add `deleted_at DATETIME` to the table. Then:

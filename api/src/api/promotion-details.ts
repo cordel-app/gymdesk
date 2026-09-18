@@ -34,35 +34,65 @@ promotionDetailsRouter.get('/plans', async (req, res) => {
   res.json(rows);
 });
 
+// #554 ("Suitable Membership Plans"): every *newly added* plan id must be an
+// active, non-deleted plan belonging to this gym — the frontend only ever
+// offers active plans as new selectable options, so this is a server-side
+// backstop, never trusted from the client alone. An id that was ALREADY
+// associated with this promotion is allowed through even if the plan has
+// since gone inactive: the promotion's own edit flow always resubmits the
+// full current selection (see plansDraft in the admin page), and a plan
+// being deactivated elsewhere must never silently break an unrelated save
+// of this promotion or drop a pre-existing association (Historical
+// Integrity in the ticket). Explicitly unchecking a plan — active or not —
+// is still the only way to remove its association.
 promotionDetailsRouter.put('/plans', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const promotionId = parseInt((req.params as any).id, 10);
   const { membership_plan_ids } = req.body;
   if (!Array.isArray(membership_plan_ids)) return res.status(400).json({ error: 'membership_plan_ids must be an array' });
+
+  const requestedIds: number[] = [];
+  for (const raw of membership_plan_ids) {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n <= 0) return res.status(400).json({ error: 'membership_plan_ids must contain positive integers' });
+    requestedIds.push(n);
+  }
+  // Duplicate associations are prevented by deduping the request itself
+  // (the table also has a unique (promotion_id, membership_plan_id) index).
+  const dedupedIds = Array.from(new Set(requestedIds));
+
   if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
 
-  if (membership_plan_ids.length > 0) {
-    const placeholders = membership_plan_ids.map(() => '?').join(',');
+  const { rows: currentRows } = await db.query(
+    'SELECT membership_plan_id FROM promotion_membership_plans WHERE promotion_id = ? AND gym_id = ?',
+    [promotionId, gymId],
+  );
+  const currentIds = new Set<number>(currentRows.map((r: any) => r.membership_plan_id));
+  const newIds = dedupedIds.filter((id) => !currentIds.has(id));
+
+  if (newIds.length > 0) {
+    const placeholders = newIds.map(() => '?').join(',');
     const { rows } = await db.query(
-      `SELECT id FROM membership_plans WHERE gym_id = ? AND id IN (${placeholders})`,
-      [gymId, ...membership_plan_ids],
+      `SELECT id FROM membership_plans
+       WHERE gym_id = ? AND lifecycle_status = 'active' AND deleted_at IS NULL AND id IN (${placeholders})`,
+      [gymId, ...newIds],
     );
-    if (rows.length !== membership_plan_ids.length) {
-      return res.status(404).json({ error: 'One or more plans not found in this gym' });
+    if (rows.length !== newIds.length) {
+      return res.status(400).json({ error: 'One or more selected membership plans are invalid, inactive, or not found in this gym' });
     }
   }
 
   try {
     await db.transaction(async (tx) => {
       await tx.query('DELETE FROM promotion_membership_plans WHERE promotion_id = ? AND gym_id = ?', [promotionId, gymId]);
-      for (const planId of membership_plan_ids) {
+      for (const planId of dedupedIds) {
         await tx.query(
           'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
           [gymId, promotionId, planId],
         );
       }
     });
-    res.json({ promotion_id: promotionId, membership_plan_ids });
+    res.json({ promotion_id: promotionId, membership_plan_ids: dedupedIds });
   } catch (err) { next(err); }
 });
 

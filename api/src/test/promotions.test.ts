@@ -1,6 +1,7 @@
 // Tests for promotions.ts and promotion-details.ts routers (#272)
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
@@ -29,6 +30,18 @@ async function createPromo(gymId: string, name = 'Test Promo'): Promise<number> 
 async function getChargeTypeId(code: string): Promise<number> {
   const { rows } = await db.query<{ id: number }>('SELECT id FROM charge_types WHERE code = ?', [code]);
   return rows[0]?.id;
+}
+
+async function createPlan(
+  gymId: string,
+  name: string,
+  lifecycleStatus: 'draft' | 'active' | 'paused' | 'inactive' = 'active',
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, ?, ?, 'staff_only')`,
+    [gymId, name, lifecycleStatus],
+  );
+  return insertId;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -897,5 +910,191 @@ describe('Included benefits', () => {
       .set('x-gym-id', gymB)
       .send({ items: [] });
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── Suitable Membership Plans (#554) ──────────────────────────────────────────
+// GET/PUT /promotions/:id/plans — which active plans a promotion may be
+// applied to. Persisted in promotion_membership_plans (added in #26,
+// migration 020) and already enforced at apply-time by
+// membership-promotions.ts (applyPromotionToMembership / POST
+// /user-memberships/:id/promotions both reject a promotion that doesn't
+// target the membership's plan) — this ticket adds active-plan validation
+// on write plus the frontend section; no new enforcement plumbing beyond that.
+
+describe('Suitable Membership Plans', () => {
+  let gymId: string;
+  let gymB: string;
+  let promoId: number;
+  let activePlanA: number;
+  let activePlanB: number;
+  let inactivePlan: number;
+  let otherGymPlan: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('SMP Gym');
+    gymB = await createTestGym('SMP Gym B');
+    await createTestMembership(gymId, 'admin');
+    await createTestMembership(gymB, 'admin');
+    promoId = await createPromo(gymId, 'SMP Promo');
+    activePlanA = await createPlan(gymId, `SMP Active A ${Date.now()}`, 'active');
+    activePlanB = await createPlan(gymId, `SMP Active B ${Date.now()}`, 'active');
+    inactivePlan = await createPlan(gymId, `SMP Inactive ${Date.now()}`, 'inactive');
+    otherGymPlan = await createPlan(gymB, `SMP Other Gym ${Date.now()}`, 'active');
+  });
+
+  it('GET /:id/plans → 401 without token', async () => {
+    const res = await request.get(`/promotions/${promoId}/plans`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('PUT /:id/plans → 403 for a non-admin role (accountant has FINANCIALS read/write, but writes here are admin-only)', async () => {
+    const accountantId = 'smp-accountant';
+    // This path is matched by both the broad `/promotions` mount and the nested
+    // `/promotions/:id` mount, so requireAuth() (and verifyToken) runs twice per
+    // request — queue the override identity for both calls.
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: accountantId } as any);
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: accountantId } as any);
+    await createTestMembership(gymId, 'accountant', accountantId);
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [activePlanA] });
+    expect(res.status).toBe(403);
+  });
+
+  it('GET /:id/plans returns empty initially', async () => {
+    const res = await request
+      .get(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('PUT /:id/plans rejects a plan belonging to another gym', async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [otherGymPlan] });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/plans rejects an inactive plan as a new selection', async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [inactivePlan] });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/plans rejects a non-existent plan id', async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [999999999] });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/plans accepts active plans and persists the association', async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [activePlanA, activePlanB] });
+    expect(res.status).toBe(200);
+    expect(res.body.membership_plan_ids.sort()).toEqual([activePlanA, activePlanB].sort());
+
+    const getRes = await request
+      .get(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.map((p: any) => p.id).sort()).toEqual([activePlanA, activePlanB].sort());
+    expect(getRes.body.every((p: any) => typeof p.name === 'string')).toBe(true);
+  });
+
+  it('PUT /:id/plans dedupes duplicate ids in the request instead of erroring', async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [activePlanA, activePlanA, activePlanB] });
+    expect(res.status).toBe(200);
+    const { rows } = await db.query(
+      'SELECT membership_plan_id FROM promotion_membership_plans WHERE promotion_id = ? AND gym_id = ?',
+      [promoId, gymId],
+    );
+    expect(rows).toHaveLength(2);
+  });
+
+  it('unchecking (removing) a plan from the selection removes its association', async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [activePlanA] });
+    expect(res.status).toBe(200);
+
+    const getRes = await request
+      .get(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(getRes.body.map((p: any) => p.id)).toEqual([activePlanA]);
+  });
+
+  it('preserves a historical association when the associated plan later goes inactive (does not silently drop it on an unrelated re-save)', async () => {
+    // Re-associate B alongside A, both active at this point.
+    let res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [activePlanA, activePlanB] });
+    expect(res.status).toBe(200);
+
+    // Plan B goes inactive independently of this promotion (e.g. retired by
+    // the Membership Plans page).
+    await db.query("UPDATE membership_plans SET lifecycle_status = 'inactive' WHERE id = ?", [activePlanB]);
+
+    // The promotion is saved again with the same selection it already had
+    // (the admin page always resubmits the full current draft) — this must
+    // still succeed, since B was already associated, not newly added.
+    res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [activePlanA, activePlanB] });
+    expect(res.status).toBe(200);
+
+    const getRes = await request
+      .get(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(getRes.body.map((p: any) => p.id).sort()).toEqual([activePlanA, activePlanB].sort());
+  });
+
+  it('PUT /:id/plans is tenant-isolated (gym B cannot modify gym A promo)', async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymB)
+      .send({ membership_plan_ids: [] });
+    expect(res.status).toBe(404);
+  });
+
+  it('GET /:id/plans with gym B header returns 404 for gym A promo', async () => {
+    // Consistent with the other /:id sub-resources' tenant-isolation
+    // behavior in this file — a cross-tenant id never leaks a 200/empty vs.
+    // 404 distinction the caller could use to probe for existence.
+    const res = await request
+      .get(`/promotions/${promoId}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymB);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
   });
 });
