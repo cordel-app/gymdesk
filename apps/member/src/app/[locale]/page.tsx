@@ -16,6 +16,7 @@ interface UpcomingBooking {
   starts_at: string;
   ends_at: string;
   room_name: string | null;
+  center_name: string | null;
   my_booking_status: 'booked' | 'waitlisted' | 'attended' | 'no_show' | null;
   my_booking_id: number | null;
 }
@@ -210,6 +211,9 @@ export default function HomePage() {
                   <p style={styles.bookingName}>{nextBooking.class_type_name}</p>
                   {nextBooking.room_name && (
                     <p style={styles.bookingSub}>{nextBooking.room_name}</p>
+                  )}
+                  {nextBooking.center_name && (
+                    <p style={styles.bookingSub}>{nextBooking.center_name}</p>
                   )}
                   <p style={styles.bookingSub}>
                     {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}

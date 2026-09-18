@@ -197,7 +197,9 @@
     "type_booking_reminder_24h": "Recordatori: demà",
     "type_booking_reminder_1h": "Recordatori: comença aviat",
     "type_shared_training_approved": "Entrenament compartit aprovat",
-    "type_shared_training_rejected": "Entrenament compartit rebutjat"
+    "type_shared_training_rejected": "Entrenament compartit rebutjat",
+    "type_event_cancelled": "Reserva cancel·lada",
+    "type_event_updated": "Reserva actualitzada"
   },
   "membership": {
     "title": "La meva quota",

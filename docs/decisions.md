@@ -4,6 +4,15 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 13. Member Notifications already existed before #503 asked for it (#503, 2026-09-18)
+
+**Decision**: the #503 issue thread asked for "a section on top named 'Notifications'" in the Members app, assuming none existed. One already did — feature #194 (migration `087_member_notifications.js`, the `member_notifications` table, `sendNotification`/`sendBulkNotification` in `api/src/infra/notifications.ts`, the `/me/notifications*` endpoints, and the `/notifications` page) — and stage 4 (#575) was already writing `event_cancelled` notifications into it for schedule-rule cancellations. Stage 8 does not rebuild this feature; it only fixes the two things that made it not read as a working entry point: `TopBar.tsx` had no dedicated Notifications button (the unread dot sat on the Profile button, which links to `/profile`), and two notification types (`event_cancelled`/`event_updated`) had no i18n label in any locale, so they rendered as a raw type string.
+
+- Before extending or "adding" a member-facing capability, check whether it already exists under a different issue number — `docs/architecture.md`'s feature list and a codebase search are cheaper than rebuilding.
+- `apps/member/locales/base/*.json`'s `nav.alerts` key had been sitting unused since it was added; it's now wired to the new bell button rather than adding a duplicate key.
+
+---
+
 ## 12. Waitlisting is configurable, and off for anything new (#503, 2026-09-18)
 
 **Decision**: the waitlist is a three-state setting — `disabled` / `open` / `closed` — stored on `activity_types.waitlist_mode` with a nullable per-occurrence override on `calendar_events.waitlist_mode` (migration 154). The effective value is `COALESCE(ce.waitlist_mode, at.waitlist_mode)`, mirroring how `ce.capacity` falls back to `at.max_capacity`. Until now waitlisting was unconditional: every over-capacity booking silently became a waitlist row with no way to turn it off.

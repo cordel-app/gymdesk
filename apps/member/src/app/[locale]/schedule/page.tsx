@@ -16,6 +16,7 @@ interface Session {
   starts_at: string;
   ends_at: string;
   space_name: string | null;
+  center_name: string | null;
   trainer_name: string | null;
   effective_capacity: number;
   booked_count: number;
@@ -185,6 +186,7 @@ export default function MemberSchedulePage() {
                   </div>
                   <div style={styles.name}>{s.class_type_name}</div>
                   {s.space_name && <div style={styles.sub}>{s.space_name}</div>}
+                  {s.center_name && <div style={styles.sub}>{s.center_name}</div>}
                   {s.trainer_name && <div style={styles.sub}>{s.trainer_name}</div>}
                   {isExpanded && (
                     <div style={styles.details}>
