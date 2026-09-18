@@ -442,6 +442,21 @@ Selectors that create **new** associations must only offer active entities (`?st
 
 ---
 
+## Duplicate Action (flat catalog item)
+
+For a single-row catalog entity (not a hierarchy — see "Duplicate at every level" below for that case), "Duplicate" is a single immediate backend action, not a pre-filled form the user reviews before saving:
+
+- **One endpoint**: `POST /<entity>/:id/duplicate` (`requireRole('admin')`). Reads the source row (404 if missing/soft-deleted/cross-gym), `INSERT`s a copy scoped to the *current* gym and *current* user (`created_by`/`created_by_membership_id`), and returns the new row with `201`.
+- **Name it deterministically** so the origin is obvious in the list without extra UI — e.g. `Copy of <original>` or `<original> (Copy)`; either is fine, just stay consistent within one page's own actions.
+- **Drop lineage-only fields.** Anything that exists purely to trace the row back to something else it was migrated/derived from (e.g. `gym_charges.class_package_id`) is never copied — the duplicate is a fresh, independent row. A field that only makes sense for a *system* row (e.g. `charge_type_id`) is dropped too, the same way the entity's own `POST /` (custom-create) already omits it.
+- **Preserve or reset status per the entity's own rules**, not a blanket convention — check the ticket/existing behavior for the entity: some reset to a safe draft-like state (Plans: `lifecycle_status='draft'`, `enrollment_status='staff_only'`), others preserve the source's status/visibility as-is (Sellable Items, #545). Don't guess; the two existing entities below disagree on purpose.
+- **Frontend**: a plain `ContextMenu` item → `apiFetch(POST .../duplicate)` → reload the list. No confirmation dialog, no intermediate form — the duplicate is simply an new editable row the user can then Edit like any other.
+- Child/related rows (prices, allowances, benefits…) are copied alongside the parent only if the entity actually has them — a flat entity like `gym_charges` has none, so its duplicate is a single `INSERT`; an entity with child tables copies them in the same `db.transaction()`.
+
+Reference implementations: `membership-plans.ts` `POST /:id/duplicate` (multi-table, transaction, resets lifecycle/enrollment) and `sellable-items.ts` `POST /:id/duplicate` (single-table, preserves status/enrollment, #545).
+
+---
+
 ## Tree-Grid Editor (hierarchical catalog pages)
 
 Pages whose entity owns a hierarchy (Training Plan Template → Workouts → Blocks → Exercises, #61; Workout Template → Blocks → Exercises, #63) render it inline in the list page instead of chaining CRUD sub-pages/modals. The shared `DataTable` already supports it (`renderExpanded` / `expandedRowKeys` / `onToggleExpand`); the page supplies the rest:

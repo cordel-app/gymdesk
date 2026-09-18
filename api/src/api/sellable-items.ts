@@ -216,6 +216,59 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   }
 });
 
+// ─── POST /:id/duplicate — duplicate an existing sellable item ────────────────
+
+sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  try {
+    const { rows: origRows } = await db.query(
+      'SELECT * FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [req.params.id, gymId],
+    );
+    if (origRows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const orig = origRows[0];
+    const name = `Copy of ${orig.name ?? ''}`.trim();
+
+    const { insertId } = await db.query(
+      `INSERT INTO gym_charges
+         (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
+          is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+          created_by_membership_id, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        gymId,
+        name,
+        orig.type,
+        orig.units,
+        orig.description,
+        orig.amount,
+        orig.currency,
+        orig.billing_frequency,
+        orig.status,
+        orig.enrollment_status,
+        orig.notes,
+        orig.package_information,
+        orig.validity_days,
+        orig.tax_rate_id,
+        orig.tax_behavior,
+        gymMembershipId,
+        gymMembershipId,
+      ],
+    );
+    const { rows } = await db.query(`${SELECT} WHERE gc.id = ?`, [insertId]);
+    recordAudit(req, {
+      action: 'create',
+      entityType: 'gym_charge',
+      entityId: String(insertId),
+      entityName: name,
+      next: { name, type: orig.type, duplicated_from: Number(req.params.id) },
+    });
+    res.status(201).json(attachPriceFields(rows[0]));
+  } catch (err: any) {
+    handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
+  }
+});
+
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 
 sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
