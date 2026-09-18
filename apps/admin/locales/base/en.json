@@ -844,6 +844,8 @@
     "section_period_benefits": "Period Benefits",
     "no_period_benefits": "No period benefits yet.",
     "add_period_benefit": "+ Add Period Benefit",
+    "section_membership_fee_benefits": "Membership Fee Benefits",
+    "no_membership_fee_benefit": "No Membership Fee benefit configured.",
     "col_charge_type": "Charge Type",
     "col_action": "Action",
     "col_value": "Value",

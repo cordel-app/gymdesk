@@ -54,7 +54,9 @@ interface PeriodBenefit {
   frequency_unit: 'week' | 'month';
   duration_months: number | null;
   enabled: number;
-  // Membership Fee only (#487 stage 1) — null/unused for every other charge type.
+  // Only meaningful for the Membership Fee Benefits row (#551) — the generic
+  // Period Benefits section never sets these (Membership Fee has its own
+  // dedicated category and is excluded from Period Benefits entirely).
   action: string | null;
   value: string | null;
 }
@@ -133,12 +135,14 @@ export default function PromotionsPage() {
   const [cachedCb, setCachedCb] = useState<Record<number, ChargeBenefit[]>>({});
   const [cachedPb, setCachedPb] = useState<Record<number, PeriodBenefit[]>>({});
   const [cachedIb, setCachedIb] = useState<Record<number, IncludedBenefit[]>>({});
+  const [cachedMf, setCachedMf] = useState<Record<number, PeriodBenefit | null>>({});
 
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [plansDraft, setPlansDraft] = useState<number[]>([]);
   const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
   const [pbDraft, setPbDraft] = useState<PeriodBenefit[]>([]);
   const [ibDraft, setIbDraft] = useState<IncludedBenefit[]>([]);
+  const [mfDraft, setMfDraft] = useState<PeriodBenefit | null>(null);
 
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -154,6 +158,18 @@ export default function PromotionsPage() {
 
   // Sellable items = charge types that are not gym charges
   const sellableItems = chargeTypes.filter((c) => !c.is_gym_charge);
+  // Membership Fee has its own dedicated benefit category (#551) — excluded
+  // from the generic Period Benefits item picker so it can't be configured twice.
+  const periodBenefitItems = sellableItems.filter((c) => c.code !== 'membership_fee');
+  const membershipFeeName = chargeTypes.find((c) => c.code === 'membership_fee')?.name ?? 'Membership Fee';
+
+  function defaultMfDraft(): PeriodBenefit {
+    return {
+      id: -1, charge_type_id: 0, charge_type_code: 'membership_fee', charge_type_name: membershipFeeName,
+      quantity: 1, frequency_interval: 1, frequency_unit: 'month', duration_months: null, enabled: 1,
+      action: 'no_benefit', value: null,
+    };
+  }
 
   useEffect(() => {
     if (!gymLoading && !isAdmin) router.replace(`/${locale}`);
@@ -229,19 +245,21 @@ export default function PromotionsPage() {
 
   async function loadSubResources(promoId: number) {
     try {
-      const [ap, cb, pb, ib] = await Promise.all([
+      const [ap, cb, pb, ib, mf] = await Promise.all([
         apiFetch<{ id: number }[]>(`/promotions/${promoId}/plans`),
         apiFetch<ChargeBenefit[]>(`/promotions/${promoId}/charge-benefits`),
         apiFetch<PeriodBenefit[]>(`/promotions/${promoId}/period-benefits`),
         apiFetch<IncludedBenefit[]>(`/promotions/${promoId}/included-benefits`),
+        apiFetch<PeriodBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
       ]);
       setCachedPlans((prev) => ({ ...prev, [promoId]: ap.map((p) => p.id) }));
       setCachedCb((prev) => ({ ...prev, [promoId]: cb }));
       setCachedPb((prev) => ({ ...prev, [promoId]: pb }));
       setCachedIb((prev) => ({ ...prev, [promoId]: ib }));
-      return { ap: ap.map((p) => p.id), cb, pb, ib };
+      setCachedMf((prev) => ({ ...prev, [promoId]: mf }));
+      return { ap: ap.map((p) => p.id), cb, pb, ib, mf };
     } catch {
-      return { ap: [], cb: [], pb: [], ib: [] };
+      return { ap: [], cb: [], pb: [], ib: [], mf: null as PeriodBenefit | null };
     }
   }
 
@@ -262,13 +280,14 @@ export default function PromotionsPage() {
     setEditingId(promo.id);
     setEditForm(emptyEditForm(promo));
     setEditError(null);
-    const { ap, cb, pb, ib } = await loadSubResources(promo.id);
+    const { ap, cb, pb, ib, mf } = await loadSubResources(promo.id);
     setPlansDraft(ap);
     const cbMap: Record<number, { action: string; value: string }> = {};
     for (const c of cb) cbMap[c.gym_charge_id] = { action: c.action, value: c.value ?? '' };
     setCbDraft(cbMap);
     setPbDraft(pb.map((p) => ({ ...p })));
     setIbDraft(ib.map((i) => ({ ...i })));
+    setMfDraft(mf ? { ...mf } : defaultMfDraft());
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
 
@@ -291,6 +310,7 @@ export default function PromotionsPage() {
     setCbDraft({});
     setPbDraft([]);
     setIbDraft([]);
+    setMfDraft(defaultMfDraft());
     setEditError(null);
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
@@ -349,27 +369,39 @@ export default function PromotionsPage() {
         body: JSON.stringify({ items: cbItems }),
       });
 
-      const pbItems = pbDraft.map((pb) => {
-        // Action/value only apply to the Membership Fee row (#487 stage 1).
-        const isMembershipFee = pb.charge_type_code === 'membership_fee';
-        const action = isMembershipFee ? (pb.action || null) : null;
-        const needsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(action ?? '');
-        const value = needsValue ? (parseFloat(pb.value ?? '') || 0) : null;
-        return {
-          charge_type_id: pb.charge_type_id,
-          quantity: pb.quantity,
-          frequency_interval: pb.frequency_interval,
-          frequency_unit: pb.frequency_unit,
-          duration_months: pb.duration_months ?? null,
-          enabled: pb.enabled,
-          action,
-          value,
-        };
-      });
+      // Action/value are Membership Fee Benefits-only (#551) — the generic
+      // Period Benefits section can never contain that row (excluded server-side).
+      const pbItems = pbDraft.map((pb) => ({
+        charge_type_id: pb.charge_type_id,
+        quantity: pb.quantity,
+        frequency_interval: pb.frequency_interval,
+        frequency_unit: pb.frequency_unit,
+        duration_months: pb.duration_months ?? null,
+        enabled: pb.enabled,
+        action: null,
+        value: null,
+      }));
       await apiFetch(`/promotions/${id}/period-benefits`, {
         method: 'PUT',
         body: JSON.stringify({ items: pbItems }),
       });
+
+      if (mfDraft) {
+        const mfAction = mfDraft.action || 'no_benefit';
+        const mfNeedsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(mfAction);
+        await apiFetch(`/promotions/${id}/membership-fee-benefit`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            quantity: mfDraft.quantity,
+            frequency_interval: mfDraft.frequency_interval,
+            frequency_unit: mfDraft.frequency_unit,
+            duration_months: mfDraft.duration_months,
+            enabled: mfDraft.enabled,
+            action: mfAction,
+            value: mfNeedsValue ? (parseFloat(mfDraft.value ?? '') || 0) : null,
+          }),
+        });
+      }
 
       const ibItems = ibDraft.map((ib) => ({
         charge_type_id: ib.charge_type_id,
@@ -420,7 +452,7 @@ export default function PromotionsPage() {
   // ─── Period benefit draft helpers ─────────────────────────────────────────
 
   function addPbRow() {
-    const firstCt = sellableItems[0];
+    const firstCt = periodBenefitItems[0];
     if (!firstCt) return;
     setPbDraft((prev) => [
       ...prev,
@@ -433,14 +465,17 @@ export default function PromotionsPage() {
       if (i !== idx) return r;
       const next = { ...r, ...patch };
       if (patch.charge_type_id != null) {
-        const ct = sellableItems.find((c) => c.id === patch.charge_type_id);
+        const ct = periodBenefitItems.find((c) => c.id === patch.charge_type_id);
         if (ct) { next.charge_type_code = ct.code; next.charge_type_name = ct.name; }
-        // Action/value only apply to the Membership Fee row — clear stale data
-        // when a row is switched away from it (#487 stage 1).
-        if (ct?.code !== 'membership_fee') { next.action = null; next.value = null; }
       }
       return next;
     }));
+  }
+
+  // ─── Membership Fee benefit draft helper (#551 — singleton) ──────────────
+
+  function updateMfDraft(patch: Partial<PeriodBenefit>) {
+    setMfDraft((prev) => (prev ? { ...prev, ...patch } : prev));
   }
 
   // ─── Included benefit draft helpers ───────────────────────────────────────
@@ -717,7 +752,54 @@ export default function PromotionsPage() {
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_period_benefits')}</p>
           {pbDraft.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 55px 55px 75px 70px 120px 80px 55px 24px', gap: '3px 8px', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 55px 55px 75px 70px 55px 24px', gap: '3px 8px', alignItems: 'center', marginBottom: 8 }}>
+              <span style={colHeaderSt}>{t('col_benefit_type')}</span>
+              <span style={colHeaderSt}>{t('col_quantity')}</span>
+              <span style={colHeaderSt}>{t('label_frequency_interval')}</span>
+              <span style={colHeaderSt}>{t('label_frequency_unit')}</span>
+              <span style={colHeaderSt}>{t('col_duration_months')}</span>
+              <span style={colHeaderSt}>{t('col_enabled')}</span>
+              <span />
+              {pbDraft.map((pb, idx) => (
+                <div key={pb.id} style={{ display: 'contents' }}>
+                  <select
+                    value={pb.charge_type_id}
+                    onChange={(e) => updatePbRow(idx, { charge_type_id: parseInt(e.target.value, 10) })}
+                    style={inlineSelectSt}
+                  >
+                    {periodBenefitItems.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+                  </select>
+                  <input type="number" min="1" value={pb.quantity} onChange={(e) => updatePbRow(idx, { quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
+                  <input type="number" min="1" value={pb.frequency_interval} onChange={(e) => updatePbRow(idx, { frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
+                  <select value={pb.frequency_unit} onChange={(e) => updatePbRow(idx, { frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
+                    {FREQ_UNITS.map((u) => <option key={u} value={u}>{t(`frequency_${u}` as any)}</option>)}
+                  </select>
+                  <input
+                    type="number" min="1"
+                    value={pb.duration_months ?? ''}
+                    onChange={(e) => updatePbRow(idx, { duration_months: e.target.value ? parseInt(e.target.value, 10) : null })}
+                    placeholder="—"
+                    style={{ ...inlineSelectSt, width: '100%' }}
+                  />
+                  <label style={{ display: 'flex', justifyContent: 'center' }}>
+                    <input type="checkbox" checked={!!pb.enabled} onChange={(e) => updatePbRow(idx, { enabled: e.target.checked ? 1 : 0 })} />
+                  </label>
+                  <button onClick={() => setPbDraft((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {periodBenefitItems.length > 0 && (
+            <button onClick={addPbRow} style={btnSmall('#6c63ff')}>{t('add_period_benefit')}</button>
+          )}
+        </div>
+
+        {/* Membership Fee Benefits (#551) — reuses the Period Benefits fields/
+            validation/behaviour exactly; the item is hardcoded, never selectable. */}
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_membership_fee_benefits')}</p>
+          {mfDraft && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 55px 55px 75px 70px 120px 80px 55px', gap: '3px 8px', alignItems: 'center' }}>
               <span style={colHeaderSt}>{t('col_benefit_type')}</span>
               <span style={colHeaderSt}>{t('col_quantity')}</span>
               <span style={colHeaderSt}>{t('label_frequency_interval')}</span>
@@ -726,63 +808,49 @@ export default function PromotionsPage() {
               <span style={colHeaderSt}>{t('col_action')}</span>
               <span style={colHeaderSt}>{t('col_value')}</span>
               <span style={colHeaderSt}>{t('col_enabled')}</span>
-              <span />
-              {pbDraft.map((pb, idx) => {
-                const isMembershipFee = pb.charge_type_code === 'membership_fee';
-                const pbAction = pb.action ?? 'no_benefit';
-                const pbNeedsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(pbAction);
+              {(() => {
+                const mfAction = mfDraft.action ?? 'no_benefit';
+                const mfNeedsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(mfAction);
                 return (
-                  <div key={pb.id} style={{ display: 'contents' }}>
-                    <select
-                      value={pb.charge_type_id}
-                      onChange={(e) => updatePbRow(idx, { charge_type_id: parseInt(e.target.value, 10) })}
-                      style={inlineSelectSt}
-                    >
-                      {sellableItems.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
-                    </select>
-                    <input type="number" min="1" value={pb.quantity} onChange={(e) => updatePbRow(idx, { quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                    <input type="number" min="1" value={pb.frequency_interval} onChange={(e) => updatePbRow(idx, { frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                    <select value={pb.frequency_unit} onChange={(e) => updatePbRow(idx, { frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
+                  <div style={{ display: 'contents' }}>
+                    <span style={{ fontSize: 13 }}>{mfDraft.charge_type_name}</span>
+                    <input type="number" min="1" value={mfDraft.quantity} onChange={(e) => updateMfDraft({ quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
+                    <input type="number" min="1" value={mfDraft.frequency_interval} onChange={(e) => updateMfDraft({ frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
+                    <select value={mfDraft.frequency_unit} onChange={(e) => updateMfDraft({ frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
                       {FREQ_UNITS.map((u) => <option key={u} value={u}>{t(`frequency_${u}` as any)}</option>)}
                     </select>
                     <input
                       type="number" min="1"
-                      value={pb.duration_months ?? ''}
-                      onChange={(e) => updatePbRow(idx, { duration_months: e.target.value ? parseInt(e.target.value, 10) : null })}
+                      value={mfDraft.duration_months ?? ''}
+                      onChange={(e) => updateMfDraft({ duration_months: e.target.value ? parseInt(e.target.value, 10) : null })}
                       placeholder="—"
                       style={{ ...inlineSelectSt, width: '100%' }}
                     />
-                    {isMembershipFee ? (
-                      <select
-                        value={pbAction}
-                        onChange={(e) => updatePbRow(idx, { action: e.target.value, value: '' })}
-                        style={inlineSelectSt}
-                      >
-                        {CHARGE_ACTIONS.map((a) => (
-                          <option key={a} value={a}>{t(`cb_action_${a}` as any)}</option>
-                        ))}
-                      </select>
-                    ) : <span />}
-                    {isMembershipFee && pbNeedsValue ? (
+                    <select
+                      value={mfAction}
+                      onChange={(e) => updateMfDraft({ action: e.target.value, value: '' })}
+                      style={inlineSelectSt}
+                    >
+                      {CHARGE_ACTIONS.map((a) => (
+                        <option key={a} value={a}>{t(`cb_action_${a}` as any)}</option>
+                      ))}
+                    </select>
+                    {mfNeedsValue ? (
                       <input
-                        type="number" min="0" max={pbAction === 'percentage_discount' ? 100 : undefined} step="0.01"
-                        value={pb.value ?? ''}
-                        onChange={(e) => updatePbRow(idx, { value: e.target.value })}
+                        type="number" min="0" max={mfAction === 'percentage_discount' ? 100 : undefined} step="0.01"
+                        value={mfDraft.value ?? ''}
+                        onChange={(e) => updateMfDraft({ value: e.target.value })}
                         placeholder="0"
                         style={{ width: 70, padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
                       />
                     ) : <span />}
                     <label style={{ display: 'flex', justifyContent: 'center' }}>
-                      <input type="checkbox" checked={!!pb.enabled} onChange={(e) => updatePbRow(idx, { enabled: e.target.checked ? 1 : 0 })} />
+                      <input type="checkbox" checked={!!mfDraft.enabled} onChange={(e) => updateMfDraft({ enabled: e.target.checked ? 1 : 0 })} />
                     </label>
-                    <button onClick={() => setPbDraft((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}>✕</button>
                   </div>
                 );
-              })}
+              })()}
             </div>
-          )}
-          {sellableItems.length > 0 && (
-            <button onClick={addPbRow} style={btnSmall('#6c63ff')}>{t('add_period_benefit')}</button>
           )}
         </div>
 
@@ -795,6 +863,7 @@ export default function PromotionsPage() {
     const cb = cachedCb[promo.id] ?? [];
     const pb = cachedPb[promo.id] ?? [];
     const ib = cachedIb[promo.id] ?? [];
+    const mf = cachedMf[promo.id] ?? null;
 
     const free = promo.free_months ?? 0;
     const paid = promo.paid_months ?? 0;
@@ -880,8 +949,7 @@ export default function PromotionsPage() {
                     <th style={thSt}>{t('col_quantity')}</th>
                     <th style={thSt}>{t('col_frequency')}</th>
                     <th style={thSt}>{t('col_duration_months')}</th>
-                    <th style={thSt}>{t('col_action')}</th>
-                    <th style={thSt}>{t('col_value')}</th>
+                    <th style={thSt}>{t('col_enabled')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -891,10 +959,41 @@ export default function PromotionsPage() {
                       <td style={tdSt}>{p.quantity}</td>
                       <td style={tdSt}>{p.frequency_interval} {t(`frequency_${p.frequency_unit}` as any)}</td>
                       <td style={tdSt}>{p.duration_months ?? '—'}</td>
-                      <td style={tdSt}>{p.action ? t(`cb_action_${p.action}` as any) : '—'}</td>
-                      <td style={tdSt}>{p.value ?? '—'}</td>
+                      <td style={tdSt}>{p.enabled ? '✓' : '—'}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_membership_fee_benefits')}</p>
+          {!mf || (mf.action ?? 'no_benefit') === 'no_benefit'
+            ? <p style={hintSt}>{t('no_membership_fee_benefit')}</p>
+            : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={thSt}>{t('col_benefit_type')}</th>
+                    <th style={thSt}>{t('col_quantity')}</th>
+                    <th style={thSt}>{t('col_frequency')}</th>
+                    <th style={thSt}>{t('col_duration_months')}</th>
+                    <th style={thSt}>{t('col_action')}</th>
+                    <th style={thSt}>{t('col_value')}</th>
+                    <th style={thSt}>{t('col_enabled')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ opacity: mf.enabled ? 1 : 0.45 }}>
+                    <td style={tdSt}>{mf.charge_type_name}</td>
+                    <td style={tdSt}>{mf.quantity}</td>
+                    <td style={tdSt}>{mf.frequency_interval} {t(`frequency_${mf.frequency_unit}` as any)}</td>
+                    <td style={tdSt}>{mf.duration_months ?? '—'}</td>
+                    <td style={tdSt}>{t(`cb_action_${mf.action}` as any)}</td>
+                    <td style={tdSt}>{mf.value ?? '—'}</td>
+                    <td style={tdSt}>{mf.enabled ? '✓' : '—'}</td>
+                  </tr>
                 </tbody>
               </table>
             )}

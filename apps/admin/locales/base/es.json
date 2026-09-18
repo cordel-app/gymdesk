@@ -830,6 +830,8 @@
     "section_period_benefits": "Beneficios periódicos",
     "no_period_benefits": "Sin beneficios de periodo.",
     "add_period_benefit": "+ Añadir beneficio de periodo",
+    "section_membership_fee_benefits": "Beneficios de cuota de socio",
+    "no_membership_fee_benefit": "No hay ningún beneficio de cuota de socio configurado.",
     "col_charge_type": "Concepto",
     "col_action": "Acción",
     "col_value": "Valor",
