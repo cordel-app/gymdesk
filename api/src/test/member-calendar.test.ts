@@ -167,6 +167,42 @@ describe('GET /me/schedule', () => {
     expect(session.allows_shared_booking).toBe(true);
   });
 
+  it('#503 stage 5: each session carries the unified read-model fields, additive next to availability_state', async () => {
+    const res = await request
+      .get(`/me/schedule?activity_type_id=${shareableActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const session = (res.body as any[]).find((s: any) => s.id === shareableSessionId);
+    expect(session).toBeDefined();
+    // Future, scheduled, uncancelled session with free capacity.
+    expect(session.status).toBe('scheduled');
+    expect(session.occupancy_status).toBe('available');
+    // createActivityType() doesn't set waitlist_mode, so it lands on the
+    // column's post-#503-stage-2 default ('disabled' for new activity types).
+    expect(session.waitlist_status).toBe('disabled');
+    expect(session.waitlist_count).toBe(0);
+  });
+
+  it('#503 stage 5: occupancy_status reflects capacity thresholds', async () => {
+    const fullActivityTypeId = await createActivityType(gymId, 0, 1);
+    const fullSessionId = await createSession(gymId, fullActivityTypeId, centerId, 0);
+    await db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
+       VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
+      [gymId, centerId, memberId, fullSessionId],
+    );
+    const res = await request
+      .get(`/me/schedule?activity_type_id=${fullActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const session = (res.body as any[]).find((s: any) => s.id === fullSessionId);
+    expect(session).toBeDefined();
+    // capacity=1, 1 booked -> no spots remain.
+    expect(session.occupancy_status).toBe('full');
+  });
+
   it('#478: still returns a session with no center (center_id NULL) even though the member is scoped to a specific center', async () => {
     const res = await request
       .get('/me/schedule')
