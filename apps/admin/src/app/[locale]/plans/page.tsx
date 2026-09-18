@@ -13,6 +13,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
+import { computeVatPreview, computeGrossFromPreservedNet } from '@/lib/priceVat';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ interface PriceRow { id: number; price: string; valid_from: string; valid_to: st
 interface ActivityType { id: number; name: string; }
 interface GymCharge { id: number; name: string; charge_type_name: string | null; charge_type_code: string | null; amount: string | null; availability: string; }
 interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
-interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; }
+interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; is_system: boolean | number; }
 
 // #485: read-only, dynamically computed by the backend — never persisted.
 interface ForecastLine {
@@ -645,6 +646,9 @@ export default function PlansPage() {
               </select>
             </div>
           </div>
+          <p style={{ ...fieldDescStyle, margin: '0 0 6px' }}>
+            {t(inlineNew.tax_behavior === 'exclusive' ? 'plans.tax_behavior_hint_exclusive' : 'plans.tax_behavior_hint_inclusive')}
+          </p>
           <p style={{ ...fieldDescStyle, margin: '0 0 12px' }}>
             {t('plans.default_billing_notice', {
               billing: fmtBillingInterval(DEFAULT_BILLING_POLICY.recurring_billing_interval, DEFAULT_BILLING_POLICY.recurring_billing_unit),
@@ -826,6 +830,26 @@ export default function PlansPage() {
                         </select>
                       </div>
                     </div>
+                    {(() => {
+                      // #547: net price is preserved when VAT is changed here — only the displayed gross
+                      // (customer-facing) price is recalculated. The stored `price` row itself is untouched;
+                      // it's the Price sub-form below that writes it.
+                      if (plan.amount_excl_tax == null) return null;
+                      const newRatePercent = editForm.tax_rate_id !== ''
+                        ? parseFloat(taxRates.find((tr) => String(tr.id) === editForm.tax_rate_id)?.rate_percent ?? '')
+                        : parseFloat(taxRates.find((tr) => tr.is_system)?.rate_percent ?? '');
+                      if (isNaN(newRatePercent)) return null;
+                      const newGross = computeGrossFromPreservedNet(plan.amount_excl_tax, newRatePercent);
+                      return (
+                        <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>
+                          {t('plans.vat_change_preview', {
+                            net: plan.amount_excl_tax.toFixed(2),
+                            rate: newRatePercent,
+                            gross: newGross.toFixed(2),
+                          })}
+                        </p>
+                      );
+                    })()}
                     {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
                     <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
                       <button onClick={cancelEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
@@ -1137,6 +1161,26 @@ export default function PlansPage() {
                             />
                           </div>
                         </div>
+                        {(() => {
+                          const ratePercent = plan.tax_rate_percent != null ? parseFloat(plan.tax_rate_percent) : null;
+                          if (ratePercent == null) return null;
+                          const hintKey = plan.tax_behavior === 'exclusive' ? 'plans.price_hint_exclusive' : 'plans.price_hint_inclusive';
+                          const priceNum = parseFloat(priceForm.price);
+                          const preview = !isNaN(priceNum) && priceNum >= 0
+                            ? computeVatPreview(priceNum, ratePercent, plan.tax_behavior)
+                            : null;
+                          return (
+                            <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>
+                              {t(hintKey, { rate: ratePercent })}
+                              {preview && (
+                                <> — {t('plans.price_preview', {
+                                  excl: preview.amount_excl_tax.toFixed(2),
+                                  incl: preview.amount_incl_tax.toFixed(2),
+                                })}</>
+                              )}
+                            </p>
+                          );
+                        })()}
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                           <button onClick={closePriceForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
                           <button onClick={handleSavePrice} style={btnSmall()}>{t('plans.save_changes')}</button>
