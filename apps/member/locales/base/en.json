@@ -197,7 +197,9 @@
     "type_booking_reminder_24h": "Reminder: tomorrow",
     "type_booking_reminder_1h": "Reminder: starting soon",
     "type_shared_training_approved": "Shared training approved",
-    "type_shared_training_rejected": "Shared training declined"
+    "type_shared_training_rejected": "Shared training declined",
+    "type_event_cancelled": "Booking cancelled",
+    "type_event_updated": "Booking updated"
   },
   "membership": {
     "title": "My membership",

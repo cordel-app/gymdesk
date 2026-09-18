@@ -7,8 +7,12 @@ import { useApp } from '@/context/AppContext';
 /**
  * #361: replaces the old bottom tab bar. Home is reached via its own
  * greeting/tiles; every other page gets a slim bar with a way back to Home
- * and a persistent entry point into Profile (the one destination kept
- * outside the Home navigation tiles).
+ * and persistent entry points into Notifications and Profile (the two
+ * destinations kept outside the Home navigation tiles).
+ *
+ * #503 stage 8: the unread badge used to sit on the Profile button, which
+ * linked to /profile, not /notifications — a bell with its own dedicated
+ * link is the actual "Notifications" entry point the issue asked for.
  */
 export function TopBar() {
   const pathname = usePathname();
@@ -23,6 +27,7 @@ export function TopBar() {
   const homePath = `/${locale}`;
   const isHome = pathname === homePath;
   const isProfile = pathname.startsWith(`${homePath}/profile`);
+  const isNotifications = pathname.startsWith(`${homePath}/notifications`);
 
   const logoSrc = theme?.has_logo
     ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
@@ -56,30 +61,49 @@ export function TopBar() {
         </button>
       )}
 
-      {!isProfile && (
-        <button
-          onClick={() => router.push(`${homePath}/profile`)}
-          aria-label={t('nav.profile')}
-          style={{
-            position: 'relative',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: 20,
-            lineHeight: 1,
-            padding: 4,
-          }}
-        >
-          ◉
-          {isHome && unreadNotifications > 0 && (
-            <span style={{
-              position: 'absolute', top: 0, right: 0,
-              width: 8, height: 8, borderRadius: '50%',
-              background: '#ef4444',
-            }} />
-          )}
-        </button>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {!isNotifications && (
+          <button
+            onClick={() => router.push(`${homePath}/notifications`)}
+            aria-label={t('nav.alerts')}
+            style={{
+              position: 'relative',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 20,
+              lineHeight: 1,
+              padding: 4,
+            }}
+          >
+            🔔
+            {unreadNotifications > 0 && (
+              <span style={{
+                position: 'absolute', top: 0, right: 0,
+                width: 8, height: 8, borderRadius: '50%',
+                background: '#ef4444',
+              }} />
+            )}
+          </button>
+        )}
+
+        {!isProfile && (
+          <button
+            onClick={() => router.push(`${homePath}/profile`)}
+            aria-label={t('nav.profile')}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 20,
+              lineHeight: 1,
+              padding: 4,
+            }}
+          >
+            ◉
+          </button>
+        )}
+      </div>
     </div>
   );
 }

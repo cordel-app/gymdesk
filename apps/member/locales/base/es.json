@@ -197,7 +197,9 @@
     "type_booking_reminder_24h": "Recordatorio: mañana",
     "type_booking_reminder_1h": "Recordatorio: empieza pronto",
     "type_shared_training_approved": "Entreno compartido aprobado",
-    "type_shared_training_rejected": "Entreno compartido rechazado"
+    "type_shared_training_rejected": "Entreno compartido rechazado",
+    "type_event_cancelled": "Reserva cancelada",
+    "type_event_updated": "Reserva actualizada"
   },
   "membership": {
     "title": "Mi cuota",

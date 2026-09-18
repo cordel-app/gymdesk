@@ -905,7 +905,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
-- **#503 (in progress — stages 1–7 of a 9-stage plan agreed on the issue
+- **#503 (in progress — stages 1–8 of a 9-stage plan agreed on the issue
   thread)**: Members App — Align Calendar Event Information with Admin
   Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
   `calendar_events.kind ENUM('session','event')` (added by the #360
@@ -1027,9 +1027,31 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `occupancy_status` (+ count), and (only when not `disabled`)
   `waitlist_status` with an aggregate `waitlist_count` — additive alongside
   the existing `availability_state`-keyed action buttons, which are
-  unchanged. Remaining stages (Home/My Bookings updates, tests/docs) are
-  tracked on #503 and land as separate PRs, each `Related to #503` until
-  the final stage closes it.
+  unchanged. Stage 8, "Home + My Bookings, and the Notifications entry
+  point": the plan's own premise — that Home/My Bookings hardcode
+  `kind: 'session'` — turned out to be stale; both already consume `/me
+  /schedule` (stage 5's unified read model) and have no `kind` reference
+  left anywhere. The real remaining gaps were (a) neither screen displayed
+  which center a booking is at, even though stage 7 already added
+  `center_id`/`center_name` to `/me/schedule` for the calendar UI, and (b)
+  the "Notifications" entry point the thread asked for already existed as
+  a full feature (#194 — `member_notifications` table, `/me/notifications`
+  endpoints, the `/notifications` page, `AppContext`'s unread count) but
+  had no working nav entry: `TopBar`'s unread dot sat on the Profile
+  button, which links to `/profile`. Fixed both: Home
+  (`app/[locale]/page.tsx`) and My Bookings (`app/[locale]/schedule
+  /page.tsx`) now render `center_name` alongside the existing room/space
+  name; `TopBar.tsx` gets its own bell button (using the previously-unused
+  `nav.alerts` i18n key) linking to `/notifications`, with the unread
+  badge moved onto it. Also filled two missing `notifications.type_*` i18n
+  keys (`event_cancelled`/`event_updated`) that stage 4's cancellation
+  notifications had been firing since #575 but which rendered as a raw,
+  untranslated type string in both Home's alert banner and the
+  Notifications page, in all three locales. No schema or API changes. See
+  `docs/decisions.md` #13 for why the pre-existing `member_notifications`
+  feature needed no rebuilding. Stage 9 (tests/docs audit across all
+  stages) is tracked on #503 and lands as a separate PR, `Related to #503`
+  until it closes the issue.
 
 ## Decisions
 
