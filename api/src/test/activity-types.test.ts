@@ -270,9 +270,9 @@ describe('PUT /activity-types/:id — propagate to future calendar_events (#503 
     centerAId = cA;
     const { insertId: cB } = await db.query(`INSERT INTO centers (gym_id, name, status) VALUES (?, 'Center B', 'active')`, [propGymId]);
     centerBId = cB;
-    const { insertId: sA } = await db.query(`INSERT INTO spaces (gym_id, name, capacity, status) VALUES (?, 'Space A', 20, 'active')`, [propGymId]);
+    const { insertId: sA } = await db.query(`INSERT INTO spaces (gym_id, name, capacity, status, center_id) VALUES (?, 'Space A', 20, 'active', ?)`, [propGymId, centerAId]);
     spaceAId = sA;
-    const { insertId: sB } = await db.query(`INSERT INTO spaces (gym_id, name, capacity, status) VALUES (?, 'Space B', 20, 'active')`, [propGymId]);
+    const { insertId: sB } = await db.query(`INSERT INTO spaces (gym_id, name, capacity, status, center_id) VALUES (?, 'Space B', 20, 'active', ?)`, [propGymId, centerBId]);
     spaceBId = sB;
     await db.query(
       `INSERT INTO gym_memberships (user_id, gym_id, role, status, name) VALUES (?, ?, 'trainer_performance', 'active', 'Trainer A')`,
