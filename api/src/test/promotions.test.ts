@@ -950,6 +950,10 @@ describe('Suitable Membership Plans', () => {
 
   it('PUT /:id/plans → 403 for a non-admin role (accountant has FINANCIALS read/write, but writes here are admin-only)', async () => {
     const accountantId = 'smp-accountant';
+    // This path is matched by both the broad `/promotions` mount and the nested
+    // `/promotions/:id` mount, so requireAuth() (and verifyToken) runs twice per
+    // request — queue the override identity for both calls.
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: accountantId } as any);
     vi.mocked(verifyToken).mockResolvedValueOnce({ sub: accountantId } as any);
     await createTestMembership(gymId, 'accountant', accountantId);
     const res = await request
