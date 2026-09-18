@@ -898,6 +898,7 @@
     "label_pay_beforehand_months": "Pay Beforehand (months)",
     "label_bonus_months": "Bonus Duration (months)",
     "section_timeline": "Example Timeline",
+    "timeline_empty": "Set the Billing & Duration fields above to preview an example timeline.",
     "timeline_example_note": "Example: a customer starting on {date}",
     "timeline_disclaimer": "Example only. Dates shown are illustrative and will be recalculated from each customer's actual enrollment date.",
     "col_dates": "Dates",

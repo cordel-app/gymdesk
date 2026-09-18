@@ -884,6 +884,7 @@
     "label_pay_beforehand_months": "Pagament anticipat (mesos)",
     "label_bonus_months": "Durada bonificada (mesos)",
     "section_timeline": "Línia de temps d'exemple",
+    "timeline_empty": "Emplena els camps de Facturació i Durada per previsualitzar una línia de temps d'exemple.",
     "timeline_example_note": "Exemple: un client que comença el {date}",
     "timeline_disclaimer": "Només és un exemple. Les dates mostrades són il·lustratives i es recalcularan a partir de la data real d'inscripció de cada client.",
     "col_dates": "Dates",

@@ -884,6 +884,7 @@
     "label_pay_beforehand_months": "Pago anticipado (meses)",
     "label_bonus_months": "Duración bonificada (meses)",
     "section_timeline": "Línea de tiempo de ejemplo",
+    "timeline_empty": "Completa los campos de Facturación y Duración para previsualizar una línea de tiempo de ejemplo.",
     "timeline_example_note": "Ejemplo: un cliente que empieza el {date}",
     "timeline_disclaimer": "Solo es un ejemplo. Las fechas mostradas son ilustrativas y se recalcularán a partir de la fecha real de inscripción de cada cliente.",
     "col_dates": "Fechas",
