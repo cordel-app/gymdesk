@@ -324,6 +324,63 @@ describe('GET /promotions/timeline', () => {
     expect(res.body.periods).toHaveLength(1);
     expect(res.body.periods[0].status).toBe('pay_regular');
   });
+
+  // #552 — Billing column reflects the (unsaved, draft) Membership Fee Benefit.
+  it('rejects an invalid membership_fee_action', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({ paid_months: 1, membership_fee_action: 'bogus' })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a non-numeric membership_fee_value', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({ paid_months: 1, membership_fee_action: 'percentage_discount', membership_fee_value: 'abc' })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a non-positive membership_fee_duration_months', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({ paid_months: 1, membership_fee_duration_months: '0' })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns the Membership Fee Benefit action/value only on paid promotional periods', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({
+        free_months: 1, paid_months: 1, bonus_months: 1,
+        membership_fee_action: 'percentage_discount', membership_fee_value: '30', membership_fee_enabled: '1',
+        anchor_date: '2026-01-01',
+      })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.periods.map((p: any) => [p.status, p.billingAction, p.billingValue])).toEqual([
+      ['free_promotion', null, null],
+      ['pay_promotion', 'percentage_discount', 30],
+      ['bonus_promotion', null, null],
+      ['pay_regular', null, null],
+    ]);
+  });
+
+  it('ignores the Membership Fee Benefit when membership_fee_enabled is not set', async () => {
+    const res = await request
+      .get('/promotions/timeline')
+      .query({ paid_months: 1, membership_fee_action: 'waive', membership_fee_value: '0' })
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.periods.every((p: any) => p.billingAction === null)).toBe(true);
+  });
 });
 
 // ─── Period benefits with duration_months ─────────────────────────────────────

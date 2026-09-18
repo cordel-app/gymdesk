@@ -2,6 +2,14 @@
 // Example Timeline/Forecast server-side so the classification logic (which
 // billing period is Free/Pay/Prepaid/Bonus/Regular) lives in one place rather
 // than being duplicated in the frontend. Purely a projection — never persisted.
+//
+// #552: the Billing column additionally reflects the promotion's Membership
+// Fee Benefit (action/value/enabled/durationMonths — the same shape #551's
+// membership-fee-benefit endpoint persists and `assignedPlanBillingEvents.ts`
+// already applies to real billing), so a paid promotional period shows what
+// it would actually bill instead of a generic "promotional price" label.
+
+import { PromotionBenefitAction } from './promotionBenefits';
 
 export type PromotionTimelineStatus =
   | 'free_promotion'
@@ -15,6 +23,14 @@ export interface PromotionTimelineConfig {
   paidMonths: number;
   payBeforehandMonths: number;
   bonusMonths: number;
+  // Membership Fee Benefit — optional; a period-benefit-shaped action applied
+  // to every pay_promotion/prepaid_promotion period, gated by `enabled` and,
+  // if set, expiring `durationMonths` after the timeline's own anchor date
+  // (mirrors `computeMembershipFeePriceAt`'s duration gate).
+  membershipFeeAction?: PromotionBenefitAction;
+  membershipFeeValue?: number | null;
+  membershipFeeEnabled?: boolean;
+  membershipFeeDurationMonths?: number | null;
 }
 
 export interface PromotionTimelinePeriod {
@@ -22,6 +38,11 @@ export interface PromotionTimelinePeriod {
   status: PromotionTimelineStatus;
   startsOn: string; // YYYY-MM-DD
   endsOn: string | null; // null for the final, open-ended regular period
+  // The Membership Fee Benefit action/value in effect for this period — only
+  // ever set on pay_promotion/prepaid_promotion periods, and only while the
+  // benefit is enabled and (if `durationMonths` is set) not yet expired.
+  billingAction: PromotionBenefitAction | null;
+  billingValue: number | null;
 }
 
 export interface PromotionTimelineResult {
@@ -67,13 +88,30 @@ export function computePromotionTimeline(config: PromotionTimelineConfig, anchor
   const anchor = anchorDate ?? new Date().toISOString().slice(0, 10);
   const [ay, am] = anchor.split('-').map(Number);
   let cursor = `${ay}-${String(am).padStart(2, '0')}-01`;
+  const anchorStart = cursor;
+
+  const mfAction = config.membershipFeeAction ?? 'no_benefit';
+  const mfEnabled = !!config.membershipFeeEnabled && mfAction !== 'no_benefit';
+  const mfValue = config.membershipFeeValue ?? null;
+  const mfDurationMonths = config.membershipFeeDurationMonths ?? null;
 
   const periods: PromotionTimelinePeriod[] = [];
   let period = 1;
   const pushPeriod = (status: PromotionTimelineStatus, openEnded = false) => {
     const startsOn = cursor;
     const next = addMonthsToDateStr(cursor, 1);
-    periods.push({ period, status, startsOn, endsOn: openEnded ? null : dayBefore(next) });
+
+    let billingAction: PromotionBenefitAction | null = null;
+    let billingValue: number | null = null;
+    if (status === 'pay_promotion' || status === 'prepaid_promotion') {
+      const withinDuration = mfDurationMonths == null || startsOn < addMonthsToDateStr(anchorStart, mfDurationMonths);
+      if (mfEnabled && withinDuration) {
+        billingAction = mfAction;
+        billingValue = mfValue;
+      }
+    }
+
+    periods.push({ period, status, startsOn, endsOn: openEnded ? null : dayBefore(next), billingAction, billingValue });
     cursor = next;
     period++;
   };
