@@ -4,6 +4,16 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 14. #503's 9-stage plan is complete, distinct from #360's own still-open stages (#503, 2026-09-18)
+
+**Decision**: stage 9 ("Tests + docs") closes the 9-stage plan agreed on the #503 issue thread (stages 1–8: #568, #570, #572, #575, #576, #579, #580, #583). `calendar_events` is now the single occurrence entity for members and Admin alike: no `kind` discriminator, configurable waitlisting, activity→future-event field propagation, a unified member read model (`status`/`occupancy_status`/`waitlist_status`), local calendar filters, and a member calendar UI/Home/My Bookings that surface all of it.
+
+- This is a separate, later staged plan from #360's own 5-stage CalendarEvent Unification plan (see #10 above and `docs/architecture.md`'s "Planned: CalendarEvent Unification" section) — both operate on `calendar_events`, but #360's plan is about *unifying it with `class_sessions`* and its own stages 4 (frontend consolidation) and 5 (cleanup/drop legacy tables) remain open. Closing #503 does not close #360.
+- Two gaps were surfaced during this stage's audit and are deliberately **not** closed by it — they're open follow-up work, not silent regressions: (1) the `INNER JOIN activity_types` discovery gap noted in #11 above (occurrences with no activity type stay invisible to members); (2) the calendar detail panel has no explicit `Booked` badge (booking is currently implied only by which action button shows), while the ticket's "Event details" acceptance criteria call for it as a distinct, visible element the same way My Bookings already renders one.
+- New test coverage added this stage: backend privacy/isolation regression tests (`api/src/test/member-calendar.test.ts`) proving no `/me/*` response can leak another member's booking identity and that one member's booking never flips another member's `availability_state`; and a Member app i18n key-parity test (`apps/member/src/test/locales.test.ts`, the app's first test file — `apps/member` gained a `vitest` devDependency and `test` script for it) proving every referenced translation key resolves in `en`/`es`/`ca`.
+
+---
+
 ## 13. Member Notifications already existed before #503 asked for it (#503, 2026-09-18)
 
 **Decision**: the #503 issue thread asked for "a section on top named 'Notifications'" in the Members app, assuming none existed. One already did — feature #194 (migration `087_member_notifications.js`, the `member_notifications` table, `sendNotification`/`sendBulkNotification` in `api/src/infra/notifications.ts`, the `/me/notifications*` endpoints, and the `/notifications` page) — and stage 4 (#575) was already writing `event_cancelled` notifications into it for schedule-rule cancellations. Stage 8 does not rebuild this feature; it only fixes the two things that made it not read as a working entry point: `TopBar.tsx` had no dedicated Notifications button (the unread dot sat on the Profile button, which links to `/profile`), and two notification types (`event_cancelled`/`event_updated`) had no i18n label in any locale, so they rendered as a raw type string.
@@ -29,7 +39,7 @@ Short record of the settled choices that are not obvious from the code. Don't re
 **Decision**: the `kind ENUM('session','event')` column added by the #360 unification (migration 134) is removed (migration 152). Every `calendar_events` row is now equally bookable at the primitive/API level — `bookMemberOnSession` no longer gates on `kind`. This was requested explicitly on the #503 issue thread: "There must be no separate logic for sessions versus events."
 
 - The admin-facing `classSessionsRouter`/`calendarEventsRouter` split (`calendar-events.ts`) is **not** merged by this decision — it now partitions `calendar_events` by `activity_type_id` (`IS NOT NULL` vs `IS NULL`) instead of `kind`, preserving the same mutually-exclusive split the admin Calendar page's dual-fetch relies on. Fully merging the two admin detail panels (`ClassSessionDetailPanel` vs `EventDetailsPanel`) into one UI is an open design question, not yet specified, left for a later #503 stage.
-- Member-facing discovery (`/me/schedule`, `/me/upcoming`, `/me/activity-history`) still implicitly requires `activity_type_id IS NOT NULL` (via `INNER JOIN activity_types`) — extending it to rows without an activity type is explicitly a later stage of the #503 plan ("Unified member read model"), not part of this decision.
+- Member-facing discovery (`/me/schedule`, `/me/upcoming`, `/me/activity-history`) still implicitly requires `activity_type_id IS NOT NULL` (via `INNER JOIN activity_types`) — extending it to rows without an activity type was flagged for "Unified member read model" (stage 5, #576), but that stage scoped itself to additive read-model fields only and explicitly left the join as-is (see its own PR's "Scope note"). **This gap is still open as of stage 9** — it was never closed by any of the 9 stages — and is tracked here rather than only in `docs/architecture.md`'s roadmap paragraph, so it isn't mistaken for resolved.
 - Do not reintroduce a session/event (or similar) discriminator column as a workaround for admin UI branching — that was explicitly ruled out on the issue thread. If the admin UI split needs its own signal going forward, that's a product decision to make explicitly, not to infer from a renamed flag.
 
 ---
@@ -57,8 +67,8 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 **Consequences**:
 - Do not reintroduce `Event` as a standalone entity. If differentiation is needed (workshop, appointment, special activity), differentiate through existing columns (e.g. `activity_type_id`) rather than creating a new table — see #11 above, which additionally rules out a dedicated discriminator *column* for this on `calendar_events`.
-- `GET /me/upcoming` and `GET /me/activity-history` return bookings for occurrences of an activity type (`activity_type_id IS NOT NULL`) — in practice every booking today, since `bookMemberOnSession` requires the caller to reach the occurrence through `/me/schedule`, which has the same requirement (see #11).
-- The `member_notifications` table retains the `event_cancelled`/`event_updated` type values as dead historical rows; no new notifications of those types will be written.
+- `GET /me/upcoming` and `GET /me/activity-history` return bookings for occurrences of an activity type (`activity_type_id IS NOT NULL`) — in practice every booking today, since `bookMemberOnSession` requires the caller to reach the occurrence through `/me/schedule`, which has the same requirement (see #11). This is a `calendar_events` discovery gap, not a standalone-Event concept — see #11's stage 9 note.
+- **Stale as of #503 stage 4 (#575):** this bullet previously said the `member_notifications` table's `event_cancelled`/`event_updated` type values were "dead historical rows" that would never be written again. That stopped being true once stage 4 started writing `event_cancelled` notifications for schedule-rule/end-date cancellations, and stage 8 (#583) added the missing `en`/`es`/`ca` labels for both types specifically because they're live again. These two types are active, current calendar-event notifications now — not #221's removed standalone Event entity — and should keep working.
 
 ---
 

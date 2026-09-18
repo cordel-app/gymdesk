@@ -905,8 +905,8 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
-- **#503 (in progress — stages 1–8 of a 9-stage plan agreed on the issue
-  thread)**: Members App — Align Calendar Event Information with Admin
+- **#503 (done — all 9 stages of the plan agreed on the issue thread have
+  landed)**: Members App — Align Calendar Event Information with Admin
   Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
   `calendar_events.kind ENUM('session','event')` (added by the #360
   unification) and both its CHECK constraints. `bookMemberOnSession`
@@ -1049,9 +1049,25 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   untranslated type string in both Home's alert banner and the
   Notifications page, in all three locales. No schema or API changes. See
   `docs/decisions.md` #13 for why the pre-existing `member_notifications`
-  feature needed no rebuilding. Stage 9 (tests/docs audit across all
-  stages) is tracked on #503 and lands as a separate PR, `Related to #503`
-  until it closes the issue.
+  feature needed no rebuilding. Stage 9, "tests + docs": added backend
+  regression coverage in `member-calendar.test.ts` proving no `/me/*`
+  response can leak another member's booking identity (only aggregate
+  `booked_count`/`waitlist_count`) and that one member's booking never
+  flips `availability_state`/`status` for another member on the same
+  event; added the Member app's first test file
+  (`apps/member/src/test/locales.test.ts`, with a new `vitest` devDependency
+  and `test` script for `apps/member`) asserting every `en`/`es`/`ca`
+  translation key referenced anywhere in the app resolves in all three
+  locales and that the three locale files carry an identical key set.
+  Corrected a stale `docs/decisions.md` #9 bullet that had said
+  `member_notifications`'s `event_cancelled`/`event_updated` types would
+  never be written again — stage 4 (#575) already reactivated them — and
+  added #14 recording the plan's completion, including the two gaps this
+  stage deliberately leaves open rather than silently dropping: the
+  `INNER JOIN activity_types` member-discovery gap (flagged since stage 1)
+  and the calendar detail panel's missing explicit `Booked` badge (booking
+  is currently implied only by which action button renders, while My
+  Bookings already shows one). This closes #503.
 
 ## Decisions
 

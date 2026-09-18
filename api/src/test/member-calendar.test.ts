@@ -254,6 +254,119 @@ describe('GET /me/schedule', () => {
   });
 });
 
+// ─── #503 stage 9: attendee privacy + booking-status isolation between members ─
+//
+// The ticket's acceptance criteria require that (a) no member-facing response
+// ever exposes another member's booking identity — only aggregate counts —
+// and (b) a booking made by one member never flips availability_state (or the
+// derived "Booked" label) for another member on the same event. Stages 1-8
+// built this correctly by construction (every /me/* query scopes per-member
+// subqueries to the caller's own member_id and exposes only COUNT(*)
+// aggregates for everyone else), but no test asserted the negative until now.
+describe('#503 stage 9: attendee privacy + booking-status isolation between members', () => {
+  let memberBId: number;
+  const memberBClerkId = `member-b-${Date.now()}`;
+  let sharedSessionId: number;
+  let memberOwnSessionId: number;
+
+  beforeAll(async () => {
+    await createTestMembership(gymId, 'member', memberBClerkId);
+    const { insertId } = await db.query(
+      `INSERT INTO members (gym_id, name, email, clerk_user_id)
+       VALUES (?, 'Member B', ?, ?)`,
+      [gymId, `member-b-${Date.now()}@test.com`, memberBClerkId],
+    );
+    memberBId = insertId;
+    // Member B isn't restricted to a center by default (centerContext's
+    // single-center fallback only applies when the gym has exactly one
+    // center), so assign her explicitly to keep this test independent of
+    // how many centers other describe blocks in this file have created.
+    await db.query(
+      'INSERT INTO member_centers (gym_id, member_id, center_id) VALUES (?, ?, ?)',
+      [gymId, memberBId, centerId],
+    );
+
+    sharedSessionId = await createSession(gymId, shareableActivityTypeId, centerId, 1);
+    // Only member B books this session.
+    await db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
+       VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
+      [gymId, centerId, memberBId, sharedSessionId],
+    );
+
+    memberOwnSessionId = await createSession(gymId, shareableActivityTypeId, centerId, 1);
+    // Only member A (the file's default TEST_USER_ID member) books this one.
+    await db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
+       VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
+      [gymId, centerId, memberId, memberOwnSessionId],
+    );
+  });
+
+  it('GET /me/schedule exposes another member\'s booking only as an aggregate count, never their identity', async () => {
+    const res = await request
+      .get(`/me/schedule?activity_type_id=${shareableActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const session = (res.body as any[]).find((s: any) => s.id === sharedSessionId);
+    expect(session).toBeDefined();
+    // Aggregate only — member A never booked this session.
+    expect(session.booked_count).toBe(1);
+    expect(session.my_booking_status).toBeNull();
+    expect(session.availability_state).not.toBe('BOOKED_BY_MEMBER');
+    // No field anywhere on the row can name or identify member B — every
+    // #503 field is either a COUNT(*) aggregate or scoped to the caller.
+    expect(session).not.toHaveProperty('member_id');
+    expect(session).not.toHaveProperty('member_name');
+    expect(session).not.toHaveProperty('attendees');
+    const serialized = JSON.stringify(session);
+    expect(serialized).not.toContain('Member B');
+    expect(serialized).not.toContain(String(memberBId));
+  });
+
+  it('a booking made by one member never flips availability_state (or status) for another member on the same event', async () => {
+    const resA = await request
+      .get(`/me/schedule?activity_type_id=${shareableActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    const asSeenByA = (resA.body as any[]).find((s: any) => s.id === memberOwnSessionId);
+    expect(asSeenByA).toBeDefined();
+    expect(asSeenByA.availability_state).toBe('BOOKED_BY_MEMBER');
+    // The event's own lifecycle status and the caller's booking status are
+    // independent fields — booking one member never overwrites the other.
+    expect(asSeenByA.status).toBe('scheduled');
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: memberBClerkId } as any);
+    const resB = await request
+      .get(`/me/schedule?activity_type_id=${shareableActivityTypeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    const asSeenByB = (resB.body as any[]).find((s: any) => s.id === memberOwnSessionId);
+    expect(asSeenByB).toBeDefined();
+    expect(asSeenByB.availability_state).not.toBe('BOOKED_BY_MEMBER');
+    expect(asSeenByB.my_booking_status).toBeNull();
+    // Lifecycle status is the same event-level fact regardless of who is asking.
+    expect(asSeenByB.status).toBe('scheduled');
+  });
+
+  it('GET /me/bookings only ever returns the caller\'s own bookings, never another member\'s', async () => {
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: memberBClerkId } as any);
+    const res = await request
+      .get('/me/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = (res.body as any[]).map((b: any) => b.class_session_id);
+    expect(ids).toContain(sharedSessionId);
+    expect(ids).not.toContain(memberOwnSessionId);
+    for (const booking of res.body as any[]) {
+      expect(booking).not.toHaveProperty('member_id');
+      expect(booking).not.toHaveProperty('member_name');
+    }
+  });
+});
+
 // ─── POST /me/shared-training-requests ───────────────────────────────────────
 
 describe('POST /me/shared-training-requests', () => {
