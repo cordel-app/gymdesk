@@ -168,7 +168,7 @@ export function computeSlotSegments(
  * occurrence survives a rule edit unchanged, or is "impacted" (would fall outside
  * the new configuration and therefore needs staff confirmation to cancel).
  */
-function occurrenceFitsConfig(
+export function occurrenceFitsConfig(
   config: RuleWindowConfig,
   localDate: string,
   localStartTime: string,
@@ -251,6 +251,70 @@ export async function partitionBookedFutureOccurrences(
     (fits ? preserved : impacted).push(occ);
   }
   return { preserved, impacted };
+}
+
+/** #503 stage 4: every future (non-cancelled) occurrence of this rule, booked or
+ * not, with the ids of the members holding an active booking on it (empty when
+ * unbooked). Unlike `findBookedFutureOccurrences`, this includes unbooked rows —
+ * needed to tell which *unbooked* occurrences fall outside a new `end_date` too,
+ * so they can be removed without a confirmation prompt. */
+export async function findFutureOccurrences(ruleId: number): Promise<BookedOccurrence[]> {
+  const { rows } = await db.query(
+    `SELECT ce.id, ce.starts_at, ce.ends_at, ceb.member_id
+     FROM calendar_events ce
+     LEFT JOIN calendar_event_bookings ceb ON ceb.calendar_event_id = ce.id AND ceb.status = 'booked'
+     WHERE ce.schedule_rule_id = ? AND ce.starts_at > UTC_TIMESTAMP() AND ce.deleted_at IS NULL`,
+    [ruleId],
+  );
+  const byEvent = new Map<number, BookedOccurrence>();
+  for (const r of rows) {
+    let occ = byEvent.get(r.id);
+    if (!occ) {
+      occ = { id: r.id, starts_at: r.starts_at, ends_at: r.ends_at, member_ids: [] };
+      byEvent.set(r.id, occ);
+    }
+    if (r.member_id != null) occ.member_ids.push(r.member_id);
+  }
+  return [...byEvent.values()];
+}
+
+/**
+ * #503 stage 4: split *every* future occurrence of a rule (booked or not) into
+ * those that still fit `newConfig`'s window ("in range" — left completely
+ * untouched, never cancelled or regenerated) and those that don't ("out of
+ * range" — candidates for removal). Used only for the end-date-only edit path,
+ * where the goal is a surgical add/remove at the date-range boundary rather than
+ * the full cancel-and-regenerate `partitionBookedFutureOccurrences` drives for a
+ * general window change (which only needs to reason about booked occurrences,
+ * since everything else is regenerated anyway).
+ */
+export async function partitionOutOfRangeOccurrences(
+  ruleId: number,
+  newConfig: RuleWindowConfig,
+  gymTimezone: string,
+): Promise<{ inRange: BookedOccurrence[]; outOfRange: BookedOccurrence[] }> {
+  const all = await findFutureOccurrences(ruleId);
+  const inRange: BookedOccurrence[] = [];
+  const outOfRange: BookedOccurrence[] = [];
+  for (const occ of all) {
+    const start = DateTime.fromJSDate(occ.starts_at, { zone: 'utc' }).setZone(gymTimezone);
+    const end = DateTime.fromJSDate(occ.ends_at, { zone: 'utc' }).setZone(gymTimezone);
+    const fits = occurrenceFitsConfig(newConfig, start.toFormat('yyyy-MM-dd'), start.toFormat('HH:mm'), end.toFormat('HH:mm'));
+    (fits ? inRange : outOfRange).push(occ);
+  }
+  return { inRange, outOfRange };
+}
+
+/** #503 stage 4: cancel exactly these occurrences (by id) — no other future
+ * occurrence of the rule is touched. Used instead of `cancelFutureOccurrences`
+ * for the end-date-only path, where in-range occurrences (booked or not) must
+ * survive an edit untouched rather than being cancelled-and-regenerated. */
+export async function cancelOccurrencesByIds(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db.query(
+    `UPDATE calendar_events SET status = 'cancelled', deleted_at = UTC_TIMESTAMP() WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ids,
+  );
 }
 
 /**

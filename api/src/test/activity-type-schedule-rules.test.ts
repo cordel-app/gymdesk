@@ -52,6 +52,16 @@ function upcomingMonSunWeek() {
   };
 }
 
+/** Upcoming Monday (today or later, UTC), optionally shifted by whole weeks —
+ * used by the #503 stage 4 end-date-only tests, which need 3+ weekly Mondays
+ * in a single rule window. */
+function upcomingMonday(offsetWeeks = 0): string {
+  const { mon } = upcomingMonSunWeek();
+  const d = new Date(`${mon}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + offsetWeeks * 7);
+  return d.toISOString().slice(0, 10);
+}
+
 async function insertTestMember(gymId: string, label: string): Promise<number> {
   const email = `sr-member-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@test.com`;
   const { insertId } = await db.query(
@@ -1333,6 +1343,207 @@ describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(204);
+  });
+});
+
+// ── #503 stage 4: end-date-only edits diff surgically ───────────────────────
+// Changing *only* a recurring rule's end_date must never cancel-and-regenerate
+// occurrences that stay in range (booked or not) — only occurrences the new
+// end_date actually excludes are removed, and only with confirmation when any
+// of them are booked. This is distinct from the general #482 window-change
+// path above, which regenerates every non-preserved future occurrence.
+
+describe('end-date-only diffing (#503 stage 4)', () => {
+  let endDateActivityTypeId: number;
+
+  beforeAll(async () => {
+    const res = await request
+      .post('/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'End Date SR', duration_minutes: 60, max_capacity: 10, status: 'active' });
+    expect(res.status).toBe(201);
+    endDateActivityTypeId = res.body.id;
+  });
+
+  it('PUT extending end_date only adds the new occurrences — the existing booked occurrence keeps its row untouched, no confirmation needed', async () => {
+    const mon1 = upcomingMonday(0);
+    const memberId = await insertTestMember(gymId, 'extend-end-date');
+
+    const createRes = await request
+      .post(rulesBase(endDateActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: mon1, end_date: mon1, // single Monday occurrence
+        weekdays: [1], start_time: '09:00', end_time: '10:00',
+        member_ids: [memberId],
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows: before } = await db.query(
+      `SELECT id, starts_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL`,
+      [ruleId],
+    );
+    expect(before.length).toBe(1);
+    const originalEventId = before[0].id;
+    const originalStartsAt = before[0].starts_at;
+
+    const putRes = await request
+      .put(`/activity-types/${endDateActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: mon1, end_date: upcomingMonday(2), // adds week 2 and week 3
+        weekdays: [1], start_time: '09:00', end_time: '10:00',
+      });
+    expect(putRes.status).toBe(200);
+
+    const { rows: after } = await db.query(
+      `SELECT id, starts_at, status, deleted_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL ORDER BY starts_at`,
+      [ruleId],
+    );
+    expect(after.length).toBe(3);
+    const originalRow = after.find((r: any) => r.id === originalEventId);
+    expect(originalRow).toBeDefined();
+    expect(originalRow.status).toBe('scheduled');
+    expect(new Date(originalRow.starts_at).getTime()).toBe(new Date(originalStartsAt).getTime());
+
+    const { rows: bookingRows } = await db.query(
+      `SELECT status FROM calendar_event_bookings WHERE calendar_event_id = ? AND member_id = ?`,
+      [originalEventId, memberId],
+    );
+    expect(bookingRows[0].status).toBe('booked');
+  });
+
+  it('PUT shortening end_date with no bookings on the removed occurrences proceeds without confirmation, leaving the in-range occurrence untouched', async () => {
+    const mon1 = upcomingMonday(0);
+
+    const createRes = await request
+      .post(rulesBase(endDateActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: mon1, end_date: upcomingMonday(2), // 3 Mondays, unbooked
+        weekdays: [1], start_time: '11:00', end_time: '12:00',
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows: before } = await db.query(
+      `SELECT id, starts_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL ORDER BY starts_at`,
+      [ruleId],
+    );
+    expect(before.length).toBe(3);
+    const keptEventId = before[0].id;
+    const keptStartsAt = before[0].starts_at;
+    const removedIds = [before[1].id, before[2].id];
+
+    const putRes = await request
+      .put(`/activity-types/${endDateActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: mon1, end_date: mon1, // shrink to only the first Monday
+        weekdays: [1], start_time: '11:00', end_time: '12:00',
+      });
+    expect(putRes.status).toBe(200);
+
+    const { rows: keptAfter } = await db.query(
+      `SELECT starts_at, status, deleted_at FROM calendar_events WHERE id = ?`,
+      [keptEventId],
+    );
+    expect(keptAfter[0].status).toBe('scheduled');
+    expect(keptAfter[0].deleted_at).toBeNull();
+    expect(new Date(keptAfter[0].starts_at).getTime()).toBe(new Date(keptStartsAt).getTime());
+
+    const { rows: removedAfter } = await db.query(
+      `SELECT status, deleted_at FROM calendar_events WHERE id IN (?, ?)`,
+      removedIds,
+    );
+    expect(removedAfter).toHaveLength(2);
+    for (const row of removedAfter) {
+      expect(row.status).toBe('cancelled');
+      expect(row.deleted_at).not.toBeNull();
+    }
+  });
+
+  it('PUT shortening end_date that would remove booked occurrences blocks with 409 and touches nothing; confirming removes only the excluded occurrences and notifies the member', async () => {
+    const mon1 = upcomingMonday(0);
+    const memberId = await insertTestMember(gymId, 'shrink-end-date');
+
+    const createRes = await request
+      .post(rulesBase(endDateActivityTypeId))
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: mon1, end_date: upcomingMonday(2), // 3 Mondays
+        weekdays: [1], start_time: '13:00', end_time: '14:00',
+        member_ids: [memberId], // auto-books all 3 occurrences
+      });
+    expect(createRes.status).toBe(201);
+    const ruleId = createRes.body.id;
+
+    const { rows: eventRows } = await db.query(
+      `SELECT id, starts_at FROM calendar_events WHERE schedule_rule_id = ? AND deleted_at IS NULL ORDER BY starts_at`,
+      [ruleId],
+    );
+    expect(eventRows.length).toBe(3);
+    const keptEventId = eventRows[0].id;
+    const removedIds = [eventRows[1].id, eventRows[2].id];
+
+    const blockedRes = await request
+      .put(`/activity-types/${endDateActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: mon1, end_date: mon1, // shrink to only the first Monday
+        weekdays: [1], start_time: '13:00', end_time: '14:00',
+      });
+    expect(blockedRes.status).toBe(409);
+    expect(blockedRes.body.error).toBe('booked_occurrences_impacted');
+    expect(blockedRes.body.member_count).toBe(1);
+    expect(blockedRes.body.impacted_occurrences).toHaveLength(2);
+
+    // Nothing touched yet — including the in-range occurrence.
+    const { rows: untouched } = await db.query(
+      `SELECT status FROM calendar_events WHERE id IN (?, ?, ?)`,
+      [keptEventId, ...removedIds],
+    );
+    expect(untouched.every((r: any) => r.status === 'scheduled')).toBe(true);
+
+    const confirmRes = await request
+      .put(`/activity-types/${endDateActivityTypeId}/schedule-rules/${ruleId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        type: 'weekly', start_date: mon1, end_date: mon1,
+        weekdays: [1], start_time: '13:00', end_time: '14:00',
+        confirm_cancel_booked: true,
+      });
+    expect(confirmRes.status).toBe(200);
+
+    const { rows: keptAfter } = await db.query(
+      `SELECT status, deleted_at FROM calendar_events WHERE id = ?`,
+      [keptEventId],
+    );
+    expect(keptAfter[0].status).toBe('scheduled');
+    expect(keptAfter[0].deleted_at).toBeNull();
+
+    const { rows: removedAfter } = await db.query(
+      `SELECT status, deleted_at FROM calendar_events WHERE id IN (?, ?)`,
+      removedIds,
+    );
+    for (const row of removedAfter) {
+      expect(row.status).toBe('cancelled');
+      expect(row.deleted_at).not.toBeNull();
+    }
+
+    for (const removedId of removedIds) {
+      const notification = await waitForNotification(memberId, removedId);
+      expect(notification).not.toBeNull();
+    }
   });
 });
 
