@@ -35,6 +35,7 @@ interface ActivityType {
   color: string | null;
   status: 'active' | 'inactive';
   public_event: boolean;
+  waitlist_mode: 'disabled' | 'open' | 'closed';
   created_at: string;
   created_by_membership_id: number | null;
   created_by_name: string | null;
@@ -66,6 +67,7 @@ interface Trainer { gym_membership_id: number; name: string; }
 interface MembershipPlan { id: number; name: string; lifecycle_status: string; }
 
 const STATUSES = ['active', 'inactive'] as const;
+const WAITLIST_MODES = ['disabled', 'open', 'closed'] as const;
 const RULE_TYPES = ['one_off', 'weekly', 'monthly'] as const;
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6].map((value) => ({ value })); // labels via tWeekday(String(value))
 const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'last'] as const;
@@ -82,6 +84,7 @@ const emptyEditForm = {
   default_trainer_membership_id: '',
   color: '',
   public_event: true,
+  waitlist_mode: 'disabled' as ActivityType['waitlist_mode'],
 };
 type EditForm = typeof emptyEditForm;
 
@@ -287,6 +290,7 @@ export default function ActivityTypesPage() {
       default_trainer_membership_id: row.default_trainer_membership_id ? String(row.default_trainer_membership_id) : '',
       color: row.color ?? '',
       public_event: row.public_event,
+      waitlist_mode: row.waitlist_mode,
     });
     setEditError(null);
     setExpanded((prev) => new Set([...prev, row.id]));
@@ -321,6 +325,7 @@ export default function ActivityTypesPage() {
             ? parseInt(editForm.default_trainer_membership_id, 10) : null,
           color: editForm.color || null,
           public_event: editForm.public_event,
+          waitlist_mode: editForm.waitlist_mode,
         }),
       });
       await apiFetch(`/activity-types/${row.id}/eligible-plans`, {
@@ -863,6 +868,19 @@ export default function ActivityTypesPage() {
                 {editForm.public_event ? t('public_event_hint_public') : t('public_event_hint_restricted')}
               </p>
             </div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={inlineLabelStyle}>{t('label_waitlist_mode')}</label>
+              <select
+                value={editForm.waitlist_mode}
+                onChange={(e) => setEditForm({ ...editForm, waitlist_mode: e.target.value as ActivityType['waitlist_mode'] })}
+                style={inlineSelectStyle}
+              >
+                {WAITLIST_MODES.map((m) => <option key={m} value={m}>{t(`waitlist_mode_${m}` as any)}</option>)}
+              </select>
+              <p style={{ fontSize: 12.5, color: '#888', margin: '4px 0 0' }}>
+                {t(`waitlist_mode_hint_${editForm.waitlist_mode}` as any)}
+              </p>
+            </div>
             {!editForm.public_event && (
               <div style={{ marginBottom: 12 }}>
                 <label style={inlineLabelStyle}>{t('label_eligible_plans')}</label>
@@ -919,6 +937,7 @@ export default function ActivityTypesPage() {
 
             <SectionHeader title={t('section_booking_access')} />
             <DetailRow label={t('label_public_event')} value={row.public_event ? t('public_event_yes') : t('public_event_no')} />
+            <DetailRow label={t('label_waitlist_mode')} value={t(`waitlist_mode_${row.waitlist_mode}` as any)} />
             {!row.public_event && (
               <div style={{ margin: '4px 0 10px' }}>
                 <span style={{ ...inlineLabelStyle, marginBottom: 6, display: 'block' }}>{t('label_eligible_plans')}</span>
@@ -1083,6 +1102,7 @@ export default function ActivityTypesPage() {
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={detailSectionLabelStyle}>{t('section_booking_access')}</div>
             <ModalDetail label={t('label_public_event')} value={details.public_event ? t('public_event_yes') : t('public_event_no')} />
+            <ModalDetail label={t('label_waitlist_mode')} value={t(`waitlist_mode_${details.waitlist_mode}` as any)} />
             {!details.public_event && (
               <div>
                 <span style={detailLabelStyle}>{t('label_eligible_plans')}</span>

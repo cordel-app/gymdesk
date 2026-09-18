@@ -878,7 +878,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
-- **#503 (in progress — stage 1 of a 9-stage plan agreed on the issue
+- **#503 (in progress — stages 1–2 of a 9-stage plan agreed on the issue
   thread)**: Members App — Align Calendar Event Information with Admin
   Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
   `calendar_events.kind ENUM('session','event')` (added by the #360
@@ -899,11 +899,25 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   deferred gaps: merging the two admin detail panels (`ClassSessionDetailPanel`
   vs `EventDetailsPanel` — no UI design has been specified for this yet), and
   extending member-facing discovery to rows without an `activity_type_id`
-  (the plan's stage 5, "Unified member read model"). Remaining stages
-  (waitlist mode, activity→event field propagation, member calendar UI,
-  Home/My Bookings updates, member notifications, tests/docs) are tracked on
-  #503 and land as separate PRs, each `Related to #503` until the final stage
-  closes it.
+  (the plan's stage 5, "Unified member read model"). Stage 2, "waitlist mode":
+  migration 153 adds `activity_types.waitlist_mode`
+  (`disabled`/`open`/`closed`, CHECK-constrained) with a nullable
+  per-occurrence override on `calendar_events.waitlist_mode`;
+  `bookMemberOnSession` resolves `COALESCE(ce.waitlist_mode,
+  at.waitlist_mode)` and now returns 409 instead of silently waitlisting an
+  over-capacity booking unless the effective mode is `open` — `force` still
+  books past capacity, and promoting someone already queued is deliberately
+  never gated. Pre-existing activity types are migrated to `open` (today's
+  behavior); new ones default to `disabled` per the issue thread. Admin
+  Activity Types page gets the selector in its Booking & Access section
+  (en/es/ca), the admin session panel hides "Add to waiting list" when the
+  waitlist isn't open, and `/me/schedule` reports `FULL` rather than
+  `WAITLIST_AVAILABLE` so members aren't offered a waitlist that would 409.
+  See `docs/decisions.md` #12. Remaining stages (activity→event field
+  propagation, activity end-date handling, unified member read model, local
+  filters, member calendar UI, Home/My Bookings updates, member
+  notifications, tests/docs) are tracked on #503 and land as separate PRs,
+  each `Related to #503` until the final stage closes it.
 
 ## Decisions
 
