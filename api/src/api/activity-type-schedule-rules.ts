@@ -4,9 +4,11 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 import {
   materializeScheduleRule,
   cancelFutureOccurrences,
+  cancelOccurrencesByIds,
   computeSlotSegments,
   findBookedFutureOccurrences,
   partitionBookedFutureOccurrences,
+  partitionOutOfRangeOccurrences,
   findOverlappingRules,
   rulesOverlap,
   type RuleWindowConfig,
@@ -391,20 +393,54 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
     && existingConfig.start_time === newConfig.start_time
     && existingConfig.end_time === newConfig.end_time;
 
-  // #482: never silently cancel an already-booked future occurrence. One that no
-  // longer fits the new window needs explicit staff confirmation before this
-  // edit touches anything; one that still fits is always preserved untouched.
-  const { preserved, impacted } = windowUnchanged
-    ? { preserved: [] as BookedOccurrence[], impacted: [] as BookedOccurrence[] }
-    : await partitionBookedFutureOccurrences(Number(ruleId), newConfig, gymTimezone);
-  if (impacted.length > 0 && req.body.confirm_cancel_booked !== true) {
-    const memberCount = new Set(impacted.flatMap((o) => o.member_ids)).size;
-    return res.status(409).json({
-      error: 'booked_occurrences_impacted',
-      message: `This change would cancel ${impacted.length} already-booked occurrence(s) affecting ${memberCount} member(s). Resend with confirm_cancel_booked: true to proceed — affected members will be notified.`,
-      impacted_occurrences: impacted.map((o) => ({ id: o.id, starts_at: o.starts_at, ends_at: o.ends_at, member_count: o.member_ids.length })),
-      member_count: memberCount,
-    });
+  // #503 stage 4: when *only* end_date moved (recurring types only — one_off has
+  // no end_date), diff surgically instead of the general cancel-everything-and-
+  // regenerate path below: an occurrence that stays within the new range, booked
+  // or not, must never be cancelled or regenerated; only occurrences the new
+  // end_date actually excludes are candidates for removal.
+  const endDateOnlyChanged = !windowUnchanged
+    && type !== 'one_off'
+    && existingConfig.type === newConfig.type
+    && existingConfig.start_date === newConfig.start_date
+    && existingConfig.weekday === newConfig.weekday
+    && JSON.stringify(existingConfig.weekdays) === JSON.stringify(newConfig.weekdays)
+    && existingConfig.ordinal === newConfig.ordinal
+    && existingConfig.start_time === newConfig.start_time
+    && existingConfig.end_time === newConfig.end_time;
+
+  // #482 / #503 stage 4: never silently cancel an already-booked future
+  // occurrence. One that no longer fits the new window/range needs explicit
+  // staff confirmation before this edit touches anything; one that still fits
+  // is always preserved untouched.
+  let preserved: BookedOccurrence[] = [];
+  let impacted: BookedOccurrence[] = [];
+  let outOfRangeIds: number[] = [];
+
+  if (endDateOnlyChanged) {
+    const { outOfRange } = await partitionOutOfRangeOccurrences(Number(ruleId), newConfig, gymTimezone);
+    const bookedOutOfRange = outOfRange.filter((o) => o.member_ids.length > 0);
+    if (bookedOutOfRange.length > 0 && req.body.confirm_cancel_booked !== true) {
+      const memberCount = new Set(bookedOutOfRange.flatMap((o) => o.member_ids)).size;
+      return res.status(409).json({
+        error: 'booked_occurrences_impacted',
+        message: `Shortening the end date would remove ${outOfRange.length} future occurrence(s), ${bookedOutOfRange.length} of which have ${memberCount} registered member(s). Resend with confirm_cancel_booked: true to proceed — affected members will be notified.`,
+        impacted_occurrences: bookedOutOfRange.map((o) => ({ id: o.id, starts_at: o.starts_at, ends_at: o.ends_at, member_count: o.member_ids.length })),
+        member_count: memberCount,
+      });
+    }
+    outOfRangeIds = outOfRange.map((o) => o.id);
+    impacted = bookedOutOfRange;
+  } else if (!windowUnchanged) {
+    ({ preserved, impacted } = await partitionBookedFutureOccurrences(Number(ruleId), newConfig, gymTimezone));
+    if (impacted.length > 0 && req.body.confirm_cancel_booked !== true) {
+      const memberCount = new Set(impacted.flatMap((o) => o.member_ids)).size;
+      return res.status(409).json({
+        error: 'booked_occurrences_impacted',
+        message: `This change would cancel ${impacted.length} already-booked occurrence(s) affecting ${memberCount} member(s). Resend with confirm_cancel_booked: true to proceed — affected members will be notified.`,
+        impacted_occurrences: impacted.map((o) => ({ id: o.id, starts_at: o.starts_at, ends_at: o.ends_at, member_count: o.member_ids.length })),
+        member_count: memberCount,
+      });
+    }
   }
 
   await db.query(
@@ -428,15 +464,27 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
   // `member_ids` omitted from the request body leaves the current assignment untouched.
   if (memberIds) await setRuleMembers(gymId, Number(ruleId), memberIds);
 
-  // Cancel future events for this rule — preserving booked occurrences that still
-  // fit the new window — then regenerate. Re-materialization re-books the
-  // (possibly updated) assigned Members on the new occurrences and skips slots
-  // that already exist as preserved rows.
-  await cancelFutureOccurrences(Number(ruleId), { preserveIds: preserved.map((o) => o.id) });
+  if (endDateOnlyChanged) {
+    // #503 stage 4: cancel only the occurrences the new end_date actually
+    // excludes — everything else (in-range, booked or not) is left completely
+    // untouched. Re-materialization then only inserts the additional occurrences
+    // a later end_date newly makes room for; it already skips any date that
+    // still exists as a non-cancelled row, so nothing in range is recreated.
+    await cancelOccurrencesByIds(outOfRangeIds);
+  } else {
+    // Cancel future events for this rule — preserving booked occurrences that still
+    // fit the new window — then regenerate. Re-materialization re-books the
+    // (possibly updated) assigned Members on the new occurrences and skips slots
+    // that already exist as preserved rows.
+    await cancelFutureOccurrences(Number(ruleId), { preserveIds: preserved.map((o) => o.id) });
+  }
   await materializeScheduleRule(Number(ruleId), gymTimezone);
 
   if (impacted.length > 0) {
-    notifyImpactedOccurrences(gymId, activityType.name, impacted, 'The availability schedule for this activity was changed');
+    notifyImpactedOccurrences(
+      gymId, activityType.name, impacted,
+      endDateOnlyChanged ? 'The activity’s schedule end date was shortened' : 'The availability schedule for this activity was changed',
+    );
   }
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);

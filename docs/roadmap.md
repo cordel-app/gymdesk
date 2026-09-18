@@ -878,7 +878,7 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `type IS NULL AND charge_type_id IS NOT NULL`, so custom Sellable Items are
   untouched). Regression tests added to `gyms.test.ts` (both provisioning
   paths) and `gym-charges.test.ts` (`GET /sellable-items` response).
-- **#503 (in progress — stages 1–3 of a 9-stage plan agreed on the issue
+- **#503 (in progress — stages 1–4 of a 9-stage plan agreed on the issue
   thread)**: Members App — Align Calendar Event Information with Admin
   Calendar. Stage 1, "drop the `kind` distinction": migration 152 removes
   `calendar_events.kind ENUM('session','event')` (added by the #360
@@ -929,11 +929,22 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   `ConfirmDialog` pattern used for the schedule-rules 409. `waitlist_mode` is
   excluded — it already reaches every event live via the existing
   `COALESCE` fallback, so there's nothing to propagate. See
-  `docs/architecture.md`'s Activity types row for the full behavior. Remaining
-  stages (activity end-date handling, unified member read model, local
-  filters, member calendar UI, Home/My Bookings updates, member
-  notifications, tests/docs) are tracked on #503 and land as separate PRs,
-  each `Related to #503` until the final stage closes it.
+  `docs/architecture.md`'s Activity types row for the full behavior. Stage 4,
+  "activity end-date special case": `PUT /activity-types/:id/schedule-rules/
+  :ruleId` now diffs surgically when only a recurring rule's `end_date`
+  changes, instead of the general #482 cancel-everything-and-regenerate path.
+  Occurrences that stay within the new range — booked or not — are never
+  touched; extending the end date only adds the newly in-range occurrences,
+  and shortening it removes only the now-out-of-range ones, 409ing with the
+  existing `booked_occurrences_impacted` shape (and notifying affected
+  members the same way #482 already does) when any of them are booked. No
+  schema change and no frontend change were needed: the Admin UI's existing
+  generic 409 `ConfirmDialog` and the member app's existing in-app
+  notifications center (`docs/architecture.md`'s Member Notifications row)
+  already cover this. Remaining stages (unified member read model, local
+  filters, member calendar UI, Home/My Bookings updates, tests/docs) are
+  tracked on #503 and land as separate PRs, each `Related to #503` until the
+  final stage closes it.
 
 ## Decisions
 
