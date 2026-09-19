@@ -1113,6 +1113,24 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   API cutover lands in a later stage; `promotion_charge_benefits` (the
   discount mechanism) is untouched, out of scope. Stages 2–4 (backend
   validation/endpoints, three-section frontend, tests/docs polish) remain.
+- **Done (continued)**: #550 stage 2 of 4 (backend validation + endpoints).
+  Three new sub-resources on `promotion-details.ts` —
+  `GET`/`PUT /promotions/:id/session-benefits`, `/oneoff-benefits`,
+  `/periodical-benefits` — backed by stage 1's `promotion_session`/
+  `promotion_oneoff`/`promotion_periodical` tables; same one-time-grant shape
+  as `/included-benefits` but keyed to a real Sellable Item (`gym_charge_id`),
+  with `PUT` enforcing tenant ownership, active/non-deleted status, no
+  duplicate `gym_charge_id` per request, a positive integer `quantity`, and
+  section-classification (`classifySellableItem()` must match the endpoint's
+  category). `POST /:id/duplicate` now also copies all three tables.
+  Integration tests added to `promotions.test.ts` (tenant isolation, auth,
+  happy path, classification/active-status/duplicate-id rejection, 403 for
+  non-admin, duplicate). The legacy `/period-benefits`
+  (non-Membership-Fee)/`/included-benefits` endpoints from stage 1 are left
+  untouched and still live alongside the three new ones — retiring them lands
+  with the stage-3 frontend cutover, not before, so the currently-live
+  Promotions UI never breaks mid-migration. Stages 3 (three-section frontend)
+  and 4 (tests/docs polish) remain.
 
 ## Decisions
 

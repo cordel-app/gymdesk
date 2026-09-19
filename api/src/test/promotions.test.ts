@@ -1098,3 +1098,185 @@ describe('Suitable Membership Plans', () => {
     expect(res.body).toEqual([]);
   });
 });
+
+// ─── Session / One-off / Periodical benefits (#550 stage 2) ───────────────────
+// Replaces the "quantity granted" half of Period/Included Benefits with three
+// tables keyed to a real Sellable Item (`gym_charges`) instead of the old
+// `charge_types` pseudo-catalog, classified via `classifySellableItem()`.
+
+async function createSellableItem(
+  gymId: string,
+  name: string,
+  type: 'sessions' | 'service' | 'fee' | 'merchandise' | 'other',
+  billingFrequency: string | null,
+  status: 'active' | 'inactive' = 'active',
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, status, is_system, currency)
+     VALUES (?, ?, ?, ?, ?, 0, 'EUR')`,
+    [gymId, name, type, billingFrequency, status],
+  );
+  return insertId;
+}
+
+describe.each([
+  { path: 'session-benefits', category: 'session' as const },
+  { path: 'oneoff-benefits', category: 'oneoff' as const },
+  { path: 'periodical-benefits', category: 'periodical' as const },
+])('$path', ({ path, category }) => {
+  let gymId: string;
+  let gymB: string;
+  let promoId: number;
+  let matchingItemId: number;
+  let mismatchedItemId: number;
+  let inactiveItemId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym(`SIB ${category} Gym`);
+    gymB = await createTestGym(`SIB ${category} Gym B`);
+    await createTestMembership(gymId, 'admin');
+    await createTestMembership(gymB, 'admin');
+    promoId = await createPromo(gymId, `SIB ${category} Promo`);
+
+    if (category === 'session') {
+      matchingItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+      mismatchedItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
+    } else if (category === 'oneoff') {
+      matchingItemId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
+      mismatchedItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+    } else {
+      matchingItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
+      mismatchedItemId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
+    }
+    inactiveItemId = await createSellableItem(gymId, 'Retired Item', 'other', null, 'inactive');
+  });
+
+  it(`GET /${path} returns empty initially`, async () => {
+    const res = await request
+      .get(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it(`PUT /${path} replaces all items for a matching Sellable Item`, async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: matchingItemId, quantity: 3 }] });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].gym_charge_id).toBe(matchingItemId);
+    expect(res.body[0].quantity).toBe(3);
+    expect(res.body[0].gym_charge_name).toBeDefined();
+  });
+
+  it(`GET /${path} returns saved items`, async () => {
+    const res = await request
+      .get(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+  });
+
+  it(`PUT /${path} rejects a Sellable Item that classifies into a different category`, async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: mismatchedItemId, quantity: 1 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it(`PUT /${path} rejects an inactive Sellable Item`, async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: inactiveItemId, quantity: 1 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it(`PUT /${path} rejects a non-positive quantity`, async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: matchingItemId, quantity: 0 }] });
+    expect(res.status).toBe(400);
+  });
+
+  it(`PUT /${path} rejects a duplicate gym_charge_id within the same request`, async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        items: [
+          { gym_charge_id: matchingItemId, quantity: 1 },
+          { gym_charge_id: matchingItemId, quantity: 2 },
+        ],
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it(`PUT /${path} is tenant-isolated (gym B cannot modify gym A promo)`, async () => {
+    const res = await request
+      .put(`/promotions/${promoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymB)
+      .send({ items: [] });
+    expect(res.status).toBe(404);
+  });
+
+  it(`PUT /${path} → 403 for a non-admin role`, async () => {
+    const trainerGymId = await createTestGym(`SIB ${category} Trainer Gym`);
+    await createTestMembership(trainerGymId, 'front_desk');
+    const trainerPromoId = await createPromo(trainerGymId, `SIB ${category} Trainer Promo`);
+    const res = await request
+      .put(`/promotions/${trainerPromoId}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', trainerGymId)
+      .send({ items: [] });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('Session / One-off / Periodical benefits — duplicate', () => {
+  let gymId: string;
+  let promoId: number;
+  let sessionItemId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('SIB Duplicate Gym');
+    await createTestMembership(gymId, 'admin');
+    promoId = await createPromo(gymId, 'SIB Duplicate Promo');
+    sessionItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+    await request
+      .put(`/promotions/${promoId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: sessionItemId, quantity: 2 }] });
+  });
+
+  it('duplicate copies session/one-off/periodical benefits', async () => {
+    const dupRes = await request
+      .post(`/promotions/${promoId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(dupRes.status).toBe(201);
+    const newId = dupRes.body.id;
+
+    const res = await request
+      .get(`/promotions/${newId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].gym_charge_id).toBe(sessionItemId);
+    expect(res.body[0].quantity).toBe(2);
+  });
+});
