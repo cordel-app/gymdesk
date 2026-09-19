@@ -8,6 +8,7 @@ import {
   replaceProfessionalServices,
   validateProfessionalServiceIds,
 } from '../domain/sellableItemProfessionalServices';
+import { classifySellableItem } from '../domain/sellableItemClassification';
 
 export const sellableItemsRouter = Router();
 
@@ -103,6 +104,13 @@ function attachPriceFields(row: any) {
   return { ...row, ...computePriceFields(row) };
 }
 
+// #550: exposes the single source of truth for how a Sellable Item classifies
+// into a Promotion benefit section, so Promotions can filter/group by this
+// server-computed field instead of re-deriving the type/frequency rules.
+function attachBenefitCategory(row: any) {
+  return { ...row, benefit_category: classifySellableItem(row) };
+}
+
 // #546: Professional Services can only be linked to Session-type ('sessions') items.
 const SESSION_TYPE = 'sessions';
 
@@ -145,7 +153,7 @@ sellableItemsRouter.get('/', async (req, res, next) => {
     sql += ' ORDER BY gc.is_system DESC, gc.name ASC';
     const { rows } = await db.query(sql, params);
     const psMap = await loadProfessionalServicesMap(rows.map((r: any) => r.id));
-    res.json(rows.map((r: any) => attachProfessionalServices(attachPriceFields(r), psMap)));
+    res.json(rows.map((r: any) => attachBenefitCategory(attachProfessionalServices(attachPriceFields(r), psMap))));
   } catch (err) { next(err); }
 });
 
@@ -160,7 +168,7 @@ sellableItemsRouter.get('/:id', async (req, res, next) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
-    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
+    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err) { next(err); }
 });
 
@@ -241,7 +249,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       entityName: name.trim(),
       next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids },
     });
-    res.status(201).json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
+    res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
   }
@@ -313,7 +321,7 @@ sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
       entityName: name,
       next: { name, type: orig.type, duplicated_from: Number(req.params.id), professional_service_ids: linkedServiceIds },
     });
-    res.status(201).json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
+    res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
   }
@@ -440,7 +448,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
       entityName: rows[0]?.name ?? rows[0]?.charge_type_name,
       next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids: professionalServiceIdsToPersist },
     });
-    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
+    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
   }
@@ -462,7 +470,7 @@ sellableItemsRouter.post('/:id/activate', requireRole('admin'), async (req, res,
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'activate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
+    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err) { next(err); }
 });
 
@@ -482,7 +490,7 @@ sellableItemsRouter.post('/:id/deactivate', requireRole('admin'), async (req, re
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'deactivate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
-    res.json(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
+    res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err) { next(err); }
 });
 

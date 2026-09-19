@@ -52,7 +52,20 @@ interface MembershipPlan {
   enrollment_status?: string | null;
 }
 interface AssociatedPlan { id: number; name: string }
-interface GymCharge { id: number; charge_type_name: string; charge_type_code: string; amount: string | null; availability: string }
+interface GymCharge {
+  id: number;
+  name: string;
+  type: string;
+  billing_frequency: string | null;
+  status: string;
+  // #550: server-computed via classifySellableItem() — the single source of
+  // truth for which Promotion benefit section a Sellable Item belongs to.
+  benefit_category: 'session' | 'oneoff' | 'periodical';
+  charge_type_name: string;
+  charge_type_code: string;
+  amount: string | null;
+  availability: string;
+}
 interface ChargeBenefit { id: number; gym_charge_id: number; action: string; value: string | null; gym_charge_name: string; gym_charge_availability: string }
 interface ChargeType { id: number; code: string; name: string; is_gym_charge: number }
 interface PeriodBenefit {
@@ -65,18 +78,28 @@ interface PeriodBenefit {
   frequency_unit: 'week' | 'month';
   duration_months: number | null;
   enabled: number;
-  // Only meaningful for the Membership Fee Benefits row (#551) — the generic
-  // Period Benefits section never sets these (Membership Fee has its own
-  // dedicated category and is excluded from Period Benefits entirely).
+  // Membership Fee Benefits (#551) is the only remaining user of this shape —
+  // the generic Period/Included Benefits it once coexisted with were retired
+  // in #550 stage 3, replaced by the Sellable-Item-keyed benefits below.
   action: string | null;
   value: string | null;
 }
-interface IncludedBenefit {
-  id: number;
-  charge_type_id: number;
-  charge_type_code: string;
-  charge_type_name: string;
+
+// #550 stage 3: Session / One-off / Periodical Benefits — replaces the old
+// Included Benefits + generic Period Benefits sections, keyed to a real
+// Sellable Item (`gym_charges`) instead of the old `charge_types`
+// pseudo-catalog. `gym_charge_*` fields come straight off GET
+// /promotions/:id/{session,oneoff,periodical}-benefits (joined server-side),
+// which is why an item that has since gone inactive still resolves to its
+// real name/status here instead of falling back to "#<id>" — same pattern as
+// Suitable Membership Plans (#554) and Suitable Membership Plans' `cachedPlans`.
+interface SellableItemBenefit {
+  gym_charge_id: number;
   quantity: number;
+  gym_charge_name: string;
+  gym_charge_type: string;
+  gym_charge_billing_frequency: string | null;
+  gym_charge_status: string;
 }
 
 const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
@@ -153,16 +176,18 @@ export default function PromotionsPage() {
   // to its name instead of falling back to "#<id>" (#554).
   const [cachedPlans, setCachedPlans] = useState<Record<number, AssociatedPlan[]>>({});
   const [cachedCb, setCachedCb] = useState<Record<number, ChargeBenefit[]>>({});
-  const [cachedPb, setCachedPb] = useState<Record<number, PeriodBenefit[]>>({});
-  const [cachedIb, setCachedIb] = useState<Record<number, IncludedBenefit[]>>({});
   const [cachedMf, setCachedMf] = useState<Record<number, PeriodBenefit | null>>({});
+  const [cachedSessionB, setCachedSessionB] = useState<Record<number, SellableItemBenefit[]>>({});
+  const [cachedOneoffB, setCachedOneoffB] = useState<Record<number, SellableItemBenefit[]>>({});
+  const [cachedPeriodicalB, setCachedPeriodicalB] = useState<Record<number, SellableItemBenefit[]>>({});
 
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [plansDraft, setPlansDraft] = useState<number[]>([]);
   const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
-  const [pbDraft, setPbDraft] = useState<PeriodBenefit[]>([]);
-  const [ibDraft, setIbDraft] = useState<IncludedBenefit[]>([]);
   const [mfDraft, setMfDraft] = useState<PeriodBenefit | null>(null);
+  const [sessionDraft, setSessionDraft] = useState<SellableItemBenefit[]>([]);
+  const [oneoffDraft, setOneoffDraft] = useState<SellableItemBenefit[]>([]);
+  const [periodicalDraft, setPeriodicalDraft] = useState<SellableItemBenefit[]>([]);
 
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -176,12 +201,28 @@ export default function PromotionsPage() {
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
-  // Sellable items = charge types that are not gym charges
-  const sellableItems = chargeTypes.filter((c) => !c.is_gym_charge);
-  // Membership Fee has its own dedicated benefit category (#551) — excluded
-  // from the generic Period Benefits item picker so it can't be configured twice.
-  const periodBenefitItems = sellableItems.filter((c) => c.code !== 'membership_fee');
   const membershipFeeName = chargeTypes.find((c) => c.code === 'membership_fee')?.name ?? 'Membership Fee';
+
+  // #550: active, tenant-scoped Sellable Items, grouped by the server-computed
+  // `benefit_category` — the only classification source of truth (never
+  // re-derived from name/type/frequency here). New selections only ever come
+  // from these three lists; an item already associated with a promotion but
+  // since deactivated is merged in separately per-row (see benefitRowOptions).
+  const activeSessionItems = gymCharges.filter((gc) => gc.benefit_category === 'session');
+  const activeOneoffItems = gymCharges.filter((gc) => gc.benefit_category === 'oneoff');
+  const activePeriodicalItems = gymCharges.filter((gc) => gc.benefit_category === 'periodical');
+
+  // Existing selections must remain visible/editable even after the
+  // underlying Sellable Item goes inactive (#550) — so a row's own saved
+  // gym_charge_id is always offered as an option, even if it fell out of the
+  // active-only `categoryItems` list above.
+  function benefitRowOptions(categoryItems: GymCharge[], row: SellableItemBenefit) {
+    const opts = categoryItems.map((c) => ({ id: c.id, name: c.name, inactive: false }));
+    if (!opts.some((o) => o.id === row.gym_charge_id)) {
+      opts.unshift({ id: row.gym_charge_id, name: row.gym_charge_name, inactive: true });
+    }
+    return opts;
+  }
 
   function defaultMfDraft(): PeriodBenefit {
     return {
@@ -309,21 +350,26 @@ export default function PromotionsPage() {
 
   async function loadSubResources(promoId: number) {
     try {
-      const [ap, cb, pb, ib, mf] = await Promise.all([
+      const [ap, cb, mf, sessionB, oneoffB, periodicalB] = await Promise.all([
         apiFetch<AssociatedPlan[]>(`/promotions/${promoId}/plans`),
         apiFetch<ChargeBenefit[]>(`/promotions/${promoId}/charge-benefits`),
-        apiFetch<PeriodBenefit[]>(`/promotions/${promoId}/period-benefits`),
-        apiFetch<IncludedBenefit[]>(`/promotions/${promoId}/included-benefits`),
         apiFetch<PeriodBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
+        apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/session-benefits`),
+        apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/oneoff-benefits`),
+        apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/periodical-benefits`),
       ]);
       setCachedPlans((prev) => ({ ...prev, [promoId]: ap }));
       setCachedCb((prev) => ({ ...prev, [promoId]: cb }));
-      setCachedPb((prev) => ({ ...prev, [promoId]: pb }));
-      setCachedIb((prev) => ({ ...prev, [promoId]: ib }));
       setCachedMf((prev) => ({ ...prev, [promoId]: mf }));
-      return { ap, cb, pb, ib, mf };
+      setCachedSessionB((prev) => ({ ...prev, [promoId]: sessionB }));
+      setCachedOneoffB((prev) => ({ ...prev, [promoId]: oneoffB }));
+      setCachedPeriodicalB((prev) => ({ ...prev, [promoId]: periodicalB }));
+      return { ap, cb, mf, sessionB, oneoffB, periodicalB };
     } catch {
-      return { ap: [] as AssociatedPlan[], cb: [], pb: [], ib: [], mf: null as PeriodBenefit | null };
+      return {
+        ap: [] as AssociatedPlan[], cb: [] as ChargeBenefit[], mf: null as PeriodBenefit | null,
+        sessionB: [] as SellableItemBenefit[], oneoffB: [] as SellableItemBenefit[], periodicalB: [] as SellableItemBenefit[],
+      };
     }
   }
 
@@ -344,14 +390,15 @@ export default function PromotionsPage() {
     setEditingId(promo.id);
     setEditForm(emptyEditForm(promo));
     setEditError(null);
-    const { ap, cb, pb, ib, mf } = await loadSubResources(promo.id);
+    const { ap, cb, mf, sessionB, oneoffB, periodicalB } = await loadSubResources(promo.id);
     setPlansDraft(ap.map((p) => p.id));
     const cbMap: Record<number, { action: string; value: string }> = {};
     for (const c of cb) cbMap[c.gym_charge_id] = { action: c.action, value: c.value ?? '' };
     setCbDraft(cbMap);
-    setPbDraft(pb.map((p) => ({ ...p })));
-    setIbDraft(ib.map((i) => ({ ...i })));
     setMfDraft(mf ? { ...mf } : defaultMfDraft());
+    setSessionDraft(sessionB.map((b) => ({ ...b })));
+    setOneoffDraft(oneoffB.map((b) => ({ ...b })));
+    setPeriodicalDraft(periodicalB.map((b) => ({ ...b })));
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
 
@@ -372,9 +419,10 @@ export default function PromotionsPage() {
     setEditForm(emptyEditForm());
     setPlansDraft([]);
     setCbDraft({});
-    setPbDraft([]);
-    setIbDraft([]);
     setMfDraft(defaultMfDraft());
+    setSessionDraft([]);
+    setOneoffDraft([]);
+    setPeriodicalDraft([]);
     setEditError(null);
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
@@ -433,21 +481,22 @@ export default function PromotionsPage() {
         body: JSON.stringify({ items: cbItems }),
       });
 
-      // Action/value are Membership Fee Benefits-only (#551) — the generic
-      // Period Benefits section can never contain that row (excluded server-side).
-      const pbItems = pbDraft.map((pb) => ({
-        charge_type_id: pb.charge_type_id,
-        quantity: pb.quantity,
-        frequency_interval: pb.frequency_interval,
-        frequency_unit: pb.frequency_unit,
-        duration_months: pb.duration_months ?? null,
-        enabled: pb.enabled,
-        action: null,
-        value: null,
-      }));
-      await apiFetch(`/promotions/${id}/period-benefits`, {
+      // #550: Session / One-off / Periodical Benefits, keyed to a real
+      // Sellable Item — server-side classification (classifySellableItem())
+      // is the enforcement backstop, this is just the replace-all payload shape.
+      const toBenefitItems = (draft: SellableItemBenefit[]) =>
+        draft.map((b) => ({ gym_charge_id: b.gym_charge_id, quantity: b.quantity }));
+      await apiFetch(`/promotions/${id}/session-benefits`, {
         method: 'PUT',
-        body: JSON.stringify({ items: pbItems }),
+        body: JSON.stringify({ items: toBenefitItems(sessionDraft) }),
+      });
+      await apiFetch(`/promotions/${id}/oneoff-benefits`, {
+        method: 'PUT',
+        body: JSON.stringify({ items: toBenefitItems(oneoffDraft) }),
+      });
+      await apiFetch(`/promotions/${id}/periodical-benefits`, {
+        method: 'PUT',
+        body: JSON.stringify({ items: toBenefitItems(periodicalDraft) }),
       });
 
       if (mfDraft) {
@@ -466,15 +515,6 @@ export default function PromotionsPage() {
           }),
         });
       }
-
-      const ibItems = ibDraft.map((ib) => ({
-        charge_type_id: ib.charge_type_id,
-        quantity: ib.quantity,
-      }));
-      await apiFetch(`/promotions/${id}/included-benefits`, {
-        method: 'PUT',
-        body: JSON.stringify({ items: ibItems }),
-      });
 
       setEditingId(null);
       setExpandedId(null);
@@ -513,53 +553,51 @@ export default function PromotionsPage() {
     }
   }
 
-  // ─── Period benefit draft helpers ─────────────────────────────────────────
-
-  function addPbRow() {
-    const firstCt = periodBenefitItems[0];
-    if (!firstCt) return;
-    setPbDraft((prev) => [
-      ...prev,
-      { id: -(Date.now()), charge_type_id: firstCt.id, charge_type_code: firstCt.code, charge_type_name: firstCt.name, quantity: 1, frequency_interval: 1, frequency_unit: 'month', duration_months: null, enabled: 1, action: null, value: null },
-    ]);
-  }
-
-  function updatePbRow(idx: number, patch: Partial<PeriodBenefit>) {
-    setPbDraft((prev) => prev.map((r, i) => {
-      if (i !== idx) return r;
-      const next = { ...r, ...patch };
-      if (patch.charge_type_id != null) {
-        const ct = periodBenefitItems.find((c) => c.id === patch.charge_type_id);
-        if (ct) { next.charge_type_code = ct.code; next.charge_type_name = ct.name; }
-      }
-      return next;
-    }));
-  }
-
   // ─── Membership Fee benefit draft helper (#551 — singleton) ──────────────
 
   function updateMfDraft(patch: Partial<PeriodBenefit>) {
     setMfDraft((prev) => (prev ? { ...prev, ...patch } : prev));
   }
 
-  // ─── Included benefit draft helpers ───────────────────────────────────────
+  // ─── Session / One-off / Periodical benefit draft helpers (#550) ─────────
+  // Shared by all three sections — the only difference between them is which
+  // `categoryItems` list (active Sellable Items of that classification) and
+  // which draft/setter they operate on.
 
-  function addIbRow() {
-    const firstCt = sellableItems[0];
-    if (!firstCt) return;
-    setIbDraft((prev) => [
+  function addBenefitRow(
+    setDraft: (fn: (prev: SellableItemBenefit[]) => SellableItemBenefit[]) => void,
+    categoryItems: GymCharge[],
+    draft: SellableItemBenefit[],
+  ) {
+    const next = categoryItems.find((c) => !draft.some((d) => d.gym_charge_id === c.id));
+    if (!next) return;
+    setDraft((prev) => [
       ...prev,
-      { id: -(Date.now()), charge_type_id: firstCt.id, charge_type_code: firstCt.code, charge_type_name: firstCt.name, quantity: 1 },
+      {
+        gym_charge_id: next.id, quantity: 1, gym_charge_name: next.name,
+        gym_charge_type: next.type, gym_charge_billing_frequency: next.billing_frequency,
+        gym_charge_status: next.status,
+      },
     ]);
   }
 
-  function updateIbRow(idx: number, patch: Partial<IncludedBenefit>) {
-    setIbDraft((prev) => prev.map((r, i) => {
+  function updateBenefitRow(
+    setDraft: (fn: (prev: SellableItemBenefit[]) => SellableItemBenefit[]) => void,
+    categoryItems: GymCharge[],
+    idx: number,
+    patch: Partial<SellableItemBenefit>,
+  ) {
+    setDraft((prev) => prev.map((r, i) => {
       if (i !== idx) return r;
       const next = { ...r, ...patch };
-      if (patch.charge_type_id != null) {
-        const ct = sellableItems.find((c) => c.id === patch.charge_type_id);
-        if (ct) { next.charge_type_code = ct.code; next.charge_type_name = ct.name; }
+      if (patch.gym_charge_id != null) {
+        const item = categoryItems.find((c) => c.id === patch.gym_charge_id);
+        if (item) {
+          next.gym_charge_name = item.name;
+          next.gym_charge_type = item.type;
+          next.gym_charge_billing_frequency = item.billing_frequency;
+          next.gym_charge_status = item.status;
+        }
       }
       return next;
     }));
@@ -635,6 +673,107 @@ export default function PromotionsPage() {
     if (action === 'fixed_price') return `${base} (${value.toFixed(2)}€)`;
     if (action === 'fixed_discount') return `${base} (-${value.toFixed(2)}€)`;
     return base;
+  }
+
+  // #550: shared row/grid renderer for the Session / One-off / Periodical
+  // Benefit sections — identical shape, differing only in which category's
+  // active items back the picker and whether the (read-only, Sellable-Item-
+  // derived) Frequency column is shown.
+  function renderSellableItemBenefitSection(opts: {
+    titleKey: string;
+    addKey: string;
+    draft: SellableItemBenefit[];
+    setDraft: (fn: (prev: SellableItemBenefit[]) => SellableItemBenefit[]) => void;
+    categoryItems: GymCharge[];
+    showFrequency: boolean;
+  }) {
+    const { titleKey, addKey, draft, setDraft, categoryItems, showFrequency } = opts;
+    const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.gym_charge_id === c.id));
+    return (
+      <div style={subSectionSt}>
+        <p style={sectionLabelSt}>{t(titleKey as any)}</p>
+        {draft.length > 0 && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: showFrequency ? '1.3fr 80px 100px 28px' : '1.3fr 80px 28px',
+              gap: '3px 8px', alignItems: 'center', marginBottom: 8,
+            }}
+          >
+            <span style={colHeaderSt}>{t('col_sellable_item')}</span>
+            <span style={colHeaderSt}>{t('col_quantity')}</span>
+            {showFrequency && <span style={colHeaderSt}>{t('col_frequency')}</span>}
+            <span />
+            {draft.map((row, idx) => (
+              <div key={row.gym_charge_id} style={{ display: 'contents' }}>
+                <select
+                  value={row.gym_charge_id}
+                  onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { gym_charge_id: parseInt(e.target.value, 10) })}
+                  style={inlineSelectSt}
+                >
+                  {benefitRowOptions(categoryItems, row).map((o) => (
+                    <option key={o.id} value={o.id}>{o.inactive ? `${o.name} ${t('inactive_item_tag')}` : o.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="number" min="1" value={row.quantity}
+                  onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { quantity: parseInt(e.target.value, 10) || 1 })}
+                  style={{ ...inlineSelectSt, width: '100%' }}
+                />
+                {showFrequency && (
+                  <span style={{ fontSize: 13, color: '#666' }}>
+                    {row.gym_charge_billing_frequency ? t(`frequency_${row.gym_charge_billing_frequency}` as any) : '—'}
+                  </span>
+                )}
+                <button
+                  onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}
+                >✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {hasMoreToAdd && (
+          <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={btnSmall('#6c63ff')}>{t(addKey as any)}</button>
+        )}
+      </div>
+    );
+  }
+
+  // Read-only counterpart of renderSellableItemBenefitSection, used by
+  // renderViewSection (card not in edit mode).
+  function renderSellableItemBenefitViewSection(
+    titleKey: string, emptyKey: string, rows: SellableItemBenefit[], showFrequency: boolean,
+  ) {
+    return (
+      <div style={subSectionSt}>
+        <p style={sectionLabelSt}>{t(titleKey as any)}</p>
+        {rows.length === 0
+          ? <p style={hintSt}>{t(emptyKey as any)}</p>
+          : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={thSt}>{t('col_sellable_item')}</th>
+                  <th style={thSt}>{t('col_quantity')}</th>
+                  {showFrequency && <th style={thSt}>{t('col_frequency')}</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.gym_charge_id}>
+                    <td style={tdSt}>{r.gym_charge_name}{r.gym_charge_status !== 'active' && ` ${t('inactive_item_tag')}`}</td>
+                    <td style={tdSt}>{r.quantity}</td>
+                    {showFrequency && (
+                      <td style={tdSt}>{r.gym_charge_billing_frequency ? t(`frequency_${r.gym_charge_billing_frequency}` as any) : '—'}</td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+      </div>
+    );
   }
 
   function renderTimeline() {
@@ -849,79 +988,20 @@ export default function PromotionsPage() {
           </div>
         )}
 
-        {/* Included Benefits */}
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_included_benefits')}</p>
-          {ibDraft.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 28px', gap: '3px 8px', alignItems: 'center', marginBottom: 8 }}>
-              <span style={colHeaderSt}>{t('col_sellable_item')}</span>
-              <span style={colHeaderSt}>{t('col_quantity')}</span>
-              <span />
-              {ibDraft.map((ib, idx) => (
-                <div key={ib.id} style={{ display: 'contents' }}>
-                  <select
-                    value={ib.charge_type_id}
-                    onChange={(e) => updateIbRow(idx, { charge_type_id: parseInt(e.target.value, 10) })}
-                    style={inlineSelectSt}
-                  >
-                    {sellableItems.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
-                  </select>
-                  <input type="number" min="1" value={ib.quantity} onChange={(e) => updateIbRow(idx, { quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                  <button onClick={() => setIbDraft((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}>✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-          {sellableItems.length > 0 && (
-            <button onClick={addIbRow} style={btnSmall('#6c63ff')}>{t('add_included_benefit')}</button>
-          )}
-        </div>
-
-        {/* Period Benefits */}
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_period_benefits')}</p>
-          {pbDraft.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 55px 55px 75px 70px 55px 24px', gap: '3px 8px', alignItems: 'center', marginBottom: 8 }}>
-              <span style={colHeaderSt}>{t('col_benefit_type')}</span>
-              <span style={colHeaderSt}>{t('col_quantity')}</span>
-              <span style={colHeaderSt}>{t('label_frequency_interval')}</span>
-              <span style={colHeaderSt}>{t('label_frequency_unit')}</span>
-              <span style={colHeaderSt}>{t('col_duration_months')}</span>
-              <span style={colHeaderSt}>{t('col_enabled')}</span>
-              <span />
-              {pbDraft.map((pb, idx) => (
-                <div key={pb.id} style={{ display: 'contents' }}>
-                  <select
-                    value={pb.charge_type_id}
-                    onChange={(e) => updatePbRow(idx, { charge_type_id: parseInt(e.target.value, 10) })}
-                    style={inlineSelectSt}
-                  >
-                    {periodBenefitItems.map((ct) => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
-                  </select>
-                  <input type="number" min="1" value={pb.quantity} onChange={(e) => updatePbRow(idx, { quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                  <input type="number" min="1" value={pb.frequency_interval} onChange={(e) => updatePbRow(idx, { frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                  <select value={pb.frequency_unit} onChange={(e) => updatePbRow(idx, { frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
-                    {FREQ_UNITS.map((u) => <option key={u} value={u}>{t(`frequency_${u}` as any)}</option>)}
-                  </select>
-                  <input
-                    type="number" min="1"
-                    value={pb.duration_months ?? ''}
-                    onChange={(e) => updatePbRow(idx, { duration_months: e.target.value ? parseInt(e.target.value, 10) : null })}
-                    placeholder="—"
-                    style={{ ...inlineSelectSt, width: '100%' }}
-                  />
-                  <label style={{ display: 'flex', justifyContent: 'center' }}>
-                    <input type="checkbox" checked={!!pb.enabled} onChange={(e) => updatePbRow(idx, { enabled: e.target.checked ? 1 : 0 })} />
-                  </label>
-                  <button onClick={() => setPbDraft((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}>✕</button>
-                </div>
-              ))}
-            </div>
-          )}
-          {periodBenefitItems.length > 0 && (
-            <button onClick={addPbRow} style={btnSmall('#6c63ff')}>{t('add_period_benefit')}</button>
-          )}
-        </div>
+        {/* Session / One-off / Periodical Benefits (#550) — Sellable-Item-keyed,
+            replacing the old charge_types-pseudo-catalog Included/Period Benefits. */}
+        {renderSellableItemBenefitSection({
+          titleKey: 'section_session_benefits', addKey: 'add_session_benefit',
+          draft: sessionDraft, setDraft: setSessionDraft, categoryItems: activeSessionItems, showFrequency: false,
+        })}
+        {renderSellableItemBenefitSection({
+          titleKey: 'section_oneoff_benefits', addKey: 'add_oneoff_benefit',
+          draft: oneoffDraft, setDraft: setOneoffDraft, categoryItems: activeOneoffItems, showFrequency: false,
+        })}
+        {renderSellableItemBenefitSection({
+          titleKey: 'section_period_benefits', addKey: 'add_period_benefit',
+          draft: periodicalDraft, setDraft: setPeriodicalDraft, categoryItems: activePeriodicalItems, showFrequency: true,
+        })}
 
         {/* Membership Fee Benefits (#551) — reuses the Period Benefits fields/
             validation/behaviour exactly; the item is hardcoded, never selectable. */}
@@ -1002,8 +1082,9 @@ export default function PromotionsPage() {
   function renderViewSection(promo: Promo) {
     const associatedPlans = cachedPlans[promo.id] ?? [];
     const cb = cachedCb[promo.id] ?? [];
-    const pb = cachedPb[promo.id] ?? [];
-    const ib = cachedIb[promo.id] ?? [];
+    const sessionB = cachedSessionB[promo.id] ?? [];
+    const oneoffB = cachedOneoffB[promo.id] ?? [];
+    const periodicalB = cachedPeriodicalB[promo.id] ?? [];
     const mf = cachedMf[promo.id] ?? null;
 
     const free = promo.free_months ?? 0;
@@ -1057,59 +1138,9 @@ export default function PromotionsPage() {
               ))}
         </div>
 
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_included_benefits')}</p>
-          {ib.length === 0
-            ? <p style={hintSt}>{t('no_included_benefits')}</p>
-            : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr>
-                    <th style={thSt}>{t('col_sellable_item')}</th>
-                    <th style={thSt}>{t('col_quantity')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ib.map((i) => (
-                    <tr key={i.id}>
-                      <td style={tdSt}>{i.charge_type_name}</td>
-                      <td style={tdSt}>{i.quantity}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-        </div>
-
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_period_benefits')}</p>
-          {pb.length === 0
-            ? <p style={hintSt}>{t('no_period_benefits')}</p>
-            : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr>
-                    <th style={thSt}>{t('col_benefit_type')}</th>
-                    <th style={thSt}>{t('col_quantity')}</th>
-                    <th style={thSt}>{t('col_frequency')}</th>
-                    <th style={thSt}>{t('col_duration_months')}</th>
-                    <th style={thSt}>{t('col_enabled')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pb.map((p) => (
-                    <tr key={p.id} style={{ opacity: p.enabled ? 1 : 0.45 }}>
-                      <td style={tdSt}>{p.charge_type_name}</td>
-                      <td style={tdSt}>{p.quantity}</td>
-                      <td style={tdSt}>{p.frequency_interval} {t(`frequency_${p.frequency_unit}` as any)}</td>
-                      <td style={tdSt}>{p.duration_months ?? '—'}</td>
-                      <td style={tdSt}>{p.enabled ? '✓' : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-        </div>
+        {renderSellableItemBenefitViewSection('section_session_benefits', 'no_session_benefits', sessionB, false)}
+        {renderSellableItemBenefitViewSection('section_oneoff_benefits', 'no_oneoff_benefits', oneoffB, false)}
+        {renderSellableItemBenefitViewSection('section_period_benefits', 'no_period_benefits', periodicalB, true)}
 
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_membership_fee_benefits')}</p>

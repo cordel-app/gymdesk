@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
-import { insertAndFetch } from '../infra/db-helpers';
 import {
   benefitTableForCategory,
   classifySellableItem,
@@ -17,8 +16,7 @@ async function verifyPromotion(gymId: string, promotionId: number) {
 
 // #551: Membership Fee Benefits is a UI-level category, not a new table — it's
 // the one promotion_period_benefits row whose charge_type is 'membership_fee',
-// pulled into its own singleton endpoint so it can't be clobbered by the
-// generic /period-benefits bulk-replace, and so the item can't be swapped out.
+// pulled into its own singleton endpoint so the item can't be swapped out.
 async function getMembershipFeeChargeTypeId(): Promise<number> {
   const { rows } = await db.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
   return rows[0].id;
@@ -173,76 +171,14 @@ promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req,
   } catch (err) { next(err); }
 });
 
-/* ---------- period benefits ---------- */
-
-promotionDetailsRouter.get('/period-benefits', async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = (req.params as any).id;
-  try {
-    // Membership Fee is its own category (#551) — excluded here, served by
-    // GET /membership-fee-benefit instead.
-    const { rows } = await db.query(
-      `SELECT ppb.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_period_benefits ppb
-       JOIN charge_types ct ON ct.id = ppb.charge_type_id
-       WHERE ppb.promotion_id = ? AND ppb.gym_id = ? AND ct.code != 'membership_fee'
-       ORDER BY ppb.id ASC`,
-      [promotionId, gymId],
-    );
-    res.json(rows);
-  } catch (err) { next(err); }
-});
-
-promotionDetailsRouter.put('/period-benefits', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = parseInt((req.params as any).id, 10);
-  const { items } = req.body;
-  if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
-  if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
-
-  for (const item of items) {
-    const err = validatePeriodBenefit(item);
-    if (err) return res.status(400).json({ error: err });
-  }
-
-  const membershipFeeId = await getMembershipFeeChargeTypeId();
-  if (items.some((i: any) => parseInt(i.charge_type_id, 10) === membershipFeeId)) {
-    return res.status(400).json({ error: 'Membership Fee benefits are managed via /membership-fee-benefit' });
-  }
-
-  try {
-    await db.transaction(async (tx) => {
-      // Never touches the Membership Fee row (#551) — that row lives in this
-      // same table but is owned by the /membership-fee-benefit singleton.
-      await tx.query(
-        'DELETE FROM promotion_period_benefits WHERE promotion_id = ? AND gym_id = ? AND charge_type_id != ?',
-        [promotionId, gymId, membershipFeeId],
-      );
-      for (const item of items) {
-        const dur = item.duration_months != null ? parseInt(item.duration_months, 10) : null;
-        const action = item.action ?? null;
-        const value = periodBenefitValue(action, item.value);
-        await tx.query(
-          'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [gymId, promotionId, item.charge_type_id, parseInt(item.quantity, 10), parseInt(item.frequency_interval, 10), item.frequency_unit, dur ?? null, item.enabled != null ? (item.enabled ? 1 : 0) : 1, action, value],
-        );
-      }
-    });
-    const { rows } = await db.query(
-      `SELECT ppb.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_period_benefits ppb
-       JOIN charge_types ct ON ct.id = ppb.charge_type_id
-       WHERE ppb.promotion_id = ? AND ppb.gym_id = ? AND ct.code != 'membership_fee'
-       ORDER BY ppb.id ASC`,
-      [promotionId, gymId],
-    );
-    res.json(rows);
-  } catch (err) { next(err); }
-});
+/* ---------- membership fee benefit config helpers ---------- */
+// Shared by the /membership-fee-benefit singleton below. The generic
+// Period/Included Benefits CRUD that used to share these (keyed to the old
+// `charge_types` pseudo-catalog) was retired in #550 stage 3 — replaced by
+// the Sellable-Item-keyed /session-benefits, /oneoff-benefits and
+// /periodical-benefits below.
 
 // Mirrors promotion_charge_benefits' action/value convention (#487 stage 1).
-// Stage 1 is display/config only — these fields have no effect on real
-// billing yet (that wiring is stage 2/3, a separate future PR).
 const PERIOD_BENEFIT_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
 
 function validatePeriodBenefit(body: any) {
@@ -273,94 +209,6 @@ function periodBenefitValue(action: any, value: any) {
   const needsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(action);
   return needsValue && value != null && value !== '' ? parseFloat(value) : null;
 }
-
-promotionDetailsRouter.post('/period-benefits', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = parseInt((req.params as any).id, 10);
-  const err = validatePeriodBenefit(req.body);
-  if (err) return res.status(400).json({ error: err });
-  if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
-
-  const membershipFeeId = await getMembershipFeeChargeTypeId();
-  if (parseInt(req.body.charge_type_id, 10) === membershipFeeId) {
-    return res.status(400).json({ error: 'Membership Fee benefits are managed via /membership-fee-benefit' });
-  }
-
-  const { charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value } = req.body;
-  try {
-    const dur = duration_months != null ? parseInt(duration_months, 10) : null;
-    const act = action ?? null;
-    const val = periodBenefitValue(act, value);
-    const row = await insertAndFetch(
-      'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [gymId, promotionId, charge_type_id, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit, dur ?? null, enabled != null ? (enabled ? 1 : 0) : 1, act, val],
-      `SELECT ppb.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_period_benefits ppb
-       JOIN charge_types ct ON ct.id = ppb.charge_type_id
-       WHERE ppb.id = ?`,
-      (id) => [id],
-    );
-    res.status(201).json(row);
-  } catch (err) { next(err); }
-});
-
-promotionDetailsRouter.put('/period-benefits/:pbId', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = (req.params as any).id;
-  const { pbId } = req.params;
-  const err = validatePeriodBenefit(req.body);
-  if (err) return res.status(400).json({ error: err });
-
-  const membershipFeeId = await getMembershipFeeChargeTypeId();
-  if (parseInt(req.body.charge_type_id, 10) === membershipFeeId) {
-    return res.status(400).json({ error: 'Membership Fee benefits are managed via /membership-fee-benefit' });
-  }
-  const { rows: existingRows } = await db.query(
-    'SELECT charge_type_id FROM promotion_period_benefits WHERE id = ? AND promotion_id = ? AND gym_id = ?',
-    [pbId, promotionId, gymId],
-  );
-  if (existingRows.length === 0) return res.status(404).json({ error: 'Period benefit not found' });
-  if (existingRows[0].charge_type_id === membershipFeeId) {
-    return res.status(400).json({ error: 'Membership Fee benefits are managed via /membership-fee-benefit' });
-  }
-
-  const { charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value } = req.body;
-  try {
-    const dur = duration_months != null ? parseInt(duration_months, 10) : null;
-    const act = action ?? null;
-    const val = periodBenefitValue(act, value);
-    const { rowCount } = await db.query(
-      `UPDATE promotion_period_benefits
-         SET charge_type_id = ?, quantity = ?, frequency_interval = ?, frequency_unit = ?, duration_months = ?, enabled = ?, action = ?, value = ?
-       WHERE id = ? AND promotion_id = ? AND gym_id = ?`,
-      [charge_type_id, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit,
-       dur ?? null, enabled != null ? (enabled ? 1 : 0) : 1, act, val, pbId, promotionId, gymId],
-    );
-    if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Period benefit not found' });
-    const { rows } = await db.query(
-      `SELECT ppb.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_period_benefits ppb
-       JOIN charge_types ct ON ct.id = ppb.charge_type_id
-       WHERE ppb.id = ?`,
-      [pbId],
-    );
-    res.json(rows[0]);
-  } catch (err) { next(err); }
-});
-
-promotionDetailsRouter.delete('/period-benefits/:pbId', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = (req.params as any).id;
-  try {
-    const membershipFeeId = await getMembershipFeeChargeTypeId();
-    const { rowCount } = await db.query(
-      'DELETE FROM promotion_period_benefits WHERE id = ? AND promotion_id = ? AND gym_id = ? AND charge_type_id != ?',
-      [req.params.pbId, promotionId, gymId, membershipFeeId],
-    );
-    if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Period benefit not found' });
-    res.status(204).send();
-  } catch (err) { next(err); }
-});
 
 /* ---------- membership fee benefit (singleton; #551) ---------- */
 // Reuses the Period Benefits table/validation/action-value mechanism exactly
@@ -431,82 +279,18 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
   } catch (err) { next(err); }
 });
 
-/* ---------- included benefits ---------- */
-
-promotionDetailsRouter.get('/included-benefits', async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = (req.params as any).id;
-  try {
-    const { rows } = await db.query(
-      `SELECT pib.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_included_benefits pib
-       JOIN charge_types ct ON ct.id = pib.charge_type_id
-       WHERE pib.promotion_id = ? AND pib.gym_id = ?
-       ORDER BY pib.id ASC`,
-      [promotionId, gymId],
-    );
-    res.json(rows);
-  } catch (err) { next(err); }
-});
-
-promotionDetailsRouter.put('/included-benefits', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = parseInt((req.params as any).id, 10);
-  const { items } = req.body;
-  if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
-  if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
-
-  for (const item of items) {
-    if (!item.charge_type_id) return res.status(400).json({ error: 'charge_type_id is required' });
-    const qty = parseInt(item.quantity, 10);
-    if (isNaN(qty) || qty <= 0) return res.status(400).json({ error: 'quantity must be a positive integer' });
-  }
-
-  if (items.length > 0) {
-    const chargeTypeIds = items.map((i: any) => i.charge_type_id);
-    const placeholders = chargeTypeIds.map(() => '?').join(',');
-    const { rows: validTypes } = await db.query(
-      `SELECT id FROM charge_types WHERE is_gym_charge = 0 AND id IN (${placeholders})`,
-      chargeTypeIds,
-    );
-    if (validTypes.length !== chargeTypeIds.length) {
-      return res.status(400).json({ error: 'One or more charge types are invalid or are gym charges' });
-    }
-  }
-
-  try {
-    await db.transaction(async (tx) => {
-      await tx.query('DELETE FROM promotion_included_benefits WHERE promotion_id = ? AND gym_id = ?', [promotionId, gymId]);
-      for (const item of items) {
-        await tx.query(
-          'INSERT INTO promotion_included_benefits (gym_id, promotion_id, charge_type_id, quantity) VALUES (?, ?, ?, ?)',
-          [gymId, promotionId, item.charge_type_id, parseInt(item.quantity, 10)],
-        );
-      }
-    });
-    const { rows } = await db.query(
-      `SELECT pib.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_included_benefits pib
-       JOIN charge_types ct ON ct.id = pib.charge_type_id
-       WHERE pib.promotion_id = ? AND pib.gym_id = ?
-       ORDER BY pib.id ASC`,
-      [promotionId, gymId],
-    );
-    res.json(rows);
-  } catch (err) { next(err); }
-});
-
-/* ---------- session / one-off / periodical benefits (#550 stage 2) ---------- */
+/* ---------- session / one-off / periodical benefits (#550 stage 3) ---------- */
 // Replaces the "quantity granted" half of the legacy Period/Included Benefits
-// above (one-time-grant shape, same as Included Benefits) with three tables
+// (one-time-grant shape, same as the old Included Benefits) with three tables
 // keyed to a real Sellable Item (`gym_charges`, migration 155) instead of the
 // old `charge_types` pseudo-catalog, split by `classifySellableItem()` into
 // Session / One-off / Periodical. The legacy `/period-benefits` (excluding
-// Membership Fee, #551) and `/included-benefits` endpoints above are
-// deliberately left untouched and still live — the admin frontend still reads
-// them, and cutting it over is stage 3 of #550's staged plan; retiring the old
-// endpoints/tables happens together with that cutover so the currently-live
-// Promotions UI never breaks mid-migration.
+// Membership Fee, #551) and `/included-benefits` endpoints have been retired
+// (#550 stage 3) now that the admin frontend reads/writes these three
+// instead — `promotion_period_benefits` and `promotion_included_benefits`
+// stay in the schema (the former still backs `/membership-fee-benefit`
+// below; the latter is now unused but its data isn't backfilled anywhere per
+// the issue owner's explicit "start from scratch" instruction on #550).
 
 function selectSellableItemBenefits(table: string): string {
   return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
@@ -561,14 +345,31 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     }
 
     if (gymChargeIds.length > 0) {
+      // Only *newly* selected items must be active — an item already
+      // associated with this promotion stays selectable even if it has since
+      // gone inactive elsewhere, so existing selections remain visible/
+      // editable rather than silently 400ing the whole save (#550: "Existing
+      // selected items must remain visible when editing a promotion, even if
+      // they are now inactive"). Mirrors the Suitable Membership Plans PUT
+      // pattern above (`/plans`).
+      const { rows: existingAssoc } = await db.query(
+        `SELECT gym_charge_id FROM ${table} WHERE promotion_id = ? AND gym_id = ?`,
+        [promotionId, gymId],
+      );
+      const existingIds = new Set<number>(existingAssoc.map((r: any) => r.gym_charge_id));
+
       const placeholders = gymChargeIds.map(() => '?').join(',');
       const { rows: sellableItems } = await db.query(
-        `SELECT id, type, billing_frequency FROM gym_charges
-         WHERE gym_id = ? AND status = 'active' AND deleted_at IS NULL AND id IN (${placeholders})`,
+        `SELECT id, type, billing_frequency, status FROM gym_charges
+         WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
         [gymId, ...gymChargeIds],
       );
       if (sellableItems.length !== gymChargeIds.length) {
-        return res.status(400).json({ error: 'One or more Sellable Items not found or not active in this gym' });
+        return res.status(400).json({ error: 'One or more Sellable Items not found in this gym' });
+      }
+      const newlyInactive = sellableItems.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
+      if (newlyInactive) {
+        return res.status(400).json({ error: `Sellable Item ${newlyInactive.id} is not active in this gym` });
       }
       const mismatched = sellableItems.find((si: any) => classifySellableItem(si) !== category);
       if (mismatched) {

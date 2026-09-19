@@ -1131,6 +1131,35 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   with the stage-3 frontend cutover, not before, so the currently-live
   Promotions UI never breaks mid-migration. Stages 3 (three-section frontend)
   and 4 (tests/docs polish) remain.
+- **Done**: #550 stage 3 of 4 (three-section frontend cutover), with stage 4
+  (tests/docs polish) folded in rather than landing separately — this
+  completes the ticket. Admin Promotions page: Included Benefits and the
+  generic (non-Membership-Fee) Period Benefits sections are replaced by three
+  Sellable-Item-keyed sections — Session Benefits, One-off Benefits, Period
+  Benefits — reading/writing stage 2's `/session-benefits`/`/oneoff-benefits`/
+  `/periodical-benefits`. `GET /sellable-items` now returns a server-computed
+  `benefit_category` field (`classifySellableItem()` via a new
+  `attachBenefitCategory()` in `sellable-items.ts`) so the item pickers group
+  by that field instead of re-deriving the type/frequency rule client-side, per
+  CLAUDE.md's "no duplicated business logic in the frontend." Period Benefits'
+  Frequency column is read-only, sourced live from the Sellable Item's own
+  `billing_frequency` (never a per-benefit field, matching stage 1's schema).
+  New selections come from active, tenant-scoped Sellable Items only; an item
+  already selected on a promotion stays visible/editable even after going
+  inactive (fixed a stage-2 gap: `PUT` on the three endpoints now only
+  requires *newly* added `gym_charge_id`s to be active, mirroring the Suitable
+  Membership Plans `/plans` PUT pattern) — this was the ticket's explicit
+  "existing selected items must remain visible when editing" requirement.
+  Backend: the legacy `charge_types`-pseudo-catalog-driven `/period-benefits`
+  (bulk + single-row) and `/included-benefits` endpoints are removed outright;
+  `promotion_period_benefits` stays (still backs the untouched
+  `/membership-fee-benefit` singleton, #551) and `promotion_included_benefits`
+  stays but is now unused (no remaining write path; no data loss beyond what
+  migration 158 already reset, per the issue owner's "start from scratch"
+  clarification). New/updated tests in `promotions.test.ts` (removed tests for
+  the retired endpoints, added the "already-selected item stays selectable
+  after going inactive" case for all three categories) and `gym-charges.test.ts`
+  (`benefit_category` classification + presence on list/detail/create/update).
 
 ## Decisions
 
