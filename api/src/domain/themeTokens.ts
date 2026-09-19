@@ -28,6 +28,7 @@ export function defaultTokens() {
       textColor:                    '#111827', // "Primary Text Color" in the editor — same field, relabeled per #489 §19 (alias, not a new column)
       secondaryTextColor:           '#374151',
       mutedTextColor:               '#6b7280',
+      sectionHeadingTextColor:      '#888888',
       cardBackground:               '#ffffff',
       cardBorder:                   '#e5e7eb',
       separatorColor:               '#e5e7eb',
@@ -64,7 +65,7 @@ export function validateTokens(tokens: any): string | null {
   const { colors, typography } = tokens;
   if (colors) {
     const hexFields = [
-      'pageBackground', 'textColor', 'secondaryTextColor', 'mutedTextColor',
+      'pageBackground', 'textColor', 'secondaryTextColor', 'mutedTextColor', 'sectionHeadingTextColor',
       'cardBackground', 'cardBorder', 'separatorColor',
       'inputBorderColor', 'inputBackgroundColor',
       'headerBackground', 'headerText', 'headerSeparatorColor',

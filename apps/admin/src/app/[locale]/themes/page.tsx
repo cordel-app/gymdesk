@@ -392,11 +392,11 @@ export default function GymThemesPage() {
   function renderSection(title: string, key: SectionKey, content: React.ReactNode) {
     const open = openSections.has(key);
     return (
-      <div key={key} style={{ borderTop: '1px solid #eee' }}>
+      <div key={key} style={{ borderTop: '1px solid var(--gd-border, #eee)' }}>
         <button
           type="button"
           onClick={() => toggleSection(key)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#333', textAlign: 'left' }}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--gd-section-heading-text, #888888)', textAlign: 'left' }}
         >
           {title}
           <span style={{ fontSize: 12, color: '#aaa', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
@@ -415,7 +415,7 @@ export default function GymThemesPage() {
     const visibleCenters = showAllCenters ? filteredCenters : filteredCenters.slice(0, CENTERS_INITIAL_LIMIT);
     return (
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid #eee', marginBottom: 16, opacity: canAssign ? 1 : 0.5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid var(--gd-border, #eee)', marginBottom: 16, opacity: canAssign ? 1 : 0.5 }}>
           <input
             type="checkbox"
             id={`gym-default-${theme.id}`}
@@ -430,7 +430,7 @@ export default function GymThemesPage() {
           <p style={{ margin: '0 0 10px', fontWeight: 600, fontSize: 14 }}>{t('assign_centers_title')} ({assignments.centers.length})</p>
           <input type="text" value={centersSearch} onChange={(e) => { setCentersSearch(e.target.value); setShowAllCenters(false); }} placeholder={t('assign_centers_search')} style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ddd', fontSize: 14, marginBottom: 8, boxSizing: 'border-box' }} />
           {filteredCenters.length === 0 ? (
-            <p style={{ color: '#888', fontSize: 13 }}>{t('assign_no_centers')}</p>
+            <p style={{ color: 'var(--gd-text-muted, #6b7280)', fontSize: 13 }}>{t('assign_no_centers')}</p>
           ) : (
             <>
               {visibleCenters.map((center) => (
@@ -475,7 +475,7 @@ export default function GymThemesPage() {
     const dirty = isDirty();
 
     return (
-      <div style={{ padding: '0 24px 20px', borderTop: '1px solid #eee' }}>
+      <div style={{ padding: '0 24px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
         {isBase && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888', fontStyle: 'italic' }}>{t('read_only_hint')}</p>}
         {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
 
@@ -528,7 +528,7 @@ export default function GymThemesPage() {
             <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
           </div>
         ) : (
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', borderTop: '1px solid #eee', paddingTop: 16 }}>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
             <button onClick={handleCancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
             <button onClick={() => handleSaveAll(theme)} disabled={saving || !dirty} style={{ ...btnSmall('#6c63ff'), opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? 'not-allowed' : 'pointer' }}>
               {saving ? t('saving') : t('save_changes')}
