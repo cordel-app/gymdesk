@@ -699,6 +699,74 @@ describe('GET /sellable-items — computed price fields', () => {
   });
 });
 
+// ─── benefit_category (#550) ────────────────────────────────────────────────────
+// Server-computed via classifySellableItem() (api/src/domain/sellableItemClassification.ts)
+// — the single source of truth Promotions' Session/One-off/Periodical Benefit
+// pickers group by, instead of re-deriving the type/frequency rules client-side.
+
+describe('GET /sellable-items — benefit_category', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Benefit Category Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('classifies a Sessions-type item as session', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'BC Group Class', type: 'sessions' });
+    expect(res.status).toBe(201);
+    expect(res.body.benefit_category).toBe('session');
+  });
+
+  it('classifies a non-Sessions item with a recurring frequency as periodical', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'BC Locker Rental', type: 'service', billing_frequency: 'month' });
+    expect(res.status).toBe(201);
+    expect(res.body.benefit_category).toBe('periodical');
+  });
+
+  it('classifies a non-Sessions item with a non-recurring (or no) frequency as oneoff', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'BC Registration Fee', type: 'fee' });
+    expect(res.status).toBe(201);
+    expect(res.body.benefit_category).toBe('oneoff');
+  });
+
+  it('includes benefit_category on GET /sellable-items list and GET /:id', async () => {
+    const created = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'BC List Item', type: 'sessions' });
+    expect(created.status).toBe(201);
+
+    const list = await request
+      .get('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    const row = list.body.find((r: any) => r.id === created.body.id);
+    expect(row?.benefit_category).toBe('session');
+
+    const single = await request
+      .get(`/sellable-items/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(single.status).toBe(200);
+    expect(single.body.benefit_category).toBe('session');
+  });
+});
+
 // ─── Editing tax_rate_id (#368) ─────────────────────────────────────────────────
 
 describe('POST /sellable-items — tax_rate_id validation', () => {

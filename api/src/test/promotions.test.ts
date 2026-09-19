@@ -396,103 +396,14 @@ describe('GET /promotions/timeline', () => {
   });
 });
 
-// ─── Period benefits with duration_months ─────────────────────────────────────
-
-describe('Period benefits — duration_months', () => {
-  let gymId: string;
-  let promoId: number;
-  let chargeTypeId: number;
-
-  beforeAll(async () => {
-    gymId = await createTestGym('PB Gym');
-    await createTestMembership(gymId, 'admin');
-    promoId = await createPromo(gymId, 'PB Promo');
-    chargeTypeId = await getChargeTypeId('nutrition_service');
-  });
-
-  it('PUT /period-benefits stores duration_months', async () => {
-    const res = await request
-      .put(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({
-        items: [{
-          charge_type_id: chargeTypeId,
-          quantity: 1,
-          frequency_interval: 1,
-          frequency_unit: 'month',
-          duration_months: 3,
-          enabled: true,
-        }],
-      });
-    expect(res.status).toBe(200);
-    expect(res.body[0].duration_months).toBe(3);
-  });
-
-  it('GET /period-benefits returns duration_months', async () => {
-    const res = await request
-      .get(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body[0].duration_months).toBe(3);
-  });
-
-  it('PUT /period-benefits rejects invalid duration_months', async () => {
-    const res = await request
-      .put(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({
-        items: [{
-          charge_type_id: chargeTypeId,
-          quantity: 1,
-          frequency_interval: 1,
-          frequency_unit: 'month',
-          duration_months: -1,
-        }],
-      });
-    expect(res.status).toBe(400);
-  });
-});
-
-// ─── Period benefits — pre-existing rows without action/value (#487 stage 1) ──
-
-describe('Period benefits — pre-migration-shape rows', () => {
-  let gymId: string;
-  let promoId: number;
-
-  beforeAll(async () => {
-    gymId = await createTestGym('PB Shape Gym');
-    await createTestMembership(gymId, 'admin');
-    promoId = await createPromo(gymId, 'PB Shape Promo');
-  });
-
-  it('pre-existing (pre-migration-shape) period benefits without action/value remain valid', async () => {
-    // Insert directly, bypassing the API, to simulate a row written before action/value existed.
-    const nutritionCtId = await getChargeTypeId('nutrition_service');
-    await db.query(
-      `INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, enabled)
-       VALUES (?, ?, ?, 1, 1, 'month', 1)`,
-      [gymId, promoId, nutritionCtId],
-    );
-    const res = await request
-      .get(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.charge_type_id === nutritionCtId);
-    expect(row).toBeTruthy();
-    expect(row.action).toBeNull();
-    expect(row.value).toBeNull();
-  });
-});
-
 // ─── Membership Fee Benefits (#551) ────────────────────────────────────────────
 // Reuses the Period Benefits table/validation/action-value mechanism (#487
 // stage 1) exactly, as a singleton row whose charge_type is always
 // 'membership_fee', server-resolved — never accepted from the client. The
-// generic /period-benefits endpoints must never see or touch this row.
+// generic Period Benefits endpoints this once had to be isolated from were
+// retired in #550 stage 3 (superseded by /session-benefits, /oneoff-benefits,
+// /periodical-benefits below) — /membership-fee-benefit is now the only
+// writer of promotion_period_benefits.
 
 describe('Membership Fee Benefit', () => {
   let gymId: string;
@@ -722,58 +633,6 @@ describe('Membership Fee Benefit', () => {
     expect(res.status).toBe(403);
   });
 
-  // ─── Isolation from the generic /period-benefits section ────────────────
-
-  it('GET /period-benefits never includes the Membership Fee row', async () => {
-    const res = await request
-      .get(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body.find((r: any) => r.charge_type_code === 'membership_fee')).toBeUndefined();
-  });
-
-  it('PUT /period-benefits rejects a membership_fee charge_type_id', async () => {
-    const res = await request
-      .put(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ items: [{ charge_type_id: membershipFeeCtId, quantity: 1, frequency_interval: 1, frequency_unit: 'month' }] });
-    expect(res.status).toBe(400);
-  });
-
-  it('POST /period-benefits rejects a membership_fee charge_type_id', async () => {
-    const res = await request
-      .post(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ charge_type_id: membershipFeeCtId, quantity: 1, frequency_interval: 1, frequency_unit: 'month' });
-    expect(res.status).toBe(400);
-  });
-
-  it('bulk-saving the generic Period Benefits list never deletes the Membership Fee row', async () => {
-    const nutritionCtId = await getChargeTypeId('nutrition_service');
-    await request
-      .put(`/promotions/${promoId}/membership-fee-benefit`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send(mfBody({ action: 'waive' }));
-
-    const saveGeneric = await request
-      .put(`/promotions/${promoId}/period-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ items: [{ charge_type_id: nutritionCtId, quantity: 2, frequency_interval: 1, frequency_unit: 'week' }] });
-    expect(saveGeneric.status).toBe(200);
-
-    const mf = await request
-      .get(`/promotions/${promoId}/membership-fee-benefit`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(mf.status).toBe(200);
-    expect(mf.body).not.toBeNull();
-    expect(mf.body.action).toBe('waive');
-  });
 });
 
 // ─── Charge benefits — fixed_price action ─────────────────────────────────────
@@ -832,84 +691,6 @@ describe('Charge benefits — fixed_price action', () => {
         }],
       });
     expect(res.status).toBe(400);
-  });
-});
-
-// ─── Included benefits ────────────────────────────────────────────────────────
-
-describe('Included benefits', () => {
-  let gymId: string;
-  let gymB: string;
-  let promoId: number;
-  let chargeTypeId: number;
-  let gymChargeTypeId: number;
-
-  beforeAll(async () => {
-    gymId = await createTestGym('IB Gym');
-    gymB = await createTestGym('IB Gym B');
-    await createTestMembership(gymId, 'admin');
-    await createTestMembership(gymB, 'admin');
-    promoId = await createPromo(gymId, 'IB Promo');
-    chargeTypeId = await getChargeTypeId('personal_training');
-    // Get a gym_charge charge_type (is_gym_charge = 1)
-    const { rows } = await db.query<{ id: number }>(
-      'SELECT id FROM charge_types WHERE is_gym_charge = 1 LIMIT 1',
-    );
-    gymChargeTypeId = rows[0]?.id;
-  });
-
-  it('GET /included-benefits returns empty initially', async () => {
-    const res = await request
-      .get(`/promotions/${promoId}/included-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
-  });
-
-  it('PUT /included-benefits replaces all items', async () => {
-    const res = await request
-      .put(`/promotions/${promoId}/included-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({
-        items: [{ charge_type_id: chargeTypeId, quantity: 2 }],
-      });
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-    expect(res.body[0].charge_type_id).toBe(chargeTypeId);
-    expect(res.body[0].quantity).toBe(2);
-    expect(res.body[0].charge_type_name).toBeDefined();
-  });
-
-  it('GET /included-benefits returns saved items', async () => {
-    const res = await request
-      .get(`/promotions/${promoId}/included-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(1);
-  });
-
-  it('PUT /included-benefits rejects gym charge types (is_gym_charge=1)', async () => {
-    if (!gymChargeTypeId) return;
-    const res = await request
-      .put(`/promotions/${promoId}/included-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({
-        items: [{ charge_type_id: gymChargeTypeId, quantity: 1 }],
-      });
-    expect(res.status).toBe(400);
-  });
-
-  it('PUT /included-benefits is tenant-isolated (gym B cannot modify gym A promo)', async () => {
-    const res = await request
-      .put(`/promotions/${promoId}/included-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymB)
-      .send({ items: [] });
-    expect(res.status).toBe(404);
   });
 });
 
@@ -1198,6 +979,48 @@ describe.each([
       .set('x-gym-id', gymId)
       .send({ items: [{ gym_charge_id: inactiveItemId, quantity: 1 }] });
     expect(res.status).toBe(400);
+  });
+
+  // #550: "Existing selected items must remain visible when editing a
+  // promotion, even if they are now inactive" — a resubmit of an already-
+  // saved selection must not 400 just because the item went inactive after
+  // it was selected; only a *new* (not-yet-associated) inactive item is rejected.
+  it(`PUT /${path} keeps an already-selected Sellable Item that has since gone inactive`, async () => {
+    const goesInactivePromo = await createPromo(gymId, `SIB ${category} Deactivation Promo`);
+    const itemId = await createSellableItem(
+      gymId,
+      `${category} Later Inactive Item`,
+      category === 'session' ? 'sessions' : category === 'periodical' ? 'service' : 'fee',
+      category === 'periodical' ? 'month' : category === 'session' ? null : 'once',
+    );
+
+    const firstSave = await request
+      .put(`/promotions/${goesInactivePromo}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: itemId, quantity: 2 }] });
+    expect(firstSave.status).toBe(200);
+
+    await db.query("UPDATE gym_charges SET status = 'inactive' WHERE id = ?", [itemId]);
+
+    const resave = await request
+      .put(`/promotions/${goesInactivePromo}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: itemId, quantity: 3 }] });
+    expect(resave.status).toBe(200);
+    expect(resave.body).toHaveLength(1);
+    expect(resave.body[0].gym_charge_id).toBe(itemId);
+    expect(resave.body[0].quantity).toBe(3);
+    expect(resave.body[0].gym_charge_status).toBe('inactive');
+
+    const getRes = await request
+      .get(`/promotions/${goesInactivePromo}/${path}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body).toHaveLength(1);
+    expect(getRes.body[0].gym_charge_status).toBe('inactive');
   });
 
   it(`PUT /${path} rejects a non-positive quantity`, async () => {
