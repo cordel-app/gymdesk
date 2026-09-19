@@ -1068,6 +1068,26 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   and the calendar detail panel's missing explicit `Booked` badge (booking
   is currently implied only by which action button renders, while My
   Bookings already shows one). This closes #503.
+- **#555 (done)**: Aligned Membership Plans' look and feel with Promotions —
+  presentation only, no migration, no API/business-logic changes. List
+  header now carries a lifecycle-status `StatusFilter` (reusing the
+  already-supported `GET /membership-plans?lifecycle_status=`, same as
+  Promotions), and the row's expand chevron moved from the first column to
+  just before the actions menu, matching Promotions' column order. Card
+  border/radius, the row/column-header padding, and each expanded section's
+  divider now match Promotions' `cardSt`/`rowSt`/`subSectionSt`/
+  `sectionLabelSt` styling (a border above each section instead of below its
+  label); the purple "editing" card highlight is now reserved for the
+  not-yet-saved new-plan row only, mirroring Promotions' own new-row
+  treatment. Wording aligned with Promotions for the shared charge-benefit
+  action labels (`no_benefit`/`waive`/`fixed_discount`, same enum on both
+  routers) and the "no charge benefits" empty state, in en/es/ca. Also fixed
+  a few pre-existing i18n bugs surfaced along the way: the Included Services
+  section header referenced a missing `plans.section_services` key (raw key
+  shown to English users; es/ca happened to still carry old duplicate
+  entries) — repointed to the correct `plans.section_allowances`; the
+  Activity picker's label and "Select…" placeholder were hardcoded English
+  instead of translated; en.json was missing `plans.add_price` entirely.
 
 ## Decisions
 
