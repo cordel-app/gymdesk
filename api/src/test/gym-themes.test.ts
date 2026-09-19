@@ -113,6 +113,7 @@ describe('Semantic color tokens (#489)', () => {
             separatorColor: '#abcdef',
             inputBorderColor: '#111111',
             inputBackgroundColor: '#222222',
+            sectionHeadingTextColor: '#333333',
           },
         },
       });
@@ -123,11 +124,13 @@ describe('Semantic color tokens (#489)', () => {
       separatorColor: '#abcdef',
       inputBorderColor: '#111111',
       inputBackgroundColor: '#222222',
+      sectionHeadingTextColor: '#333333',
     });
 
     const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [customThemeId]);
     const persisted = typeof rows[0].tokens === 'string' ? JSON.parse(rows[0].tokens) : rows[0].tokens;
     expect(persisted.colors.separatorColor).toBe('#abcdef');
+    expect(persisted.colors.sectionHeadingTextColor).toBe('#333333');
   });
 
   it('round-trips an `advanced` map unchanged on update (no duplication/loss of existing values)', async () => {

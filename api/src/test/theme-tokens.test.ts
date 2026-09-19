@@ -41,6 +41,11 @@ describe('validateTokens()', () => {
     expect(validateTokens({ colors: { inputBackgroundColor: 'nope' } })).toBe('colors.inputBackgroundColor must be a hex color like #rrggbb');
   });
 
+  it('validates the #558 sectionHeadingTextColor token', () => {
+    expect(validateTokens({ colors: { sectionHeadingTextColor: '#888888' } })).toBeNull();
+    expect(validateTokens({ colors: { sectionHeadingTextColor: 'nope' } })).toBe('colors.sectionHeadingTextColor must be a hex color like #rrggbb');
+  });
+
   it('rejects headerSeparatorHeight outside 0-20', () => {
     expect(validateTokens({ colors: { headerSeparatorHeight: 21 } })).toMatch(/headerSeparatorHeight/);
     expect(validateTokens({ colors: { headerSeparatorHeight: -1 } })).toMatch(/headerSeparatorHeight/);

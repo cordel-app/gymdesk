@@ -426,11 +426,11 @@ export default function ThemesPage() {
   function renderSection(key: SectionKey, title: string, content: React.ReactNode) {
     const open = openSections.has(key);
     return (
-      <div style={{ borderTop: '1px solid #eee' }}>
+      <div style={{ borderTop: '1px solid var(--gd-border, #eee)' }}>
         <button
           type="button"
           onClick={() => setOpenSections((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#333', textAlign: 'left' }}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--gd-section-heading-text, #888888)', textAlign: 'left' }}
         >
           {title}
           <span style={{ fontSize: 12, color: '#aaa', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>&#9662;</span>
@@ -445,11 +445,11 @@ export default function ThemesPage() {
   function renderReadOnly(theme: Theme) {
     const colors = theme.tokens?.colors ?? DEFAULT_TOKENS.colors;
     return (
-      <div style={{ padding: '16px 24px 20px', borderTop: '1px solid #eee' }}>
+      <div style={{ padding: '16px 24px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
           {COLOR_GROUPS.filter(({ fields }) => fields.length > 0).map(({ groupKey, fields }) => (
             <div key={groupKey}>
-              <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
+              <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: 'var(--gd-section-heading-text, #888888)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {fields.map(({ key, labelKey }) => (
                   <ColorSwatch key={key} color={colors[key] as string | undefined} title={`${t(labelKey as any)}: ${colors[key] ?? '?'}`} size={22} />
@@ -466,7 +466,7 @@ export default function ThemesPage() {
 
   function renderEditForm(id: string, isNew: boolean) {
     return (
-      <div style={{ padding: '0 24px 20px', borderTop: '1px solid #eee' }}>
+      <div style={{ padding: '0 24px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
         {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
 
         <div style={{ marginTop: 12 }}>
@@ -543,7 +543,7 @@ export default function ThemesPage() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end', borderTop: '1px solid #eee', paddingTop: 16 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button
             onClick={() => handleSave(id)}

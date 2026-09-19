@@ -26,6 +26,7 @@ export const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens[
       { key: 'textColor', labelKey: 'label_text_color' },
       { key: 'secondaryTextColor', labelKey: 'label_secondary_text_color' },
       { key: 'mutedTextColor', labelKey: 'label_muted_text_color' },
+      { key: 'sectionHeadingTextColor', labelKey: 'label_section_heading_text_color' },
     ],
   },
   {
@@ -127,7 +128,7 @@ export function ThemeColorsEditor({ tokens, onChange, namespace, t, readOnly }: 
     <div>
       {COLOR_GROUPS.map(({ groupKey, fields }) => (
         <div key={groupKey} style={{ marginBottom: 20 }}>
-          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey)}</p>
+          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: 'var(--gd-section-heading-text, #888888)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey)}</p>
           {fields.map(({ key, labelKey }) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey)}</span>

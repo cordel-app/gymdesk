@@ -17,6 +17,7 @@ export interface ThemeTokens {
     textColor: string;
     secondaryTextColor: string;
     mutedTextColor: string;
+    sectionHeadingTextColor: string;
     cardBackground: string;
     cardBorder: string;
     separatorColor: string;
@@ -62,6 +63,7 @@ export const DEFAULT_TOKENS: ThemeTokens = {
     textColor:                     '#111827',
     secondaryTextColor:            '#374151',
     mutedTextColor:                '#6b7280',
+    sectionHeadingTextColor:       '#888888',
     cardBackground:                '#ffffff',
     cardBorder:                    '#e5e7eb',
     separatorColor:                '#e5e7eb',
@@ -106,6 +108,7 @@ export function applyTokens(tokens: ThemeTokens) {
   el.style.setProperty('--gd-text',                  c.textColor);
   el.style.setProperty('--gd-text-secondary',        c.secondaryTextColor ?? DEFAULT_TOKENS.colors.secondaryTextColor);
   el.style.setProperty('--gd-text-muted',            c.mutedTextColor ?? DEFAULT_TOKENS.colors.mutedTextColor);
+  el.style.setProperty('--gd-section-heading-text',  c.sectionHeadingTextColor ?? DEFAULT_TOKENS.colors.sectionHeadingTextColor);
   el.style.setProperty('--gd-card-bg',               c.cardBackground);
   el.style.setProperty('--gd-card-border',           c.cardBorder);
   el.style.setProperty('--gd-border',                c.separatorColor ?? DEFAULT_TOKENS.colors.separatorColor);
