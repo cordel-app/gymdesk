@@ -1088,6 +1088,31 @@ Agent session prompts: `docs/agent-prompts.md`. Always implement via the GitHub 
   entries) — repointed to the correct `plans.section_allowances`; the
   Activity picker's label and "Select…" placeholder were hardcoded English
   instead of translated; en.json was missing `plans.add_price` entirely.
+- **Done (continued)**: #550 stage 1 of 4 (Redistribute Promotion Benefits by
+  Sellable Item Type and Frequency — schema + classification helper only, no
+  routers/frontend yet). New `promotion_session`/`promotion_oneoff`/
+  `promotion_periodical` tables (migration 155), each `gym_id`+`promotion_id`+
+  `gym_charge_id FK→gym_charges` (real Sellable Items, not the old
+  `charge_types` pseudo-catalog) + `quantity`, replacing the "quantity
+  granted" half of the legacy `promotion_period_benefits`/
+  `promotion_included_benefits` tables; shared pure
+  `classifySellableItem()`/`isRecurringFrequency()` helper in
+  `api/src/domain/sellableItemClassification.ts` (sessions type → session;
+  else recurring `billing_frequency` → periodical; else → oneoff), unit
+  tests in `sellable-item-classification.test.ts`. Skeleton snapshot tables
+  (migration 156, `user_membership_promotion_{session,oneoff,periodical}_snapshot`)
+  created schema-only for a future assignment-flow ticket — not yet written
+  to or read, kept as real rows (not JSON) alongside the existing
+  `user_membership_promotions.snapshot` JSON column (#511 stage 2) so a
+  member's granted benefits stay inspectable per-row. Follow-up migration 158
+  hard-deletes (`TRUNCATE`) the stale `promotion_period_benefits`/
+  `promotion_included_benefits` data per the issue owner's explicit
+  "start from scratch, no historical preservation" clarification — the two
+  tables are truncated, not dropped, since `promotion-details.ts`/
+  `promotions.ts`/the admin Promotions page still read/write them until the
+  API cutover lands in a later stage; `promotion_charge_benefits` (the
+  discount mechanism) is untouched, out of scope. Stages 2–4 (backend
+  validation/endpoints, three-section frontend, tests/docs polish) remain.
 
 ## Decisions
 
