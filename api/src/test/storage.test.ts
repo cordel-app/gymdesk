@@ -72,6 +72,29 @@ describe('isStorageConfigured()', () => {
   });
 });
 
+describe('getMissingStorageConfigKeys()', () => {
+  it('lists all four env vars when none are set', async () => {
+    const { getMissingStorageConfigKeys } = await import('../infra/storage');
+    expect(getMissingStorageConfigKeys()).toEqual([...ENV_KEYS]);
+  });
+
+  it('lists only the env vars that are unset', async () => {
+    process.env.CLOUDFLARE_R2_ENDPOINT = 'https://example.r2.cloudflarestorage.com';
+    process.env.CLOUDFLARE_R2_BUCKET = 'test-bucket';
+    const { getMissingStorageConfigKeys } = await import('../infra/storage');
+    expect(getMissingStorageConfigKeys()).toEqual([
+      'CLOUDFLARE_R2_ACCESS_KEY_ID',
+      'CLOUDFLARE_R2_SECRET_ACCESS_KEY',
+    ]);
+  });
+
+  it('is empty when all env vars are set', async () => {
+    setConfigured();
+    const { getMissingStorageConfigKeys } = await import('../infra/storage');
+    expect(getMissingStorageConfigKeys()).toEqual([]);
+  });
+});
+
 describe('initializeGymBucket()', () => {
   it('throws without touching the network when not configured', async () => {
     const { initializeGymBucket } = await import('../infra/storage');

@@ -35,8 +35,21 @@ function getConfig() {
 
 /** Whether this deployment has R2 configured at all (platform-wide, not per-gym). */
 export function isStorageConfigured(): boolean {
+  return getMissingStorageConfigKeys().length === 0;
+}
+
+/**
+ * Names of the CLOUDFLARE_R2_* env vars that are unset, so 503 responses can
+ * tell an admin exactly what's missing instead of a generic "not configured".
+ */
+export function getMissingStorageConfigKeys(): string[] {
   const { endpoint, accessKeyId, secretAccessKey, bucket } = getConfig();
-  return !!(endpoint && accessKeyId && secretAccessKey && bucket);
+  const missing: string[] = [];
+  if (!endpoint) missing.push('CLOUDFLARE_R2_ENDPOINT');
+  if (!accessKeyId) missing.push('CLOUDFLARE_R2_ACCESS_KEY_ID');
+  if (!secretAccessKey) missing.push('CLOUDFLARE_R2_SECRET_ACCESS_KEY');
+  if (!bucket) missing.push('CLOUDFLARE_R2_BUCKET');
+  return missing;
 }
 
 function getClient(): S3Client {

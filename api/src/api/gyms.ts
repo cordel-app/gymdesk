@@ -5,7 +5,7 @@ import { tenantContext, requireRole, requireSuperadmin } from '../infra/tenantCo
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { ASSIGNABLE_ROLES, AppRole } from '../infra/permissions';
-import { buildGymFolderPrefix, initializeGymBucket, isStorageConfigured } from '../infra/storage';
+import { buildGymFolderPrefix, getMissingStorageConfigKeys, initializeGymBucket, isStorageConfigured } from '../infra/storage';
 
 export const gymsRouter = Router();
 export const platformRouter = Router();
@@ -383,7 +383,11 @@ platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (re
   const gym = existing[0];
 
   if (!isStorageConfigured()) {
-    return res.status(503).json({ error: 'Cloudflare storage has not been configured for this deployment' });
+    const missingConfig = getMissingStorageConfigKeys();
+    return res.status(503).json({
+      error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+      missingConfig,
+    });
   }
 
   const folderPrefix: string = gym.storage_folder_prefix ?? buildGymFolderPrefix(gym.id, gym.name);
