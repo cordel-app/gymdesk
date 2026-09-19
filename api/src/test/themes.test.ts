@@ -426,6 +426,7 @@ describe('Semantic color tokens (#489)', () => {
             inputBorderColor: '#111111',
             inputBackgroundColor: '#222222',
             headerSeparatorColor: '#333333',
+            sectionHeadingTextColor: '#444444',
           },
         },
       });
@@ -436,6 +437,7 @@ describe('Semantic color tokens (#489)', () => {
       separatorColor: '#abcdef',
       inputBorderColor: '#111111',
       inputBackgroundColor: '#222222',
+      sectionHeadingTextColor: '#444444',
     });
     // Application separator and header separator remain independent settings (#489 §7).
     expect(res.body.tokens.colors.separatorColor).not.toBe(res.body.tokens.colors.headerSeparatorColor);
@@ -443,6 +445,7 @@ describe('Semantic color tokens (#489)', () => {
     const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [res.body.id]);
     const persisted = typeof rows[0].tokens === 'string' ? JSON.parse(rows[0].tokens) : rows[0].tokens;
     expect(persisted.colors.separatorColor).toBe('#abcdef');
+    expect(persisted.colors.sectionHeadingTextColor).toBe('#444444');
   });
 
   it('round-trips an unrecognized `advanced` map unchanged on update (no duplication/loss of existing values)', async () => {

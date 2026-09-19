@@ -9,6 +9,7 @@ import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
+import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { AssignPlanModal } from './AssignPlanModal';
@@ -161,6 +162,10 @@ export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Status filter (aligned with the Promotions list header — the list endpoint
+  // already supports ?lifecycle_status=, so this is presentation-only wiring)
+  const [statusFilter, setStatusFilter] = useState('');
+
   // Accordion expand (view mode)
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
@@ -244,7 +249,10 @@ export default function PlansPage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const data = await apiFetch<Plan[]>('/membership-plans');
+      const params = new URLSearchParams();
+      if (statusFilter) params.set('lifecycle_status', statusFilter);
+      const qs = params.toString();
+      const data = await apiFetch<Plan[]>(`/membership-plans${qs ? `?${qs}` : ''}`);
       setPlans(data);
     } catch (err: any) {
       setPlans([]);
@@ -254,7 +262,7 @@ export default function PlansPage() {
     }
   }
 
-  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading]);
+  useEffect(() => { if (!gymLoading) load(); }, [activeGymId, gymLoading, statusFilter]);
 
   // ─── Accordion toggle ───────────────────────────────────────────────────────
 
@@ -674,22 +682,30 @@ export default function PlansPage() {
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('plans.title')}</h1>
-        <button onClick={openInlineNew} style={btnStyle()} disabled={inlineNew !== null}>{t('plans.add')}</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <StatusFilter
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={LIFECYCLE_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
+            allLabel={t('status.all')}
+          />
+          <button onClick={openInlineNew} style={btnStyle()} disabled={inlineNew !== null}>{t('plans.add')}</button>
+        </div>
       </div>
 
       {/* Column headers */}
       {!loading && (plans.length > 0 || inlineNew) && (
         <div style={colHeaderStyle}>
-          <div style={{ width: 14, flexShrink: 0 }} />
           <div style={{ flex: 2 }}>{t('plans.col_name')}</div>
           <div style={{ flex: 3 }}>{t('plans.col_description')}</div>
           <div style={{ flex: 2 }}>{t('plans.col_created_by')}</div>
           <div style={{ minWidth: 100 }}>{t('plans.col_created_at')}</div>
           <div style={{ minWidth: 90 }}>{t('plans.col_status')}</div>
           <div style={{ minWidth: 90 }}>{t('plans.col_enrollment')}</div>
-          <div style={{ minWidth: 68 }} />
+          <div style={{ minWidth: 13, flexShrink: 0 }} />
+          <div style={{ minWidth: 32, flexShrink: 0 }} />
         </div>
       )}
 
@@ -719,10 +735,9 @@ export default function PlansPage() {
             ];
 
             return (
-              <div key={plan.id} style={cardStyle(isEditing)}>
+              <div key={plan.id} style={cardStyle(false)}>
                 {/* Row header */}
                 <div style={rowStyle} onClick={() => toggleExpand(plan.id)}>
-                  <span style={{ fontSize: 13, color: '#aaa', flexShrink: 0, display: 'inline-block', width: 14, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
                   <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {plan.name}
                   </div>
@@ -744,6 +759,7 @@ export default function PlansPage() {
                       label={t(`status.${plan.enrollment_status}`)}
                     />
                   </div>
+                  <span style={{ fontSize: 13, color: '#aaa', flexShrink: 0, display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
                   <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
                     <ContextMenu items={menuItems} ariaLabel={`Actions for ${plan.name}`} />
                   </div>
@@ -751,7 +767,7 @@ export default function PlansPage() {
 
                 {/* Inline edit form */}
                 {isEditing && (
-                  <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #ececf0)' }}>
+                  <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                       <div>
                         <label style={inlineLabelStyle}>{t('plans.label_name')} *</label>
@@ -862,7 +878,7 @@ export default function PlansPage() {
 
                 {/* Accordion detail sections (view mode only) */}
                 {isExpanded && !isEditing && (
-                  <div style={{ padding: '0 20px 16px', borderTop: '1px solid var(--gd-card-border, #ececf0)' }}>
+                  <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
                     <SectionHeader title={t('plans.section_status')} />
                     <DetailRow label={t('plans.label_lifecycle_status')} value={t(`status.${plan.lifecycle_status}`)} />
                     <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
@@ -931,7 +947,7 @@ export default function PlansPage() {
                         <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} description={t('plans.desc_auto_renew')} />
                       </>
                     ) : (
-                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_billing')}</p>
+                      <p style={hintSt}>{t('plans.no_billing')}</p>
                     )}
 
                     <SectionHeader
@@ -967,20 +983,20 @@ export default function PlansPage() {
                     )}
 
                     <SectionHeader
-                      title={t('plans.section_services')}
-                      action={allowanceForPlanId === plan.id ? null : <button onClick={() => openAddAllowance(plan.id)} style={linkBtn}>+ Add</button>}
+                      title={t('plans.section_allowances')}
+                      action={allowanceForPlanId === plan.id ? null : <button onClick={() => openAddAllowance(plan.id)} style={linkBtn}>{t('plans.add_allowance')}</button>}
                     />
                     {allowanceForPlanId === plan.id && (
                       <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                           <div>
-                            <label style={inlineLabelStyle}>Activity</label>
+                            <label style={inlineLabelStyle}>{t('plans.label_activity_type')}</label>
                             <select
                               value={allowanceForm.activity_type_id}
                               onChange={(e) => setAllowanceForm({ ...allowanceForm, activity_type_id: e.target.value })}
                               style={inlineSelectStyle}
                             >
-                              <option value="">Select…</option>
+                              <option value="">{t('plans.select_placeholder')}</option>
                               {activityTypes.map((at) => <option key={at.id} value={at.id}>{at.name}</option>)}
                             </select>
                           </div>
@@ -1036,7 +1052,7 @@ export default function PlansPage() {
                       </div>
                     )}
                     {(plan.allowances ?? []).length === 0 ? (
-                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_allowances')}</p>
+                      <p style={hintSt}>{t('plans.no_allowances')}</p>
                     ) : (
                       (plan.allowances ?? []).map((a) => (
                         <div key={a.id} style={benefitRowStyle}>
@@ -1098,14 +1114,14 @@ export default function PlansPage() {
                             </div>
                           </>
                         ) : (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').length === 0 ? (
-                          <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_charge_benefits')}</p>
+                          <p style={hintSt}>{t('plans.no_charge_benefits')}</p>
                         ) : (
                           (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').map((cb) => (
                             <div key={cb.id} style={benefitRowStyle}>
                               <span style={benefitNameStyle}>
                                 {cb.gym_charge_name}
                                 {cb.gym_charge_availability === 'unavailable' && (
-                                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 4 }}>Unavailable</span>
+                                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 3 }}>Unavailable</span>
                                 )}
                               </span>
                               <span style={benefitValueStyle}>{cb.action}{cb.value != null ? ` — ${cb.value}` : ''}</span>
@@ -1117,7 +1133,7 @@ export default function PlansPage() {
 
                     <SectionHeader
                       title={t('plans.section_prices')}
-                      action={priceForPlanId === plan.id ? null : <button onClick={() => openAddPrice(plan.id)} style={linkBtn}>+ Add</button>}
+                      action={priceForPlanId === plan.id ? null : <button onClick={() => openAddPrice(plan.id)} style={linkBtn}>{t('plans.add_price')}</button>}
                     />
                     <DetailRow
                       label={t('plans.label_tax_rate')}
@@ -1188,7 +1204,7 @@ export default function PlansPage() {
                       </div>
                     )}
                     {(plan.price_history ?? []).length === 0 ? (
-                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>{t('plans.no_prices')}</p>
+                      <p style={hintSt}>{t('plans.no_prices')}</p>
                     ) : (
                       (plan.price_history ?? []).map((row) => (
                         <div key={row.id} style={benefitRowStyle}>
@@ -1230,7 +1246,7 @@ export default function PlansPage() {
                         ))}
                       </>
                     ) : (
-                      <p style={{ fontSize: 13, color: '#888', margin: '4px 0 0' }}>
+                      <p style={hintSt}>
                         {plan.billing_forecast?.reason ?? t('plans.billing_forecast_unavailable')}
                       </p>
                     )}
@@ -1275,10 +1291,12 @@ export default function PlansPage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+// Divider-above-label pattern, matching Promotions' subSectionSt + sectionLabelSt
+// (see apps/admin/src/app/[locale]/promotions/page.tsx).
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--gd-card-border, #eee)', margin: '16px 0 8px', paddingBottom: 6 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</span>
+    <div style={{ ...subSectionSt, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      <span style={sectionLabelSt}>{title}</span>
       {action}
     </div>
   );
@@ -1309,21 +1327,24 @@ function DetailRow({ label, value, description }: { label: string; value: React.
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const cardStyle = (editing: boolean): React.CSSProperties => ({
-  border: editing ? '1.5px solid #4b45c6' : '1px solid var(--gd-card-border, #ececf0)',
-  borderRadius: 10,
+// Card border/radius match Promotions' cardSt; the highlighted variant is reserved
+// for the not-yet-saved "new plan" row, mirroring Promotions' "new" row treatment
+// (existing rows keep a plain border while being edited).
+const cardStyle = (highlighted: boolean): React.CSSProperties => ({
+  border: highlighted ? '1px solid #6c63ff' : '1px solid var(--gd-card-border, #e2e2e6)',
+  borderRadius: 8,
   overflow: 'hidden',
   background: 'var(--gd-card-bg, #ffffff)',
 });
 
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px',
   cursor: 'pointer', userSelect: 'none',
 };
 
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', padding: '4px 14px 6px', gap: 12,
-  fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em',
+  display: 'flex', alignItems: 'center', padding: '6px 20px', marginBottom: 4, gap: 12,
+  fontSize: 11, fontWeight: 600, color: '#999', textTransform: 'uppercase', letterSpacing: '0.04em',
 };
 
 const detailRowStyle: React.CSSProperties = {
@@ -1355,8 +1376,14 @@ const benefitValueStyle: React.CSSProperties = {
 };
 
 const inlineLabelStyle: React.CSSProperties = {
-  display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4,
+  display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4,
+  textTransform: 'uppercase', letterSpacing: '0.04em',
 };
+
+// Section divider + label, matching Promotions' subSectionSt / sectionLabelSt.
+const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
+const sectionLabelSt: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
+const hintSt: React.CSSProperties = { color: '#aaa', fontSize: 13, margin: 0 };
 
 const fieldDescStyle: React.CSSProperties = {
   fontSize: 12, color: '#888', marginTop: 2, marginBottom: 6,
