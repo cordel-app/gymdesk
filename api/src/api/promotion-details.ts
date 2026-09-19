@@ -2,6 +2,11 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { insertAndFetch } from '../infra/db-helpers';
+import {
+  benefitTableForCategory,
+  classifySellableItem,
+  SellableItemBenefitCategory,
+} from '../domain/sellableItemClassification';
 
 export const promotionDetailsRouter = Router({ mergeParams: true });
 
@@ -490,3 +495,99 @@ promotionDetailsRouter.put('/included-benefits', requireRole('admin'), async (re
     res.json(rows);
   } catch (err) { next(err); }
 });
+
+/* ---------- session / one-off / periodical benefits (#550 stage 2) ---------- */
+// Replaces the "quantity granted" half of the legacy Period/Included Benefits
+// above (one-time-grant shape, same as Included Benefits) with three tables
+// keyed to a real Sellable Item (`gym_charges`, migration 155) instead of the
+// old `charge_types` pseudo-catalog, split by `classifySellableItem()` into
+// Session / One-off / Periodical. The legacy `/period-benefits` (excluding
+// Membership Fee, #551) and `/included-benefits` endpoints above are
+// deliberately left untouched and still live — the admin frontend still reads
+// them, and cutting it over is stage 3 of #550's staged plan; retiring the old
+// endpoints/tables happens together with that cutover so the currently-live
+// Promotions UI never breaks mid-migration.
+
+function selectSellableItemBenefits(table: string): string {
+  return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
+                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status
+          FROM ${table} b
+          JOIN gym_charges gc ON gc.id = b.gym_charge_id
+          WHERE b.promotion_id = ? AND b.gym_id = ?
+          ORDER BY gym_charge_name ASC`;
+}
+
+const CATEGORY_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
+  { path: 'session-benefits', category: 'session' },
+  { path: 'oneoff-benefits', category: 'oneoff' },
+  { path: 'periodical-benefits', category: 'periodical' },
+];
+
+for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
+  const table = benefitTableForCategory(category);
+
+  promotionDetailsRouter.get(`/${path}`, async (req, res, next) => {
+    const { gymId } = getTenantContext(req);
+    const promotionId = (req.params as any).id;
+    try {
+      const { rows } = await db.query(selectSellableItemBenefits(table), [promotionId, gymId]);
+      res.json(rows);
+    } catch (err) { next(err); }
+  });
+
+  promotionDetailsRouter.put(`/${path}`, requireRole('admin'), async (req, res, next) => {
+    const { gymId, gymMembershipId } = getTenantContext(req);
+    const promotionId = parseInt((req.params as any).id, 10);
+    const { items } = req.body;
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
+    if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
+
+    const gymChargeIds: number[] = [];
+    const seen = new Set<number>();
+    for (const item of items) {
+      const gymChargeId = parseInt(item.gym_charge_id, 10);
+      const quantity = parseInt(item.quantity, 10);
+      if (!Number.isInteger(gymChargeId) || gymChargeId <= 0) {
+        return res.status(400).json({ error: 'gym_charge_id is required' });
+      }
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({ error: 'quantity must be a positive integer' });
+      }
+      if (seen.has(gymChargeId)) {
+        return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
+      }
+      seen.add(gymChargeId);
+      gymChargeIds.push(gymChargeId);
+    }
+
+    if (gymChargeIds.length > 0) {
+      const placeholders = gymChargeIds.map(() => '?').join(',');
+      const { rows: sellableItems } = await db.query(
+        `SELECT id, type, billing_frequency FROM gym_charges
+         WHERE gym_id = ? AND status = 'active' AND deleted_at IS NULL AND id IN (${placeholders})`,
+        [gymId, ...gymChargeIds],
+      );
+      if (sellableItems.length !== gymChargeIds.length) {
+        return res.status(400).json({ error: 'One or more Sellable Items not found or not active in this gym' });
+      }
+      const mismatched = sellableItems.find((si: any) => classifySellableItem(si) !== category);
+      if (mismatched) {
+        return res.status(400).json({ error: `Sellable Item ${mismatched.id} does not belong in the '${category}' category` });
+      }
+    }
+
+    try {
+      await db.transaction(async (tx) => {
+        await tx.query(`DELETE FROM ${table} WHERE promotion_id = ? AND gym_id = ?`, [promotionId, gymId]);
+        for (const item of items) {
+          await tx.query(
+            `INSERT INTO ${table} (gym_id, promotion_id, gym_charge_id, quantity, created_by_membership_id) VALUES (?, ?, ?, ?, ?)`,
+            [gymId, promotionId, parseInt(item.gym_charge_id, 10), parseInt(item.quantity, 10), gymMembershipId ?? null],
+          );
+        }
+      });
+      const { rows } = await db.query(selectSellableItemBenefits(table), [promotionId, gymId]);
+      res.json(rows);
+    } catch (err) { next(err); }
+  });
+}
