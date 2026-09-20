@@ -42,6 +42,75 @@ export interface MembershipRow {
 
 export type GrantStatus = 'granted' | 'already_granted' | 'invited';
 
+/**
+ * #594: one email is never both member and staff of the same gym. A staff
+ * member signs in with their work account; if the same person is also a
+ * member, that membership lives on a separate personal account. Both flows
+ * write the single `gym_memberships` row per (user, gym), so a collision would
+ * silently flip the role and break whichever app lost — refuse it instead.
+ */
+export const MEMBER_EMAIL_CONFLICT =
+  "This email is registered as a member of this gym. Use the staff member's work email for their login; membership stays on their personal email.";
+export const STAFF_EMAIL_CONFLICT =
+  'This email is a staff login for this gym. Use a personal email for the membership.';
+
+/**
+ * Staff side of the #594 guard. Throws 409 when the email belongs to an active
+ * member of the gym, or when the Clerk account behind it already holds a
+ * `member` row there. Returns the resolved Clerk user (or undefined) so the
+ * caller can hand it to `grantAccess` and skip a second lookup.
+ */
+export async function assertNotMemberEmail(gymId: string, rawEmail: string): Promise<any | undefined> {
+  const email = rawEmail.trim().toLowerCase();
+  const { rows: memberRows } = await db.query<{ id: number }>(
+    'SELECT id FROM members WHERE gym_id = ? AND LOWER(email) = ? AND deleted_at IS NULL LIMIT 1',
+    [gymId, email],
+  );
+  if (memberRows[0]) throw new AccessError(409, MEMBER_EMAIL_CONFLICT);
+
+  const clerkUser = await lookupClerkUser(email);
+  if (clerkUser) {
+    const { rows } = await db.query<{ role: string }>(
+      'SELECT role FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
+      [clerkUser.id, gymId],
+    );
+    if (rows[0]?.role === 'member') throw new AccessError(409, MEMBER_EMAIL_CONFLICT);
+  }
+  return clerkUser;
+}
+
+/**
+ * Member side of the #594 guard: true when the email is already a staff login
+ * in this gym — a Staff record with a linked membership, or a pending staff
+ * invitation placeholder. (A login with no Staff record, e.g. the gym owner,
+ * is caught by `/me/link`'s user-id check instead.)
+ */
+export async function isStaffLoginEmail(gymId: string, rawEmail: string): Promise<boolean> {
+  const email = rawEmail.trim().toLowerCase();
+  const { rows } = await db.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM (
+       SELECT s.id FROM staff s
+         JOIN gym_memberships gm ON gm.id = s.gym_membership_id
+        WHERE s.gym_id = ? AND LOWER(s.email) = ? AND s.deleted_at IS NULL
+       UNION ALL
+       SELECT gm.id FROM gym_memberships gm
+        WHERE gm.gym_id = ? AND gm.role != 'member' AND LOWER(gm.email) = ?
+     ) x`,
+    [gymId, email, gymId, email],
+  );
+  return Number(rows[0].n) > 0;
+}
+
+async function lookupClerkUser(email: string): Promise<any | undefined> {
+  try {
+    const { data } = await clerkClient.users.getUserList({ emailAddress: [email], limit: 1 });
+    return data[0];
+  } catch (err: any) {
+    console.error('Clerk getUserList error:', { message: err.message, status: err.status, errors: err.errors });
+    throw mapClerkError(err, 'Failed to lookup user');
+  }
+}
+
 export async function getMembership(id: number): Promise<MembershipRow | null> {
   const { rows } = await db.query<MembershipRow>('SELECT * FROM gym_memberships WHERE id = ?', [id]);
   return rows[0] ?? null;
@@ -81,19 +150,14 @@ function mapClerkError(err: any, fallback: string): AccessError {
  */
 export async function grantAccess(
   req: any,
-  opts: { gymId: string; email: string; role: AppRole; name: string },
+  opts: { gymId: string; email: string; role: AppRole; name: string; clerkUser?: any },
 ): Promise<{ status: GrantStatus; membershipId: number }> {
   const { gymId, role, name } = opts;
   const email = opts.email.trim().toLowerCase();
 
-  let existing: any;
-  try {
-    const { data } = await clerkClient.users.getUserList({ emailAddress: [email], limit: 1 });
-    existing = data[0];
-  } catch (err: any) {
-    console.error('Clerk getUserList error:', { message: err.message, status: err.status, errors: err.errors });
-    throw mapClerkError(err, 'Failed to lookup user');
-  }
+  // `clerkUser` is the user already resolved by assertNotMemberEmail (#594);
+  // callers that skipped that check get it looked up (and guarded) here.
+  const existing = 'clerkUser' in opts ? opts.clerkUser : await assertNotMemberEmail(gymId, email);
 
   if (existing) {
     const { rows } = await db.query<MembershipRow>(
@@ -101,6 +165,7 @@ export async function grantAccess(
       [existing.id, gymId],
     );
     const row = rows[0];
+    if (row?.role === 'member') throw new AccessError(409, MEMBER_EMAIL_CONFLICT);
     if (row) {
       if (row.role === role && row.name === name) return { status: 'already_granted', membershipId: row.id };
       // COALESCE so a blank name never clobbers one saved earlier (#504).

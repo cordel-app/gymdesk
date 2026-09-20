@@ -5,6 +5,7 @@ import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tena
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, handleDupEntry } from '../infra/db-helpers';
 import { validateDocumentId, maskDocumentId } from '../domain/documentId';
+import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
 
 /**
  * #513: never write the raw nif_nie_passport value into audit_logs — mask it
@@ -175,6 +176,9 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
   const docCheck = validateDocumentId(nif_nie_passport);
   if (!docCheck.valid) return res.status(400).json({ error: docCheck.message });
 
+  // #594: one email is never both member and staff of the same gym.
+  if (await isStaffLoginEmail(gymId, String(email))) return res.status(409).json({ error: STAFF_EMAIL_CONFLICT });
+
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
@@ -255,6 +259,8 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
     if (rows[0].clerk_user_id) return res.status(409).json({ error: 'This member already has portal access.' });
+    // #594: the row may predate a staff login on the same email — refuse to invite into a collision.
+    if (await isStaffLoginEmail(gymId, rows[0].email)) return res.status(409).json({ error: STAFF_EMAIL_CONFLICT });
 
     const invitation = await clerkClient.invitations.createInvitation({
       emailAddress: rows[0].email,

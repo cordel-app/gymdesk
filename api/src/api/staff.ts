@@ -7,6 +7,7 @@ import { AppRole, STAFF_PROFILES, roleForProfile } from '../infra/permissions';
 import {
   AccessError, MembershipRow, GrantStatus,
   getMembership, grantAccess, resendInvitation, revokeAccess, linkGymInvite, isPendingInvite,
+  assertNotMemberEmail,
 } from '../infra/staff-access';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
@@ -68,6 +69,7 @@ async function assertMembershipChange(
 async function grantForStaff(
   req: Request,
   staffRow: { id: number; gym_id: string; email: string; first_name: string; last_name: string; profile: string },
+  clerkUser?: any,
 ): Promise<{ status: GrantStatus | 'error'; error?: string }> {
   const role = roleForProfile(staffRow.profile)!;
   try {
@@ -76,12 +78,16 @@ async function grantForStaff(
       email: staffRow.email,
       role,
       name: `${staffRow.first_name} ${staffRow.last_name}`,
+      ...(clerkUser !== undefined ? { clerkUser } : {}),
     });
     await db.query('UPDATE staff SET gym_membership_id = ? WHERE id = ?', [result.membershipId, staffRow.id]);
     return { status: result.status };
   } catch (err: any) {
-    // The staff row is already saved — surface the failure so the admin can retry
-    // from the App access section instead of losing the HR record.
+    // A member/staff email collision (#594) is the caller's to report as 409 —
+    // callers check it before saving anything, so this only fires on a race.
+    if (err instanceof AccessError && err.status === 409) throw err;
+    // Any other failure: the staff row is already saved — surface it so the admin
+    // can retry from the App access section instead of losing the HR record.
     return { status: 'error', error: err instanceof AccessError ? err.message : (err?.message ?? 'Unknown error') };
   }
 }
@@ -270,6 +276,10 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if ('error' in centers) return res.status(400).json({ error: centers.error });
 
   try {
+    // #594: refuse before saving anything — a staff login must not share an
+    // email with a member of this gym. Also resolves the Clerk user once.
+    const clerkUser = await assertNotMemberEmail(gymId, email);
+
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO staff (
@@ -315,7 +325,7 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
     // Access is granted only for employees who are active today; an inactive
     // hire gets a login when they are (re)activated / invited from the form.
     const access = (employment_status ?? 'active') === 'active'
-      ? await grantForStaff(req, { id: insertId, gym_id: gymId, email, first_name, last_name, profile })
+      ? await grantForStaff(req, { id: insertId, gym_id: gymId, email, first_name, last_name, profile }, clerkUser)
       : { status: 'not_enrolled' as const };
 
     const { rows } = await db.query(
@@ -334,7 +344,7 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
     res.status(201).json({ ...created, access });
   } catch (err: any) {
-    next(err);
+    accessErrorToResponse(err, res, next);
   }
 });
 
@@ -372,6 +382,9 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   }
 
   try {
+    // #594: a changed email must not collide with a member of this gym.
+    if (nextEmail !== String(prev.email).trim().toLowerCase()) await assertNotMemberEmail(gymId, nextEmail);
+
     await db.query(
       `UPDATE staff SET
         first_name = ?, last_name = ?, email = ?, mobile_phone = ?, profile_photo_url = ?,
