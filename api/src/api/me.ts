@@ -13,6 +13,7 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
+import { STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -302,6 +303,17 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
       return res.status(404).json({ error: 'No pending invitation found for this email in this gym.' });
     }
     const member = memberRows[0];
+
+    // #594: this Clerk account may already be a staff login in the gym (a Staff
+    // record, or the owner's admin row). INSERT IGNORE below would silently keep
+    // that role and leave the member "linked" but unable to use the member app.
+    const { rows: existing } = await db.query<{ role: string }>(
+      'SELECT role FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
+      [userId, gymId],
+    );
+    if (existing[0] && existing[0].role !== 'member') {
+      return res.status(409).json({ error: STAFF_EMAIL_CONFLICT });
+    }
 
     // Link the Clerk user and create membership in a transaction
     await db.transaction(async (tx) => {
