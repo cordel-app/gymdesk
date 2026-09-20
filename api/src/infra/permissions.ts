@@ -16,7 +16,7 @@ export type AppRole =
   | 'nutritionist'
   | 'member';
 
-/** All valid staff roles that can be assigned via the Team UI (excludes member). */
+/** All valid staff roles that can be granted to a Staff record (excludes member). */
 export const ASSIGNABLE_ROLES: AppRole[] = [
   'admin',
   'trainer_performance',
@@ -25,6 +25,27 @@ export const ASSIGNABLE_ROLES: AppRole[] = [
   'accountant',
   'nutritionist',
 ];
+
+/**
+ * #592: a Staff record's HR `profile` (the label the admin picks on the Staff
+ * form) determines the RBAC role of the gym_memberships row linked to it.
+ * The two lists are 1:1 by design — there is no separate role picker.
+ * Mirrored in apps/admin/src/config/permissions.ts for the form hint.
+ */
+export const PROFILE_ROLE_MAP: Record<string, AppRole> = {
+  'Gym Manager': 'admin',
+  'Personal Trainer': 'trainer_performance',
+  'Personal Trainer & Nutritionist': 'trainer_perf_nutrition',
+  'Front Desk': 'front_desk',
+  'Accountant': 'accountant',
+  'Nutritionist': 'nutritionist',
+};
+
+export const STAFF_PROFILES = Object.keys(PROFILE_ROLE_MAP);
+
+export function roleForProfile(profile: unknown): AppRole | null {
+  return PROFILE_ROLE_MAP[String(profile)] ?? null;
+}
 
 export type PermissionLevel =
   | 'RW'           // Full read + write

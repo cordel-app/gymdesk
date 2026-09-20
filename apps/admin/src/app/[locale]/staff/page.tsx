@@ -12,10 +12,13 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle, btnSmall } from '@/components/ui';
+import { PROFILE_ROLE_MAP } from '@/config/permissions';
 
 export interface StaffMember {
   id: number;
   gym_id: string;
+  /** #592: the gym_memberships row (login) this record owns, if any. */
+  gym_membership_id: number | null;
   first_name: string;
   last_name: string;
   email: string;
@@ -209,6 +212,8 @@ export default function StaffPage() {
   const [detailsCenters, setDetailsCenters] = useState<StaffCenterAssignment[]>([]);
   const [deleting, setDeleting] = useState<StaffMember | null>(null);
   const [deactivating, setDeactivating] = useState<StaffMember | null>(null);
+  const [revokingAccess, setRevokingAccess] = useState<StaffMember | null>(null);
+  const [accessBusy, setAccessBusy] = useState(false);
 
   const firstNameRef = useRef<HTMLInputElement>(null);
   const isAdmin = activeGym?.role === 'admin';
@@ -262,6 +267,15 @@ export default function StaffPage() {
     setTimeout(() => firstNameRef.current?.focus(), 50);
   }
 
+  function loadClerkStatus(staffId: number) {
+    setClerkStatus(null);
+    setClerkLoading(true);
+    apiFetch<ClerkStatus>(`/staff/${staffId}/clerk-status`)
+      .then(setClerkStatus)
+      .catch(() => setClerkStatus({ status: 'error', userId: null }))
+      .finally(() => setClerkLoading(false));
+  }
+
   function openExpand(member: StaffMember) {
     if (expandedId === member.id) { setExpandedId(null); setClerkStatus(null); return; }
     setForm({
@@ -273,12 +287,7 @@ export default function StaffPage() {
     });
     setExpandedId(member.id);
     setFormError(null);
-    setClerkStatus(null);
-    setClerkLoading(true);
-    apiFetch<ClerkStatus>(`/staff/${member.id}/clerk-status`)
-      .then(setClerkStatus)
-      .catch(() => setClerkStatus({ status: 'error', userId: null }))
-      .finally(() => setClerkLoading(false));
+    loadClerkStatus(member.id);
     setAssignedCenterIds(new Set());
     setDefaultCenterId(null);
     apiFetch<StaffCenterAssignment[]>(`/staff/${member.id}/centers`)
@@ -323,8 +332,16 @@ export default function StaffPage() {
           body.center_ids = Array.from(assignedCenterIds);
           body.default_center_id = defaultCenterId;
         }
-        await apiFetch('/staff', { method: 'POST', body: JSON.stringify(body) });
-        toast(t('created'));
+        const created = await apiFetch<StaffMember & { access?: { status: string; error?: string } }>(
+          '/staff', { method: 'POST', body: JSON.stringify(body) },
+        );
+        // The HR record is saved even when the login could not be set up — say so,
+        // the admin can retry from the App access section of the row.
+        if (created.access?.status === 'error') {
+          toast(t('created_access_error', { error: created.access.error ?? '' }));
+        } else {
+          toast(t('created'));
+        }
       } else {
         await apiFetch(`/staff/${expandedId}`, { method: 'PUT', body: JSON.stringify(form) });
         if (showCenters) {
@@ -353,6 +370,35 @@ export default function StaffPage() {
       toast(err.message ?? t('error_generic'));
     }
     setDeactivating(null);
+  }
+
+  async function handleGrantAccess(member: StaffMember) {
+    setAccessBusy(true);
+    try {
+      const res = await apiFetch<{ status: string }>(`/staff/${member.id}/access`, { method: 'POST' });
+      toast(t(res.status === 'granted' || res.status === 'already_granted' ? 'access_granted_toast' : 'access_invited_toast'));
+      loadClerkStatus(member.id);
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('access_error'));
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+
+  async function handleRevokeAccess(member: StaffMember) {
+    setAccessBusy(true);
+    try {
+      await apiFetch(`/staff/${member.id}/access`, { method: 'DELETE' });
+      toast(t('access_revoked_toast'));
+      loadClerkStatus(member.id);
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('access_error'));
+    } finally {
+      setAccessBusy(false);
+      setRevokingAccess(null);
+    }
   }
 
   async function handleDuplicate(member: StaffMember) {
@@ -470,6 +516,11 @@ export default function StaffPage() {
           <select style={selectStyle} value={form.profile ?? ''} onChange={(e) => patchForm({ profile: e.target.value })}>
             {PROFILES.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
+          {form.profile && PROFILE_ROLE_MAP[form.profile] && (
+            <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+              {t('access_role_hint', { role: t(`role_${PROFILE_ROLE_MAP[form.profile]}` as any) })}
+            </div>
+          )}
         </FormRow>
         <FormRow label={t('label_employment_status')}>
           <select style={selectStyle} value={form.employment_status ?? 'active'} onChange={(e) => patchForm({ employment_status: e.target.value as any })}>
@@ -619,6 +670,11 @@ export default function StaffPage() {
       return <p style={{ fontSize: 14, color: '#888' }}>{t('clerk_loading')}</p>;
     }
     const statusText = clerkStatusLabel(clerkStatus.status);
+    const member = typeof expandedId === 'number' ? rows.find((r) => r.id === expandedId) : undefined;
+    const role = form.profile ? PROFILE_ROLE_MAP[form.profile] : undefined;
+    const canInvite = clerkStatus.status === 'not_enrolled' || clerkStatus.status === 'error';
+    const canResend = clerkStatus.status === 'invited';
+    const canRevoke = clerkStatus.status !== 'not_enrolled';
     const dot = (
       <span style={{
         display: 'inline-block',
@@ -633,7 +689,23 @@ export default function StaffPage() {
     return (
       <div>
         {field(t('clerk_status_label'), <span>{dot}{statusText}</span>)}
+        {role && field(t('access_role_label'), t(`role_${role}` as any))}
         {clerkStatus.userId && field(t('clerk_user_id_label'), <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{clerkStatus.userId}</span>)}
+        <p style={{ fontSize: 12, color: '#888', margin: '0 0 12px 0' }}>{t('access_note')}</p>
+        {isAdmin && member && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {(canInvite || canResend) && (
+              <button type="button" onClick={() => handleGrantAccess(member)} disabled={accessBusy} style={btnSmall('#4c6ef5')}>
+                {canResend ? t('access_resend') : t('access_invite')}
+              </button>
+            )}
+            {canRevoke && (
+              <button type="button" onClick={() => setRevokingAccess(member)} disabled={accessBusy} style={btnSmall('#c0392b')}>
+                {t('access_revoke')}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -662,10 +734,12 @@ export default function StaffPage() {
             {renderNotes()}
           </div>
 
-          <div>
-            <p style={subsectionLabelStyle}>{t('section_clerk')}</p>
-            {renderClerk()}
-          </div>
+          {expandedId !== 'new' && (
+            <div>
+              <p style={subsectionLabelStyle}>{t('section_clerk')}</p>
+              {renderClerk()}
+            </div>
+          )}
         </div>
 
         {/* Error + actions */}
@@ -888,6 +962,17 @@ export default function StaffPage() {
         cancelLabel={t('cancel')}
         onConfirm={() => deactivating && handleDeactivate(deactivating)}
         onCancel={() => setDeactivating(null)}
+      />
+
+      {/* Revoke app access confirm */}
+      <ConfirmDialog
+        open={!!revokingAccess}
+        message={revokingAccess ? t('access_revoke_confirm', { name: `${revokingAccess.first_name} ${revokingAccess.last_name}` }) : ''}
+        confirmLabel={t('access_revoke')}
+        cancelLabel={t('cancel')}
+        busy={accessBusy}
+        onConfirm={() => revokingAccess && handleRevokeAccess(revokingAccess)}
+        onCancel={() => setRevokingAccess(null)}
       />
 
       {/* Delete confirm */}

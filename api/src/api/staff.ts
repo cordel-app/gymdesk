@@ -1,12 +1,90 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { AppRole, STAFF_PROFILES, roleForProfile } from '../infra/permissions';
+import {
+  AccessError, MembershipRow, GrantStatus,
+  getMembership, grantAccess, resendInvitation, revokeAccess, linkGymInvite, isPendingInvite,
+} from '../infra/staff-access';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
 export const staffRouter = Router();
+export const staffLinkRouter = Router();
+
+/**
+ * #592: every Staff record owns (at most) one gym_memberships row — the login
+ * behind it — via `staff.gym_membership_id`. Access is granted on creation
+ * with the role derived from the HR `profile` (see PROFILE_ROLE_MAP), kept in
+ * sync on update, and revoked on deactivate/delete. The old Team page
+ * (`gym-users.ts`) that used to manage gym_memberships directly is gone.
+ */
+
+function accessErrorToResponse(err: unknown, res: Response, next: NextFunction) {
+  if (err instanceof AccessError) return res.status(err.status).json({ error: err.message });
+  return next(err);
+}
+
+async function loadStaff(id: unknown, gymId: string): Promise<any | null> {
+  const { rows } = await db.query<any>(
+    'SELECT * FROM staff WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [id, gymId],
+  );
+  return rows[0] ?? null;
+}
+
+async function linkedMembership(staffRow: any): Promise<MembershipRow | null> {
+  return staffRow.gym_membership_id ? getMembership(staffRow.gym_membership_id) : null;
+}
+
+/** Self-edit + last-admin guards, carried over from the Team router. */
+async function assertMembershipChange(
+  req: Request,
+  membership: MembershipRow,
+  next: { role?: AppRole; remove?: boolean },
+): Promise<string | null> {
+  const { userId, gymId } = getTenantContext(req);
+  if (membership.user_id === userId) {
+    return next.remove
+      ? 'Cannot revoke your own access — ask a peer admin.'
+      : 'Cannot change your own role — ask a peer admin.';
+  }
+  const losesAdmin = membership.role === 'admin' && (next.remove || (next.role && next.role !== 'admin'));
+  if (losesAdmin && !isPendingInvite(membership)) {
+    const { rows } = await db.query<{ cnt: number }>(
+      "SELECT COUNT(*) AS cnt FROM gym_memberships WHERE gym_id = ? AND role = 'admin' AND status = 'active'",
+      [gymId],
+    );
+    if (Number(rows[0].cnt) <= 1) {
+      return next.remove ? 'Cannot revoke the last admin in this gym.' : 'Cannot demote the last admin in this gym.';
+    }
+  }
+  return null;
+}
+
+/** Grant access for a staff row and store the link. Returns what the API reports as `access`. */
+async function grantForStaff(
+  req: Request,
+  staffRow: { id: number; gym_id: string; email: string; first_name: string; last_name: string; profile: string },
+): Promise<{ status: GrantStatus | 'error'; error?: string }> {
+  const role = roleForProfile(staffRow.profile)!;
+  try {
+    const result = await grantAccess(req, {
+      gymId: staffRow.gym_id,
+      email: staffRow.email,
+      role,
+      name: `${staffRow.first_name} ${staffRow.last_name}`,
+    });
+    await db.query('UPDATE staff SET gym_membership_id = ? WHERE id = ?', [result.membershipId, staffRow.id]);
+    return { status: result.status };
+  } catch (err: any) {
+    // The staff row is already saved — surface the failure so the admin can retry
+    // from the App access section instead of losing the HR record.
+    return { status: 'error', error: err instanceof AccessError ? err.message : (err?.message ?? 'Unknown error') };
+  }
+}
 
 /**
  * #440: resolve a staff member's center assignment for creation. Mirrors
@@ -184,6 +262,9 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (!first_name || !last_name || !email || !profile || !hire_date) {
     return res.status(400).json({ error: 'first_name, last_name, email, profile, and hire_date are required' });
   }
+  if (!roleForProfile(profile)) {
+    return res.status(400).json({ error: `profile must be one of: ${STAFF_PROFILES.join(', ')}` });
+  }
 
   const centers = await resolveStaffCenters(gymId, center_ids, default_center_id);
   if ('error' in centers) return res.status(400).json({ error: centers.error });
@@ -231,6 +312,12 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
       return insertId;
     });
 
+    // Access is granted only for employees who are active today; an inactive
+    // hire gets a login when they are (re)activated / invited from the form.
+    const access = (employment_status ?? 'active') === 'active'
+      ? await grantForStaff(req, { id: insertId, gym_id: gymId, email, first_name, last_name, profile })
+      : { status: 'not_enrolled' as const };
+
     const { rows } = await db.query(
       `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ?`,
       [insertId],
@@ -245,7 +332,7 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
       next: created,
     });
 
-    res.status(201).json(created);
+    res.status(201).json({ ...created, access });
   } catch (err: any) {
     next(err);
   }
@@ -254,12 +341,8 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
 staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId } = getTenantContext(req);
 
-  const { rows: existing } = await db.query(
-    'SELECT * FROM staff WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [req.params.id, gymId],
-  );
-  if (!existing[0]) return res.status(404).json({ error: 'Staff member not found' });
-  const prev = existing[0];
+  const prev = await loadStaff(req.params.id, gymId);
+  if (!prev) return res.status(404).json({ error: 'Staff member not found' });
 
   const {
     first_name, last_name, email, mobile_phone, profile_photo_url,
@@ -269,6 +352,24 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
     working_days, work_start_time, work_end_time, break_duration_minutes, notes,
   } = req.body;
+
+  if (profile !== undefined && !roleForProfile(profile)) {
+    return res.status(400).json({ error: `profile must be one of: ${STAFF_PROFILES.join(', ')}` });
+  }
+
+  const nextProfile = profile ?? prev.profile;
+  const nextRole = roleForProfile(nextProfile);
+  const nextName = `${first_name ?? prev.first_name} ${last_name ?? prev.last_name}`;
+  const nextEmail = String(email ?? prev.email).trim().toLowerCase();
+
+  // A linked login follows the HR record: profile change → role change (guarded
+  // like the old Team role edit), name change → gm.name, and a changed email on
+  // a still-pending invite re-issues the invitation to the new address.
+  const membership = await linkedMembership(prev);
+  if (membership && nextRole && nextRole !== membership.role) {
+    const blocked = await assertMembershipChange(req, membership, { role: nextRole });
+    if (blocked) return res.status(400).json({ error: blocked });
+  }
 
   try {
     await db.query(
@@ -285,7 +386,7 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         first_name ?? prev.first_name, last_name ?? prev.last_name,
         email ?? prev.email, mobile_phone ?? null, profile_photo_url ?? null,
         date_of_birth ?? null, national_id ?? null,
-        profile ?? prev.profile, employment_status ?? prev.employment_status,
+        nextProfile, employment_status ?? prev.employment_status,
         current_status ?? prev.current_status,
         hire_date ?? prev.hire_date, contract_end_date ?? null, termination_date ?? null,
         direct_manager_id ?? null, employee_number ?? null,
@@ -297,6 +398,19 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         req.params.id, gymId,
       ],
     );
+
+    if (membership) {
+      const emailChanged = isPendingInvite(membership) && nextEmail !== String(prev.email).trim().toLowerCase();
+      if (emailChanged) {
+        await revokeAccess(req, membership, { deleteClerkUser: false });
+        await grantForStaff(req, { ...prev, id: prev.id, email: nextEmail, first_name: first_name ?? prev.first_name, last_name: last_name ?? prev.last_name, profile: nextProfile });
+      } else if (nextRole !== membership.role || nextName !== membership.name) {
+        await db.query('UPDATE gym_memberships SET role = ?, name = ? WHERE id = ?', [nextRole, nextName, membership.id]);
+        if (nextRole !== membership.role) {
+          recordAudit(req, { action: 'change_role', entityType: 'gym_user', entityId: String(membership.id), previous: { role: membership.role }, next: { role: nextRole } });
+        }
+      }
+    }
 
     const { rows } = await db.query(
       `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ?`,
@@ -315,30 +429,45 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 
     res.json(updated);
   } catch (err: any) {
-    next(err);
+    accessErrorToResponse(err, res, next);
   }
 });
 
-staffRouter.patch('/:id/deactivate', requireRole('admin'), async (req, res) => {
+staffRouter.patch('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId } = getTenantContext(req);
-  const { rowCount } = await db.query(
-    `UPDATE staff SET employment_status = 'inactive', updated_by = ?, updated_at = UTC_TIMESTAMP()
-     WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [userId ?? null, req.params.id, gymId],
-  );
-  if (rowCount === 0) return res.status(404).json({ error: 'Staff member not found' });
+  const staffRow = await loadStaff(req.params.id, gymId);
+  if (!staffRow) return res.status(404).json({ error: 'Staff member not found' });
 
-  const { rows } = await db.query(
-    `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ?`,
-    [req.params.id],
-  );
-  recordAudit(req, {
-    action: 'deactivate',
-    entityType: 'staff',
-    entityId: Number(req.params.id),
-    entityName: `${rows[0].first_name} ${rows[0].last_name}`,
-  });
-  res.json(rows[0]);
+  try {
+    // Deactivating an employee removes their login (a pending invite is revoked)
+    // but keeps the Clerk account — re-activation just needs a fresh invitation.
+    const membership = await linkedMembership(staffRow);
+    if (membership) {
+      const blocked = await assertMembershipChange(req, membership, { remove: true });
+      if (blocked) return res.status(400).json({ error: blocked });
+      await revokeAccess(req, membership, { deleteClerkUser: false });
+    }
+
+    await db.query(
+      `UPDATE staff SET employment_status = 'inactive', gym_membership_id = NULL, updated_by = ?, updated_at = UTC_TIMESTAMP()
+       WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+      [userId ?? null, req.params.id, gymId],
+    );
+
+    const { rows } = await db.query(
+      `SELECT ${STAFF_SELECT} ${STAFF_FROM} WHERE s.id = ?`,
+      [req.params.id],
+    );
+    recordAudit(req, {
+      action: 'deactivate',
+      entityType: 'staff',
+      entityId: Number(req.params.id),
+      entityName: `${rows[0].first_name} ${rows[0].last_name}`,
+    });
+    res.json(rows[0]);
+  } catch (err) {
+    accessErrorToResponse(err, res, next);
+  }
 });
 
 staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
@@ -409,19 +538,103 @@ staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) 
   }
 });
 
-staffRouter.delete('/:id', requireRole('admin'), async (req, res) => {
+staffRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId } = getTenantContext(req);
-  const { rowCount } = await db.query(
-    `UPDATE staff SET deleted_at = UTC_TIMESTAMP(), updated_by = ?, updated_at = UTC_TIMESTAMP()
-     WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [userId ?? null, req.params.id, gymId],
-  );
-  if (rowCount === 0) return res.status(404).json({ error: 'Staff member not found' });
+  const staffRow = await loadStaff(req.params.id, gymId);
+  if (!staffRow) return res.status(404).json({ error: 'Staff member not found' });
 
-  recordAudit(req, {
-    action: 'delete',
-    entityType: 'staff',
-    entityId: Number(req.params.id),
-  });
-  res.status(204).send();
+  try {
+    // Same semantics the Team page's Remove had: the Clerk account goes too when
+    // this gym was the user's last one, and that must succeed before we soft-delete.
+    const membership = await linkedMembership(staffRow);
+    if (membership) {
+      const blocked = await assertMembershipChange(req, membership, { remove: true });
+      if (blocked) return res.status(400).json({ error: blocked });
+      await revokeAccess(req, membership, { deleteClerkUser: true });
+    }
+
+    await db.query(
+      `UPDATE staff SET deleted_at = UTC_TIMESTAMP(), gym_membership_id = NULL, updated_by = ?, updated_at = UTC_TIMESTAMP()
+       WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+      [userId ?? null, req.params.id, gymId],
+    );
+
+    recordAudit(req, {
+      action: 'delete',
+      entityType: 'staff',
+      entityId: Number(req.params.id),
+    });
+    res.status(204).send();
+  } catch (err) {
+    accessErrorToResponse(err, res, next);
+  }
+});
+
+/**
+ * POST /staff/:id/access — grant, or re-send, app access for a staff member.
+ * Idempotent: not enrolled → grant/invite; pending invite → resend; active → no-op.
+ * This is the retry path when the automatic grant on creation failed.
+ */
+staffRouter.post('/:id/access', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const staffRow = await loadStaff(req.params.id, gymId);
+  if (!staffRow) return res.status(404).json({ error: 'Staff member not found' });
+  if (!roleForProfile(staffRow.profile)) {
+    return res.status(400).json({ error: `profile must be one of: ${STAFF_PROFILES.join(', ')}` });
+  }
+
+  try {
+    const membership = await linkedMembership(staffRow);
+    if (membership && isPendingInvite(membership)) {
+      await resendInvitation(req, membership);
+      return res.json({ status: 'reinvited' });
+    }
+    if (membership) return res.json({ status: 'already_granted' });
+
+    const access = await grantForStaff(req, staffRow);
+    if (access.status === 'error') return res.status(502).json({ error: access.error });
+    res.status(201).json(access);
+  } catch (err) {
+    accessErrorToResponse(err, res, next);
+  }
+});
+
+/**
+ * DELETE /staff/:id/access — revoke app access, leaving the HR record untouched.
+ * The Clerk account is kept, so access can be granted again later.
+ */
+staffRouter.delete('/:id/access', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const staffRow = await loadStaff(req.params.id, gymId);
+  if (!staffRow) return res.status(404).json({ error: 'Staff member not found' });
+
+  try {
+    const membership = await linkedMembership(staffRow);
+    if (!membership) return res.status(204).send();
+
+    const blocked = await assertMembershipChange(req, membership, { remove: true });
+    if (blocked) return res.status(400).json({ error: blocked });
+
+    await revokeAccess(req, membership, { deleteClerkUser: false });
+    await db.query('UPDATE staff SET gym_membership_id = NULL WHERE id = ?', [staffRow.id]);
+    res.status(204).send();
+  } catch (err) {
+    accessErrorToResponse(err, res, next);
+  }
+});
+
+/**
+ * POST /staff/link — called by the admin app on an invitee's first sign-in
+ * (mounted before tenantContext: no membership row exists yet). Materializes
+ * the gym_memberships row from the Clerk `gym_invite` metadata.
+ */
+staffLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
+  const userId = req.auth?.userId;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const row = await linkGymInvite(userId);
+    if (!row) return res.status(404).json({ error: 'No pending staff invitation found.' });
+    res.json(row);
+  } catch (err) { next(err); }
 });

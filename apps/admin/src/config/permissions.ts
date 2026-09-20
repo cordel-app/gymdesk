@@ -50,3 +50,17 @@ export const ASSIGNABLE_ROLES: AppRole[] = [
   'accountant',
   'nutritionist',
 ];
+
+/**
+ * #592: mirrors api/src/infra/permissions.ts PROFILE_ROLE_MAP — the RBAC role a
+ * Staff record's login receives is fixed by its HR profile. Frontend uses it only
+ * for the hint next to the Profile select; the backend is the source of truth.
+ */
+export const PROFILE_ROLE_MAP: Record<string, AppRole> = {
+  'Gym Manager': 'admin',
+  'Personal Trainer': 'trainer_performance',
+  'Personal Trainer & Nutritionist': 'trainer_perf_nutrition',
+  'Front Desk': 'front_desk',
+  'Accountant': 'accountant',
+  'Nutritionist': 'nutritionist',
+};

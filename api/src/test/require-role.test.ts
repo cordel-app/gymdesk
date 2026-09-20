@@ -23,27 +23,28 @@ describe('requireRole', () => {
 
   it('returns 401 when no Authorization header is sent', async () => {
     const res = await request
-      .get('/gym-users')
-      .set('x-gym-id', gymId);
+      .post('/staff')
+      .set('x-gym-id', gymId)
+      .send({});
 
     expect(res.status).toBe(401);
   });
 
-  it('returns 403 when a staff member hits an admin-only route (GET /gym-users)', async () => {
+  it('returns 403 when a staff member hits an admin-only route (PATCH /staff/:id/deactivate)', async () => {
     const res = await request
-      .get('/gym-users')
+      .patch('/staff/1/deactivate')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
 
     expect(res.status).toBe(403);
   });
 
-  it('returns 403 when a staff member tries to POST /gym-users (admin-only write)', async () => {
+  it('returns 403 when a staff member tries to POST /staff (admin-only write)', async () => {
     const res = await request
-      .post('/gym-users')
+      .post('/staff')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ email: 'new@example.com', role: 'front_desk' });
+      .send({ first_name: 'New', last_name: 'Hire', email: 'new@example.com', profile: 'Front Desk', hire_date: '2026-01-01' });
 
     expect(res.status).toBe(403);
   });

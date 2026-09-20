@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { verifyWebhook } from '@clerk/backend/webhooks';
-import { linkGymInvite } from './gym-users';
+import { linkGymInvite } from '../infra/staff-access';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 

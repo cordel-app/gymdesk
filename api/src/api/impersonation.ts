@@ -13,6 +13,13 @@ export const impersonationRouter = Router();
  * dialog (which only wants `type=member`). `type` is optional and, when
  * omitted, preserves the original combined behavior for backward compatibility.
  * Members are eligible regardless of whether they have a Clerk account.
+ *
+ * #592: staff targets are the gym's active logins enriched with the Staff
+ * record linked to them (`staff.gym_membership_id`), so the dialog shows the
+ * Staff Members page's names and profiles. A login with no Staff record (the
+ * gym owner's admin membership created at gym creation) is still listed under
+ * its membership name; a Staff record with no login is not — there is no
+ * identity to impersonate.
  */
 impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) => {
   const adminId = req.auth!.userId;
@@ -28,21 +35,25 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
   try {
     const like = `%${q}%`;
 
-    // Staff: all gym_memberships rows with non-member roles (no status filter — status is informational only).
-    // gym_memberships.name is nullable — staff granted via an existing Clerk user (as opposed to
-    // invited by email) are inserted without a name (see gym-users.ts POST /). A plain `name LIKE ?`
-    // filter excludes those rows entirely, since `NULL LIKE anything` is NULL, not true — so they
-    // never appeared in this list even for an empty search. Fall back to email, then user_id, for
-    // both matching and display so every staff row is always findable.
+    // Staff: all gym_memberships rows with non-member roles (no status filter — status is informational only),
+    // LEFT JOINed to the Staff record that owns the login (#592). Display name prefers the Staff
+    // record's first/last name; gym_memberships.name is nullable (legacy grants had none), so fall
+    // back to it, then email, then user_id for both matching and display — `NULL LIKE ?` is NULL,
+    // not true, so a plain `name LIKE ?` would silently drop those rows (#364).
     const staffRows = type === 'member' ? [] : (await db.query<{
       user_id: string; name: string; email: string | null; role: string; gym_id: string; status: string;
+      profile: string | null; staff_id: number | null;
     }>(
-      `SELECT gm.user_id, COALESCE(gm.name, gm.email, gm.user_id) AS name, gm.email, gm.role, gm.gym_id, gm.status
+      `SELECT gm.user_id,
+              COALESCE(CONCAT(s.first_name, ' ', s.last_name), gm.name, gm.email, gm.user_id) AS name,
+              COALESCE(s.email, gm.email) AS email,
+              gm.role, gm.gym_id, gm.status, s.profile, s.id AS staff_id
        FROM gym_memberships gm
+       LEFT JOIN staff s ON s.gym_membership_id = gm.id AND s.deleted_at IS NULL
        WHERE gm.gym_id = ?
          AND gm.user_id != ?
          AND gm.role != 'member'
-         AND COALESCE(gm.name, gm.email, gm.user_id) LIKE ?
+         AND COALESCE(CONCAT(s.first_name, ' ', s.last_name), gm.name, gm.email, gm.user_id) LIKE ?
        ORDER BY name ASC
        LIMIT 50`,
       [gymId, adminId, like],
@@ -66,7 +77,7 @@ impersonationRouter.get('/targets', requireSuperadmin, async (req, res, next) =>
     // are excluded because they carry no gym_memberships row (see tenantContext.ts:
     // "gymMembershipId: null for superadmins with no membership row").
     const staffFiltered = staffRows.map((s) => (
-      { id: s.user_id, name: s.name, email: s.email, type: 'staff', role: s.role, status: s.status, gymId: s.gym_id }
+      { id: s.user_id, name: s.name, email: s.email, type: 'staff', role: s.role, status: s.status, gymId: s.gym_id, profile: s.profile, staffId: s.staff_id }
     ));
 
     // Exclude caller from members list (if the superadmin also has a member row)
@@ -160,7 +171,10 @@ impersonationRouter.post('/:targetId', requireSuperadmin, async (req, res, next)
     // no gym_memberships row, so a superadmin target simply fails the lookup below with
     // "no membership in this gym" rather than needing an explicit superadmin check.
     const { rows } = await db.query<{ id: number; role: string; name: string }>(
-      `SELECT gm.id, gm.role, gm.name FROM gym_memberships gm
+      `SELECT gm.id, gm.role,
+              COALESCE(CONCAT(s.first_name, ' ', s.last_name), gm.name, gm.email, gm.user_id) AS name
+       FROM gym_memberships gm
+       LEFT JOIN staff s ON s.gym_membership_id = gm.id AND s.deleted_at IS NULL
        WHERE gm.user_id = ? AND gm.gym_id = ?`,
       [targetId, gymId],
     );
