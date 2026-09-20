@@ -24,7 +24,7 @@ function validateShape(body: any): string | null {
 }
 
 trainerAvailabilityRouter.get('/', async (req, res) => {
-  const { gymId, role, gymMembershipId } = getTenantContext(req);
+  const { gymId } = getTenantContext(req);
   const { center_id, trainer_membership_id, status } = req.query as Record<string, string | undefined>;
   const where: string[] = ['gym_id = ?', 'deleted_at IS NULL'];
   const params: any[] = [gymId];
@@ -50,7 +50,7 @@ trainerAvailabilityRouter.get('/:id', async (req, res) => {
 });
 
 trainerAvailabilityRouter.post('/', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
-  const { gymId, role, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id, is_recurring, weekday, specific_date, starts_time, ends_time, notes, status, center_id } = req.body;
 
   if (!trainer_membership_id) return res.status(400).json({ error: 'trainer_membership_id is required' });
@@ -87,7 +87,7 @@ trainerAvailabilityRouter.post('/', requireModuleWrite('ORGANIZATION'), async (r
 });
 
 trainerAvailabilityRouter.put('/:id', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
-  const { gymId, role, gymMembershipId } = getTenantContext(req);
+  const { gymId, gymMembershipId } = getTenantContext(req);
   const { rows: existingRows } = await db.query(
     'SELECT * FROM trainer_availability WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],

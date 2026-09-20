@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
+import { normalizeMuscleKey } from '../domain/muscles';
 
 export const platformExercisesRouter = Router();
 

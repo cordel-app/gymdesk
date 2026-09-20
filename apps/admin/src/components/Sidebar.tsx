@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
-import { navigationGroups, filterNavGroups, NavItem as NavItemType, NavGroup as NavGroupType } from '@/config/navigationGroups';
+import { navigationGroups, filterNavGroups, NavItem as NavItemType } from '@/config/navigationGroups';
 import { NavGroup } from './NavGroup';
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -85,70 +84,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       }
       return next;
     });
-  }
-
-  function renderNavItem(item: NavItemType) {
-    const active = pathname === item.href;
-    const isParentOfActive = !!item.children && pathname.startsWith(item.href);
-
-    return (
-      <div key={item.href}>
-        <Link
-          href={item.href}
-          onClick={onNavigate}
-          style={{
-            display: 'block',
-            padding: '10px 20px',
-            color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
-            textDecoration: 'none',
-            background: active && !isParentOfActive ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))' : 'transparent',
-            borderLeft: active && !isParentOfActive ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
-            fontWeight: active ? 600 : 400,
-            fontSize: 15,
-          }}
-        >
-          {t(item.labelKey as any)}
-        </Link>
-
-        {item.children && isParentOfActive && (
-          <div>
-            {item.children.map((child) => renderChildNavItem(child))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function renderChildNavItem(item: NavItemType) {
-    const active = pathname === item.href;
-    const isParentOfActive = !!item.children && pathname.startsWith(item.href);
-
-    return (
-      <div key={item.href}>
-        <Link
-          href={item.href}
-          onClick={onNavigate}
-          style={{
-            display: 'block',
-            padding: '8px 20px 8px 36px',
-            color: active ? 'var(--gd-sidebar-selected-text, #fff)' : 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
-            textDecoration: 'none',
-            background: active ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))' : 'transparent',
-            borderLeft: active ? '3px solid var(--brand, #6c63ff)' : '3px solid transparent',
-            fontWeight: active ? 600 : 400,
-            fontSize: 14,
-          }}
-        >
-          {t(item.labelKey as any)}
-        </Link>
-
-        {item.children && isParentOfActive && (
-          <div>
-            {item.children.map((child) => renderChildNavItem(child))}
-          </div>
-        )}
-      </div>
-    );
   }
 
   return (

@@ -1,6 +1,5 @@
 import crypto from 'crypto';
-import { afterEach, describe, expect, it } from 'vitest';
-import { MoneiProvider } from '../payments/providers/monei';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { verifyAndParseWebhook } from '../payments/providers/monei/webhook';
 
 afterEach(() => {
@@ -10,16 +9,20 @@ afterEach(() => {
 });
 
 describe('getPaymentProvider()', () => {
+  // The factory caches its provider at module level: reset the module registry
+  // so each test reads the env vars afresh.
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
   it('returns a MoneiProvider when PAYMENT_PROVIDER=monei', async () => {
     process.env.PAYMENT_PROVIDER = 'monei';
     process.env.MONEI_API_KEY = 'test-key';
     process.env.MONEI_WEBHOOK_SECRET = 'test-secret';
 
-    // Reset module cache so env vars are re-read
     const { getPaymentProvider } = await import('../payments/index');
-    // Bypass cache by using MoneiProvider directly
-    const provider = new MoneiProvider('test-key', 'test-secret');
-    expect(provider).toBeInstanceOf(MoneiProvider);
+    const { MoneiProvider } = await import('../payments/providers/monei');
+    expect(getPaymentProvider()).toBeInstanceOf(MoneiProvider);
   });
 
   it('throws a descriptive error for unknown provider', async () => {
@@ -27,15 +30,8 @@ describe('getPaymentProvider()', () => {
     process.env.MONEI_API_KEY = 'test-key';
     process.env.MONEI_WEBHOOK_SECRET = 'test-secret';
 
-    // Fresh import to bypass cached singleton
-    const mod = await import('../payments/index?unknown=' + Date.now());
-    // Since module is cached, test the condition directly
-    expect(() => {
-      const providerName = 'stripe';
-      if (providerName !== 'monei') {
-        throw new Error(`Unknown payment provider: "${providerName}"`);
-      }
-    }).toThrow('Unknown payment provider: "stripe"');
+    const { getPaymentProvider } = await import('../payments/index');
+    expect(() => getPaymentProvider()).toThrow('Unknown payment provider: "stripe"');
   });
 });
 

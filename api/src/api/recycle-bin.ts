@@ -423,55 +423,42 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
   const type = entityType as EntityType;
 
   let sql: string;
-  let checkDeletedCondition: string;
   switch (type) {
     case 'member':
       sql = `UPDATE members SET deleted_at = NULL, deleted_by_name = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
-      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
     case 'membership_plan':
       sql = `UPDATE membership_plans SET deleted_at = NULL, deleted_by = NULL, lifecycle_status = 'active' WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
-      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
     case 'promotion':
       sql = `UPDATE promotions SET lifecycle_status = 'active', deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND lifecycle_status = 'deleted'`;
-      checkDeletedCondition = "lifecycle_status = 'deleted'";
       break;
     case 'center':
       sql = `UPDATE centers SET deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
-      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
     case 'space':
       sql = `UPDATE spaces SET deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
-      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
     case 'sellable_item':
       sql = `UPDATE gym_charges SET deleted_at = NULL, deleted_by_membership_id = NULL, deleted_by_name = NULL, status = 'active' WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NOT NULL`;
-      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
     case 'exercise':
       sql = `UPDATE exercises SET status = 'active', deleted_at = NULL, deleted_by = NULL WHERE id = ? AND gym_id = ? AND status = 'deleted'`;
-      checkDeletedCondition = "status = 'deleted'";
       break;
     case 'workout_template':
       sql = `UPDATE workout_templates SET status = 'active', deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND status = 'deleted'`;
-      checkDeletedCondition = "status = 'deleted'";
       break;
     case 'training_plan_template':
       sql = `UPDATE training_plan_templates SET status = 'active', deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND status = 'deleted'`;
-      checkDeletedCondition = "status = 'deleted'";
       break;
     case 'nutrition_plan_template':
       sql = `UPDATE nutrition_plan_templates SET status = 'active', deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND status = 'deleted'`;
-      checkDeletedCondition = "status = 'deleted'";
       break;
     case 'theme':
       sql = `UPDATE themes SET status = 'active', deleted_at = NULL WHERE id = ? AND gym_id = ? AND status = 'deleted'`;
-      checkDeletedCondition = "status = 'deleted'";
       break;
     case 'activity_type':
       sql = `UPDATE activity_types SET deleted_at = NULL, deleted_by_membership_id = NULL, status = 'active' WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
-      checkDeletedCondition = 'deleted_at IS NOT NULL';
       break;
     case 'professional_service':
       sql = `UPDATE professional_services SET deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NOT NULL`;
