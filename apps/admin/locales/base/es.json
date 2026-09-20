@@ -54,7 +54,8 @@
     "taxes": "Impuestos",
     "feature_flags": "Flags de características",
     "nutrition_plans": "Planes de nutrición",
-    "operating_hours": "Horario y Festivos"
+    "operating_hours": "Horario y Festivos",
+    "website_integration": "Integración web"
   },
   "dashboard": {
     "title": "Panel",
@@ -2908,5 +2909,32 @@
     "save_changes": "Guardar",
     "yes": "Sí",
     "no": "No"
+  },
+  "website_integration": {
+    "title": "Integración web",
+    "intro": "Permite que las personas se registren desde la web de tu gimnasio. Tu web envía el nombre y el correo al endpoint de abajo, y nosotros les enviamos una invitación para crear una contraseña y entrar en la app de socios. El socio se añade a tu lista la primera vez que inicia sesión.",
+    "loading": "Cargando…",
+    "endpoint_label": "Endpoint de registro",
+    "endpoint_path_only": "Antepón a esta ruta la dirección de la API.",
+    "key_label": "Clave de API",
+    "key_shown_once": "Copia esta clave ahora. No se volverá a mostrar.",
+    "key_active": "Clave activa {prefix} · creada el {date}",
+    "key_none": "Aún no hay clave. Genera una para conectar tu web.",
+    "generate": "Generar clave",
+    "rotate": "Rotar clave",
+    "revoke": "Revocar clave",
+    "cancel": "Cancelar",
+    "copy": "Copiar",
+    "copied": "Copiado al portapapeles.",
+    "copy_failed": "No se pudo copiar. Selecciona el texto y cópialo manualmente.",
+    "revoke_success": "Clave revocada. Tu web ya no puede registrar socios.",
+    "confirm_rotate": "¿Rotar la clave? La clave actual deja de funcionar de inmediato y tendrás que actualizar tu web con la nueva.",
+    "confirm_revoke": "¿Revocar la clave? Tu web no podrá registrar socios hasta que generes una nueva.",
+    "how_label": "Cómo conectar tu web",
+    "how_1": "Genera una clave y guárdala en tu servidor web. Nunca la pongas en una página ni en JavaScript que los visitantes puedan leer.",
+    "how_2": "Desde tu servidor, envía una petición POST al endpoint con la cabecera x-api-key y un cuerpo JSON con name y email.",
+    "how_3": "Protege el formulario de tu web con un CAPTCHA para que los bots no puedan enviarlo.",
+    "how_4": "Toda petición aceptada responde 202, tanto si el correo ya era conocido como si no. Muestra al visitante un mensaje de «revisa tu correo».",
+    "error_generic": "Algo ha ido mal."
   }
 }

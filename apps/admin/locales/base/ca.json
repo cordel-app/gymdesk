@@ -55,7 +55,8 @@
     "taxes": "Impostos",
     "feature_flags": "Flags de funcionalitats",
     "nutrition_plans": "Plans de nutrició",
-    "operating_hours": "Horari i Festius"
+    "operating_hours": "Horari i Festius",
+    "website_integration": "Integració web"
   },
   "dashboard": {
     "title": "Tauler",
@@ -2935,5 +2936,32 @@
     "save_changes": "Desar",
     "yes": "Sí",
     "no": "No"
+  },
+  "website_integration": {
+    "title": "Integració web",
+    "intro": "Permet que les persones es registrin des del web del teu gimnàs. El teu web envia el nom i el correu a l'endpoint de sota, i nosaltres els enviem una invitació per crear una contrasenya i entrar a l'app de socis. El soci s'afegeix a la teva llista la primera vegada que inicia sessió.",
+    "loading": "Carregant…",
+    "endpoint_label": "Endpoint de registre",
+    "endpoint_path_only": "Afegeix l'adreça de l'API davant d'aquesta ruta.",
+    "key_label": "Clau d'API",
+    "key_shown_once": "Copia aquesta clau ara. No es tornarà a mostrar.",
+    "key_active": "Clau activa {prefix} · creada el {date}",
+    "key_none": "Encara no hi ha cap clau. Genera-ne una per connectar el teu web.",
+    "generate": "Generar clau",
+    "rotate": "Rotar clau",
+    "revoke": "Revocar clau",
+    "cancel": "Cancel·lar",
+    "copy": "Copiar",
+    "copied": "Copiat al porta-retalls.",
+    "copy_failed": "No s'ha pogut copiar. Selecciona el text i copia'l manualment.",
+    "revoke_success": "Clau revocada. El teu web ja no pot registrar socis.",
+    "confirm_rotate": "Vols rotar la clau? La clau actual deixa de funcionar immediatament i hauràs d'actualitzar el teu web amb la nova.",
+    "confirm_revoke": "Vols revocar la clau? El teu web no podrà registrar socis fins que en generis una de nova.",
+    "how_label": "Com connectar el teu web",
+    "how_1": "Genera una clau i desa-la al teu servidor web. No la posis mai en una pàgina ni en JavaScript que els visitants puguin llegir.",
+    "how_2": "Des del teu servidor, envia una petició POST a l'endpoint amb la capçalera x-api-key i un cos JSON amb name i email.",
+    "how_3": "Protegeix el formulari del teu web amb un CAPTCHA perquè els bots no el puguin enviar.",
+    "how_4": "Tota petició acceptada respon 202, tant si el correu ja era conegut com si no. Mostra al visitant un missatge de «revisa el teu correu».",
+    "error_generic": "Alguna cosa ha anat malament."
   }
 }

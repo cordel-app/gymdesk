@@ -13,7 +13,7 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
-import { STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
+import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -282,6 +282,53 @@ meGymsRouter.get('/', async (req: Request, res: Response, next: NextFunction) =>
   } catch (err) { next(err); }
 });
 
+// #599: first sign-in of a website self-registration. The center was resolved
+// when the invitation was issued; if it has since been removed, fall back to
+// the gym's first active center rather than stranding a person who already
+// signed up — staff can reassign from the Members page. Returns null when the
+// email or Clerk account is already on a member record (both are unique).
+async function createSelfRegisteredMember(
+  gymId: string,
+  userId: string,
+  email: string,
+  signup: { name?: string; center_id?: number },
+  clerkUser: { firstName?: string | null; lastName?: string | null },
+): Promise<Record<string, unknown> | null> {
+  const clerkName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ');
+  const name = (signup.name?.trim() || clerkName || email).slice(0, 255);
+  const { rows: centers } = await db.query<{ id: number }>(
+    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL ORDER BY id',
+    [gymId],
+  );
+  const centerId = centers.find((c) => c.id === Number(signup.center_id))?.id ?? centers[0]?.id;
+
+  try {
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        'INSERT INTO members (name, email, gym_id, clerk_user_id) VALUES (?, ?, ?, ?)',
+        [name, email, gymId, userId],
+      );
+      if (centerId) {
+        await tx.query(
+          `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, assigned_by_membership_id)
+           VALUES (?, ?, ?, 1, UTC_TIMESTAMP(), NULL)`,
+          [gymId, insertId, centerId],
+        );
+      }
+      await tx.query(
+        `INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'member')`,
+        [userId, gymId],
+      );
+      return insertId;
+    });
+    const { rows } = await db.query('SELECT * FROM members WHERE id = ? AND gym_id = ?', [insertId, gymId]);
+    return rows[0];
+  } catch (err: any) {
+    if (err.code === 'ER_DUP_ENTRY') return null;
+    throw err;
+  }
+}
+
 meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) => {
   const userId = req.auth?.userId;
   const gymId = req.headers['x-gym-id'] as string | undefined;
@@ -299,10 +346,15 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
        WHERE email = ? AND gym_id = ? AND clerk_user_id IS NULL AND deleted_at IS NULL`,
       [email, gymId],
     );
-    if (!memberRows[0]) {
+    // #599: no row yet is expected for a website self-registration — the
+    // invitation carried `gym_signup`, which Clerk copied onto this user. It is
+    // server-set metadata, so it proves our backend invited this email to this gym.
+    const signup = (clerkUser.publicMetadata as any)?.gym_signup as
+      { gym_id?: string; name?: string; center_id?: number } | undefined;
+    const isSelfRegistration = !memberRows[0] && signup?.gym_id === gymId;
+    if (!memberRows[0] && !isSelfRegistration) {
       return res.status(404).json({ error: 'No pending invitation found for this email in this gym.' });
     }
-    const member = memberRows[0];
 
     // #594: this Clerk account may already be a staff login in the gym (a Staff
     // record, or the owner's admin row). INSERT IGNORE below would silently keep
@@ -314,6 +366,27 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     if (existing[0] && existing[0].role !== 'member') {
       return res.status(409).json({ error: STAFF_EMAIL_CONFLICT });
     }
+
+    if (isSelfRegistration) {
+      if (await isStaffLoginEmail(gymId, email)) return res.status(409).json({ error: STAFF_EMAIL_CONFLICT });
+      const created = await createSelfRegisteredMember(gymId, userId, email, signup!, clerkUser);
+      if (!created) {
+        // A retry after a successful link lands here: same account, same gym.
+        const { rows: linked } = await db.query(
+          'SELECT * FROM members WHERE clerk_user_id = ? AND gym_id = ? AND deleted_at IS NULL',
+          [userId, gymId],
+        );
+        if (linked[0]) return res.json(linked[0]);
+        return res.status(409).json({ error: 'A member with this email already exists.' });
+      }
+      // Best-effort: the metadata has done its job. A failure here is harmless —
+      // the next /me/link finds the linked row, not the metadata.
+      clerkClient.users.updateUserMetadata(userId, { publicMetadata: { gym_signup: null } })
+        .catch((err: any) => req.log.warn({ userId, message: err.message }, 'Failed to clear gym_signup metadata'));
+      req.log.info({ gymId, memberId: created.id }, 'Website registration: member created on first sign-in');
+      return res.status(201).json(created);
+    }
+    const member = memberRows[0];
 
     // Link the Clerk user and create membership in a transaction
     await db.transaction(async (tx) => {

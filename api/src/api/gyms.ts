@@ -43,8 +43,15 @@ async function seedSystemPtPackage(gymId: string) {
   );
 }
 
+// #599: gym rows are read with `g.*`, so the website API key hash must be
+// dropped before a row is serialised — into a response or an audit payload.
+function stripGymSecrets<T extends Record<string, any>>(row: T): Omit<T, 'website_api_key_hash'> {
+  const { website_api_key_hash: _hash, ...rest } = row;
+  return rest;
+}
+
 function attachTheme(row: any) {
-  const { theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at, theme_logo_contains_gym_name, theme_tokens, ...rest } = row;
+  const { theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at, theme_logo_contains_gym_name, theme_tokens, ...rest } = stripGymSecrets(row);
   const theme = theme_id_val ? {
     id: theme_id_val,
     name: theme_name,
@@ -272,7 +279,7 @@ platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
     `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
-  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: existing[0], next: attachTheme(rows[0]) });
+  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]), next: attachTheme(rows[0]) });
   res.json(attachTheme(rows[0]));
 });
 
@@ -306,7 +313,7 @@ platformRouter.patch('/gyms/:id', requireSuperadmin, async (req, res) => {
     `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
-  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: existing[0], next: attachTheme(rows[0]) });
+  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]), next: attachTheme(rows[0]) });
   res.json(attachTheme(rows[0]));
 });
 
@@ -322,7 +329,7 @@ platformRouter.delete('/gyms/:id', requireSuperadmin, async (req, res) => {
      WHERE id = ? AND deleted_at IS NULL`,
     [actorName, req.params.id],
   );
-  recordAudit(req, { action: 'delete', entityType: 'gym', entityId: req.params.id, previous: existing[0] });
+  recordAudit(req, { action: 'delete', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]) });
   res.status(204).send();
 });
 
@@ -413,7 +420,7 @@ platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (re
     `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
-  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: gym, next: attachTheme(rows[0]) });
+  recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(gym), next: attachTheme(rows[0]) });
   res.json(attachTheme(rows[0]));
 });
 

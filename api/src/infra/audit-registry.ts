@@ -169,6 +169,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   workout_block: { kind: 'none', label: 'Workout Blocks' },
   workout_exercise: { kind: 'none', label: 'Workout Exercises' },
   superadmin: { kind: 'none', label: 'Superadmins' },
+  website_api_key: { kind: 'none', label: 'Website API Key' },
 };
 
 export async function resolveEntityName(
