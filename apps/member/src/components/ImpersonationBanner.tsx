@@ -11,6 +11,10 @@ export function ImpersonationBanner() {
 
   if (!isImpersonating || !session) return null;
 
+  // The member app only ever impersonates members (#415) — show the translated
+  // label rather than the raw role enum.
+  const roleLabel = session.effectiveRole === 'member' ? t('type_member') : session.effectiveRole;
+
   async function handleStop() {
     if (!session) return;
     const durationSeconds = Math.round((Date.now() - session.startedAt) / 1000);
@@ -44,7 +48,7 @@ export function ImpersonationBanner() {
     }}>
       <span>
         <strong>{t('impersonating_label')}</strong>{' '}
-        {session.effectiveName} ({session.effectiveRole})
+        {session.effectiveName} ({roleLabel})
         {'  ·  '}
         <strong>{t('signed_in_as')}</strong>{' '}
         {session.authenticatorName}

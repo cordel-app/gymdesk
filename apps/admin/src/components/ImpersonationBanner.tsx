@@ -13,6 +13,11 @@ export function ImpersonationBanner() {
 
   if (!isImpersonating || !session) return null;
 
+  // Never show the raw role enum (e.g. "front_desk") — reuse the dialog's translated
+  // role_* labels; fall back to the key only for a role with no label yet.
+  const roleKey = `role_${session.effectiveRole}`;
+  const roleLabel = t.has(roleKey as any) ? t(roleKey as any) : session.effectiveRole;
+
   async function handleStop() {
     if (!session) return;
     const durationSeconds = Math.round((Date.now() - session.startedAt) / 1000);
@@ -49,7 +54,7 @@ export function ImpersonationBanner() {
     }}>
       <span>
         <strong>{t('impersonating_label')}</strong>{' '}
-        {session.effectiveName} ({session.effectiveRole})
+        {session.effectiveName} ({roleLabel})
         {'  ·  '}
         <strong>{t('signed_in_as')}</strong>{' '}
         {session.authenticatorName}
