@@ -121,29 +121,6 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-// One-time dev seed — remove after use
-app.post('/dev/seed-gym', async (req: any, res: any) => {
-  const { user_id, gym_name, gym_slug } = req.body;
-  if (!user_id || !gym_name || !gym_slug) return res.status(400).json({ error: 'user_id, gym_name, gym_slug required' });
-  const { db } = await import('./infra/db');
-  await db.query(
-    `INSERT INTO gyms (name, slug, plan) VALUES (?, ?, 'free') AS new ON DUPLICATE KEY UPDATE name = new.name`,
-    [gym_name, gym_slug]
-  );
-  const { rows: [gym] } = await db.query('SELECT * FROM gyms WHERE slug = ?', [gym_slug]);
-  await db.query(
-    `INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'admin')`,
-    [user_id, gym.id]
-  );
-  // #59: dev-seeded gyms need a Center too, same as platformRouter.post('/gyms').
-  await db.query(
-    `INSERT INTO centers (gym_id, name, status)
-     SELECT ?, ?, 'active' WHERE NOT EXISTS (SELECT 1 FROM centers WHERE gym_id = ? AND deleted_at IS NULL)`,
-    [gym.id, gym.name, gym.id]
-  );
-  res.json({ gym, message: 'Gym created and user assigned as admin' });
-});
-
 app.use('/docs', swaggerUi.serve as any);
 app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }) as any);
 
