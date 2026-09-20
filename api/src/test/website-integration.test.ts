@@ -6,7 +6,7 @@
 import { verifyToken } from '@clerk/backend';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { hashWebsiteApiKey } from '../infra/website-api-key';
+import { verifyWebsiteApiKey } from '../infra/website-api-key';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
 const BASE = '/system/website-integration';
@@ -115,7 +115,7 @@ describe('website-integration — key lifecycle', () => {
     expect(res.status).toBe(404);
   });
 
-  it('POST /key → 201 with a gdk_ key; the DB holds only its sha256', async () => {
+  it('POST /key → 201 with a gdk_ key; the DB holds only a scrypt digest', async () => {
     const res = await authed('post', `${BASE}/key`, gymId);
 
     expect(res.status).toBe(201);
@@ -130,8 +130,9 @@ describe('website-integration — key lifecycle', () => {
     firstKey = res.body.key;
 
     const row = await gymRow(gymId);
-    expect(row.website_api_key_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(row.website_api_key_hash).toBe(hashWebsiteApiKey(firstKey));
+    expect(row.website_api_key_hash).toMatch(/^scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}$/);
+    expect(row.website_api_key_hash).not.toContain(firstKey);
+    expect(await verifyWebsiteApiKey(firstKey, row.website_api_key_hash, row.website_api_key_prefix)).toBe(true);
     expect(row.website_api_key_prefix).toBe(firstKey.slice(0, 12));
     expect(row.website_api_key_created_at).not.toBeNull();
     // The plaintext key is nowhere in the row.
@@ -147,7 +148,8 @@ describe('website-integration — key lifecycle', () => {
     expect(res.body).not.toHaveProperty('key');
     const raw = JSON.stringify(res.body);
     expect(raw).not.toContain(firstKey);
-    expect(raw).not.toContain(hashWebsiteApiKey(firstKey));
+    expect(raw).not.toContain((await gymRow(gymId)).website_api_key_hash!);
+    expect(raw).not.toContain('scrypt$');
   });
 
   it('the returned key authenticates against the public registration route', async () => {
@@ -161,7 +163,9 @@ describe('website-integration — key lifecycle', () => {
     secondKey = res.body.key;
     expect(secondKey.startsWith('gdk_')).toBe(true);
     expect(secondKey).not.toBe(firstKey);
-    expect((await gymRow(gymId)).website_api_key_hash).toBe(hashWebsiteApiKey(secondKey));
+    const rotated = await gymRow(gymId);
+    expect(await verifyWebsiteApiKey(secondKey, rotated.website_api_key_hash, rotated.website_api_key_prefix)).toBe(true);
+    expect(await verifyWebsiteApiKey(firstKey, rotated.website_api_key_hash, rotated.website_api_key_prefix)).toBe(false);
 
     expect((await registerWith(slug, firstKey)).status).toBe(401);
     expect((await registerWith(slug, secondKey)).status).toBe(202);
@@ -212,8 +216,8 @@ describe('website-integration — audit trail', () => {
     expect(raw).toContain(second.body.key_prefix);
     for (const key of [first.body.key, second.body.key]) {
       expect(raw).not.toContain(key);
-      expect(raw).not.toContain(hashWebsiteApiKey(key));
     }
+    expect(raw).not.toContain('scrypt$'); // no stored digest either
   });
 });
 
@@ -238,7 +242,8 @@ describe('website-integration — tenant isolation', () => {
     const createdB = await authed('post', `${BASE}/key`, gymB.id);
     expect(createdB.body.key).not.toBe(created.body.key);
     expect((await authed('delete', `${BASE}/key`, gymA.id)).status).toBe(200);
-    expect((await gymRow(gymB.id)).website_api_key_hash).toBe(hashWebsiteApiKey(createdB.body.key));
+    const rowB = await gymRow(gymB.id);
+    expect(await verifyWebsiteApiKey(createdB.body.key, rowB.website_api_key_hash, rowB.website_api_key_prefix)).toBe(true);
     expect((await registerWith(gymB.slug, createdB.body.key)).status).toBe(202);
     expect((await registerWith(gymA.slug, created.body.key)).status).toBe(401);
   });

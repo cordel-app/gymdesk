@@ -7,7 +7,7 @@ import { generateWebsiteApiKey } from '../infra/website-api-key';
 /**
  * #599: manages the per-gym API key the gym's website uses to call
  * POST /public/gyms/:slug/registrations. The plaintext key is returned exactly
- * once, by POST /key; only its SHA-256 is stored, so GET can never leak it.
+ * once, by POST /key; only a scrypt digest is stored, so GET can never leak it.
  */
 export const websiteIntegrationRouter = Router();
 
@@ -58,7 +58,7 @@ websiteIntegrationRouter.post('/key', requireModuleWrite('SYSTEM'), async (req, 
   const { gymId } = getTenantContext(req);
   try {
     const before = await loadStatus(gymId);
-    const { key, hash, prefix } = generateWebsiteApiKey();
+    const { key, hash, prefix } = await generateWebsiteApiKey();
     await db.query(
       `UPDATE gyms SET website_api_key_hash = ?, website_api_key_prefix = ?, website_api_key_created_at = UTC_TIMESTAMP()
        WHERE id = ?`,

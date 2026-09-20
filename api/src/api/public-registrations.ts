@@ -54,11 +54,14 @@ const gymLimiter = rateLimit({
 // Unknown slug, deleted/inactive gym and wrong key all get the same 401.
 async function requireWebsiteApiKey(req: Request, res: Response, next: NextFunction) {
   try {
-    const { rows } = await db.query<{ id: string; website_api_key_hash: string | null }>(
-      "SELECT id, website_api_key_hash FROM gyms WHERE slug = ? AND deleted_at IS NULL AND status = 'active'",
+    const { rows } = await db.query<{
+      id: string; website_api_key_hash: string | null; website_api_key_prefix: string | null;
+    }>(
+      "SELECT id, website_api_key_hash, website_api_key_prefix FROM gyms WHERE slug = ? AND deleted_at IS NULL AND status = 'active'",
       [(req.params as any).slug],
     );
-    if (!verifyWebsiteApiKey(req.headers['x-api-key'], rows[0]?.website_api_key_hash)) {
+    const gym = rows[0];
+    if (!(await verifyWebsiteApiKey(req.headers['x-api-key'], gym?.website_api_key_hash, gym?.website_api_key_prefix))) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     (req as any).registrationGymId = rows[0].id;

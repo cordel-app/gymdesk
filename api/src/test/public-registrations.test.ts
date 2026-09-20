@@ -59,7 +59,7 @@ async function insertCenter(id: string, name = 'Main Center'): Promise<number> {
 
 /** Setup via SQL: store the hash + prefix exactly as POST /system/website-integration/key would. */
 async function setApiKey(id: string): Promise<string> {
-  const { key, hash, prefix } = generateWebsiteApiKey();
+  const { key, hash, prefix } = await generateWebsiteApiKey();
   await db.query(
     `UPDATE gyms SET website_api_key_hash = ?, website_api_key_prefix = ?, website_api_key_created_at = UTC_TIMESTAMP()
      WHERE id = ?`,
@@ -121,7 +121,7 @@ describe('POST /public/gyms/:slug/registrations — API key guard', () => {
   });
 
   it('returns 401 with a wrong key', async () => {
-    const res = await register(slug, generateWebsiteApiKey().key, { name: 'Ana', email: uniqueEmail('wrongkey') });
+    const res = await register(slug, (await generateWebsiteApiKey()).key, { name: 'Ana', email: uniqueEmail('wrongkey') });
     expect(res.status).toBe(401);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
   });

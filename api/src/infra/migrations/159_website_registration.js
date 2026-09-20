@@ -2,10 +2,10 @@
  * #599: Website self-registration.
  *
  * A gym's public website (WordPress) calls POST /public/gyms/:slug/registrations
- * server-to-server, authenticated by a per-gym API key. Only the SHA-256 of the
- * key is stored — the key is 32 random bytes, so a fast hash is appropriate
- * (there is no low-entropy secret to stretch). `website_api_key_prefix` is
- * display-only, so an admin can tell which key is live without ever seeing it.
+ * server-to-server, authenticated by a per-gym API key. Only a salted scrypt
+ * digest of the key is stored, as `scrypt$<salt hex>$<digest hex>` (104 chars).
+ * `website_api_key_prefix` lets an admin tell which key is live without ever
+ * seeing it, and is the cheap pre-filter checked before the scrypt digest.
  *
  * One key per gym, so the columns live on `gyms` rather than in a new table.
  * Also seeds the `system.website_integration` navigation flag. It is seeded
@@ -16,7 +16,7 @@
  * keeps the hash out of responses and audit payloads.
  */
 const COLUMNS = [
-  ['website_api_key_hash', 'CHAR(64) NULL'],
+  ['website_api_key_hash', 'VARCHAR(128) NULL'],
   ['website_api_key_prefix', 'VARCHAR(16) NULL'],
   ['website_api_key_created_at', 'DATETIME NULL'],
 ];
