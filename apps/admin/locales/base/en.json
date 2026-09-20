@@ -54,7 +54,8 @@
     "taxes": "Taxes",
     "feature_flags": "Feature Flags",
     "nutrition_plans": "Nutrition Plans",
-    "operating_hours": "Operating Hours"
+    "operating_hours": "Operating Hours",
+    "website_integration": "Website Integration"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -2923,5 +2924,32 @@
     "save_changes": "Save",
     "yes": "Yes",
     "no": "No"
+  },
+  "website_integration": {
+    "title": "Website Integration",
+    "intro": "Let people register from your gym's website. Your site sends the name and email to the endpoint below, and we email them an invitation to set a password and sign in to the member app. The member is added to your list the first time they sign in.",
+    "loading": "Loading…",
+    "endpoint_label": "Registration endpoint",
+    "endpoint_path_only": "Prefix this path with the address of the API.",
+    "key_label": "API key",
+    "key_shown_once": "Copy this key now. It will not be shown again.",
+    "key_active": "Active key {prefix} · created {date}",
+    "key_none": "No key yet. Generate one to connect your website.",
+    "generate": "Generate key",
+    "rotate": "Rotate key",
+    "revoke": "Revoke key",
+    "cancel": "Cancel",
+    "copy": "Copy",
+    "copied": "Copied to clipboard.",
+    "copy_failed": "Could not copy. Select the text and copy it manually.",
+    "revoke_success": "Key revoked. Your website can no longer register members.",
+    "confirm_rotate": "Rotate the key? The current key stops working immediately, and your website must be updated with the new one.",
+    "confirm_revoke": "Revoke the key? Your website will stop being able to register members until you generate a new one.",
+    "how_label": "How to connect your website",
+    "how_1": "Generate a key and store it on your web server. Never put it in a page or in JavaScript that visitors can read.",
+    "how_2": "From your server, send a POST request to the endpoint with the header x-api-key and a JSON body containing name and email.",
+    "how_3": "Protect the form on your website with a CAPTCHA so bots cannot submit it.",
+    "how_4": "Any accepted request answers 202, whether or not the email was already known. Show the visitor a \"check your inbox\" message.",
+    "error_generic": "Something went wrong."
   }
 }

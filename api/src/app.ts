@@ -78,10 +78,18 @@ import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
+import { publicRegistrationsRouter } from './api/public-registrations';
+import { websiteIntegrationRouter } from './api/website-integration';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 
 export const app = express();
+
+// #599: the API runs behind nginx (infra/nginx/corback.conf). Without this,
+// req.ip is the proxy's address for every request, so every per-IP rate limiter
+// collapses into a single bucket shared by all clients.
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
+app.set('trust proxy', Number.isInteger(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1);
 
 app.use(requestLogger);
 
@@ -141,13 +149,16 @@ app.post('/dev/seed-gym', async (req: any, res: any) => {
      SELECT ?, ?, 'active' WHERE NOT EXISTS (SELECT 1 FROM centers WHERE gym_id = ? AND deleted_at IS NULL)`,
     [gym.id, gym.name, gym.id]
   );
-  res.json({ gym, message: 'Gym created and user assigned as admin' });
+  const { website_api_key_hash: _hash, ...safeGym } = gym; // #599: never serialise the key hash
+  res.json({ gym: safeGym, message: 'Gym created and user assigned as admin' });
 });
 
 app.use('/docs', swaggerUi.serve as any);
 app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }) as any);
 
 // Public endpoints — no auth, no tenant context (identified by gym slug)
+// #599: website self-registration — per-gym API key, not a Clerk session.
+app.use('/public/gyms/:slug/registrations', publicRegistrationsRouter);
 app.use('/public', publicRouter);
 
 // Payment page — no Clerk auth; authenticated by single-use page_token
@@ -247,6 +258,7 @@ app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess(
 // SYSTEM module — admin=RW, all others=NONE
 app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.audit'), auditLogsRouter);
 app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.themes'), gymThemesRouter);
+app.use('/system/website-integration', requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.website_integration'), websiteIntegrationRouter);
 app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.recycle_bin'), recycleBinRouter);
 
 // Global error handler — must be last, after all routes

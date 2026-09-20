@@ -239,6 +239,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.recycle_bin',
         featureKey: 'system.recycle_bin',
       },
+      {
+        href: '/{{locale}}/website-integration',
+        labelKey: 'nav.website_integration',
+        featureKey: 'system.website_integration',
+      },
     ],
   },
   {
