@@ -212,7 +212,7 @@ Superadmins can impersonate any active gym user for support and debugging withou
 - `ImpersonationContext.tsx` — `ImpersonationSession` includes `gymIds: string[]`; `ImpersonationProvider` wraps the app and rehydrates from `sessionStorage` on mount.
 - `TopHeader.tsx` — renders an "Impersonate" button (superadmin only, not while impersonating) and an `ImpersonationDialog`; replaces `UserButton` with a locked avatar div during impersonation.
 - `ImpersonationDialog.tsx` — modal with debounced search calling `GET /targets`, results list with member/staff type badges, confirms via `POST /:targetId` with `{ targetType }` body.
-- `GymContext.tsx` — while impersonating, filters visible gyms to `session.gymIds` and overrides `role` with `effectiveRole`.
+- `GymContext.tsx` — while impersonating, filters visible gyms to `session.gymIds` and overrides `role` with `effectiveRole`. **Derives this from `useImpersonation()`, never from `sessionStorage` during render (#596)**: `GymProvider` receives `children` as a stable prop, so a parent `setSession` does not re-render it — reading storage in render left the previous role's buttons on screen after start/stop until a reload. `ImpersonationContext` exposes `ready` (same flag as the Member app, #415); until it flips, `GymProvider` falls back to the synchronous `readStoredImpersonationSession()` so a reload mid-impersonation never flashes the superadmin's own role.
 
 **Frontend — Member app** (`apps/member/src/`):
 - `ImpersonationContext.tsx` — same session shape as admin app, plus a `ready` flag that flips true after the initial `sessionStorage` read so `AppContext` does not fetch `/me/profile` as a bare superadmin on refresh (#415).

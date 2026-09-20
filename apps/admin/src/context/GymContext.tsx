@@ -1,10 +1,11 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useTranslations } from 'next-intl';
 import { useToast } from '@/components/Toast';
 import { AppRole } from '@/config/permissions';
+import { useImpersonation, readStoredImpersonationSession } from '@/context/ImpersonationContext';
 
 export interface GymTheme {
   id: string;
@@ -53,6 +54,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const t = useTranslations('common');
   const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
+  const { session: impersonationSession, ready: impersonationReady } = useImpersonation();
 
   const [gyms, setGyms] = useState<GymOption[]>([]);
   const [activeGymId, setActiveGymIdState] = useState<string | null>(null);
@@ -120,28 +122,26 @@ export function GymProvider({ children }: { children: ReactNode }) {
 
   // When a superadmin is impersonating, filter gyms to the impersonated user's
   // accessible gyms and expose the effective user's role for nav gating.
-  const { visibleGyms, rawActiveGym, activeGym } = (() => {
-    if (typeof window === 'undefined') {
-      const raw = gyms.find((g) => g.id === activeGymId) ?? null;
-      return { visibleGyms: gyms, rawActiveGym: raw, activeGym: raw };
+  // Derived from ImpersonationContext so starting/stopping a session re-renders
+  // this provider (#596 — it used to read sessionStorage during render, which
+  // nothing re-triggered: GymProvider gets `children` as a stable prop, so the
+  // parent's setSession never reached it and the previous role's buttons stayed
+  // on screen until a reload). Before the context has rehydrated, fall back to the
+  // synchronous storage read so a reload mid-impersonation never flashes the
+  // superadmin's own role.
+  const { visibleGyms, rawActiveGym, activeGym } = useMemo(() => {
+    const session = impersonationReady ? impersonationSession : readStoredImpersonationSession();
+    if (session?.gymIds?.length) {
+      const filtered = gyms.filter((g) => session.gymIds.includes(g.id));
+      const raw = filtered.find((g) => g.id === activeGymId) ?? filtered[0] ?? null;
+      const effective = raw && session.effectiveRole
+        ? { ...raw, role: session.effectiveRole as GymOption['role'] }
+        : raw;
+      return { visibleGyms: filtered, rawActiveGym: raw, activeGym: effective };
     }
-    try {
-      const stored = sessionStorage.getItem('impersonation_session');
-      if (stored) {
-        const session = JSON.parse(stored);
-        if (session?.gymIds?.length) {
-          const filtered = gyms.filter((g) => session.gymIds.includes(g.id));
-          const raw = filtered.find((g) => g.id === activeGymId) ?? filtered[0] ?? null;
-          const effective = raw && session.effectiveRole
-            ? { ...raw, role: session.effectiveRole as GymOption['role'] }
-            : raw;
-          return { visibleGyms: filtered, rawActiveGym: raw, activeGym: effective };
-        }
-      }
-    } catch {}
     const raw = gyms.find((g) => g.id === activeGymId) ?? null;
     return { visibleGyms: gyms, rawActiveGym: raw, activeGym: raw };
-  })();
+  }, [gyms, activeGymId, impersonationSession, impersonationReady]);
 
   return (
     <GymContext.Provider value={{ gyms: visibleGyms, activeGymId: rawActiveGym?.id ?? activeGymId, activeGym, setActiveGymId, loading, isSuperadmin, refreshGyms: loadGyms }}>
