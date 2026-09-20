@@ -80,7 +80,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
       if (!isSuperadmin && Array.isArray(data) && data.length === 0 && !linkAttempted.current) {
         linkAttempted.current = true;
         try {
-          await fetch('/api/proxy/gym-users/link', {
+          await fetch('/api/proxy/staff/link', {
             method: 'POST',
             headers: { Authorization: `Bearer ${token}` },
           });

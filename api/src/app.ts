@@ -56,8 +56,7 @@ import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter, meGymRouter, meGymsRouter } from './api/me';
 import { themesRouter, themesPublicRouter } from './api/themes';
 import { gymThemesRouter } from './api/gym-themes';
-import { gymUsersRouter, gymUsersLinkRouter } from './api/gym-users';
-import { staffRouter } from './api/staff';
+import { staffRouter, staffLinkRouter } from './api/staff';
 import { staffCentersRouter } from './api/staff-centers';
 import { paymentsRouter } from './api/payments';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
@@ -179,16 +178,15 @@ app.use('/platform/feature-flags', requireAuth(), platformFeatureFlagsRouter);
 app.use('/feature-flags', requireAuth(), featureFlagsPublicRouter);
 
 // Domain routes — require auth + tenant context (gym_id from x-gym-id header)
-// /me/link + /gym-users/link must come before tenantContext (no membership row exists yet on first link)
+// /me/link + /staff/link must come before tenantContext (no membership row exists yet on first link)
 app.use('/me/link', requireAuth(), meLinkRouter);
-app.use('/gym-users/link', requireAuth(), gymUsersLinkRouter);
+app.use('/staff/link', requireAuth(), staffLinkRouter);
 // /me/gym and /me/gyms must come BEFORE /me to avoid being swallowed by tenantContext
 app.use('/me/gym',  requireAuth(), meGymRouter);
 app.use('/me/gyms', requireAuth(), meGymsRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE
-app.use('/gym-users',     requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), gymUsersRouter);
 app.use('/spaces',        requireAuth(), tenantContext, centerContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.spaces'), spacesRouter);
 app.use('/trainers',      requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), trainersRouter);
 app.use('/staff',         requireAuth(), tenantContext, requireModuleAccess('ORGANIZATION'), requireFeatureEnabled('organization.staff'), staffRouter);

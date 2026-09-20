@@ -224,8 +224,8 @@ describe('GET /platform/impersonation/targets', () => {
   });
 
   it('includes staff with no name/email (granted via existing Clerk user — regression #364)', async () => {
-    // Mirrors gym-users.ts POST / for an existing Clerk user: only user_id/gym_id/role are set,
-    // so both name and email are NULL. A plain `name LIKE ?` filter used to silently drop this row.
+    // Mirrors a legacy direct grant: only user_id/gym_id/role are set, so both name and
+    // email are NULL. A plain `name LIKE ?` filter used to silently drop this row.
     const namelessStaffId = 'impersonation-nameless-staff-id';
     await db.query(
       `INSERT INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'trainer_performance')`,
@@ -243,6 +243,46 @@ describe('GET /platform/impersonation/targets', () => {
     expect(match.name).toBe(namelessStaffId);
 
     await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [namelessStaffId]);
+  });
+
+  it('shows the linked Staff record\'s name and profile for a login, and skips Staff rows with no login (#592)', async () => {
+    const { insertId: gmId } = await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES ('impersonation-linked-staff-id', ?, 'front_desk', 'active', 'Legacy Name')`,
+      [gymId],
+    );
+    await db.query(
+      `INSERT INTO staff (gym_id, gym_membership_id, first_name, last_name, email, profile, hire_date, created_at, updated_at)
+       VALUES (?, ?, 'Javier', 'Dominguez', 'javier@impersonation.test', 'Front Desk', '2026-01-01', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+      [gymId, gmId],
+    );
+    // HR record with no login — nothing to impersonate.
+    await db.query(
+      `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, created_at, updated_at)
+       VALUES (?, 'No', 'Login', 'nologin@impersonation.test', 'Accountant', '2026-01-01', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+      [gymId],
+    );
+
+    const res = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: 'Dominguez', type: 'staff' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0]).toMatchObject({
+      id: 'impersonation-linked-staff-id', name: 'Javier Dominguez', email: 'javier@impersonation.test',
+      role: 'front_desk', profile: 'Front Desk', type: 'staff',
+    });
+
+    const all = await request
+      .get('/platform/impersonation/targets')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .query({ gym_id: gymId, q: '', type: 'staff' });
+    expect(all.body.find((u: any) => u.name === 'No Login')).toBeUndefined();
+
+    await db.query('DELETE FROM staff WHERE gym_id = ?', [gymId]);
+    await db.query('DELETE FROM gym_memberships WHERE id = ?', [gmId]);
   });
 
   it('excludes members when type=staff is requested (Admin app impersonation dialog — #504)', async () => {

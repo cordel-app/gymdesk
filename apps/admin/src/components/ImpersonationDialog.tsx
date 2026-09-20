@@ -16,6 +16,8 @@ interface Target {
   role: string;
   status?: string;
   gymId: string;
+  /** #592: HR profile of the Staff record that owns this login, when there is one. */
+  profile?: string | null;
 }
 
 interface Props {
@@ -156,9 +158,9 @@ export function ImpersonationDialog({ onClose }: Props) {
             // primary label (#504); show a human-readable placeholder with the id as secondary info.
             const isUnnamed = c.name === c.id;
             const displayName = isUnnamed ? t('unnamed_staff') : c.name;
-            // Translate the auth role — never show the raw enum value (e.g. "front_desk"),
-            // which is a technical key, not a user-facing label.
-            const roleLabel = t(`role_${c.role}` as any);
+            // Prefer the Staff record's profile (what the Staff page shows); otherwise translate
+            // the auth role — never show the raw enum value (e.g. "front_desk").
+            const roleLabel = c.profile || t(`role_${c.role}` as any);
             const secondary = [roleLabel, c.status, isUnnamed ? c.id : c.email]
               .filter(Boolean)
               .join(' · ');
