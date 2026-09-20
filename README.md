@@ -112,6 +112,8 @@ SEED_USER_ID=<clerk_user_id> npm run db:seed
 
 Find your Clerk user ID in the [Clerk Dashboard](https://dashboard.clerk.com) → Users.
 
+This is for local / dev only — the seed script also creates a placeholder gym. For production, see [docs/go-to-production.md](docs/go-to-production.md#3-first-superadmin-bootstrap).
+
 ## API endpoints
 
 All endpoints except `GET /health` and `/public` require a valid Clerk session token (`Authorization: Bearer <token>`); domain routes additionally require an `x-gym-id` header with the active gym's UUID (center-scoped routes accept an optional `x-center-id`).

@@ -185,7 +185,7 @@ Trainers are `trainer_performance` or `trainer_perf_nutrition` rows in `gym_memb
 - Used for `/platform/*` (gym creation, full gym list) and `/platform/superadmins` (grant/revoke platform role).
 - `tenantContext` grants superadmins a synthetic `admin` role for any gym, so they can access all domain routes.
 - Frontend: `GymContext` exposes `isSuperadmin` from Clerk's `useUser()`.
-- `infra/seed.ts` bootstraps the first superadmin from `SEED_USER_ID`.
+- `infra/seed.ts` bootstraps the first superadmin from `SEED_USER_ID` (local / dev only — production bootstrap is in `docs/go-to-production.md` §3).
 
 ### User Impersonation (#135, extended by #189)
 Superadmins can impersonate any active gym user for support and debugging without a password change.

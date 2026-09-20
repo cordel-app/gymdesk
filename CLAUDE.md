@@ -124,6 +124,7 @@ Before opening the PR, run these checks in order:
    - `docs/roadmap.md` — mark the ticket done and update the Status section if the feature is complete.
    - `docs/architecture.md` — update if new tables, routers, middleware, or patterns were introduced.
    - `docs/feature-patterns.md` — update if a new pattern or template emerged that future tickets should follow.
+   - `docs/go-to-production.md` — add a checklist item whenever the ticket defers something "until production" (there is no production environment yet); tick items the ticket completes.
    - `CLAUDE.md` — update if a new hard constraint, convention, or cleanup rule was established.
 
    Only update a file if the ticket genuinely changes what it documents. Navigation-only or i18n-only changes rarely need doc updates; new API surface, DB schema, or architectural patterns almost always do.
