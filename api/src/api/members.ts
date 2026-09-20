@@ -3,7 +3,7 @@ import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { gymFetchOne, handleDupEntry } from '../infra/db-helpers';
+import { handleDupEntry } from '../infra/db-helpers';
 import { validateDocumentId, maskDocumentId } from '../domain/documentId';
 import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
 

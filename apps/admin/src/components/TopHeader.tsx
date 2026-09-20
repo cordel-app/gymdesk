@@ -13,7 +13,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 
 export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const { isSuperadmin, activeGym, gyms, loading } = useGym();
-  const { isImpersonating, session } = useImpersonation();
+  const { isImpersonating } = useImpersonation();
   const { user } = useUser();
   const t = useTranslations('impersonation');
   const [dialogOpen, setDialogOpen] = useState(false);

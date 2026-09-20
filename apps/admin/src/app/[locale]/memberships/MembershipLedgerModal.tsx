@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 
 interface Membership {
   id: number;

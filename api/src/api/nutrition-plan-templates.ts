@@ -711,7 +711,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requireModule
 
 nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const { dayId, mealId } = req.params as { dayId: string; mealId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
 
   const updates: string[] = [];
@@ -746,7 +746,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireModule
 
 nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const { dayId, mealId } = req.params as { dayId: string; mealId: string };
   try {
     const { rowCount } = await db.query(
       'DELETE FROM nutrition_plan_template_meals WHERE id = ? AND nutrition_plan_template_day_id = ? AND gym_id = ?',
@@ -761,7 +761,7 @@ nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId', requireMod
 
 nutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals/:mealId/items', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const { dayId, mealId } = req.params as { dayId: string; mealId: string };
   try {
     if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
     const { rows } = await db.query(
@@ -779,7 +779,7 @@ nutritionPlanTemplatesRouter.get('/:id/days/:dayId/meals/:mealId/items', async (
 
 nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const { dayId, mealId } = req.params as { dayId: string; mealId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
 
   const { nutrition_library_item_id, component_type, quantity, unit } = req.body;
@@ -814,7 +814,7 @@ nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items', requir
 
 nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { id, dayId, mealId, itemId } = req.params as { id: string; dayId: string; mealId: string; itemId: string };
+  const { dayId, mealId, itemId } = req.params as { dayId: string; mealId: string; itemId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
 
   const updates: string[] = [];
@@ -862,7 +862,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId',
 
 nutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId/items/:itemId', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { id, dayId, mealId, itemId } = req.params as { id: string; dayId: string; mealId: string; itemId: string };
+  const { dayId, mealId, itemId } = req.params as { dayId: string; mealId: string; itemId: string };
   if (!(await mealExists(dayId, mealId, gymId))) return res.status(404).json({ error: 'Meal not found' });
   try {
     const { rowCount } = await db.query(

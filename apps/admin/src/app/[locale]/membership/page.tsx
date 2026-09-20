@@ -1,10 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
 export default function MembershipDashboard() {
-  const t = useTranslations();
-
   return (
     <div>
       <h1 style={{ margin: '0 0 12px' }}>Membership Dashboard</h1>

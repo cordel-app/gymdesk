@@ -14,8 +14,8 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { COLOR_GROUPS, ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
+import { btnSmall } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
 interface Theme {
@@ -88,7 +88,6 @@ export default function GymThemesPage() {
   const origFormRef = useRef<typeof emptyForm | null>(null);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  const [statusSaving, setStatusSaving] = useState<string | null>(null);
 
   const [assignments, setAssignments] = useState<Assignments | null>(null);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
@@ -188,14 +187,11 @@ export default function GymThemesPage() {
   }, [openSections, expandedId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleStatusChange(theme: Theme, newStatus: string) {
-    setStatusSaving(theme.id);
     try {
       await apiFetch(`/system/themes/${theme.id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
-    } finally {
-      setStatusSaving(null);
     }
   }
 

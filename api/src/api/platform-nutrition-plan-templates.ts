@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 export const platformNutritionPlanTemplatesRouter = Router();
 
@@ -386,7 +385,7 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/reorder', requi
 });
 
 platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requireSuperadmin, async (req, res, next) => {
-  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const { dayId, mealId } = req.params as { dayId: string; mealId: string };
   if (!(await baseMealExists(dayId, mealId))) return res.status(404).json({ error: 'Meal not found' });
   const updates: string[] = [];
   const params: any[] = [];
@@ -414,7 +413,7 @@ platformNutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId', requi
 });
 
 platformNutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId', requireSuperadmin, async (req, res, next) => {
-  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const { dayId, mealId } = req.params as { dayId: string; mealId: string };
   try {
     const { rowCount } = await db.query(
       'DELETE FROM nutrition_plan_template_meals WHERE id = ? AND nutrition_plan_template_day_id = ? AND gym_id IS NULL',
@@ -428,7 +427,7 @@ platformNutritionPlanTemplatesRouter.delete('/:id/days/:dayId/meals/:mealId', re
 /* ── Meal Items ──────────────────────────────────────────────────────────── */
 
 platformNutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items', requireSuperadmin, async (req, res, next) => {
-  const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
+  const { dayId, mealId } = req.params as { dayId: string; mealId: string };
   if (!(await baseMealExists(dayId, mealId))) return res.status(404).json({ error: 'Meal not found' });
   const { nutrition_library_item_id, component_type, quantity, unit } = req.body;
   if (!nutrition_library_item_id) return res.status(400).json({ error: 'nutrition_library_item_id is required' });

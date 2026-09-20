@@ -8,7 +8,6 @@ import {
   createTestMembership,
   request,
   TEST_AUTH_HEADER,
-  TEST_USER_ID,
 } from './helpers';
 
 let gymId: string;

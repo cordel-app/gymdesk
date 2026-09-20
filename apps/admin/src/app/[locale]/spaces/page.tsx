@@ -9,7 +9,7 @@ import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { CrudModal } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall } from '@/components/ui';

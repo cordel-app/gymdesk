@@ -597,11 +597,9 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Remove member?</div>
             <div style={{ fontSize: 13, color: '#374151', marginBottom: 16 }}>
               <strong>{removingBooking.member_name}</strong> will be removed from this event.<br />
-              {session && (
-                <span style={{ color: '#6b7280' }}>
-                  {fmt(session.starts_at)} · {fmtTime(session.starts_at)} – {fmtTime(session.ends_at)}
-                </span>
-              )}
+              <span style={{ color: '#6b7280' }}>
+                {fmt(session.starts_at)} · {fmtTime(session.starts_at)} – {fmtTime(session.ends_at)}
+              </span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button

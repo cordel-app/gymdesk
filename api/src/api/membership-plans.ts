@@ -2,7 +2,7 @@ import { Router, Request } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
+import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { effectivePrice, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';

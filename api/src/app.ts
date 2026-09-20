@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
-import { createClerkClient, verifyToken } from '@clerk/backend';
+import { verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
 import { membersRouter } from './api/members';
 import { bookingsRouter } from './api/bookings';

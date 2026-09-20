@@ -178,7 +178,6 @@ const subsectionLabelStyle: React.CSSProperties = {
 
 export default function StaffPage() {
   const t = useTranslations('staff');
-  const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
