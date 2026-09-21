@@ -17,6 +17,7 @@ import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
 import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { getCalendarEventStatusColor } from '@/lib/calendarEventColors';
+import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -427,8 +428,10 @@ export default function CalendarPage() {
 
       {/* Calendar + panel split view */}
       <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 0 }}>
-        {/* Calendar */}
-        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        {/* Calendar — `gd-calendar` scopes the theme's Calendar tokens to
+            FullCalendar (#559 stage 2); see CalendarThemeStyles. */}
+        <div className="gd-calendar" style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+          <CalendarThemeStyles />
           <FullCalendar
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
