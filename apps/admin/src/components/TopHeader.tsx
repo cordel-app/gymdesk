@@ -29,10 +29,8 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
 
   return (
     <header style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
+      // Positioned by AppShell's fixed top bar (stacked under the impersonation banner).
+      position: 'relative',
       height: 52,
       background: 'var(--gd-header-bg, var(--chrome, #1a1a2e))',
       color: 'var(--gd-header-text, #fff)',
@@ -41,7 +39,6 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '0 16px',
-      zIndex: 50,
       boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

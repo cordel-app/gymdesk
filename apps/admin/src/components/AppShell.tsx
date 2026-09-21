@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import { Sidebar } from './Sidebar';
@@ -11,8 +11,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isSignedIn, isLoaded } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Height of the fixed top bar (impersonation banner + header). The banner can
+  // appear, disappear, or wrap onto several lines, so measure instead of assuming 52px.
+  const topBarRef = useRef<HTMLDivElement>(null);
+  const [topBarHeight, setTopBarHeight] = useState(52);
   const isAuthPage = /\/(sign-in|sign-up)/.test(pathname);
   const isHomePage = /^\/[a-z]{2}$/.test(pathname);
+
+  useEffect(() => {
+    const el = topBarRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setTopBarHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
 
   if (isAuthPage || (isHomePage && (!isLoaded || !isSignedIn))) {
     return <>{children}</>;
@@ -20,8 +32,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <ImpersonationBanner />
-      <TopHeader onMenuToggle={() => setSidebarOpen((v) => !v)} />
+      <div ref={topBarRef} style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50 }}>
+        <ImpersonationBanner />
+        <TopHeader onMenuToggle={() => setSidebarOpen((v) => !v)} />
+      </div>
 
       {/* Mobile overlay */}
       {sidebarOpen && (
@@ -35,7 +49,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
 
-      <div style={{ display: 'flex', minHeight: '100vh', paddingTop: 52 }}>
+      <div style={{
+        display: 'flex', minHeight: '100vh', paddingTop: topBarHeight,
+        ['--gd-top-bar-h' as string]: `${topBarHeight}px`,
+      }}>
         <div className={`sidebar-wrapper${sidebarOpen ? ' sidebar-open' : ''}`}>
           <Sidebar onNavigate={() => setSidebarOpen(false)} />
         </div>
@@ -48,9 +65,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         @media (max-width: 768px) {
           .sidebar-wrapper {
             position: fixed;
-            top: 52px;
+            top: var(--gd-top-bar-h, 52px);
             left: -220px;
-            height: calc(100vh - 52px);
+            height: calc(100vh - var(--gd-top-bar-h, 52px));
             z-index: 45;
             transition: left 0.25s ease;
           }
