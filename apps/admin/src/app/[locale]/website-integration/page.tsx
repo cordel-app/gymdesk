@@ -89,7 +89,7 @@ export default function WebsiteIntegrationPage() {
     try {
       setStatus(await apiFetch<IntegrationStatus>('/system/website-integration/key', { method: 'DELETE' }));
       setNewKey(null);
-      toast(t('revoke_success'));
+      toast(t('revoke_success'), 'success');
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -101,7 +101,7 @@ export default function WebsiteIntegrationPage() {
   async function copy(value: string) {
     try {
       await navigator.clipboard.writeText(value);
-      toast(t('copied'));
+      toast(t('copied'), 'success');
     } catch {
       toast(t('copy_failed'));
     }

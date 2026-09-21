@@ -196,7 +196,7 @@ export default function NutritionPlanTemplatesPage() {
   async function handleDuplicate(tpl: NutritionPlanTemplate) {
     try {
       await apiFetch(`/nutrition-plan-templates/${tpl.id}/duplicate`, { method: 'POST' });
-      toast(t('nutrition_plan_templates.duplicated'));
+      toast(t('nutrition_plan_templates.duplicated'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('nutrition_plan_templates.error_generic'));
@@ -216,7 +216,7 @@ export default function NutritionPlanTemplatesPage() {
 
   function handleAssigned(_plan: AssignedNutritionPlan) {
     setAssigning(null);
-    toast(t('nutrition_plans.assigned'));
+    toast(t('nutrition_plans.assigned'), 'success');
     router.push(`/${locale}/nutrition/nutrition-plans`);
   }
 

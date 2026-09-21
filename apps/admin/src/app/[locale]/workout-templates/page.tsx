@@ -253,7 +253,7 @@ export default function WorkoutTemplatesPage() {
   async function handleClone(wt: WorkoutTemplate) {
     try {
       await apiFetch(`/workout-templates/${wt.id}/clone`, { method: 'POST' });
-      toast(t('cloned'));
+      toast(t('cloned'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -265,7 +265,7 @@ export default function WorkoutTemplatesPage() {
   async function handleDuplicate(wt: WorkoutTemplate) {
     try {
       const created = await apiFetch<WorkoutTemplate>(`/workout-templates/${wt.id}/duplicate`, { method: 'POST' });
-      toast(t('duplicated'));
+      toast(t('duplicated'), 'success');
       await load();
       openEdit(created);
     } catch (err: any) {

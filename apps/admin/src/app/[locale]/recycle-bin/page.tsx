@@ -179,7 +179,7 @@ export default function RecycleBinPage() {
     setRecoverSaving(true);
     try {
       await apiFetch(`/recycle-bin/${recovering.entity_type}/${recovering.id}/recover`, { method: 'POST' });
-      toast(t('recover_success'));
+      toast(t('recover_success'), 'success');
       setRecovering(null);
       setDetailItem(null);
       setDetail(null);

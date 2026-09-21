@@ -223,7 +223,7 @@ export default function TrainingPlanTemplatesPage() {
   async function handleClone(tpl: TrainingPlanTemplate) {
     try {
       await apiFetch(`/training-plan-templates/${tpl.id}/clone`, { method: 'POST' });
-      toast(t('cloned'));
+      toast(t('cloned'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));

@@ -391,7 +391,7 @@ export default function ThemesPage() {
   async function handleSetSystemDefault(theme: Theme) {
     try {
       await apiFetch(`/platform/themes/${theme.id}/set-system-default`, { method: 'PUT' });
-      toast(t('toast_system_default_set'));
+      toast(t('toast_system_default_set'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));

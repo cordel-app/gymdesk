@@ -134,7 +134,7 @@ export default function OperatingHoursPage() {
         }),
       });
       setShifts(saved);
-      toast(t('saved'));
+      toast(t('saved'), 'success');
     } catch (err: any) {
       setWeeklyError(err.message ?? t('error_generic'));
     } finally {

@@ -1279,7 +1279,7 @@ export default function PlansPage() {
           onClose={() => setAssigningPlan(null)}
           onAssigned={() => {
             setAssigningPlan(null);
-            toast(t('plans.assign_success'));
+            toast(t('plans.assign_success'), 'success');
             load();
           }}
         />

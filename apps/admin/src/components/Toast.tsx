@@ -11,6 +11,10 @@ interface ToastItem {
 }
 
 interface ToastContextValue {
+  /**
+   * `type` defaults to 'error' — most calls report a failed request. A confirmation
+   * (saved, created, invited, impersonation ended…) must pass 'success' to show green.
+   */
   toast: (message: string, type?: ToastType) => void;
 }
 
