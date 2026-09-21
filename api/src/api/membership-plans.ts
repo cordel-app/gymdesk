@@ -1,5 +1,5 @@
 import { Router, Request } from 'express';
-import { db } from '../infra/db';
+import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
@@ -36,7 +36,17 @@ interface PriceRow {
   price: string;
   valid_from: string;
   valid_to: string | null;
+  // #547: 'active' = in force, 'applied' = in force and already pushed onto the
+  // plan's Assigned Plans, 'inactive' = superseded (history only).
+  status: PriceStatus;
+  applied_at: string | null;
+  // VAT in force while this price was, so a history row keeps reading correctly
+  // after the plan's tax rate changes.
+  tax_rate_id: number | null;
+  tax_rate_percent: string | null;
 }
+
+type PriceStatus = 'active' | 'applied' | 'inactive';
 
 interface BillingPolicyRow {
   id: number;
@@ -171,11 +181,21 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   // connection's timezone config — normalize before string-comparing.
   const toDateStr = (v: unknown): string | null =>
     v == null ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
-  const currentPrice = prices.find(p => {
-    const from = toDateStr(p.valid_from);
-    const to = toDateStr(p.valid_to);
-    return from != null && from <= today && (to == null || to >= today);
-  }) ?? null;
+  // #547: a price replaced earlier the same day keeps a same-day closed window,
+  // so more than one row can cover today — the one that is not history wins,
+  // then the most recent. Mirrors CURRENT_PRICE_SQL's ordering.
+  const currentPrice = prices
+    .filter(p => {
+      const from = toDateStr(p.valid_from);
+      const to = toDateStr(p.valid_to);
+      return from != null && from <= today && (to == null || to >= today);
+    })
+    .sort((a, b) => {
+      const historyRank = Number(a.status === 'inactive') - Number(b.status === 'inactive');
+      if (historyRank !== 0) return historyRank;
+      const from = String(toDateStr(b.valid_from)).localeCompare(String(toDateStr(a.valid_from)));
+      return from !== 0 ? from : b.id - a.id;
+    })[0] ?? null;
 
   const taxRate = taxRateRows[0] ?? null;
   const priceFields = computePriceFields({
@@ -198,10 +218,21 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     })),
   });
 
+  // #547: the stored status is a projection of the validity windows, refreshed on
+  // every price write — but nothing rewrites it when a window simply expires with
+  // the calendar. Derive what the history displays from the dates, so a plan
+  // nobody has saved since its price window ended never shows a stale badge.
+  const priceHistory = prices.map(p => ({
+    ...p,
+    status: currentPrice && p.id === currentPrice.id
+      ? (p.applied_at != null ? 'applied' : 'active')
+      : 'inactive',
+  }));
+
   return {
     ...plan,
     current_price: currentPrice ? currentPrice.price : null,
-    price_history: prices,
+    price_history: priceHistory,
     billing_policy: billingPolicy,
     allowances,
     centers,
@@ -551,9 +582,15 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
         [req.params.id, gymId],
       );
       for (const p of prices) {
+        // #547: the copy carries the VAT snapshot and the price's place in the
+        // history, but never the "applied to assigned plans" marker — the new
+        // plan has no Assigned Plans yet.
         await tx.query(
-          'INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, valid_to) VALUES (?, ?, ?, ?, ?)',
-          [gymId, insertId, p.price, p.valid_from, p.valid_to],
+          `INSERT INTO membership_plan_prices
+             (gym_id, membership_plan_id, price, valid_from, valid_to, status, tax_rate_id, tax_rate_percent)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, insertId, p.price, p.valid_from, p.valid_to,
+           p.status === 'inactive' ? 'inactive' : 'active', p.tax_rate_id ?? null, p.tax_rate_percent ?? null],
         );
       }
 
@@ -849,6 +886,45 @@ membershipPlansRouter.put('/:id/centers', requireRole('admin'), async (req, res,
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// #547: the row whose validity window covers today is the plan's current price.
+// Ties (a window replaced earlier the same day keeps a same-day closed window)
+// are broken in favour of the row that is not history yet, then by recency.
+const CURRENT_PRICE_SQL = `
+  SELECT * FROM membership_plan_prices
+   WHERE membership_plan_id = ? AND gym_id = ?
+     AND valid_from <= UTC_DATE() AND (valid_to IS NULL OR valid_to >= UTC_DATE())
+   ORDER BY (status = 'inactive') ASC, valid_from DESC, id DESC
+   LIMIT 1`;
+
+async function loadCurrentPriceRow(q: Tx, planId: number | string | string[], gymId: string): Promise<PriceRow | null> {
+  const { rows } = await q.query<PriceRow>(CURRENT_PRICE_SQL, [planId, gymId]);
+  return rows[0] ?? null;
+}
+
+/**
+ * Re-derives every price row's status for one plan from its validity windows:
+ * the window covering today is the current price, everything else is history.
+ * A current price that was already pushed onto the plan's Assigned Plans keeps
+ * its 'applied' marker. Called after any write that can move the windows, so
+ * the status column can never drift from the dates it describes.
+ */
+async function recomputePriceStatuses(q: Tx, planId: number | string | string[], gymId: string): Promise<void> {
+  const current = await loadCurrentPriceRow(q, planId, gymId);
+  await q.query(
+    `UPDATE membership_plan_prices SET status = 'inactive'
+      WHERE membership_plan_id = ? AND gym_id = ? AND id <> ?`,
+    [planId, gymId, current ? current.id : 0],
+  );
+  if (current) {
+    await q.query(
+      `UPDATE membership_plan_prices
+          SET status = IF(applied_at IS NULL, 'active', 'applied')
+        WHERE id = ? AND gym_id = ?`,
+      [current.id, gymId],
+    );
+  }
+}
+
 function parsePriceBody(body: Record<string, unknown>): { price: number; from: string; to: string | null } | string {
   const price = body.price as string | number | null | undefined;
   const valid_from = body.valid_from as string | null | undefined;
@@ -894,9 +970,14 @@ membershipPlansRouter.post('/:id/prices', requireRole('admin'), async (req, res,
   }
   try {
     const { insertId } = await db.query(
-      'INSERT INTO membership_plan_prices (membership_plan_id, gym_id, price, valid_from, valid_to) VALUES (?, ?, ?, ?, ?)',
-      [req.params.id, gymId, parsed.price, parsed.from, parsed.to],
+      `INSERT INTO membership_plan_prices (membership_plan_id, gym_id, price, valid_from, valid_to, tax_rate_id, tax_rate_percent)
+       SELECT ?, ?, ?, ?, ?, mp.tax_rate_id, tr.rate_percent
+         FROM membership_plans mp
+         LEFT JOIN tax_rates tr ON tr.id = mp.tax_rate_id
+        WHERE mp.id = ? AND mp.gym_id = ?`,
+      [req.params.id, gymId, parsed.price, parsed.from, parsed.to, req.params.id, gymId],
     );
+    await recomputePriceStatuses(db, req.params.id, gymId);
     const { rows } = await db.query('SELECT * FROM membership_plan_prices WHERE id = ?', [insertId]);
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -919,6 +1000,7 @@ membershipPlansRouter.put('/:id/prices/:priceId', requireRole('admin'), async (r
       [parsed.price, parsed.from, parsed.to, req.params.priceId, req.params.id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Price not found' });
+    await recomputePriceStatuses(db, req.params.id, gymId);
     const { rows } = await db.query('SELECT * FROM membership_plan_prices WHERE id = ?', [req.params.priceId]);
     res.json(rows[0]);
   } catch (err) {
@@ -933,7 +1015,159 @@ membershipPlansRouter.delete('/:id/prices/:priceId', requireRole('admin'), async
     [req.params.priceId, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Price not found' });
+  await recomputePriceStatuses(db, req.params.id, gymId);
   res.status(204).send();
+});
+
+// ─── Pricing (#547) ───────────────────────────────────────────────────────────
+// The Pricing section edits one thing: what the plan costs today, VAT included.
+// Saving closes the current price window and opens a new one, so the superseded
+// price stays in the history exactly as it was (req. 15 — historical rows are
+// never recomputed, only closed).
+
+const ASSIGNABLE_STATUSES = ['draft', 'awaiting_payment', 'active', 'paused'];
+
+function round2(value: number): number {
+  return parseFloat(value.toFixed(2));
+}
+
+membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { rows: planRows } = await db.query<PlanRow>(
+    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (planRows.length === 0) return res.status(404).json({ error: 'Plan not found' });
+  const plan = planRows[0];
+
+  const rawPrice = req.body.price;
+  const price = parseFloat(rawPrice as string);
+  if (rawPrice == null || rawPrice === '' || isNaN(price) || price < 0) {
+    return res.status(400).json({ error: 'price must be a non-negative number' });
+  }
+  const taxRateErr = await validateTaxRateId(gymId, req.body.tax_rate_id);
+  if (taxRateErr) return res.status(400).json({ error: taxRateErr });
+
+  // An explicit tax_rate_id wins; an explicit null/'' means "gym default" (the
+  // system rate, mirroring POST /); omitting the key leaves the plan's rate as is.
+  const providedTaxRateId = req.body.tax_rate_id;
+  const nextTaxRateId = providedTaxRateId != null && providedTaxRateId !== ''
+    ? Number(providedTaxRateId)
+    : 'tax_rate_id' in req.body
+      ? await getSystemTaxRateId(gymId)
+      : (plan.tax_rate_id ?? await getSystemTaxRateId(gymId));
+
+  const value = round2(price);
+  const callerMemberId = await getCallerMembershipId(req);
+  const { rows: nextTaxRows } = nextTaxRateId == null
+    ? { rows: [] as { rate_percent: string }[] }
+    : await db.query<{ rate_percent: string }>(
+        'SELECT rate_percent FROM tax_rates WHERE id = ? AND gym_id = ?',
+        [nextTaxRateId, gymId],
+      );
+  const nextRatePercent = nextTaxRows[0] ? nextTaxRows[0].rate_percent : null;
+
+  try {
+    await db.transaction(async (tx) => {
+      const current = await loadCurrentPriceRow(tx, plan.id, gymId);
+      // A VAT change is a pricing change too: the current row keeps the rate it
+      // was priced with and a new row opens under the new one.
+      const changed = current == null
+        || round2(parseFloat(current.price)) !== value
+        || (current.tax_rate_id ?? null) !== (nextTaxRateId ?? null);
+
+      if (changed) {
+        if (current) {
+          // A window opened on an earlier day closes yesterday; one opened today
+          // closes today, so the history still records that it was in force.
+          await tx.query(
+            `UPDATE membership_plan_prices
+                SET status = 'inactive',
+                    valid_to = IF(valid_from < UTC_DATE(), DATE_SUB(UTC_DATE(), INTERVAL 1 DAY), valid_from)
+              WHERE id = ? AND gym_id = ?`,
+            [current.id, gymId],
+          );
+        }
+        await tx.query(
+          `INSERT INTO membership_plan_prices
+             (membership_plan_id, gym_id, price, valid_from, valid_to, status, tax_rate_id, tax_rate_percent)
+           VALUES (?, ?, ?, UTC_DATE(), NULL, 'active', ?, ?)`,
+          [plan.id, gymId, value, nextTaxRateId ?? null, nextRatePercent],
+        );
+      }
+
+      // Price is always the final, VAT-inclusive customer price (req. 6/7), so
+      // the plan's tax behavior is fixed — only the rate is selectable.
+      await tx.query(
+        `UPDATE membership_plans
+            SET tax_rate_id = ?, tax_behavior = 'inclusive', modified_at = UTC_TIMESTAMP(), modified_by = ?
+          WHERE id = ? AND gym_id = ?`,
+        [nextTaxRateId, callerMemberId, plan.id, gymId],
+      );
+      await recomputePriceStatuses(tx, plan.id, gymId);
+    });
+
+    const { rows } = await db.query<PlanRow>('SELECT * FROM membership_plans WHERE id = ?', [plan.id]);
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'membership_plan',
+      entityId: plan.id,
+      previous: { price: null, tax_rate_id: plan.tax_rate_id },
+      next: { price: value, tax_rate_id: nextTaxRateId },
+    });
+    res.json(await enrichPlan(rows[0], gymId));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Pushes the plan's current price onto the Assigned Plans that still run on it.
+// Terminal (cancelled/expired) memberships and already-generated Billing Events
+// are never touched — this only changes what an ongoing Assigned Plan costs from
+// now on. A negotiated discount (an Assigned Plan with a discount_reason) keeps
+// its agreed final price; only its plan-price snapshot is refreshed.
+membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('admin'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+
+  const current = await loadCurrentPriceRow(db, req.params.id, gymId);
+  if (!current) return res.status(400).json({ error: 'This plan has no current price to apply.' });
+  const price = round2(parseFloat(current.price));
+  const statusMarks = ASSIGNABLE_STATUSES.map(() => '?').join(',');
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const { rowCount: updated } = await tx.query(
+        `UPDATE user_memberships
+            SET base_price = ?, plan_price_id = ?, final_price = ?
+          WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
+            AND (discount_reason IS NULL OR discount_reason = '')`,
+        [price, current.id, price, req.params.id, gymId, ...ASSIGNABLE_STATUSES],
+      );
+      const { rowCount: keptDiscounted } = await tx.query(
+        `UPDATE user_memberships
+            SET base_price = ?, plan_price_id = ?
+          WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
+            AND discount_reason IS NOT NULL AND discount_reason <> ''`,
+        [price, current.id, req.params.id, gymId, ...ASSIGNABLE_STATUSES],
+      );
+      await tx.query(
+        `UPDATE membership_plan_prices SET status = 'applied', applied_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?`,
+        [current.id, gymId],
+      );
+      return { updated, kept_discounted: keptDiscounted };
+    });
+
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'membership_plan',
+      entityId: req.params.id,
+      next: { applied_price: price, plan_price_id: current.id, ...result },
+    });
+    res.json({ price, ...result });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ─── Charge Benefits ──────────────────────────────────────────────────────────

@@ -489,6 +489,21 @@ Selectors that create **new** associations must only offer active entities (`?st
 
 ---
 
+## Current Value + Immutable History (#547)
+
+When a field is edited over time but every past value must stay readable exactly as it was (a price, a rate, a policy amount), don't update the row in place and don't hand the admin raw validity windows to manage. One row is *in force*, the rest are history:
+
+- **Schema**: the history table keeps its `valid_from`/`valid_to` window plus a `status` column with a named CHECK (`membership_plan_prices.status` / `chk_membership_plan_prices_status`: `active`, `applied`, `inactive`). Snapshot onto the row anything a reader needs to interpret the value later (the VAT rate that applied: `tax_rate_id` + `tax_rate_percent`) — a history row must not depend on the parent's *current* configuration to read correctly.
+- **One write endpoint** (`PUT /<parent>/:id/<thing>`), not create/update/delete of windows: in a single `db.transaction()` it closes the current row (`valid_to` = yesterday, or its own `valid_from` when the row opened today, so a same-day replacement still records that it was in force), marks it `inactive`, and inserts the new open-ended `active` row dated today. Re-saving identical values writes nothing.
+- **Derive status, never trust it**: a `recompute<Thing>Statuses()` helper re-derives `status` from the windows (the row covering today is the current one, everything else is history) and runs after *every* write that can move a window — including legacy endpoints kept for API compatibility. The column is then a fast, queryable projection of the dates, not a second source of truth that can drift.
+- **Tie-break the same way everywhere**: a same-day replacement means two rows can cover today, so every "what applies now" query orders `(status = 'inactive') ASC, valid_from DESC, id DESC` — the backend lookup, the parent's enriched response, and any frontend mirror of that logic.
+- **Propagating to downstream records is a separate, explicit action** (`POST /<parent>/:id/<thing>/apply-to-…`), confirmed in the UI with a `ConfirmDialog`, never a side effect of saving. It touches only live downstream rows (never terminal ones, never an already-generated ledger row), preserves per-row negotiated overrides (a membership with a `discount_reason` keeps its `final_price`), reports what it did (`{ updated, kept_discounted }`), and flips the current row to the `applied` status so the UI can show it was pushed.
+- **Frontend**: an inline section with the editable current value and a **Save** button, and a read-only history list below it, newest first, badging each row with its status. No add/edit/delete controls on history rows — that is the whole point.
+
+Reference implementation: Plans' Pricing section — `api/src/api/membership-plans.ts` (`PUT /:id/pricing`, `POST /:id/pricing/apply-to-assigned-plans`, `recomputePriceStatuses`) + `apps/admin/src/app/[locale]/plans/page.tsx`.
+
+---
+
 ## Duplicate Action (flat catalog item)
 
 For a single-row catalog entity (not a hierarchy — see "Duplicate at every level" below for that case), "Duplicate" is a single immediate backend action, not a pre-filled form the user reviews before saving:

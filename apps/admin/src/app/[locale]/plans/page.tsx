@@ -15,7 +15,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
-import { computeVatPreview, computeGrossFromPreservedNet } from '@/lib/priceVat';
+import { computeVatPreview } from '@/lib/priceVat';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,7 +43,19 @@ interface Allowance {
 }
 
 interface Center { id: number; name: string; }
-interface PriceRow { id: number; price: string; valid_from: string; valid_to: string | null; }
+// #547: `status` is the price's place in the plan's history — 'active' is the
+// price in force, 'applied' the price in force that has already been pushed onto
+// the plan's Assigned Plans, 'inactive' a superseded price kept for history.
+type PriceStatus = 'active' | 'applied' | 'inactive';
+interface PriceRow {
+  id: number;
+  price: string;
+  valid_from: string;
+  valid_to: string | null;
+  status: PriceStatus;
+  applied_at: string | null;
+  tax_rate_percent: string | null;
+}
 interface ActivityType { id: number; name: string; }
 interface GymCharge { id: number; name: string; charge_type_name: string | null; charge_type_code: string | null; amount: string | null; availability: string; }
 interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
@@ -93,7 +105,6 @@ const MEMBER_LIMITS = ['1', '2', 'family'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
-const TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
 
 // Applied automatically to every new plan; staff can adjust it afterwards via the Billing Policy section.
 const DEFAULT_BILLING_POLICY = {
@@ -116,8 +127,6 @@ const emptyEditForm = {
   lifecycle_status: 'draft' as Plan['lifecycle_status'],
   enrollment_status: 'staff_only' as Plan['enrollment_status'],
   member_limit: '1' as Plan['member_limit'],
-  tax_rate_id: '',
-  tax_behavior: 'inclusive' as Plan['tax_behavior'],
 };
 
 type InlineNew = {
@@ -127,7 +136,6 @@ type InlineNew = {
   enrollment_status: Plan['enrollment_status'];
   member_limit: Plan['member_limit'];
   tax_rate_id: string;
-  tax_behavior: Plan['tax_behavior'];
   saving: boolean;
   error: string | null;
 };
@@ -135,7 +143,7 @@ type InlineNew = {
 function emptyInlineNew(): InlineNew {
   return {
     name: '', description: '', lifecycle_status: 'draft', enrollment_status: 'staff_only', member_limit: '1',
-    tax_rate_id: '', tax_behavior: 'inclusive', saving: false, error: null,
+    tax_rate_id: '', saving: false, error: null,
   };
 }
 
@@ -189,10 +197,12 @@ export default function PlansPage() {
   // Details modal (#512)
   const [detailFor, setDetailFor] = useState<Plan | null>(null);
 
-  // Price sub-form (inline, per plan)
-  const [priceForm, setPriceForm] = useState({ price: '', valid_from: '', valid_to: '' });
-  const [priceEditId, setPriceEditId] = useState<number | null>(null);
-  const [priceForPlanId, setPriceForPlanId] = useState<number | null>(null);
+  // Pricing sub-form (inline, per plan) — price is always VAT-inclusive (#547)
+  const [pricingForm, setPricingForm] = useState({ price: '', tax_rate_id: '' });
+  const [pricingForPlanId, setPricingForPlanId] = useState<number | null>(null);
+  const [pricingSaving, setPricingSaving] = useState(false);
+  const [applyPricingFor, setApplyPricingFor] = useState<Plan | null>(null);
+  const [applyingPricing, setApplyingPricing] = useState(false);
 
   // Allowance sub-form (inline, per plan)
   const [allowanceForPlanId, setAllowanceForPlanId] = useState<number | null>(null);
@@ -289,8 +299,6 @@ export default function PlansPage() {
       lifecycle_status: plan.lifecycle_status,
       enrollment_status: plan.enrollment_status,
       member_limit: plan.member_limit,
-      tax_rate_id: plan.tax_rate_id != null ? String(plan.tax_rate_id) : '',
-      tax_behavior: plan.tax_behavior ?? 'inclusive',
     });
     setEditError(null);
   }
@@ -312,8 +320,6 @@ export default function PlansPage() {
           lifecycle_status: editForm.lifecycle_status,
           enrollment_status: editForm.enrollment_status,
           member_limit: editForm.member_limit,
-          tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
-          tax_behavior: editForm.tax_behavior,
         }),
       });
       setEditingId(null);
@@ -350,7 +356,8 @@ export default function PlansPage() {
           enrollment_status: inlineNew.enrollment_status,
           member_limit: inlineNew.member_limit,
           tax_rate_id: inlineNew.tax_rate_id !== '' ? parseInt(inlineNew.tax_rate_id, 10) : null,
-          tax_behavior: inlineNew.tax_behavior,
+          // #547: a plan's price is always the final VAT-inclusive customer price.
+          tax_behavior: 'inclusive',
         }),
       });
       await apiFetch(`/membership-plans/${created.id}/billing-policy`, {
@@ -433,48 +440,69 @@ export default function PlansPage() {
     }
   }
 
-  // ─── Price sub-form ─────────────────────────────────────────────────────────
+  // ─── Pricing sub-form (#547) ────────────────────────────────────────────────
+  // One editable price per plan, always VAT-inclusive. Saving supersedes the
+  // current price, which moves to the price history below — nothing here ever
+  // rewrites a price that was already in force.
 
-  function openAddPrice(planId: number) {
-    setPriceForPlanId(planId);
-    setPriceEditId(null);
-    setPriceForm({ price: '', valid_from: '', valid_to: '' });
+  function openPricing(plan: Plan) {
+    setPricingForPlanId(plan.id);
+    setPricingForm({
+      price: plan.current_price != null ? parseFloat(plan.current_price).toFixed(2) : '',
+      tax_rate_id: plan.tax_rate_id != null ? String(plan.tax_rate_id) : '',
+    });
   }
 
-  function openEditPrice(planId: number, row: PriceRow) {
-    setPriceForPlanId(planId);
-    setPriceEditId(row.id);
-    setPriceForm({ price: row.price, valid_from: row.valid_from, valid_to: row.valid_to ?? '' });
+  function closePricingForm() {
+    setPricingForPlanId(null);
+    setPricingForm({ price: '', tax_rate_id: '' });
   }
 
-  function closePriceForm() {
-    setPriceForPlanId(null);
-    setPriceEditId(null);
-    setPriceForm({ price: '', valid_from: '', valid_to: '' });
-  }
-
-  async function handleSavePrice() {
-    if (!priceForPlanId) return;
-    const body = { price: parseFloat(priceForm.price), valid_from: priceForm.valid_from, valid_to: priceForm.valid_to || null };
+  async function handleSavePricing(planId: number) {
+    const price = parseFloat(pricingForm.price);
+    if (isNaN(price) || price < 0) {
+      toast(t('plans.error_price'));
+      return;
+    }
+    setPricingSaving(true);
     try {
-      if (priceEditId) {
-        await apiFetch(`/membership-plans/${priceForPlanId}/prices/${priceEditId}`, { method: 'PUT', body: JSON.stringify(body) });
-      } else {
-        await apiFetch(`/membership-plans/${priceForPlanId}/prices`, { method: 'POST', body: JSON.stringify(body) });
-      }
-      closePriceForm();
+      await apiFetch(`/membership-plans/${planId}/pricing`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          price,
+          tax_rate_id: pricingForm.tax_rate_id !== '' ? parseInt(pricingForm.tax_rate_id, 10) : null,
+        }),
+      });
+      closePricingForm();
+      toast(t('plans.pricing_saved'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('plans.error_generic'));
+    } finally {
+      setPricingSaving(false);
     }
   }
 
-  async function handleDeletePrice(planId: number, priceId: number) {
+  async function handleApplyPricing() {
+    if (!applyPricingFor) return;
+    setApplyingPricing(true);
     try {
-      await apiFetch(`/membership-plans/${planId}/prices/${priceId}`, { method: 'DELETE' });
+      const result = await apiFetch<{ price: number; updated: number; kept_discounted: number }>(
+        `/membership-plans/${applyPricingFor.id}/pricing/apply-to-assigned-plans`,
+        { method: 'POST' },
+      );
+      setApplyPricingFor(null);
+      toast(
+        result.kept_discounted > 0
+          ? t('plans.apply_price_done_with_discounts', { updated: result.updated, kept: result.kept_discounted })
+          : t('plans.apply_price_done', { updated: result.updated }),
+        'success',
+      );
       load();
     } catch (err: any) {
       toast(err.message ?? t('plans.error_generic'));
+    } finally {
+      setApplyingPricing(false);
     }
   }
 
@@ -647,19 +675,9 @@ export default function PlansPage() {
                 ))}
               </select>
             </div>
-            <div>
-              <label style={inlineLabelStyle}>{t('plans.label_tax_behavior')}</label>
-              <select
-                value={inlineNew.tax_behavior}
-                onChange={(e) => setInlineNew({ ...inlineNew, tax_behavior: e.target.value as Plan['tax_behavior'] })}
-                style={inlineSelectStyle}
-              >
-                {TAX_BEHAVIORS.map((b) => <option key={b} value={b}>{t(`plans.tax_behavior_${b}`)}</option>)}
-              </select>
-            </div>
           </div>
           <p style={{ ...fieldDescStyle, margin: '0 0 6px' }}>
-            {t(inlineNew.tax_behavior === 'exclusive' ? 'plans.tax_behavior_hint_exclusive' : 'plans.tax_behavior_hint_inclusive')}
+            {t('plans.tax_behavior_hint_inclusive')}
           </p>
           <p style={{ ...fieldDescStyle, margin: '0 0 12px' }}>
             {t('plans.default_billing_notice', {
@@ -826,50 +844,11 @@ export default function PlansPage() {
                           ))}
                         </select>
                       </div>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('plans.label_tax_rate')}</label>
-                        <select
-                          value={editForm.tax_rate_id}
-                          onChange={(e) => setEditForm({ ...editForm, tax_rate_id: e.target.value })}
-                          style={inlineSelectStyle}
-                        >
-                          <option value="">{t('plans.tax_rate_default')}</option>
-                          {taxRateOptions(editForm.tax_rate_id).map((tr) => (
-                            <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('plans.label_tax_behavior')}</label>
-                        <select
-                          value={editForm.tax_behavior}
-                          onChange={(e) => setEditForm({ ...editForm, tax_behavior: e.target.value as Plan['tax_behavior'] })}
-                          style={inlineSelectStyle}
-                        >
-                          {TAX_BEHAVIORS.map((b) => <option key={b} value={b}>{t(`plans.tax_behavior_${b}`)}</option>)}
-                        </select>
-                      </div>
                     </div>
-                    {(() => {
-                      // #547: net price is preserved when VAT is changed here — only the displayed gross
-                      // (customer-facing) price is recalculated. The stored `price` row itself is untouched;
-                      // it's the Price sub-form below that writes it.
-                      if (plan.amount_excl_tax == null) return null;
-                      const newRatePercent = editForm.tax_rate_id !== ''
-                        ? parseFloat(taxRates.find((tr) => String(tr.id) === editForm.tax_rate_id)?.rate_percent ?? '')
-                        : parseFloat(taxRates.find((tr) => tr.is_system)?.rate_percent ?? '');
-                      if (isNaN(newRatePercent)) return null;
-                      const newGross = computeGrossFromPreservedNet(plan.amount_excl_tax, newRatePercent);
-                      return (
-                        <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>
-                          {t('plans.vat_change_preview', {
-                            net: plan.amount_excl_tax.toFixed(2),
-                            rate: newRatePercent,
-                            gross: newGross.toFixed(2),
-                          })}
-                        </p>
-                      );
-                    })()}
+                    {/* #547: price and VAT are edited together in the Pricing section below —
+                        changing them there is what opens a new price and files the old one in
+                        the history, so they are deliberately not repeated in this form. */}
+                    <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.tax_rate_moved_hint')}</p>
                     {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
                     <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
                       <button onClick={cancelEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
@@ -1136,62 +1115,56 @@ export default function PlansPage() {
                     )}
 
                     <SectionHeader
-                      title={t('plans.section_prices')}
-                      action={priceForPlanId === plan.id ? null : <button onClick={() => openAddPrice(plan.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.add_price')}</button>}
+                      title={t('plans.section_pricing')}
+                      action={pricingForPlanId === plan.id ? null : (
+                        <button onClick={() => openPricing(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
+                          {t('plans.edit_pricing')}
+                        </button>
+                      )}
                     />
-                    <DetailRow
-                      label={t('plans.label_tax_rate')}
-                      value={plan.tax_rate_name ? `${plan.tax_rate_name} (${parseFloat(plan.tax_rate_percent ?? '0')}%, ${t(`plans.tax_behavior_${plan.tax_behavior}`)})` : t('plans.tax_rate_default')}
-                    />
-                    {plan.current_price != null && plan.amount_excl_tax != null && plan.amount_incl_tax != null && (
-                      <DetailRow
-                        label={t('plans.label_current_price')}
-                        value={`€${plan.amount_excl_tax.toFixed(2)} + tax = €${plan.amount_incl_tax.toFixed(2)}`}
-                      />
-                    )}
-                    {priceForPlanId === plan.id && (
+                    {pricingForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                           <div>
-                            <label style={inlineLabelStyle}>{t('prices.col_price')}</label>
+                            <label style={inlineLabelStyle}>{t('plans.label_price_incl_tax')}</label>
                             <input
                               type="number" min="0" step="0.01"
-                              value={priceForm.price}
-                              onChange={(e) => setPriceForm({ ...priceForm, price: e.target.value })}
+                              value={pricingForm.price}
+                              onChange={(e) => setPricingForm({ ...pricingForm, price: e.target.value })}
                               placeholder="0.00"
                               style={inlineInputStyle}
                             />
                           </div>
                           <div>
-                            <label style={inlineLabelStyle}>{t('prices.col_from')}</label>
-                            <input
-                              type="date"
-                              value={priceForm.valid_from}
-                              onChange={(e) => setPriceForm({ ...priceForm, valid_from: e.target.value })}
-                              style={inlineInputStyle}
-                            />
-                          </div>
-                          <div>
-                            <label style={inlineLabelStyle}>{t('prices.col_to')}</label>
-                            <input
-                              type="date"
-                              value={priceForm.valid_to}
-                              onChange={(e) => setPriceForm({ ...priceForm, valid_to: e.target.value })}
-                              style={inlineInputStyle}
-                            />
+                            <label style={inlineLabelStyle}>{t('plans.label_tax_rate')}</label>
+                            <select
+                              value={pricingForm.tax_rate_id}
+                              onChange={(e) => setPricingForm({ ...pricingForm, tax_rate_id: e.target.value })}
+                              style={inlineSelectStyle}
+                            >
+                              <option value="">{t('plans.tax_rate_default')}</option>
+                              {taxRateOptions(pricingForm.tax_rate_id).map((tr) => (
+                                <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+                              ))}
+                            </select>
                           </div>
                         </div>
                         {(() => {
-                          const ratePercent = plan.tax_rate_percent != null ? parseFloat(plan.tax_rate_percent) : null;
-                          if (ratePercent == null) return null;
-                          const hintKey = plan.tax_behavior === 'exclusive' ? 'plans.price_hint_exclusive' : 'plans.price_hint_inclusive';
-                          const priceNum = parseFloat(priceForm.price);
+                          // Req. 6/7/11/12: the entered price is always the final VAT-inclusive
+                          // customer price — the net is derived from it live, and picking another
+                          // VAT re-splits the same gross rather than stacking tax on top of it.
+                          const selected = pricingForm.tax_rate_id !== ''
+                            ? taxRates.find((tr) => String(tr.id) === pricingForm.tax_rate_id)
+                            : taxRates.find((tr) => tr.is_system);
+                          const ratePercent = selected ? parseFloat(selected.rate_percent) : null;
+                          if (ratePercent == null || isNaN(ratePercent)) return null;
+                          const priceNum = parseFloat(pricingForm.price);
                           const preview = !isNaN(priceNum) && priceNum >= 0
-                            ? computeVatPreview(priceNum, ratePercent, plan.tax_behavior)
+                            ? computeVatPreview(priceNum, ratePercent, 'inclusive')
                             : null;
                           return (
                             <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>
-                              {t(hintKey, { rate: ratePercent })}
+                              {t('plans.price_hint_inclusive', { rate: ratePercent })}
                               {preview && (
                                 <> — {t('plans.price_preview', {
                                   excl: preview.amount_excl_tax.toFixed(2),
@@ -1201,25 +1174,65 @@ export default function PlansPage() {
                             </p>
                           );
                         })()}
+                        <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.pricing_save_hint')}</p>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={closePriceForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={handleSavePrice} style={btnSmall()}>{t('plans.save_changes')}</button>
+                          <button onClick={closePricingForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={() => handleSavePricing(plan.id)} disabled={pricingSaving} style={btnSmall()}>
+                            {pricingSaving ? t('plans.saving') : t('plans.save')}
+                          </button>
                         </div>
                       </div>
+                    ) : (
+                      <>
+                        <DetailRow
+                          label={t('plans.label_tax_rate')}
+                          value={plan.tax_rate_name ? `${plan.tax_rate_name} (${parseFloat(plan.tax_rate_percent ?? '0')}%)` : t('plans.tax_rate_default')}
+                        />
+                        {plan.current_price != null && plan.amount_excl_tax != null && plan.amount_incl_tax != null && (
+                          <DetailRow
+                            label={t('plans.label_current_price')}
+                            value={`€${plan.amount_incl_tax.toFixed(2)} ${t('plans.tax_included_suffix')} (${t('plans.price_preview', { excl: plan.amount_excl_tax.toFixed(2), incl: plan.amount_incl_tax.toFixed(2) })})`}
+                          />
+                        )}
+                        {plan.current_price != null && (
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '6px 0 10px' }}>
+                            <button
+                              onClick={() => setApplyPricingFor(plan)}
+                              disabled={!canWrite}
+                              title={readOnlyTitle}
+                              style={readOnlyStyle(btnSmall(), !canWrite)}
+                            >
+                              {t('plans.apply_price_to_assigned')}
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
+
+                    <SectionHeader title={t('plans.section_prices')} />
                     {(plan.price_history ?? []).length === 0 ? (
                       <p style={hintSt}>{t('plans.no_prices')}</p>
                     ) : (
-                      (plan.price_history ?? []).map((row) => (
-                        <div key={row.id} style={benefitRowStyle}>
-                          <span style={benefitNameStyle}>{String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}</span>
-                          <span style={benefitValueStyle}>€{parseFloat(row.price).toFixed(2)}</span>
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <button onClick={() => openEditPrice(plan.id, row)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>
-                            <button onClick={() => handleDeletePrice(plan.id, row.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(dangerLinkBtn, !canWrite)}>✕</button>
+                      // Newest first — the plan's current price heads its own history.
+                      [...(plan.price_history ?? [])]
+                        .sort((a, b) =>
+                          Number(a.status === 'inactive') - Number(b.status === 'inactive')
+                          || String(b.valid_from).localeCompare(String(a.valid_from))
+                          || b.id - a.id)
+                        .map((row) => (
+                          <div key={row.id} style={benefitRowStyle}>
+                            <span style={benefitNameStyle}>
+                              {String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}
+                            </span>
+                            <span style={benefitValueStyle}>
+                              €{parseFloat(row.price).toFixed(2)}
+                              {row.tax_rate_percent != null && ` (${t('plans.price_hint_inclusive', { rate: parseFloat(row.tax_rate_percent) })})`}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: row.status === 'inactive' ? '#888' : '#1e7e34' }}>
+                              {t(`plans.price_status_${row.status}`)}
+                            </span>
                           </div>
-                        </div>
-                      ))
+                        ))
                     )}
 
                     <SectionHeader title={t('plans.section_billing_forecast')} />
@@ -1270,6 +1283,21 @@ export default function PlansPage() {
         cancelLabel={t('plans.cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
+      />
+
+      {/* #547: pushing the plan's current price onto its Assigned Plans is
+          confirmed explicitly — it changes what existing members pay. */}
+      <ConfirmDialog
+        open={applyPricingFor !== null}
+        message={t('plans.confirm_apply_price', {
+          name: applyPricingFor?.name ?? '',
+          price: applyPricingFor?.amount_incl_tax != null ? applyPricingFor.amount_incl_tax.toFixed(2) : '',
+        })}
+        confirmLabel={t('plans.confirm_apply_price_yes')}
+        cancelLabel={t('plans.cancel')}
+        busy={applyingPricing}
+        onConfirm={handleApplyPricing}
+        onCancel={() => setApplyPricingFor(null)}
       />
 
       {/* Assign Plan to Member(s) (#376) */}

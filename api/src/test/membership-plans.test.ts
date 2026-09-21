@@ -1596,3 +1596,339 @@ describe('POST /membership-plans/:id/assign', () => {
     expect(res.status).toBe(409);
   });
 });
+
+// ─── Pricing (#547) ──────────────────────────────────────────────────────────
+// PUT /:id/pricing replaces the plan's current VAT-inclusive price; the
+// superseded price stays in the history untouched. POST
+// /:id/pricing/apply-to-assigned-plans pushes the current price onto the
+// Assigned Plans still running on the plan.
+
+describe('Membership Plan Pricing (#547)', () => {
+  let gymId: string;
+  let otherGymId: string;
+  let taxRate21: number;
+  let taxRate10: number;
+
+  async function createPricingTaxRate(gId: string, ratePercent: number): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO tax_rates (gym_id, name, rate_percent, is_system, status) VALUES (?, ?, ?, 0, 'active')`,
+      [gId, `Pricing Tax ${ratePercent}%-${Math.random().toString(36).slice(2, 6)}`, ratePercent],
+    );
+    return insertId;
+  }
+
+  async function priceRows(planId: number): Promise<any[]> {
+    const { rows } = await db.query(
+      'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? ORDER BY id ASC',
+      [planId],
+    );
+    return rows;
+  }
+
+  function savePricing(planId: number, body: Record<string, unknown>, gId = gymId) {
+    return request
+      .put(`/membership-plans/${planId}/pricing`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gId)
+      .send(body);
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Pricing Gym');
+    await createTestMembership(gymId, 'admin');
+    otherGymId = await createTestGym('Plans Pricing Gym B');
+    taxRate21 = await createPricingTaxRate(gymId, 21);
+    taxRate10 = await createPricingTaxRate(gymId, 10);
+  });
+
+  // ── Auth / roles ──
+
+  it('returns 401 without an Authorization header', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Auth Plan' });
+    const res = await request
+      .put(`/membership-plans/${planId}/pricing`)
+      .set('x-gym-id', gymId)
+      .send({ price: 50 });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when a read-only role saves pricing', async () => {
+    const gymRO = await createTestGym('Pricing Role Guard Gym');
+    await createTestMembership(gymRO, 'front_desk');
+    const planId = await createPlan(gymRO, { name: 'Pricing Role Guard Plan' });
+    const res = await savePricing(planId, { price: 50 }, gymRO);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 403 when a read-only role applies the price to assigned plans', async () => {
+    const gymRO = await createTestGym('Pricing Apply Role Guard Gym');
+    await createTestMembership(gymRO, 'front_desk');
+    const planId = await createPlan(gymRO, { name: 'Pricing Apply Role Guard Plan' });
+    const res = await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymRO);
+    expect(res.status).toBe(403);
+  });
+
+  // ── Tenant isolation ──
+
+  it("returns 404 for a plan belonging to another gym", async () => {
+    const planId = await createPlan(otherGymId, { name: 'Pricing Other Gym Plan' });
+    const res = await savePricing(planId, { price: 50 });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a tax rate belonging to another gym", async () => {
+    const foreignTaxRateId = await createPricingTaxRate(otherGymId, 7);
+    const planId = await createPlan(gymId, { name: 'Pricing Foreign Tax Plan' });
+    const res = await savePricing(planId, { price: 50, tax_rate_id: foreignTaxRateId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/tax_rate_id/i);
+  });
+
+  // ── Validation ──
+
+  it('rejects a negative price', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Negative Plan' });
+    const res = await savePricing(planId, { price: -1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/non-negative/i);
+  });
+
+  it('rejects a missing price', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Missing Price Plan' });
+    const res = await savePricing(planId, { tax_rate_id: taxRate21 });
+    expect(res.status).toBe(400);
+  });
+
+  // ── Happy path ──
+
+  it('saves the price as the VAT-inclusive customer price and derives the net from it', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Happy Plan' });
+    const res = await savePricing(planId, { price: 121, tax_rate_id: taxRate21 });
+    expect(res.status).toBe(200);
+    expect(res.body.current_price).toBe('121.00');
+    expect(res.body.tax_behavior).toBe('inclusive');
+    expect(res.body.tax_rate_id).toBe(taxRate21);
+    expect(res.body.amount_incl_tax).toBeCloseTo(121, 2);
+    expect(res.body.amount_excl_tax).toBeCloseTo(100, 2);
+
+    const rows = await priceRows(planId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('active');
+    expect(Number(rows[0].tax_rate_percent)).toBeCloseTo(21, 2);
+  });
+
+  it('a 0% tax rate leaves the price unchanged', async () => {
+    const zeroRate = await createPricingTaxRate(gymId, 0);
+    const planId = await createPlan(gymId, { name: 'Pricing Zero Rate Plan' });
+    const res = await savePricing(planId, { price: 45.5, tax_rate_id: zeroRate });
+    expect(res.status).toBe(200);
+    expect(res.body.amount_excl_tax).toBeCloseTo(45.5, 2);
+    expect(res.body.amount_incl_tax).toBeCloseTo(45.5, 2);
+  });
+
+  // ── Price history invariants ──
+
+  it('moves the superseded price to the history and keeps its amount untouched', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing History Plan' });
+    await savePricing(planId, { price: 100, tax_rate_id: taxRate21 });
+    const res = await savePricing(planId, { price: 120, tax_rate_id: taxRate21 });
+    expect(res.status).toBe(200);
+    expect(res.body.current_price).toBe('120.00');
+
+    const rows = await priceRows(planId);
+    expect(rows).toHaveLength(2);
+    const [old_, current] = rows;
+    expect(Number(old_.price)).toBeCloseTo(100, 2);
+    expect(old_.status).toBe('inactive');
+    expect(Number(current.price)).toBeCloseTo(120, 2);
+    expect(current.status).toBe('active');
+    expect(res.body.price_history).toHaveLength(2);
+  });
+
+  it('a VAT change also opens a new price and files the old one in the history', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing VAT Change Plan' });
+    await savePricing(planId, { price: 100, tax_rate_id: taxRate21 });
+    const res = await savePricing(planId, { price: 100, tax_rate_id: taxRate10 });
+    expect(res.status).toBe(200);
+    expect(res.body.tax_rate_id).toBe(taxRate10);
+    expect(res.body.amount_excl_tax).toBeCloseTo(90.91, 2);
+
+    const rows = await priceRows(planId);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].status).toBe('inactive');
+    expect(Number(rows[0].tax_rate_percent)).toBeCloseTo(21, 2);
+    expect(rows[1].status).toBe('active');
+    expect(Number(rows[1].tax_rate_percent)).toBeCloseTo(10, 2);
+  });
+
+  it('saving the same price and VAT again does not add a history row', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Idempotent Plan' });
+    await savePricing(planId, { price: 80, tax_rate_id: taxRate21 });
+    const res = await savePricing(planId, { price: 80, tax_rate_id: taxRate21 });
+    expect(res.status).toBe(200);
+    expect(await priceRows(planId)).toHaveLength(1);
+  });
+
+  it("an explicit null tax_rate_id falls back to the gym's system tax rate", async () => {
+    const { insertId: systemRateId } = await db.query(
+      `INSERT INTO tax_rates (gym_id, name, rate_percent, is_system, status) VALUES (?, 'System VAT', 21, 1, 'active')`,
+      [gymId],
+    );
+    const planId = await createPlan(gymId, { name: 'Pricing Default Tax Plan' });
+    await savePricing(planId, { price: 100, tax_rate_id: taxRate10 });
+    const res = await savePricing(planId, { price: 100, tax_rate_id: null });
+    expect(res.status).toBe(200);
+    expect(res.body.tax_rate_id).toBe(systemRateId);
+  });
+
+  it('reports a price whose window has expired as inactive without a rewrite', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Expired Window Plan' });
+    await savePricing(planId, { price: 55, tax_rate_id: taxRate21 });
+    // Simulate the calendar moving past the window: the row keeps its stored
+    // 'active' status, which only a later price write would recompute.
+    await db.query(
+      `UPDATE membership_plan_prices SET valid_to = DATE_SUB(UTC_DATE(), INTERVAL 1 DAY)
+        WHERE membership_plan_id = ?`,
+      [planId],
+    );
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.current_price).toBeNull();
+    expect(res.body.price_history).toHaveLength(1);
+    expect(res.body.price_history[0].status).toBe('inactive');
+  });
+
+  // ── Apply to assigned plans ──
+
+  it('applies the current price to the assigned plans still running on the plan', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Apply Plan' });
+    await savePricing(planId, { price: 60, tax_rate_id: taxRate21 });
+    const memberId = await createMember(gymId);
+    const membershipId = await createActiveUserMembership(gymId, memberId, planId);
+    await db.query('UPDATE user_memberships SET base_price = 40, final_price = 40 WHERE id = ?', [membershipId]);
+
+    await savePricing(planId, { price: 75, tax_rate_id: taxRate21 });
+    const res = await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(1);
+    expect(res.body.kept_discounted).toBe(0);
+    expect(res.body.price).toBeCloseTo(75, 2);
+
+    const { rows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
+    expect(Number(rows[0].base_price)).toBeCloseTo(75, 2);
+    expect(Number(rows[0].final_price)).toBeCloseTo(75, 2);
+
+    const prices = await priceRows(planId);
+    const current = prices.find((p) => Number(p.price) === 75);
+    expect(current.status).toBe('applied');
+    expect(current.applied_at).not.toBeNull();
+  });
+
+  it('keeps the agreed price of an assigned plan that has a discount', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Apply Discount Plan' });
+    await savePricing(planId, { price: 100, tax_rate_id: taxRate21 });
+    const memberId = await createMember(gymId);
+    const membershipId = await createActiveUserMembership(gymId, memberId, planId);
+    await db.query(
+      "UPDATE user_memberships SET base_price = 100, final_price = 80, discount_reason = 'Loyalty' WHERE id = ?",
+      [membershipId],
+    );
+
+    await savePricing(planId, { price: 130, tax_rate_id: taxRate21 });
+    const res = await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(0);
+    expect(res.body.kept_discounted).toBe(1);
+
+    const { rows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
+    expect(Number(rows[0].base_price)).toBeCloseTo(130, 2);
+    expect(Number(rows[0].final_price)).toBeCloseTo(80, 2);
+  });
+
+  it('never touches a cancelled assigned plan or an already-generated billing event', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Apply History Plan' });
+    await savePricing(planId, { price: 50, tax_rate_id: taxRate21 });
+    const memberId = await createMember(gymId);
+    const membershipId = await createActiveUserMembership(gymId, memberId, planId);
+    await db.query(
+      "UPDATE user_memberships SET status = 'cancelled', base_price = 50, final_price = 50 WHERE id = ?",
+      [membershipId],
+    );
+    const { insertId: eventId } = await db.query(
+      `INSERT INTO billing_events (gym_id, user_membership_id, member_id, event_type, amount, source)
+       VALUES (?, ?, ?, 'charge_created', 50.00, 'admin')`,
+      [gymId, membershipId, memberId],
+    );
+
+    await savePricing(planId, { price: 90, tax_rate_id: taxRate21 });
+    const res = await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(0);
+
+    const { rows: umRows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
+    expect(Number(umRows[0].final_price)).toBeCloseTo(50, 2);
+    const { rows: beRows } = await db.query('SELECT * FROM billing_events WHERE id = ?', [eventId]);
+    expect(Number(beRows[0].amount)).toBeCloseTo(50, 2);
+  });
+
+  it('returns 400 when the plan has no current price to apply', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Apply No Price Plan' });
+    const res = await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no current price/i);
+  });
+
+  it("returns 404 when applying the price of another gym's plan", async () => {
+    const planId = await createPlan(otherGymId, { name: 'Pricing Apply Other Gym Plan' });
+    const res = await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  // ── Duplication (req. 17) ──
+
+  it('carries the price and its VAT snapshot to a duplicated plan without the applied marker', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Duplicate Source' });
+    await savePricing(planId, { price: 110, tax_rate_id: taxRate10 });
+    const memberId = await createMember(gymId);
+    await createActiveUserMembership(gymId, memberId, planId);
+    await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+
+    const res = await request
+      .post(`/membership-plans/${planId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(201);
+    expect(res.body.current_price).toBe('110.00');
+    expect(res.body.tax_rate_id).toBe(taxRate10);
+
+    const copies = await priceRows(res.body.id);
+    expect(copies).toHaveLength(1);
+    expect(copies[0].status).toBe('active');
+    expect(copies[0].applied_at).toBeNull();
+    expect(Number(copies[0].tax_rate_percent)).toBeCloseTo(10, 2);
+  });
+});
