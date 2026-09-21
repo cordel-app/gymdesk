@@ -96,7 +96,7 @@ export default function NutritionPlanTemplatesPage() {
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
 
   // #613: impersonation-aware; read-only roles see controls disabled.
-  const { canRead, canWrite } = useModuleAccess('NUTRITION');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
   useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
   useEffect(() => {
@@ -293,7 +293,9 @@ export default function NutritionPlanTemplatesPage() {
           />
           <button
             onClick={() => guardUnsaved(() => { setPendingNewForm(emptyForm); setPendingNewError(null); setPendingNew(true); })}
-            style={btnStyle()}
+            disabled={!canWrite}
+            title={readOnlyTitle}
+            style={readOnlyStyle(btnStyle(), !canWrite)}
           >
             {t('nutrition_plan_templates.add_new')}
           </button>
