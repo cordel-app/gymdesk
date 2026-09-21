@@ -195,7 +195,7 @@ async function validateMemberIds(gymId: string, memberIds: number[]): Promise<st
   return null;
 }
 
-classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
+classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
   if (!activity_type_id || !starts_at || !ends_at) {
@@ -316,7 +316,7 @@ classSessionsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, n
   }
 });
 
-classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
+classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
@@ -457,7 +457,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res,
   }
 });
 
-classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'), async (req, res, next) => {
+classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { authorized } = req.body;
   if (typeof authorized !== 'boolean') return res.status(400).json({ error: 'authorized (boolean) is required' });
@@ -503,7 +503,7 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('TRAINING'
   } catch (e) { next(e); }
 });
 
-classSessionsRouter.post('/:id/cancel', requireModuleWrite('TRAINING'), async (req, res) => {
+classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const reason = String(req.body?.cancellation_reason ?? '').trim();
   if (!reason) return res.status(400).json({ error: 'cancellation_reason is required' });
@@ -612,7 +612,7 @@ classSessionsRouter.post('/:id/walk-in',
   },
 );
 
-classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('TRAINING'), async (req, res) => {
+classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('CALENDAR'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id } = req.body;
 
@@ -654,7 +654,7 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('TRAINING')
   res.json(rows[0]);
 });
 
-classSessionsRouter.post('/:id/complete', requireModuleWrite('TRAINING'), async (req, res) => {
+classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
 
   const { rows: sessionRows } = await db.query(
@@ -758,7 +758,7 @@ calendarEventsRouter.get('/:id', async (req, res) => {
   res.json(rows[0]);
 });
 
-calendarEventsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
+calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
     title, activity_type_id, space_id, center_id, trainer_membership_id, color,
@@ -807,7 +807,7 @@ calendarEventsRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, 
   }
 });
 
-calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
+calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { rows: existing } = await db.query(
     "SELECT * FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL",
@@ -886,7 +886,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res
   }
 });
 
-calendarEventsRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
+calendarEventsRouter.delete('/:id', requireModuleWrite('CALENDAR'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { rows: existing } = await db.query(
     "SELECT title FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL",
