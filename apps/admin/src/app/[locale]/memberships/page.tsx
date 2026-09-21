@@ -35,7 +35,7 @@ interface Membership {
 
 interface Member { id: number; name: string; email: string }
 interface Plan   { id: number; name: string; base_price: string; status: 'active' | 'inactive' }
-interface PlanPrice { id: number; price: string; valid_from: string; valid_to: string | null }
+interface PlanPrice { id: number; price: string; valid_from: string; valid_to: string | null; status: 'active' | 'applied' | 'inactive' }
 
 const STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 const day = (d: string | null) => (d ? d.slice(0, 10) : '');
@@ -60,7 +60,12 @@ const emptyForm = {
 function effectivePrice(plan: Plan, prices: PlanPrice[], date: string): number {
   const applicable = prices
     .filter((p) => day(p.valid_from) <= date && (p.valid_to === null || day(p.valid_to) >= date))
-    .sort((a, b) => day(b.valid_from).localeCompare(day(a.valid_from)));
+    // #547: a price replaced on the same day keeps a same-day closed window, so
+    // two rows can match — the one that is not history wins, then the recent one.
+    .sort((a, b) =>
+      Number(a.status === 'inactive') - Number(b.status === 'inactive')
+      || day(b.valid_from).localeCompare(day(a.valid_from))
+      || b.id - a.id);
   return parseFloat(applicable[0]?.price ?? plan.base_price);
 }
 

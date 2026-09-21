@@ -11,15 +11,29 @@ import { join } from 'path';
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
-// Every key #547 added to the pre-existing "plans" namespace for the live
-// VAT recalculation preview (Price sub-form + Tax Rate/Behavior selects).
+// Every key #547 added to the pre-existing "plans" namespace: the live VAT
+// recalculation preview, plus the Pricing section's Save / price-history /
+// "Apply new price to assigned plans" flow.
 const PRICING_KEYS = [
   'price_hint_inclusive',
-  'price_hint_exclusive',
   'price_preview',
-  'vat_change_preview',
   'tax_behavior_hint_inclusive',
-  'tax_behavior_hint_exclusive',
+  'section_pricing',
+  'edit_pricing',
+  'save',
+  'label_price_incl_tax',
+  'pricing_save_hint',
+  'pricing_saved',
+  'tax_included_suffix',
+  'tax_rate_moved_hint',
+  'apply_price_to_assigned',
+  'confirm_apply_price',
+  'confirm_apply_price_yes',
+  'apply_price_done',
+  'apply_price_done_with_discounts',
+  'price_status_active',
+  'price_status_applied',
+  'price_status_inactive',
 ] as const;
 
 type Messages = Record<string, unknown>;

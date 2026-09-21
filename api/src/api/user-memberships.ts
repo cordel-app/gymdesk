@@ -376,10 +376,13 @@ export async function effectivePrice(planId: number, gymId: string, date: string
   if (planRows.length === 0) return null;
 
   const { rows: priceRows } = await db.query(
+    // #547: replacing a price on the same day leaves the superseded row with a
+    // same-day closed window, so two rows can match — prefer the one that is
+    // not history, then the most recent.
     `SELECT id, price FROM membership_plan_prices
      WHERE membership_plan_id = ? AND gym_id = ?
        AND valid_from <= ? AND (valid_to IS NULL OR valid_to >= ?)
-     ORDER BY valid_from DESC LIMIT 1`,
+     ORDER BY (status = 'inactive') ASC, valid_from DESC, id DESC LIMIT 1`,
     [planId, gymId, date, date],
   );
   // membership_plans.base_price was dropped in migration 058 — membership_plan_prices
