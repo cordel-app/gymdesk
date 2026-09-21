@@ -52,6 +52,29 @@ export interface ThemeTokens {
     // Links
     linkColor: string;
     linkHoverColor: string;
+    // Calendar (#559 stage 1) — only the surfaces the admin Calendar
+    // (FullCalendar: timeGridDay / timeGridWeek / dayGridMonth) actually
+    // renders today. Deliberately absent: event background and event border,
+    // which stay derived from `calendar_events.status` per #541 and the #559
+    // clarification ("Calendar event background will be the one used");
+    // a now-indicator token, since `nowIndicator` isn't enabled; and an
+    // empty-state color, since dayGrid/timeGrid have no empty state.
+    calendarBackground: string;
+    calendarSurfaceBackground: string;
+    calendarHeaderBackground: string;
+    calendarHeaderText: string;
+    calendarDayText: string;
+    calendarMutedDayText: string;
+    calendarTodayBackground: string;
+    calendarSelectionBackground: string;
+    calendarGridBorder: string;
+    calendarTimeAxisBackground: string;
+    calendarTimeAxisText: string;
+    calendarWeekendBackground: string;
+    calendarDisabledSlotBackground: string;
+    calendarEventText: string;
+    calendarNavButtonBackground: string;
+    calendarNavButtonText: string;
   };
   advanced?: Record<string, string | number | boolean | null>;
 }
@@ -130,6 +153,13 @@ export const DEFAULT_ADVANCED: Record<string, string | number | boolean> = {
   // Animations
   animationsEnabled: true,
   transitionSpeed: 'normal',
+  // Calendar (#559 stage 1) — defaults mirror FullCalendar's own built-in
+  // values so an unconfigured theme keeps today's exact calendar appearance.
+  calendarEventBorderRadius: '3px',
+  calendarEventSelectedOverlay: '#000000',
+  calendarSlotHeight: '1.5em',
+  calendarNavButtonHoverBackground: '#1e2b37',
+  calendarNavButtonBorderRadius: '4px',
 };
 
 // Per #489 stage 2 (remainder): these attributes no longer live under a
@@ -198,6 +228,12 @@ export const ADVANCED_ATTRIBUTES: AdvancedAttribute[] = [
   { key: 'cellPadding',             labelKey: 'adv_cell_padding',            group: 'group_tables',          type: 'text' },
   { key: 'rowHoverBg',              labelKey: 'adv_row_hover_bg',            group: 'group_tables',          type: 'color' },
   { key: 'selectedRowBg',           labelKey: 'adv_selected_row_bg',         group: 'group_tables',          type: 'color' },
+  // Calendar (#559 stage 1)
+  { key: 'calendarEventBorderRadius',      labelKey: 'adv_calendar_event_radius',          group: 'group_calendar', type: 'text' },
+  { key: 'calendarEventSelectedOverlay',   labelKey: 'adv_calendar_event_selected_overlay', group: 'group_calendar', type: 'color' },
+  { key: 'calendarSlotHeight',             labelKey: 'adv_calendar_slot_height',           group: 'group_calendar', type: 'text' },
+  { key: 'calendarNavButtonHoverBackground', labelKey: 'adv_calendar_nav_btn_hover_bg',    group: 'group_calendar', type: 'color' },
+  { key: 'calendarNavButtonBorderRadius',  labelKey: 'adv_calendar_nav_btn_radius',        group: 'group_calendar', type: 'text' },
 ];
 
 export const DEFAULT_TOKENS: ThemeTokens = {
@@ -242,6 +278,22 @@ export const DEFAULT_TOKENS: ThemeTokens = {
     statusInfo:                   '#2563eb',
     linkColor:                    '#6c63ff',
     linkHoverColor:               '#5a52d5',
+    calendarBackground:           '#ffffff',
+    calendarSurfaceBackground:    '#ffffff',
+    calendarHeaderBackground:     '#ffffff',
+    calendarHeaderText:           '#111827',
+    calendarDayText:              '#111827',
+    calendarMutedDayText:         '#6b7280',
+    calendarTodayBackground:      '#fffbe6',
+    calendarSelectionBackground:  '#e8f6f9',
+    calendarGridBorder:           '#dddddd',
+    calendarTimeAxisBackground:   '#ffffff',
+    calendarTimeAxisText:         '#6b7280',
+    calendarWeekendBackground:    '#ffffff',
+    calendarDisabledSlotBackground: '#f7f7f7',
+    calendarEventText:            '#ffffff',
+    calendarNavButtonBackground:  '#2c3e50',
+    calendarNavButtonText:        '#ffffff',
   },
 };
 

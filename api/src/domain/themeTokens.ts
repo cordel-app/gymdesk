@@ -56,9 +56,43 @@ export function defaultTokens() {
       statusInfo:                   '#2563eb',
       linkColor:                    '#6c63ff',
       linkHoverColor:               '#5a52d5',
+      // Calendar (#559 stage 1). Values mirror FullCalendar's own built-in
+      // defaults so an unconfigured theme keeps today's calendar appearance.
+      // Event background/border are intentionally absent: they stay derived
+      // from `calendar_events.status` (#541).
+      calendarBackground:             '#ffffff',
+      calendarSurfaceBackground:      '#ffffff',
+      calendarHeaderBackground:       '#ffffff',
+      calendarHeaderText:             '#111827',
+      calendarDayText:                '#111827',
+      calendarMutedDayText:           '#6b7280',
+      calendarTodayBackground:        '#fffbe6',
+      calendarSelectionBackground:    '#e8f6f9',
+      calendarGridBorder:             '#dddddd',
+      calendarTimeAxisBackground:     '#ffffff',
+      calendarTimeAxisText:           '#6b7280',
+      calendarWeekendBackground:      '#ffffff',
+      calendarDisabledSlotBackground: '#f7f7f7',
+      calendarEventText:              '#ffffff',
+      calendarNavButtonBackground:    '#2c3e50',
+      calendarNavButtonText:          '#ffffff',
     },
   };
 }
+
+// Kept as a named export so the editor, the validator and the tests all agree
+// on exactly which calendar color tokens exist (#559 stage 1).
+export const CALENDAR_COLOR_FIELDS = [
+  'calendarBackground', 'calendarSurfaceBackground',
+  'calendarHeaderBackground', 'calendarHeaderText',
+  'calendarDayText', 'calendarMutedDayText',
+  'calendarTodayBackground', 'calendarSelectionBackground',
+  'calendarGridBorder',
+  'calendarTimeAxisBackground', 'calendarTimeAxisText',
+  'calendarWeekendBackground', 'calendarDisabledSlotBackground',
+  'calendarEventText',
+  'calendarNavButtonBackground', 'calendarNavButtonText',
+];
 
 export function validateTokens(tokens: any): string | null {
   if (!tokens || typeof tokens !== 'object') return 'tokens must be an object';
@@ -75,6 +109,7 @@ export function validateTokens(tokens: any): string | null {
       'primaryButton', 'primaryButtonText', 'secondaryButton', 'secondaryButtonText',
       'statusSuccess', 'statusWarning', 'statusError', 'statusInfo',
       'linkColor', 'linkHoverColor',
+      ...CALENDAR_COLOR_FIELDS,
     ];
     for (const f of hexFields) {
       if (colors[f] !== undefined && !HEX_RE.test(colors[f])) return `colors.${f} must be a hex color like #rrggbb`;
