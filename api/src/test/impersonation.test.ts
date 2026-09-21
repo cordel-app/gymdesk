@@ -543,6 +543,25 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
     });
   });
 
+  it('refuses to start a session on a staff member whose invitation is still pending', async () => {
+    const placeholderId = `invited_${Date.now()}`;
+    await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, email, name)
+       VALUES (?, ?, 'front_desk', 'invited', 'pending@impersonation.test', 'Pending Staff')`,
+      [placeholderId, gymId],
+    );
+
+    const res = await request
+      .post(`/platform/impersonation/${placeholderId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ targetType: 'staff' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not accepted their invitation/);
+    await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [placeholderId]);
+  });
+
   it('returns 400 when trying to impersonate yourself as staff', async () => {
     const res = await request
       .post(`/platform/impersonation/${TEST_USER_ID}`)
@@ -613,7 +632,11 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
     });
   });
 
-  it('succeeds for invited (non-active) staff', async () => {
+  it('refuses invited (non-active) staff by status, even with a non-placeholder id', async () => {
+    // #342/#358 let POST start a session here, but tenantContext resolves the target
+    // in Clerk on every request and an invited row has no Clerk user yet — the session
+    // died on its first call. Invited staff still appear in GET /targets (see above);
+    // only starting a session is refused.
     const invitedId = 'impersonation-invited-post-staff-id';
     await db.query(
       `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
@@ -627,8 +650,8 @@ describe('POST /platform/impersonation/:targetId — staff impersonation', () =>
       .set('x-gym-id', gymId)
       .send({ targetType: 'staff' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.id).toBe(invitedId);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not accepted their invitation/);
 
     await db.query('DELETE FROM gym_memberships WHERE user_id = ?', [invitedId]);
   });
