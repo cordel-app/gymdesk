@@ -9,9 +9,9 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { btnStyle } from '@/components/ui';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
 import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
 import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
@@ -88,7 +88,8 @@ export default function CalendarPage() {
   const [sessionPanelId, setSessionPanelId] = useState<number | null>(null);
 
   const role = activeGym?.role ?? 'member';
-  const canWrite = isSuperadmin || canWriteModule(role as any, 'CALENDAR');
+  // #613: impersonation-aware (isSuperadmin stays true while impersonating).
+  const { canWrite } = useModuleAccess('CALENDAR');
 
   useEffect(() => {
     if (!gymLoading && !activeGymId) router.replace(`/${locale}`);

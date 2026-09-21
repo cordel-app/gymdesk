@@ -6,6 +6,10 @@ export interface ContextMenuItem {
   label: string;
   onClick: () => void;
   danger?: boolean;
+  /** #613: shown but not actionable (e.g. a write action for a read-only role). */
+  disabled?: boolean;
+  /** Tooltip, typically the read-only hint when `disabled`. */
+  title?: string;
 }
 
 /**
@@ -72,9 +76,16 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
             <button
               key={i}
               role="menuitem"
-              onClick={() => { setOpen(false); item.onClick(); }}
-              style={{ ...itemStyle, color: item.danger ? '#c0392b' : 'var(--gd-dropdown-text, #111827)' }}
-              onMouseEnter={(e) => { (e.currentTarget.style.background = 'var(--gd-dropdown-hover-bg, #f5f5f5)'); }}
+              disabled={item.disabled}
+              aria-disabled={item.disabled || undefined}
+              title={item.title}
+              onClick={() => { if (item.disabled) return; setOpen(false); item.onClick(); }}
+              style={{
+                ...itemStyle,
+                color: item.danger ? '#c0392b' : 'var(--gd-dropdown-text, #111827)',
+                ...(item.disabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
+              }}
+              onMouseEnter={(e) => { if (item.disabled) return; (e.currentTarget.style.background = 'var(--gd-dropdown-hover-bg, #f5f5f5)'); }}
               onMouseLeave={(e) => { (e.currentTarget.style.background = 'transparent'); }}
             >
               {item.label}

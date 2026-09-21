@@ -11,7 +11,8 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { PROFILE_ROLE_MAP } from '@/config/permissions';
 
 export interface StaffMember {
@@ -215,7 +216,8 @@ export default function StaffPage() {
   const [accessBusy, setAccessBusy] = useState(false);
 
   const firstNameRef = useRef<HTMLInputElement>(null);
-  const isAdmin = activeGym?.role === 'admin';
+  // #613: read-only roles see every control, disabled — the API rejects their writes.
+  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   // Debounce search
   useEffect(() => {
@@ -700,15 +702,15 @@ export default function StaffPage() {
         {role && field(t('access_role_label'), t(`role_${role}` as any))}
         {clerkStatus.userId && field(t('clerk_user_id_label'), <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{clerkStatus.userId}</span>)}
         <p style={{ fontSize: 12, color: '#888', margin: '0 0 12px 0' }}>{t('access_note')}</p>
-        {isAdmin && member && (
+        {member && (
           <div style={{ display: 'flex', gap: 8 }}>
             {(canInvite || canResend) && (
-              <button type="button" onClick={() => handleGrantAccess(member)} disabled={accessBusy} style={btnSmall('#4c6ef5')}>
+              <button type="button" onClick={() => handleGrantAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#4c6ef5'), !canWrite)}>
                 {canResend ? t('access_resend') : t('access_invite')}
               </button>
             )}
             {canRevoke && (
-              <button type="button" onClick={() => setRevokingAccess(member)} disabled={accessBusy} style={btnSmall('#c0392b')}>
+              <button type="button" onClick={() => setRevokingAccess(member)} disabled={!canWrite || accessBusy} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#c0392b'), !canWrite)}>
                 {t('access_revoke')}
               </button>
             )}
@@ -756,7 +758,7 @@ export default function StaffPage() {
         )}
         {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
         <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-          <button onClick={handleSave} disabled={saving} style={btnStyle('#4c6ef5')}>
+          <button onClick={handleSave} disabled={!canWrite || saving} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#4c6ef5'), !canWrite)}>
             {saving ? t('saving') : t('save')}
           </button>
           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
@@ -770,14 +772,12 @@ export default function StaffPage() {
 
     const menuItems: ContextMenuItem[] = [
       { label: t('action_details'), onClick: () => setDetailsMember(member) },
-      { label: t('action_duplicate'), onClick: () => handleDuplicate(member) },
+      { label: t('action_duplicate'), onClick: () => handleDuplicate(member), disabled: !canWrite, title: readOnlyTitle },
     ];
-    if (isAdmin) {
-      if (member.employment_status === 'active') {
-        menuItems.push({ label: t('action_deactivate'), onClick: () => setDeactivating(member) });
-      }
-      menuItems.push({ label: t('action_delete'), onClick: () => setDeleting(member), danger: true });
+    if (member.employment_status === 'active') {
+      menuItems.push({ label: t('action_deactivate'), onClick: () => setDeactivating(member), disabled: !canWrite, title: readOnlyTitle });
     }
+    menuItems.push({ label: t('action_delete'), onClick: () => setDeleting(member), danger: true, disabled: !canWrite, title: readOnlyTitle });
 
     return (
       <div key={member.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
@@ -899,9 +899,7 @@ export default function StaffPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
-        {isAdmin && (
-          <button onClick={openNew} style={btnStyle('#4c6ef5')}>{t('add')}</button>
-        )}
+        <button onClick={openNew} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#4c6ef5'), !canWrite)}>{t('add')}</button>
       </div>
 
       {/* Filters */}

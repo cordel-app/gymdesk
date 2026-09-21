@@ -9,6 +9,11 @@ export function btnStyle(bg?: string): React.CSSProperties {
   return { background: bg ?? 'var(--brand, #6c63ff)', color: '#fff', border: 'none', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
 }
 
+/** #613: visual state for a write control that is disabled for a read-only role. */
+export function readOnlyStyle(style: React.CSSProperties, disabled: boolean): React.CSSProperties {
+  return disabled ? { ...style, opacity: 0.45, cursor: 'not-allowed' } : style;
+}
+
 export function btnSmall(bg?: string): React.CSSProperties {
   return { background: bg ?? 'var(--brand, #6c63ff)', color: '#fff', border: 'none', borderRadius: 4, padding: '6px 12px', cursor: 'pointer', fontSize: 13 };
 }

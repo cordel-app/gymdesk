@@ -314,7 +314,8 @@
     "image_invalid_type": "Unsupported image type. Allowed: PNG, JPEG, WEBP, GIF.",
     "image_upload_error": "Failed to upload image.",
     "image_not_configured": "Cloudflare storage has not been configured for this deployment.",
-    "image_not_initialized": "Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded."
+    "image_not_initialized": "Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.",
+    "read_only_hint": "Read-only access"
   },
   "system_gyms": {
     "title": "Gyms",

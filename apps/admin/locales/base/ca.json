@@ -315,7 +315,8 @@
     "image_invalid_type": "Tipus d'imatge no admès. Permesos: PNG, JPEG, WEBP, GIF.",
     "image_upload_error": "No s'ha pogut pujar la imatge.",
     "image_not_configured": "L'emmagatzematge de Cloudflare no està configurat per a aquest entorn.",
-    "image_not_initialized": "L'emmagatzematge de Cloudflare no s'ha inicialitzat per a aquest gimnàs, per la qual cosa no es poden pujar imatges."
+    "image_not_initialized": "L'emmagatzematge de Cloudflare no s'ha inicialitzat per a aquest gimnàs, per la qual cosa no es poden pujar imatges.",
+    "read_only_hint": "Accés de només lectura"
   },
   "system_gyms": {
     "title": "Gimnasos",
