@@ -209,7 +209,7 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/financials/taxes',
         labelKey: 'nav.taxes',
-        featureKey: 'financials.gym_charges',
+        featureKey: 'financials.taxes',
       },
       {
         href: '/{{locale}}/financials/payment-providers',

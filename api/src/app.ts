@@ -219,7 +219,9 @@ app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('
 app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), chargeTypesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), actionTypesRouter);
 app.use('/sellable-items',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), sellableItemsRouter); // lgtm[js/missing-rate-limiting]
-app.use('/taxes',            requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), taxesRouter); // lgtm[js/missing-rate-limiting]
+// Reads depend only on the Financials group flag: Plans and Sellable Items load /taxes for
+// their tax dropdown. The Taxes page's own flag (financials.taxes) gates writes in the router (#610).
+app.use('/taxes',            requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), taxesRouter); // lgtm[js/missing-rate-limiting]
 app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionsRouter);
 app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionDetailsRouter);
 
