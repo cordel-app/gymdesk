@@ -34,6 +34,8 @@ export function useModuleAccess(module: AppModule) {
     loading,
     canRead,
     canWrite,
+    /** Gym admin (or a superadmin acting as themselves) — for admin-only actions inside a module. */
+    isAdmin: actsAsSuperadmin || role === 'admin',
     /** Tooltip for a disabled write control; undefined when the user can write. */
     readOnlyTitle: canWrite ? undefined : t('read_only_hint'),
   };

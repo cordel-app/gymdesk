@@ -4,8 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -39,7 +38,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
   const tStatus = useTranslations('status');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
-  const { activeGym, isSuperadmin } = useGym();
   const loadedRef = useRef(false);
 
   const [detail, setDetail] = useState<AssignedPlanDetail | null>(null);
@@ -55,8 +53,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
 
-  const canWritePayments = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
-  const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
+  const { canWrite: canWritePayments, isAdmin, readOnlyTitle } = useModuleAccess('PAYMENTS');
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -185,19 +183,21 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
     );
   }
 
-  const canEdit = canWritePayments && EDITABLE_STATUSES.includes(detail.status);
-  const canSubmit = canWritePayments && detail.status === 'draft';
-  const canPause = canWritePayments && detail.status === 'active';
-  const canReactivate = canWritePayments && detail.status === 'paused';
-  const canClose = isAdmin && CLOSEABLE_STATUSES.includes(detail.status);
+  const canEdit = EDITABLE_STATUSES.includes(detail.status);
+  const canSubmit = detail.status === 'draft';
+  const canPause = detail.status === 'active';
+  const canReactivate = detail.status === 'paused';
+  const canClose = CLOSEABLE_STATUSES.includes(detail.status);
+  const write = { disabled: !canWritePayments, title: readOnlyTitle };
+  const adminOnly = { disabled: !isAdmin, title: isAdmin ? undefined : readOnlyTitle };
 
   const menuItems = [
     { label: t('action_details'), onClick: () => setShowDetails(true) },
-    ...(canEdit && !editing ? [{ label: t('action_edit'), onClick: startEdit }] : []),
-    ...(canSubmit ? [{ label: t('action_submit'), onClick: () => runAction('submit') }] : []),
-    ...(canPause ? [{ label: t('action_pause'), onClick: () => runAction('pause') }] : []),
-    ...(canReactivate ? [{ label: t('action_reactivate'), onClick: () => runAction('reactivate') }] : []),
-    ...(canClose ? [{ label: t('action_close'), onClick: () => setCloseStep('confirm'), danger: true }] : []),
+    ...(canEdit && !editing ? [{ label: t('action_edit'), onClick: startEdit, ...write }] : []),
+    ...(canSubmit ? [{ label: t('action_submit'), onClick: () => runAction('submit'), ...write }] : []),
+    ...(canPause ? [{ label: t('action_pause'), onClick: () => runAction('pause'), ...write }] : []),
+    ...(canReactivate ? [{ label: t('action_reactivate'), onClick: () => runAction('reactivate'), ...write }] : []),
+    ...(canClose ? [{ label: t('action_close'), onClick: () => setCloseStep('confirm'), danger: true, ...adminOnly }] : []),
   ];
 
   return (
