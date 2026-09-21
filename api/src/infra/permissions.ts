@@ -57,6 +57,7 @@ export type PermissionLevel =
 
 export type AppModule =
   | 'MEMBERS'
+  | 'CALENDAR'
   | 'ORGANIZATION'
   | 'TRAINING'
   | 'NUTRITION'
@@ -74,6 +75,19 @@ export const PERMISSION_MATRIX: Record<AppModule, Record<AppRole, PermissionLeve
     accountant:              'NONE',
     nutritionist:            'R_ASSIGNED',
     member:                  'R_OWN',
+  },
+  // #614: Calendar is its own permission area (#247) — it gates /calendar-events and
+  // /class-sessions, which used to ride on TRAINING (front desk was read-only there).
+  // Front desk creates and edits events; nutritionist stays read-only (not granted by
+  // #247 or the #614 decision). Mirrored in apps/admin/src/config/permissions.ts.
+  CALENDAR: {
+    admin:                   'RW',
+    trainer_performance:     'RW',
+    trainer_perf_nutrition:  'RW',
+    front_desk:              'RW',
+    accountant:              'NONE',
+    nutritionist:            'R',
+    member:                  'NONE',
   },
   ORGANIZATION: {
     admin:                   'RW',

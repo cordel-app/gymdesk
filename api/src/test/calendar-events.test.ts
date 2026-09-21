@@ -97,11 +97,11 @@ describe('GET /calendar-events', () => {
 // ── POST — create event ───────────────────────────────────────────────────────
 
 describe('POST /calendar-events', () => {
-  it('returns 403 for front_desk (no write on TRAINING module)', async () => {
+  it('allows front_desk to create an event (CALENDAR module, #614)', async () => {
     const res = await request.post(BASE)
       .set({ Authorization: TEST_AUTH_HEADER, 'x-gym-id': fdGymId })
       .send({ title: 'FD Test', starts_at: '2025-03-01T10:00:00', ends_at: '2025-03-01T11:00:00' });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
   });
 
   it('returns 400 when title is missing', async () => {
