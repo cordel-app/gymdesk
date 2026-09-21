@@ -559,3 +559,26 @@ recordAudit(req, {
 ```
 
 Actor, gym, IP, user-agent, and `source` are pulled from `req.tenantCtx` automatically. Rows are read back through `GET /audit-logs` (admin only, scoped to the active gym) in the admin **System → Audit log** page. Platform superadmins can pass `?scope=all` to see every gym's events (with `gym_name` joined in) — surfaced as **Cordel → Audit log** (`/cordel/audit`); both pages render the shared `AuditLogView` component.
+
+## Read-only access in admin pages (#613)
+
+A role with read-only access to a module (`R` / `R_ASSIGNED`) **sees the page and its data, with every write control disabled** — never hidden, never redirected away. The API rejects the write independently (`requireModuleWrite` / `requireRole`); `api/src/test/read-only-writes.test.ts` pins that per module.
+
+```tsx
+import { useModuleAccess } from '@/lib/useModuleAccess';
+import { readOnlyStyle } from '@/components/ui';
+
+const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
+
+<button onClick={openNew} disabled={!canWrite} title={readOnlyTitle}
+        style={readOnlyStyle(btnStyle(), !canWrite)}>{t('add')}</button>
+
+const menuItems: ContextMenuItem[] = [
+  { label: t('details'), onClick: () => setDetails(row) },                       // read: always enabled
+  { label: t('edit'), onClick: () => openEdit(row), disabled: !canWrite, title: readOnlyTitle },
+];
+```
+
+- Use `useModuleAccess`, not `isSuperadmin || canWriteModule(...)`: `isSuperadmin` stays true while impersonating, so the old pattern showed every edit control to a superadmin impersonating a read-only user.
+- Gate the **entry points** (Add button, ⋮ menu write items, in-row action buttons, Save). Inline edit forms that only open from a gated entry point need nothing extra.
+

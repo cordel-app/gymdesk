@@ -6,6 +6,7 @@ import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -13,7 +14,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
-import { btnStyle } from '@/components/ui';
+import { btnStyle, readOnlyStyle } from '@/components/ui';
 
 interface Center {
   id: number;
@@ -66,6 +67,7 @@ export default function CentersPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,12 +217,12 @@ export default function CentersPage() {
     const isExpanded = expandedId === center.id;
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetailsCenter(center) },
-      { label: t('edit'), onClick: () => openEdit(center) },
+      { label: t('edit'), onClick: () => openEdit(center), disabled: !canWrite, title: readOnlyTitle },
       {
         label: t('view_members'),
         onClick: () => router.push(`/${locale}/members?centerId=${center.id}`),
       },
-      { label: t('delete'), onClick: () => setDeleting(center), danger: true },
+      { label: t('delete'), onClick: () => setDeleting(center), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
 
     return (
@@ -278,7 +280,7 @@ export default function CentersPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={handleAdd} style={btnStyle('#6c63ff')}>{t('add')}</button>
+          <button onClick={handleAdd} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
         </div>
       </div>
 

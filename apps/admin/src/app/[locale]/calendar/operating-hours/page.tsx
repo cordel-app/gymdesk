@@ -6,9 +6,10 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ export default function OperatingHoursPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<WeeklyShift[]>([]);
@@ -283,6 +285,7 @@ export default function OperatingHoursPage() {
                             type="time"
                             value={s.start_time}
                             onChange={(e) => updateShift(s._idx, 'start_time', e.target.value)}
+                            disabled={!canWrite}
                             style={inlineInputStyle}
                           />
                           <span style={{ color: '#888' }}>–</span>
@@ -290,13 +293,14 @@ export default function OperatingHoursPage() {
                             type="time"
                             value={s.end_time}
                             onChange={(e) => updateShift(s._idx, 'end_time', e.target.value)}
+                            disabled={!canWrite}
                             style={inlineInputStyle}
                           />
-                          <button onClick={() => removeShift(s._idx)} style={btnSmall('#c0392b')}>{t('remove_shift')}</button>
+                          <button onClick={() => removeShift(s._idx)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#c0392b'), !canWrite)}>{t('remove_shift')}</button>
                         </div>
                       ))}
                       <div>
-                        <button onClick={() => addShift(weekday)} style={btnSmall('#6c63ff')}>{t('add_shift')}</button>
+                        <button onClick={() => addShift(weekday)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#6c63ff'), !canWrite)}>{t('add_shift')}</button>
                       </div>
                     </div>
                   </div>
@@ -304,7 +308,7 @@ export default function OperatingHoursPage() {
               })}
               {weeklyError && <p style={errorStyle}>{weeklyError}</p>}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-                <button onClick={saveWeekly} disabled={weeklySaving} style={btnStyle('#6c63ff')}>
+                <button onClick={saveWeekly} disabled={!canWrite || weeklySaving} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>
                   {weeklySaving ? t('saving') : t('save_weekly')}
                 </button>
               </div>
@@ -314,7 +318,7 @@ export default function OperatingHoursPage() {
           {/* Holidays */}
           <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionHeader title={t('section_holidays')} />
-            <button onClick={openInlineNew} style={btnStyle('#6c63ff')} disabled={inlineNew !== null}>{t('add_holiday')}</button>
+            <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add_holiday')}</button>
           </div>
 
           {inlineNew && (
@@ -367,8 +371,8 @@ export default function OperatingHoursPage() {
                       <div style={{ minWidth: 90, fontSize: 13, color: '#666' }}>{h.annual_renewal ? t('yes') : t('no')}</div>
                       <div style={{ flex: 2, minWidth: 140, fontSize: 13, color: '#666' }}>{h.label ?? '—'}</div>
                       <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                        <button onClick={() => openEdit(h)} style={btnSmall('#6c63ff')}>{t('edit_holiday')}</button>
-                        <button onClick={() => setDeleting(h)} style={btnSmall('#c0392b')}>{t('delete_holiday')}</button>
+                        <button onClick={() => openEdit(h)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#6c63ff'), !canWrite)}>{t('edit_holiday')}</button>
+                        <button onClick={() => setDeleting(h)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#c0392b'), !canWrite)}>{t('delete_holiday')}</button>
                       </div>
                     </div>
                   )}

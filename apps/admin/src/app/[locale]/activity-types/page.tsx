@@ -6,13 +6,14 @@ import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 
@@ -123,6 +124,7 @@ export default function ActivityTypesPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [rows, setRows] = useState<ActivityType[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
@@ -726,8 +728,8 @@ export default function ActivityTypesPage() {
               ) : (
                 <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--gd-card-bg, #f6f6f9)', borderRadius: 6, fontSize: 13 }}>
                   <span style={{ flex: 1, color: '#333' }}>{ruleLabel(rule)}</span>
-                  <button onClick={() => openEditRule(rule)} style={{ ...btnSmall('#555'), padding: '3px 10px', fontSize: 12 }}>{ts('edit_rule')}</button>
-                  <button onClick={() => deleteRule(row.id, rule.id)} style={{ ...btnSmall('#c0392b'), padding: '3px 10px', fontSize: 12 }}>{ts('delete_rule')}</button>
+                  <button onClick={() => openEditRule(rule)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle({ ...btnSmall('#555'), padding: '3px 10px', fontSize: 12 }, !canWrite)}>{ts('edit_rule')}</button>
+                  <button onClick={() => deleteRule(row.id, rule.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle({ ...btnSmall('#c0392b'), padding: '3px 10px', fontSize: 12 }, !canWrite)}>{ts('delete_rule')}</button>
                 </div>
               ),
             )}
@@ -747,7 +749,9 @@ export default function ActivityTypesPage() {
           : editingRuleId == null && (
               <button
                 onClick={() => openAddRule(row.id)}
-                style={{ fontSize: 13, color: '#6c63ff', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                disabled={!canWrite}
+                title={readOnlyTitle}
+                style={readOnlyStyle({ fontSize: 13, color: '#6c63ff', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }, !canWrite)}
               >
                 + {ts('add_rule')}
               </button>
@@ -764,9 +768,9 @@ export default function ActivityTypesPage() {
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => { setDetails(row); if (!eligiblePlansMap.has(row.id)) fetchEligiblePlans(row.id); } },
-      { label: t('edit'), onClick: () => openEdit(row) },
-      { label: t('duplicate'), onClick: () => handleDuplicate(row) },
-      { label: t('delete'), onClick: () => setDeleting(row), danger: true },
+      { label: t('edit'), onClick: () => openEdit(row), disabled: !canWrite, title: readOnlyTitle },
+      { label: t('duplicate'), onClick: () => handleDuplicate(row), disabled: !canWrite, title: readOnlyTitle },
+      { label: t('delete'), onClick: () => setDeleting(row), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
 
     const filteredSpaces = spaces.filter((s) =>
@@ -1040,7 +1044,7 @@ export default function ActivityTypesPage() {
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
-          <button onClick={openInlineNew} style={btnStyle('#6c63ff')} disabled={inlineNew !== null}>{t('add')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
 

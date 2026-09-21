@@ -6,12 +6,13 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ export default function ProfessionalServicesPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [items, setItems] = useState<ProfessionalService[]>([]);
   const [loading, setLoading] = useState(true);
@@ -264,12 +266,12 @@ export default function ProfessionalServicesPage() {
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetails(item) },
-      ...(!isSystem ? [{ label: t('edit'), onClick: () => openEdit(item) }] : []),
+      ...(!isSystem ? [{ label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       item.status === 'active'
-        ? { label: t('deactivate'), onClick: () => handleDeactivate(item) }
-        : { label: t('activate'), onClick: () => handleActivate(item) },
-      { label: t('duplicate'), onClick: () => handleDuplicate(item) },
-      ...(!isSystem ? [{ label: t('delete'), onClick: () => setDeleting(item), danger: true }] : []),
+        ? { label: t('deactivate'), onClick: () => handleDeactivate(item), disabled: !canWrite, title: readOnlyTitle }
+        : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle },
+      { label: t('duplicate'), onClick: () => handleDuplicate(item), disabled: !canWrite, title: readOnlyTitle },
+      ...(!isSystem ? [{ label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
     ];
 
     return (
@@ -349,7 +351,7 @@ export default function ProfessionalServicesPage() {
     <div style={{ padding: '24px 32px', maxWidth: 900 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>{t('title')}</h1>
-        <button onClick={openInlineNew} style={btnStyle('#6c63ff')} disabled={inlineNew !== null}>{t('add')}</button>
+        <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
       </div>
 
       {/* Column headers */}
