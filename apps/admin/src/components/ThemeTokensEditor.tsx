@@ -105,8 +105,8 @@ export const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens[
     // one entry gives both screens the section. Per the #559 clarification,
     // the Base/Custom relationship itself is unchanged: cloning a Base Theme
     // copies these values along with every other token, exactly as today.
-    // Stage 1 persists and validates these tokens; stage 2 wires them to
-    // --gd-calendar-* CSS variables, so saving one has no visual effect yet.
+    // Stage 1 persisted and validated these tokens, stage 2 wired them to the
+    // --gd-calendar-* CSS variables, and stage 3 added the event colors.
     groupKey: 'group_calendar',
     fields: [
       { key: 'calendarBackground', labelKey: 'label_calendar_bg' },
@@ -122,6 +122,8 @@ export const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens[
       { key: 'calendarTimeAxisText', labelKey: 'label_calendar_time_axis_text' },
       { key: 'calendarWeekendBackground', labelKey: 'label_calendar_weekend_bg' },
       { key: 'calendarDisabledSlotBackground', labelKey: 'label_calendar_disabled_slot_bg' },
+      { key: 'calendarEventBackground', labelKey: 'label_calendar_event_bg' },
+      { key: 'calendarEventBorder', labelKey: 'label_calendar_event_border' },
       { key: 'calendarEventText', labelKey: 'label_calendar_event_text' },
       { key: 'calendarNavButtonBackground', labelKey: 'label_calendar_nav_btn_bg' },
       { key: 'calendarNavButtonText', labelKey: 'label_calendar_nav_btn_text' },

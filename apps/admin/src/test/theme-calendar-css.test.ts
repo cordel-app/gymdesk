@@ -13,22 +13,14 @@ import {
   type ThemeTokens,
 } from '../lib/themeTokens';
 
-// #559 stage 2 — the Calendar tokens introduced in stage 1 now reach the
+// #559 stages 2 & 3 — the Calendar tokens introduced in stage 1 now reach the
 // calendar: applyTokens() writes one --gd-calendar-* variable per token, and
 // CalendarThemeStyles' sheet is the single consumer of those variables.
-// Stage 3 adds the event rules (per-status pill badge), so the three event
-// variables are asserted to be emitted but NOT yet used by any CSS rule.
+// Stage 3 completed the set by wiring the event variables, so every variable
+// emitted must now be read by some rule.
 
 const calendarGroup = COLOR_GROUPS.find((g) => g.groupKey === 'group_calendar')!;
 const calendarAdvanced = ADVANCED_ATTRIBUTES.filter((a) => a.group === 'group_calendar');
-
-// Wired in stage 3 together with the per-status pill badge (#541 keeps event
-// background/border derived from the booking status).
-const EVENT_VARS = [
-  '--gd-calendar-event-text',
-  '--gd-calendar-event-radius',
-  '--gd-calendar-event-selected-overlay',
-];
 
 /** Minimal `document` stand-in — these tests run in vitest's node environment. */
 function stubDocument(): Record<string, string> {
@@ -101,19 +93,11 @@ describe('Calendar theme CSS variables (#559 stage 2)', () => {
   });
 });
 
-describe('Calendar theme stylesheet (#559 stage 2)', () => {
-  it('consumes every non-event calendar variable', () => {
-    const used = [...Object.values(CALENDAR_COLOR_VARS), ...Object.values(CALENDAR_ADVANCED_VARS)]
-      .filter((v) => !EVENT_VARS.includes(v));
+describe('Calendar theme stylesheet (#559 stages 2 & 3)', () => {
+  it('consumes every calendar variable it emits', () => {
+    const used = [...Object.values(CALENDAR_COLOR_VARS), ...Object.values(CALENDAR_ADVANCED_VARS)];
     for (const cssVar of used) {
       expect(CALENDAR_THEME_CSS, `${cssVar} is emitted but no rule reads it`).toContain(`var(${cssVar},`);
-    }
-  });
-
-  it('leaves the event variables to stage 3', () => {
-    for (const cssVar of EVENT_VARS) {
-      expect(CALENDAR_THEME_CSS, `${cssVar} is wired — event colors are stage 3 (#541)`)
-        .not.toContain(cssVar);
     }
   });
 

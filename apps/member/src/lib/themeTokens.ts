@@ -61,6 +61,8 @@ export interface ThemeTokens {
     calendarTimeAxisText: string;
     calendarWeekendBackground: string;
     calendarDisabledSlotBackground: string;
+    calendarEventBackground: string;
+    calendarEventBorder: string;
     calendarEventText: string;
     calendarNavButtonBackground: string;
     calendarNavButtonText: string;
@@ -74,6 +76,7 @@ export interface ThemeTokens {
 export const DEFAULT_CALENDAR_ADVANCED: Record<string, string> = {
   calendarEventBorderRadius:        '3px',
   calendarEventSelectedOverlay:     '#000000',
+  calendarEventHoverBackground:     '#5a52d5',
   calendarSlotHeight:               '1.5em',
   calendarNavButtonHoverBackground: '#1e2b37',
   calendarNavButtonBorderRadius:    '4px',
@@ -93,6 +96,8 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
   calendarTimeAxisText:           '--gd-calendar-time-axis-text',
   calendarWeekendBackground:      '--gd-calendar-weekend-bg',
   calendarDisabledSlotBackground: '--gd-calendar-disabled-slot-bg',
+  calendarEventBackground:        '--gd-calendar-event-bg',
+  calendarEventBorder:            '--gd-calendar-event-border',
   calendarEventText:              '--gd-calendar-event-text',
   calendarNavButtonBackground:    '--gd-calendar-nav-btn-bg',
   calendarNavButtonText:          '--gd-calendar-nav-btn-text',
@@ -101,6 +106,7 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
 export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
   calendarEventBorderRadius:        '--gd-calendar-event-radius',
   calendarEventSelectedOverlay:     '--gd-calendar-event-selected-overlay',
+  calendarEventHoverBackground:     '--gd-calendar-event-hover-bg',
   calendarSlotHeight:               '--gd-calendar-slot-height',
   calendarNavButtonHoverBackground: '--gd-calendar-nav-btn-hover-bg',
   calendarNavButtonBorderRadius:    '--gd-calendar-nav-btn-radius',
@@ -161,6 +167,8 @@ export const DEFAULT_TOKENS: ThemeTokens = {
     calendarTimeAxisText:           '#6b7280',
     calendarWeekendBackground:      '#ffffff',
     calendarDisabledSlotBackground: '#f7f7f7',
+    calendarEventBackground:        '#6c63ff',
+    calendarEventBorder:            '#6c63ff',
     calendarEventText:              '#ffffff',
     calendarNavButtonBackground:    '#2c3e50',
     calendarNavButtonText:          '#ffffff',

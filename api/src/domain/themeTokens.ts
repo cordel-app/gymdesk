@@ -56,10 +56,10 @@ export function defaultTokens() {
       statusInfo:                   '#2563eb',
       linkColor:                    '#6c63ff',
       linkHoverColor:               '#5a52d5',
-      // Calendar (#559 stage 1). Values mirror FullCalendar's own built-in
-      // defaults so an unconfigured theme keeps today's calendar appearance.
-      // Event background/border are intentionally absent: they stay derived
-      // from `calendar_events.status` (#541).
+      // Calendar (#559 stages 1 & 3). Values mirror FullCalendar's own
+      // built-in defaults so an unconfigured theme keeps today's calendar
+      // appearance — except the event colors (stage 3), which default to the
+      // purple every `scheduled` event was painted with before.
       calendarBackground:             '#ffffff',
       calendarSurfaceBackground:      '#ffffff',
       calendarHeaderBackground:       '#ffffff',
@@ -73,6 +73,8 @@ export function defaultTokens() {
       calendarTimeAxisText:           '#6b7280',
       calendarWeekendBackground:      '#ffffff',
       calendarDisabledSlotBackground: '#f7f7f7',
+      calendarEventBackground:        '#6c63ff',
+      calendarEventBorder:            '#6c63ff',
       calendarEventText:              '#ffffff',
       calendarNavButtonBackground:    '#2c3e50',
       calendarNavButtonText:          '#ffffff',
@@ -81,7 +83,7 @@ export function defaultTokens() {
 }
 
 // Kept as a named export so the editor, the validator and the tests all agree
-// on exactly which calendar color tokens exist (#559 stage 1).
+// on exactly which calendar color tokens exist (#559 stages 1 & 3).
 export const CALENDAR_COLOR_FIELDS = [
   'calendarBackground', 'calendarSurfaceBackground',
   'calendarHeaderBackground', 'calendarHeaderText',
@@ -90,7 +92,7 @@ export const CALENDAR_COLOR_FIELDS = [
   'calendarGridBorder',
   'calendarTimeAxisBackground', 'calendarTimeAxisText',
   'calendarWeekendBackground', 'calendarDisabledSlotBackground',
-  'calendarEventText',
+  'calendarEventBackground', 'calendarEventBorder', 'calendarEventText',
   'calendarNavButtonBackground', 'calendarNavButtonText',
 ];
 

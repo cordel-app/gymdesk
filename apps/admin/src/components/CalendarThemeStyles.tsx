@@ -16,11 +16,17 @@
  * unthemed page (no gym resolved yet, or a theme saved before #559) renders
  * exactly as it did before this ticket.
  *
- * Event colors are deliberately untouched here. Event background and border
- * stay derived from the booking status (#541 / `calendarEventColors.ts`), and
- * `--gd-calendar-event-text`, `--gd-calendar-event-radius` and
- * `--gd-calendar-event-selected-overlay` are wired in stage 3 alongside the
- * per-status pill badge agreed in the issue thread.
+ * Stage 3 added the event rules. Every event now takes its background, border
+ * and text from the theme; what tells the statuses apart is the pill badge
+ * rendered inside the event (`components/CalendarStatusBadge.tsx`), which
+ * still gets its colors from the status alone (#541 /
+ * `lib/calendarEventColors.ts`).
+ *
+ * Member Web keeps setting a per-event `backgroundColor`, because there an
+ * event's color means the session's *availability* to that member, not a
+ * booking status. FullCalendar writes that as an inline style, which wins over
+ * these rules — so the event variables act as the base for any event that
+ * doesn't ask for its own color, and Member Web is unaffected.
  *
  * Rendered inside the page body (same pattern as `Toast`/`AppShell`), which
  * places it after the stylesheet FullCalendar injects into `<head>` — so
@@ -46,7 +52,59 @@ export const CALENDAR_THEME_CSS = `
   --fc-button-hover-border-color: var(--gd-calendar-nav-btn-hover-bg, #1e2b37);
   --fc-button-active-bg-color: var(--gd-calendar-nav-btn-hover-bg, #1e2b37);
   --fc-button-active-border-color: var(--gd-calendar-nav-btn-hover-bg, #1e2b37);
+  /* Event colors (#559 stage 3). FullCalendar resolves these into
+     .fc-h-event / .fc-v-event (every view) and into the selected/focused
+     overlay, so one mapping is the whole story. --fc-bg-event-color is a
+     different variable, so the greyed-out closed-hours blocks are untouched. */
+  --fc-event-bg-color: var(--gd-calendar-event-bg, #6c63ff);
+  --fc-event-border-color: var(--gd-calendar-event-border, #6c63ff);
+  --fc-event-text-color: var(--gd-calendar-event-text, #ffffff);
   color: var(--gd-calendar-day-text, #111827);
+}
+
+/* Event corner radius. FullCalendar sets 3px on .fc-daygrid-event and
+   .fc-timegrid-event, then flattens the corners where a multi-day event is
+   continued — those rules are re-asserted below, since the selectors here are
+   at least as specific and would otherwise round a continuation's edge. */
+.gd-calendar .fc .fc-daygrid-event,
+.gd-calendar .fc .fc-timegrid-event {
+  border-radius: var(--gd-calendar-event-radius, 3px);
+}
+.gd-calendar .fc-direction-ltr .fc-daygrid-block-event:not(.fc-event-start),
+.gd-calendar .fc-direction-rtl .fc-daygrid-block-event:not(.fc-event-end) {
+  border-bottom-left-radius: 0;
+  border-top-left-radius: 0;
+}
+.gd-calendar .fc-direction-ltr .fc-daygrid-block-event:not(.fc-event-end),
+.gd-calendar .fc-direction-rtl .fc-daygrid-block-event:not(.fc-event-start) {
+  border-bottom-right-radius: 0;
+  border-top-right-radius: 0;
+}
+.gd-calendar .fc .fc-v-event:not(.fc-event-start) {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+.gd-calendar .fc .fc-v-event:not(.fc-event-end) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Hover. FullCalendar has no event hover style of its own, so this is the
+   only rule painting it; :not(.fc-bg-event) keeps the closed-hours background
+   blocks out, and :not(.fc-event-selected) lets a selected event keep its
+   overlay rather than flipping color under the pointer. */
+.gd-calendar .fc .fc-event:not(.fc-bg-event):not(.fc-event-selected):hover {
+  background-color: var(--gd-calendar-event-hover-bg, #5a52d5);
+}
+
+/* Selected / keyboard-focused event. FullCalendar paints a translucent
+   rgba(0,0,0,.25) sheet over the event through an ::after pseudo-element; the
+   token is a plain color (it's a color picker), so the .25 is applied here as
+   opacity to keep the same weight whatever color is configured. */
+.gd-calendar .fc .fc-event-selected:after,
+.gd-calendar .fc .fc-event:focus:after {
+  background: var(--gd-calendar-event-selected-overlay, #000000);
+  opacity: 0.25;
 }
 
 /* Grid surface — FullCalendar paints cells transparent, so the table itself

@@ -16,8 +16,8 @@ import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from
 import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
 import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
-import { getCalendarEventStatusColor } from '@/lib/calendarEventColors';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
+import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -34,6 +34,15 @@ type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 
 function formatHM(d: Date): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+// Statuses with a `calendar.status_*` translation (#559 stage 3). next-intl
+// has no locale fallback, so an unknown status would render as its raw key
+// path — anything outside this list falls back to the raw value instead.
+const TRANSLATED_BADGE_STATUSES = ['draft', 'scheduled', 'completed', 'cancelled', 'full'];
+
+function statusBadgeLabel(t: (key: any) => string, status: string): string {
+  return TRANSLATED_BADGE_STATUSES.includes(status) ? t(`status_${status}`) : status.toUpperCase();
 }
 
 const MIN_PANEL_WIDTH = 280;
@@ -142,14 +151,16 @@ export default function CalendarPage() {
         apiFetch<any[]>(`/class-sessions?${params}`),
       ])
         .then(([calEvents, sessions]) => {
+          // No per-event backgroundColor/borderColor (#559 stage 3): every
+          // event takes the theme's Calendar event colors, and the status is
+          // carried by the pill badge in `eventContent` below. An inline color
+          // here would override the theme.
           const calMapped = calEvents.map((e) => ({
             id: `ce-${e.id}`,
             title: e.title,
             start: e.starts_at,
             end: e.ends_at,
             allDay: !!e.all_day,
-            backgroundColor: getCalendarEventStatusColor(e.status),
-            borderColor:     getCalendarEventStatusColor(e.status),
             editable: true,
             extendedProps: { ...e, _type: 'event' },
           }));
@@ -159,8 +170,6 @@ export default function CalendarPage() {
             start: s.starts_at,
             end: s.ends_at,
             allDay: false,
-            backgroundColor: getCalendarEventStatusColor(s.status),
-            borderColor:     getCalendarEventStatusColor(s.status),
             // Sessions use a different time-change flow; disable FC drag/resize
             editable: false,
             extendedProps: { ...s, _type: 'session' },
@@ -471,8 +480,12 @@ export default function CalendarPage() {
               const spaceName: string | null = e.space_name ?? null;
               const bookingCount: string | null = isSession ? `${e.booked_count}/${e.effective_capacity}` : null;
 
+              // `full` is a derived status: a scheduled session whose bookings
+              // reached capacity. It takes the badge over `scheduled` because
+              // it's the more actionable of the two.
               const isFull = isSession && Number(e.booked_count) >= Number(e.effective_capacity) && e.status === 'scheduled';
-              const displayStatus: string = isFull ? 'FULL' : (e.status ?? '').toUpperCase();
+              const badgeStatus: string = isFull ? 'full' : (e.status ?? '');
+              const statusLabel = badgeStatus ? statusBadgeLabel(t, badgeStatus) : null;
 
               if (viewType === 'dayGridMonth') {
                 return (
@@ -483,8 +496,8 @@ export default function CalendarPage() {
                     <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                       {arg.event.title}
                     </span>
-                    {displayStatus && (
-                      <span style={{ flexShrink: 0, opacity: 0.85, fontSize: 10 }}>{displayStatus}</span>
+                    {statusLabel && (
+                      <CalendarStatusBadge status={badgeStatus} label={statusLabel} compact />
                     )}
                   </div>
                 );
@@ -494,9 +507,6 @@ export default function CalendarPage() {
                 const timeRange = !e.all_day && arg.event.start && arg.event.end
                   ? `${formatHM(arg.event.start)} – ${formatHM(arg.event.end)}`
                   : null;
-                const line2Parts: string[] = [];
-                if (bookingCount) line2Parts.push(bookingCount);
-                if (displayStatus) line2Parts.push(displayStatus);
                 return (
                   <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
                     {timeRange && (
@@ -507,9 +517,14 @@ export default function CalendarPage() {
                     <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {arg.event.title}
                     </div>
-                    {line2Parts.length > 0 && (
-                      <div style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {line2Parts.join(' · ')}
+                    {(bookingCount || statusLabel) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                        {bookingCount && (
+                          <span style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap' }}>{bookingCount}</span>
+                        )}
+                        {statusLabel && (
+                          <CalendarStatusBadge status={badgeStatus} label={statusLabel} compact />
+                        )}
                       </div>
                     )}
                   </div>
@@ -523,10 +538,12 @@ export default function CalendarPage() {
               if (bookingCount) line2Parts.push(bookingCount);
               return (
                 <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
-                  <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {arg.timeText ? `${arg.timeText} ` : ''}{arg.event.title}
-                    {displayStatus && (
-                      <span style={{ fontWeight: 400, opacity: 0.85 }}> · {displayStatus}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                    <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {arg.timeText ? `${arg.timeText} ` : ''}{arg.event.title}
+                    </span>
+                    {statusLabel && (
+                      <CalendarStatusBadge status={badgeStatus} label={statusLabel} />
                     )}
                   </div>
                   {line2Parts.length > 0 && (

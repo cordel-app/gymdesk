@@ -154,7 +154,7 @@ describe('Semantic color tokens (#489)', () => {
   });
 });
 
-// ─── Calendar color tokens (#559 stage 1) ────────────────────────────────────
+// ─── Calendar color tokens (#559 stages 1 & 3) ───────────────────────────────
 
 describe('Calendar color tokens (#559)', () => {
   const calendarColors = {
@@ -171,6 +171,8 @@ describe('Calendar color tokens (#559)', () => {
     calendarTimeAxisText: '#141414',
     calendarWeekendBackground: '#151515',
     calendarDisabledSlotBackground: '#161616',
+    calendarEventBackground: '#1a1a1a',
+    calendarEventBorder: '#1b1b1b',
     calendarEventText: '#171717',
     calendarNavButtonBackground: '#181818',
     calendarNavButtonText: '#191919',
@@ -196,7 +198,7 @@ describe('Calendar color tokens (#559)', () => {
   });
 
   it('round-trips the calendar attributes in the `advanced` map', async () => {
-    const advanced = { calendarEventBorderRadius: '10px', calendarSlotHeight: '3em', calendarNavButtonHoverBackground: '#abcabc' };
+    const advanced = { calendarEventBorderRadius: '10px', calendarEventHoverBackground: '#bcdbcd', calendarSlotHeight: '3em', calendarNavButtonHoverBackground: '#abcabc' };
     const res = await request
       .put(`/system/themes/${customThemeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
