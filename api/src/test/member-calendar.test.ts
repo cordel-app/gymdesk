@@ -324,9 +324,18 @@ describe('#503 stage 9: attendee privacy + booking-status isolation between memb
     expect(session).not.toHaveProperty('member_id');
     expect(session).not.toHaveProperty('member_name');
     expect(session).not.toHaveProperty('attendees');
-    const serialized = JSON.stringify(session);
-    expect(serialized).not.toContain('Member B');
-    expect(serialized).not.toContain(String(memberBId));
+    // Compare every value in the row exactly. A substring search on the serialized
+    // JSON was flaky: member B's id (e.g. 220) also matches unrelated numbers that
+    // merely contain those digits (another id, a count, a timestamp).
+    const values: unknown[] = [];
+    const walk = (v: unknown): void => {
+      if (v !== null && typeof v === 'object') Object.values(v as object).forEach(walk);
+      else values.push(v);
+    };
+    walk(session);
+    expect(values).not.toContain('Member B');
+    expect(values).not.toContain(memberBId);
+    expect(values).not.toContain(String(memberBId));
   });
 
   it('a booking made by one member never flips availability_state (or status) for another member on the same event', async () => {
