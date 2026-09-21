@@ -113,8 +113,8 @@ export default function TrainingPlansPage() {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   // #613: impersonation-aware; read-only roles see controls disabled.
-  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
-  useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
+  useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
   useEffect(() => {
     if (editingId === null) return;
@@ -315,7 +315,7 @@ export default function TrainingPlansPage() {
     else { setSortKey(key); setSortDir(key === 'created_at' || key === 'modified_at' || key === 'start_date' ? 'desc' : 'asc'); }
   }
 
-  if (gymLoading || !canWrite) return null;
+  if (gymLoading || !canRead) return null;
 
   const pageStart = total === 0 ? 0 : offset + 1;
   const pageEnd = Math.min(offset + LIMIT, total);

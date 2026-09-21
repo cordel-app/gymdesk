@@ -96,8 +96,8 @@ export default function NutritionPlanTemplatesPage() {
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
 
   // #613: impersonation-aware; read-only roles see controls disabled.
-  const { canWrite } = useModuleAccess('NUTRITION');
-  useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
+  const { canRead, canWrite } = useModuleAccess('NUTRITION');
+  useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
   useEffect(() => {
     if (editingId === null) return;
@@ -264,7 +264,7 @@ export default function NutritionPlanTemplatesPage() {
     else { setSortKey(key); setSortDir('asc'); }
   }
 
-  if (gymLoading || !canWrite) return null;
+  if (gymLoading || !canRead) return null;
 
   const pageStart = total === 0 ? 0 : offset + 1;
   const pageEnd = Math.min(offset + LIMIT, total);

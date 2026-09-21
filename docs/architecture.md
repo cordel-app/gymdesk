@@ -121,17 +121,17 @@ gymdesk/
 
 ### Permission model (#156)
 
-Access is governed by a static `PERMISSION_MATRIX` in `api/src/infra/permissions.ts` (mirrored to `apps/admin/src/config/permissions.ts` for the frontend). Each cell maps `AppModule × AppRole → PermissionLevel` (`RW | R | R_ASSIGNED | RW_ASSIGNED | R_OWN | NONE`). R_ASSIGNED/RW_ASSIGNED are treated as R/RW at the router layer until a `staff_member_assignments` table is added.
+Access is governed by a static `PERMISSION_MATRIX` in `api/src/infra/permissions.ts` (mirrored to `apps/admin/src/config/permissions.ts` for the frontend). The table below is the #156 spec, which the API matches; the admin copy drifted from it until #611 and `apps/admin/src/test/permission-matrix-parity.test.ts` now fails on any difference. **Read-only roles (`R` / `R_ASSIGNED`) see the module's menu and pages with write controls disabled** (#611/#613 — see `feature-patterns.md` → Read-only access); pages redirect only when the role has no access to the module at all (`useModuleAccess(module).canRead`). Each cell maps `AppModule × AppRole → PermissionLevel` (`RW | R | R_ASSIGNED | RW_ASSIGNED | R_OWN | NONE`). R_ASSIGNED/RW_ASSIGNED are treated as R/RW at the router layer until a `staff_member_assignments` table is added.
 
 | Module | admin | trainer_performance | trainer_perf_nutrition | front_desk | accountant | nutritionist | member |
 |---|---|---|---|---|---|---|---|
-| MEMBERS | RW | R_ASSIGNED | R_ASSIGNED | RW | R | R_ASSIGNED | R_OWN |
+| MEMBERS | RW | R_ASSIGNED | R_ASSIGNED | RW | NONE | R_ASSIGNED | R_OWN |
 | CALENDAR | RW | RW | RW | RW | NONE | R | NONE |
-| ORGANIZATION | RW | NONE | NONE | R | NONE | NONE | NONE |
-| TRAINING | RW | RW_ASSIGNED | RW_ASSIGNED | R | NONE | NONE | R_OWN |
-| NUTRITION | RW | R | RW_ASSIGNED | R | NONE | RW_ASSIGNED | R_OWN |
-| FINANCIALS | RW | NONE | NONE | NONE | RW | NONE | NONE |
-| PAYMENTS | RW | NONE | NONE | RW | RW | NONE | NONE |
+| ORGANIZATION | RW | R | R | R | NONE | R | NONE |
+| TRAINING | RW | RW | RW | R | NONE | R_ASSIGNED | R_OWN |
+| NUTRITION | RW | R_ASSIGNED | RW_ASSIGNED | R | NONE | RW_ASSIGNED | R_OWN |
+| FINANCIALS | RW | NONE | NONE | R | R | NONE | NONE |
+| PAYMENTS | RW | NONE | NONE | RW | R | NONE | R_OWN |
 | SYSTEM | RW | NONE | NONE | NONE | NONE | NONE | NONE |
 | CORDEL | NONE | NONE | NONE | NONE | NONE | NONE | NONE |
 

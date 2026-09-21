@@ -79,7 +79,7 @@ export default function SpacesPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,12 +112,12 @@ export default function SpacesPage() {
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isAdmin) { router.replace(`/${locale}`); return; }
+    if (!canRead) { router.replace(`/${locale}`); return; }
     loadCenters();
     loadActivityTypes();
-  }, [gymLoading, isAdmin]);
+  }, [gymLoading, canRead]);
 
-  useEffect(() => { if (!gymLoading && isAdmin) load(); }, [activeGymId, gymLoading, statusFilter, centerFilter]);
+  useEffect(() => { if (!gymLoading && canRead) load(); }, [activeGymId, gymLoading, statusFilter, centerFilter]);
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
@@ -560,7 +560,7 @@ export default function SpacesPage() {
     );
   }
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   const visibleSpaces = spaces.filter((s) => {
     if (!search) return true;

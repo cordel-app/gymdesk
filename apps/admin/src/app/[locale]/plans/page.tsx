@@ -225,13 +225,13 @@ export default function PlansPage() {
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
   // Assigning a plan creates a user membership — a PAYMENTS write (front desk: RW), not FINANCIALS.
   const { canWrite: canAssign, readOnlyTitle: assignReadOnlyTitle } = useModuleAccess('PAYMENTS');
 
   useEffect(() => {
-    if (!gymLoading && !isAdmin) router.replace(`/${locale}`);
-  }, [gymLoading, isAdmin]);
+    if (!gymLoading && !canRead) router.replace(`/${locale}`);
+  }, [gymLoading, canRead]);
 
   useEffect(() => {
     if (!gymLoading && activeGymId) {
@@ -681,7 +681,7 @@ export default function PlansPage() {
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div>

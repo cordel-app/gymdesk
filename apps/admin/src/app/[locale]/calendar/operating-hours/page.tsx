@@ -57,7 +57,7 @@ export default function OperatingHoursPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [loading, setLoading] = useState(true);
   const [shifts, setShifts] = useState<WeeklyShift[]>([]);
@@ -76,9 +76,9 @@ export default function OperatingHoursPage() {
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isAdmin) { router.replace(`/${locale}`); return; }
+    if (!canRead) { router.replace(`/${locale}`); return; }
     load();
-  }, [gymLoading, isAdmin, activeGymId]);
+  }, [gymLoading, canRead, activeGymId]);
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
@@ -254,7 +254,7 @@ export default function OperatingHoursPage() {
     return dates;
   }
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div>
