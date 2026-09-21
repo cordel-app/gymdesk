@@ -1,10 +1,23 @@
 // Unit tests for api/src/domain/themeTokens.ts — pure functions, no DB/HTTP.
 import { describe, expect, it } from 'vitest';
-import { defaultTokens, validateTokens } from '../domain/themeTokens';
+import { CALENDAR_COLOR_FIELDS, defaultTokens, validateTokens } from '../domain/themeTokens';
 
 describe('defaultTokens()', () => {
   it('returns tokens that pass validateTokens()', () => {
     expect(validateTokens(defaultTokens())).toBeNull();
+  });
+
+  it('defines every #559 calendar color token', () => {
+    const colors = defaultTokens().colors as Record<string, unknown>;
+    for (const field of CALENDAR_COLOR_FIELDS) {
+      expect(colors[field], `defaultTokens() is missing colors.${field}`).toBeTypeOf('string');
+    }
+  });
+
+  it('does not define event background/border tokens — event color stays status-derived (#541)', () => {
+    const colors = defaultTokens().colors as Record<string, unknown>;
+    expect(colors.calendarEventBackground).toBeUndefined();
+    expect(colors.calendarEventBorder).toBeUndefined();
   });
 });
 
@@ -44,6 +57,19 @@ describe('validateTokens()', () => {
   it('validates the #558 sectionHeadingTextColor token', () => {
     expect(validateTokens({ colors: { sectionHeadingTextColor: '#888888' } })).toBeNull();
     expect(validateTokens({ colors: { sectionHeadingTextColor: 'nope' } })).toBe('colors.sectionHeadingTextColor must be a hex color like #rrggbb');
+  });
+
+  it('validates every #559 calendar color token', () => {
+    for (const field of CALENDAR_COLOR_FIELDS) {
+      expect(validateTokens({ colors: { [field]: '#123abc' } }), `colors.${field} should accept a valid hex`).toBeNull();
+      expect(validateTokens({ colors: { [field]: 'not-a-color' } })).toBe(`colors.${field} must be a hex color like #rrggbb`);
+    }
+  });
+
+  it('accepts a legacy theme with no calendar tokens at all (backward compatibility)', () => {
+    // Themes persisted before #559 have no `calendar*` keys — validation must
+    // treat them as absent rather than invalid, so existing themes keep saving.
+    expect(validateTokens({ colors: { textColor: '#111827', pageBackground: '#f5f5f5' } })).toBeNull();
   });
 
   it('rejects headerSeparatorHeight outside 0-20', () => {

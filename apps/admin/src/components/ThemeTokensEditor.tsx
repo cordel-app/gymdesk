@@ -1,7 +1,7 @@
 'use client';
 
 import { ThemeAdvancedSection } from '@/components/ThemeAdvancedSection';
-import { FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
+import { DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
 
 // Shared by the Custom Themes (`[locale]/themes`) and Base Themes
 // (`[locale]/system/themes`) editors (#492) — both edit the same
@@ -99,6 +99,34 @@ export const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens[
     groupKey: 'group_tables',
     fields: [],
   },
+  {
+    // #559 stage 1. Rendered identically in Base Themes and Custom Themes —
+    // both editors map over COLOR_GROUPS through ThemeColorsEditor, so this
+    // one entry gives both screens the section. Per the #559 clarification,
+    // the Base/Custom relationship itself is unchanged: cloning a Base Theme
+    // copies these values along with every other token, exactly as today.
+    // Stage 1 persists and validates these tokens; stage 2 wires them to
+    // --gd-calendar-* CSS variables, so saving one has no visual effect yet.
+    groupKey: 'group_calendar',
+    fields: [
+      { key: 'calendarBackground', labelKey: 'label_calendar_bg' },
+      { key: 'calendarSurfaceBackground', labelKey: 'label_calendar_surface_bg' },
+      { key: 'calendarHeaderBackground', labelKey: 'label_calendar_header_bg' },
+      { key: 'calendarHeaderText', labelKey: 'label_calendar_header_text' },
+      { key: 'calendarDayText', labelKey: 'label_calendar_day_text' },
+      { key: 'calendarMutedDayText', labelKey: 'label_calendar_muted_day_text' },
+      { key: 'calendarTodayBackground', labelKey: 'label_calendar_today_bg' },
+      { key: 'calendarSelectionBackground', labelKey: 'label_calendar_selection_bg' },
+      { key: 'calendarGridBorder', labelKey: 'label_calendar_grid_border' },
+      { key: 'calendarTimeAxisBackground', labelKey: 'label_calendar_time_axis_bg' },
+      { key: 'calendarTimeAxisText', labelKey: 'label_calendar_time_axis_text' },
+      { key: 'calendarWeekendBackground', labelKey: 'label_calendar_weekend_bg' },
+      { key: 'calendarDisabledSlotBackground', labelKey: 'label_calendar_disabled_slot_bg' },
+      { key: 'calendarEventText', labelKey: 'label_calendar_event_text' },
+      { key: 'calendarNavButtonBackground', labelKey: 'label_calendar_nav_btn_bg' },
+      { key: 'calendarNavButtonText', labelKey: 'label_calendar_nav_btn_text' },
+    ],
+  },
 ];
 
 export const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
@@ -135,7 +163,13 @@ export function ThemeColorsEditor({ tokens, onChange, namespace, t, readOnly }: 
               <input
                 type="color"
                 disabled={readOnly}
-                value={tokens.colors[key] as string}
+                // Themes persisted before a token was introduced have no value
+                // for it (the Calendar group in #559, the Text/Separator/Input
+                // groups in #489). Fall back to the default so the picker stays
+                // a controlled input showing the color actually in effect,
+                // rather than rendering blank — matches applyTokens()'s own
+                // `?? DEFAULT_TOKENS.colors.x` fallbacks.
+                value={(tokens.colors[key] ?? DEFAULT_TOKENS.colors[key]) as string}
                 onChange={(e) => onChange({ ...tokens, colors: { ...tokens.colors, [key]: e.target.value } })}
                 style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: readOnly ? 'default' : 'pointer', padding: 2 }}
               />

@@ -154,6 +154,111 @@ describe('Semantic color tokens (#489)', () => {
   });
 });
 
+// ─── Calendar color tokens (#559 stage 1) ────────────────────────────────────
+
+describe('Calendar color tokens (#559)', () => {
+  const calendarColors = {
+    calendarBackground: '#0a0a0a',
+    calendarSurfaceBackground: '#0b0b0b',
+    calendarHeaderBackground: '#0c0c0c',
+    calendarHeaderText: '#0d0d0d',
+    calendarDayText: '#0e0e0e',
+    calendarMutedDayText: '#0f0f0f',
+    calendarTodayBackground: '#101010',
+    calendarSelectionBackground: '#111111',
+    calendarGridBorder: '#121212',
+    calendarTimeAxisBackground: '#131313',
+    calendarTimeAxisText: '#141414',
+    calendarWeekendBackground: '#151515',
+    calendarDisabledSlotBackground: '#161616',
+    calendarEventText: '#171717',
+    calendarNavButtonBackground: '#181818',
+    calendarNavButtonText: '#191919',
+  };
+
+  it('persists and returns every calendar color token for a customer theme', async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({
+        tokens: {
+          ...defaultTokensFixture(),
+          colors: { ...defaultTokensFixture().colors, ...calendarColors },
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.colors).toMatchObject(calendarColors);
+
+    const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [customThemeId]);
+    const persisted = typeof rows[0].tokens === 'string' ? JSON.parse(rows[0].tokens) : rows[0].tokens;
+    expect(persisted.colors).toMatchObject(calendarColors);
+  });
+
+  it('round-trips the calendar attributes in the `advanced` map', async () => {
+    const advanced = { calendarEventBorderRadius: '10px', calendarSlotHeight: '3em', calendarNavButtonHoverBackground: '#abcabc' };
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { ...defaultTokensFixture(), colors: { ...defaultTokensFixture().colors, ...calendarColors }, advanced } });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.advanced).toEqual(advanced);
+  });
+
+  it('rejects an invalid hex on a calendar token (400)', async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { colors: { calendarTodayBackground: 'not-a-hex' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error ?? res.body.message).toMatch(/calendarTodayBackground/);
+  });
+
+  it("returns 404 when writing calendar tokens to another gym's theme (tenant isolation)", async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', otherGymId)
+      .send({ tokens: { colors: { calendarBackground: '#abcdef' } } });
+    expect(res.status).toBe(404);
+  });
+
+  it('accepts an update to a legacy theme whose persisted tokens have no calendar keys', async () => {
+    // Backward compatibility: themes saved before #559 carry no `calendar*`
+    // keys. Saving such a theme must keep working and must not invent values.
+    await db.query('UPDATE themes SET tokens = ? WHERE id = ?', [
+      JSON.stringify({ v: 2, colors: { pageBackground: '#f5f5f5', textColor: '#111827' } }),
+      customThemeId,
+    ]);
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { colors: { pageBackground: '#eeeeee', textColor: '#111827' } } });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.colors.pageBackground).toBe('#eeeeee');
+    expect(res.body.tokens.colors.calendarBackground).toBeUndefined();
+  });
+
+  it('copies calendar tokens when cloning a theme (clone-on-create, unchanged Base/Custom relationship)', async () => {
+    await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { ...defaultTokensFixture(), colors: { ...defaultTokensFixture().colors, ...calendarColors } } });
+
+    const res = await request
+      .post(`/system/themes/clone/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Calendar Clone Test' });
+    expect(res.status).toBe(201);
+    expect(res.body.tokens.colors).toMatchObject(calendarColors);
+  });
+});
+
 // ─── GET /system/themes ────────────────────────────────────────────────────────
 
 describe('GET /system/themes', () => {
