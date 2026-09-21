@@ -4,13 +4,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
 import { ImageUploadField } from '@/components/ImageUploadField';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
@@ -53,7 +53,8 @@ export default function NutritionLibraryPage() {
   const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
-  const canWrite = !!activeGym?.role && canWriteModule(activeGym.role, 'NUTRITION');
+  // #613: impersonation-aware (superadmins included); read-only roles see controls disabled.
+  const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
 
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -334,11 +335,11 @@ export default function NutritionLibraryPage() {
     {
       header: '', width: 40,
       render: (item) => {
-        const canEditItem = canWrite && item.gym_id !== null;
+        const isGymItem = item.gym_id !== null;
         return (
           <ContextMenu items={[
             { label: t('nutrition_library.details'), onClick: () => toggleExpand(item.id) },
-            ...(canEditItem ? [{ label: t('nutrition_library.edit'), onClick: () => openInlineEdit(item) }] : []),
+            ...(isGymItem ? [{ label: t('nutrition_library.edit'), onClick: () => openInlineEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
           ]} />
         );
       },
@@ -351,7 +352,7 @@ export default function NutritionLibraryPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('nutrition_library.title')}</h1>
-        {canWrite && <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>{t('nutrition_library.add_new')}</button>}
+        <button style={readOnlyStyle(btnStyle(), !canWrite)} onClick={openInlineNew} disabled={!canWrite || creating} title={readOnlyTitle}>{t('nutrition_library.add_new')}</button>
       </div>
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>

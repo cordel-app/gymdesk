@@ -5,14 +5,14 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
-import { btnStyle } from '@/components/ui';
-import { canWriteModule } from '@/config/permissions';
+import { btnStyle, readOnlyStyle } from '@/components/ui';
 import { NewTrainingPlanDialog } from './NewTrainingPlanDialog';
 import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
 import { HierBlock } from '../workout-templates/summaries';
@@ -70,7 +70,7 @@ export default function TrainingPlansPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
-  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const openPlanId = searchParams.get('open');
@@ -112,7 +112,8 @@ export default function TrainingPlansPage() {
   const [editSaving, setEditSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  // #613: impersonation-aware; read-only roles see controls disabled.
+  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   useEffect(() => {
@@ -347,7 +348,7 @@ export default function TrainingPlansPage() {
           </select>
           <StatusFilter value={statusFilter} onChange={setStatusFilter}
             options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))} allLabel={t('status.all')} />
-          <button onClick={() => guardUnsaved(() => setNewOpen(true))} style={btnStyle()}>{t('training_plans.new_plan')}</button>
+          <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>{t('training_plans.new_plan')}</button>
         </div>
       </div>
 
@@ -495,12 +496,13 @@ function PlanCard({
 }) {
   const isCompleted = row.status === 'completed';
 
+  const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
-    ...(canWrite && !isCompleted ? [{ label: t('training_plan_templates.edit'), onClick: onEdit }] : []),
+    ...(!isCompleted ? [{ label: t('training_plan_templates.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
     { label: t('training_plans.details'), onClick: onDetails },
-    ...(canWrite ? [{ label: t('training_plans.duplicate'), onClick: onDuplicate }] : []),
-    ...(canWrite && row.status === 'active' ? [{ label: t('training_plans.complete'), onClick: onComplete }] : []),
-    ...(canWrite ? [{ label: t('training_plans.delete'), onClick: onDelete, danger: true }] : []),
+    { label: t('training_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
+    ...(row.status === 'active' ? [{ label: t('training_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
+    { label: t('training_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
   ];
 
   return (

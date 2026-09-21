@@ -5,7 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -14,7 +14,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ImageUploadField } from '@/components/ImageUploadField';
-import { btnSmall, btnStyle } from '@/components/ui';
+import { btnSmall, btnStyle, readOnlyStyle } from '@/components/ui';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ export default function ExercisesPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const [rows, setRows] = useState<Exercise[]>([]);
@@ -110,7 +110,8 @@ export default function ExercisesPage() {
   const [depBusy, setDepBusy] = useState(false);
   const [importing, setImporting] = useState(false);
 
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  // #613: impersonation-aware; read-only roles see controls disabled.
+  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   useEffect(() => {
@@ -538,13 +539,13 @@ export default function ExercisesPage() {
     const menuItems: ContextMenuItem[] = isBase
       ? [
           { label: t('details'), onClick: () => setDetailFor(ex) },
-          { label: t('clone'), onClick: () => handleClone(ex) },
+          { label: t('clone'), onClick: () => handleClone(ex), disabled: !canWrite, title: readOnlyTitle },
         ]
       : [
           { label: t('details'), onClick: () => setDetailFor(ex) },
-          { label: t('edit'), onClick: () => guardedAction('edit', ex) },
-          { label: t('duplicate'), onClick: () => handleDuplicate(ex) },
-          { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true },
+          { label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
+          { label: t('duplicate'), onClick: () => handleDuplicate(ex), disabled: !canWrite, title: readOnlyTitle },
+          { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true, disabled: !canWrite, title: readOnlyTitle },
         ];
 
     return (
@@ -620,8 +621,8 @@ export default function ExercisesPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={importDefaults} disabled={importing} style={btnStyle('#1e7e40')}>{importing ? '…' : t('import_defaults')}</button>
-          <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setAddError(null); setAddModalOpen(true); }} style={btnStyle('#6c63ff')}>{t('add')}</button>
+          <button onClick={importDefaults} disabled={!canWrite || importing} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{importing ? '…' : t('import_defaults')}</button>
+          <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
         </div>
       </div>
 

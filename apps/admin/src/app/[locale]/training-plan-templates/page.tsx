@@ -5,14 +5,14 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
+import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
 
@@ -55,7 +55,7 @@ export default function TrainingPlanTemplatesPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const [rows, setRows] = useState<TrainingPlanTemplate[]>([]);
@@ -95,7 +95,8 @@ export default function TrainingPlanTemplatesPage() {
   const [hierarchies, setHierarchies] = useState<Record<number, Hierarchy>>({});
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
 
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  // #613: impersonation-aware; read-only roles see controls disabled.
+  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   useEffect(() => {
@@ -315,7 +316,7 @@ export default function TrainingPlanTemplatesPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={openInlineNew} disabled={inlineNew !== null} style={btnStyle()}>
+          <button onClick={openInlineNew} disabled={!canWrite || inlineNew !== null} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>
             {t('add')}
           </button>
         </div>
@@ -488,18 +489,19 @@ function TemplateCard({
   onChanged: () => void;
 }) {
   const isBase = template.gym_id === null;
+  const roTitle = useReadOnlyTitle(canWrite);
   const menuItems: ContextMenuItem[] = isBase
     ? [
         { label: t('details'), onClick: onDetails },
-        { label: t('clone'), onClick: onClone },
-        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign }] : []),
+        { label: t('clone'), onClick: onClone, disabled: !canWrite, title: roTitle },
+        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
       ]
     : [
         { label: t('details'), onClick: onDetails },
-        ...(canWrite ? [{ label: t('edit'), onClick: onEdit }] : []),
-        ...(canWrite ? [{ label: t('duplicate'), onClick: onDuplicate }] : []),
-        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign }] : []),
-        ...(canWrite ? [{ label: t('delete'), onClick: onDelete, danger: true }] : []),
+        { label: t('edit'), onClick: onEdit, disabled: !canWrite, title: roTitle },
+        { label: t('duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
+        ...(template.status === 'active' ? [{ label: t('assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
+        { label: t('delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
       ];
 
   const descText = template.description

@@ -16,6 +16,12 @@ import { AppModule, canAccessModule, canWriteModule } from '@/config/permissions
  *   data with write controls disabled (`readOnlyTitle` as the tooltip). The API
  *   rejects their writes independently (`requireModuleWrite` / `requireRole`).
  */
+/** Tooltip for a write control in a sub-component that only receives `canWrite`. */
+export function useReadOnlyTitle(canWrite: boolean): string | undefined {
+  const t = useTranslations('common');
+  return canWrite ? undefined : t('read_only_hint');
+}
+
 export function useModuleAccess(module: AppModule) {
   const t = useTranslations('common');
   const { activeGym, isSuperadmin, loading } = useGym();
