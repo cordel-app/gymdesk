@@ -71,9 +71,9 @@ export default function SystemUsersPage() {
       });
       setModalOpen(false);
       setEmail('');
-      if (res.status === 'invited') toast(t('invited', { email: res.email ?? email }));
-      else if (res.status === 'already_granted') toast(t('already_granted'));
-      else toast(t('granted'));
+      if (res.status === 'invited') toast(t('invited', { email: res.email ?? email }), 'success');
+      else if (res.status === 'already_granted') toast(t('already_granted'), 'success');
+      else toast(t('granted'), 'success');
       load();
     } catch (err: any) {
       setError(err.message ?? t('error_generic'));
@@ -87,7 +87,7 @@ export default function SystemUsersPage() {
     try {
       await apiFetch(`/platform/superadmins/${revoking.id}`, { method: 'DELETE' });
       setRevoking(null);
-      toast(t('revoked'));
+      toast(t('revoked'), 'success');
       load();
     } catch (err: any) {
       setRevoking(null);

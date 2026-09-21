@@ -272,7 +272,7 @@ export default function ExercisesPage() {
   async function handleClone(ex: Exercise) {
     try {
       await apiFetch(`/exercises/${ex.id}/clone`, { method: 'POST' });
-      toast(t('cloned'));
+      toast(t('cloned'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -334,7 +334,7 @@ export default function ExercisesPage() {
     setImporting(true);
     try {
       const result: any = await apiFetch('/exercises/import-defaults', { method: 'POST' });
-      toast(t('imported', { n: result.inserted }));
+      toast(t('imported', { n: result.inserted }), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));

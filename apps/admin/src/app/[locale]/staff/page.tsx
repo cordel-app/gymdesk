@@ -341,7 +341,7 @@ export default function StaffPage() {
         if (created.access?.status === 'error') {
           toast(t('created_access_error', { error: created.access.error ?? '' }));
         } else {
-          toast(t('created'));
+          toast(t('created'), 'success');
         }
       } else {
         const updated = await apiFetch<StaffMember & { access?: { status: string; error?: string } }>(
@@ -357,9 +357,9 @@ export default function StaffPage() {
         if (updated.access?.status === 'error') {
           toast(t('saved_access_error', { error: updated.access.error ?? '' }));
         } else if (updated.access?.status === 'invited') {
-          toast(t('saved_invited', { email: form.email ?? '' }));
+          toast(t('saved_invited', { email: form.email ?? '' }), 'success');
         } else {
-          toast(t('saved'));
+          toast(t('saved'), 'success');
         }
       }
       setExpandedId(null);
@@ -374,7 +374,7 @@ export default function StaffPage() {
   async function handleDeactivate(member: StaffMember) {
     try {
       await apiFetch(`/staff/${member.id}/deactivate`, { method: 'PATCH' });
-      toast(t('deactivated'));
+      toast(t('deactivated'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -386,7 +386,7 @@ export default function StaffPage() {
     setAccessBusy(true);
     try {
       const res = await apiFetch<{ status: string }>(`/staff/${member.id}/access`, { method: 'POST' });
-      toast(t(res.status === 'granted' || res.status === 'already_granted' ? 'access_granted_toast' : 'access_invited_toast'));
+      toast(t(res.status === 'granted' || res.status === 'already_granted' ? 'access_granted_toast' : 'access_invited_toast'), 'success');
       loadClerkStatus(member.id);
       load();
     } catch (err: any) {
@@ -400,7 +400,7 @@ export default function StaffPage() {
     setAccessBusy(true);
     try {
       await apiFetch(`/staff/${member.id}/access`, { method: 'DELETE' });
-      toast(t('access_revoked_toast'));
+      toast(t('access_revoked_toast'), 'success');
       loadClerkStatus(member.id);
       load();
     } catch (err: any) {
@@ -414,7 +414,7 @@ export default function StaffPage() {
   async function handleDuplicate(member: StaffMember) {
     try {
       await apiFetch(`/staff/${member.id}/duplicate`, { method: 'POST' });
-      toast(t('duplicated'));
+      toast(t('duplicated'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -424,7 +424,7 @@ export default function StaffPage() {
   async function handleDelete(member: StaffMember) {
     try {
       await apiFetch(`/staff/${member.id}`, { method: 'DELETE' });
-      toast(t('deleted'));
+      toast(t('deleted'), 'success');
       if (expandedId === member.id) setExpandedId(null);
       load();
     } catch (err: any) {

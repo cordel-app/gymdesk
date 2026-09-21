@@ -138,7 +138,7 @@ export default function NutritionPlansPage() {
   async function handleDuplicate(plan: MemberNutritionPlan) {
     try {
       await apiFetch(`/member-nutrition-plans/${plan.id}/duplicate`, { method: 'POST' });
-      toast(t('nutrition_plans.duplicated'));
+      toast(t('nutrition_plans.duplicated'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('nutrition_plans.error_generic'));

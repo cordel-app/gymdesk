@@ -276,7 +276,7 @@ export default function TrainingPlansPage() {
   async function handleDuplicate(row: TrainingPlanRow) {
     try {
       await apiFetch(`/members/${row.member_id}/training-plans/${row.id}/duplicate`, { method: 'POST' });
-      toast(t('training_plan_templates.duplicated'));
+      toast(t('training_plan_templates.duplicated'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('training_plans.error_generic'));

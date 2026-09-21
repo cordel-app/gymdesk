@@ -35,7 +35,7 @@ export function ImpersonationBanner() {
       // Audit failure should not block stopping the session
     }
     stopImpersonation();
-    toast(t('stopped'));
+    toast(t('stopped'), 'success');
   }
 
   return (
