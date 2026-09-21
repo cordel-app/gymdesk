@@ -203,8 +203,9 @@ app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, requi
 app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plans'), memberTrainingPlansRouter);
 app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), exerciseLogsRouter);
 app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), workoutBlockLogsRouter);
-app.use('/class-sessions',         requireAuth(), tenantContext, centerContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), classSessionsRouter);
-app.use('/calendar-events',        requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.calendar'), calendarEventsRouter);
+// #614: Calendar is its own permission module (#247) — front desk can create/edit events.
+app.use('/class-sessions',         requireAuth(), tenantContext, centerContext, requireModuleAccess('CALENDAR'), requireFeatureEnabled('calendar.calendar'), classSessionsRouter);
+app.use('/calendar-events',        requireAuth(), tenantContext, requireModuleAccess('CALENDAR'), requireFeatureEnabled('calendar.calendar'), calendarEventsRouter);
 app.use('/shared-training-requests', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('calendar.member_calendar'), sharedTrainingRequestsRouter);
 
 // NUTRITION module — admin=RW, trainer_perf_nutrition/nutritionist=RW_ASSIGNED, trainer_performance=R_ASSIGNED, front_desk=R, accountant/member=NONE
@@ -219,7 +220,9 @@ app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('
 app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), chargeTypesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), actionTypesRouter);
 app.use('/sellable-items',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), sellableItemsRouter); // lgtm[js/missing-rate-limiting]
-app.use('/taxes',            requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), taxesRouter); // lgtm[js/missing-rate-limiting]
+// Reads depend only on the Financials group flag: Plans and Sellable Items load /taxes for
+// their tax dropdown. The Taxes page's own flag (financials.taxes) gates writes in the router (#610).
+app.use('/taxes',            requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), taxesRouter); // lgtm[js/missing-rate-limiting]
 app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionsRouter);
 app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionDetailsRouter);
 

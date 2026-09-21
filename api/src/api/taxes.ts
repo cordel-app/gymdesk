@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
+import { requireFeatureEnabled } from '../infra/featureFlags';
 
 export const taxesRouter = Router();
 
@@ -63,7 +64,7 @@ taxesRouter.get('/:id', async (req, res, next) => {
 
 // ─── POST / — create custom tax rate ─────────────────────────────────────────
 
-taxesRouter.post('/', requireRole('admin'), async (req, res, next) => {
+taxesRouter.post('/', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
   const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
   const { name, rate_percent, status, description } = req.body;
 
@@ -122,7 +123,7 @@ async function getTaxImpact(gymId: string, taxRateId: string) {
   };
 }
 
-taxesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
+taxesRouter.put('/:id', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
   const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
   const { name, rate_percent, status, description, confirmImpact } = req.body;
 
@@ -195,7 +196,7 @@ taxesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 
 // ─── POST /:id/activate ───────────────────────────────────────────────────────
 
-taxesRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
+taxesRouter.post('/:id/activate', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
   const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
@@ -213,7 +214,7 @@ taxesRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) =
 
 // ─── POST /:id/deactivate ─────────────────────────────────────────────────────
 
-taxesRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
+taxesRouter.post('/:id/deactivate', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
   const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
@@ -231,7 +232,7 @@ taxesRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next)
 
 // ─── DELETE /:id — soft-delete custom tax rates only ─────────────────────────
 
-taxesRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
+taxesRouter.delete('/:id', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
   const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   try {
     const { rows: existing } = await db.query(
