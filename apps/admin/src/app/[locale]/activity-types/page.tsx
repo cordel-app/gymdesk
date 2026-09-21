@@ -124,7 +124,7 @@ export default function ActivityTypesPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [rows, setRows] = useState<ActivityType[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
@@ -179,10 +179,10 @@ export default function ActivityTypesPage() {
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isAdmin) { router.replace(`/${locale}`); return; }
-  }, [gymLoading, isAdmin]);
+    if (!canRead) { router.replace(`/${locale}`); return; }
+  }, [gymLoading, canRead]);
 
-  useEffect(() => { if (!gymLoading && isAdmin) load(); }, [activeGymId, gymLoading, statusFilter]);
+  useEffect(() => { if (!gymLoading && canRead) load(); }, [activeGymId, gymLoading, statusFilter]);
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
@@ -1035,7 +1035,7 @@ export default function ActivityTypesPage() {
     );
   }
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div>

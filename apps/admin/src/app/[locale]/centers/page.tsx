@@ -67,7 +67,7 @@ export default function CentersPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,8 +89,8 @@ export default function CentersPage() {
   const [deleting, setDeleting] = useState<Center | null>(null);
 
   useEffect(() => {
-    if (!gymLoading && !isAdmin) router.replace(`/${locale}`);
-  }, [gymLoading, isAdmin]);
+    if (!gymLoading && !canRead) router.replace(`/${locale}`);
+  }, [gymLoading, canRead]);
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
@@ -112,7 +112,7 @@ export default function CentersPage() {
   }
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) { load(); loadThemes(); }
+    if (!gymLoading && canRead) { load(); loadThemes(); }
   }, [activeGymId, gymLoading, statusFilter]);
 
   async function handleAdd() {
@@ -267,7 +267,7 @@ export default function CentersPage() {
     );
   }
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div>

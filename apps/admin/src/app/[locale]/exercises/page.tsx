@@ -111,15 +111,15 @@ export default function ExercisesPage() {
   const [importing, setImporting] = useState(false);
 
   // #613: impersonation-aware; read-only roles see controls disabled.
-  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
-  useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
+  useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
   useEffect(() => {
-    if (!gymLoading && canWrite) loadLookups();
-  }, [gymLoading, canWrite, activeGymId]);
+    if (!gymLoading && canRead) loadLookups();
+  }, [gymLoading, canRead, activeGymId]);
 
   useEffect(() => {
-    if (!gymLoading && canWrite) load();
+    if (!gymLoading && canRead) load();
   }, [activeGymId, gymLoading, statusFilter, search]);
 
   async function loadLookups() {
@@ -343,7 +343,7 @@ export default function ExercisesPage() {
     }
   }
 
-  if (gymLoading || !canWrite) return null;
+  if (gymLoading || !canRead) return null;
 
   // Muscle picker keys: static catalog + any legacy keys on the exercise being edited
   const pickerKeys = [...muscleKeys, ...Array.from(editMuscles.keys()).filter((k) => !muscleKeys.includes(k))];

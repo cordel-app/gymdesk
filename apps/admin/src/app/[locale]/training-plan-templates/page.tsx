@@ -96,8 +96,8 @@ export default function TrainingPlanTemplatesPage() {
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
 
   // #613: impersonation-aware; read-only roles see controls disabled.
-  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
-  useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
+  useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
   useEffect(() => {
     const id = setTimeout(() => setNameQuery(nameInput.trim()), 300);
@@ -289,7 +289,7 @@ export default function TrainingPlanTemplatesPage() {
     return new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
-  if (gymLoading || !canWrite) return null;
+  if (gymLoading || !canRead) return null;
 
   const pageStart = total === 0 ? 0 : offset + 1;
   const pageEnd = Math.min(offset + LIMIT, total);

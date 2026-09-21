@@ -201,7 +201,7 @@ export default function PromotionsPage() {
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
 
   const membershipFeeName = chargeTypes.find((c) => c.code === 'membership_fee')?.name ?? 'Membership Fee';
 
@@ -235,15 +235,15 @@ export default function PromotionsPage() {
   }
 
   useEffect(() => {
-    if (!gymLoading && !isAdmin) router.replace(`/${locale}`);
-  }, [gymLoading, isAdmin]);
+    if (!gymLoading && !canRead) router.replace(`/${locale}`);
+  }, [gymLoading, canRead]);
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) { loadPlans(); loadOtherLookups(); }
-  }, [gymLoading, isAdmin, activeGymId]);
+    if (!gymLoading && canRead) { loadPlans(); loadOtherLookups(); }
+  }, [gymLoading, canRead, activeGymId]);
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) load();
+    if (!gymLoading && canRead) load();
   }, [activeGymId, gymLoading, statusFilter, search]);
 
   // Live forecast preview — recalculated by the backend (not duplicated here).
@@ -640,7 +640,7 @@ export default function PromotionsPage() {
     searchTimer.current = setTimeout(() => setSearch(val), 300);
   }
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   // ─── Timeline preview ─────────────────────────────────────────────────────
   // The Free/Pay/Prepaid/Bonus/Regular classification is computed by the

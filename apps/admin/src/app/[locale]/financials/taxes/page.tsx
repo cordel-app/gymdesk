@@ -85,7 +85,7 @@ export default function TaxesPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
 
   const [items, setItems] = useState<TaxRate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,11 +105,11 @@ export default function TaxesPage() {
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isAdmin) { router.replace(`/${locale}`); return; }
-  }, [gymLoading, isAdmin]);
+    if (!canRead) { router.replace(`/${locale}`); return; }
+  }, [gymLoading, canRead]);
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) load();
+    if (!gymLoading && canRead) load();
   }, [activeGymId, gymLoading]);
 
   async function load() {
@@ -419,7 +419,7 @@ export default function TaxesPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 900 }}>

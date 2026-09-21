@@ -67,7 +67,7 @@ export default function ProfessionalServicesPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [items, setItems] = useState<ProfessionalService[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,11 +86,11 @@ export default function ProfessionalServicesPage() {
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isAdmin) { router.replace(`/${locale}`); return; }
-  }, [gymLoading, isAdmin]);
+    if (!canRead) { router.replace(`/${locale}`); return; }
+  }, [gymLoading, canRead]);
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) load();
+    if (!gymLoading && canRead) load();
   }, [activeGymId, gymLoading]);
 
   async function load() {
@@ -345,7 +345,7 @@ export default function ProfessionalServicesPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────────
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div style={{ padding: '24px 32px', maxWidth: 900 }}>

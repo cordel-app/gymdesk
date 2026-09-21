@@ -77,8 +77,8 @@ export default function NutritionPlansPage() {
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
 
   // #613: impersonation-aware; read-only roles see controls disabled.
-  const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
-  useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
+  useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
   const load = useCallback(async () => {
     if (!activeGymId) { setLoading(false); return; }
@@ -208,7 +208,7 @@ export default function NutritionPlansPage() {
     if (!isExpanded) loadHierarchy(row.id);
   }
 
-  if (gymLoading || !canWrite) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div>

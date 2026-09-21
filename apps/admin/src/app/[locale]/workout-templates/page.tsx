@@ -77,7 +77,7 @@ export default function WorkoutTemplatesPage() {
   const { toast } = useToast();
 
   // #613: impersonation-aware; read-only roles see controls disabled.
-  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
 
   const [rows, setRows] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,7 +109,7 @@ export default function WorkoutTemplatesPage() {
   // Delete confirm
   const [deleting, setDeleting] = useState<WorkoutTemplate | null>(null);
 
-  useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
+  useEffect(() => { if (!gymLoading && !canRead) router.replace(`/${locale}`); }, [gymLoading, canRead]);
 
   // Debounce name search
   useEffect(() => {
@@ -594,7 +594,7 @@ export default function WorkoutTemplatesPage() {
     );
   }
 
-  if (gymLoading || !canWrite) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div>

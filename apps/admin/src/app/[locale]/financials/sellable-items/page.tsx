@@ -158,7 +158,7 @@ export default function SellableItemsPage() {
   const { toast } = useToast();
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
-  const { canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
+  const { canRead, canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
 
   const [items, setItems] = useState<SellableItem[]>([]);
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
@@ -183,21 +183,21 @@ export default function SellableItemsPage() {
 
   useEffect(() => {
     if (gymLoading) return;
-    if (!isAdmin) { router.replace(`/${locale}`); return; }
-  }, [gymLoading, isAdmin]);
+    if (!canRead) { router.replace(`/${locale}`); return; }
+  }, [gymLoading, canRead]);
 
   useEffect(() => {
-    if (!gymLoading && isAdmin) load();
+    if (!gymLoading && canRead) load();
   }, [activeGymId, gymLoading, typeFilter, statusFilter]);
 
   useEffect(() => {
-    if (gymLoading || !isAdmin || !activeGymId) return;
+    if (gymLoading || !canRead || !activeGymId) return;
     apiFetch<TaxRate[]>('/taxes').then(setTaxRates).catch(() => setTaxRates([]));
   }, [activeGymId, gymLoading, isAdmin]);
 
   // #546: gym-scoped Professional Services catalog, for the type='sessions' multi-select.
   useEffect(() => {
-    if (gymLoading || !isAdmin || !activeGymId) return;
+    if (gymLoading || !canRead || !activeGymId) return;
     setProfessionalServicesLoading(true);
     apiFetch<ProfessionalService[]>('/professional-services')
       .then(setProfessionalServices)
@@ -790,7 +790,7 @@ export default function SellableItemsPage() {
     );
   }
 
-  if (gymLoading || !isAdmin) return null;
+  if (gymLoading || !canRead) return null;
 
   return (
     <div>
