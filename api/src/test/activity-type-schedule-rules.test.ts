@@ -52,6 +52,30 @@ function upcomingMonSunWeek() {
   };
 }
 
+/** Same week as upcomingMonSunWeek(), but shifted a full week forward whenever its
+ * Monday would be today — guaranteeing every date in the window is strictly after
+ * today (UTC). Needed by tests that book a same-week occurrence and then assert on
+ * it later in the same test run: materializeScheduleRule stores starts_at using the
+ * gym's local timezone (Europe/Madrid by default, UTC+1/+2), so a same-day slot's
+ * UTC starts_at can already be in the past by the time a later query checks
+ * "starts_at > UTC_TIMESTAMP()" — the same hazard tomorrowStr() above guards
+ * against for single-date tests. */
+function nextMonSunWeek() {
+  const week = upcomingMonSunWeek();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (week.mon !== todayStr) return week;
+  const shift = (dateStr: string) => {
+    const d = new Date(`${dateStr}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + 7);
+    return d.toISOString().slice(0, 10);
+  };
+  return {
+    start: shift(week.start), end: shift(week.end),
+    mon: shift(week.mon), tue: shift(week.tue), wed: shift(week.wed),
+    thu: shift(week.thu), fri: shift(week.fri), sat: shift(week.sat), sun: shift(week.sun),
+  };
+}
+
 /** Upcoming Monday (today or later, UTC), optionally shifted by whole weeks —
  * used by the #503 stage 4 end-date-only tests, which need 3+ weekly Mondays
  * in a single rule window. */
@@ -1112,7 +1136,7 @@ describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
   });
 
   it('PUT narrowing/moving the window away from a booked occurrence blocks with 409 and touches nothing', async () => {
-    const week = upcomingMonSunWeek();
+    const week = nextMonSunWeek();
     const memberId = await insertTestMember(gymId, 'block-put');
 
     const createRes = await request
@@ -1165,7 +1189,7 @@ describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
   });
 
   it('PUT with confirm_cancel_booked:true proceeds, cancels the impacted occurrence, and notifies the affected member', async () => {
-    const week = upcomingMonSunWeek();
+    const week = nextMonSunWeek();
     const memberId = await insertTestMember(gymId, 'confirm-put');
 
     const createRes = await request
@@ -1210,7 +1234,7 @@ describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
   });
 
   it('PUT widening the window around a booked occurrence preserves it untouched — no confirmation needed, no duplicate slot', async () => {
-    const week = upcomingMonSunWeek();
+    const week = nextMonSunWeek();
     const memberId = await insertTestMember(gymId, 'preserve-put');
 
     const createRes = await request
@@ -1268,7 +1292,7 @@ describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
   });
 
   it('DELETE with a booked future occurrence blocks with 409 unless ?confirm_cancel_booked=true, then notifies on confirm', async () => {
-    const week = upcomingMonSunWeek();
+    const week = nextMonSunWeek();
     const memberId = await insertTestMember(gymId, 'delete-guard');
 
     const createRes = await request
@@ -1326,7 +1350,7 @@ describe('booked-occurrence preservation on rule edit/delete (#482)', () => {
   });
 
   it('DELETE with no booked occurrences proceeds immediately without confirmation', async () => {
-    const week = upcomingMonSunWeek();
+    const week = nextMonSunWeek();
     const createRes = await request
       .post(rulesBase(preserveActivityTypeId))
       .set('Authorization', TEST_AUTH_HEADER)
