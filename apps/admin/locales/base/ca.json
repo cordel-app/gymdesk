@@ -2154,7 +2154,10 @@
     "role_trainer_perf_nutrition": "Entrenador + Nutrició",
     "role_front_desk": "Recepcionista",
     "role_accountant": "Comptable",
-    "role_nutritionist": "Nutricionista"
+    "role_nutritionist": "Nutricionista",
+    "save_will_invite": "En desar es configurarà l'accés d'aquesta persona. Si {email} encara no té compte, rebrà un correu d'invitació.",
+    "saved_invited": "Desat. Invitació enviada a {email}.",
+    "saved_access_error": "Desat, però no s'ha pogut configurar l'accés: {error}"
   },
   "spaces": {
     "title": "Espais",
@@ -2448,7 +2451,9 @@
     "cancel": "Cancel·lar",
     "error_start": "No s'ha pogut iniciar la suplantació.",
     "error_search": "No s'ha pogut completar la cerca. Si us plau, torneu-ho a intentar.",
-    "account_locked_hint": "Les accions del compte estan desactivades durant la suplantació"
+    "account_locked_hint": "Les accions del compte estan desactivades durant la suplantació",
+    "pending_invitation": "Invitació pendent",
+    "pending_invitation_hint": "Encara no ha acceptat la invitació, així que no hi ha cap compte per suplantar."
   },
   "calendar": {
     "title": "Calendari",

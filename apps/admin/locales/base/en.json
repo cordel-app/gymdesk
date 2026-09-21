@@ -2142,7 +2142,10 @@
     "role_trainer_perf_nutrition": "Trainer + Nutrition",
     "role_front_desk": "Front Desk",
     "role_accountant": "Accountant",
-    "role_nutritionist": "Nutritionist"
+    "role_nutritionist": "Nutritionist",
+    "save_will_invite": "Saving will set up this person's login. If {email} has no account yet, they'll receive an invitation email.",
+    "saved_invited": "Saved. Invitation sent to {email}.",
+    "saved_access_error": "Saved, but the login could not be set up: {error}"
   },
   "spaces": {
     "title": "Spaces",
@@ -2436,7 +2439,9 @@
     "cancel": "Cancel",
     "error_start": "Could not start impersonation.",
     "error_search": "Unable to complete search. Please try again.",
-    "account_locked_hint": "Account actions are disabled while impersonating"
+    "account_locked_hint": "Account actions are disabled while impersonating",
+    "pending_invitation": "Invitation pending",
+    "pending_invitation_hint": "They haven't accepted their invitation yet, so there is no account to impersonate."
   },
   "calendar": {
     "title": "Calendar",

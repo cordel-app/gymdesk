@@ -304,6 +304,99 @@ describe('staff access (#592)', () => {
     });
   });
 
+  describe('PUT /staff/:id — save grants or removes the login', () => {
+    async function insertLegacyStaff(email: string, status: 'active' | 'inactive' = 'active') {
+      // A record created before #592: no gym_membership_id.
+      const { insertId } = await db.query(
+        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, created_at, updated_at)
+         VALUES (?, 'Legacy', 'Record', ?, 'Personal Trainer', '2026-01-01', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+        [gymId, email, status],
+      );
+      return insertId as number;
+    }
+
+    it('grants a login when an active record with none is saved (legacy records heal)', async () => {
+      const email = uniqueEmail('legacy');
+      const staffId = await insertLegacyStaff(email);
+
+      const res = await request
+        .put(`/staff/${staffId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ first_name: 'Legacy', last_name: 'Record', email, profile: 'Personal Trainer', hire_date: '2026-01-01' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.access).toEqual({ status: 'invited' });
+      const gm = await membershipFor(staffId);
+      expect(gm.role).toBe('trainer_performance');
+      expect(gm.status).toBe('invited');
+    });
+
+    it('does not grant a login when the record is saved as inactive', async () => {
+      const email = uniqueEmail('legacy-inactive');
+      const staffId = await insertLegacyStaff(email, 'inactive');
+
+      const res = await request
+        .put(`/staff/${staffId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ first_name: 'Legacy', last_name: 'Record', email, profile: 'Personal Trainer', hire_date: '2026-01-01', employment_status: 'inactive' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.access).toBeUndefined();
+      expect(await membershipFor(staffId)).toBeNull();
+      expect(clerk.createInvitation).not.toHaveBeenCalled();
+    });
+
+    it('re-activating a record restores its login', async () => {
+      const email = uniqueEmail('reactivate');
+      const staffId = await insertLegacyStaff(email, 'inactive');
+
+      const res = await request
+        .put(`/staff/${staffId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ first_name: 'Legacy', last_name: 'Record', email, profile: 'Personal Trainer', hire_date: '2026-01-01', employment_status: 'active' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.access.status).toBe('invited');
+      expect(await membershipFor(staffId)).not.toBeNull();
+    });
+
+    it('saving a record as inactive removes its login, like PATCH /deactivate', async () => {
+      const email = uniqueEmail('form-inactive');
+      knownClerkUser(`clerk-${email}`, email);
+      const created = await postStaff(gymId, { email });
+      expect(await membershipFor(created.body.id)).not.toBeNull();
+
+      const res = await request
+        .put(`/staff/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ ...BASE, email, employment_status: 'inactive' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.access).toEqual({ status: 'not_enrolled' });
+      expect(res.body.gym_membership_id).toBeNull();
+      expect(clerk.deleteUser).not.toHaveBeenCalled();
+    });
+
+    it('refuses to grant on save when the email belongs to a member of the gym (#594)', async () => {
+      const email = uniqueEmail('legacy-member');
+      const staffId = await insertLegacyStaff(email);
+      await db.query(`INSERT INTO members (gym_id, name, email) VALUES (?, 'Personal', ?)`, [gymId, email]);
+
+      const res = await request
+        .put(`/staff/${staffId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ first_name: 'Legacy', last_name: 'Record', email, profile: 'Personal Trainer', hire_date: '2026-01-01' });
+
+      expect(res.status).toBe(409);
+      expect(await membershipFor(staffId)).toBeNull();
+    });
+  });
+
   describe('revoking', () => {
     it('PATCH /deactivate revokes a pending invitation and unlinks, keeping the HR record', async () => {
       const created = await postStaff(gymId, { email: uniqueEmail('deactivate') });

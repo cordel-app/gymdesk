@@ -381,9 +381,24 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     if (blocked) return res.status(400).json({ error: blocked });
   }
 
+  // Saving is what keeps login and HR record in step, in both directions: an
+  // active record with no login gets one here exactly as on create — records that
+  // predate #592 heal on their next save, and re-activating someone restores the
+  // login a deactivation removed — and a record saved as inactive loses its login,
+  // same as PATCH /deactivate.
+  const nextStatus = employment_status ?? prev.employment_status;
+  const willGrant = !membership && nextStatus === 'active' && !!nextRole;
+  const willRevoke = !!membership && nextStatus === 'inactive';
+  if (membership && willRevoke) {
+    const blocked = await assertMembershipChange(req, membership, { remove: true });
+    if (blocked) return res.status(400).json({ error: blocked });
+  }
+
   try {
-    // #594: a changed email must not collide with a member of this gym.
-    if (nextEmail !== String(prev.email).trim().toLowerCase()) await assertNotMemberEmail(gymId, nextEmail);
+    // #594: an email that is about to become (or change) a staff login must not
+    // collide with a member of this gym — checked before anything is written.
+    const emailWasChanged = nextEmail !== String(prev.email).trim().toLowerCase();
+    const clerkUser = (emailWasChanged || willGrant) ? await assertNotMemberEmail(gymId, nextEmail) : undefined;
 
     await db.query(
       `UPDATE staff SET
@@ -412,8 +427,16 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       ],
     );
 
-    if (membership) {
-      const emailChanged = isPendingInvite(membership) && nextEmail !== String(prev.email).trim().toLowerCase();
+    const nextStaff = { id: prev.id, gym_id: gymId, email: nextEmail, first_name: first_name ?? prev.first_name, last_name: last_name ?? prev.last_name, profile: nextProfile };
+    let access: { status: string; error?: string } | undefined;
+    if (membership && willRevoke) {
+      await revokeAccess(req, membership, { deleteClerkUser: false });
+      await db.query('UPDATE staff SET gym_membership_id = NULL WHERE id = ?', [prev.id]);
+      access = { status: 'not_enrolled' };
+    } else if (willGrant) {
+      access = await grantForStaff(req, nextStaff, clerkUser);
+    } else if (membership) {
+      const emailChanged = isPendingInvite(membership) && emailWasChanged;
       if (emailChanged) {
         await revokeAccess(req, membership, { deleteClerkUser: false });
         await grantForStaff(req, { ...prev, id: prev.id, email: nextEmail, first_name: first_name ?? prev.first_name, last_name: last_name ?? prev.last_name, profile: nextProfile });
@@ -440,7 +463,7 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
       next: updated,
     });
 
-    res.json(updated);
+    res.json(access ? { ...updated, access } : updated);
   } catch (err: any) {
     accessErrorToResponse(err, res, next);
   }

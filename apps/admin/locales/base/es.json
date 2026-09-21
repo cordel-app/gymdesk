@@ -2127,7 +2127,10 @@
     "role_trainer_perf_nutrition": "Entrenador + Nutrición",
     "role_front_desk": "Recepcionista",
     "role_accountant": "Contable",
-    "role_nutritionist": "Nutricionista"
+    "role_nutritionist": "Nutricionista",
+    "save_will_invite": "Al guardar se configurará el acceso de esta persona. Si {email} aún no tiene cuenta, recibirá un correo de invitación.",
+    "saved_invited": "Guardado. Invitación enviada a {email}.",
+    "saved_access_error": "Guardado, pero no se pudo configurar el acceso: {error}"
   },
   "spaces": {
     "title": "Espacios",
@@ -2421,7 +2424,9 @@
     "cancel": "Cancelar",
     "error_start": "No se pudo iniciar la suplantación.",
     "error_search": "No se pudo completar la búsqueda. Por favor, inténtalo de nuevo.",
-    "account_locked_hint": "Las acciones de cuenta están desactivadas durante la suplantación"
+    "account_locked_hint": "Las acciones de cuenta están desactivadas durante la suplantación",
+    "pending_invitation": "Invitación pendiente",
+    "pending_invitation_hint": "Aún no ha aceptado la invitación, así que no hay cuenta que suplantar."
   },
   "calendar": {
     "title": "Calendario",

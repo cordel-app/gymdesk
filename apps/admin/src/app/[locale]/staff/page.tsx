@@ -342,14 +342,23 @@ export default function StaffPage() {
           toast(t('created'));
         }
       } else {
-        await apiFetch(`/staff/${expandedId}`, { method: 'PUT', body: JSON.stringify(form) });
+        const updated = await apiFetch<StaffMember & { access?: { status: string; error?: string } }>(
+          `/staff/${expandedId}`, { method: 'PUT', body: JSON.stringify(form) },
+        );
         if (showCenters) {
           await apiFetch(`/staff/${expandedId}/centers`, {
             method: 'PUT',
             body: JSON.stringify({ center_ids: Array.from(assignedCenterIds), default_center_id: defaultCenterId }),
           });
         }
-        toast(t('saved'));
+        // Saving an active record with no login creates one (and may email an invitation).
+        if (updated.access?.status === 'error') {
+          toast(t('saved_access_error', { error: updated.access.error ?? '' }));
+        } else if (updated.access?.status === 'invited') {
+          toast(t('saved_invited', { email: form.email ?? '' }));
+        } else {
+          toast(t('saved'));
+        }
       }
       setExpandedId(null);
       load();
@@ -742,6 +751,9 @@ export default function StaffPage() {
         </div>
 
         {/* Error + actions */}
+        {expandedId !== 'new' && clerkStatus?.status === 'not_enrolled' && form.employment_status === 'active' && (
+          <p style={{ color: '#888', fontSize: 13, marginTop: 16 }}>{t('save_will_invite', { email: form.email ?? '' })}</p>
+        )}
         {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
         <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
           <button onClick={handleSave} disabled={saving} style={btnStyle('#4c6ef5')}>

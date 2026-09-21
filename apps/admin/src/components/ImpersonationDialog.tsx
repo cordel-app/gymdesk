@@ -161,7 +161,10 @@ export function ImpersonationDialog({ onClose }: Props) {
             // Prefer the Staff record's profile (what the Staff page shows); otherwise translate
             // the auth role — never show the raw enum value (e.g. "front_desk").
             const roleLabel = c.profile || t(`role_${c.role}` as any);
-            const secondary = [roleLabel, c.status, isUnnamed ? c.id : c.email]
+            // A pending invitation has no Clerk identity to act as yet — list it (so the
+            // admin sees why the person is missing) but don't let a session start on it.
+            const isPending = c.status === 'invited';
+            const secondary = [roleLabel, isPending ? t('pending_invitation') : null, isUnnamed ? c.id : c.email]
               .filter(Boolean)
               .join(' · ');
 
@@ -169,13 +172,14 @@ export function ImpersonationDialog({ onClose }: Props) {
               <button
                 key={c.id}
                 onClick={() => handleImpersonate(c)}
-                disabled={starting === c.id}
+                disabled={isPending || starting === c.id}
+                title={isPending ? t('pending_invitation_hint') : undefined}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12,
                   width: '100%', padding: '12px 20px', border: 'none',
-                  background: 'none', cursor: 'pointer', textAlign: 'left',
+                  background: 'none', cursor: isPending ? 'not-allowed' : 'pointer', textAlign: 'left',
                   borderBottom: '1px solid var(--border, #f0f0f0)',
-                  opacity: starting && starting !== c.id ? 0.5 : 1,
+                  opacity: isPending || (starting && starting !== c.id) ? 0.5 : 1,
                 }}
               >
                 <div style={{

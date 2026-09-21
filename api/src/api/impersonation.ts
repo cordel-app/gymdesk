@@ -170,8 +170,8 @@ impersonationRouter.post('/:targetId', requireSuperadmin, async (req, res, next)
     // No Clerk lookup: gym_memberships is the sole source of truth. Superadmins carry
     // no gym_memberships row, so a superadmin target simply fails the lookup below with
     // "no membership in this gym" rather than needing an explicit superadmin check.
-    const { rows } = await db.query<{ id: number; role: string; name: string }>(
-      `SELECT gm.id, gm.role,
+    const { rows } = await db.query<{ id: number; role: string; name: string; status: string }>(
+      `SELECT gm.id, gm.role, gm.status,
               COALESCE(CONCAT(s.first_name, ' ', s.last_name), gm.name, gm.email, gm.user_id) AS name
        FROM gym_memberships gm
        LEFT JOIN staff s ON s.gym_membership_id = gm.id AND s.deleted_at IS NULL
@@ -180,6 +180,12 @@ impersonationRouter.post('/:targetId', requireSuperadmin, async (req, res, next)
     );
 
     if (!rows[0]) return res.status(400).json({ error: 'Target user has no membership in this gym' });
+    // A pending invitation is a placeholder row (`invited_<ts>`), not a Clerk user:
+    // tenantContext could never resolve it, so every request of the session would
+    // fail with "Impersonation target not found". Refuse up front instead.
+    if (rows[0].status === 'invited' || targetId.startsWith('invited_')) {
+      return res.status(400).json({ error: 'This staff member has not accepted their invitation yet.' });
+    }
 
     const { rows: gymRows } = await db.query<{ gym_id: string }>(
       `SELECT gym_id FROM gym_memberships WHERE user_id = ?`,
