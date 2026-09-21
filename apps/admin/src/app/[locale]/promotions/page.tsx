@@ -5,12 +5,13 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnSmall, btnStyle } from '@/components/ui';
+import { btnSmall, btnStyle, readOnlyStyle } from '@/components/ui';
 import { PromotionDetailModal } from './PromotionDetailModal';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
 
@@ -200,6 +201,7 @@ export default function PromotionsPage() {
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const { canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
 
   const membershipFeeName = chargeTypes.find((c) => c.code === 'membership_fee')?.name ?? 'Membership Fee';
 
@@ -1188,9 +1190,9 @@ export default function PromotionsPage() {
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetailFor(promo) },
-      { label: t('edit'), onClick: () => enterEdit(promo) },
-      { label: t('duplicate'), onClick: () => handleDuplicate(promo) },
-      { label: t('delete'), onClick: () => setDeleting(promo), danger: true },
+      { label: t('edit'), onClick: () => enterEdit(promo), disabled: !canWrite, title: readOnlyTitle },
+      { label: t('duplicate'), onClick: () => handleDuplicate(promo), disabled: !canWrite, title: readOnlyTitle },
+      { label: t('delete'), onClick: () => setDeleting(promo), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
 
     return (
@@ -1274,7 +1276,7 @@ export default function PromotionsPage() {
             options={LIFECYCLE_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={handleNew} style={btnStyle('#6c63ff')} disabled={hasNewRow}>{t('add')}</button>
+          <button onClick={handleNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || hasNewRow}>{t('add')}</button>
         </div>
       </div>
 

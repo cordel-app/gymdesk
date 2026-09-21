@@ -6,12 +6,13 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview, computeGrossFromPreservedNet } from '@/lib/priceVat';
@@ -224,6 +225,9 @@ export default function PlansPage() {
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
 
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
+  const { canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
+  // Assigning a plan creates a user membership — a PAYMENTS write (front desk: RW), not FINANCIALS.
+  const { canWrite: canAssign, readOnlyTitle: assignReadOnlyTitle } = useModuleAccess('PAYMENTS');
 
   useEffect(() => {
     if (!gymLoading && !isAdmin) router.replace(`/${locale}`);
@@ -691,7 +695,7 @@ export default function PlansPage() {
             options={LIFECYCLE_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
             allLabel={t('status.all')}
           />
-          <button onClick={openInlineNew} style={btnStyle()} disabled={inlineNew !== null}>{t('plans.add')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('plans.add')}</button>
         </div>
       </div>
 
@@ -728,10 +732,10 @@ export default function PlansPage() {
 
             const menuItems: ContextMenuItem[] = [
               { label: t('plans.details'), onClick: () => setDetailFor(plan) },
-              { label: t('plans.edit'), onClick: () => openInlineEdit(plan) },
-              { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan) },
-              { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan) },
-              { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true },
+              { label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle },
+              { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan), disabled: !canAssign, title: assignReadOnlyTitle },
+              { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan), disabled: !canWrite, title: readOnlyTitle },
+              { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true, disabled: !canWrite, title: readOnlyTitle },
             ];
 
             return (
@@ -894,7 +898,7 @@ export default function PlansPage() {
 
                     <SectionHeader
                       title={t('plans.section_billing')}
-                      action={billingEditForPlanId === plan.id ? null : <button onClick={() => openBillingEdit(plan)} style={linkBtn}>{t('plans.edit')}</button>}
+                      action={billingEditForPlanId === plan.id ? null : <button onClick={() => openBillingEdit(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>}
                     />
                     {billingEditForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
@@ -952,7 +956,7 @@ export default function PlansPage() {
 
                     <SectionHeader
                       title={t('plans.section_centers')}
-                      action={centersForPlanId === plan.id ? null : <button onClick={() => openCenters(plan)} style={linkBtn}>{t('plans.edit')}</button>}
+                      action={centersForPlanId === plan.id ? null : <button onClick={() => openCenters(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>}
                     />
                     {centersForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
@@ -984,7 +988,7 @@ export default function PlansPage() {
 
                     <SectionHeader
                       title={t('plans.section_allowances')}
-                      action={allowanceForPlanId === plan.id ? null : <button onClick={() => openAddAllowance(plan.id)} style={linkBtn}>{t('plans.add_allowance')}</button>}
+                      action={allowanceForPlanId === plan.id ? null : <button onClick={() => openAddAllowance(plan.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.add_allowance')}</button>}
                     />
                     {allowanceForPlanId === plan.id && (
                       <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
@@ -1062,7 +1066,7 @@ export default function PlansPage() {
                               ? t('plans.unlimited')
                               : `${a.session_count} sessions / ${fmtBillingInterval(a.recurrence_interval ?? 1, a.recurrence_unit ?? 'month')}`}
                           </span>
-                          <button onClick={() => handleDeleteAllowance(plan.id, a.id)} style={dangerLinkBtn}>✕</button>
+                          <button onClick={() => handleDeleteAllowance(plan.id, a.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(dangerLinkBtn, !canWrite)}>✕</button>
                         </div>
                       ))
                     )}
@@ -1073,7 +1077,7 @@ export default function PlansPage() {
                           title={t('plans.section_charge_benefits')}
                           action={
                             cbEditForPlanId === plan.id ? null :
-                            <button onClick={() => openCbEdit(plan)} style={linkBtn}>{t('plans.edit')}</button>
+                            <button onClick={() => openCbEdit(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>
                           }
                         />
                         {cbEditForPlanId === plan.id ? (
@@ -1133,7 +1137,7 @@ export default function PlansPage() {
 
                     <SectionHeader
                       title={t('plans.section_prices')}
-                      action={priceForPlanId === plan.id ? null : <button onClick={() => openAddPrice(plan.id)} style={linkBtn}>{t('plans.add_price')}</button>}
+                      action={priceForPlanId === plan.id ? null : <button onClick={() => openAddPrice(plan.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.add_price')}</button>}
                     />
                     <DetailRow
                       label={t('plans.label_tax_rate')}
@@ -1211,8 +1215,8 @@ export default function PlansPage() {
                           <span style={benefitNameStyle}>{String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}</span>
                           <span style={benefitValueStyle}>€{parseFloat(row.price).toFixed(2)}</span>
                           <div style={{ display: 'flex', gap: 4 }}>
-                            <button onClick={() => openEditPrice(plan.id, row)} style={linkBtn}>{t('plans.edit')}</button>
-                            <button onClick={() => handleDeletePrice(plan.id, row.id)} style={dangerLinkBtn}>✕</button>
+                            <button onClick={() => openEditPrice(plan.id, row)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>
+                            <button onClick={() => handleDeletePrice(plan.id, row.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(dangerLinkBtn, !canWrite)}>✕</button>
                           </div>
                         </div>
                       ))
