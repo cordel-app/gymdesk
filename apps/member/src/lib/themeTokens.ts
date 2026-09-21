@@ -45,9 +45,66 @@ export interface ThemeTokens {
     statusInfo: string;
     linkColor: string;
     linkHoverColor: string;
+    // Calendar (#559). Member Web renders the same FullCalendar views as
+    // Admin off the same theme, so it reads the same tokens; they are only
+    // ever edited in the Admin theme editors.
+    calendarBackground: string;
+    calendarSurfaceBackground: string;
+    calendarHeaderBackground: string;
+    calendarHeaderText: string;
+    calendarDayText: string;
+    calendarMutedDayText: string;
+    calendarTodayBackground: string;
+    calendarSelectionBackground: string;
+    calendarGridBorder: string;
+    calendarTimeAxisBackground: string;
+    calendarTimeAxisText: string;
+    calendarWeekendBackground: string;
+    calendarDisabledSlotBackground: string;
+    calendarEventText: string;
+    calendarNavButtonBackground: string;
+    calendarNavButtonText: string;
   };
   advanced?: Record<string, string | number | boolean | null>;
 }
+
+// Mirrors apps/admin/src/lib/themeTokens.ts — the calendar `advanced` defaults
+// Admin's editor writes, needed here so an unconfigured theme still resolves
+// every --gd-calendar-* variable.
+export const DEFAULT_CALENDAR_ADVANCED: Record<string, string> = {
+  calendarEventBorderRadius:        '3px',
+  calendarEventSelectedOverlay:     '#000000',
+  calendarSlotHeight:               '1.5em',
+  calendarNavButtonHoverBackground: '#1e2b37',
+  calendarNavButtonBorderRadius:    '4px',
+};
+
+export const CALENDAR_COLOR_VARS: Record<string, string> = {
+  calendarBackground:             '--gd-calendar-bg',
+  calendarSurfaceBackground:      '--gd-calendar-surface-bg',
+  calendarHeaderBackground:       '--gd-calendar-header-bg',
+  calendarHeaderText:             '--gd-calendar-header-text',
+  calendarDayText:                '--gd-calendar-day-text',
+  calendarMutedDayText:           '--gd-calendar-muted-day-text',
+  calendarTodayBackground:        '--gd-calendar-today-bg',
+  calendarSelectionBackground:    '--gd-calendar-selection-bg',
+  calendarGridBorder:             '--gd-calendar-grid-border',
+  calendarTimeAxisBackground:     '--gd-calendar-time-axis-bg',
+  calendarTimeAxisText:           '--gd-calendar-time-axis-text',
+  calendarWeekendBackground:      '--gd-calendar-weekend-bg',
+  calendarDisabledSlotBackground: '--gd-calendar-disabled-slot-bg',
+  calendarEventText:              '--gd-calendar-event-text',
+  calendarNavButtonBackground:    '--gd-calendar-nav-btn-bg',
+  calendarNavButtonText:          '--gd-calendar-nav-btn-text',
+};
+
+export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
+  calendarEventBorderRadius:        '--gd-calendar-event-radius',
+  calendarEventSelectedOverlay:     '--gd-calendar-event-selected-overlay',
+  calendarSlotHeight:               '--gd-calendar-slot-height',
+  calendarNavButtonHoverBackground: '--gd-calendar-nav-btn-hover-bg',
+  calendarNavButtonBorderRadius:    '--gd-calendar-nav-btn-radius',
+};
 
 export const DEFAULT_TOKENS: ThemeTokens = {
   v: 2,
@@ -91,6 +148,22 @@ export const DEFAULT_TOKENS: ThemeTokens = {
     statusInfo:                    '#2563eb',
     linkColor:                     '#6c63ff',
     linkHoverColor:                '#5a52d5',
+    calendarBackground:             '#ffffff',
+    calendarSurfaceBackground:      '#ffffff',
+    calendarHeaderBackground:       '#ffffff',
+    calendarHeaderText:             '#111827',
+    calendarDayText:                '#111827',
+    calendarMutedDayText:           '#6b7280',
+    calendarTodayBackground:        '#fffbe6',
+    calendarSelectionBackground:    '#e8f6f9',
+    calendarGridBorder:             '#dddddd',
+    calendarTimeAxisBackground:     '#ffffff',
+    calendarTimeAxisText:           '#6b7280',
+    calendarWeekendBackground:      '#ffffff',
+    calendarDisabledSlotBackground: '#f7f7f7',
+    calendarEventText:              '#ffffff',
+    calendarNavButtonBackground:    '#2c3e50',
+    calendarNavButtonText:          '#ffffff',
   },
 };
 
@@ -142,6 +215,17 @@ export function applyTokens(tokens: ThemeTokens) {
   // Links
   el.style.setProperty('--gd-link',                  c.linkColor);
   el.style.setProperty('--gd-link-hover',            c.linkHoverColor);
+  // Calendar (#559 stage 2) — read by components/CalendarThemeStyles.tsx.
+  // Themes saved before #559 carry no calendar values, so every key falls back
+  // to its default (FullCalendar's own built-in appearance).
+  const adv = tokens.advanced ?? {};
+  for (const [key, cssVar] of Object.entries(CALENDAR_COLOR_VARS)) {
+    const value = (c as Record<string, unknown>)[key] ?? (DEFAULT_TOKENS.colors as Record<string, unknown>)[key];
+    el.style.setProperty(cssVar, String(value));
+  }
+  for (const [key, cssVar] of Object.entries(CALENDAR_ADVANCED_VARS)) {
+    el.style.setProperty(cssVar, String(adv[key] ?? DEFAULT_CALENDAR_ADVANCED[key]));
+  }
 
   // Typography
   el.style.setProperty('--gd-font-h1',    ty.h1.fontFamily);

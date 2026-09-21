@@ -236,6 +236,37 @@ export const ADVANCED_ATTRIBUTES: AdvancedAttribute[] = [
   { key: 'calendarNavButtonBorderRadius',  labelKey: 'adv_calendar_nav_btn_radius',        group: 'group_calendar', type: 'text' },
 ];
 
+// #559 stage 2 — token key → CSS variable name. One list, consumed by
+// applyTokens() below, by the FullCalendar override sheet
+// (components/CalendarThemeStyles.tsx) and by the tests, so the three can't
+// drift apart. Mirrored in apps/member/src/lib/themeTokens.ts.
+export const CALENDAR_COLOR_VARS: Record<string, string> = {
+  calendarBackground:             '--gd-calendar-bg',
+  calendarSurfaceBackground:      '--gd-calendar-surface-bg',
+  calendarHeaderBackground:       '--gd-calendar-header-bg',
+  calendarHeaderText:             '--gd-calendar-header-text',
+  calendarDayText:                '--gd-calendar-day-text',
+  calendarMutedDayText:           '--gd-calendar-muted-day-text',
+  calendarTodayBackground:        '--gd-calendar-today-bg',
+  calendarSelectionBackground:    '--gd-calendar-selection-bg',
+  calendarGridBorder:             '--gd-calendar-grid-border',
+  calendarTimeAxisBackground:     '--gd-calendar-time-axis-bg',
+  calendarTimeAxisText:           '--gd-calendar-time-axis-text',
+  calendarWeekendBackground:      '--gd-calendar-weekend-bg',
+  calendarDisabledSlotBackground: '--gd-calendar-disabled-slot-bg',
+  calendarEventText:              '--gd-calendar-event-text',
+  calendarNavButtonBackground:    '--gd-calendar-nav-btn-bg',
+  calendarNavButtonText:          '--gd-calendar-nav-btn-text',
+};
+
+export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
+  calendarEventBorderRadius:        '--gd-calendar-event-radius',
+  calendarEventSelectedOverlay:     '--gd-calendar-event-selected-overlay',
+  calendarSlotHeight:               '--gd-calendar-slot-height',
+  calendarNavButtonHoverBackground: '--gd-calendar-nav-btn-hover-bg',
+  calendarNavButtonBorderRadius:    '--gd-calendar-nav-btn-radius',
+};
+
 export const DEFAULT_TOKENS: ThemeTokens = {
   v: 2,
   typography: {
@@ -369,6 +400,20 @@ export function applyTokens(tokens: ThemeTokens) {
   // Links
   el.style.setProperty('--gd-link',                 c.linkColor);
   el.style.setProperty('--gd-link-hover',           c.linkHoverColor);
+  // Calendar (#559 stage 2) — read by the FullCalendar override sheet in
+  // components/CalendarThemeStyles.tsx. Every key falls back to its default,
+  // so themes saved before #559 (which carry no calendar values at all) still
+  // get the full variable set, holding FullCalendar's own built-in appearance.
+  // The three event variables are emitted here too but not yet consumed by any
+  // CSS rule: event colors stay status-derived until stage 3 (#541).
+  const adv = tokens.advanced ?? {};
+  for (const [key, cssVar] of Object.entries(CALENDAR_COLOR_VARS)) {
+    const value = (c as Record<string, unknown>)[key] ?? (DEFAULT_TOKENS.colors as Record<string, unknown>)[key];
+    el.style.setProperty(cssVar, String(value));
+  }
+  for (const [key, cssVar] of Object.entries(CALENDAR_ADVANCED_VARS)) {
+    el.style.setProperty(cssVar, String(adv[key] ?? DEFAULT_ADVANCED[key]));
+  }
 
   // Typography
   el.style.setProperty('--gd-font-h1',    ty.h1.fontFamily);

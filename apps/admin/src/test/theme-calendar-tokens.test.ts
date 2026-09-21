@@ -5,9 +5,9 @@ import { COLOR_GROUPS } from '../components/ThemeTokensEditor';
 import { ADVANCED_ATTRIBUTES, DEFAULT_ADVANCED, DEFAULT_TOKENS } from '../lib/themeTokens';
 
 // #559 stage 1 — the Calendar section in the Base Themes and Custom Themes
-// editors. Stage 1 only adds the tokens, their defaults, and the editor
-// section; wiring them to --gd-calendar-* CSS variables is stage 2, so there
-// is deliberately no assertion here that applyTokens() emits them.
+// editors: the tokens, their defaults, and the editor section. Their wiring to
+// --gd-calendar-* CSS variables and to FullCalendar landed in stage 2 and is
+// covered separately by theme-calendar-css.test.ts.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;

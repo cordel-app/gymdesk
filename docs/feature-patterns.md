@@ -466,6 +466,20 @@ storageRouter.post(
 
 ---
 
+## Theming a Third-Party Widget (#559)
+
+A widget the app doesn't own (FullCalendar today) is themed through the same `themes.tokens` blob as everything else — never a parallel styling system, and never hardcoded colors in the page.
+
+1. **Tokens → CSS variables.** Add the fields to `tokens.colors` (or to the `advanced` map for non-colors), then one exported map of token key → variable name, e.g. `CALENDAR_COLOR_VARS` in `apps/admin/src/lib/themeTokens.ts`. `applyTokens()` loops over the map, falling back to `DEFAULT_TOKENS`/`DEFAULT_ADVANCED` per key so a theme saved before the tokens existed still resolves the whole set. The map — not a hand-written list in three places — is what the stylesheet and the tests read.
+
+2. **One scoped override sheet.** Put the CSS in its own component (`components/CalendarThemeStyles.tsx`) rendered inside the page body, like `Toast`/`AppShell` do; that places it after any stylesheet the library injects into `<head>`, so equal-specificity rules win on document order. Scope **every** selector to a wrapper class (`.gd-calendar`) set on the container element, so nothing leaks into the rest of the app.
+
+3. **Prefer the library's own variables.** Map a token onto the library's variable (`--fc-border-color`, `--fc-today-bg-color`, …) whenever it has one — a single declaration then reaches every view and state the library paints with it. Write an explicit rule only for surfaces it hardcodes, and comment any rule that exists to beat a more specific library selector.
+
+4. **Repeat the default as the CSS fallback.** `var(--gd-calendar-today-bg, #fffbe6)` — the fallback is what renders before a theme resolves (or with no theme at all), so it must equal the token's default. A test asserts the two never drift.
+
+---
+
 ## Dependency Awareness (shared catalog entities)
 
 Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:

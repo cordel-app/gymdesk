@@ -10,6 +10,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
+import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 
 interface ActivityType { id: number; name: string; color: string | null }
 
@@ -382,8 +383,10 @@ export default function MemberCalendarPage() {
         </div>
       </div>
 
-      {/* Calendar */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      {/* Calendar — `gd-calendar` scopes the theme's Calendar tokens to
+          FullCalendar (#559 stage 2); see CalendarThemeStyles. */}
+      <div className="gd-calendar" style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <CalendarThemeStyles />
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
