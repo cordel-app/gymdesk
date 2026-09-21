@@ -10,14 +10,14 @@ import {
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,10 +73,11 @@ export default function WorkoutTemplatesPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  // #613: impersonation-aware; read-only roles see controls disabled.
+  const { canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
 
   const [rows, setRows] = useState<WorkoutTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -453,13 +454,13 @@ export default function WorkoutTemplatesPage() {
     const menuItems: ContextMenuItem[] = isBase
       ? [
           { label: t('details'), onClick: () => setDetails(wt) },
-          { label: t('clone'), onClick: () => handleClone(wt) },
+          { label: t('clone'), onClick: () => handleClone(wt), disabled: !canWrite, title: readOnlyTitle },
         ]
       : [
           { label: t('details'), onClick: () => setDetails(wt) },
-          { label: t('edit'), onClick: () => openEdit(wt) },
-          { label: t('duplicate'), onClick: () => handleDuplicate(wt) },
-          { label: t('delete'), onClick: () => setDeleting(wt), danger: true },
+          { label: t('edit'), onClick: () => openEdit(wt), disabled: !canWrite, title: readOnlyTitle },
+          { label: t('duplicate'), onClick: () => handleDuplicate(wt), disabled: !canWrite, title: readOnlyTitle },
+          { label: t('delete'), onClick: () => setDeleting(wt), danger: true, disabled: !canWrite, title: readOnlyTitle },
         ];
 
     const h = hierarchies[wt.id];
@@ -617,7 +618,7 @@ export default function WorkoutTemplatesPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={openInlineNew} style={btnStyle()} disabled={inlineNew !== null}>{t('add')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
 

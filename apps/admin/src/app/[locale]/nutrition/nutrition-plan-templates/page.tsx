@@ -5,14 +5,14 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
+import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
-import { btnStyle } from '@/components/ui';
+import { btnStyle, readOnlyStyle } from '@/components/ui';
 import { NutritionPlanTree, Hierarchy } from './NutritionPlanTree';
 import { AssignNutritionPlanDialog, AssignedNutritionPlan } from '../AssignNutritionPlanDialog';
 
@@ -50,7 +50,7 @@ export default function NutritionPlanTemplatesPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const [rows, setRows] = useState<NutritionPlanTemplate[]>([]);
@@ -95,7 +95,8 @@ export default function NutritionPlanTemplatesPage() {
   const [hierarchies, setHierarchies] = useState<Record<number, Hierarchy>>({});
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
 
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
+  // #613: impersonation-aware; read-only roles see controls disabled.
+  const { canWrite } = useModuleAccess('NUTRITION');
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   useEffect(() => {
@@ -437,12 +438,13 @@ function TemplateCard({
   onCancel: () => void;
   onChanged: () => void;
 }) {
+  const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
-    ...(canWrite ? [{ label: t('nutrition_plan_templates.edit'), onClick: onEdit }] : []),
+    { label: t('nutrition_plan_templates.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle },
     { label: t('nutrition_plan_templates.details'), onClick: onDetails },
-    ...(canWrite ? [{ label: t('nutrition_plan_templates.duplicate'), onClick: onDuplicate }] : []),
-    ...(canWrite && template.status === 'active' ? [{ label: t('nutrition_plan_templates.assign_to_member'), onClick: onAssign }] : []),
-    ...(canWrite ? [{ label: t('nutrition_plan_templates.delete'), onClick: onDelete, danger: true }] : []),
+    { label: t('nutrition_plan_templates.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
+    ...(template.status === 'active' ? [{ label: t('nutrition_plan_templates.assign_to_member'), onClick: onAssign, disabled: !canWrite, title: roTitle }] : []),
+    { label: t('nutrition_plan_templates.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
   ];
 
   return (

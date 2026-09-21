@@ -5,13 +5,13 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
-import { btnStyle } from '@/components/ui';
-import { canWriteModule } from '@/config/permissions';
+import { btnStyle, readOnlyStyle } from '@/components/ui';
 import { NutritionPlanTree, Hierarchy } from '../nutrition-plan-templates/NutritionPlanTree';
 import { NewNutritionPlanDialog } from '../NewNutritionPlanDialog';
 
@@ -46,7 +46,7 @@ export default function NutritionPlansPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
-  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const [rows, setRows] = useState<MemberNutritionPlan[]>([]);
@@ -76,7 +76,8 @@ export default function NutritionPlansPage() {
   const [hierarchies, setHierarchies] = useState<Record<number, Hierarchy>>({});
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
 
-  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
+  // #613: impersonation-aware; read-only roles see controls disabled.
+  const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
   useEffect(() => { if (!gymLoading && !canWrite) router.replace(`/${locale}`); }, [gymLoading, canWrite]);
 
   const load = useCallback(async () => {
@@ -225,7 +226,7 @@ export default function NutritionPlansPage() {
           <button onClick={() => guardUnsaved(() => router.push(`/${locale}/nutrition/nutrition-plan-templates`))} style={btnStyle()}>
             {t('nutrition_plans.assign_from_template')}
           </button>
-          <button onClick={() => guardUnsaved(() => setNewOpen(true))} style={btnStyle()}>
+          <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>
             {t('nutrition_plans.new_plan')}
           </button>
         </div>
@@ -343,13 +344,15 @@ function PlanCard({
   onCancel: () => void;
   onChanged: () => void;
 }) {
-  const canEditPlan = canWrite && plan.status === 'active';
+  const isActive = plan.status === 'active';
+  const canEditPlan = canWrite && isActive;
+  const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
-    ...(canEditPlan ? [{ label: t('nutrition_plans.edit'), onClick: onEdit }] : []),
+    ...(isActive ? [{ label: t('nutrition_plans.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle }] : []),
     { label: t('nutrition_plans.details'), onClick: onDetails },
-    ...(canWrite ? [{ label: t('nutrition_plans.duplicate'), onClick: onDuplicate }] : []),
-    ...(canEditPlan ? [{ label: t('nutrition_plans.complete'), onClick: onComplete }] : []),
-    ...(canWrite ? [{ label: t('nutrition_plans.delete'), onClick: onDelete, danger: true }] : []),
+    { label: t('nutrition_plans.duplicate'), onClick: onDuplicate, disabled: !canWrite, title: roTitle },
+    ...(isActive ? [{ label: t('nutrition_plans.complete'), onClick: onComplete, disabled: !canWrite, title: roTitle }] : []),
+    { label: t('nutrition_plans.delete'), onClick: onDelete, danger: true, disabled: !canWrite, title: roTitle },
   ];
 
   return (
