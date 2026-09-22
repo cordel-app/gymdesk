@@ -1,8 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { useGym } from '@/context/GymContext';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 
 interface MemberDetail {
@@ -28,7 +31,11 @@ export function MemberDetailModal({ memberId, memberName, onClose }: {
   onClose: () => void;
 }) {
   const t = useTranslations('members');
+  const locale = useLocale();
+  const router = useRouter();
   const { apiFetch } = useApiClient();
+  const { activeGym, isSuperadmin } = useGym();
+  const { flags } = useFeatureFlags();
   const [detail, setDetail] = useState<MemberDetail | null>(null);
 
   useEffect(() => {
@@ -36,6 +43,20 @@ export function MemberDetailModal({ memberId, memberName, onClose }: {
       .then(setDetail)
       .catch(() => {});
   }, [memberId]);
+
+  // Configuration → Audit Log is admin-only (guarded again in AuditLogView and the API),
+  // and hidden when its feature flag is off — same rule the sidebar applies.
+  const auditEnabled = isSuperadmin || (flags['system'] !== false && flags['system.audit'] !== false);
+  const canViewAudit = (isSuperadmin || activeGym?.role === 'admin') && auditEnabled;
+
+  /**
+   * #642: close first, then deep-link to the Audit Log already filtered to this
+   * member by entity id — never by name, which is neither unique nor stable.
+   */
+  function openAuditLog() {
+    onClose();
+    router.push(`/${locale}/audit?entity_type=member&entity_id=${memberId}`);
+  }
 
   const field = (label: string, value: string | null | undefined) => (
     <div style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
@@ -75,7 +96,10 @@ export function MemberDetailModal({ memberId, memberName, onClose }: {
           </>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          {canViewAudit && (
+            <button onClick={openAuditLog} style={btnStyle()}>{t('action_view_audit_log')}</button>
+          )}
           <button onClick={onClose} style={btnStyle('#444')}>{t('cancel')}</button>
         </div>
       </div>

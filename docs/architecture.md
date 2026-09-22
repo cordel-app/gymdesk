@@ -426,7 +426,9 @@ Revoking the invitation closes the race for the *link itself* (Clerk shows "The 
 
 The registry (`AUDIT_ENTITY_REGISTRY`) and action list (`AUDIT_ACTIONS`) are served by `GET /audit-logs/meta` for frontend dropdown population. High-value mutations call `recordAudit` after the business write; `class-types.ts` and `promotions.ts` were added in #69.
 
-Two read views share one endpoint and one React component (`AuditLogView`): **System → Audit log** (`/audit`, admin+) is scoped to the active gym; **Cordel → Audit log** (`/cordel/audit`, superadmin) sends `?scope=all` to see every gym's events with a Gym column joined in (#66). Filters: `entity_type` (dropdown), `entity_name` (LIKE on stored snapshot), `actor` (name LIKE or Clerk ID exact), `action` (dropdown), `source` (dropdown), `from`/`to` date range.
+Two read views share one endpoint and one React component (`AuditLogView`): **System → Audit log** (`/audit`, admin+) is scoped to the active gym; **Cordel → Audit log** (`/cordel/audit`, superadmin) sends `?scope=all` to see every gym's events with a Gym column joined in (#66). Filters: `entity_type` (dropdown), `entity_id` (exact match), `entity_name` (LIKE on stored snapshot), `actor` (name LIKE or Clerk ID exact), `action` (dropdown), `source` (dropdown), `from`/`to` date range.
+
+`entity_type`, `entity_id` and `entity_name` are also read from the query string on mount, so any page can deep-link to one record's history — the Members → Details modal's **View Audit Log** button opens `/{locale}/audit?entity_type=member&entity_id=<id>` (#642). Link by id, never by name: `entity_name` is a snapshot and is neither unique nor stable. The `entity_id` filter is served by the existing `(gym_id, entity_type, entity_id)` index.
 
 ---
 
