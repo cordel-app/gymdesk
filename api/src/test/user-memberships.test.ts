@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
   TEST_AUTH_HEADER,
+  TEST_USER_ID,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
@@ -2489,5 +2490,323 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     expect(res.status).toBe(200);
     expect(res.body.range_end).toBe('2026-01-20');
     expect(res.body.events).toHaveLength(1);
+  });
+});
+
+// ─── Billing Simulation (#629 stage 1) ────────────────────────────────────────
+// Mounted at /user-memberships/member/:memberId/billing-simulation (app.ts).
+// The engine itself is unit-tested in billing-simulation.test.ts — these cover
+// the routing, the guards, and what the loader actually reads out of the DB.
+
+async function createSellableItem(
+  gymId: string, name: string, type: string, billingFrequency: string, amount: number,
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
+     VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0)`,
+    [gymId, name, type, amount, billingFrequency],
+  );
+  return insertId;
+}
+
+async function setPromotionDuration(
+  promoId: number, months: { free?: number; paid?: number; bonus?: number; payBeforehand?: number },
+): Promise<void> {
+  await db.query(
+    'UPDATE promotions SET free_months = ?, paid_months = ?, bonus_months = ?, pay_beforehand_months = ? WHERE id = ?',
+    [months.free ?? 0, months.paid ?? 0, months.bonus ?? 0, months.payBeforehand ?? 0, promoId],
+  );
+}
+
+// Applied directly rather than through POST /:id/promotions so a fixture can
+// pin `applied_at` to the assignment's start date (the API always stamps now).
+async function applyPromotionDirect(gymId: string, umId: number, promoId: number, appliedAt: string): Promise<void> {
+  await db.query(
+    `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, applied_at)
+     VALUES (?, ?, ?, ?, 'applied', ?)`,
+    [gymId, umId, promoId, TEST_USER_ID, appliedAt],
+  );
+}
+
+async function grantPeriodicalItem(gymId: string, promoId: number, gymChargeId: number, quantity: number): Promise<void> {
+  await db.query(
+    'INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)',
+    [gymId, promoId, gymChargeId, quantity],
+  );
+}
+
+const getSimulation = (gymId: string, memberId: number) =>
+  request
+    .get(`/user-memberships/member/${memberId}/billing-simulation`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+
+function sectionOf(body: any, name: string) {
+  return body.sections.find((s: any) => s.section === name);
+}
+
+describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('UM Billing Simulation Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const memberId = await createMember(gymId);
+    const res = await request
+      .get(`/user-memberships/member/${memberId}/billing-simulation`)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for a role with no PAYMENTS access', async () => {
+    const gymNoAccess = await createTestGym('UM Simulation No Access Gym');
+    await createTestMembership(gymNoAccess, 'trainer_performance');
+    const memberId = await createMember(gymNoAccess);
+    const res = await getSimulation(gymNoAccess, memberId);
+    expect(res.status).toBe(403);
+  });
+
+  it('allows a read-only role (accountant) to read the simulation', async () => {
+    const gymReadOnly = await createTestGym('UM Simulation Read Only Gym');
+    await createTestMembership(gymReadOnly, 'accountant');
+    const memberId = await createMember(gymReadOnly);
+    const res = await getSimulation(gymReadOnly, memberId);
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 400 for a member id that is not a positive integer', async () => {
+    const res = await request
+      .get('/user-memberships/member/abc/billing-simulation')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for a non-existent member', async () => {
+    const res = await getSimulation(gymId, 9999999);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a soft-deleted member', async () => {
+    const memberId = await createMember(gymId);
+    await db.query('UPDATE members SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [memberId]);
+    const res = await getSimulation(gymId, memberId);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a member of another gym', async () => {
+    const gymOther = await createTestGym('UM Simulation Other Gym');
+    await createTestMembership(gymOther, 'admin', 'other-simulation-user-id');
+    const otherMemberId = await createMember(gymOther);
+    const res = await getSimulation(gymId, otherMemberId);
+    expect(res.status).toBe(404);
+  });
+
+  it('reports no active plans for a member with no assignments', async () => {
+    const memberId = await createMember(gymId);
+    const res = await getSimulation(gymId, memberId);
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(false);
+    expect(res.body.sections).toEqual([]);
+  });
+
+  it('projects the membership fee from the plan cadence and assignment date', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 75, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(true);
+    expect(res.body.start_date).toBe('2026-03-01');
+    const monthly = sectionOf(res.body, 'month');
+    expect(monthly.events).toHaveLength(1);
+    expect(monthly.events[0].date).toBe('2026-03-01');
+    expect(monthly.events[0].lines[0].regular_price).toBe(75);
+    expect(monthly.events[0].lines[0].actual_charge).toBe(75);
+    expect(res.body.total).toBe(75);
+  });
+
+  it('uses the plan price window as the regular price, not the assignment snapshot', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    await db.query(
+      `INSERT INTO membership_plan_prices (membership_plan_id, gym_id, price, valid_from, valid_to)
+       VALUES (?, ?, 90, '2026-01-01', NULL)`,
+      [planId, gymId],
+    );
+    await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 10, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    expect(sectionOf(res.body, 'month').events[0].lines[0].regular_price).toBe(90);
+  });
+
+  it('resolves an applied promotion into the actual charge, with its reason', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
+    const promoId = await createPromotion(gymId, planId, `Sim Free ${Date.now()}`);
+    await setPromotionDuration(promoId, { free: 2 });
+    await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    const monthly = sectionOf(res.body, 'month');
+    expect(monthly.events.map((e: any) => e.date)).toEqual(['2026-03-01', '2026-04-01', '2026-05-01']);
+    expect(monthly.events.map((e: any) => e.total)).toEqual([0, 0, 100]);
+    expect(monthly.events[0].lines[0].benefits[0]).toMatchObject({
+      source: 'promotion', action: 'waive', period_status: 'free_promotion',
+    });
+    expect(res.body.horizon_date).toBe('2026-05-01');
+  });
+
+  it('projects a Sellable Item granted by a promotion at its own billing frequency', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
+    const promoId = await createPromotion(gymId, planId, `Sim Locker ${Date.now()}`);
+    const itemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'four_weeks', 20);
+    await grantPeriodicalItem(gymId, promoId, itemId, 1);
+    await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    const fourWeeks = sectionOf(res.body, 'four_weeks');
+    expect(fourWeeks.events.map((e: any) => [e.date, e.period_end])).toEqual([
+      ['2026-03-01', '2026-03-28'],
+      ['2026-03-29', '2026-04-25'],
+    ]);
+    expect(fourWeeks.events.map((e: any) => e.total)).toEqual([0, 20]);
+    expect(fourWeeks.events[0].lines[0]).toMatchObject({ label: 'Locker Rental', gym_charge_id: itemId });
+  });
+
+  it('consolidates every simulated plan of the member into one simulation', async () => {
+    const memberId = await createMember(gymId);
+    const planA = await createPlan(gymId);
+    const planB = await createPlan(gymId);
+    await setBillingPolicy(gymId, planA, 1, 'month');
+    await setBillingPolicy(gymId, planB, 1, 'month');
+    await createUserMembershipWithPrice(gymId, memberId, planA, 'active', 75, '2026-03-01');
+    await createUserMembershipWithPrice(gymId, memberId, planB, 'draft', 100, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    const monthly = sectionOf(res.body, 'month');
+    expect(monthly.events).toHaveLength(1);
+    expect(monthly.events[0].lines).toHaveLength(2);
+    expect(monthly.events[0].total).toBe(175);
+  });
+
+  it('ignores cancelled and expired assignments', async () => {
+    const memberId = await createMember(gymId);
+    const cancelledPlan = await createPlan(gymId);
+    const expiredPlan = await createPlan(gymId);
+    await setBillingPolicy(gymId, cancelledPlan, 1, 'month');
+    await setBillingPolicy(gymId, expiredPlan, 1, 'month');
+    await createUserMembershipWithPrice(gymId, memberId, cancelledPlan, 'cancelled', 75, '2026-03-01');
+    await createUserMembershipWithPrice(gymId, memberId, expiredPlan, 'expired', 75, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    expect(res.body.available).toBe(false);
+  });
+
+  it('simulates a paused assignment — it still has charges ahead of it', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    await createUserMembershipWithPrice(gymId, memberId, planId, 'paused', 75, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    expect(res.body.available).toBe(true);
+    expect(res.body.currency).toBe('EUR');
+    expect(res.body.truncated).toBe(false);
+    expect(sectionOf(res.body, 'month').events[0].total).toBe(75);
+  });
+
+  it('ignores a revoked promotion', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
+    const promoId = await createPromotion(gymId, planId, `Sim Revoked ${Date.now()}`);
+    await setPromotionDuration(promoId, { free: 3 });
+    await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
+    await db.query(
+      "UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP() WHERE user_membership_id = ? AND promotion_id = ?",
+      [umId, promoId],
+    );
+
+    const res = await getSimulation(gymId, memberId);
+    const monthly = sectionOf(res.body, 'month');
+    expect(monthly.events).toHaveLength(1);
+    expect(monthly.events[0].total).toBe(100);
+    expect(monthly.events[0].lines[0].benefits).toEqual([]);
+  });
+
+  it('places one-off and session grants in their own sections', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
+    const promoId = await createPromotion(gymId, planId, `Sim Grants ${Date.now()}`);
+    const feeItem = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once', 50);
+    const sessionItem = await createSellableItem(gymId, 'Personal Training Class', 'sessions', 'per_session', 30);
+    await db.query(
+      'INSERT INTO promotion_oneoff (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, 1)',
+      [gymId, promoId, feeItem],
+    );
+    await db.query(
+      'INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, 4)',
+      [gymId, promoId, sessionItem],
+    );
+    await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberId);
+    const oneOff = sectionOf(res.body, 'one_off');
+    expect(oneOff.events[0].lines[0]).toMatchObject({
+      label: 'Registration Fee', quantity: 1, regular_price: 50, actual_charge: 0,
+    });
+    const sessions = sectionOf(res.body, 'session');
+    expect(sessions.events[0].lines[0]).toMatchObject({
+      label: 'Personal Training Class', quantity: 4, unit_price: 30, regular_price: 120, actual_charge: 0,
+    });
+  });
+
+  it('scopes the simulation to the requested member', async () => {
+    const memberA = await createMember(gymId);
+    const memberB = await createMember(gymId);
+    const planA = await createPlan(gymId);
+    const planB = await createPlan(gymId);
+    await setBillingPolicy(gymId, planA, 1, 'month');
+    await setBillingPolicy(gymId, planB, 1, 'month');
+    await createUserMembershipWithPrice(gymId, memberA, planA, 'active', 40, '2026-03-01');
+    await createUserMembershipWithPrice(gymId, memberB, planB, 'active', 55, '2026-03-01');
+
+    const res = await getSimulation(gymId, memberB);
+    const monthly = sectionOf(res.body, 'month');
+    expect(monthly.events[0].lines).toHaveLength(1);
+    expect(monthly.events[0].lines[0].actual_charge).toBe(55);
+  });
+
+  it('persists nothing — no billing events are created by the simulation', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 75, '2026-03-01');
+
+    const countEvents = async () => {
+      const { rows } = await db.query(
+        'SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ? AND member_id = ?',
+        [gymId, memberId],
+      );
+      return Number(rows[0].n);
+    };
+    const before = await countEvents();
+    expect((await getSimulation(gymId, memberId)).status).toBe(200);
+    expect(await countEvents()).toBe(before);
   });
 });

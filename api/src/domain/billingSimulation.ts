@@ -1,0 +1,614 @@
+// #629 (stage 1 — the Billing Simulation engine).
+//
+// A read-only, never-persisted forecast of what a Member will actually be
+// charged: it resolves, for every projected billing event,
+//
+//     regular price -> promotion -> benefit -> ACTUAL CHARGE
+//
+// and keeps the reason for the difference attached to the line, so the
+// simulation explains *why* an amount differs from the regular price rather
+// than only showing the promotional configuration (#629 §2, §4, §7).
+//
+// Pure calculation — no DB access, no persistence (#629 §8). The caller
+// (`api/src/api/billing-simulation.ts`) does the reads and hands this module
+// already-normalized (YYYY-MM-DD) inputs, the same split
+// `assignedPlanBillingEvents.ts` uses, so it is unit-testable without
+// `createTestGym`/`db` (see CLAUDE.md's unit-vs-integration test guidance).
+//
+// Scope of stage 1, per the #629 thread's Q1 answer: the simulation covers the
+// membership price, one-off prices, periodic benefits, session benefits and
+// the applied Promotions. Plan Charge Benefits (`user_membership_charge_
+// benefits`) are deliberately NOT an input — they are being decommissioned by
+// a follow-up ticket. Additional Periodic Services (#631) plug in as extra
+// items on an assignment once that ticket lands; nothing here assumes the
+// items can only come from a Promotion.
+
+import { advanceBillingDate } from '../api/billing';
+import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
+import {
+  AppliedPromotionForBilling,
+  MembershipFeeBenefit,
+  promotionCoversDate,
+} from './assignedPlanBillingEvents';
+import {
+  PromotionTimelineStatus,
+  computePromotionTimeline,
+} from './promotionTimeline';
+import { SellableItemBenefitCategory } from './sellableItemClassification';
+
+export type BillingUnit = 'day' | 'week' | 'month' | 'year';
+
+/** `gym_charges.billing_frequency` (migrations 090/102/123). */
+export type SellableItemFrequency = 'once' | 'per_session' | 'week' | 'four_weeks' | 'month' | 'year';
+
+/**
+ * The simulation's groups, in the order #629 §3 fixes them: one-off charges
+ * first, then year, then monthly, then 4-week. `week`, `session` and `other`
+ * are appended after those four because the catalogue can produce them
+ * (`gym_charges.billing_frequency` also allows `week`/`per_session`, and a
+ * Plan's `billing_policies` cadence is a free (interval, unit) pair) and the
+ * ticket's four sections have nowhere to put them.
+ */
+export type SimulationSection = 'one_off' | 'year' | 'month' | 'four_weeks' | 'week' | 'session' | 'other';
+
+export const SECTION_ORDER: readonly SimulationSection[] = [
+  'one_off', 'year', 'month', 'four_weeks', 'week', 'session', 'other',
+];
+
+// How far the projection will ever run, as a safety net: a promotion that
+// grants an indefinite Membership Fee benefit and is never revoked has no
+// natural end, so "continue to the first regular milestone" (#629 §6) would
+// otherwise never terminate. Mirrors assignedPlanBillingEvents.ts's own cap.
+const MAX_SIMULATION_MONTHS = 36;
+
+// Upper bound on the scan that locates an occurrence index — a weekly cadence
+// over the longest projection is ~156 steps, so this is never reached in
+// practice; it only stops a degenerate cadence from spinning.
+const MAX_OCCURRENCE_SCAN = 2000;
+
+/** A Promotion, as the simulation needs it: its window, its timeline shape and what it grants. */
+export interface SimulationPromotion extends AppliedPromotionForBilling {
+  name: string | null;
+  freeMonths: number;
+  paidMonths: number;
+  payBeforehandMonths: number;
+  bonusMonths: number;
+  /** Sellable Items granted by this Promotion (`promotion_session` / `_oneoff` / `_periodical`). */
+  grants: SimulationGrant[];
+}
+
+export interface SimulationGrant {
+  gymChargeId: number;
+  name: string;
+  category: SellableItemBenefitCategory;
+  billingFrequency: SellableItemFrequency | null;
+  unitPrice: number;
+  /**
+   * What the Promotion grants: for a `session` or `oneoff` item the number of
+   * units covered, for a `periodical` item the number of billing periods
+   * covered (`promotion_periodical.quantity`).
+   */
+  quantity: number;
+}
+
+export interface SimulationAssignment {
+  userMembershipId: number;
+  planName: string | null;
+  startsAt: string;
+  endsAt: string | null;
+  /** The Plan's regular price at the assignment date — before any Promotion. */
+  membershipFeePrice: number | null;
+  recurringInterval: number | null;
+  recurringUnit: BillingUnit | null;
+  promotions: SimulationPromotion[];
+}
+
+export interface BillingSimulationInput {
+  assignments: SimulationAssignment[];
+  /** Overrides MAX_SIMULATION_MONTHS — tests only. */
+  maxMonths?: number;
+}
+
+/** Why an actual charge differs from the regular price. */
+export interface SimulationBenefit {
+  /** Stage 1 only produces `promotion`; Membership Plan benefits arrive with #635. */
+  source: 'promotion';
+  name: string | null;
+  /** `included` = the item itself is granted by the Promotion (session/one-off/periodical benefit). */
+  action: PromotionBenefitAction | 'included';
+  value: number | null;
+  /** Which Promotion period the charge fell in — only set for Membership Fee lines. */
+  period_status: PromotionTimelineStatus | null;
+}
+
+export interface SimulationLine {
+  kind: 'membership_fee' | 'sellable_item';
+  label: string;
+  user_membership_id: number;
+  plan_name: string | null;
+  gym_charge_id: number | null;
+  quantity: number;
+  unit_price: number;
+  regular_price: number;
+  benefits: SimulationBenefit[];
+  actual_charge: number;
+  /**
+   * #629 thread Q3: an event that falls a year or more after the item started
+   * being billed is marked, because an annual price revision could change it.
+   */
+  price_may_change: boolean;
+}
+
+export interface SimulationEvent {
+  date: string;
+  /** Closing date of the billed period — only for range cadences (4-week, weekly). */
+  period_end: string | null;
+  lines: SimulationLine[];
+  total: number;
+}
+
+export interface SimulationSectionResult {
+  section: SimulationSection;
+  events: SimulationEvent[];
+  total: number;
+}
+
+export interface BillingSimulationResult {
+  available: boolean;
+  reason: string | null;
+  currency: 'EUR';
+  start_date: string | null;
+  /** Last date the simulation runs to — the latest "first regular charge" across every item. */
+  horizon_date: string | null;
+  /** True when an item never reached its regular price within the safety cap. */
+  truncated: boolean;
+  sections: SimulationSectionResult[];
+  total: number;
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+function dayBefore(dateStr: string): string {
+  return advanceBillingDate(dateStr, -1, 'day');
+}
+
+function maxDate(a: string, b: string): string { return a > b ? a : b; }
+function minDate(a: string, b: string): string { return a < b ? a : b; }
+
+/* ── Cadences ────────────────────────────────────────────────────────────── */
+
+/** One billing cadence, normalized so streams of either origin advance identically. */
+interface Cadence {
+  section: SimulationSection;
+  /** Whether the section shows a period range (`01/10 → 28/10`) rather than a single date. */
+  ranged: boolean;
+  advance: (date: string) => string;
+}
+
+/** The Plan's `billing_policies` (interval, unit) pair. */
+export function cadenceForBillingPolicy(interval: number, unit: BillingUnit): Cadence {
+  const advance = (date: string) => advanceBillingDate(date, interval, unit);
+  if (unit === 'year') return { section: 'year', ranged: false, advance };
+  if (unit === 'month') return { section: 'month', ranged: false, advance };
+  if (unit === 'week') {
+    if (interval === 4) return { section: 'four_weeks', ranged: true, advance };
+    if (interval === 1) return { section: 'week', ranged: true, advance };
+  }
+  if (unit === 'day') {
+    if (interval === 28) return { section: 'four_weeks', ranged: true, advance };
+    if (interval === 7) return { section: 'week', ranged: true, advance };
+  }
+  return { section: 'other', ranged: false, advance };
+}
+
+/** A Sellable Item's own `billing_frequency` — the ticket's "existing billing rules" for services. */
+export function cadenceForSellableItem(frequency: SellableItemFrequency): Cadence | null {
+  switch (frequency) {
+    case 'year': return { section: 'year', ranged: false, advance: (d) => advanceBillingDate(d, 1, 'year') };
+    case 'month': return { section: 'month', ranged: false, advance: (d) => advanceBillingDate(d, 1, 'month') };
+    // 4-week billing is 28 days — never approximated as a month (#634 §10).
+    case 'four_weeks': return { section: 'four_weeks', ranged: true, advance: (d) => advanceBillingDate(d, 28, 'day') };
+    case 'week': return { section: 'week', ranged: true, advance: (d) => advanceBillingDate(d, 7, 'day') };
+    default: return null; // 'once' / 'per_session' have no schedule to project
+  }
+}
+
+/* ── Promotion resolution ────────────────────────────────────────────────── */
+
+// The timeline depends only on the Promotion, but it is consulted once per
+// projected charge — cached so a long projection doesn't rebuild it hundreds
+// of times. Keyed on the request-scoped promotion object, so nothing is
+// retained between requests.
+const timelineCache = new WeakMap<SimulationPromotion, ReturnType<typeof computePromotionTimeline>>();
+
+/**
+ * Which Promotion period (#629 §5: Free / Prepaid / Pay / Bonus / Regular)
+ * a date falls in, plus the Membership Fee Benefit in force for it.
+ *
+ * Delegates to `computePromotionTimeline` — the same projection the Promotion
+ * screen renders — rather than re-deriving the period boundaries here, so the
+ * simulation and the Promotion's own forecast can never disagree.
+ */
+function classifyPromotionPeriod(promo: SimulationPromotion, date: string): {
+  status: PromotionTimelineStatus;
+  billingAction: PromotionBenefitAction | null;
+  billingValue: number | null;
+} {
+  const { periods } = timelineCache.get(promo) ?? cachePromotionTimeline(promo);
+
+  for (const p of periods) {
+    if (date >= p.startsOn && (p.endsOn == null || date <= p.endsOn)) {
+      return { status: p.status, billingAction: p.billingAction, billingValue: p.billingValue };
+    }
+  }
+  // Before the first period (the promotion was applied later than this date)
+  // never happens — promotionCoversDate() already excluded it.
+  return { status: 'pay_regular', billingAction: null, billingValue: null };
+}
+
+function cachePromotionTimeline(promo: SimulationPromotion) {
+  const periodBenefit = promo.membershipFeeBenefits.find(
+    (b): b is Extract<MembershipFeeBenefit, { kind: 'period' }> => b.kind === 'period',
+  );
+  const timeline = computePromotionTimeline({
+    freeMonths: promo.freeMonths,
+    paidMonths: promo.paidMonths,
+    payBeforehandMonths: promo.payBeforehandMonths,
+    bonusMonths: promo.bonusMonths,
+    membershipFeeAction: periodBenefit?.action ?? undefined,
+    membershipFeeValue: periodBenefit?.value ?? null,
+    membershipFeeEnabled: periodBenefit?.enabled ?? false,
+    membershipFeeDurationMonths: periodBenefit?.durationMonths ?? null,
+  }, promo.appliedAt);
+  timelineCache.set(promo, timeline);
+  return timeline;
+}
+
+/**
+ * Resolves the Membership Fee actually charged on `date`.
+ *
+ * Free and Bonus promotional periods waive the fee outright; Pay/Prepaid
+ * periods apply the Promotion's Membership Fee (Period) Benefit; a Charge
+ * Benefit on the Membership Fee applies for as long as the Promotion is
+ * applied, in every period — the same rule `computeMembershipFeePriceAt`
+ * (real billing) uses, restated here because the simulation additionally has
+ * to report *which* benefit produced the number.
+ */
+function resolveMembershipFee(regular: number, date: string, promotions: SimulationPromotion[]): ResolvedCharge {
+  let amount = regular;
+  const benefits: SimulationBenefit[] = [];
+  // A paid promotional period with no Membership Fee Benefit charges the
+  // regular price but is still *inside* the promotion, so it is not the
+  // "first regular billing milestone" the horizon stops at (#629 §6).
+  let promotional = false;
+
+  for (const promo of promotions) {
+    if (!promotionCoversDate(promo, date)) continue;
+    const { status, billingAction, billingValue } = classifyPromotionPeriod(promo, date);
+    if (status !== 'pay_regular') promotional = true;
+
+    if (status === 'free_promotion' || status === 'bonus_promotion') {
+      amount = 0;
+      benefits.push({ source: 'promotion', name: promo.name, action: 'waive', value: null, period_status: status });
+    } else if (billingAction != null && billingAction !== 'no_benefit') {
+      amount = applyPeriodBenefit(amount, billingAction, billingValue);
+      benefits.push({ source: 'promotion', name: promo.name, action: billingAction, value: billingValue, period_status: status });
+    }
+
+    for (const b of promo.membershipFeeBenefits) {
+      if (b.kind !== 'charge' || b.action === 'no_benefit') continue;
+      amount = applyPeriodBenefit(amount, b.action, b.value);
+      benefits.push({ source: 'promotion', name: promo.name, action: b.action, value: b.value, period_status: status });
+      promotional = true;
+    }
+  }
+
+  const pending = promotions.some((p) => date < p.appliedAt && hasPromotionalEffect(p));
+  return { amount: round2(amount), benefits, promotional, pending };
+}
+
+/** Does this Promotion change the Membership Fee at all, in any period? */
+function hasPromotionalEffect(promo: SimulationPromotion): boolean {
+  return promo.freeMonths + promo.paidMonths + promo.bonusMonths > 0
+    || promo.membershipFeeBenefits.length > 0;
+}
+
+/* ── Streams ─────────────────────────────────────────────────────────────── */
+
+/**
+ * One projected charge: what is owed, why it differs from the regular price,
+ * and whether a Promotion still governs it (which is not the same thing — a
+ * paid promotional period can charge the regular price).
+ */
+interface ResolvedCharge {
+  amount: number;
+  benefits: SimulationBenefit[];
+  promotional: boolean;
+  /**
+   * A Promotion has yet to start affecting this item — it was applied after
+   * the item began being billed. Such a charge is at the regular price but is
+   * not the "first regular billing milestone": the promotional charges are
+   * still ahead of it.
+   */
+  pending: boolean;
+}
+
+/**
+ * One billable item projected over time. Every item — the Membership Fee and
+ * each granted Sellable Item alike — is a stream, so the horizon rule (#629
+ * §6: run until every item has shown one regular charge) is applied once.
+ */
+interface Stream {
+  cadence: Cadence;
+  section: SimulationSection;
+  start: string;
+  end: string | null;
+  /** Amount + explanation for the n-th occurrence (0-based) on `date`. */
+  resolve: (date: string, occurrence: number) => ResolvedCharge;
+  line: (date: string, resolved: ResolvedCharge) => SimulationLine;
+}
+
+/**
+ * Index of the first occurrence of `cadence` (counted from `start`) that falls
+ * on or after `from`. Bounded so a cadence that fails to advance can't spin.
+ */
+function occurrenceIndexOf(start: string, from: string, cadence: Cadence): number {
+  let cursor = start;
+  let index = 0;
+  while (cursor < from && index < MAX_OCCURRENCE_SCAN) {
+    const next = cadence.advance(cursor);
+    if (next <= cursor) break;
+    cursor = next;
+    index++;
+  }
+  return index;
+}
+
+/** A non-recurring charge: one line, on the assignment's start date. */
+interface SingleCharge {
+  section: SimulationSection;
+  date: string;
+  line: SimulationLine;
+}
+
+function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
+  if (a.membershipFeePrice == null || a.recurringInterval == null || a.recurringUnit == null) return null;
+  const regular = round2(a.membershipFeePrice);
+  const cadence = cadenceForBillingPolicy(a.recurringInterval, a.recurringUnit);
+  return {
+    cadence,
+    section: cadence.section,
+    start: a.startsAt,
+    end: a.endsAt,
+    resolve: (date) => resolveMembershipFee(regular, date, a.promotions),
+    line: (date, resolved) => ({
+      kind: 'membership_fee',
+      label: a.planName ?? 'Membership Fee',
+      user_membership_id: a.userMembershipId,
+      plan_name: a.planName,
+      gym_charge_id: null,
+      quantity: 1,
+      unit_price: regular,
+      regular_price: regular,
+      benefits: resolved.benefits,
+      actual_charge: resolved.amount,
+      price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
+    }),
+  };
+}
+
+/**
+ * A Promotion's periodical grant: the item is billed at its own
+ * `billing_frequency`, waived for the `quantity` periods the Promotion covers
+ * and charged at its regular price from then on (#629 thread Q3).
+ */
+function buildGrantStream(a: SimulationAssignment, promo: SimulationPromotion, grant: SimulationGrant): Stream | null {
+  const cadence = grant.billingFrequency ? cadenceForSellableItem(grant.billingFrequency) : null;
+  if (!cadence) return null;
+  const regular = round2(grant.unitPrice);
+  // The item is billed from the assignment's start date, but the grant only
+  // starts covering periods once the Promotion was applied — which can be
+  // later. Counting the granted periods from the first *covered* occurrence
+  // keeps a Promotion applied mid-assignment worth its full quantity.
+  const firstCovered = occurrenceIndexOf(a.startsAt, promo.appliedAt, cadence);
+  return {
+    cadence,
+    section: cadence.section,
+    start: a.startsAt,
+    end: a.endsAt,
+    resolve: (date, occurrence) => {
+      const covered = occurrence >= firstCovered
+        && occurrence < firstCovered + grant.quantity
+        && promotionCoversDate(promo, date);
+      if (covered) {
+        return {
+          amount: 0,
+          benefits: [{ source: 'promotion' as const, name: promo.name, action: 'included' as const, value: null, period_status: null }],
+          promotional: true,
+          pending: false,
+        };
+      }
+      const pending = occurrence < firstCovered && (promo.revokedAt == null || date <= promo.revokedAt);
+      return { amount: regular, benefits: [], promotional: false, pending };
+    },
+    line: (date, resolved) => ({
+      kind: 'sellable_item',
+      label: grant.name,
+      user_membership_id: a.userMembershipId,
+      plan_name: a.planName,
+      gym_charge_id: grant.gymChargeId,
+      quantity: 1,
+      unit_price: regular,
+      regular_price: regular,
+      benefits: resolved.benefits,
+      actual_charge: resolved.amount,
+      price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
+    }),
+  };
+}
+
+/**
+ * A Promotion's one-off or session grant: no schedule to project, so it is a
+ * single line on the assignment's start date covering the granted quantity
+ * (#629 thread Q5 — `per_session` items appear as "N sessions").
+ */
+function buildGrantSingleCharge(a: SimulationAssignment, promo: SimulationPromotion, grant: SimulationGrant): SingleCharge {
+  const unit = round2(grant.unitPrice);
+  const regular = round2(unit * grant.quantity);
+  return {
+    section: grant.category === 'session' ? 'session' : 'one_off',
+    date: a.startsAt,
+    line: {
+      kind: 'sellable_item',
+      label: grant.name,
+      user_membership_id: a.userMembershipId,
+      plan_name: a.planName,
+      gym_charge_id: grant.gymChargeId,
+      quantity: grant.quantity,
+      unit_price: unit,
+      regular_price: regular,
+      benefits: [{ source: 'promotion', name: promo.name, action: 'included', value: null, period_status: null }],
+      actual_charge: 0,
+      price_may_change: false,
+    },
+  };
+}
+
+/* ── Projection ──────────────────────────────────────────────────────────── */
+
+interface GeneratedEvent {
+  section: SimulationSection;
+  date: string;
+  period_end: string | null;
+  line: SimulationLine;
+}
+
+/**
+ * Walks one stream, yielding events, until `stopAt` decides to stop. Returns
+ * whether the cap was hit before the caller's stop condition was met.
+ */
+function walkStream(
+  stream: Stream,
+  cap: string,
+  stopAt: (date: string, resolved: ResolvedCharge) => boolean,
+): { events: GeneratedEvent[]; capped: boolean } {
+  const events: GeneratedEvent[] = [];
+  let cursor = stream.start;
+  let occurrence = 0;
+  while (cursor <= cap) {
+    if (stream.end != null && cursor > stream.end) return { events, capped: false };
+    const resolved = stream.resolve(cursor, occurrence);
+    const next = stream.cadence.advance(cursor);
+    events.push({
+      section: stream.section,
+      date: cursor,
+      period_end: stream.cadence.ranged ? dayBefore(next) : null,
+      line: stream.line(cursor, resolved),
+    });
+    if (stopAt(cursor, resolved)) return { events, capped: false };
+    // A cadence that doesn't advance would loop forever — treat as capped.
+    if (next <= cursor) return { events, capped: true };
+    cursor = next;
+    occurrence++;
+  }
+  return { events, capped: true };
+}
+
+/**
+ * The #629 §6 / thread-Q3 horizon: every item is projected until it has been
+ * charged once at its regular price, and the whole simulation then runs to the
+ * latest of those dates, so a yearly item pushes the monthly ones out with it.
+ */
+export function computeBillingSimulation(input: BillingSimulationInput): BillingSimulationResult {
+  const assignments = input.assignments;
+  const empty: BillingSimulationResult = {
+    available: false, reason: null, currency: 'EUR',
+    start_date: null, horizon_date: null, truncated: false, sections: [], total: 0,
+  };
+
+  if (assignments.length === 0) {
+    return { ...empty, reason: 'No active Membership Plans to simulate.' };
+  }
+
+  const streams: Stream[] = [];
+  const singles: SingleCharge[] = [];
+  for (const a of assignments) {
+    const fee = buildMembershipFeeStream(a);
+    if (fee) streams.push(fee);
+    for (const promo of a.promotions) {
+      for (const grant of promo.grants) {
+        if (grant.category === 'periodical') {
+          const s = buildGrantStream(a, promo, grant);
+          if (s) streams.push(s);
+        } else {
+          singles.push(buildGrantSingleCharge(a, promo, grant));
+        }
+      }
+    }
+  }
+
+  if (streams.length === 0 && singles.length === 0) {
+    return {
+      ...empty,
+      reason: 'Configure a plan price and billing frequency to preview the billing simulation.',
+    };
+  }
+
+  const startDate = [
+    ...streams.map((s) => s.start),
+    ...singles.map((s) => s.date),
+  ].reduce(minDate);
+  const cap = advanceBillingDate(startDate, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
+
+  // Pass 1 — each stream's own first regular (unbenefited) charge.
+  let horizon = startDate;
+  let truncated = false;
+  for (const stream of streams) {
+    const { events, capped } = walkStream(stream, cap, (_d, r) => !r.promotional && !r.pending);
+    if (capped) truncated = true;
+    const last = events[events.length - 1];
+    if (last) horizon = maxDate(horizon, last.date);
+  }
+
+  // Pass 2 — every stream now runs to the shared horizon.
+  const generated: GeneratedEvent[] = [];
+  for (const stream of streams) {
+    const stop = stream.end != null ? minDate(horizon, stream.end) : horizon;
+    const { events } = walkStream(stream, minDate(stop, cap), (d) => d >= stop);
+    generated.push(...events.filter((e) => e.date <= stop));
+  }
+  for (const single of singles) {
+    generated.push({ section: single.section, date: single.date, period_end: null, line: single.line });
+  }
+
+  const sections: SimulationSectionResult[] = [];
+  for (const section of SECTION_ORDER) {
+    const inSection = generated.filter((e) => e.section === section);
+    if (inSection.length === 0) continue;
+
+    const byDate = new Map<string, SimulationEvent>();
+    for (const e of inSection) {
+      const key = `${e.date}|${e.period_end ?? ''}`;
+      let event = byDate.get(key);
+      if (!event) {
+        event = { date: e.date, period_end: e.period_end, lines: [], total: 0 };
+        byDate.set(key, event);
+      }
+      event.lines.push(e.line);
+    }
+    const events = [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    for (const event of events) event.total = round2(event.lines.reduce((sum, l) => sum + l.actual_charge, 0));
+    sections.push({ section, events, total: round2(events.reduce((sum, e) => sum + e.total, 0)) });
+  }
+
+  return {
+    available: true,
+    reason: null,
+    currency: 'EUR',
+    start_date: startDate,
+    horizon_date: horizon,
+    truncated,
+    sections,
+    total: round2(sections.reduce((sum, s) => sum + s.total, 0)),
+  };
+}
