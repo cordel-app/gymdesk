@@ -20,6 +20,10 @@ interface BillingEvent {
   user_membership_id: number | null;
   plan_name: string | null;
   billing_date: string;
+  /** ISO datetime the ledger row was created; null for projected (virtual) rows. */
+  created_at: string | null;
+  /** YYYY-MM-DD the membership's next payment is scheduled for; null when none. */
+  next_payment_date: string | null;
   amount: string | null;
   event_type: string;
   status: 'paid' | 'failed' | 'scheduled' | 'recorded';
@@ -58,6 +62,28 @@ const DEFAULT_LIMIT = 50;
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** #639: an instant (billing_events.created_at) as DD/MM/YYYY HH:mm, viewer-local. */
+function fmtDateTime(iso: string | null) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/**
+ * #639: `user_memberships.next_billing_date` is a DATE column — the billing run
+ * stores the day, not a time of day — so the scheduled day is rendered verbatim
+ * at 00:00 rather than parsed as an instant and shifted by the viewer's timezone.
+ */
+function fmtScheduledDate(date: string | null) {
+  if (!date) return '—';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
+  if (!m) return '—';
+  return `${m[3]}/${m[2]}/${m[1]} 00:00`;
 }
 
 function fmtAmount(amount: string | null) {
@@ -187,10 +213,10 @@ function TransactionsRow({ billingEventId, t }: { billingEventId: number; t: Ret
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billingEventId]);
 
-  if (loading) return <td colSpan={5} style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>{t('billing_events_page.loading')}</td>;
+  if (loading) return <td colSpan={7} style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>{t('billing_events_page.loading')}</td>;
 
   return (
-    <td colSpan={5} style={{ padding: '0 0 0 48px', background: '#f9fafb' }}>
+    <td colSpan={7} style={{ padding: '0 0 0 48px', background: '#f9fafb' }}>
       <div style={{ padding: '12px 16px 16px' }}>
         <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13 }}>{t('billing_events_page.transactions_heading')}</p>
         {rows && rows.length === 0 ? (
@@ -397,6 +423,8 @@ export default function BillingEventsPage() {
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_member')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_plan')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_date')}</th>
+                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_created')}</th>
+                <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_next_payment')}</th>
                 <th style={{ padding: '8px 12px', textAlign: 'right' }}>{t('billing_events_page.col_amount')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_status')}</th>
               </tr>
@@ -404,7 +432,7 @@ export default function BillingEventsPage() {
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
+                  <td colSpan={8} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
                     {t('billing_events_page.empty')}
                   </td>
                 </tr>
@@ -431,6 +459,12 @@ export default function BillingEventsPage() {
                       <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
                       <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date)}</td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtDateTime(row.created_at)}
+                      </td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                        {fmtScheduledDate(row.next_payment_date)}
+                      </td>
                       <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                         {fmtAmount(row.amount)} {row.currency ?? ''}
                       </td>

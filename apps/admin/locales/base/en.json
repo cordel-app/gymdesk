@@ -277,6 +277,8 @@
     "col_member": "Member",
     "col_plan": "Plan",
     "col_date": "Date",
+    "col_created": "Created",
+    "col_next_payment": "Next Payment",
     "col_amount": "Amount",
     "col_status": "Status",
     "status_paid": "Paid",

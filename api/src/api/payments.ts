@@ -194,6 +194,17 @@ function advanceBillingDate(
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * mysql2 hands back DATE columns as JS Date objects at UTC midnight (pool
+ * timezone 'Z'), so `String(date).slice(0, 10)` yields "Wed Oct 21" instead of
+ * an ISO date. Normalises either representation to YYYY-MM-DD.
+ */
+function toDateOnly(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 paymentsRouter.get('/billing-events', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const q = parseQuery(req, res, z.object({
@@ -220,10 +231,12 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       user_membership_id: number | null; plan_name: string | null;
       created_at: Date; amount: string | null; event_type: string;
       currency: string | null;
+      membership_status: string | null; next_billing_date: Date | string | null;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
               be.user_membership_id, mp.name AS plan_name,
-              be.created_at, be.amount, be.event_type, NULL AS currency
+              be.created_at, be.amount, be.event_type, NULL AS currency,
+              um.status AS membership_status, um.next_billing_date
        FROM billing_events be
        LEFT JOIN members m ON m.id = be.member_id
        LEFT JOIN user_memberships um ON um.id = be.user_membership_id
@@ -234,12 +247,19 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       params,
     );
 
+    // #639: `created_at` is the ledger row's own creation instant (ISO datetime,
+    // UTC). `next_payment_date` is when the next payment is scheduled to run for
+    // the membership the event belongs to — i.e. `user_memberships.next_billing_date`,
+    // the same value the nightly billing run charges on. It is null (rendered as
+    // "—") when the event has no membership, or the membership is no longer active,
+    // or nothing is scheduled. It is a DATE column, so it carries no time of day.
     type BillingEventRow = {
       id: number | null; type: 'real' | 'virtual';
       member_id: number; member_name: string | null;
       user_membership_id: number | null; plan_name: string | null;
       billing_date: string; amount: string | null;
       event_type: string; status: string; currency: string | null;
+      created_at: string | null; next_payment_date: string | null;
     };
 
     const past: BillingEventRow[] = realRows.map((r) => ({
@@ -250,6 +270,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       user_membership_id: r.user_membership_id,
       plan_name: r.plan_name,
       billing_date: new Date(r.created_at).toISOString().slice(0, 10),
+      created_at: new Date(r.created_at).toISOString(),
+      next_payment_date: r.membership_status === 'active' ? toDateOnly(r.next_billing_date) : null,
       amount: r.amount,
       event_type: r.event_type,
       status: (
@@ -275,7 +297,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const includeScheduled = !q.status || q.status.includes('scheduled');
     const activeRows = includeScheduled ? (await db.query<{
       user_membership_id: number; member_id: number; member_name: string | null;
-      plan_name: string | null; next_billing_date: string;
+      plan_name: string | null; next_billing_date: Date | string;
       recurring_billing_interval: number; recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
       final_price: string; currency: string | null;
     }>(
@@ -295,7 +317,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const future: BillingEventRow[] = [];
 
     for (const um of activeRows) {
-      let date = String(um.next_billing_date).slice(0, 10);
+      const nextPaymentDate = toDateOnly(um.next_billing_date);
+      if (!nextPaymentDate) continue;
+      let date = nextPaymentDate;
       for (let i = 0; i < 5; i++) {
         if (date < today) {
           date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
@@ -312,6 +336,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           user_membership_id: um.user_membership_id,
           plan_name: um.plan_name,
           billing_date: date,
+          // Projected rows aren't persisted yet, so they have no creation instant.
+          created_at: null,
+          next_payment_date: nextPaymentDate,
           amount: um.final_price,
           event_type: 'upcoming',
           status: 'scheduled',

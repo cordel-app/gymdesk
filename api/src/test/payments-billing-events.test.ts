@@ -44,6 +44,21 @@ async function insertBillingEventOfType(gymId: string, memberId: number, eventTy
   return insertId;
 }
 
+async function insertBillingEventForMembership(
+  gymId: string,
+  memberId: number,
+  userMembershipId: number,
+): Promise<number> {
+  const chargeTypeId = await getChargeTypeId();
+  const { insertId } = await db.query(
+    `INSERT INTO billing_events
+       (gym_id, member_id, user_membership_id, event_type, charge_type_id, source, actor_user_id, amount)
+     VALUES (?, ?, ?, 'payment_recorded', ?, 'employee', 'test-user', 99.00)`,
+    [gymId, memberId, userMembershipId, chargeTypeId],
+  );
+  return insertId;
+}
+
 async function createMembershipPlan(gymId: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status)
@@ -294,6 +309,103 @@ describe('GET /payments/billing-events', () => {
       expect(res.status).toBe(200);
       expect(res.body.items.filter((i: any) => i.type === 'real')).toHaveLength(0);
     });
+  });
+});
+
+// ── #639: Created / Next Payment timestamps ──────────────────────────────────
+
+describe('GET /payments/billing-events — created_at / next_payment_date (#639)', () => {
+  let gymId: string;
+  let memberId: number;
+  let planId: number;
+  let linkedEventId: number;
+  let orphanEventId: number;
+  let expiredEventId: number;
+  let nextBillingDateStr: string;
+
+  const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('BE Timestamps Gym');
+    await createTestMembership(gymId, 'admin');
+
+    memberId = await createMember(gymId);
+    planId = await createPlanWithPolicy(gymId);
+
+    const future = new Date();
+    future.setDate(future.getDate() + 30);
+    nextBillingDateStr = future.toISOString().slice(0, 10);
+
+    // Real event on a membership that is still active and has a scheduled payment.
+    const userMembershipId = await createUserMembership(gymId, memberId, planId, nextBillingDateStr);
+    linkedEventId = await insertBillingEventForMembership(gymId, memberId, userMembershipId);
+
+    // Real event with no membership at all — nothing is scheduled.
+    orphanEventId = await insertBillingEvent(gymId, await createMember(gymId));
+
+    // Real event whose membership is no longer active — its next_billing_date
+    // must not be reported as an upcoming payment.
+    const expiredMemberId = await createMember(gymId);
+    const expiredMembershipId = await createUserMembership(gymId, expiredMemberId, planId, nextBillingDateStr);
+    await db.query(`UPDATE user_memberships SET status = 'expired' WHERE id = ?`, [expiredMembershipId]);
+    expiredEventId = await insertBillingEventForMembership(gymId, expiredMemberId, expiredMembershipId);
+  });
+
+  async function fetchItems() {
+    const res = await request
+      .get('/payments/billing-events')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    return res.body.items as any[];
+  }
+
+  it('reports created_at as a full ISO datetime on real rows', async () => {
+    const item = (await fetchItems()).find((i) => i.id === linkedEventId);
+    expect(item).toBeDefined();
+    expect(item.created_at).toMatch(ISO_DATETIME);
+    // Same instant the ledger row carries, not just the date already in billing_date.
+    expect(item.created_at.slice(0, 10)).toBe(item.billing_date);
+  });
+
+  it('reports the membership next_billing_date as next_payment_date', async () => {
+    const item = (await fetchItems()).find((i) => i.id === linkedEventId);
+    expect(item.next_payment_date).toBe(nextBillingDateStr);
+  });
+
+  it('returns next_payment_date null when the event has no membership', async () => {
+    const item = (await fetchItems()).find((i) => i.id === orphanEventId);
+    expect(item).toBeDefined();
+    expect(item.next_payment_date).toBeNull();
+    expect(item.created_at).toMatch(ISO_DATETIME);
+  });
+
+  it('returns next_payment_date null when the membership is no longer active', async () => {
+    const item = (await fetchItems()).find((i) => i.id === expiredEventId);
+    expect(item).toBeDefined();
+    expect(item.next_payment_date).toBeNull();
+  });
+
+  it('gives projected rows a null created_at and a YYYY-MM-DD next_payment_date', async () => {
+    const virtualItems = (await fetchItems()).filter((i) => i.type === 'virtual');
+    expect(virtualItems.length).toBeGreaterThan(0);
+    for (const v of virtualItems) {
+      expect(v.created_at).toBeNull();
+      expect(v.next_payment_date).toMatch(ISO_DATE);
+    }
+    expect(virtualItems.some((v) => v.next_payment_date === nextBillingDateStr)).toBe(true);
+  });
+
+  it('projects virtual billing_date as a real ISO date', async () => {
+    // Regression: next_billing_date arrives from mysql2 as a Date object, so a
+    // plain String(...).slice(0, 10) produced "Wed Oct 21" instead of an ISO date.
+    const virtualItems = (await fetchItems()).filter((i) => i.type === 'virtual');
+    expect(virtualItems.length).toBeGreaterThan(0);
+    for (const v of virtualItems) {
+      expect(v.billing_date).toMatch(ISO_DATE);
+    }
+    expect(virtualItems.some((v) => v.billing_date === nextBillingDateStr)).toBe(true);
   });
 });
 
