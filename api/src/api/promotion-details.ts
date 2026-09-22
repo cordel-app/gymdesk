@@ -6,6 +6,7 @@ import {
   classifySellableItem,
   SellableItemBenefitCategory,
 } from '../domain/sellableItemClassification';
+import { promotionDurationMonths } from '../domain/promotionBenefits';
 
 export const promotionDetailsRouter = Router({ mergeParams: true });
 
@@ -236,11 +237,36 @@ promotionDetailsRouter.get('/membership-fee-benefit', async (req, res, next) => 
 promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const promotionId = parseInt((req.params as any).id, 10);
-  if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
+  // #625: the Promotion's own duration (free + paid + bonus) is the ceiling for
+  // the benefit's duration, so load it alongside the existence check rather
+  // than via the id-only verifyPromotion helper.
+  const { rows: promoRows } = await db.query(
+    'SELECT free_months, paid_months, bonus_months FROM promotions WHERE id = ? AND gym_id = ?',
+    [promotionId, gymId],
+  );
+  if (promoRows.length === 0) return res.status(404).json({ error: 'Promotion not found' });
 
   const membershipFeeId = await getMembershipFeeChargeTypeId();
   const err = validatePeriodBenefit({ ...req.body, charge_type_id: membershipFeeId });
   if (err) return res.status(400).json({ error: err });
+
+  // #625: a Promotion Period Benefit can never outlast the Promotion. Reject an
+  // explicit duration greater than the total Promotion duration so an invalid
+  // configuration is never persisted (the Promotion is the source of truth and
+  // is never extended to accommodate the benefit). A null duration is allowed —
+  // it is treated as "the whole Promotion" when the forecast/billing applies it.
+  const promoDuration = promotionDurationMonths(
+    promoRows[0].free_months, promoRows[0].paid_months, promoRows[0].bonus_months,
+  );
+  const rawDuration = req.body.duration_months;
+  if (rawDuration != null && rawDuration !== '') {
+    const dur = parseInt(rawDuration, 10);
+    if (dur > promoDuration) {
+      return res.status(400).json({
+        error: `duration_months cannot exceed the promotion duration of ${promoDuration} month(s)`,
+      });
+    }
+  }
 
   const { quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value } = req.body;
   try {

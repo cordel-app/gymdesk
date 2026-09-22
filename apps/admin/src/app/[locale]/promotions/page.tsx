@@ -123,6 +123,14 @@ function parseDateStr(dateStr: string): Date {
   return new Date(y, m - 1, d);
 }
 
+// #625: total Promotion duration in months (free + paid + bonus). This is the
+// ceiling for the Membership Fee Benefit duration. Pay Beforehand is excluded —
+// it only reclassifies paid months as prepaid, it never lengthens the Promotion.
+function promotionDurationFromForm(form: { free_months: string; paid_months: string; bonus_months: string }): number {
+  const n = (v: string) => Math.max(0, parseInt(v, 10) || 0);
+  return n(form.free_months) + n(form.paid_months) + n(form.bonus_months);
+}
+
 function emptyEditForm(promo?: Promo) {
   return {
     name: promo?.name ?? '',
@@ -305,6 +313,22 @@ export default function PromotionsPage() {
     editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months,
     mfDraft?.action, mfDraft?.value, mfDraft?.enabled, mfDraft?.duration_months,
   ]);
+
+  // #625: when the Promotion duration shrinks while editing (e.g. reducing
+  // free/paid/bonus months), an already-entered Membership Fee Benefit duration
+  // must be re-constrained down to the new maximum so it never outlasts the
+  // Promotion. Only clamps an explicit (non-null) over-long value; a null
+  // (unbounded) duration is left alone.
+  useEffect(() => {
+    if (editingId == null) return;
+    const max = promotionDurationFromForm(editForm);
+    setMfDraft((prev) => {
+      if (!prev || prev.duration_months == null) return prev;
+      if (max > 0 && prev.duration_months > max) return { ...prev, duration_months: max };
+      return prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId, editForm.free_months, editForm.paid_months, editForm.bonus_months]);
 
   // Source of truth for the Suitable Membership Plans picker (#554): active,
   // tenant-scoped plans loaded dynamically from the Membership Plans API —
@@ -844,6 +868,12 @@ export default function PromotionsPage() {
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
   function renderEditSection(promoId: number) {
+    // #625: the Membership Fee Benefit can never outlast the Promotion, so its
+    // duration is capped at the total Promotion duration
+    // (free + paid + bonus — Pay Beforehand only reclassifies paid months as
+    // prepaid, it never lengthens the Promotion). Recomputed live from the edit
+    // form so shrinking the Promotion re-constrains the benefit immediately.
+    const mfMaxDurationMonths = promotionDurationFromForm(editForm);
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
 
@@ -1032,9 +1062,18 @@ export default function PromotionsPage() {
                     </select>
                     <input
                       type="number" min="1"
+                      max={mfMaxDurationMonths > 0 ? mfMaxDurationMonths : undefined}
                       value={mfDraft.duration_months ?? ''}
-                      onChange={(e) => updateMfDraft({ duration_months: e.target.value ? parseInt(e.target.value, 10) : null })}
+                      // #625: the benefit can never outlast the Promotion, so cap
+                      // the entered duration at the Promotion duration (Option A —
+                      // prevent an out-of-range value rather than flagging it).
+                      onChange={(e) => {
+                        const raw = e.target.value ? parseInt(e.target.value, 10) : null;
+                        const clamped = raw != null && mfMaxDurationMonths > 0 ? Math.min(raw, mfMaxDurationMonths) : raw;
+                        updateMfDraft({ duration_months: clamped });
+                      }}
                       placeholder="—"
+                      title={mfMaxDurationMonths > 0 ? t('mf_duration_max_hint', { max: mfMaxDurationMonths }) : undefined}
                       style={{ ...inlineSelectSt, width: '100%' }}
                     />
                     <select

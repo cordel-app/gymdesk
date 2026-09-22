@@ -882,6 +882,7 @@
     "add_period_benefit": "+ Afegir benefici de període",
     "section_membership_fee_benefits": "Beneficis de quota de soci",
     "no_membership_fee_benefit": "No hi ha cap benefici de quota de soci configurat.",
+    "mf_duration_max_hint": "No pot superar la durada de la promoció ({max} mesos).",
     "col_charge_type": "Concepte",
     "col_action": "Acció",
     "col_value": "Valor",

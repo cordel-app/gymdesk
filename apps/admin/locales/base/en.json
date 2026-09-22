@@ -897,6 +897,7 @@
     "add_period_benefit": "+ Add Period Benefit",
     "section_membership_fee_benefits": "Membership Fee Benefits",
     "no_membership_fee_benefit": "No Membership Fee benefit configured.",
+    "mf_duration_max_hint": "Cannot exceed the promotion duration ({max} months).",
     "col_charge_type": "Charge Type",
     "col_action": "Action",
     "col_value": "Value",
