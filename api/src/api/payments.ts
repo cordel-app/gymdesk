@@ -7,6 +7,12 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
+import {
+  BILLING_EVENT_STATUSES,
+  deriveBillingEventStatus,
+  isPaymentActionable,
+} from '../domain/billingEventStatus';
+import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
 
 /**
  * #129: Payments module — operational payment actions over billing_events.
@@ -19,9 +25,10 @@ import { generateReceiptPdf } from '../lib/receipt-pdf';
 const PAYMENT_EVENT_TYPES = ['charge_created', 'payment_recorded', 'adjustment'] as const;
 const SOURCES = ['admin', 'system', 'employee', 'customer', 'provider'] as const;
 
-// #416 — billing-events admin view status filter. `status` is derived from `event_type`
-// (see BillingEventRow below), not a stored column, so it can't be pushed into SQL WHERE.
-const BILLING_EVENT_STATUSES = ['paid', 'failed', 'scheduled', 'recorded'] as const;
+// #416 — billing-events admin view status filter. `status` is derived (#640: from
+// the latest linked Payment Transaction, falling back to `event_type`; see
+// `domain/billingEventStatus.ts`), not a stored column, so it can't be pushed
+// into SQL WHERE.
 
 // Accepts repeated `status=a&status=b` or a single comma-separated value.
 const billingEventStatusParam = z.preprocess((v) => {
@@ -232,11 +239,15 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       created_at: Date; amount: string | null; event_type: string;
       currency: string | null;
       membership_status: string | null; next_billing_date: Date | string | null;
+      latest_tx_status: string | null;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
               be.user_membership_id, mp.name AS plan_name,
               be.created_at, be.amount, be.event_type, NULL AS currency,
-              um.status AS membership_status, um.next_billing_date
+              um.status AS membership_status, um.next_billing_date,
+              (SELECT pr.status FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
        FROM billing_events be
        LEFT JOIN members m ON m.id = be.member_id
        LEFT JOIN user_memberships um ON um.id = be.user_membership_id
@@ -260,29 +271,32 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       billing_date: string; amount: string | null;
       event_type: string; status: string; currency: string | null;
       created_at: string | null; next_payment_date: string | null;
+      /** #640: whether Retry Payment / Manual payment apply to this row. */
+      payment_actions_available: boolean;
     };
 
-    const past: BillingEventRow[] = realRows.map((r) => ({
-      id: r.id,
-      type: 'real' as const,
-      member_id: r.member_id,
-      member_name: r.member_name,
-      user_membership_id: r.user_membership_id,
-      plan_name: r.plan_name,
-      billing_date: new Date(r.created_at).toISOString().slice(0, 10),
-      created_at: new Date(r.created_at).toISOString(),
-      next_payment_date: r.membership_status === 'active' ? toDateOnly(r.next_billing_date) : null,
-      amount: r.amount,
-      event_type: r.event_type,
-      status: (
-        r.event_type === 'recurring_payment' || r.event_type === 'payment_recorded'
-          ? 'paid'
-          : r.event_type === 'failed_billing'
-            ? 'failed'
-            : 'recorded'
-      ) as string,
-      currency: r.currency,
-    }));
+    const past: BillingEventRow[] = realRows.map((r) => {
+      const status = deriveBillingEventStatus(r.event_type, r.latest_tx_status);
+      return {
+        id: r.id,
+        type: 'real' as const,
+        member_id: r.member_id,
+        member_name: r.member_name,
+        user_membership_id: r.user_membership_id,
+        plan_name: r.plan_name,
+        billing_date: new Date(r.created_at).toISOString().slice(0, 10),
+        created_at: new Date(r.created_at).toISOString(),
+        next_payment_date: r.membership_status === 'active' ? toDateOnly(r.next_billing_date) : null,
+        amount: r.amount,
+        event_type: r.event_type,
+        status,
+        currency: r.currency,
+        // A transaction needs a membership to hang off, and a charge needs an
+        // amount — an event missing either offers no payment action.
+        payment_actions_available:
+          isPaymentActionable(status) && r.user_membership_id != null && parseFloat(r.amount ?? '0') > 0,
+      };
+    });
 
     // ── Future (virtual) billing events — rolling 5-date window per active membership ──
     const futureWhere: string[] = [
@@ -343,6 +357,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           event_type: 'upcoming',
           status: 'scheduled',
           currency: um.currency,
+          payment_actions_available: false,
         });
         date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
       }
@@ -377,6 +392,11 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
     const { rows } = await db.query<any>(
       `SELECT pr.id, pr.status, pr.amount, pr.currency, pr.provider, pr.provider_order,
               pr.provider_ref, pr.source, pr.created_at, pr.completed_at,
+              pr.attempt, pr.failure_code, pr.failure_message, pr.notes,
+              pr.modified_at,
+              (SELECT gm.name FROM gym_memberships gm
+                WHERE gm.user_id = pr.modified_by_user_id AND gm.gym_id = pr.gym_id
+                LIMIT 1) AS modified_by_name,
               m.name AS member_name,
               mp.name AS plan_name,
               pm.card_brand, pm.card_last4
@@ -390,6 +410,161 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
       [billingEventId, gymId],
     );
     res.json({ items: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── #640: Billing Event details + audited payment actions ────────────────────
+
+/**
+ * GET /payments/billing-events/:id — read-only Details view (§2).
+ *
+ * Created By / Modified By are Clerk user ids on the row, resolved to a display
+ * name through `gym_memberships.name` (the same join the audit registry uses
+ * for `gym_user`); a system-generated event has no actor at all.
+ */
+paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const { rows } = await db.query<any>(
+      `SELECT be.id, be.member_id, be.user_membership_id, be.event_type, be.amount,
+              be.notes, be.source, be.actor_user_id, be.created_at,
+              be.previous_status, be.new_status,
+              be.receipt_number, be.receipt_issued_at,
+              be.modified_at, be.modified_by_user_id,
+              ct.code AS charge_type_code,
+              m.name AS member_name,
+              mp.name AS plan_name,
+              um.status AS membership_status, um.next_billing_date,
+              (SELECT gm.name FROM gym_memberships gm
+                WHERE gm.user_id = be.actor_user_id AND gm.gym_id = be.gym_id LIMIT 1) AS created_by_name,
+              (SELECT gm.name FROM gym_memberships gm
+                WHERE gm.user_id = be.modified_by_user_id AND gm.gym_id = be.gym_id LIMIT 1) AS modified_by_name,
+              (SELECT pr.status FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
+              (SELECT CONCAT_WS(': ', pr.failure_code, pr.failure_message) FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id AND pr.failure_code IS NOT NULL
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS transaction_failure_reason
+         FROM billing_events be
+         LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
+         LEFT JOIN members m ON m.id = be.member_id
+         LEFT JOIN user_memberships um ON um.id = be.user_membership_id
+         LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+        WHERE be.id = ? AND be.gym_id = ?`,
+      [billingEventId, gymId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Billing event not found' });
+    const be = rows[0];
+
+    const status = deriveBillingEventStatus(be.event_type, be.latest_tx_status);
+    const actionable =
+      isPaymentActionable(status) && be.user_membership_id != null && parseFloat(be.amount ?? '0') > 0;
+
+    // The nightly run records a failed charge's reason on the ledger row's
+    // notes; a transaction-level reason (#640) is more specific, so it wins.
+    const failureReason = be.transaction_failure_reason
+      ?? (status === 'failed' ? be.notes ?? null : null);
+
+    res.json({
+      id: be.id,
+      member_id: be.member_id,
+      member_name: be.member_name,
+      user_membership_id: be.user_membership_id,
+      plan_name: be.plan_name,
+      amount: be.amount,
+      currency: 'EUR',
+      status,
+      event_type: be.event_type,
+      charge_type_code: be.charge_type_code,
+      source: be.source,
+      notes: be.notes,
+      previous_status: be.previous_status,
+      new_status: be.new_status,
+      receipt_number: be.receipt_number,
+      receipt_issued_at: be.receipt_issued_at ? new Date(be.receipt_issued_at).toISOString() : null,
+      created_at: new Date(be.created_at).toISOString(),
+      created_by: be.created_by_name ?? (be.actor_user_id ? be.actor_user_id : null),
+      modified_at: be.modified_at ? new Date(be.modified_at).toISOString() : null,
+      modified_by: be.modified_by_name ?? (be.modified_by_user_id ? be.modified_by_user_id : null),
+      next_payment_date: be.membership_status === 'active' ? toDateOnly(be.next_billing_date) : null,
+      failure_reason: failureReason,
+      can_retry: actionable,
+      can_record_manual_payment: actionable,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /payments/billing-events/:id/retry — Retry Payment (§3).
+ * Never appends a Billing Event: the retry is a new Payment Transaction
+ * against this one. Two rejections in a row pause the assigned plan.
+ */
+paymentsRouter.post('/billing-events/:id/retry', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const outcome = await retryBillingEventPayment(gymId, billingEventId, userId, sourceForRole(role));
+    if ('failure' in outcome) {
+      return res.status(outcome.failure.status).json({ error: outcome.failure.error });
+    }
+    const { result } = outcome;
+    // §5: the manual intervention is what the audit trail records — action,
+    // event, actor, timestamp, previous/new status, and the attempt results.
+    recordAudit(req, {
+      action: 'retry_payment',
+      entityType: 'billing_event',
+      entityId: result.billing_event_id,
+      previous: { status: result.previous_status },
+      next: {
+        status: result.new_status,
+        attempts: result.attempts,
+        membership_paused: result.membership_paused,
+      },
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /payments/billing-events/:id/manual-payment — Manual payment (§4,
+ * the action the ticket first called "Flag as Paid"). Records a front-desk
+ * settlement as a completed Payment Transaction; no provider call.
+ */
+paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, userId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const outcome = await recordManualPayment(gymId, billingEventId, userId, req.body ?? {});
+    if ('failure' in outcome) {
+      return res.status(outcome.failure.status).json({ error: outcome.failure.error });
+    }
+    const { result } = outcome;
+    recordAudit(req, {
+      action: 'manual_payment',
+      entityType: 'billing_event',
+      entityId: result.billing_event_id,
+      previous: { status: result.previous_status },
+      next: {
+        status: result.new_status,
+        payment_request_id: result.payment_request_id,
+        amount: result.amount,
+        notes: result.notes,
+      },
+    });
+    res.status(201).json(result);
   } catch (err) {
     next(err);
   }

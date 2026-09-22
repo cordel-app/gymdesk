@@ -183,17 +183,22 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
           );
           const billingEventId = (beRows as any).insertId as number;
 
+          // #640: the rejection reason is stored on the transaction too, not
+          // only in the ledger row's notes, so the Billing Event Details view
+          // can explain a failure at the attempt that produced it.
           await db.query(
             `INSERT INTO payment_requests
                (gym_id, user_membership_id, member_id, amount, currency,
                 charge_type_id, billing_event_id, status, provider,
-                provider_order, provider_ref, source, created_at)
+                provider_order, provider_ref, source, created_at,
+                failure_code, failure_message)
              VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'failed', ?, ?, ?,
-                     'billing_run', UTC_TIMESTAMP())`,
+                     'billing_run', UTC_TIMESTAMP(), ?, ?)`,
             [
               row.gym_id, row.id, row.member_id, amount,
               membershipFeeChargeTypeId, billingEventId,
               row.provider, orderId, result.providerRef,
+              result.errorCode ?? null, result.errorMessage?.slice(0, 500) ?? null,
             ],
           );
 

@@ -109,3 +109,14 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       service as the compensating control.
 - [ ] Dedicated VPS for `fitness-pay` — recommended, currently an accepted risk; required
       before any formal QSA assessment.
+- [ ] **Retry Payment runs the provider charge inside the HTTP request** (#640): one click
+      fires up to two `executeRecurring` calls sequentially, so a slow or unreachable
+      provider holds the admin's request open for as long as both calls take. Acceptable
+      against Monei's test endpoint; before the first real gym, either bound it with a
+      provider-side timeout or move the retry onto the same background path as the nightly
+      run.
+- [ ] **The nightly billing run still neither auto-retries nor pauses** (#640): the
+      retry-once-then-pause rule from that ticket's Q3 is implemented for the *manual*
+      Retry Payment action only, because issue §6 forbids changing automatic payment
+      processing. Decide before production whether an unattended failed charge should
+      follow the same rule, and open a ticket if so.

@@ -7,8 +7,12 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useLocale } from 'next-intl';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
+import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import { useToast } from '@/components/Toast';
+import { useModuleAccess } from '@/lib/useModuleAccess';
+import { readOnlyStyle } from '@/components/ui';
 
-const STATUS_VALUES = ['paid', 'failed', 'scheduled', 'recorded'] as const;
+const STATUS_VALUES = ['paid', 'failed', 'pending', 'scheduled', 'recorded'] as const;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,8 +30,10 @@ interface BillingEvent {
   next_payment_date: string | null;
   amount: string | null;
   event_type: string;
-  status: 'paid' | 'failed' | 'scheduled' | 'recorded';
+  status: 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded';
   currency: string | null;
+  /** #640: Retry Payment / Manual payment apply to this row. */
+  payment_actions_available: boolean;
 }
 
 interface PageResult {
@@ -44,12 +50,48 @@ interface Transaction {
   currency: string | null;
   provider: string | null;
   provider_ref: string | null;
+  source: string | null;
+  attempt: number | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  notes: string | null;
   created_at: string;
   completed_at: string | null;
   member_name: string | null;
   plan_name: string | null;
   card_brand: string | null;
   card_last4: string | null;
+}
+
+/** #640 §2 — the read-only Billing Event details view. */
+interface BillingEventDetails {
+  id: number;
+  member_id: number | null;
+  member_name: string | null;
+  user_membership_id: number | null;
+  plan_name: string | null;
+  amount: string | null;
+  currency: string | null;
+  status: string;
+  event_type: string;
+  charge_type_code: string | null;
+  source: string | null;
+  notes: string | null;
+  receipt_number: string | null;
+  created_at: string;
+  created_by: string | null;
+  modified_at: string | null;
+  modified_by: string | null;
+  next_payment_date: string | null;
+  failure_reason: string | null;
+  can_retry: boolean;
+  can_record_manual_payment: boolean;
+}
+
+interface RetryResult {
+  new_status: string;
+  attempts: { attempt: number; status: string }[];
+  membership_paused: boolean;
 }
 
 interface MemberHit { id: number; name: string; email: string }
@@ -182,6 +224,7 @@ function MemberFilter({
 const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   paid:      { bg: '#dcfce7', text: '#166534' },
   failed:    { bg: '#fee2e2', text: '#991b1b' },
+  pending:   { bg: '#ffedd5', text: '#9a3412' },
   scheduled: { bg: '#fef9c3', text: '#92400e' },
   recorded:  { bg: '#e0f2fe', text: '#075985' },
 };
@@ -198,26 +241,214 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
   );
 }
 
-// ── Expanded transactions row ─────────────────────────────────────────────────
+// ── Expanded row: Details + Manual payment card + Transactions ────────────────
 
-function TransactionsRow({ billingEventId, t }: { billingEventId: number; t: ReturnType<typeof useTranslations> }) {
+const detailLabelStyle: React.CSSProperties = { color: '#6b7280', fontSize: 12 };
+const detailValueStyle: React.CSSProperties = { fontSize: 13, fontWeight: 500 };
+
+function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={detailLabelStyle}>{label}</div>
+      <div style={detailValueStyle}>{children}</div>
+    </div>
+  );
+}
+
+/**
+ * #640: one expanded component per row serving both `Details` (read-only) and
+ * the inline Manual payment card — the Inline row CRUD rule in
+ * docs/feature-patterns.md, so Details never becomes a second surface to keep
+ * in sync. `refreshToken` re-fetches after an action changes the event.
+ */
+function ExpandedRow({
+  billingEvent,
+  manualOpen,
+  onManualOpenChange,
+  onChanged,
+  canWrite,
+  readOnlyTitle,
+  t,
+}: {
+  billingEvent: BillingEvent;
+  manualOpen: boolean;
+  onManualOpenChange: (open: boolean) => void;
+  onChanged: () => void;
+  canWrite: boolean;
+  readOnlyTitle?: string;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const billingEventId = billingEvent.id!;
   const { apiFetch } = useApiClient();
+  const { toast } = useToast();
+  const [details, setDetails] = useState<BillingEventDetails | null>(null);
   const [rows, setRows] = useState<Transaction[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [manualAmount, setManualAmount] = useState('');
+  const [manualNotes, setManualNotes] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    apiFetch<{ items: Transaction[] }>(`/payments/billing-events/${billingEventId}/transactions`)
-      .then((d) => setRows(d.items))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [d, tx] = await Promise.all([
+        apiFetch<BillingEventDetails>(`/payments/billing-events/${billingEventId}`),
+        apiFetch<{ items: Transaction[] }>(`/payments/billing-events/${billingEventId}/transactions`),
+      ]);
+      setDetails(d);
+      setRows(tx.items);
+      setManualAmount(d.amount ? parseFloat(d.amount).toFixed(2) : '');
+    } catch {
+      setDetails(null);
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billingEventId]);
 
-  if (loading) return <td colSpan={7} style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>{t('billing_events_page.loading')}</td>;
+  useEffect(() => { load(); }, [load]);
+
+  async function submitManualPayment() {
+    setSaving(true);
+    try {
+      await apiFetch(`/payments/billing-events/${billingEventId}/manual-payment`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: manualAmount, notes: manualNotes || undefined }),
+      });
+      toast(t('billing_events_page.manual_success'));
+      onManualOpenChange(false);
+      setManualNotes('');
+      await load();
+      onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('billing_events_page.action_error'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <td colSpan={9} style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>
+        {t('billing_events_page.loading')}
+      </td>
+    );
+  }
 
   return (
-    <td colSpan={7} style={{ padding: '0 0 0 48px', background: '#f9fafb' }}>
+    <td colSpan={9} style={{ padding: '0 0 0 48px', background: '#f9fafb' }}>
       <div style={{ padding: '12px 16px 16px' }}>
+        {/* ── Details (read-only) ── */}
+        {details && (
+          <>
+            <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13 }}>
+              {t('billing_events_page.details_heading')}
+            </p>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: 10, marginBottom: 16,
+            }}>
+              <DetailField label={t('billing_events_page.det_id')}>{details.id}</DetailField>
+              <DetailField label={t('billing_events_page.det_member')}>{details.member_name ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_plan')}>{details.plan_name ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_amount')}>
+                {fmtAmount(details.amount)} {details.currency ?? ''}
+              </DetailField>
+              <DetailField label={t('billing_events_page.det_status')}>
+                <StatusBadge
+                  status={details.status}
+                  label={t(`billing_events_page.status_${details.status}` as any)}
+                />
+              </DetailField>
+              <DetailField label={t('billing_events_page.det_event_type')}>{details.event_type}</DetailField>
+              <DetailField label={t('billing_events_page.det_charge_type')}>{details.charge_type_code ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_source')}>{details.source ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_created_at')}>{fmtDateTime(details.created_at)}</DetailField>
+              <DetailField label={t('billing_events_page.det_created_by')}>
+                {details.created_by ?? t('billing_events_page.actor_system')}
+              </DetailField>
+              <DetailField label={t('billing_events_page.det_modified_at')}>{fmtDateTime(details.modified_at)}</DetailField>
+              <DetailField label={t('billing_events_page.det_modified_by')}>{details.modified_by ?? '—'}</DetailField>
+              <DetailField label={t('billing_events_page.det_next_payment')}>
+                {fmtScheduledDate(details.next_payment_date)}
+              </DetailField>
+              <DetailField label={t('billing_events_page.det_receipt')}>{details.receipt_number ?? '—'}</DetailField>
+              {details.failure_reason && (
+                <DetailField label={t('billing_events_page.det_failure_reason')}>
+                  <span style={{ color: '#991b1b' }}>{details.failure_reason}</span>
+                </DetailField>
+              )}
+              {details.notes && (
+                <DetailField label={t('billing_events_page.det_notes')}>{details.notes}</DetailField>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── Manual payment (inline card — never a modal, #640 §4) ── */}
+        {manualOpen && details?.can_record_manual_payment && (
+          <div style={{
+            border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff',
+            padding: 12, marginBottom: 16, maxWidth: 520,
+          }}>
+            <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 13 }}>
+              {t('billing_events_page.manual_heading')}
+            </p>
+            <p style={{ margin: '0 0 10px', fontSize: 12, color: '#6b7280' }}>
+              {t('billing_events_page.manual_hint')}
+            </p>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
+                  {t('billing_events_page.manual_amount')}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={manualAmount}
+                  onChange={(e) => setManualAmount(e.target.value)}
+                  style={{ width: 120, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
+                  {t('billing_events_page.manual_notes')}
+                </label>
+                <input
+                  type="text"
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                  placeholder={t('billing_events_page.manual_notes_placeholder')}
+                  style={{ width: '100%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                onClick={submitManualPayment}
+                disabled={saving || !canWrite}
+                title={readOnlyTitle}
+                style={readOnlyStyle({
+                  padding: '6px 14px', fontSize: 13, cursor: 'pointer', borderRadius: 6,
+                  border: '1px solid #166534', background: '#166534', color: '#fff', fontWeight: 600,
+                }, !canWrite || saving)}
+              >
+                {saving ? t('billing_events_page.manual_saving') : t('billing_events_page.manual_confirm')}
+              </button>
+              <button
+                onClick={() => onManualOpenChange(false)}
+                disabled={saving}
+                style={{ padding: '6px 14px', fontSize: 13, cursor: 'pointer', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff' }}
+              >
+                {t('billing_events_page.manual_cancel')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Payment transactions ── */}
         <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13 }}>{t('billing_events_page.transactions_heading')}</p>
         {rows && rows.length === 0 ? (
           <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>{t('billing_events_page.transactions_empty')}</p>
@@ -225,7 +456,7 @@ function TransactionsRow({ billingEventId, t }: { billingEventId: number; t: Ret
           <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                {(['col_tx_date', 'col_tx_status', 'col_tx_amount', 'col_tx_card', 'col_tx_ref'] as const).map((k) => (
+                {(['col_tx_date', 'col_tx_status', 'col_tx_amount', 'col_tx_source', 'col_tx_attempt', 'col_tx_card', 'col_tx_ref', 'col_tx_reason'] as const).map((k) => (
                   <th key={k} style={{ padding: '4px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>
                     {t(`billing_events_page.${k}`)}
                   </th>
@@ -240,11 +471,16 @@ function TransactionsRow({ billingEventId, t }: { billingEventId: number; t: Ret
                   <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>
                     {fmtAmount(tx.amount)} {tx.currency ?? ''}
                   </td>
+                  <td style={{ padding: '6px 10px' }}>{tx.source ?? '—'}</td>
+                  <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>{tx.attempt ?? '—'}</td>
                   <td style={{ padding: '6px 10px' }}>
                     {tx.card_brand && tx.card_last4 ? `${tx.card_brand} ···${tx.card_last4}` : '—'}
                   </td>
                   <td style={{ padding: '6px 10px', color: '#6b7280', fontFamily: 'monospace', fontSize: 12 }}>
                     {tx.provider_ref ?? '—'}
+                  </td>
+                  <td style={{ padding: '6px 10px', color: tx.failure_code ? '#991b1b' : '#6b7280' }}>
+                    {[tx.failure_code, tx.failure_message].filter(Boolean).join(': ') || tx.notes || '—'}
                   </td>
                 </tr>
               ))}
@@ -265,6 +501,8 @@ export default function BillingEventsPage() {
   const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
   const { activeGymId, loading: gymLoading } = useGym();
+  const { toast } = useToast();
+  const { canWrite, readOnlyTitle } = useModuleAccess('PAYMENTS');
 
   // Filter state — synced with URL params
   const [memberId, setMemberId] = useState<number | null>(
@@ -283,6 +521,9 @@ export default function BillingEventsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  /** #640: which row has its inline Manual payment card open (at most one). */
+  const [manualFor, setManualFor] = useState<number | null>(null);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
 
   // Sync filter state to URL
   function pushParams(params: { memberId?: number | null; memberName?: string; from?: string; to?: string; status?: string[] }) {
@@ -314,6 +555,7 @@ export default function BillingEventsPage() {
       setTotal(data.total);
       setOffset(off);
       setExpanded(new Set()); // collapse all on new page/filter
+      setManualFor(null);
     } catch {
       setError('Failed to load billing events.');
     } finally {
@@ -324,6 +566,9 @@ export default function BillingEventsPage() {
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
+  /** Re-reads only the current page, keeping filters and expansion state. */
+  const reloadCurrentPage = useCallback(() => { load(offset); }, [load, offset]);
+
   function toggleExpand(id: number) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -332,12 +577,72 @@ export default function BillingEventsPage() {
     });
   }
 
+  function openDetails(id: number) {
+    setExpanded((prev) => new Set(prev).add(id));
+  }
+
+  function openManualPayment(id: number) {
+    openDetails(id);
+    setManualFor(id);
+  }
+
+  /**
+   * #640 §3: one click fires the provider charge and, on rejection, once more
+   * (server-side). Two rejections pause the assigned plan, which the toast
+   * says explicitly — it is a status change the admin did not ask for.
+   */
+  async function retryPayment(id: number) {
+    setRetryingId(id);
+    try {
+      const result = await apiFetch<RetryResult>(`/payments/billing-events/${id}/retry`, { method: 'POST' });
+      if (result.new_status === 'paid') {
+        toast(t('billing_events_page.retry_success'));
+      } else if (result.membership_paused) {
+        toast(t('billing_events_page.retry_failed_paused', { attempts: result.attempts.length }));
+      } else {
+        toast(t('billing_events_page.retry_failed', { attempts: result.attempts.length }));
+      }
+      openDetails(id);
+      reloadCurrentPage();
+    } catch (err: any) {
+      toast(err.message ?? t('billing_events_page.action_error'));
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
   const statusLabel: Record<string, string> = {
     paid: t('billing_events_page.status_paid'),
     failed: t('billing_events_page.status_failed'),
+    pending: t('billing_events_page.status_pending'),
     scheduled: t('billing_events_page.status_scheduled'),
     recorded: t('billing_events_page.status_recorded'),
   };
+
+  function menuItems(row: BillingEvent): ContextMenuItem[] {
+    const id = row.id!;
+    const items: ContextMenuItem[] = [
+      { label: t('billing_events_page.action_details'), onClick: () => openDetails(id) },
+    ];
+    // §1: payment actions are hidden — not merely disabled — where they don't apply.
+    if (row.payment_actions_available) {
+      items.push({
+        label: retryingId === id
+          ? t('billing_events_page.retry_running')
+          : t('billing_events_page.action_retry'),
+        onClick: () => retryPayment(id),
+        disabled: !canWrite || retryingId === id,
+        title: readOnlyTitle,
+      });
+      items.push({
+        label: t('billing_events_page.action_manual_payment'),
+        onClick: () => openManualPayment(id),
+        disabled: !canWrite,
+        title: readOnlyTitle,
+      });
+    }
+    return items;
+  }
 
   return (
     <div>
@@ -427,12 +732,13 @@ export default function BillingEventsPage() {
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_next_payment')}</th>
                 <th style={{ padding: '8px 12px', textAlign: 'right' }}>{t('billing_events_page.col_amount')}</th>
                 <th style={{ padding: '8px 12px' }}>{t('billing_events_page.col_status')}</th>
+                <th style={{ padding: '8px 12px', width: 48 }}>{t('billing_events_page.col_actions')}</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
+                  <td colSpan={9} style={{ padding: '24px 12px', textAlign: 'center', color: '#888' }}>
                     {t('billing_events_page.empty')}
                   </td>
                 </tr>
@@ -471,10 +777,23 @@ export default function BillingEventsPage() {
                       <td style={{ padding: '8px 12px' }}>
                         <StatusBadge status={row.status} label={statusLabel[row.status] ?? row.status} />
                       </td>
+                      <td style={{ padding: '8px 12px' }} onClick={(e) => e.stopPropagation()}>
+                        {isExpandable && (
+                          <ContextMenu items={menuItems(row)} ariaLabel={t('billing_events_page.col_actions')} />
+                        )}
+                      </td>
                     </tr>
                     {isExpanded && row.id != null && (
                       <tr key={`${rowKey}-expanded`} style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        <TransactionsRow billingEventId={row.id} t={t} />
+                        <ExpandedRow
+                          billingEvent={row}
+                          manualOpen={manualFor === row.id}
+                          onManualOpenChange={(open) => setManualFor(open ? row.id! : null)}
+                          onChanged={reloadCurrentPage}
+                          canWrite={canWrite}
+                          readOnlyTitle={readOnlyTitle}
+                          t={t}
+                        />
                       </tr>
                     )}
                   </>

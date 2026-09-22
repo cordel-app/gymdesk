@@ -618,6 +618,53 @@ Reference implementation: `api/src/api/user-membership-services.ts` + migration 
 
 ---
 
+## Audited Action over an Append-Only Ledger (#640)
+
+A row that must never be rewritten (a `billing_events` charge) still needs
+actions that change what it *means* — retry the payment, record that it was
+settled at the front desk. Resolve it by making the state a **projection of
+the row's children**, never an edit of the row:
+
+1. **The child table is the state.** A Billing Event has 0..N Payment
+   Transactions (`payment_requests.billing_event_id`); its status is the
+   status of the **latest** one. An action appends a child, so the ledger row
+   is untouched and the history of attempts stays readable in order.
+2. **One pure module derives the status** (`domain/billingEventStatus.ts`) —
+   with a fallback for a parent that has no children yet, read off the parent's
+   own type. The list endpoint, the detail endpoint and the UI badge all call
+   it; none of them re-derives. Unit-tested without helpers.
+3. **The list endpoint reads the child with a correlated `LIMIT 1` subquery**,
+   and the migration pays for it with a composite index on
+   `(parent_id, created_at, id)` — the single-column FK index satisfies the
+   equality but not the ordering (see migration 150 for the same reasoning on
+   `billing_events`).
+4. **Guards live with the action, not in the route** — `guardActionable()`
+   answers exists / is in the actionable state / has what a child row needs
+   (a NOT NULL FK target, a positive amount) / **isn't already settled**, and
+   returns `{ status, error }` for the route to answer with. The
+   already-settled check is a 409 and it is what makes the action idempotent:
+   it is also the thing stopping a second click advancing a billing schedule
+   twice.
+5. **Never resolve a "did it work?" flag into the row.** `payment_actions_available`
+   on the list row and `can_retry` / `can_record_manual_payment` on the detail
+   response are computed from the same derivation, so the UI shows the action
+   exactly where the API would accept it — the ⋮ menu hides them elsewhere
+   rather than disabling them (disabled is reserved for a read-only *role*).
+6. **`modified_at`/`modified_by` on the ledger row are a stamp, not an edit** —
+   they record that an action touched the event. The substance of the
+   intervention (previous/new status, per-attempt results) goes to
+   `audit_logs` via `recordAudit`, which is append-only and immutable.
+7. **Side effects that belong to an existing flow reuse that flow's helper.**
+   A settled charge advances `next_billing_date`/`last_billed_at` the same way
+   the nightly run does, and a status flip goes through `recordStatusChange`
+   so the pause is explicable from the ledger like every other transition.
+
+Reference implementation: `api/src/domain/billingEventPayments.ts` +
+`domain/billingEventStatus.ts` + the three `/payments/billing-events/:id*`
+routes in `api/src/api/payments.ts` + migration 165.
+
+---
+
 ## Duplicate Action (flat catalog item)
 
 For a single-row catalog entity (not a hierarchy — see "Duplicate at every level" below for that case), "Duplicate" is a single immediate backend action, not a pre-filled form the user reviews before saving:
