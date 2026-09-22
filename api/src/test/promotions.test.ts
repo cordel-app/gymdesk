@@ -569,12 +569,90 @@ describe('Membership Fee Benefit', () => {
     expect(res.body.value).toBeNull();
   });
 
+  // #625: a Promotion Period Benefit can never outlast the Promotion, so the
+  // Membership Fee Benefit duration is capped at free + paid + bonus months.
+  async function createPromoWithDuration(name: string, free: number, paid: number, bonus: number): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, free_months, paid_months, bonus_months)
+       VALUES (?, ?, '2026-08-01', '2026-08-31', 'active', ?, ?, ?)`,
+      [gymId, name, free, paid, bonus],
+    );
+    return insertId;
+  }
+
+  it('accepts a duration equal to the promotion duration (Case 1)', async () => {
+    const promo = await createPromoWithDuration('MF Dur Eq', 1, 2, 2); // duration 5
+    const res = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(mfBody({ action: 'fixed_price', value: 100, duration_months: 5 }));
+    expect(res.status).toBe(200);
+    expect(res.body.duration_months).toBe(5);
+  });
+
+  it('accepts a duration below the promotion duration (Case 2)', async () => {
+    const promo = await createPromoWithDuration('MF Dur Below', 1, 2, 2); // duration 5
+    const res = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(mfBody({ action: 'fixed_price', value: 100, duration_months: 3 }));
+    expect(res.status).toBe(200);
+    expect(res.body.duration_months).toBe(3);
+  });
+
+  it('rejects a duration greater than the promotion duration (Case 3)', async () => {
+    const promo = await createPromoWithDuration('MF Dur Over', 1, 2, 2); // duration 5
+    const res = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(mfBody({ action: 'fixed_price', value: 100, duration_months: 7 }));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/promotion duration/i);
+  });
+
+  it('uses free + paid + bonus for the max — not paid alone (Case 5)', async () => {
+    const promo = await createPromoWithDuration('MF Dur Sum', 1, 2, 2); // duration 5, paid alone = 2
+    // duration 5 is valid because the max is 5, not 2.
+    const ok = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(mfBody({ action: 'fixed_price', value: 100, duration_months: 5 }));
+    expect(ok.status).toBe(200);
+  });
+
+  it('rejects any positive duration when the promotion has no duration (Case 6)', async () => {
+    const promo = await createPromoWithDuration('MF Dur Zero', 0, 0, 0); // duration 0
+    const res = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(mfBody({ action: 'fixed_price', value: 100, duration_months: 1 }));
+    expect(res.status).toBe(400);
+  });
+
+  it('allows a null (unbounded) duration regardless of the promotion duration', async () => {
+    const promo = await createPromoWithDuration('MF Dur Null', 0, 0, 0); // duration 0
+    const res = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(mfBody({ action: 'fixed_price', value: 100 })); // duration_months absent
+    expect(res.status).toBe(200);
+    expect(res.body.duration_months).toBeNull();
+  });
+
   it('duplicate copies the membership fee benefit', async () => {
     const source = await request
       .post('/promotions')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'MF Dup Source', starts_at: '2026-08-01', ends_at: '2026-08-31' });
+      // #625: the benefit duration (6) must fit inside the promotion duration
+      // (free + paid + bonus = 6), otherwise the PUT below is rejected.
+      .send({ name: 'MF Dup Source', starts_at: '2026-08-01', ends_at: '2026-08-31', free_months: 2, paid_months: 2, bonus_months: 2 });
     await request
       .put(`/promotions/${source.body.id}/membership-fee-benefit`)
       .set('Authorization', TEST_AUTH_HEADER)

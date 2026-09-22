@@ -9,7 +9,7 @@
 // already applies to real billing), so a paid promotional period shows what
 // it would actually bill instead of a generic "promotional price" label.
 
-import { PromotionBenefitAction } from './promotionBenefits';
+import { PromotionBenefitAction, effectiveBenefitDurationMonths } from './promotionBenefits';
 
 export type PromotionTimelineStatus =
   | 'free_promotion'
@@ -94,6 +94,15 @@ export function computePromotionTimeline(config: PromotionTimelineConfig, anchor
   const mfEnabled = !!config.membershipFeeEnabled && mfAction !== 'no_benefit';
   const mfValue = config.membershipFeeValue ?? null;
   const mfDurationMonths = config.membershipFeeDurationMonths ?? null;
+  // #625: the Membership Fee Benefit belongs to the Promotion and can never
+  // outlast it, so its effective duration is capped at the Promotion duration
+  // (free + paid + bonus). A null configured duration therefore resolves to
+  // the full Promotion duration rather than "forever". In practice this never
+  // changes the projection for a valid config (paid/prepaid periods always
+  // fall inside the Promotion), but it guarantees the benefit is never applied
+  // to the Pay (regular) period even for an over-long or unbounded duration.
+  const promoDurationMonths = free + paid + bonus;
+  const mfEffectiveDurationMonths = effectiveBenefitDurationMonths(mfDurationMonths, promoDurationMonths);
 
   const periods: PromotionTimelinePeriod[] = [];
   let period = 1;
@@ -104,7 +113,7 @@ export function computePromotionTimeline(config: PromotionTimelineConfig, anchor
     let billingAction: PromotionBenefitAction | null = null;
     let billingValue: number | null = null;
     if (status === 'pay_promotion' || status === 'prepaid_promotion') {
-      const withinDuration = mfDurationMonths == null || startsOn < addMonthsToDateStr(anchorStart, mfDurationMonths);
+      const withinDuration = startsOn < addMonthsToDateStr(anchorStart, mfEffectiveDurationMonths);
       if (mfEnabled && withinDuration) {
         billingAction = mfAction;
         billingValue = mfValue;

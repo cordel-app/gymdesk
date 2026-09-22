@@ -196,4 +196,45 @@ describe('computePromotionTimeline', () => {
     // first 2 months from the anchor (Jan, Feb); March is regular billing.
     expect(periods.map((p) => p.billingAction)).toEqual(['waive', 'waive', null, null]);
   });
+
+  // #625: the Membership Fee Benefit belongs to the Promotion and can never be
+  // applied to the Pay (regular) period, even if its configured duration
+  // exceeds the Promotion duration or is unbounded.
+  it('never applies the Membership Fee Benefit to pay_regular when duration exceeds the promotion (ticket forecast example)', () => {
+    // Free 1, Paid 2 (Pay Beforehand 2 → both prepaid), Bonus 2 → duration 5.
+    // Membership Fee configured for 7 months must not reach period 6+ (regular).
+    const { periods } = computePromotionTimeline(
+      {
+        freeMonths: 1, paidMonths: 2, payBeforehandMonths: 2, bonusMonths: 2,
+        membershipFeeAction: 'fixed_price', membershipFeeValue: 100, membershipFeeEnabled: true,
+        membershipFeeDurationMonths: 7,
+      },
+      '2026-01-01',
+    );
+    expect(periods.map((p) => [p.status, p.billingAction])).toEqual([
+      ['free_promotion', null],
+      ['prepaid_promotion', 'fixed_price'],
+      ['prepaid_promotion', 'fixed_price'],
+      ['bonus_promotion', null],
+      ['bonus_promotion', null],
+      ['pay_regular', null],
+    ]);
+    // The €100 Fixed Price must not appear in the regular period.
+    expect(periods.find((p) => p.status === 'pay_regular')?.billingValue).toBeNull();
+  });
+
+  it('never applies an unbounded (null-duration) Membership Fee Benefit to pay_regular', () => {
+    const { periods } = computePromotionTimeline(
+      {
+        freeMonths: 0, paidMonths: 1, payBeforehandMonths: 0, bonusMonths: 0,
+        membershipFeeAction: 'waive', membershipFeeValue: null, membershipFeeEnabled: true,
+        membershipFeeDurationMonths: null,
+      },
+      '2026-01-01',
+    );
+    expect(periods.map((p) => [p.status, p.billingAction])).toEqual([
+      ['pay_promotion', 'waive'],
+      ['pay_regular', null],
+    ]);
+  });
 });

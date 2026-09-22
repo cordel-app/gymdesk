@@ -31,3 +31,38 @@ export function applyPeriodBenefit(
   if (result < 0) result = 0;
   return round2(result);
 }
+
+/**
+ * #625: total duration of a Promotion's lifecycle in months — the sum of its
+ * Free, Paid and Bonus periods. This is the single source of truth for how
+ * long any Promotion Period Benefit (e.g. the Membership Fee Benefit) may
+ * apply: a benefit belongs to the Promotion and can never outlast it.
+ *
+ * Pay Beforehand is deliberately NOT added — it only reclassifies some of the
+ * Paid months as prepaid, it never lengthens the Promotion. The maximum is
+ * `free + paid + bonus`, not `paid` alone.
+ */
+export function promotionDurationMonths(
+  freeMonths: number | null,
+  paidMonths: number | null,
+  bonusMonths: number | null,
+): number {
+  const clamp = (n: number | null | undefined) => Math.max(0, Math.trunc(Number(n)) || 0);
+  return clamp(freeMonths) + clamp(paidMonths) + clamp(bonusMonths);
+}
+
+/**
+ * #625: the number of months a Membership Fee (Period) Benefit actually
+ * applies for, capped at the Promotion duration so it can never bleed into the
+ * regular (post-promotion) period. A null configured duration means
+ * "unbounded" and therefore resolves to the full Promotion duration —
+ * `effectiveBenefitDuration = min(configuredDuration, promotionDuration)`.
+ */
+export function effectiveBenefitDurationMonths(
+  configuredDurationMonths: number | null,
+  promotionDuration: number,
+): number {
+  const promo = Math.max(0, promotionDuration);
+  if (configuredDurationMonths == null) return promo;
+  return Math.min(Math.max(0, configuredDurationMonths), promo);
+}

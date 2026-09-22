@@ -882,6 +882,7 @@
     "add_period_benefit": "+ Añadir beneficio de periodo",
     "section_membership_fee_benefits": "Beneficios de cuota de socio",
     "no_membership_fee_benefit": "No hay ningún beneficio de cuota de socio configurado.",
+    "mf_duration_max_hint": "No puede superar la duración de la promoción ({max} meses).",
     "col_charge_type": "Concepto",
     "col_action": "Acción",
     "col_value": "Valor",
