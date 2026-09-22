@@ -895,6 +895,7 @@
     "section_membership_fee_benefits": "Membership Fee Benefits",
     "no_membership_fee_benefit": "No Membership Fee benefit configured.",
     "mf_duration_max_hint": "Cannot exceed the promotion duration ({max} months).",
+    "edit_busy_hint": "Finish editing the open section first.",
     "col_charge_type": "Charge Type",
     "col_action": "Action",
     "col_value": "Value",

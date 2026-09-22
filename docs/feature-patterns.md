@@ -356,6 +356,53 @@ Rules of thumb:
 
 ---
 
+## Section-Scoped Inline Editing (#627)
+
+An expandable-row editor whose card has grown several independent
+sub-resources (Promotions: the main configuration plus four Benefit
+sections, each behind its own endpoint). Making the whole card editable at
+once means one Save writes every endpoint, so an unrelated section is
+re-submitted — and re-validated — on every edit. Split it instead: the
+context-menu **Edit** action edits only the main configuration, and each
+sub-resource section gets its own **Edit** button and its own Save/Cancel.
+
+1. **One discriminator, not one flag per section** — keep the card-level
+   `editingId` and add `editingSection: 'main' | '<section>' | … | null`.
+   `isEditingSection(id, section)` is then the only thing any renderer asks.
+   Exactly one section of one card is editable at a time, which is what lets
+   the drafts stay single-valued (`mfDraft`, `sessionDraft`, …) instead of
+   becoming per-section maps.
+2. **Disable the other Edit buttons while one section is open** — including
+   the context-menu one. A second Edit would otherwise silently overwrite
+   the draft it shares state with. Reuse `readOnlyStyle(...)` and give the
+   disabled button a hint (`edit_busy_hint`) distinct from `readOnlyTitle`.
+3. **Split the renderers in two, shell outside** — `render<X>Editor()` and
+   `render<X>View()` render controls only; a `renderSectionHeader(titleKey,
+   onEdit)` / `renderSectionActions(onSave)` shell owns the title, the Edit
+   button and Save/Cancel. One `renderExpandedSection(row)` then composes
+   every section, each choosing its own half — so there is no separate
+   "the card is in edit mode" body to keep in sync with the view one.
+4. **One save handler per section, writing only its own endpoint** — and
+   `enterSectionEdit` re-reads the saved values before seeding that
+   section's draft, so a section is never edited from a stale cache.
+5. **Creation stays a single form** — a row that hasn't been created yet has
+   no id to hang per-section saves off. Keep the create form covering every
+   section with one Save, and give its section headers no Edit button.
+6. **Watch for cross-section invariants the combined save used to uphold.**
+   Anything the old single Save kept consistent across two sections now has
+   to be re-established explicitly. In Promotions, #625 caps the Membership
+   Fee Benefit duration at the Promotion duration, and the endpoint rejects
+   (400) an over-long one — so shortening the Promotion in the main save
+   re-PUTs an already-saved, now-too-long benefit
+   (`clampSavedMembershipFeeDuration`), which would otherwise be stuck
+   un-saveable.
+
+Reference implementation: `[locale]/promotions/page.tsx`. Regression test
+(source-scan style, since `apps/admin` has no component-test infra):
+`apps/admin/src/test/promotions-section-editing.test.ts`.
+
+---
+
 ## Select All Checkbox with Indeterminate State (#554)
 
 A checkbox list (e.g. picking which of several active catalog rows apply to

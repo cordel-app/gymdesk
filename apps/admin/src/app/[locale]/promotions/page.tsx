@@ -98,8 +98,39 @@ interface SellableItemBenefit {
   gym_charge_status: string;
 }
 
+// #627: Promotion editing is split by section. The context-menu Edit action
+// only opens the main Promotion configuration ('main' — General, Suitable
+// Membership Plans, Billing & Duration); each Benefit section has its own Edit
+// button and its own independent Save/Cancel. Exactly one section of one card
+// is editable at a time, which is what keeps the single set of drafts below
+// unambiguous.
+type EditSection = 'main' | 'session' | 'oneoff' | 'periodical' | 'membership_fee';
+type BenefitSection = Exclude<EditSection, 'main'>;
+type SellableBenefitSection = Exclude<BenefitSection, 'membership_fee'>;
+
+const SELLABLE_BENEFIT_ENDPOINT: Record<SellableBenefitSection, string> = {
+  session: 'session-benefits',
+  oneoff: 'oneoff-benefits',
+  periodical: 'periodical-benefits',
+};
+
+// The three Sellable-Item-keyed Benefit sections (#550), each rendered — and
+// since #627 edited and saved — independently of the others.
+const SELLABLE_BENEFIT_SECTIONS: {
+  section: SellableBenefitSection;
+  titleKey: string;
+  emptyKey: string;
+  addKey: string;
+  showFrequency: boolean;
+}[] = [
+  { section: 'session', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: false },
+  { section: 'oneoff', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: false },
+  { section: 'periodical', titleKey: 'section_period_benefits', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', showFrequency: true },
+];
+
 const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'] as const;
+const VALUED_CHARGE_ACTIONS = ['percentage_discount', 'fixed_discount', 'fixed_price'];
 const FREQ_UNITS = ['week', 'month'] as const;
 const NEW_ID = 0;
 
@@ -124,6 +155,33 @@ function parseDateStr(dateStr: string): Date {
 function promotionDurationFromForm(form: { free_months: string; paid_months: string; bonus_months: string }): number {
   const n = (v: string) => Math.max(0, parseInt(v, 10) || 0);
   return n(form.free_months) + n(form.paid_months) + n(form.bonus_months);
+}
+
+// Same ceiling, computed from a saved Promotion instead of the edit form —
+// needed now that a Benefit section can be edited (#627) without the main
+// configuration being in edit mode.
+function promotionDurationFromPromo(promo: Promo): number {
+  const n = (v: number | null) => Math.max(0, v ?? 0);
+  return n(promo.free_months) + n(promo.paid_months) + n(promo.bonus_months);
+}
+
+// Replace-all payload shape for the Sellable-Item-keyed benefit sections (#550).
+const toBenefitItems = (draft: SellableItemBenefit[]) =>
+  draft.map((b) => ({ gym_charge_id: b.gym_charge_id, quantity: b.quantity }));
+
+// PUT body for the Membership Fee Benefit singleton (#551) — `value` is only
+// sent for the actions that take one.
+function membershipFeeBody(mf: PeriodBenefit, durationMonths: number | null) {
+  const action = mf.action || 'no_benefit';
+  return {
+    quantity: mf.quantity,
+    frequency_interval: mf.frequency_interval,
+    frequency_unit: mf.frequency_unit,
+    duration_months: durationMonths,
+    enabled: mf.enabled,
+    action,
+    value: VALUED_CHARGE_ACTIONS.includes(action) ? (parseFloat(mf.value ?? '') || 0) : null,
+  };
 }
 
 function emptyEditForm(promo?: Promo) {
@@ -173,6 +231,11 @@ export default function PromotionsPage() {
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  // #627: which part of `editingId`'s card is editable. `null` means the card
+  // is read-only. The new-Promotion row is the one case where 'main' still
+  // covers every section at once: the Promotion has no id yet, so there is
+  // nothing to hang per-section saves off and creation stays a single form.
+  const [editingSection, setEditingSection] = useState<EditSection | null>(null);
 
   // Full { id, name } objects for whatever plans are currently associated
   // with a promotion — from GET /promotions/:id/plans, which is not limited
@@ -251,29 +314,36 @@ export default function PromotionsPage() {
   // Shown as soon as a card is opened (view or edit), using the unsaved edit
   // form while editing that same card, or the promotion's own saved values
   // otherwise — so the simulation never requires entering edit mode first.
+  //
+  // #627: with editing split by section, each half of the forecast's input
+  // follows its own section — the Billing & Duration months come from the edit
+  // form only while the main configuration is being edited, and the Membership
+  // Fee Benefit from its draft only while that section is being edited. Either
+  // half falls back to the promotion's saved values otherwise. The new-Promotion
+  // row edits both at once, so it uses the drafts for both.
   useEffect(() => {
     if (expandedId === null) { setTimeline(null); setTimelineError(null); return; }
-    let free_months: string, paid_months: string, pay_beforehand_months: string, bonus_months: string;
-    let mfAction: string, mfEnabled: boolean, mfValue: string | null, mfDurationMonths: number | null;
-    if (editingId === expandedId) {
-      ({ free_months, paid_months, pay_beforehand_months, bonus_months } = editForm);
-      mfAction = mfDraft?.action || 'no_benefit';
-      mfEnabled = !!mfDraft?.enabled;
-      mfValue = mfDraft?.value ?? null;
-      mfDurationMonths = mfDraft?.duration_months ?? null;
-    } else {
-      const promo = rows.find((r) => r.id === expandedId);
-      if (!promo) { setTimeline(null); setTimelineError(null); return; }
-      free_months = promo.free_months != null ? String(promo.free_months) : '';
-      paid_months = promo.paid_months != null ? String(promo.paid_months) : '';
-      pay_beforehand_months = promo.pay_beforehand_months != null ? String(promo.pay_beforehand_months) : '';
-      bonus_months = promo.bonus_months != null ? String(promo.bonus_months) : '';
-      const savedMf = cachedMf[expandedId] ?? null;
-      mfAction = savedMf?.action || 'no_benefit';
-      mfEnabled = !!savedMf?.enabled;
-      mfValue = savedMf?.value ?? null;
-      mfDurationMonths = savedMf?.duration_months ?? null;
-    }
+    const editingHere = editingId === expandedId;
+    const useForm = editingHere && (editingSection === 'main' || expandedId === NEW_ID);
+    const useMfDraft = editingHere && (editingSection === 'membership_fee' || expandedId === NEW_ID);
+
+    const promo = expandedId !== NEW_ID ? rows.find((r) => r.id === expandedId) : undefined;
+    if (!useForm && !promo) { setTimeline(null); setTimelineError(null); return; }
+
+    const { free_months, paid_months, pay_beforehand_months, bonus_months } = useForm
+      ? editForm
+      : {
+          free_months: promo!.free_months != null ? String(promo!.free_months) : '',
+          paid_months: promo!.paid_months != null ? String(promo!.paid_months) : '',
+          pay_beforehand_months: promo!.pay_beforehand_months != null ? String(promo!.pay_beforehand_months) : '',
+          bonus_months: promo!.bonus_months != null ? String(promo!.bonus_months) : '',
+        };
+    const mf = useMfDraft ? mfDraft : (cachedMf[expandedId] ?? null);
+    const mfAction = mf?.action || 'no_benefit';
+    const mfEnabled = !!mf?.enabled;
+    const mfValue = mf?.value ?? null;
+    const mfDurationMonths = mf?.duration_months ?? null;
+
     if (!free_months && !paid_months && !pay_beforehand_months && !bonus_months) {
       setTimeline(null);
       setTimelineError(null);
@@ -302,7 +372,7 @@ export default function PromotionsPage() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    expandedId, editingId, rows, cachedMf,
+    expandedId, editingId, editingSection, rows, cachedMf,
     editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months,
     mfDraft?.action, mfDraft?.value, mfDraft?.enabled, mfDraft?.duration_months,
   ]);
@@ -314,14 +384,26 @@ export default function PromotionsPage() {
   // (unbounded) duration is left alone.
   useEffect(() => {
     if (editingId == null) return;
-    const max = promotionDurationFromForm(editForm);
+    const max = mfMaxDurationMonths(editingId);
     setMfDraft((prev) => {
       if (!prev || prev.duration_months == null) return prev;
       if (max > 0 && prev.duration_months > max) return { ...prev, duration_months: max };
       return prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, editForm.free_months, editForm.paid_months, editForm.bonus_months]);
+  }, [editingId, editingSection, rows, editForm.free_months, editForm.paid_months, editForm.bonus_months]);
+
+  // #625 + #627: the ceiling for the Membership Fee Benefit duration. While the
+  // main configuration is being edited (or a Promotion is being created) that is
+  // the unsaved form's duration; when only the Membership Fee section is being
+  // edited the Promotion itself is not changing, so it is the saved duration.
+  function mfMaxDurationMonths(promoId: number): number {
+    if (promoId === NEW_ID || (editingId === promoId && editingSection === 'main')) {
+      return promotionDurationFromForm(editForm);
+    }
+    const promo = rows.find((r) => r.id === promoId);
+    return promo ? promotionDurationFromPromo(promo) : 0;
+  }
 
   // Source of truth for the Suitable Membership Plans picker (#554): active,
   // tenant-scoped plans loaded dynamically from the Membership Plans API —
@@ -402,24 +484,45 @@ export default function PromotionsPage() {
     }
   }
 
+  // Context-menu Edit (#627) — the main Promotion configuration only. The
+  // Benefit sections below stay read-only and keep their own Edit buttons.
   async function enterEdit(promo: Promo) {
     setExpandedId(promo.id);
     setEditingId(promo.id);
+    setEditingSection('main');
     setEditForm(emptyEditForm(promo));
     setEditError(null);
-    const { ap, mf, sessionB, oneoffB, periodicalB } = await loadSubResources(promo.id);
+    // Still loads every sub-resource: the Benefit sections are rendered
+    // read-only underneath the form and the forecast reads the saved
+    // Membership Fee Benefit.
+    const { ap } = await loadSubResources(promo.id);
     setPlansDraft(ap.map((p) => p.id));
-    setMfDraft(mf ? { ...mf } : defaultMfDraft());
-    setSessionDraft(sessionB.map((b) => ({ ...b })));
-    setOneoffDraft(oneoffB.map((b) => ({ ...b })));
-    setPeriodicalDraft(periodicalB.map((b) => ({ ...b })));
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
 
+  // A Benefit section's own Edit button (#627) — seeds only that section's
+  // draft, from freshly reloaded saved values, and leaves every other section
+  // (and the main configuration) read-only.
+  async function enterSectionEdit(promo: Promo, section: BenefitSection) {
+    setExpandedId(promo.id);
+    setEditingId(promo.id);
+    setEditingSection(section);
+    setEditError(null);
+    const { mf, sessionB, oneoffB, periodicalB } = await loadSubResources(promo.id);
+    if (section === 'membership_fee') setMfDraft(mf ? { ...mf } : defaultMfDraft());
+    if (section === 'session') setSessionDraft(sessionB.map((b) => ({ ...b })));
+    if (section === 'oneoff') setOneoffDraft(oneoffB.map((b) => ({ ...b })));
+    if (section === 'periodical') setPeriodicalDraft(periodicalB.map((b) => ({ ...b })));
+  }
+
+  // Cancelling discards only the section being edited (#627). A cancelled
+  // section edit leaves the card open on its read-only view; cancelling the
+  // main configuration (or the new-Promotion row) collapses the card, as before.
   function cancelEdit() {
-    if (editingId === NEW_ID) setHasNewRow(false);
+    if (editingId === NEW_ID) { setHasNewRow(false); setExpandedId(null); }
+    else if (editingSection === 'main') setExpandedId(null);
     setEditingId(null);
-    setExpandedId(null);
+    setEditingSection(null);
     setEditError(null);
   }
 
@@ -430,6 +533,7 @@ export default function PromotionsPage() {
     setHasNewRow(true);
     setExpandedId(NEW_ID);
     setEditingId(NEW_ID);
+    setEditingSection('main');
     setEditForm(emptyEditForm());
     setPlansDraft([]);
     setMfDraft(defaultMfDraft());
@@ -442,39 +546,39 @@ export default function PromotionsPage() {
 
   // ─── Save ────────────────────────────────────────────────────────────────────
 
-  async function handleSave(promoId: number) {
-    if (!editForm.name.trim() || !editForm.starts_at || !editForm.ends_at) {
-      setEditError(t('error_required'));
-      return;
-    }
-    if (new Date(editForm.starts_at) > new Date(editForm.ends_at)) {
-      setEditError(t('error_dates'));
-      return;
-    }
+  function validateMainForm(): string | null {
+    if (!editForm.name.trim() || !editForm.starts_at || !editForm.ends_at) return t('error_required');
+    if (new Date(editForm.starts_at) > new Date(editForm.ends_at)) return t('error_dates');
+    return null;
+  }
+
+  function mainBody() {
+    return {
+      name: editForm.name.trim(),
+      description: editForm.description.trim() || null,
+      starts_at: editForm.starts_at,
+      ends_at: editForm.ends_at,
+      stackable: editForm.stackable,
+      lifecycle_status: editForm.lifecycle_status,
+      free_months: editForm.free_months !== '' ? parseInt(editForm.free_months, 10) : null,
+      paid_months: editForm.paid_months !== '' ? parseInt(editForm.paid_months, 10) : null,
+      pay_beforehand_months: editForm.pay_beforehand_months !== '' ? parseInt(editForm.pay_beforehand_months, 10) : 0,
+      bonus_months: editForm.bonus_months !== '' ? parseInt(editForm.bonus_months, 10) : null,
+    };
+  }
+
+  // Creating a Promotion stays a single form (#627): there is no Promotion id
+  // yet to hang per-section saves off, so the create row writes the main
+  // configuration and every Benefit section in one go, exactly as before.
+  async function handleCreate() {
+    const invalid = validateMainForm();
+    if (invalid) { setEditError(invalid); return; }
     setEditSaving(true);
     setEditError(null);
     try {
-      const body = {
-        name: editForm.name.trim(),
-        description: editForm.description.trim() || null,
-        starts_at: editForm.starts_at,
-        ends_at: editForm.ends_at,
-        stackable: editForm.stackable,
-        lifecycle_status: editForm.lifecycle_status,
-        free_months: editForm.free_months !== '' ? parseInt(editForm.free_months, 10) : null,
-        paid_months: editForm.paid_months !== '' ? parseInt(editForm.paid_months, 10) : null,
-        pay_beforehand_months: editForm.pay_beforehand_months !== '' ? parseInt(editForm.pay_beforehand_months, 10) : 0,
-        bonus_months: editForm.bonus_months !== '' ? parseInt(editForm.bonus_months, 10) : null,
-      };
-
-      let id = promoId;
-      if (promoId === NEW_ID) {
-        const created = await apiFetch<Promo>('/promotions', { method: 'POST', body: JSON.stringify(body) });
-        id = created.id;
-        setHasNewRow(false);
-      } else {
-        await apiFetch(`/promotions/${id}`, { method: 'PUT', body: JSON.stringify(body) });
-      }
+      const created = await apiFetch<Promo>('/promotions', { method: 'POST', body: JSON.stringify(mainBody()) });
+      const id = created.id;
+      setHasNewRow(false);
 
       await apiFetch(`/promotions/${id}/plans`, {
         method: 'PUT',
@@ -484,8 +588,6 @@ export default function PromotionsPage() {
       // #550: Session / One-off / Periodical Benefits, keyed to a real
       // Sellable Item — server-side classification (classifySellableItem())
       // is the enforcement backstop, this is just the replace-all payload shape.
-      const toBenefitItems = (draft: SellableItemBenefit[]) =>
-        draft.map((b) => ({ gym_charge_id: b.gym_charge_id, quantity: b.quantity }));
       await apiFetch(`/promotions/${id}/session-benefits`, {
         method: 'PUT',
         body: JSON.stringify({ items: toBenefitItems(sessionDraft) }),
@@ -500,23 +602,37 @@ export default function PromotionsPage() {
       });
 
       if (mfDraft) {
-        const mfAction = mfDraft.action || 'no_benefit';
-        const mfNeedsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(mfAction);
         await apiFetch(`/promotions/${id}/membership-fee-benefit`, {
           method: 'PUT',
-          body: JSON.stringify({
-            quantity: mfDraft.quantity,
-            frequency_interval: mfDraft.frequency_interval,
-            frequency_unit: mfDraft.frequency_unit,
-            duration_months: mfDraft.duration_months,
-            enabled: mfDraft.enabled,
-            action: mfAction,
-            value: mfNeedsValue ? (parseFloat(mfDraft.value ?? '') || 0) : null,
-          }),
+          body: JSON.stringify(membershipFeeBody(mfDraft, mfDraft.duration_months)),
         });
       }
 
-      setEditingId(null);
+      finishEdit();
+      load();
+    } catch (err: any) {
+      setEditError(err.message ?? t('error_generic'));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  // #627: the main Promotion configuration — General, Suitable Membership
+  // Plans and Billing & Duration. Benefit sections are untouched here; each one
+  // saves itself through handleSaveBenefitSection below.
+  async function handleSaveMain(promoId: number) {
+    const invalid = validateMainForm();
+    if (invalid) { setEditError(invalid); return; }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      await apiFetch(`/promotions/${promoId}`, { method: 'PUT', body: JSON.stringify(mainBody()) });
+      await apiFetch(`/promotions/${promoId}/plans`, {
+        method: 'PUT',
+        body: JSON.stringify({ membership_plan_ids: plansDraft }),
+      });
+      await clampSavedMembershipFeeDuration(promoId);
+      finishEdit();
       setExpandedId(null);
       load();
     } catch (err: any) {
@@ -524,6 +640,59 @@ export default function PromotionsPage() {
     } finally {
       setEditSaving(false);
     }
+  }
+
+  // #625 + #627: a Membership Fee Benefit can never outlast its Promotion, and
+  // the backend rejects (400) a duration above the Promotion's. The benefit is
+  // no longer saved alongside the Promotion, so shortening the Promotion here
+  // has to re-constrain an already-saved, now-too-long duration itself —
+  // otherwise that benefit would be stuck un-saveable until it was shortened by
+  // hand. A null duration already means "the whole Promotion" and is left alone.
+  async function clampSavedMembershipFeeDuration(promoId: number) {
+    const mf = cachedMf[promoId];
+    if (!mf || mf.duration_months == null) return;
+    const max = promotionDurationFromForm(editForm);
+    if (max > 0 && mf.duration_months <= max) return;
+    const clamped = max > 0 ? max : null;
+    await apiFetch(`/promotions/${promoId}/membership-fee-benefit`, {
+      method: 'PUT',
+      body: JSON.stringify(membershipFeeBody(mf, clamped)),
+    });
+    setCachedMf((prev) => ({ ...prev, [promoId]: { ...mf, duration_months: clamped } }));
+  }
+
+  // #627: one Benefit section, saved on its own. Only that section's endpoint
+  // is written — nothing else about the Promotion is touched.
+  async function handleSaveBenefitSection(promoId: number, section: BenefitSection) {
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      if (section === 'membership_fee') {
+        if (mfDraft) {
+          await apiFetch(`/promotions/${promoId}/membership-fee-benefit`, {
+            method: 'PUT',
+            body: JSON.stringify(membershipFeeBody(mfDraft, mfDraft.duration_months)),
+          });
+        }
+      } else {
+        await apiFetch(`/promotions/${promoId}/${SELLABLE_BENEFIT_ENDPOINT[section]}`, {
+          method: 'PUT',
+          body: JSON.stringify({ items: toBenefitItems(sellableSectionDraft(section)) }),
+        });
+      }
+      await loadSubResources(promoId);
+      finishEdit();
+    } catch (err: any) {
+      setEditError(err.message ?? t('error_generic'));
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  function finishEdit() {
+    setEditingId(null);
+    setEditingSection(null);
+    setEditError(null);
   }
 
   // ─── Duplicate ───────────────────────────────────────────────────────────────
@@ -544,7 +713,7 @@ export default function PromotionsPage() {
     if (!deleting) return;
     try {
       await apiFetch(`/promotions/${deleting.id}`, { method: 'DELETE' });
-      if (expandedId === deleting.id) { setExpandedId(null); setEditingId(null); }
+      if (expandedId === deleting.id) { setExpandedId(null); finishEdit(); }
       setDeleting(null);
       load();
     } catch (err: any) {
@@ -557,6 +726,41 @@ export default function PromotionsPage() {
 
   function updateMfDraft(patch: Partial<PeriodBenefit>) {
     setMfDraft((prev) => (prev ? { ...prev, ...patch } : prev));
+  }
+
+  // ─── Section editing state (#627) ─────────────────────────────────────────
+
+  function isEditingSection(promoId: number, section: EditSection) {
+    return editingId === promoId && editingSection === section;
+  }
+
+  // Only one section is ever editable at a time, so every other section's Edit
+  // button is disabled while one is open — a second Edit would otherwise
+  // silently discard the unsaved draft it shares state with.
+  const sectionEditBusy = editingSection !== null;
+
+  function sellableSectionDraft(section: SellableBenefitSection): SellableItemBenefit[] {
+    if (section === 'session') return sessionDraft;
+    if (section === 'oneoff') return oneoffDraft;
+    return periodicalDraft;
+  }
+
+  function sellableSectionSetDraft(section: SellableBenefitSection) {
+    if (section === 'session') return setSessionDraft;
+    if (section === 'oneoff') return setOneoffDraft;
+    return setPeriodicalDraft;
+  }
+
+  function sellableSectionItems(section: SellableBenefitSection): GymCharge[] {
+    if (section === 'session') return activeSessionItems;
+    if (section === 'oneoff') return activeOneoffItems;
+    return activePeriodicalItems;
+  }
+
+  function sellableSectionSaved(promoId: number, section: SellableBenefitSection): SellableItemBenefit[] {
+    if (section === 'session') return cachedSessionB[promoId] ?? [];
+    if (section === 'oneoff') return cachedOneoffB[promoId] ?? [];
+    return cachedPeriodicalB[promoId] ?? [];
   }
 
   // ─── Session / One-off / Periodical benefit draft helpers (#550) ─────────
@@ -678,20 +882,19 @@ export default function PromotionsPage() {
   // #550: shared row/grid renderer for the Session / One-off / Periodical
   // Benefit sections — identical shape, differing only in which category's
   // active items back the picker and whether the (read-only, Sellable-Item-
-  // derived) Frequency column is shown.
-  function renderSellableItemBenefitSection(opts: {
-    titleKey: string;
+  // derived) Frequency column is shown. #627: renders the controls only — the
+  // section shell (title, Edit / Save / Cancel) is renderBenefitSection's job.
+  function renderSellableItemBenefitEditor(opts: {
     addKey: string;
     draft: SellableItemBenefit[];
     setDraft: (fn: (prev: SellableItemBenefit[]) => SellableItemBenefit[]) => void;
     categoryItems: GymCharge[];
     showFrequency: boolean;
   }) {
-    const { titleKey, addKey, draft, setDraft, categoryItems, showFrequency } = opts;
+    const { addKey, draft, setDraft, categoryItems, showFrequency } = opts;
     const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.gym_charge_id === c.id));
     return (
-      <div style={subSectionSt}>
-        <p style={sectionLabelSt}>{t(titleKey as any)}</p>
+      <>
         {draft.length > 0 && (
           <div
             style={{
@@ -736,18 +939,17 @@ export default function PromotionsPage() {
         {hasMoreToAdd && (
           <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={btnSmall('#6c63ff')}>{t(addKey as any)}</button>
         )}
-      </div>
+      </>
     );
   }
 
-  // Read-only counterpart of renderSellableItemBenefitSection, used by
-  // renderViewSection (card not in edit mode).
-  function renderSellableItemBenefitViewSection(
-    titleKey: string, emptyKey: string, rows: SellableItemBenefit[], showFrequency: boolean,
+  // Read-only counterpart of renderSellableItemBenefitEditor — what a Benefit
+  // section shows until its own Edit button is pressed (#627).
+  function renderSellableItemBenefitView(
+    emptyKey: string, rows: SellableItemBenefit[], showFrequency: boolean,
   ) {
     return (
-      <div style={subSectionSt}>
-        <p style={sectionLabelSt}>{t(titleKey as any)}</p>
+      <>
         {rows.length === 0
           ? <p style={hintSt}>{t(emptyKey as any)}</p>
           : (
@@ -772,7 +974,7 @@ export default function PromotionsPage() {
               </tbody>
             </table>
           )}
-      </div>
+      </>
     );
   }
 
@@ -841,15 +1043,12 @@ export default function PromotionsPage() {
 
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
-  function renderEditSection(promoId: number) {
-    // #625: the Membership Fee Benefit can never outlast the Promotion, so its
-    // duration is capped at the total Promotion duration
-    // (free + paid + bonus — Pay Beforehand only reclassifies paid months as
-    // prepaid, it never lengthens the Promotion). Recomputed live from the edit
-    // form so shrinking the Promotion re-constrains the benefit immediately.
-    const mfMaxDurationMonths = promotionDurationFromForm(editForm);
+  // #627: the editable main Promotion configuration — General, Suitable
+  // Membership Plans and Billing & Duration, and nothing else. Shared by the
+  // context-menu Edit action on an existing Promotion and by the create form.
+  function renderMainFields() {
     return (
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+      <>
 
         {/* General */}
         <p style={sectionLabelSt}>{t('section_general')}</p>
@@ -959,116 +1158,250 @@ export default function PromotionsPage() {
           </div>
         </div>
 
-        {/* #626: the Charge Benefits section was removed from the Promotion
-            editor. Promotion benefits are now configured only through the
-            Session / One-off / Periodical and Membership Fee sections below. */}
+      </>
+    );
+  }
 
-        {/* Session / One-off / Periodical Benefits (#550) — Sellable-Item-keyed,
-            replacing the old charge_types-pseudo-catalog Included/Period Benefits. */}
-        {renderSellableItemBenefitSection({
-          titleKey: 'section_session_benefits', addKey: 'add_session_benefit',
-          draft: sessionDraft, setDraft: setSessionDraft, categoryItems: activeSessionItems, showFrequency: false,
-        })}
-        {renderSellableItemBenefitSection({
-          titleKey: 'section_oneoff_benefits', addKey: 'add_oneoff_benefit',
-          draft: oneoffDraft, setDraft: setOneoffDraft, categoryItems: activeOneoffItems, showFrequency: false,
-        })}
-        {renderSellableItemBenefitSection({
-          titleKey: 'section_period_benefits', addKey: 'add_period_benefit',
-          draft: periodicalDraft, setDraft: setPeriodicalDraft, categoryItems: activePeriodicalItems, showFrequency: true,
-        })}
-
-        {/* Membership Fee Benefits (#551) — reuses the Period Benefits fields/
-            validation/behaviour exactly; the item is hardcoded, never selectable. */}
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_membership_fee_benefits')}</p>
-          {mfDraft && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 55px 55px 75px 70px 120px 80px 55px', gap: '3px 8px', alignItems: 'center' }}>
-              <span style={colHeaderSt}>{t('col_benefit_type')}</span>
-              <span style={colHeaderSt}>{t('col_quantity')}</span>
-              <span style={colHeaderSt}>{t('label_frequency_interval')}</span>
-              <span style={colHeaderSt}>{t('label_frequency_unit')}</span>
-              <span style={colHeaderSt}>{t('col_duration_months')}</span>
-              <span style={colHeaderSt}>{t('col_action')}</span>
-              <span style={colHeaderSt}>{t('col_value')}</span>
-              <span style={colHeaderSt}>{t('col_enabled')}</span>
-              {(() => {
-                const mfAction = mfDraft.action ?? 'no_benefit';
-                const mfNeedsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(mfAction);
-                return (
-                  <div style={{ display: 'contents' }}>
-                    <span style={{ fontSize: 13 }}>{mfDraft.charge_type_name}</span>
-                    <input type="number" min="1" value={mfDraft.quantity} onChange={(e) => updateMfDraft({ quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                    <input type="number" min="1" value={mfDraft.frequency_interval} onChange={(e) => updateMfDraft({ frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                    <select value={mfDraft.frequency_unit} onChange={(e) => updateMfDraft({ frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
-                      {FREQ_UNITS.map((u) => <option key={u} value={u}>{t(`frequency_${u}` as any)}</option>)}
-                    </select>
-                    <input
-                      type="number" min="1"
-                      max={mfMaxDurationMonths > 0 ? mfMaxDurationMonths : undefined}
-                      value={mfDraft.duration_months ?? ''}
-                      // #625: the benefit can never outlast the Promotion, so cap
-                      // the entered duration at the Promotion duration (Option A —
-                      // prevent an out-of-range value rather than flagging it).
-                      onChange={(e) => {
-                        const raw = e.target.value ? parseInt(e.target.value, 10) : null;
-                        const clamped = raw != null && mfMaxDurationMonths > 0 ? Math.min(raw, mfMaxDurationMonths) : raw;
-                        updateMfDraft({ duration_months: clamped });
-                      }}
-                      placeholder="—"
-                      title={mfMaxDurationMonths > 0 ? t('mf_duration_max_hint', { max: mfMaxDurationMonths }) : undefined}
-                      style={{ ...inlineSelectSt, width: '100%' }}
-                    />
-                    <select
-                      value={mfAction}
-                      onChange={(e) => updateMfDraft({ action: e.target.value, value: '' })}
-                      style={inlineSelectSt}
-                    >
-                      {CHARGE_ACTIONS.map((a) => (
-                        <option key={a} value={a}>{t(`cb_action_${a}` as any)}</option>
-                      ))}
-                    </select>
-                    {mfNeedsValue ? (
-                      <input
-                        type="number" min="0" max={mfAction === 'percentage_discount' ? 100 : undefined} step="0.01"
-                        value={mfDraft.value ?? ''}
-                        onChange={(e) => updateMfDraft({ value: e.target.value })}
-                        placeholder="0"
-                        style={{ width: 70, padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
-                      />
-                    ) : <span />}
-                    <label style={{ display: 'flex', justifyContent: 'center' }}>
-                      <input type="checkbox" checked={!!mfDraft.enabled} onChange={(e) => updateMfDraft({ enabled: e.target.checked ? 1 : 0 })} />
-                    </label>
-                  </div>
-                );
-              })()}
-            </div>
-          )}
+  // Membership Fee Benefits (#551) — reuses the Period Benefits fields/
+  // validation/behaviour exactly; the item is hardcoded, never selectable.
+  // #627: controls only; the section shell owns the title and Edit/Save/Cancel.
+  function renderMembershipFeeEditor(promoId: number) {
+    // #625: the Membership Fee Benefit can never outlast the Promotion, so its
+    // duration is capped at the total Promotion duration
+    // (free + paid + bonus — Pay Beforehand only reclassifies paid months as
+    // prepaid, it never lengthens the Promotion).
+    const maxDuration = mfMaxDurationMonths(promoId);
+    return (
+      <>
+      {mfDraft && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 55px 55px 75px 70px 120px 80px 55px', gap: '3px 8px', alignItems: 'center' }}>
+          <span style={colHeaderSt}>{t('col_benefit_type')}</span>
+          <span style={colHeaderSt}>{t('col_quantity')}</span>
+          <span style={colHeaderSt}>{t('label_frequency_interval')}</span>
+          <span style={colHeaderSt}>{t('label_frequency_unit')}</span>
+          <span style={colHeaderSt}>{t('col_duration_months')}</span>
+          <span style={colHeaderSt}>{t('col_action')}</span>
+          <span style={colHeaderSt}>{t('col_value')}</span>
+          <span style={colHeaderSt}>{t('col_enabled')}</span>
+          {(() => {
+            const mfAction = mfDraft.action ?? 'no_benefit';
+            const mfNeedsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(mfAction);
+            return (
+              <div style={{ display: 'contents' }}>
+                <span style={{ fontSize: 13 }}>{mfDraft.charge_type_name}</span>
+                <input type="number" min="1" value={mfDraft.quantity} onChange={(e) => updateMfDraft({ quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
+                <input type="number" min="1" value={mfDraft.frequency_interval} onChange={(e) => updateMfDraft({ frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
+                <select value={mfDraft.frequency_unit} onChange={(e) => updateMfDraft({ frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
+                  {FREQ_UNITS.map((u) => <option key={u} value={u}>{t(`frequency_${u}` as any)}</option>)}
+                </select>
+                <input
+                  type="number" min="1"
+                  max={maxDuration > 0 ? maxDuration : undefined}
+                  value={mfDraft.duration_months ?? ''}
+                  // #625: the benefit can never outlast the Promotion, so cap
+                  // the entered duration at the Promotion duration (Option A —
+                  // prevent an out-of-range value rather than flagging it).
+                  onChange={(e) => {
+                    const raw = e.target.value ? parseInt(e.target.value, 10) : null;
+                    const clamped = raw != null && maxDuration > 0 ? Math.min(raw, maxDuration) : raw;
+                    updateMfDraft({ duration_months: clamped });
+                  }}
+                  placeholder="—"
+                  title={maxDuration > 0 ? t('mf_duration_max_hint', { max: maxDuration }) : undefined}
+                  style={{ ...inlineSelectSt, width: '100%' }}
+                />
+                <select
+                  value={mfAction}
+                  onChange={(e) => updateMfDraft({ action: e.target.value, value: '' })}
+                  style={inlineSelectSt}
+                >
+                  {CHARGE_ACTIONS.map((a) => (
+                    <option key={a} value={a}>{t(`cb_action_${a}` as any)}</option>
+                  ))}
+                </select>
+                {mfNeedsValue ? (
+                  <input
+                    type="number" min="0" max={mfAction === 'percentage_discount' ? 100 : undefined} step="0.01"
+                    value={mfDraft.value ?? ''}
+                    onChange={(e) => updateMfDraft({ value: e.target.value })}
+                    placeholder="0"
+                    style={{ width: 70, padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
+                  />
+                ) : <span />}
+                <label style={{ display: 'flex', justifyContent: 'center' }}>
+                  <input type="checkbox" checked={!!mfDraft.enabled} onChange={(e) => updateMfDraft({ enabled: e.target.checked ? 1 : 0 })} />
+                </label>
+              </div>
+            );
+          })()}
         </div>
+      )}
+      </>
+    );
+  }
 
-        {/* Example Timeline — shown as soon as the card opens, kept last so
-            Save/Cancel always follow every configuration section. */}
-        {renderTimeline()}
+  // Read-only counterpart of renderMembershipFeeEditor (#627).
+  function renderMembershipFeeView(mf: PeriodBenefit | null) {
+    if (!mf || (mf.action ?? 'no_benefit') === 'no_benefit') {
+      return <p style={hintSt}>{t('no_membership_fee_benefit')}</p>;
+    }
+    return (
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr>
+            <th style={thSt}>{t('col_benefit_type')}</th>
+            <th style={thSt}>{t('col_quantity')}</th>
+            <th style={thSt}>{t('col_frequency')}</th>
+            <th style={thSt}>{t('col_duration_months')}</th>
+            <th style={thSt}>{t('col_action')}</th>
+            <th style={thSt}>{t('col_value')}</th>
+            <th style={thSt}>{t('col_enabled')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style={{ opacity: mf.enabled ? 1 : 0.45 }}>
+            <td style={tdSt}>{mf.charge_type_name}</td>
+            <td style={tdSt}>{mf.quantity}</td>
+            <td style={tdSt}>{mf.frequency_interval} {t(`frequency_${mf.frequency_unit}` as any)}</td>
+            <td style={tdSt}>{mf.duration_months ?? '—'}</td>
+            <td style={tdSt}>{t(`cb_action_${mf.action}` as any)}</td>
+            <td style={tdSt}>{mf.value ?? '—'}</td>
+            <td style={tdSt}>{mf.enabled ? '✓' : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+    );
+  }
 
-        {editError && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={() => handleSave(promoId)} disabled={editSaving} style={btnSmall('#6c63ff')}>
-            {editSaving ? t('saving') : t('save_changes')}
+  // ─── Section shells (#627) ────────────────────────────────────────────────
+
+  // A section header: its title plus, on an existing Promotion that is not
+  // currently being edited, its own Edit button. Only one section can be open
+  // at a time, so every other section's button is disabled while one is.
+  function renderSectionHeader(titleKey: string, onEdit: (() => void) | null) {
+    const disabled = !canWrite || sectionEditBusy;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <p style={sectionLabelSt}>{t(titleKey as any)}</p>
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            disabled={disabled}
+            title={!canWrite ? readOnlyTitle : sectionEditBusy ? t('edit_busy_hint') : undefined}
+            style={readOnlyStyle(btnSmall('#6c63ff'), disabled)}
+          >
+            {t('edit')}
           </button>
-        </div>
-
+        )}
       </div>
     );
   }
 
-  function renderViewSection(promo: Promo) {
+  // Save / Cancel for whichever section is being edited. Saving one section
+  // never writes another; cancelling discards only that section's draft.
+  function renderSectionActions(onSave: () => void) {
+    return (
+      <>
+        {editError && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={onSave} disabled={editSaving} style={btnSmall('#6c63ff')}>
+            {editSaving ? t('saving') : t('save_changes')}
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  function renderSellableBenefitSection(promo: Promo, cfg: (typeof SELLABLE_BENEFIT_SECTIONS)[number]) {
+    const editing = isEditingSection(promo.id, cfg.section);
+    return (
+      <div key={cfg.section} style={subSectionSt}>
+        {renderSectionHeader(cfg.titleKey, editing ? null : () => enterSectionEdit(promo, cfg.section))}
+        {editing ? (
+          <>
+            {renderSellableItemBenefitEditor({
+              addKey: cfg.addKey,
+              draft: sellableSectionDraft(cfg.section),
+              setDraft: sellableSectionSetDraft(cfg.section),
+              categoryItems: sellableSectionItems(cfg.section),
+              showFrequency: cfg.showFrequency,
+            })}
+            {renderSectionActions(() => handleSaveBenefitSection(promo.id, cfg.section))}
+          </>
+        ) : renderSellableItemBenefitView(cfg.emptyKey, sellableSectionSaved(promo.id, cfg.section), cfg.showFrequency)}
+      </div>
+    );
+  }
+
+  function renderMembershipFeeSection(promo: Promo) {
+    const editing = isEditingSection(promo.id, 'membership_fee');
+    return (
+      <div style={subSectionSt}>
+        {renderSectionHeader('section_membership_fee_benefits', editing ? null : () => enterSectionEdit(promo, 'membership_fee'))}
+        {editing ? (
+          <>
+            {renderMembershipFeeEditor(promo.id)}
+            {renderSectionActions(() => handleSaveBenefitSection(promo.id, 'membership_fee'))}
+          </>
+        ) : renderMembershipFeeView(cachedMf[promo.id] ?? null)}
+      </div>
+    );
+  }
+
+  // ─── Expanded card (#627) ─────────────────────────────────────────────────
+  // One body for both states: each section renders itself either read-only or
+  // in edit mode, so the Promotion is never editable as a whole.
+  function renderExpandedSection(promo: Promo) {
+    const editingMain = isEditingSection(promo.id, 'main');
+    return (
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+        {editingMain
+          ? <>{renderMainFields()}{renderSectionActions(() => handleSaveMain(promo.id))}</>
+          : renderMainView(promo)}
+
+        {/* #626: the Charge Benefits section was removed from the Promotion
+            editor. Promotion benefits are configured only through the
+            Session / One-off / Periodical and Membership Fee sections below. */}
+        {SELLABLE_BENEFIT_SECTIONS.map((cfg) => renderSellableBenefitSection(promo, cfg))}
+        {renderMembershipFeeSection(promo)}
+
+        {/* Example Timeline — always read-only, kept last. */}
+        {renderTimeline()}
+      </div>
+    );
+  }
+
+  // The new-Promotion row: no id yet, so creation stays one form covering the
+  // main configuration and every Benefit section, with a single Save/Cancel.
+  function renderCreateSection() {
+    return (
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+        {renderMainFields()}
+        {SELLABLE_BENEFIT_SECTIONS.map((cfg) => (
+          <div key={cfg.section} style={subSectionSt}>
+            {renderSectionHeader(cfg.titleKey, null)}
+            {renderSellableItemBenefitEditor({
+              addKey: cfg.addKey,
+              draft: sellableSectionDraft(cfg.section),
+              setDraft: sellableSectionSetDraft(cfg.section),
+              categoryItems: sellableSectionItems(cfg.section),
+              showFrequency: cfg.showFrequency,
+            })}
+          </div>
+        ))}
+        <div style={subSectionSt}>
+          {renderSectionHeader('section_membership_fee_benefits', null)}
+          {renderMembershipFeeEditor(NEW_ID)}
+        </div>
+        {renderTimeline()}
+        {renderSectionActions(handleCreate)}
+      </div>
+    );
+  }
+
+  function renderMainView(promo: Promo) {
     const associatedPlans = cachedPlans[promo.id] ?? [];
-    const sessionB = cachedSessionB[promo.id] ?? [];
-    const oneoffB = cachedOneoffB[promo.id] ?? [];
-    const periodicalB = cachedPeriodicalB[promo.id] ?? [];
-    const mf = cachedMf[promo.id] ?? null;
 
     const free = promo.free_months ?? 0;
     const paid = promo.paid_months ?? 0;
@@ -1076,7 +1409,7 @@ export default function PromotionsPage() {
     const bonus = promo.bonus_months ?? 0;
 
     return (
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+      <>
 
         {/* Billing & Duration summary */}
         {(free > 0 || paid > 0 || bonus > 0) && (
@@ -1104,59 +1437,26 @@ export default function PromotionsPage() {
               ))}
         </div>
 
-        {/* #626: Charge Benefits removed — see renderEditSection. */}
-
-        {renderSellableItemBenefitViewSection('section_session_benefits', 'no_session_benefits', sessionB, false)}
-        {renderSellableItemBenefitViewSection('section_oneoff_benefits', 'no_oneoff_benefits', oneoffB, false)}
-        {renderSellableItemBenefitViewSection('section_period_benefits', 'no_period_benefits', periodicalB, true)}
-
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_membership_fee_benefits')}</p>
-          {!mf || (mf.action ?? 'no_benefit') === 'no_benefit'
-            ? <p style={hintSt}>{t('no_membership_fee_benefit')}</p>
-            : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr>
-                    <th style={thSt}>{t('col_benefit_type')}</th>
-                    <th style={thSt}>{t('col_quantity')}</th>
-                    <th style={thSt}>{t('col_frequency')}</th>
-                    <th style={thSt}>{t('col_duration_months')}</th>
-                    <th style={thSt}>{t('col_action')}</th>
-                    <th style={thSt}>{t('col_value')}</th>
-                    <th style={thSt}>{t('col_enabled')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ opacity: mf.enabled ? 1 : 0.45 }}>
-                    <td style={tdSt}>{mf.charge_type_name}</td>
-                    <td style={tdSt}>{mf.quantity}</td>
-                    <td style={tdSt}>{mf.frequency_interval} {t(`frequency_${mf.frequency_unit}` as any)}</td>
-                    <td style={tdSt}>{mf.duration_months ?? '—'}</td>
-                    <td style={tdSt}>{t(`cb_action_${mf.action}` as any)}</td>
-                    <td style={tdSt}>{mf.value ?? '—'}</td>
-                    <td style={tdSt}>{mf.enabled ? '✓' : '—'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            )}
-        </div>
-
-        {/* Example Timeline — shown as soon as the card opens, using the
-            promotion's saved values (no need to enter edit mode). */}
-        {renderTimeline()}
-
-      </div>
+      </>
     );
   }
 
   function renderRow(promo: Promo) {
-    const isEditing = editingId === promo.id;
-    const isExpanded = isEditing || expandedId === promo.id;
+    const isExpanded = editingId === promo.id || expandedId === promo.id;
 
+    // #627: the context-menu Edit action opens only the main Promotion
+    // configuration; each Benefit section has its own Edit button. It is
+    // disabled while a section of this card is already being edited, so it can
+    // never silently discard that section's unsaved draft.
+    const editDisabled = !canWrite || sectionEditBusy;
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetailFor(promo) },
-      { label: t('edit'), onClick: () => enterEdit(promo), disabled: !canWrite, title: readOnlyTitle },
+      {
+        label: t('edit'),
+        onClick: () => enterEdit(promo),
+        disabled: editDisabled,
+        title: !canWrite ? readOnlyTitle : sectionEditBusy ? t('edit_busy_hint') : readOnlyTitle,
+      },
       { label: t('duplicate'), onClick: () => handleDuplicate(promo), disabled: !canWrite, title: readOnlyTitle },
       { label: t('delete'), onClick: () => setDeleting(promo), danger: true, disabled: !canWrite, title: readOnlyTitle },
     ];
@@ -1184,7 +1484,7 @@ export default function PromotionsPage() {
             <ContextMenu items={menuItems} />
           </div>
         </div>
-        {isEditing ? renderEditSection(promo.id) : isExpanded ? renderViewSection(promo) : null}
+        {isExpanded ? renderExpandedSection(promo) : null}
       </div>
     );
   }
@@ -1203,7 +1503,7 @@ export default function PromotionsPage() {
           <span style={{ minWidth: 13, flexShrink: 0 }}>▾</span>
           <div style={{ minWidth: 32, flexShrink: 0 }} />
         </div>
-        {renderEditSection(NEW_ID)}
+        {renderCreateSection()}
       </div>
     );
   }
