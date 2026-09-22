@@ -2748,6 +2748,7 @@
     "error_units_positive": "Units must be a positive integer.",
     "error_generic": "Something went wrong.",
     "col_tax_rate": "Tax Rate",
+    "col_actions": "Actions",
     "label_tax_rate": "Tax / VAT",
     "option_no_tax": "No tax",
     "label_tax_behavior": "Tax Behavior",
