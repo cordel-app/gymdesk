@@ -30,6 +30,16 @@ promotionsRouter.get('/', async (req, res, next) => {
   if (createdBy !== null && !Number.isInteger(createdBy)) {
     return res.status(400).json({ error: 'created_by must be a membership id' });
   }
+  // #628: narrows the list to the Promotions targeting one Membership Plan, so
+  // the inline Assign-Plan editor can offer exactly the Promotions the apply
+  // path (`promotion_membership_plans` check in membership-promotions.ts) will
+  // accept for the plan being assigned, instead of listing every active promo
+  // and surfacing the mismatch as a 400 after the fact.
+  const membershipPlanId = req.query.membership_plan_id == null || req.query.membership_plan_id === ''
+    ? null : Number(req.query.membership_plan_id);
+  if (membershipPlanId !== null && (!Number.isInteger(membershipPlanId) || membershipPlanId <= 0)) {
+    return res.status(400).json({ error: 'membership_plan_id must be a membership plan id' });
+  }
   const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS
     ? req.query.sort : 'starts_at';
   const dir = req.query.dir === 'asc' ? 'ASC' : 'DESC';
@@ -53,6 +63,13 @@ promotionsRouter.get('/', async (req, res, next) => {
   }
   if (createdBy !== null) {
     where.push('p.created_by_membership_id = ?'); params.push(createdBy);
+  }
+  if (membershipPlanId !== null) {
+    where.push(`EXISTS (
+      SELECT 1 FROM promotion_membership_plans pmp
+      WHERE pmp.promotion_id = p.id AND pmp.membership_plan_id = ? AND pmp.gym_id = ?
+    )`);
+    params.push(membershipPlanId, gymId);
   }
 
   try {

@@ -403,6 +403,38 @@ Reference implementation: `[locale]/promotions/page.tsx`. Regression test
 
 ---
 
+## Mutually-Exclusive Multi-Select (#628)
+
+A checkbox list where the options constrain each other — Promotions, where a
+non-stackable one may not be combined with any other. The rule has to hold in
+three places, and there is exactly one way to keep them in agreement:
+
+1. **A pure validator owns the rule** — `domain/<thing>Stacking.ts`-style
+   module taking the whole selection (`validatePromotionStacking(promos)`)
+   and returning `{ ok }` / `{ ok: false, error }`. It knows nothing about
+   the DB, so it unit-tests without helpers (`api/src/test/promotion-stacking.test.ts`).
+2. **The UI disables, it does not reject** — recompute what is selectable
+   from the current selection on every change and disable the rest in place,
+   with a `title` saying why. The user never builds an invalid combination,
+   so there is nothing to discover at Save time.
+3. **The write path re-validates the set before it writes anything** — a
+   `validate<Thing>Selection(gymId, …, ids)` that re-states the existing
+   per-item checks (exists / active / in-window / targets this parent) over
+   N items at once, *plus* the pure cross-item rule, and returns
+   `{ status, error }` for the route to answer with. Run it before the
+   transaction: if the items are applied after the parent row is created
+   (because the existing per-item helper opens its own transaction), an
+   invalid set rejected late would leave a half-configured parent behind.
+
+Don't re-derive the rule in the frontend: the UI's disabling logic is an
+affordance built from the same `stackable`-style flag the validator reads,
+never a second copy of the decision.
+
+Reference implementation: `[locale]/members/AssignPlanInlineEditor.tsx` +
+`validatePromotionSelection()` in `api/src/api/membership-promotions.ts`.
+
+---
+
 ## Select All Checkbox with Indeterminate State (#554)
 
 A checkbox list (e.g. picking which of several active catalog rows apply to

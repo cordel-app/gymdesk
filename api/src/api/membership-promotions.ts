@@ -3,6 +3,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
+import { validatePromotionStacking } from '../domain/promotionStacking';
 
 /**
  * P4.4: apply/revoke promotions on a user_membership.
@@ -208,6 +209,64 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   }
 
   return { price, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };
+}
+
+/**
+ * #628: validates a whole set of Promotions against the Membership Plan they
+ * are about to be assigned with, *before* anything is written.
+ *
+ * It re-states, over N promotions at once, exactly the per-promotion checks
+ * `applyPromotionToMembership` runs one at a time (exists / active / inside
+ * its window / targets this plan), plus the cross-promotion stacking rule
+ * from `validatePromotionStacking`. Assigning a Plan creates the membership
+ * first and applies the Promotions right after, so an invalid selection has
+ * to be rejected up front — otherwise the assignment would already be
+ * persisted by the time the first apply fails.
+ */
+export async function validatePromotionSelection(
+  gymId: string,
+  membershipPlanId: number,
+  promotionIds: number[],
+): Promise<{ status: number; error: string } | null> {
+  if (promotionIds.length === 0) return null;
+
+  const placeholders = promotionIds.map(() => '?').join(',');
+  const { rows } = await db.query(
+    `SELECT id, stackable, lifecycle_status, starts_at, ends_at
+     FROM promotions
+     WHERE id IN (${placeholders}) AND gym_id = ? AND lifecycle_status != 'deleted'`,
+    [...promotionIds, gymId],
+  );
+
+  const byId = new Map<number, any>(rows.map((r: any) => [Number(r.id), r]));
+  const now = new Date();
+  for (const id of promotionIds) {
+    const promo = byId.get(id);
+    if (!promo) return { status: 404, error: `Promotion ${id} not found` };
+    if (promo.lifecycle_status !== 'active') return { status: 400, error: `Promotion ${id} is inactive` };
+    if (new Date(promo.starts_at) > now || new Date(promo.ends_at) < now) {
+      return { status: 400, error: `Promotion ${id} is outside its active window` };
+    }
+  }
+
+  const { rows: targeted } = await db.query(
+    `SELECT promotion_id FROM promotion_membership_plans
+     WHERE promotion_id IN (${placeholders}) AND membership_plan_id = ? AND gym_id = ?`,
+    [...promotionIds, membershipPlanId, gymId],
+  );
+  const targetedIds = new Set(targeted.map((r: any) => Number(r.promotion_id)));
+  for (const id of promotionIds) {
+    if (!targetedIds.has(id)) {
+      return { status: 400, error: `Promotion ${id} doesn't target this membership's plan` };
+    }
+  }
+
+  const stacking = validatePromotionStacking(
+    promotionIds.map((id) => ({ id, stackable: !!byId.get(id).stackable })),
+  );
+  if (!stacking.ok) return { status: 400, error: stacking.error };
+
+  return null;
 }
 
 export async function applyPromotionToMembership(

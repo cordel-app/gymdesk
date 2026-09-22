@@ -1181,3 +1181,76 @@ describe('Session / One-off / Periodical benefits — duplicate', () => {
     expect(res.body[0].quantity).toBe(2);
   });
 });
+
+// ─── GET /promotions?membership_plan_id= (#628) ───────────────────────────────
+
+describe('GET /promotions — membership_plan_id filter', () => {
+  let gymId: string;
+  let planA: number;
+  let planB: number;
+  let promoForA: number;
+  let promoForB: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Promo Plan Filter Gym');
+    await createTestMembership(gymId, 'admin');
+    planA = await createPlan(gymId, `PPF Plan A ${Date.now()}`, 'active');
+    planB = await createPlan(gymId, `PPF Plan B ${Date.now()}`, 'active');
+    promoForA = await createPromo(gymId, 'PPF Promo A');
+    promoForB = await createPromo(gymId, 'PPF Promo B');
+    await db.query(
+      'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+      [gymId, promoForA, planA],
+    );
+    await db.query(
+      'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
+      [gymId, promoForB, planB],
+    );
+  });
+
+  it('returns 401 without a token', async () => {
+    const res = await request.get(`/promotions?membership_plan_id=${planA}`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns only the promotions targeting the given plan', async () => {
+    const res = await request
+      .get(`/promotions?membership_plan_id=${planA}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((p: any) => p.id);
+    expect(ids).toContain(promoForA);
+    expect(ids).not.toContain(promoForB);
+  });
+
+  it("does not leak another gym's targeting rows", async () => {
+    const gymB = await createTestGym('Promo Plan Filter Gym B');
+    await createTestMembership(gymB, 'admin', 'ppf-other-admin');
+    const res = await request
+      .get(`/promotions?membership_plan_id=${planA}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.every((p: any) => p.gym_id === gymId)).toBe(true);
+  });
+
+  it('returns 400 for a non-numeric membership_plan_id', async () => {
+    const res = await request
+      .get('/promotions?membership_plan_id=abc')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+  });
+
+  it('is ignored when omitted (all promotions still returned)', async () => {
+    const res = await request
+      .get('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const ids = res.body.map((p: any) => p.id);
+    expect(ids).toContain(promoForA);
+    expect(ids).toContain(promoForB);
+  });
+});

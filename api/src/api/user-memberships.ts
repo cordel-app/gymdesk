@@ -5,7 +5,12 @@ import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
-import { fetchAppliedPromotions, fetchLiveBenefits } from './membership-promotions';
+import {
+  applyPromotionToMembership,
+  fetchAppliedPromotions,
+  fetchLiveBenefits,
+  validatePromotionSelection,
+} from './membership-promotions';
 import {
   AppliedPromotionForBilling,
   BillingUnit,
@@ -555,15 +560,41 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   res.status(204).send();
 });
 
+// #628: `promotion_ids` is optional — omitted or empty means "assign the plan
+// with no promotions". Returns null when the payload isn't a list of positive
+// integer ids, so the route can answer 400 instead of silently dropping it.
+function parsePromotionIds(raw: unknown): number[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) return null;
+  const ids: number[] = [];
+  for (const v of raw) {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n <= 0) return null;
+    ids.push(n);
+  }
+  return ids;
+}
+
 // Assign New Plan (#412): supersede the member's current plan atomically —
 // expire the old membership and create the new active one in a single
 // transaction, so the one-active-membership-per-member unique index never
 // sees two active rows for this member at once.
+//
+// #628: the caller may also pick the Promotions to apply to the new
+// assignment (`promotion_ids`). They are validated as a set *before* the
+// membership is created — `applyPromotionToMembership` opens its own
+// transaction, so the applies can only run after this one commits, and an
+// invalid selection must never leave a half-configured assignment behind.
 userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
-  const { membership_plan_id, starts_at, ends_at, final_price, discount_reason, discount_expires_at } = req.body;
+  const { membership_plan_id, starts_at, ends_at, final_price, discount_reason, discount_expires_at, promotion_ids } = req.body;
   if (!membership_plan_id || !starts_at) {
     return res.status(400).json({ error: 'membership_plan_id and starts_at are required' });
+  }
+
+  const promotionIds = parsePromotionIds(promotion_ids);
+  if (promotionIds === null) {
+    return res.status(400).json({ error: 'promotion_ids must be an array of promotion ids' });
   }
 
   const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
@@ -577,6 +608,9 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       return res.status(400).json({ error: 'discount_reason is required when final_price differs from the effective price' });
     }
   }
+
+  const promoError = await validatePromotionSelection(gymId, Number(membership_plan_id), promotionIds);
+  if (promoError) return res.status(promoError.status).json({ error: promoError.error });
 
   try {
     const newId: number | null = await db.transaction(async (tx) => {
@@ -622,13 +656,25 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       return insertId;
     });
     if (newId === null) return res.status(404).json({ error: 'Membership not found' });
+
+    // Applied after the assignment commits, one at a time, because each apply
+    // runs its own transaction (and recomputes final_price from base_price +
+    // the benefits of every promotion applied so far). The selection was
+    // validated above, so a failure here means the promotion changed
+    // underneath us between the two steps — surface it rather than silently
+    // assigning a plan without the promotions that were asked for.
+    for (const promotionId of promotionIds) {
+      await applyPromotionToMembership(gymId, userId, sourceForRole(role), newId, promotionId);
+    }
+
     const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ?`, [newId]);
     recordAudit(req, {
       action: 'assign_new_plan', entityType: 'user_membership', entityId: newId,
       next: rows[0], previous: { supersedes_user_membership_id: Number(req.params.id) },
     });
-    res.status(201).json(rows[0]);
+    res.status(201).json({ ...rows[0], applied_promotion_ids: promotionIds });
   } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     handleDupEntry(err, res, next, 'This member already has an active membership.');
   }
 });
