@@ -277,6 +277,8 @@
     "col_member": "Socio",
     "col_plan": "Plan",
     "col_date": "Fecha",
+    "col_created": "Creado",
+    "col_next_payment": "Próximo Pago",
     "col_amount": "Importe",
     "col_status": "Estado",
     "status_paid": "Pagado",

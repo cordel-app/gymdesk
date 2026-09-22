@@ -278,6 +278,8 @@
     "col_member": "Soci",
     "col_plan": "Pla",
     "col_date": "Data",
+    "col_created": "Creat",
+    "col_next_payment": "Pròxim Pagament",
     "col_amount": "Import",
     "col_status": "Estat",
     "status_paid": "Pagat",
