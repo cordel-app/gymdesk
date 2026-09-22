@@ -62,6 +62,7 @@ Use `/finish-feature` to run through the full sync + test + status checklist aut
 - One database: MySQL 8 (HeatWave when deployed). No additional stores without a concrete reason.
 - Every domain table must have `gym_id`. Every query must filter by it.
 - All config via environment variables. No hardcoded values.
+- Translated **UI labels** live in `apps/*/locales/base/{en,es,ca}.json`. Translated **data** lives in a `(entity_id, locale)` junction table with the entity's own column as the base value and fallback — never one row per language, and never a `name_es`/`name_ca` column. Resolve it server-side from the request locale (`api/src/infra/locale.ts`) and return it in a separate field (`display_name`), leaving the base column for edit forms to submit back. See "Translated Catalog Content" in `docs/feature-patterns.md`.
 - Backend-first: define the API contract before building UI.
 - Do not duplicate business logic in the frontend.
 

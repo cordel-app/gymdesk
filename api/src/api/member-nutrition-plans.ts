@@ -4,6 +4,8 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { handleDupEntry } from '../infra/db-helpers';
+import { localizedNameExpr } from '../domain/nutritionLibrary';
+import { getRequestLocale, SupportedLocale } from '../infra/locale';
 
 export const memberNutritionPlansRouter = Router();
 
@@ -86,12 +88,12 @@ const MEAL_SELECT = `
   FROM member_nutrition_plan_meals m
 `;
 
-async function fetchMealWithItems(mealId: string | number) {
+async function fetchMealWithItems(mealId: string | number, locale: SupportedLocale) {
   const { rows: mealRows } = await db.query(`${MEAL_SELECT} WHERE m.id = ?`, [mealId]);
   if (mealRows.length === 0) return null;
   const meal = mealRows[0];
   const { rows: items } = await db.query(
-    `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+    `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', locale)},
             i.component_type, i.quantity, i.unit, i.position
      FROM member_nutrition_plan_meal_items i
      JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
@@ -346,7 +348,7 @@ memberNutritionPlansRouter.get('/:id/hierarchy', async (req, res, next) => {
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {
         const { rows: items } = await db.query(
-          `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+          `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                   i.component_type, i.quantity, i.unit, i.position
            FROM member_nutrition_plan_meal_items i
            JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
@@ -360,7 +362,7 @@ memberNutritionPlansRouter.get('/:id/hierarchy', async (req, res, next) => {
     }));
 
     const { rows: restrictionRows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM member_nutrition_plan_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.member_nutrition_plan_id = ? AND r.gym_id = ?
@@ -475,7 +477,7 @@ memberNutritionPlansRouter.post('/:id/days/:dayId/meals', requireModuleWrite('NU
       'INSERT INTO member_nutrition_plan_meals (gym_id, member_nutrition_plan_day_id, meal_type, display_name, notes, position) VALUES (?, ?, ?, ?, ?, ?)',
       [gymId, dayId, meal_type, resolvedDisplayName, notes ?? null, posRows[0].next_position],
     );
-    const meal = await fetchMealWithItems(insertId);
+    const meal = await fetchMealWithItems(insertId, getRequestLocale(req));
     res.status(201).json(meal);
   } catch (err) { next(err); }
 });
@@ -496,7 +498,7 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/reorder', requireModuleWr
     );
     const meals = await Promise.all(mealRows.map(async (meal: any) => {
       const { rows: items } = await db.query(
-        `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+        `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                 i.component_type, i.quantity, i.unit, i.position
          FROM member_nutrition_plan_meal_items i
          JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
@@ -541,7 +543,7 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId', requireModuleWr
       `UPDATE member_nutrition_plan_meals SET ${updates.join(', ')} WHERE id = ? AND member_nutrition_plan_day_id = ? AND gym_id = ?`,
       params,
     );
-    const meal = await fetchMealWithItems(mealId);
+    const meal = await fetchMealWithItems(mealId, getRequestLocale(req));
     res.json(meal);
   } catch (err) { next(err); }
 });
@@ -587,7 +589,7 @@ memberNutritionPlansRouter.post('/:id/days/:dayId/meals/:mealId/items', requireM
       [gymId, mealId, Number(nutrition_library_item_id), component_type, quantity != null ? Number(quantity) : null, unit ?? null, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM member_nutrition_plan_meal_items i
        JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
@@ -636,7 +638,7 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId', r
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Meal item not found' });
     const { rows } = await db.query(
-      `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+      `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
               i.component_type, i.quantity, i.unit, i.position
        FROM member_nutrition_plan_meal_items i
        JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
@@ -685,7 +687,7 @@ memberNutritionPlansRouter.post('/:id/restrictions', requireModuleWrite('NUTRITI
       [gymId, id, Number(nutrition_library_item_id), applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
     );
     const { rows } = await db.query(
-      `SELECT r.*, nli.name AS item_name, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
+      `SELECT r.*, ${localizedNameExpr('nli', getRequestLocale(req))}, (SELECT GROUP_CONCAT(nlc.slug ORDER BY nlc.id SEPARATOR ', ') FROM nutrition_library_item_categories nlic JOIN nutrition_library_categories nlc ON nlc.id = nlic.category_id WHERE nlic.item_id = nli.id) AS item_category
        FROM member_nutrition_plan_restrictions r
        JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
        WHERE r.id = ?`,

@@ -11,7 +11,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
     'ngrok-skip-browser-warning': '1',
   };
   req.headers.forEach((value, key) => {
-    if (['authorization', 'x-gym-id', 'content-type'].includes(key.toLowerCase())) {
+    if (['authorization', 'x-gym-id', 'x-locale', 'content-type'].includes(key.toLowerCase())) {
       headers[key] = value;
     }
   });

@@ -351,3 +351,65 @@ describe('PUT /nutrition-library/:id — gym-owned items only', () => {
     expect(res.body.image_url).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Translated names for gym staff (#643)
+// ---------------------------------------------------------------------------
+
+describe('translated names', () => {
+  let gymItemId: number;
+
+  beforeAll(async () => {
+    // Cascades away with the system item in afterAll.
+    await db.query(
+      `INSERT INTO nutrition_library_item_translations (item_id, locale, name)
+       VALUES (?, 'es', 'NL Pollo de Prueba'), (?, 'ca', 'NL Pollastre de Prova')
+       ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+      [libraryItemId, libraryItemId],
+    );
+
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NL Gym Food ${Date.now()}`, category_ids: [sideId] });
+    gymItemId = res.body.id;
+  });
+
+  it('shows a system item in the staff member’s locale, keeping name as the base value', async () => {
+    const res = await request
+      .get('/nutrition-library?search=NL Pollo de Prueba')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-locale', 'es');
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((i: any) => i.id === libraryItemId);
+    expect(item.display_name).toBe('NL Pollo de Prueba');
+    expect(item.name).toBe('NL Test Chicken');
+    expect(item.translations.ca).toBe('NL Pollastre de Prova');
+  });
+
+  it('leaves gym-owned items showing their single entered name in every locale', async () => {
+    const res = await request
+      .get('/nutrition-library?limit=200')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-locale', 'ca');
+    const item = res.body.items.find((i: any) => i.id === gymItemId);
+    expect(item.display_name).toBe(item.name);
+    expect(item.translations).toEqual({});
+  });
+
+  it('a gym item created while browsing in Catalan stores the name it was given', async () => {
+    const name = `NL Catalan Create ${Date.now()}`;
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-locale', 'ca')
+      .send({ name, category_ids: [sideId] });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe(name);
+    expect(res.body.display_name).toBe(name);
+  });
+});

@@ -1,11 +1,13 @@
 import { useCallback } from 'react';
 import { useAuth } from '@clerk/nextjs';
+import { useLocale } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 
 export function useApiClient() {
   const { getToken } = useAuth();
+  const locale = useLocale();
   const { activeGymId } = useGym();
   const { activeCenterId } = useCenter();
   const { session: impersonationSession } = useImpersonation();
@@ -23,6 +25,9 @@ export function useApiClient() {
       if (activeGymId) headers['x-gym-id'] = activeGymId;
       if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
       if (impersonationSession) headers['x-impersonate-as'] = impersonationSession.effectiveUserId;
+      // Tells the API which language to resolve DB-stored translated content in
+      // (#643) — UI labels come from the locale files, data does not.
+      if (locale) headers['x-locale'] = locale;
 
       const res = await fetch(`/api/proxy${path}`, {
         ...options,
@@ -38,7 +43,7 @@ export function useApiClient() {
       if (res.status === 204) return undefined;
       return res.json();
     },
-    [getToken, activeGymId, activeCenterId, impersonationSession],
+    [getToken, activeGymId, activeCenterId, impersonationSession, locale],
   ) as <T>(path: string, options?: RequestInit) => Promise<T>;
 
   return { apiFetch };

@@ -618,6 +618,29 @@ Reference implementation: `api/src/api/user-membership-services.ts` + migration 
 
 ---
 
+## Translated Catalog Content (#643)
+
+UI labels belong in `locales/base/{en,es,ca}.json`. When the *data* itself needs
+translating — a catalog row's name shown to members and staff in their own
+language — it belongs in the database, and the shape is the same junction
+pattern used for categories and qualities.
+
+- **One row per (entity, locale), never one entity per language.** `PRIMARY KEY (item_id, locale)`, FK `ON DELETE CASCADE`, plus `KEY (locale, name)` for the search subquery. Adding a fourth locale is then data, not DDL, and every existing ID, FK and relationship is untouched.
+- **Keep the base column as the fallback.** The entity's own `name` stays the English value, keeps the uniqueness index, and is what a locale with no row resolves to — so nothing ever renders blank, and gym-created rows can simply have no translations at all.
+- **Resolve on read, in SQL.** A `COALESCE((SELECT … WHERE locale = 'xx'), base.name)` expression built by one helper (`localizedNameSql`), used by every surface that returns the name. Make it collapse to a plain column reference for the base locale so the common path costs nothing.
+- **Interpolate the locale, but only a validated one.** Threading an extra `?` through ~30 existing queries, each with its own positional params, is where the bugs live. Interpolation is safe *only* because the value is a branded `SupportedLocale` that `infra/locale.ts` alone mints, after an allowlist check — never interpolate a raw header.
+- **Return the localized value in a new field** (`display_name`), leaving `name` as the base value. Edit forms submit `name` back: prefill one from a translation and saving in Spanish silently overwrites the English original.
+- **Follow the displayed locale in search and ordering**, not just in rendering — a staff member searching for what is on their screen must find it.
+- **Seed with `INSERT IGNORE … SELECT`** matched on the base name, one (row, locale) pair at a time. A re-run, a renamed row, a deleted row and a translation an admin already edited are then all no-ops instead of failures.
+- **Authoring lives where the rows are owned** — system items on the Cordel page, one input per translatable locale (blank = fall back), with the locale list served by the API (`GET …/locales`) rather than hardcoded a second time in the frontend.
+- **Slug-keyed catalogues stay in the locale files.** Categories and nutritional qualities are rendered from `nutrition_library.category_*`/`quality_*` keys; there is no reason to move a fixed enum into the database to translate it.
+
+Reference implementation: migration 166 + `api/src/infra/locale.ts` + the
+translation helpers in `api/src/domain/nutritionLibrary.ts` +
+`apps/admin/src/app/[locale]/cordel/nutrition-library/page.tsx`.
+
+---
+
 ## Audited Action over an Append-Only Ledger (#640)
 
 A row that must never be rewritten (a `billing_events` charge) still needs
