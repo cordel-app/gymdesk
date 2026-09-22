@@ -62,12 +62,7 @@ interface GymCharge {
   // #550: server-computed via classifySellableItem() — the single source of
   // truth for which Promotion benefit section a Sellable Item belongs to.
   benefit_category: 'session' | 'oneoff' | 'periodical';
-  charge_type_name: string;
-  charge_type_code: string;
-  amount: string | null;
-  availability: string;
 }
-interface ChargeBenefit { id: number; gym_charge_id: number; action: string; value: string | null; gym_charge_name: string; gym_charge_availability: string }
 interface ChargeType { id: number; code: string; name: string; is_gym_charge: number }
 interface PeriodBenefit {
   id: number;
@@ -184,7 +179,6 @@ export default function PromotionsPage() {
   // to active plans, so a plan that has since gone inactive still resolves
   // to its name instead of falling back to "#<id>" (#554).
   const [cachedPlans, setCachedPlans] = useState<Record<number, AssociatedPlan[]>>({});
-  const [cachedCb, setCachedCb] = useState<Record<number, ChargeBenefit[]>>({});
   const [cachedMf, setCachedMf] = useState<Record<number, PeriodBenefit | null>>({});
   const [cachedSessionB, setCachedSessionB] = useState<Record<number, SellableItemBenefit[]>>({});
   const [cachedOneoffB, setCachedOneoffB] = useState<Record<number, SellableItemBenefit[]>>({});
@@ -192,7 +186,6 @@ export default function PromotionsPage() {
 
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [plansDraft, setPlansDraft] = useState<number[]>([]);
-  const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
   const [mfDraft, setMfDraft] = useState<PeriodBenefit | null>(null);
   const [sessionDraft, setSessionDraft] = useState<SellableItemBenefit[]>([]);
   const [oneoffDraft, setOneoffDraft] = useState<SellableItemBenefit[]>([]);
@@ -376,24 +369,22 @@ export default function PromotionsPage() {
 
   async function loadSubResources(promoId: number) {
     try {
-      const [ap, cb, mf, sessionB, oneoffB, periodicalB] = await Promise.all([
+      const [ap, mf, sessionB, oneoffB, periodicalB] = await Promise.all([
         apiFetch<AssociatedPlan[]>(`/promotions/${promoId}/plans`),
-        apiFetch<ChargeBenefit[]>(`/promotions/${promoId}/charge-benefits`),
         apiFetch<PeriodBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/session-benefits`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/oneoff-benefits`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/periodical-benefits`),
       ]);
       setCachedPlans((prev) => ({ ...prev, [promoId]: ap }));
-      setCachedCb((prev) => ({ ...prev, [promoId]: cb }));
       setCachedMf((prev) => ({ ...prev, [promoId]: mf }));
       setCachedSessionB((prev) => ({ ...prev, [promoId]: sessionB }));
       setCachedOneoffB((prev) => ({ ...prev, [promoId]: oneoffB }));
       setCachedPeriodicalB((prev) => ({ ...prev, [promoId]: periodicalB }));
-      return { ap, cb, mf, sessionB, oneoffB, periodicalB };
+      return { ap, mf, sessionB, oneoffB, periodicalB };
     } catch {
       return {
-        ap: [] as AssociatedPlan[], cb: [] as ChargeBenefit[], mf: null as PeriodBenefit | null,
+        ap: [] as AssociatedPlan[], mf: null as PeriodBenefit | null,
         sessionB: [] as SellableItemBenefit[], oneoffB: [] as SellableItemBenefit[], periodicalB: [] as SellableItemBenefit[],
       };
     }
@@ -416,11 +407,8 @@ export default function PromotionsPage() {
     setEditingId(promo.id);
     setEditForm(emptyEditForm(promo));
     setEditError(null);
-    const { ap, cb, mf, sessionB, oneoffB, periodicalB } = await loadSubResources(promo.id);
+    const { ap, mf, sessionB, oneoffB, periodicalB } = await loadSubResources(promo.id);
     setPlansDraft(ap.map((p) => p.id));
-    const cbMap: Record<number, { action: string; value: string }> = {};
-    for (const c of cb) cbMap[c.gym_charge_id] = { action: c.action, value: c.value ?? '' };
-    setCbDraft(cbMap);
     setMfDraft(mf ? { ...mf } : defaultMfDraft());
     setSessionDraft(sessionB.map((b) => ({ ...b })));
     setOneoffDraft(oneoffB.map((b) => ({ ...b })));
@@ -444,7 +432,6 @@ export default function PromotionsPage() {
     setEditingId(NEW_ID);
     setEditForm(emptyEditForm());
     setPlansDraft([]);
-    setCbDraft({});
     setMfDraft(defaultMfDraft());
     setSessionDraft([]);
     setOneoffDraft([]);
@@ -492,19 +479,6 @@ export default function PromotionsPage() {
       await apiFetch(`/promotions/${id}/plans`, {
         method: 'PUT',
         body: JSON.stringify({ membership_plan_ids: plansDraft }),
-      });
-
-      const cbItems = gymCharges
-        .filter((gc) => cbDraft[gc.id]?.action && cbDraft[gc.id].action !== 'no_benefit')
-        .map((gc) => ({
-          gym_charge_id: gc.id,
-          action: cbDraft[gc.id].action,
-          value: ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(cbDraft[gc.id].action)
-            ? parseFloat(cbDraft[gc.id].value) || 0 : null,
-        }));
-      await apiFetch(`/promotions/${id}/charge-benefits`, {
-        method: 'PUT',
-        body: JSON.stringify({ items: cbItems }),
       });
 
       // #550: Session / One-off / Periodical Benefits, keyed to a real
@@ -985,40 +959,9 @@ export default function PromotionsPage() {
           </div>
         </div>
 
-        {/* Charge Benefits */}
-        {gymCharges.length > 0 && (
-          <div style={subSectionSt}>
-            <p style={sectionLabelSt}>{t('section_charge_benefits')}</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '3px 12px', alignItems: 'center', marginBottom: 4 }}>
-              <span style={colHeaderSt}>{t('col_charge')}</span>
-              <span style={colHeaderSt}>{t('col_action')}</span>
-              <span />
-              {gymCharges.map((gc) => (
-                <div key={gc.id} style={{ display: 'contents' }}>
-                  <span style={{ fontSize: 13 }}>{gc.charge_type_name}</span>
-                  <select
-                    value={cbDraft[gc.id]?.action ?? 'no_benefit'}
-                    onChange={(e) => setCbDraft((prev) => ({ ...prev, [gc.id]: { ...prev[gc.id] ?? { value: '' }, action: e.target.value } }))}
-                    style={inlineSelectSt}
-                  >
-                    {CHARGE_ACTIONS.map((a) => (
-                      <option key={a} value={a}>{t(`cb_action_${a}` as any)}</option>
-                    ))}
-                  </select>
-                  {['percentage_discount', 'fixed_discount', 'fixed_price'].includes(cbDraft[gc.id]?.action ?? '') ? (
-                    <input
-                      type="number" min="0" step="0.01"
-                      value={cbDraft[gc.id]?.value ?? ''}
-                      onChange={(e) => setCbDraft((prev) => ({ ...prev, [gc.id]: { ...prev[gc.id], value: e.target.value } }))}
-                      placeholder="0"
-                      style={{ width: 70, padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
-                    />
-                  ) : <span />}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* #626: the Charge Benefits section was removed from the Promotion
+            editor. Promotion benefits are now configured only through the
+            Session / One-off / Periodical and Membership Fee sections below. */}
 
         {/* Session / One-off / Periodical Benefits (#550) — Sellable-Item-keyed,
             replacing the old charge_types-pseudo-catalog Included/Period Benefits. */}
@@ -1122,7 +1065,6 @@ export default function PromotionsPage() {
 
   function renderViewSection(promo: Promo) {
     const associatedPlans = cachedPlans[promo.id] ?? [];
-    const cb = cachedCb[promo.id] ?? [];
     const sessionB = cachedSessionB[promo.id] ?? [];
     const oneoffB = cachedOneoffB[promo.id] ?? [];
     const periodicalB = cachedPeriodicalB[promo.id] ?? [];
@@ -1162,22 +1104,7 @@ export default function PromotionsPage() {
               ))}
         </div>
 
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_charge_benefits')}</p>
-          {cb.filter((c) => c.action !== 'no_benefit').length === 0
-            ? <p style={hintSt}>{t('no_charge_benefits')}</p>
-            : cb.filter((c) => c.action !== 'no_benefit').map((c) => (
-                <div key={c.id} style={{ display: 'flex', gap: 16, fontSize: 13, padding: '3px 0' }}>
-                  <span style={{ minWidth: 160, color: '#555' }}>
-                    {c.gym_charge_name}
-                    {c.gym_charge_availability === 'unavailable' && (
-                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 3 }}>Unavailable</span>
-                    )}
-                  </span>
-                  <span>{t(`cb_action_${c.action}` as any)}{c.value != null ? ` — ${c.value}` : ''}</span>
-                </div>
-              ))}
-        </div>
+        {/* #626: Charge Benefits removed — see renderEditSection. */}
 
         {renderSellableItemBenefitViewSection('section_session_benefits', 'no_session_benefits', sessionB, false)}
         {renderSellableItemBenefitViewSection('section_oneoff_benefits', 'no_oneoff_benefits', oneoffB, false)}
