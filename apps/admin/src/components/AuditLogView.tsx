@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
@@ -38,11 +38,14 @@ const SOURCES = ['admin', 'employee', 'customer'];
  * open to gym admins; 'all' is the platform-wide view (Cordel section), guarded
  * to superadmins here and again in the API, with an extra Gym column.
  * #69: snapshot columns (actor_name, entity_name), dropdown filters, enriched display.
+ * #642: entity_type / entity_id / entity_name can be preset from the query string,
+ * so other pages can deep-link straight to one record's history.
  */
 export default function AuditLogView({ scope }: { scope: 'gym' | 'all' }) {
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
@@ -52,8 +55,9 @@ export default function AuditLogView({ scope }: { scope: 'gym' | 'all' }) {
   const [loading, setLoading]     = useState(true);
   const [meta, setMeta]           = useState<AuditMeta>({ entityTypes: [], actions: [] });
   const [offset, setOffset]       = useState(0);
-  const [entityType, setEntityType] = useState('');
-  const [entityName, setEntityName] = useState('');
+  const [entityType, setEntityType] = useState(searchParams.get('entity_type') ?? '');
+  const [entityId, setEntityId]     = useState(searchParams.get('entity_id') ?? '');
+  const [entityName, setEntityName] = useState(searchParams.get('entity_name') ?? '');
   const [actor, setActor]         = useState('');
   const [action, setAction]       = useState('');
   const [source, setSource]       = useState('');
@@ -77,6 +81,7 @@ export default function AuditLogView({ scope }: { scope: 'gym' | 'all' }) {
       const q = new URLSearchParams();
       if (platformScope) q.set('scope', 'all');
       if (entityType) q.set('entity_type', entityType);
+      if (entityId)   q.set('entity_id', entityId);
       if (entityName) q.set('entity_name', entityName);
       if (actor)      q.set('actor', actor);
       if (action)     q.set('action', action);
@@ -93,10 +98,10 @@ export default function AuditLogView({ scope }: { scope: 'gym' | 'all' }) {
 
   useEffect(() => {
     if (!gymLoading && canView) load();
-  }, [activeGymId, gymLoading, canView, entityType, entityName, actor, action, source, from, to, offset]);
+  }, [activeGymId, gymLoading, canView, entityType, entityId, entityName, actor, action, source, from, to, offset]);
 
   function resetFilters() {
-    setEntityType(''); setEntityName(''); setActor('');
+    setEntityType(''); setEntityId(''); setEntityName(''); setActor('');
     setAction(''); setSource(''); setFrom(''); setTo('');
     setOffset(0);
   }
@@ -118,6 +123,11 @@ export default function AuditLogView({ scope }: { scope: 'gym' | 'all' }) {
               <option key={et.value} value={et.value}>{et.label}</option>
             ))}
           </select>
+        </label>
+        <label style={labelSt}>
+          {t('audit.filter_entity_id')}
+          <input value={entityId} onChange={(e) => { setEntityId(e.target.value); setOffset(0); }}
+                 style={{ ...inputSt, width: 120 }} placeholder={t('audit.filter_entity_id_placeholder')} />
         </label>
         <label style={labelSt}>
           {t('audit.filter_entity_name')}
