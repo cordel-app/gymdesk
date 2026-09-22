@@ -5,7 +5,16 @@ import { tenantContext, requireRole, requireSuperadmin } from '../infra/tenantCo
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { ASSIGNABLE_ROLES, AppRole } from '../infra/permissions';
-import { buildGymFolderPrefix, getMissingStorageConfigKeys, initializeGymBucket, isStorageConfigured } from '../infra/storage';
+import {
+  buildGymFolderPrefix,
+  describeStorageError,
+  getMissingStorageConfigKeys,
+  getStorageDiagnostics,
+  initializeGymBucket,
+  isStorageConfigured,
+  StorageOperationError,
+} from '../infra/storage';
+import { logger } from '../lib/logger';
 
 export const gymsRouter = Router();
 export const platformRouter = Router();
@@ -394,6 +403,9 @@ platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (re
     return res.status(503).json({
       error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
       missingConfig,
+      // #542: even a 503 carries the snapshot, so an admin can see *which*
+      // parts of the R2 config did arrive in the container.
+      diagnostics: getStorageDiagnostics(),
     });
   }
 
@@ -402,7 +414,19 @@ platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (re
   try {
     await initializeGymBucket(folderPrefix);
   } catch (err: any) {
-    return res.status(502).json({ error: `Failed to initialize Cloudflare storage: ${err.message ?? 'unknown error'}` });
+    // #542: a one-line toast was not enough to tell a wrong endpoint from a
+    // wrong bucket from a bad key — return the structured detail as well, and
+    // log the raw error server-side so the stack survives for support.
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'initializeGymBucket' });
+    const diagnostics = getStorageDiagnostics();
+    logger.error({ err, details, diagnostics, gymId: req.params.id, folderPrefix }, 'Cloudflare R2 bucket initialization failed');
+    return res.status(502).json({
+      error: `Failed to initialize Cloudflare storage: ${details.message}`,
+      details,
+      diagnostics,
+    });
   }
 
   const actorName = req.superadminName ?? null;

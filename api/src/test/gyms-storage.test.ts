@@ -64,7 +64,7 @@ vi.mock('../infra/storage', async (importOriginal) => {
 
 // Imported after the mock is declared — buildGymFolderPrefix is the real
 // (unmocked) implementation, so tests can compute the expected prefix.
-import { buildGymFolderPrefix } from '../infra/storage';
+import { buildGymFolderPrefix, StorageOperationError } from '../infra/storage';
 
 let gymId: string;
 let gymName: string;
@@ -154,10 +154,13 @@ describe('storage not configured', () => {
 
     const res = await initStorage(gymId);
     expect(res.status).toBe(503);
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       error: 'Cloudflare storage has not been configured for this deployment (missing: CLOUDFLARE_R2_BUCKET)',
       missingConfig: ['CLOUDFLARE_R2_BUCKET'],
     });
+    // #542: the config snapshot rides along so an admin can see which parts of
+    // the R2 config did reach the container.
+    expect(res.body.diagnostics).toBeDefined();
     expect(mockInitializeGymBucket).not.toHaveBeenCalled();
 
     // Row must be left untouched.
@@ -181,6 +184,79 @@ describe('bucket initialization failure', () => {
     const { rows } = await db.query('SELECT storage_folder_prefix, storage_initialized_at FROM gyms WHERE id = ?', [id]);
     expect(rows[0].storage_folder_prefix).toBeNull();
     expect(rows[0].storage_initialized_at).toBeNull();
+  });
+
+  // #542: a one-line toast could not distinguish a wrong endpoint from a wrong
+  // bucket from a bad key, so the 502 now carries structured detail.
+  it('returns the StorageOperationError details verbatim, plus the deployment diagnostics', async () => {
+    const id = await createTestGym('Bucket Detail Gym');
+    const details = {
+      operation: 'initializeGymBucket',
+      message: 'The specified bucket does not exist',
+      name: 'NoSuchBucket',
+      code: 'NoSuchBucket',
+      httpStatusCode: 404,
+      requestId: 'req-abc-123',
+      attempts: 3,
+      key: 'gym-Nutrition/',
+      bucket: 'gymdesk',
+      causes: [],
+    };
+    mockInitializeGymBucket.mockRejectedValueOnce(
+      new StorageOperationError(details, new Error('underlying')),
+    );
+
+    const res = await initStorage(id);
+    expect(res.status).toBe(502);
+    expect(res.body.error).toBe('Failed to initialize Cloudflare storage: The specified bucket does not exist');
+    expect(res.body.details).toEqual(details);
+    expect(res.body.diagnostics).toMatchObject({
+      missingConfig: expect.any(Array),
+      accessKeyIdLength: expect.any(Number),
+      secretAccessKeyLength: expect.any(Number),
+    });
+
+    const { rows } = await db.query('SELECT storage_folder_prefix, storage_initialized_at FROM gyms WHERE id = ?', [id]);
+    expect(rows[0].storage_folder_prefix).toBeNull();
+    expect(rows[0].storage_initialized_at).toBeNull();
+  });
+
+  it('never leaks the access key or the secret into the 502 body', async () => {
+    const id = await createTestGym('Bucket Secret Leak Gym');
+    const previous = {
+      key: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
+      secret: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+    };
+    process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = 'leak-canary-access-key';
+    process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = 'leak-canary-secret-value';
+    mockInitializeGymBucket.mockRejectedValueOnce(new Error('SignatureDoesNotMatch'));
+
+    try {
+      const res = await initStorage(id);
+      expect(res.status).toBe(502);
+      const body = JSON.stringify(res.body);
+      expect(body).not.toContain('leak-canary-access-key');
+      expect(body).not.toContain('leak-canary-secret-value');
+    } finally {
+      if (previous.key === undefined) delete process.env.CLOUDFLARE_R2_ACCESS_KEY_ID;
+      else process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = previous.key;
+      if (previous.secret === undefined) delete process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY;
+      else process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY = previous.secret;
+    }
+  });
+
+  it('falls back to describeStorageError for a plain Error, still returning details', async () => {
+    const id = await createTestGym('Bucket Plain Error Gym');
+    mockInitializeGymBucket.mockRejectedValueOnce(new Error('connect ETIMEDOUT'));
+
+    const res = await initStorage(id);
+    expect(res.status).toBe(502);
+    expect(res.body.details).toMatchObject({
+      operation: 'initializeGymBucket',
+      message: 'connect ETIMEDOUT',
+      name: 'Error',
+      httpStatusCode: null,
+    });
   });
 });
 

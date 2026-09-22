@@ -55,6 +55,45 @@ type InlineNew = {
   error: string | null;
 };
 
+/**
+ * #542: structured failure detail returned by
+ * `POST /platform/gyms/:id/storage/initialize`. A toast disappears before an
+ * admin can read it, so the failure is also pinned into the gym's Storage
+ * section as a copyable report.
+ */
+interface StorageErrorDetails {
+  operation: string;
+  message: string;
+  name: string | null;
+  code: string | null;
+  httpStatusCode: number | null;
+  requestId: string | null;
+  attempts: number | null;
+  key: string | null;
+  bucket: string | null;
+  causes: string[];
+}
+
+interface StorageDiagnostics {
+  endpointHost: string | null;
+  endpointProtocol: string | null;
+  endpointPath: string | null;
+  endpointMalformed: boolean;
+  bucket: string | null;
+  accessKeyIdLength: number;
+  secretAccessKeyLength: number;
+  missingConfig: string[];
+}
+
+type StorageFailure = {
+  gymId: string;
+  status: number | null;
+  message: string;
+  details: StorageErrorDetails | null;
+  diagnostics: StorageDiagnostics | null;
+  at: string;
+};
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SystemGymsPage() {
@@ -82,6 +121,7 @@ export default function SystemGymsPage() {
   const [details, setDetails] = useState<Gym | null>(null);
   const [deleting, setDeleting] = useState<Gym | null>(null);
   const [initializingStorageId, setInitializingStorageId] = useState<string | null>(null);
+  const [storageFailure, setStorageFailure] = useState<StorageFailure | null>(null);
 
   useEffect(() => {
     if (gymLoading) return;
@@ -218,14 +258,60 @@ export default function SystemGymsPage() {
 
   async function handleInitializeStorage(gym: Gym) {
     setInitializingStorageId(gym.id);
+    setStorageFailure(null);
     try {
       await apiFetch(`/platform/gyms/${gym.id}/storage/initialize`, { method: 'POST' });
       await load();
     } catch (err: any) {
+      // #542: keep the toast for immediacy, but pin the full report to the
+      // row — the toast alone was too small/short-lived to diagnose from.
       toast(err.message ?? t('error_storage_initialize'));
+      setStorageFailure({
+        gymId: gym.id,
+        status: err.status ?? null,
+        message: err.message ?? t('error_storage_initialize'),
+        details: err.body?.details ?? null,
+        diagnostics: err.body?.diagnostics ?? null,
+        at: new Date().toISOString(),
+      });
     } finally {
       setInitializingStorageId(null);
     }
+  }
+
+  /** Plain-text report an admin can paste straight into a support ticket. */
+  function storageFailureReport(failure: StorageFailure): string {
+    const lines = [
+      `Gym: ${failure.gymId}`,
+      `When: ${failure.at}`,
+      `HTTP status: ${failure.status ?? '—'}`,
+      `Error: ${failure.message}`,
+    ];
+    if (failure.details) {
+      const d = failure.details;
+      lines.push(
+        `Operation: ${d.operation}`,
+        `Failing key: ${d.key ?? '—'}`,
+        `Bucket: ${d.bucket ?? '—'}`,
+        `R2 error: ${d.name ?? '—'}${d.code && d.code !== d.name ? ` (${d.code})` : ''}`,
+        `R2 HTTP status: ${d.httpStatusCode ?? '—'}`,
+        `Request ID: ${d.requestId ?? '—'}`,
+        `Attempts: ${d.attempts ?? '—'}`,
+      );
+      if (d.causes.length > 0) lines.push(`Caused by: ${d.causes.join(' ← ')}`);
+    }
+    if (failure.diagnostics) {
+      const g = failure.diagnostics;
+      lines.push(
+        `Endpoint: ${g.endpointProtocol ?? '—'}://${g.endpointHost ?? '—'}${g.endpointPath ?? ''}`,
+        `Endpoint malformed: ${g.endpointMalformed ? 'yes' : 'no'}`,
+        `Configured bucket: ${g.bucket ?? '—'}`,
+        `Access key ID length: ${g.accessKeyIdLength}`,
+        `Secret access key length: ${g.secretAccessKeyLength}`,
+        `Missing env vars: ${g.missingConfig.length > 0 ? g.missingConfig.join(', ') : 'none'}`,
+      );
+    }
+    return lines.join('\n');
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -393,6 +479,15 @@ export default function SystemGymsPage() {
                 {initializingStorageId === gym.id ? t('initializing_storage') : t('btn_initialize_storage')}
               </button>
             </div>
+            {storageFailure?.gymId === gym.id && (
+              <StorageFailurePanel
+                failure={storageFailure}
+                report={storageFailureReport(storageFailure)}
+                onDismiss={() => setStorageFailure(null)}
+                onCopied={() => toast(t('storage_report_copied'))}
+                t={t}
+              />
+            )}
 
             <SectionHeader title={t('section_notes')} />
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('notes_placeholder')}</p>
@@ -561,6 +656,103 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13 }}>
       <span style={{ width: 160, flexShrink: 0, color: '#666' }}>{label}</span>
       <span style={{ color: '#111', flex: 1 }}>{value}</span>
+    </div>
+  );
+}
+
+/**
+ * #542: pinned, copyable report for a failed "Initialize Cloudflare Bucket".
+ * Stays on screen until dismissed or the next attempt, so an admin can read
+ * the R2 error name, the failing object key and the deployment's R2 config
+ * instead of chasing a toast that has already faded.
+ */
+function StorageFailurePanel({
+  failure,
+  report,
+  onDismiss,
+  onCopied,
+  t,
+}: {
+  failure: StorageFailure;
+  report: string;
+  onDismiss: () => void;
+  onCopied: () => void;
+  t: (key: string, values?: Record<string, string | number>) => string;
+}) {
+  const d = failure.details;
+  const g = failure.diagnostics;
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        border: '1px solid #e6b0aa',
+        borderRadius: 8,
+        background: '#fdf3f2',
+        padding: '10px 12px',
+        fontSize: 13,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <strong style={{ color: '#c0392b', flex: 1 }}>{t('storage_failure_title')}</strong>
+        <button onClick={onDismiss} style={btnSmall('#888')}>{t('btn_dismiss')}</button>
+      </div>
+
+      <p style={{ margin: '6px 0 0', color: '#7b241c', wordBreak: 'break-word' }}>{failure.message}</p>
+
+      <div style={{ marginTop: 8 }}>
+        <DetailRow label={t('storage_failure_http_status')} value={failure.status != null ? String(failure.status) : '—'} />
+        {d && (
+          <>
+            <DetailRow label={t('storage_failure_operation')} value={d.operation} />
+            <DetailRow label={t('storage_failure_key')} value={d.key ?? '—'} />
+            <DetailRow label={t('storage_failure_bucket')} value={d.bucket ?? '—'} />
+            <DetailRow
+              label={t('storage_failure_r2_error')}
+              value={d.name ? `${d.name}${d.code && d.code !== d.name ? ` (${d.code})` : ''}` : '—'}
+            />
+            <DetailRow label={t('storage_failure_r2_status')} value={d.httpStatusCode != null ? String(d.httpStatusCode) : '—'} />
+            <DetailRow label={t('storage_failure_request_id')} value={d.requestId ?? '—'} />
+            <DetailRow label={t('storage_failure_attempts')} value={d.attempts != null ? String(d.attempts) : '—'} />
+            {d.causes.length > 0 && (
+              <DetailRow label={t('storage_failure_caused_by')} value={d.causes.join(' ← ')} />
+            )}
+          </>
+        )}
+        {g && (
+          <>
+            <DetailRow
+              label={t('storage_failure_endpoint')}
+              value={g.endpointMalformed
+                ? t('storage_failure_endpoint_malformed')
+                : `${g.endpointProtocol ?? '—'}://${g.endpointHost ?? '—'}${g.endpointPath ?? ''}`}
+            />
+            <DetailRow label={t('storage_failure_configured_bucket')} value={g.bucket ?? '—'} />
+            <DetailRow
+              label={t('storage_failure_credentials')}
+              value={t('storage_failure_credentials_value', {
+                keyLen: g.accessKeyIdLength,
+                secretLen: g.secretAccessKeyLength,
+              })}
+            />
+            <DetailRow
+              label={t('storage_failure_missing_config')}
+              value={g.missingConfig.length > 0 ? g.missingConfig.join(', ') : t('storage_failure_missing_none')}
+            />
+            {g.endpointPath && (
+              <p style={{ margin: '6px 0 0', color: '#b9770e' }}>{t('storage_failure_endpoint_path_hint')}</p>
+            )}
+          </>
+        )}
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <button
+          onClick={() => { navigator.clipboard?.writeText(report).then(onCopied, () => undefined); }}
+          style={btnSmall('#444')}
+        >
+          {t('btn_copy_storage_report')}
+        </button>
+      </div>
     </div>
   );
 }
