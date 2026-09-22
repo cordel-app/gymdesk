@@ -2878,6 +2878,15 @@
     "error_generic": "Something went wrong.",
     "system_delete_blocked": "System tax rates cannot be deleted."
   },
+  "financials_dashboard": {
+    "title": "Finance Dashboard",
+    "subtitle": "Overview and metrics for financial management.",
+    "membership_plans": "Membership Plans",
+    "assigned_members": "Assigned Members",
+    "loading": "Loading…",
+    "empty": "No membership plans to show.",
+    "error_generic": "Something went wrong. Please try again."
+  },
   "professional_services": {
     "title": "Professional Services",
     "loading": "Loading…",

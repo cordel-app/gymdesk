@@ -2890,6 +2890,15 @@
     "error_generic": "Alguna cosa ha anat malament.",
     "system_delete_blocked": "Els tipus impositius del sistema no es poden eliminar."
   },
+  "financials_dashboard": {
+    "title": "Tauler de finances",
+    "subtitle": "Resum i mètriques de la gestió financera.",
+    "membership_plans": "Plans de membresia",
+    "assigned_members": "Membres assignats",
+    "loading": "Carregant…",
+    "empty": "No hi ha plans de membresia per mostrar.",
+    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
+  },
   "professional_services": {
     "title": "Serveis professionals",
     "loading": "Carregant…",

@@ -13,6 +13,7 @@ import { superadminsRouter } from './api/superadmins';
 import { impersonationRouter } from './api/impersonation';
 import { membershipPlansRouter } from './api/membership-plans';
 import { benefitTypesRouter } from './api/benefit-types';
+import { financialsDashboardRouter } from './api/financials-dashboard';
 import { chargeTypesRouter } from './api/charge-types';
 import { billingEventsRouter } from './api/billing-events';
 import { spacesRouter } from './api/spaces';
@@ -216,6 +217,9 @@ app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess(
 
 // FINANCIALS module — admin=RW, front_desk/accountant=R, trainer*/nutritionist/member=NONE
 app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.plans'), membershipPlansRouter);
+// #638: Finance → Dashboard. Read-only aggregation; gated on the Financials
+// group flag so it survives the Plans page being turned off.
+app.use('/financials/dashboard', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), financialsDashboardRouter);
 app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), benefitTypesRouter);
 app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), chargeTypesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), actionTypesRouter);
