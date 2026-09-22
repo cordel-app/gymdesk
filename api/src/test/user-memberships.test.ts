@@ -113,11 +113,16 @@ async function getChargeTypeId(code: string): Promise<number> {
   return rows[0].id;
 }
 
-async function createPromotion(gymId: string, planId: number, name: string): Promise<number> {
+async function createPromotion(
+  gymId: string,
+  planId: number,
+  name: string,
+  stackable = false,
+): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable)
-     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 0)`,
-    [gymId, name],
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', ?)`,
+    [gymId, name, stackable ? 1 : 0],
   );
   await db.query(
     'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
@@ -1098,6 +1103,147 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.status).toBe(201);
     expect(Number(res.body.final_price)).toBe(5);
     expect(res.body.discount_reason).toBe('Loyalty discount');
+  });
+
+  // ─── promotion_ids (#628) ──────────────────────────────────────────────────
+
+  it('applies the selected stackable promotions to the newly assigned plan', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Promo Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+    const promoA = await createPromotion(gymId, newPlanId, `Assign-Stack-A-${Date.now()}`, true);
+    const promoB = await createPromotion(gymId, newPlanId, `Assign-Stack-B-${Date.now()}`, true);
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: [promoA, promoB] });
+    expect(res.status).toBe(201);
+    expect(res.body.applied_promotion_ids).toEqual([promoA, promoB]);
+
+    const { rows } = await db.query(
+      "SELECT promotion_id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied' ORDER BY promotion_id",
+      [res.body.id],
+    );
+    expect(rows.map((r: any) => r.promotion_id).sort()).toEqual([promoA, promoB].sort());
+  });
+
+  it('assigns with no promotions when promotion_ids is omitted', async () => {
+    const memberId = await createMember(gymId, 'UM Assign No Promo Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+    await createPromotion(gymId, newPlanId, `Assign-Unselected-${Date.now()}`, true);
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
+    expect(res.status).toBe(201);
+
+    const { rows } = await db.query(
+      'SELECT id FROM user_membership_promotions WHERE user_membership_id = ?',
+      [res.body.id],
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('rejects a non-stackable promotion combined with another one, without assigning the plan', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Stacking Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+    const exclusive = await createPromotion(gymId, newPlanId, `Assign-Exclusive-${Date.now()}`, false);
+    const stackable = await createPromotion(gymId, newPlanId, `Assign-Stackable-${Date.now()}`, true);
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: [exclusive, stackable] });
+    expect(res.status).toBe(400);
+
+    // Nothing was persisted: the superseded plan is still active and no new row exists.
+    const { rows } = await db.query(
+      'SELECT id, status FROM user_memberships WHERE member_id = ? AND gym_id = ?',
+      [memberId, gymId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(oldUmId);
+    expect(rows[0].status).toBe('active');
+  });
+
+  it('accepts a single non-stackable promotion', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Exclusive Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+    const exclusive = await createPromotion(gymId, newPlanId, `Assign-Only-Exclusive-${Date.now()}`, false);
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: [exclusive] });
+    expect(res.status).toBe(201);
+
+    const { rows } = await db.query(
+      "SELECT promotion_id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'",
+      [res.body.id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].promotion_id).toBe(exclusive);
+  });
+
+  it('rejects a promotion that does not target the plan being assigned', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Mismatch Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const otherPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+    const promoId = await createPromotion(gymId, otherPlanId, `Assign-Mismatch-${Date.now()}`, true);
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: [promoId] });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for another gym's promotion id", async () => {
+    const gymOther = await createTestGym('UM Assign Promo Other Gym');
+    const otherPlanId = await createPlan(gymOther);
+    const otherPromoId = await createPromotion(gymOther, otherPlanId, `Assign-Foreign-${Date.now()}`, true);
+
+    const memberId = await createMember(gymId, 'UM Assign Foreign Promo Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: [otherPromoId] });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when promotion_ids is not a list of ids', async () => {
+    const memberId = await createMember(gymId, 'UM Assign Bad Promo Payload Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: 'not-an-array' });
+    expect(res.status).toBe(400);
   });
 });
 

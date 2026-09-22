@@ -8,7 +8,7 @@ import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { AssignNewPlanModal } from './AssignNewPlanModal';
+import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 
 interface UserMembership {
   id: number;
@@ -324,7 +324,14 @@ export function MemberExpandedRow({
                     <ContextMenu
                       ariaLabel={`Actions for ${m.plan_name ?? 'plan'}`}
                       items={[
-                        { label: t('members.action_assign_new_plan'), onClick: () => setAssigningFor(m) },
+                        {
+                          label: t('members.action_assign_new_plan'),
+                          onClick: () => setAssigningFor(m),
+                          // #628: only one inline assignment editor at a time —
+                          // they share a single draft state.
+                          disabled: assigningFor !== null,
+                          title: assigningFor !== null ? t('members.assign_new_plan_busy_hint') : undefined,
+                        },
                         ...(m.status !== 'cancelled'
                           ? [{ label: t('members.action_cancel_plan'), onClick: () => setCancelling(m), danger: true }]
                           : []),
@@ -332,6 +339,17 @@ export function MemberExpandedRow({
                     />
                   )}
                 </div>
+
+                {/* #628: Assign New Plan is edited inline, in place, inside the
+                    plan card it supersedes — no modal. */}
+                {assigningFor?.id === m.id && (
+                  <AssignPlanInlineEditor
+                    membership={assigningFor}
+                    plans={plans}
+                    onCancel={() => setAssigningFor(null)}
+                    onAssigned={() => { setAssigningFor(null); reloadMemberships(); }}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -538,14 +556,6 @@ export function MemberExpandedRow({
         onCancel={() => setCancelling(null)}
       />
 
-      {assigningFor && (
-        <AssignNewPlanModal
-          membership={assigningFor}
-          plans={plans}
-          onClose={() => setAssigningFor(null)}
-          onAssigned={() => { setAssigningFor(null); reloadMemberships(); }}
-        />
-      )}
     </div>
   );
 }
