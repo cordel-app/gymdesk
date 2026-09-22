@@ -19,9 +19,13 @@
 // membership price, one-off prices, periodic benefits, session benefits and
 // the applied Promotions. Plan Charge Benefits (`user_membership_charge_
 // benefits`) are deliberately NOT an input — they are being decommissioned by
-// a follow-up ticket. Additional Periodic Services (#631) plug in as extra
-// items on an assignment once that ticket lands; nothing here assumes the
-// items can only come from a Promotion.
+// a follow-up ticket.
+//
+// #631 adds Additional Periodic Services: recurring Sellable Items attached
+// directly to an assignment. They are plain items on the assignment, not
+// Promotion benefits (#631 §7) — each is its own stream, billed at the
+// Sellable Item's own frequency and price over its own effective window, so
+// the horizon rule below covers them exactly as it covers everything else.
 
 import { advanceBillingDate } from '../api/billing';
 import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
@@ -91,6 +95,23 @@ export interface SimulationGrant {
   quantity: number;
 }
 
+/**
+ * #631 — an Additional Periodic Service: a recurring Sellable Item attached to
+ * the assignment itself. Billed at the item's own `billing_frequency` and
+ * price, over the window it is attached for (`endsOn` is the effective removal
+ * date, so removing a service only ever stops future charges).
+ */
+export interface SimulationService {
+  id: number;
+  gymChargeId: number;
+  name: string;
+  billingFrequency: SellableItemFrequency | null;
+  unitPrice: number;
+  quantity: number;
+  startsOn: string;
+  endsOn: string | null;
+}
+
 export interface SimulationAssignment {
   userMembershipId: number;
   planName: string | null;
@@ -101,6 +122,8 @@ export interface SimulationAssignment {
   recurringInterval: number | null;
   recurringUnit: BillingUnit | null;
   promotions: SimulationPromotion[];
+  /** #631 — Additional Periodic Services attached to this assignment. */
+  services: SimulationService[];
 }
 
 export interface BillingSimulationInput {
@@ -448,6 +471,55 @@ function buildGrantStream(a: SimulationAssignment, promo: SimulationPromotion, g
 }
 
 /**
+ * #631 — an Additional Periodic Service.
+ *
+ * Billed at the Sellable Item's own cadence and price, from the later of the
+ * assignment's start and the service's effective start date (#631 §5: a
+ * service added after the plan started bills from its actual effective date),
+ * and until the earlier of the assignment's end and the service's effective
+ * removal date (#631 §3: removal affects future billing only — charges before
+ * `endsOn` still stand).
+ *
+ * No Promotion resolution: these are additional services, never Promotion
+ * benefits (#631 §7), so every occurrence is charged at the regular price and
+ * carries no benefit explanation.
+ */
+function buildServiceStream(a: SimulationAssignment, service: SimulationService): Stream | null {
+  const cadence = service.billingFrequency ? cadenceForSellableItem(service.billingFrequency) : null;
+  if (!cadence) return null;
+
+  const start = maxDate(a.startsAt, service.startsOn);
+  const end = a.endsAt != null && service.endsOn != null
+    ? minDate(a.endsAt, service.endsOn)
+    : (a.endsAt ?? service.endsOn);
+  if (end != null && end < start) return null;
+
+  const quantity = Math.max(1, Math.trunc(service.quantity) || 1);
+  const unit = round2(service.unitPrice);
+  const regular = round2(unit * quantity);
+  return {
+    cadence,
+    section: cadence.section,
+    start,
+    end,
+    resolve: () => ({ amount: regular, benefits: [], promotional: false, pending: false }),
+    line: (date) => ({
+      kind: 'sellable_item',
+      label: service.name,
+      user_membership_id: a.userMembershipId,
+      plan_name: a.planName,
+      gym_charge_id: service.gymChargeId,
+      quantity,
+      unit_price: unit,
+      regular_price: regular,
+      benefits: [],
+      actual_charge: regular,
+      price_may_change: date >= advanceBillingDate(start, 1, 'year'),
+    }),
+  };
+}
+
+/**
  * A Promotion's one-off or session grant: no schedule to project, so it is a
  * single line on the assignment's start date covering the granted quantity
  * (#629 thread Q5 — `per_session` items appear as "N sessions").
@@ -544,6 +616,10 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
           singles.push(buildGrantSingleCharge(a, promo, grant));
         }
       }
+    }
+    for (const service of a.services) {
+      const s = buildServiceStream(a, service);
+      if (s) streams.push(s);
     }
   }
 

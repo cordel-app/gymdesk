@@ -12,6 +12,7 @@ import {
   computeBillingSimulation,
 } from '../domain/billingSimulation';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
+import { loadServicesForSimulation } from './user-membership-services';
 
 /**
  * #629 (stage 1) — Billing Simulation.
@@ -145,6 +146,11 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
     gymId,
     [...new Set(applicationsPerAssignment.flat().map((a) => a.promotionId))],
   );
+  // #631 — Additional Periodic Services attached to these assignments. Read
+  // live (name, price, frequency from `gym_charges`) like the Promotion grants
+  // above, so an item's price change is reflected the next time the simulation
+  // runs rather than being frozen at attachment time.
+  const servicesByAssignment = await loadServicesForSimulation(gymId, rows.map((row) => row.id));
 
   const assignments: SimulationAssignment[] = await Promise.all(rows.map(async (row, i) => {
     const startsAt = toDateOnly(row.starts_at);
@@ -168,6 +174,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       recurringInterval: row.recurring_billing_interval,
       recurringUnit: (row.recurring_billing_unit ?? null) as BillingUnit | null,
       promotions,
+      services: servicesByAssignment.get(row.id) ?? [],
     };
   }));
 

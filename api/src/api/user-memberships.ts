@@ -11,6 +11,7 @@ import {
   fetchLiveBenefits,
   validatePromotionSelection,
 } from './membership-promotions';
+import { loadAssignedPlanServices } from './user-membership-services';
 import {
   AppliedPromotionForBilling,
   BillingUnit,
@@ -365,12 +366,16 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   const um = rows[0];
 
-  const [audit, members, billingPolicy, chargeBenefits, promotions] = await Promise.all([
+  const [audit, members, billingPolicy, chargeBenefits, promotions, additionalServices] = await Promise.all([
     loadAuditMetadata(gymId, req.params.id),
     db.query(MEMBERS_SELECT, [req.params.id, gymId]).then((r) => r.rows),
     loadBillingPolicy(gymId, um.membership_plan_id),
     loadChargeBenefitsSnapshot(gymId, um.id),
     fetchAppliedPromotions(gymId, um.id),
+    // #631 — Additional Periodic Services, embedded like every other section
+    // of the expanded card. GET /:id/services stays mounted for the lighter
+    // refetch the inline editor does after an add/remove.
+    loadAssignedPlanServices(gymId, um.id),
   ]);
   const activityAllowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, members.map((m: any) => m.member_id));
   const billingEvents = await computeBillingEventsView(gymId, um);
@@ -382,6 +387,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     charge_benefits: chargeBenefits,
     activity_allowances: activityAllowances,
     promotions,
+    additional_services: additionalServices,
     billing_events: billingEvents,
   });
 });

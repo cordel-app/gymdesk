@@ -56,6 +56,10 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM member_nutrition_plan_meals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_days WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plans WHERE gym_id IN (${marks})`, ids);
+  // #631: user_membership_services.gym_charge_id has no ON DELETE CASCADE, so
+  // these rows must go before gym_charges below (deleting members cascades them
+  // via user_memberships, but only for gyms whose members are deleted here).
+  await db.query(`DELETE FROM user_membership_services WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});

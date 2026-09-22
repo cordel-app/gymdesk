@@ -247,7 +247,8 @@
     "event_type_label": "Tipus de càrrec",
     "event_notes": "Notes",
     "event_source": "Origen",
-    "event_receipt": "Rebut"
+    "event_receipt": "Rebut",
+    "section_additional_services": "Serveis Periòdics Addicionals"
   },
   "member_payments": {
     "title": "Pagaments del soci",
@@ -2889,7 +2890,29 @@
     "detail_created_at": "Creat el",
     "detail_modified_by": "Modificat per",
     "detail_modified_at": "Modificat el",
-    "close": "Tanca"
+    "close": "Tanca",
+    "section_additional_services": "Serveis Periòdics Addicionals",
+    "services_none": "Sense serveis periòdics addicionals.",
+    "services_add": "+ Afegir Servei",
+    "services_save": "Afegir",
+    "services_remove": "Eliminar",
+    "services_removed": "Eliminat",
+    "services_select_item": "Selecciona un servei…",
+    "services_items_error": "No s’han pogut carregar els serveis disponibles.",
+    "services_col_item": "Article Venible",
+    "services_col_quantity": "Quantitat",
+    "services_col_frequency": "Freqüència",
+    "services_col_price": "Preu",
+    "services_col_start_date": "Data d'Inici",
+    "services_col_end_date": "Data de Fi",
+    "services_col_actions": "Accions",
+    "services_frequency_week": "Setmanal",
+    "services_frequency_four_weeks": "4 Setmanes",
+    "services_frequency_month": "Mensual",
+    "services_frequency_year": "Anual",
+    "services_frequency_once": "Únic",
+    "services_frequency_per_session": "Per Sessió",
+    "services_item_retired": "retirat"
   },
   "taxes": {
     "title": "Impostos",

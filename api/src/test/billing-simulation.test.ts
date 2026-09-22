@@ -9,6 +9,7 @@ import {
   SimulationAssignment,
   SimulationGrant,
   SimulationPromotion,
+  SimulationService,
   computeBillingSimulation,
 } from '../domain/billingSimulation';
 
@@ -24,6 +25,22 @@ function assignment(over: Partial<SimulationAssignment> = {}): SimulationAssignm
     recurringInterval: 1,
     recurringUnit: 'month',
     promotions: [],
+    services: [],
+    ...over,
+  };
+}
+
+// #631 — an Additional Periodic Service attached to the assignment.
+function service(over: Partial<SimulationService> = {}): SimulationService {
+  return {
+    id: 1,
+    gymChargeId: 42,
+    name: 'Locker Rental',
+    billingFrequency: 'month',
+    unitPrice: 20,
+    quantity: 1,
+    startsOn: START,
+    endsOn: null,
     ...over,
   };
 }
@@ -354,5 +371,101 @@ describe('computeBillingSimulation — cadences', () => {
       assignments: [assignment({ recurringInterval: 10, recurringUnit: 'day' })],
     });
     expect(result.sections.map((s) => s.section)).toEqual(['other']);
+  });
+});
+
+describe('computeBillingSimulation — additional periodic services (#631)', () => {
+  it('bills a service alongside the membership fee, in the section of its own frequency', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ services: [service()] })],
+    });
+    const monthly = section(result, 'month')!;
+    expect(monthly.events).toHaveLength(1);
+    expect(monthly.events[0].lines.map((l) => [l.kind, l.label, l.actual_charge])).toEqual([
+      ['membership_fee', 'Standard', 100],
+      ['sellable_item', 'Locker Rental', 20],
+    ]);
+    expect(monthly.events[0].total).toBe(120);
+    expect(result.total).toBe(120);
+  });
+
+  it('multiplies the charge by the quantity', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ services: [service({ quantity: 3 })] })],
+    });
+    const line = section(result, 'month')!.events[0].lines[1];
+    expect(line).toMatchObject({ quantity: 3, unit_price: 20, regular_price: 60, actual_charge: 60 });
+  });
+
+  it('bills a 4-week service in its own section with concrete period dates', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ services: [service({ name: 'Training Service', billingFrequency: 'four_weeks', unitPrice: 40 })] })],
+    });
+    const events = section(result, 'four_weeks')!.events;
+    expect(events[0]).toMatchObject({ date: '2026-09-01', period_end: '2026-09-28', total: 40 });
+  });
+
+  it('bills a service added after the plan started from its own effective date (#631 §5)', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        promotions: [promotion({ freeMonths: 3 })],
+        services: [service({ startsOn: '2026-11-01' })],
+      })],
+    });
+    const events = section(result, 'month')!.events;
+    expect(events.map((e) => [e.date, e.total])).toEqual([
+      ['2026-09-01', 0], ['2026-10-01', 0], ['2026-11-01', 20], ['2026-12-01', 120],
+    ]);
+  });
+
+  it('stops a removed service after its effective removal date, keeping earlier charges (#631 §3)', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        promotions: [promotion({ freeMonths: 4 })],
+        services: [service({ endsOn: '2026-10-15' })],
+      })],
+    });
+    const events = section(result, 'month')!.events;
+    expect(events.map((e) => [e.date, e.total])).toEqual([
+      ['2026-09-01', 20], ['2026-10-01', 20], ['2026-11-01', 0], ['2026-12-01', 0], ['2027-01-01', 100],
+    ]);
+  });
+
+  it('charges the regular price during a promotional period — services are not promotion benefits (#631 §7)', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        promotions: [promotion({ freeMonths: 1, grants: [grant({ gymChargeId: 42, billingFrequency: 'month' })] })],
+        services: [service()],
+      })],
+    });
+    const first = section(result, 'month')!.events[0];
+    const serviceLine = first.lines.find((l) => l.kind === 'sellable_item' && l.benefits.length === 0)!;
+    expect(serviceLine).toMatchObject({ label: 'Locker Rental', actual_charge: 20, benefits: [] });
+    // The membership fee is waived by the free month; the service still bills.
+    expect(first.lines.find((l) => l.kind === 'membership_fee')!.actual_charge).toBe(0);
+  });
+
+  it('extends the horizon so a service starting later still shows its first charge', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ services: [service({ billingFrequency: 'year', startsOn: '2027-03-01' })] })],
+    });
+    expect(result.horizon_date).toBe('2027-03-01');
+    expect(section(result, 'year')!.events.map((e) => e.date)).toEqual(['2027-03-01']);
+    expect(section(result, 'month')!.events).toHaveLength(7); // 2026-09 → 2027-03
+  });
+
+  it('ignores a service whose window closes before the assignment starts', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ services: [service({ startsOn: '2026-06-01', endsOn: '2026-07-01' })] })],
+    });
+    expect(section(result, 'month')!.events[0].lines).toHaveLength(1);
+  });
+
+  it('ignores a service whose Sellable Item has no recurring frequency', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ services: [service({ billingFrequency: 'once' }), service({ id: 2, billingFrequency: null })] })],
+    });
+    expect(section(result, 'month')!.events[0].lines).toHaveLength(1);
+    expect(section(result, 'one_off')).toBeUndefined();
   });
 });

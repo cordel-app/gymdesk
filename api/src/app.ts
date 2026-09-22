@@ -37,6 +37,7 @@ import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
 import { memberBillingSimulationRouter } from './api/billing-simulation';
+import { userMembershipServicesRouter } from './api/user-membership-services';
 import { musclesRouter, exercisesRouter } from './api/exercises';
 import { resultTypesRouter } from './api/result-types';
 import { workoutTemplatesRouter } from './api/workout-templates';
@@ -236,6 +237,9 @@ app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('
 app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), billingEventsRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipsRouter);
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), membershipPromotionsRouter);
+// #631: Additional Periodic Services attached to one Assigned Plan. Three path
+// segments, so userMembershipsRouter's own '/:id' (one segment) never matches.
+app.use('/user-memberships/:id/services', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipServicesRouter);
 // #629: three path segments, so userMembershipsRouter (mounted above) never
 // matches it and the request falls through to here.
 app.use('/user-memberships/member/:memberId/billing-simulation', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), memberBillingSimulationRouter);
