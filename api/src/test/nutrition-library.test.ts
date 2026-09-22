@@ -413,3 +413,65 @@ describe('translated names', () => {
     expect(res.body.display_name).toBe(name);
   });
 });
+
+// ---------------------------------------------------------------------------
+// #644 — the nutritional-quality classification seeded by migration 167.
+// The acceptance criterion is that the review is persisted, so assert against
+// the migrated database rather than only against the migration's own table.
+// ---------------------------------------------------------------------------
+
+describe('nutritional qualities of the system library (#644)', () => {
+  async function qualitiesOf(name: string): Promise<string[]> {
+    const { rows } = await db.query<{ slug: string }>(
+      `SELECT nq.slug
+       FROM nutrition_library_items nli
+       JOIN nutrition_library_item_qualities nliq ON nliq.item_id = nli.id
+       JOIN nutritional_qualities nq ON nq.id = nliq.quality_id
+       WHERE nli.gym_id IS NULL AND nli.name = ?
+       ORDER BY nq.slug`,
+      [name],
+    );
+    return rows.map((r) => r.slug);
+  }
+
+  it('assigns fat and fiber, which had no assignments at all before this ticket', async () => {
+    const { rows } = await db.query<{ slug: string; total: number }>(
+      `SELECT nq.slug, COUNT(*) AS total
+       FROM nutritional_qualities nq
+       JOIN nutrition_library_item_qualities nliq ON nliq.quality_id = nq.id
+       WHERE nq.slug IN ('fat', 'fiber')
+       GROUP BY nq.slug`,
+    );
+    const bySlug = Object.fromEntries(rows.map((r) => [r.slug, Number(r.total)]));
+    expect(bySlug.fat).toBeGreaterThan(0);
+    expect(bySlug.fiber).toBeGreaterThan(0);
+  });
+
+  it('classifies a food by every macronutrient it is a source of', async () => {
+    expect(await qualitiesOf('Nuts')).toEqual(['fat', 'fiber', 'protein']);
+    expect(await qualitiesOf('Salmon')).toEqual(['fat', 'protein']);
+    expect(await qualitiesOf('Brown Rice')).toEqual(['carbohydrate', 'fiber']);
+  });
+
+  it('keeps the assignments migration 127 already made', async () => {
+    expect(await qualitiesOf('Chicken')).toContain('protein');
+    expect(await qualitiesOf('Sugar')).toContain('carbohydrate');
+  });
+
+  it('leaves trace-only foods untagged', async () => {
+    for (const name of ['Water', 'Coffee', 'Tea', 'Mustard', 'Hot Sauce', 'Tomato Sauce', 'Yogurt Sauce']) {
+      expect(await qualitiesOf(name), `${name} should have no qualities`).toEqual([]);
+    }
+  });
+
+  it('exposes the classification through the gym-facing list endpoint', async () => {
+    const res = await request
+      .get(`/nutrition-library?search=${encodeURIComponent('Olive Oil')}&limit=10`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((i: any) => i.name === 'Olive Oil');
+    expect(item).toBeTruthy();
+    expect(item.qualities.map((q: any) => q.slug)).toContain('fat');
+  });
+});
