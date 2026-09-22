@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { ThemeAdvancedSection } from '@/components/ThemeAdvancedSection';
 import { checkCalendarContrast } from '@/lib/calendarContrast';
 import { ADVANCED_ATTRIBUTES, DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
@@ -202,56 +203,90 @@ interface EditorProps {
 // Colors groups + inline Advanced attributes for each group (draft-only —
 // the caller decides when/whether `onChange` triggers a live preview or a
 // persistence call; this component never calls either directly).
+//
+// #632 — each group is a collapsible card. The state lives here and holds only
+// which groups are open: it never touches `tokens`, so collapsing a group can't
+// change a color value, and the groups are independent (a Set of open keys, not
+// an accordion's single key). All groups start collapsed — the point of the
+// ticket is that the Colors section is too long to scan expanded.
 export function ThemeColorsEditor({ tokens, onChange, namespace, t, readOnly }: EditorProps) {
   const advanced = tokens.advanced ?? {};
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+
+  function toggleGroup(groupKey: string) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }
+
   return (
     <div>
-      {COLOR_GROUPS.map(({ groupKey, fields }) => (
-        <div key={groupKey} style={{ marginBottom: 20 }}>
-          <p style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: 'var(--gd-section-heading-text, #888888)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey)}</p>
-          {fields.map(({ key, labelKey }) => (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey)}</span>
-              <input
-                type="color"
-                disabled={readOnly}
-                // Themes persisted before a token was introduced have no value
-                // for it (the Calendar group in #559, the Text/Separator/Input
-                // groups in #489). Fall back to the default so the picker stays
-                // a controlled input showing the color actually in effect,
-                // rather than rendering blank — matches applyTokens()'s own
-                // `?? DEFAULT_TOKENS.colors.x` fallbacks.
-                value={(tokens.colors[key] ?? DEFAULT_TOKENS.colors[key]) as string}
-                onChange={(e) => onChange({ ...tokens, colors: { ...tokens.colors, [key]: e.target.value } })}
-                style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: readOnly ? 'default' : 'pointer', padding: 2 }}
-              />
-            </div>
-          ))}
-          {groupKey === 'group_header' && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
-              <input
-                type="number"
-                min={0}
-                max={20}
-                disabled={readOnly}
-                value={tokens.colors.headerSeparatorHeight}
-                onChange={(e) => onChange({ ...tokens, colors: { ...tokens.colors, headerSeparatorHeight: Number(e.target.value) } })}
-                style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
-              />
-            </div>
-          )}
-          {!readOnly && (
-            <ThemeAdvancedSection
-              group={groupKey}
-              advanced={advanced}
-              onChange={(next) => onChange({ ...tokens, advanced: next })}
-              namespace={namespace}
-            />
-          )}
-          {groupKey === 'group_calendar' && <CalendarContrastReport tokens={tokens} t={t} />}
-        </div>
-      ))}
+      {COLOR_GROUPS.map(({ groupKey, fields }) => {
+        const open = openGroups.has(groupKey);
+        return (
+          <div key={groupKey} style={{ marginBottom: 10, border: '1px solid var(--gd-border, #eee)', borderRadius: 6, overflow: 'hidden' }}>
+            {/* The whole header is the toggle — a <button> so it is keyboard- and
+                screen-reader-operable, with the group name as its accessible name. */}
+            <button
+              type="button"
+              onClick={() => toggleGroup(groupKey)}
+              aria-expanded={open}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 12px', background: 'var(--gd-card-bg, #ffffff)', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--gd-section-heading-text, #888888)', textTransform: 'uppercase', letterSpacing: '0.06em', fontFamily: 'inherit' }}
+            >
+              {t(groupKey)}
+              <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+            </button>
+            {open && (
+              <div style={{ padding: '12px 12px 4px', borderTop: '1px solid var(--gd-border, #eee)' }}>
+                {fields.map(({ key, labelKey }) => (
+                  <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{t(labelKey)}</span>
+                    <input
+                      type="color"
+                      disabled={readOnly}
+                      // Themes persisted before a token was introduced have no value
+                      // for it (the Calendar group in #559, the Text/Separator/Input
+                      // groups in #489). Fall back to the default so the picker stays
+                      // a controlled input showing the color actually in effect,
+                      // rather than rendering blank — matches applyTokens()'s own
+                      // `?? DEFAULT_TOKENS.colors.x` fallbacks.
+                      value={(tokens.colors[key] ?? DEFAULT_TOKENS.colors[key]) as string}
+                      onChange={(e) => onChange({ ...tokens, colors: { ...tokens.colors, [key]: e.target.value } })}
+                      style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: readOnly ? 'default' : 'pointer', padding: 2 }}
+                    />
+                  </div>
+                ))}
+                {groupKey === 'group_header' && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{t('label_header_sep_height')}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      disabled={readOnly}
+                      value={tokens.colors.headerSeparatorHeight}
+                      onChange={(e) => onChange({ ...tokens, colors: { ...tokens.colors, headerSeparatorHeight: Number(e.target.value) } })}
+                      style={{ width: 80, padding: '6px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 14 }}
+                    />
+                  </div>
+                )}
+                {!readOnly && (
+                  <ThemeAdvancedSection
+                    group={groupKey}
+                    advanced={advanced}
+                    onChange={(next) => onChange({ ...tokens, advanced: next })}
+                    namespace={namespace}
+                  />
+                )}
+                {groupKey === 'group_calendar' && <CalendarContrastReport tokens={tokens} t={t} />}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
