@@ -14,10 +14,14 @@ describe('defaultTokens()', () => {
     }
   });
 
-  it('does not define event background/border tokens — event color stays status-derived (#541)', () => {
+  it('defines the #559 stage-3 event color tokens, defaulting to the pre-stage-3 event purple', () => {
+    // Every event used to be painted by its booking status; `scheduled` (much
+    // the most common) was #6c63ff. Defaulting to it keeps an unconfigured
+    // calendar looking like the one admins already had, with the status now
+    // carried by the pill badge inside the event.
     const colors = defaultTokens().colors as Record<string, unknown>;
-    expect(colors.calendarEventBackground).toBeUndefined();
-    expect(colors.calendarEventBorder).toBeUndefined();
+    expect(colors.calendarEventBackground).toBe('#6c63ff');
+    expect(colors.calendarEventBorder).toBe('#6c63ff');
   });
 });
 

@@ -4,10 +4,11 @@ import { join } from 'path';
 import { COLOR_GROUPS } from '../components/ThemeTokensEditor';
 import { ADVANCED_ATTRIBUTES, DEFAULT_ADVANCED, DEFAULT_TOKENS } from '../lib/themeTokens';
 
-// #559 stage 1 — the Calendar section in the Base Themes and Custom Themes
-// editors: the tokens, their defaults, and the editor section. Their wiring to
-// --gd-calendar-* CSS variables and to FullCalendar landed in stage 2 and is
-// covered separately by theme-calendar-css.test.ts.
+// #559 stages 1 & 3 — the Calendar section in the Base Themes and Custom
+// Themes editors: the tokens, their defaults, and the editor section. Their
+// wiring to --gd-calendar-* CSS variables and to FullCalendar landed in stage
+// 2 and is covered separately by theme-calendar-css.test.ts; the status pill
+// badge stage 3 adds is covered by calendar-status-badge.test.ts.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
@@ -59,10 +60,11 @@ describe('Calendar theme section (#559 stage 1)', () => {
     }
   });
 
-  it('exposes no event background or border token — event color stays status-derived (#541)', () => {
+  it('exposes the event color tokens added in stage 3', () => {
     const keys = calendarGroup!.fields.map((f) => f.key as string);
-    expect(keys).not.toContain('calendarEventBackground');
-    expect(keys).not.toContain('calendarEventBorder');
+    expect(keys).toContain('calendarEventBackground');
+    expect(keys).toContain('calendarEventBorder');
+    expect(keys).toContain('calendarEventText');
   });
 
   // next-intl has no locale fallback (apps/admin/src/i18n.ts), so a key present

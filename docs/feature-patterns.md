@@ -478,6 +478,8 @@ A widget the app doesn't own (FullCalendar today) is themed through the same `th
 
 4. **Repeat the default as the CSS fallback.** `var(--gd-calendar-today-bg, #fffbe6)` — the fallback is what renders before a theme resolves (or with no theme at all), so it must equal the token's default. A test asserts the two never drift.
 
+5. **Nothing per-item may set the same property inline.** Libraries that take a color per item (FullCalendar's `backgroundColor`/`borderColor` per event) write it as an inline style, which beats the sheet — so a page passing one silently disables the token. If the per-item color carried meaning (#541: a calendar event's color was its booking status), move that meaning to something layered *inside* the item, e.g. a pill badge with its own background, and keep the one centralized mapping that produced the color. The token then owns the item's surface, the badge owns the meaning, and a test asserts no inline color comes back.
+
 ---
 
 ## Dependency Awareness (shared catalog entities)

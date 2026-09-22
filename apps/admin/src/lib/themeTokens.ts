@@ -52,13 +52,11 @@ export interface ThemeTokens {
     // Links
     linkColor: string;
     linkHoverColor: string;
-    // Calendar (#559 stage 1) — only the surfaces the admin Calendar
+    // Calendar (#559 stages 1 & 3) — only the surfaces the admin Calendar
     // (FullCalendar: timeGridDay / timeGridWeek / dayGridMonth) actually
-    // renders today. Deliberately absent: event background and event border,
-    // which stay derived from `calendar_events.status` per #541 and the #559
-    // clarification ("Calendar event background will be the one used");
-    // a now-indicator token, since `nowIndicator` isn't enabled; and an
-    // empty-state color, since dayGrid/timeGrid have no empty state.
+    // renders today. Deliberately absent: a now-indicator token, since
+    // `nowIndicator` isn't enabled; and an empty-state color, since
+    // dayGrid/timeGrid have no empty state.
     calendarBackground: string;
     calendarSurfaceBackground: string;
     calendarHeaderBackground: string;
@@ -72,6 +70,12 @@ export interface ThemeTokens {
     calendarTimeAxisText: string;
     calendarWeekendBackground: string;
     calendarDisabledSlotBackground: string;
+    // Event colors (#559 stage 3). One background for every event: the booking
+    // status is carried by the pill badge inside the event instead (#541 /
+    // lib/calendarEventColors.ts), so it is still status — and only status —
+    // that gives an event its color.
+    calendarEventBackground: string;
+    calendarEventBorder: string;
     calendarEventText: string;
     calendarNavButtonBackground: string;
     calendarNavButtonText: string;
@@ -153,10 +157,14 @@ export const DEFAULT_ADVANCED: Record<string, string | number | boolean> = {
   // Animations
   animationsEnabled: true,
   transitionSpeed: 'normal',
-  // Calendar (#559 stage 1) — defaults mirror FullCalendar's own built-in
+  // Calendar (#559 stages 1 & 3) — defaults mirror FullCalendar's own built-in
   // values so an unconfigured theme keeps today's exact calendar appearance.
+  // The exception is the event hover background (#559 stage 3): FullCalendar
+  // has no event hover style of its own, so the default is the same purple the
+  // events themselves default to, one step darker.
   calendarEventBorderRadius: '3px',
   calendarEventSelectedOverlay: '#000000',
+  calendarEventHoverBackground: '#5a52d5',
   calendarSlotHeight: '1.5em',
   calendarNavButtonHoverBackground: '#1e2b37',
   calendarNavButtonBorderRadius: '4px',
@@ -228,9 +236,10 @@ export const ADVANCED_ATTRIBUTES: AdvancedAttribute[] = [
   { key: 'cellPadding',             labelKey: 'adv_cell_padding',            group: 'group_tables',          type: 'text' },
   { key: 'rowHoverBg',              labelKey: 'adv_row_hover_bg',            group: 'group_tables',          type: 'color' },
   { key: 'selectedRowBg',           labelKey: 'adv_selected_row_bg',         group: 'group_tables',          type: 'color' },
-  // Calendar (#559 stage 1)
+  // Calendar (#559 stages 1 & 3)
   { key: 'calendarEventBorderRadius',      labelKey: 'adv_calendar_event_radius',          group: 'group_calendar', type: 'text' },
   { key: 'calendarEventSelectedOverlay',   labelKey: 'adv_calendar_event_selected_overlay', group: 'group_calendar', type: 'color' },
+  { key: 'calendarEventHoverBackground',   labelKey: 'adv_calendar_event_hover_bg',        group: 'group_calendar', type: 'color' },
   { key: 'calendarSlotHeight',             labelKey: 'adv_calendar_slot_height',           group: 'group_calendar', type: 'text' },
   { key: 'calendarNavButtonHoverBackground', labelKey: 'adv_calendar_nav_btn_hover_bg',    group: 'group_calendar', type: 'color' },
   { key: 'calendarNavButtonBorderRadius',  labelKey: 'adv_calendar_nav_btn_radius',        group: 'group_calendar', type: 'text' },
@@ -254,6 +263,8 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
   calendarTimeAxisText:           '--gd-calendar-time-axis-text',
   calendarWeekendBackground:      '--gd-calendar-weekend-bg',
   calendarDisabledSlotBackground: '--gd-calendar-disabled-slot-bg',
+  calendarEventBackground:        '--gd-calendar-event-bg',
+  calendarEventBorder:            '--gd-calendar-event-border',
   calendarEventText:              '--gd-calendar-event-text',
   calendarNavButtonBackground:    '--gd-calendar-nav-btn-bg',
   calendarNavButtonText:          '--gd-calendar-nav-btn-text',
@@ -262,6 +273,7 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
 export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
   calendarEventBorderRadius:        '--gd-calendar-event-radius',
   calendarEventSelectedOverlay:     '--gd-calendar-event-selected-overlay',
+  calendarEventHoverBackground:     '--gd-calendar-event-hover-bg',
   calendarSlotHeight:               '--gd-calendar-slot-height',
   calendarNavButtonHoverBackground: '--gd-calendar-nav-btn-hover-bg',
   calendarNavButtonBorderRadius:    '--gd-calendar-nav-btn-radius',
@@ -322,6 +334,11 @@ export const DEFAULT_TOKENS: ThemeTokens = {
     calendarTimeAxisText:         '#6b7280',
     calendarWeekendBackground:    '#ffffff',
     calendarDisabledSlotBackground: '#f7f7f7',
+    // #559 stage 3 — the purple every `scheduled` event was painted with
+    // before this stage, so the calendar an admin sees on day one is the one
+    // they saw before (scheduled is by far the most common status).
+    calendarEventBackground:      '#6c63ff',
+    calendarEventBorder:          '#6c63ff',
     calendarEventText:            '#ffffff',
     calendarNavButtonBackground:  '#2c3e50',
     calendarNavButtonText:        '#ffffff',
@@ -400,12 +417,10 @@ export function applyTokens(tokens: ThemeTokens) {
   // Links
   el.style.setProperty('--gd-link',                 c.linkColor);
   el.style.setProperty('--gd-link-hover',           c.linkHoverColor);
-  // Calendar (#559 stage 2) — read by the FullCalendar override sheet in
+  // Calendar (#559 stages 2 & 3) — read by the FullCalendar override sheet in
   // components/CalendarThemeStyles.tsx. Every key falls back to its default,
   // so themes saved before #559 (which carry no calendar values at all) still
   // get the full variable set, holding FullCalendar's own built-in appearance.
-  // The three event variables are emitted here too but not yet consumed by any
-  // CSS rule: event colors stay status-derived until stage 3 (#541).
   const adv = tokens.advanced ?? {};
   for (const [key, cssVar] of Object.entries(CALENDAR_COLOR_VARS)) {
     const value = (c as Record<string, unknown>)[key] ?? (DEFAULT_TOKENS.colors as Record<string, unknown>)[key];
