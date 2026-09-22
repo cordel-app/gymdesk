@@ -326,11 +326,14 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         <AssignedPlanDetailsModal detail={detail} onClose={() => setShowDetails(false)} />
       )}
 
+      {/* #630: the menu action reads "Cancel" now, so the dialog can't label both
+          its buttons with it — the confirm button spells out what it cancels and
+          the dismiss button says what happens instead of a second "Cancel". */}
       <ConfirmDialog
         open={closeStep === 'confirm'}
         message={t('confirm_close')}
-        confirmLabel={t('action_close')}
-        cancelLabel={t('cancel')}
+        confirmLabel={t('action_close_confirm')}
+        cancelLabel={t('action_close_dismiss')}
         onConfirm={confirmClose}
         onCancel={() => setCloseStep('none')}
         busy={actionBusy}
@@ -338,8 +341,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
       <ConfirmDialog
         open={closeStep === 'warn'}
         message={t('confirm_close_with_warnings', { warnings: closeWarnings.join(', ') })}
-        confirmLabel={t('action_close')}
-        cancelLabel={t('cancel')}
+        confirmLabel={t('action_close_confirm')}
+        cancelLabel={t('action_close_dismiss')}
         onConfirm={confirmCloseWithWarnings}
         onCancel={() => setCloseStep('none')}
         busy={actionBusy}
