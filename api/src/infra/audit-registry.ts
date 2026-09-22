@@ -6,6 +6,8 @@ export const AUDIT_ACTIONS: string[] = [
   'change_role', 'grant', 'invite', 'reinvite', 'remove',
   'revoke', 'revoke_invite', 'link', 'status_change',
   'impersonation_started', 'impersonation_ended',
+  // #640: manual financial interventions on a Billing Event.
+  'retry_payment', 'manual_payment',
 ];
 
 interface SimpleEntity {

@@ -100,10 +100,21 @@ membersRouter.get('/', async (req, res) => {
              FROM user_memberships um
              WHERE um.member_id = m.id AND um.gym_id = m.gym_id
              ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS enrollment_status,
+            -- #640: a Membership covering two people or a family bills once,
+            -- against its owner, so a covered member's payment status has to
+            -- follow the transactions of any Membership they are covered by —
+            -- not only the ones raised against them personally. Without the
+            -- join through user_membership_members a failed (or retried, or
+            -- manually settled) charge would move the owner's status and leave
+            -- everyone else on the same plan reading as if nothing happened.
             (SELECT pr.status
              FROM payment_requests pr
-             WHERE pr.member_id = m.id AND pr.gym_id = m.gym_id
-             ORDER BY pr.created_at DESC LIMIT 1) AS payment_status
+             WHERE pr.gym_id = m.gym_id
+               AND (pr.member_id = m.id
+                    OR pr.user_membership_id IN (
+                         SELECT umm.user_membership_id FROM user_membership_members umm
+                         WHERE umm.member_id = m.id AND umm.gym_id = m.gym_id))
+             ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_status
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}

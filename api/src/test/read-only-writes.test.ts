@@ -31,7 +31,10 @@ const CASES: { module: string; role: Role; reads: string[]; writes: [Verb, strin
     writes: [['post', '/membership-plans'], ['put', '/membership-plans/999999'], ['delete', '/membership-plans/999999'],
              ['post', '/promotions'], ['post', '/sellable-items'], ['post', '/taxes'], ['put', '/taxes/999999'], ['delete', '/taxes/999999']] },
   { module: 'PAYMENTS (R)', role: 'accountant', reads: ['/user-memberships'],
-    writes: [['post', '/user-memberships']] },
+    writes: [['post', '/user-memberships'],
+             // #640: the two audited Billing Event payment actions.
+             ['post', '/payments/billing-events/999999/retry'],
+             ['post', '/payments/billing-events/999999/manual-payment']] },
 ];
 
 const gyms = {} as Record<Role, string>;
