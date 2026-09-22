@@ -1,7 +1,8 @@
 'use client';
 
 import { ThemeAdvancedSection } from '@/components/ThemeAdvancedSection';
-import { DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
+import { checkCalendarContrast } from '@/lib/calendarContrast';
+import { ADVANCED_ATTRIBUTES, DEFAULT_TOKENS, FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
 
 // Shared by the Custom Themes (`[locale]/themes`) and Base Themes
 // (`[locale]/system/themes`) editors (#492) — both edit the same
@@ -133,6 +134,55 @@ export const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens[
 
 export const TYPO_LEVELS = ['h1', 'h2', 'h3', 'body', 'small'] as const;
 
+// #559 stage 4 — calendar token key → its label key in this editor, so the
+// contrast report names each color exactly as the picker above it does. Built
+// from the section definitions rather than restated, so a renamed label can't
+// drift out of the report.
+const CALENDAR_LABEL_KEYS: Record<string, string> = {
+  ...Object.fromEntries(
+    (COLOR_GROUPS.find((g) => g.groupKey === 'group_calendar')?.fields ?? [])
+      .map(({ key, labelKey }) => [key as string, labelKey]),
+  ),
+  ...Object.fromEntries(
+    ADVANCED_ATTRIBUTES.filter((a) => a.group === 'group_calendar').map((a) => [a.key, a.labelKey]),
+  ),
+};
+
+/**
+ * #559 stage 4 — the ticket's accessibility requirement ("ensure configured
+ * colors remain readable and provide sufficient contrast against their
+ * backgrounds") surfaced where the colors are chosen.
+ *
+ * Advisory only: it reports, it never blocks a save. A gym's branding is its
+ * own, and the API-side `validateTokens()` stays a pure format check. Passing
+ * pairs collapse into the one-line count; only the combinations that fall
+ * short are listed, each with the ratio it reaches and the one it needs.
+ */
+function CalendarContrastReport({ tokens, t }: { tokens: ThemeTokens; t: (key: any) => string }) {
+  const results = checkCalendarContrast(tokens);
+  const failing = results.filter((r) => !r.passes);
+  return (
+    <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 6, background: 'var(--gd-app-bg, #f5f5f5)' }}>
+      <p style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>
+        {t('calendar_contrast_title')}{' '}
+        <span style={{ fontWeight: 400, color: 'var(--gd-text-muted, #6b7280)' }}>
+          — {results.length - failing.length}/{results.length} {t('calendar_contrast_summary')}
+        </span>
+      </p>
+      {failing.length > 0 && (
+        <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12, color: 'var(--gd-status-warning, #d97706)' }}>
+          {failing.map((r) => (
+            <li key={r.pair.id} style={{ marginBottom: 2 }}>
+              {t(CALENDAR_LABEL_KEYS[r.pair.fg])} / {t(CALENDAR_LABEL_KEYS[r.pair.bg])} — {r.ratio.toFixed(2)}:1{' '}
+              ({t('calendar_contrast_min')} {r.pair.minRatio}:1)
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const selectStyle: React.CSSProperties = {
   width: '100%', padding: '10px 12px', borderRadius: 6,
   border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff',
@@ -199,6 +249,7 @@ export function ThemeColorsEditor({ tokens, onChange, namespace, t, readOnly }: 
               namespace={namespace}
             />
           )}
+          {groupKey === 'group_calendar' && <CalendarContrastReport tokens={tokens} t={t} />}
         </div>
       ))}
     </div>

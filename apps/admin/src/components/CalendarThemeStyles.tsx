@@ -107,6 +107,33 @@ export const CALENDAR_THEME_CSS = `
   opacity: 0.25;
 }
 
+/* Focus visibility (#559 stage 4, WCAG 2.4.7 — "preserve visible focus states
+   for interactive calendar controls"). A keyboard-focused event keeps the
+   overlay above and gains a ring drawn *inside* the box (negative offset) in
+   the event's own text color: that token already has to read against the event
+   fill, so the ring stays visible whatever the calendar behind the event is
+   painted with, and it can't be clipped by a neighbouring event. */
+.gd-calendar .fc .fc-event:focus-visible {
+  outline: 2px solid var(--gd-calendar-event-text, #ffffff);
+  outline-offset: -2px;
+}
+
+/* The nav buttons' only focus affordance in FullCalendar is a box-shadow baked
+   to its own default button color (rgba(44,62,80,.25)), which washes out as
+   soon as the buttons are themed — so it is replaced by an outline in the
+   calendar's day-text color, the calendar's primary foreground and therefore
+   the token guaranteed to read against the surface the button sits on. The
+   :active:focus selector is listed because FullCalendar declares that shadow
+   at a higher specificity than its plain :focus rule. */
+.gd-calendar .fc .fc-button:focus,
+.gd-calendar .fc .fc-button:focus-visible,
+.gd-calendar .fc .fc-button-primary:not(:disabled):active:focus,
+.gd-calendar .fc .fc-button-primary:not(:disabled).fc-button-active:focus {
+  outline: 2px solid var(--gd-calendar-day-text, #111827);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
 /* Grid surface — FullCalendar paints cells transparent, so the table itself
    carries the calendar's card background. */
 .gd-calendar .fc .fc-scrollgrid {

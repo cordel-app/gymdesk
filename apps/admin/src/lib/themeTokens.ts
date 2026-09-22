@@ -279,6 +279,47 @@ export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
   calendarNavButtonBorderRadius:    '--gd-calendar-nav-btn-radius',
 };
 
+// #559 stage 4 — which calendar `advanced` attributes hold a color rather than
+// a CSS length. Derived from ADVANCED_ATTRIBUTES so the two can't drift.
+export const CALENDAR_ADVANCED_COLOR_KEYS = new Set(
+  ADVANCED_ATTRIBUTES.filter((a) => a.group === 'group_calendar' && a.type === 'color').map((a) => a.key),
+);
+
+// Mirrors `HEX_RE` in api/src/domain/themeTokens.ts — the format the color
+// pickers emit and the API validates on write.
+export const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && HEX_COLOR_RE.test(value);
+}
+
+/**
+ * #559 stage 4 — the value to write for one `--gd-calendar-*` variable,
+ * falling back to the default when the persisted one is missing *or unusable*.
+ *
+ * `??` alone only covers missing. An unusable value has to be caught here too:
+ * a custom property holding e.g. `""` or `"blue-ish"` is not invalid CSS by
+ * itself, so `var(--gd-calendar-event-bg, #6c63ff)` does *not* fall back to
+ * its literal — the declaration using it becomes invalid at computed-value
+ * time and the property lands on `inherit`/`initial` instead, which is how a
+ * single bad token turns a calendar surface transparent. `validateTokens()`
+ * rejects a bad calendar *color* on write, but the `advanced` map is not
+ * format-checked, and a row written before #559 stage 1 (or edited straight in
+ * the DB) never went through that check at all.
+ */
+export function calendarVarValue(
+  key: string,
+  raw: unknown,
+  fallback: string | number | boolean,
+): string {
+  if (key in CALENDAR_COLOR_VARS || CALENDAR_ADVANCED_COLOR_KEYS.has(key)) {
+    return isHexColor(raw) ? raw : String(fallback);
+  }
+  // A length (`3px`, `1.5em`). Not parsed further — anything CSS rejects is
+  // dropped by the browser and the rule's own `var()` literal takes over.
+  return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : String(fallback);
+}
+
 export const DEFAULT_TOKENS: ThemeTokens = {
   v: 2,
   typography: {
@@ -420,14 +461,15 @@ export function applyTokens(tokens: ThemeTokens) {
   // Calendar (#559 stages 2 & 3) — read by the FullCalendar override sheet in
   // components/CalendarThemeStyles.tsx. Every key falls back to its default,
   // so themes saved before #559 (which carry no calendar values at all) still
-  // get the full variable set, holding FullCalendar's own built-in appearance.
+  // get the full variable set, holding FullCalendar's own built-in appearance;
+  // since #559 stage 4 an unusable persisted value falls back the same way.
   const adv = tokens.advanced ?? {};
   for (const [key, cssVar] of Object.entries(CALENDAR_COLOR_VARS)) {
-    const value = (c as Record<string, unknown>)[key] ?? (DEFAULT_TOKENS.colors as Record<string, unknown>)[key];
-    el.style.setProperty(cssVar, String(value));
+    const fallback = (DEFAULT_TOKENS.colors as Record<string, string | number>)[key];
+    el.style.setProperty(cssVar, calendarVarValue(key, (c as Record<string, unknown>)[key], fallback));
   }
   for (const [key, cssVar] of Object.entries(CALENDAR_ADVANCED_VARS)) {
-    el.style.setProperty(cssVar, String(adv[key] ?? DEFAULT_ADVANCED[key]));
+    el.style.setProperty(cssVar, calendarVarValue(key, adv[key], DEFAULT_ADVANCED[key]));
   }
 
   // Typography

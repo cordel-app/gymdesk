@@ -570,7 +570,10 @@
     "adv_calendar_event_hover_bg": "Fondo del evento al pasar el cursor",
     "adv_calendar_slot_height": "Altura de la franja horaria",
     "adv_calendar_nav_btn_hover_bg": "Fondo del botón de navegación al pasar el ratón",
-    "adv_calendar_nav_btn_radius": "Radio de borde del botón de navegación"
+    "adv_calendar_nav_btn_radius": "Radio de borde del botón de navegación",
+    "calendar_contrast_title": "Comprobación de contraste",
+    "calendar_contrast_summary": "combinaciones cumplen el contraste WCAG AA",
+    "calendar_contrast_min": "mínimo"
   },
   "system_users": {
     "title": "Superadministradores",
@@ -1966,7 +1969,10 @@
     "adv_calendar_event_hover_bg": "Fondo del evento al pasar el cursor",
     "adv_calendar_slot_height": "Altura de la franja horaria",
     "adv_calendar_nav_btn_hover_bg": "Fondo del botón de navegación al pasar el ratón",
-    "adv_calendar_nav_btn_radius": "Radio de borde del botón de navegación"
+    "adv_calendar_nav_btn_radius": "Radio de borde del botón de navegación",
+    "calendar_contrast_title": "Comprobación de contraste",
+    "calendar_contrast_summary": "combinaciones cumplen el contraste WCAG AA",
+    "calendar_contrast_min": "mínimo"
   },
   "weekday": {
     "0": "Domingo",
