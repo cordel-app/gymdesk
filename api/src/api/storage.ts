@@ -2,7 +2,15 @@ import express, { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
-import { getMissingStorageConfigKeys, isStorageConfigured, uploadGymImage } from '../infra/storage';
+import {
+  describeStorageError,
+  getMissingStorageConfigKeys,
+  getStorageDiagnostics,
+  isStorageConfigured,
+  StorageOperationError,
+  uploadGymImage,
+} from '../infra/storage';
+import { logger } from '../lib/logger';
 
 /**
  * #417 stage 2/3: generic per-gym image upload endpoint backed by Cloudflare R2.
@@ -57,7 +65,18 @@ async function handleImageUpload(req: express.Request, res: express.Response, fo
     const url = await uploadGymImage(folderPrefix, folder, mime, rawBody);
     res.status(201).json({ url });
   } catch (err: any) {
-    res.status(502).json({ error: `Failed to upload image: ${err.message ?? 'unknown error'}` });
+    // #542: same structured detail as the superadmin initialize route. The
+    // deployment-config snapshot (getStorageDiagnostics()) is deliberately NOT
+    // returned here — this route is gym-staff-facing, and the snapshot
+    // describes platform infrastructure. It goes to the server log only.
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'uploadGymImage' });
+    logger.error(
+      { err, details, diagnostics: getStorageDiagnostics(), gymId, folder },
+      'Cloudflare R2 image upload failed',
+    );
+    res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
   }
 }
 
