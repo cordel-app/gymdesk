@@ -30,6 +30,53 @@ type Frequency = typeof FREQUENCIES[number];
 // #546: Professional Services only apply to Session-type ('sessions') items.
 const SESSION_TYPE: ItemType = 'sessions';
 
+// ─── List columns (#637) ──────────────────────────────────────────────────────
+// The column headers and every collapsed row are laid out from this one
+// definition, so a long name or a long "created by" can never push a row's
+// values out of line with its header. Every column is a fixed track except the
+// name, which is the only one allowed to absorb the leftover width; when the
+// viewport is narrower than the sum of the tracks the list scrolls
+// horizontally instead of dropping or squeezing columns.
+
+interface ListColumn {
+  /** Header label, a key in the `sellable_items` namespace. */
+  labelKey: string;
+  /** Fixed track width in px — also the minimum for the flexible column. */
+  width: number;
+  /** Set on the one flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+  align?: 'right';
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { labelKey: 'col_name', width: 180, grow: 2 },
+  { labelKey: 'col_type', width: 100 },
+  { labelKey: 'col_units', width: 70, align: 'right' },
+  { labelKey: 'col_amount', width: 150 },
+  { labelKey: 'col_tax_rate', width: 80 },
+  { labelKey: 'col_frequency', width: 110 },
+  { labelKey: 'col_created_by', width: 100 },
+  { labelKey: 'col_created_at', width: 90 },
+  { labelKey: 'col_status', width: 90 },
+  { labelKey: 'col_enrollment_status', width: 100 },
+  // Wide enough for the longest translated header ("ACCIONES") next to the
+  // chevron and the ⋮ menu the cell also holds.
+  { labelKey: 'col_actions', width: 84 },
+];
+
+const LIST_COLUMN_GAP = 10;
+const LIST_ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + LIST_ROW_PADDING_X * 2;
+
 interface LinkedProfessionalService {
   id: number;
   name: string;
@@ -531,9 +578,9 @@ export default function SellableItemsPage() {
 
     return (
       <div key={item.id} style={cardStyle}>
-        {/* Collapsed header */}
+        {/* Collapsed header — one cell per LIST_COLUMNS entry, same order */}
         <div style={rowStyle} onClick={() => toggleExpand(item.id)}>
-          <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ ...cellStyle, fontWeight: 600, fontSize: 15 }}>
             {item.name}
             {isSystem && (
               <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 500, color: '#888', background: '#f0f0f0', borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle' }}>
@@ -541,43 +588,45 @@ export default function SellableItemsPage() {
               </span>
             )}
           </div>
-          <div style={{ minWidth: 90, fontSize: 13, color: '#555', flexShrink: 0 }}>
+          <div style={{ ...cellStyle, fontSize: 13, color: '#555' }}>
             {t(`type_${item.type}`)}
           </div>
-          <div style={{ minWidth: 70, fontSize: 13, color: '#555', flexShrink: 0, textAlign: 'right' }}>
+          <div style={{ ...cellStyle, fontSize: 13, color: '#555', textAlign: 'right' }}>
             {item.units != null ? item.units : '—'}
           </div>
-          <div style={{ minWidth: 110, fontSize: 13, flexShrink: 0 }}>
+          <div style={{ ...cellStyle, fontSize: 13 }}>
             {item.amount_incl_tax != null
               ? `${item.currency === 'EUR' ? '€' : item.currency}${item.amount_incl_tax.toFixed(2)} ${t(item.tax_behavior === 'exclusive' ? 'taxExcluded' : 'taxIncluded')}`
               : fmtAmount(item.amount, item.currency)}
           </div>
-          <div style={{ minWidth: 80, fontSize: 13, color: '#666', flexShrink: 0 }}>
+          <div style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
             {item.applied_tax_rate != null
               ? item.applied_tax_rate === 0 ? t('exempt') : `${item.applied_tax_rate}%`
               : '—'}
           </div>
-          <div style={{ minWidth: 90, fontSize: 13, color: '#666', flexShrink: 0 }}>
+          <div style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
             {item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'}
           </div>
-          <div style={{ minWidth: 80, fontSize: 13, color: '#888', flexShrink: 0 }}>
+          <div style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
             {item.created_by_name ?? '—'}
           </div>
-          <div style={{ minWidth: 85, fontSize: 13, color: '#888', flexShrink: 0 }}>
+          <div style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
             {fmtDate(item.created_at)}
           </div>
-          <div style={{ minWidth: 80, flexShrink: 0 }}>
+          <div style={badgeCellStyle}>
             <StatusBadge status={item.status} label={tStatus(item.status)} />
           </div>
-          <div style={{ minWidth: 90, flexShrink: 0 }}>
+          <div style={badgeCellStyle}>
             <StatusBadge
               status={item.enrollment_status === 'public' ? 'active' : 'paused'}
               label={tStatus(item.enrollment_status)}
             />
           </div>
-          <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
-            <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
+          <div style={actionsCellStyle}>
+            <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+            <div onClick={(e) => e.stopPropagation()}>
+              <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
+            </div>
           </div>
         </div>
 
@@ -825,36 +874,35 @@ export default function SellableItemsPage() {
         </div>
       </div>
 
-      {/* Column headers */}
-      {(items.length > 0 || inlineNew) && (
-        <div style={colHeaderStyle}>
-          <div style={{ flex: 2 }}>{t('col_name')}</div>
-          <div style={{ minWidth: 90 }}>{t('col_type')}</div>
-          <div style={{ minWidth: 70, textAlign: 'right' }}>{t('col_units')}</div>
-          <div style={{ minWidth: 110 }}>{t('col_amount')}</div>
-          <div style={{ minWidth: 80 }}>{t('col_tax_rate')}</div>
-          <div style={{ minWidth: 90 }}>{t('col_frequency')}</div>
-          <div style={{ minWidth: 80 }}>{t('col_created_by')}</div>
-          <div style={{ minWidth: 85 }}>{t('col_created_at')}</div>
-          <div style={{ minWidth: 80 }}>{t('col_status')}</div>
-          <div style={{ minWidth: 90 }}>{t('col_enrollment_status')}</div>
-          <div style={{ minWidth: 68 }} />
-        </div>
-      )}
+      {/* Headers + rows share LIST_GRID_COLUMNS and scroll together (#637) */}
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: LIST_MIN_WIDTH }}>
+          {/* Column headers */}
+          {(items.length > 0 || inlineNew) && (
+            <div style={colHeaderStyle}>
+              {LIST_COLUMNS.map((col) => (
+                <div key={col.labelKey} style={{ ...cellStyle, textAlign: col.align }}>
+                  {t(col.labelKey)}
+                </div>
+              ))}
+            </div>
+          )}
 
-      {/* Inline new */}
-      {renderInlineNewRow()}
+          {/* Inline new */}
+          {renderInlineNewRow()}
 
-      {/* List */}
-      {loading ? (
-        <p style={{ color: '#888' }}>{t('loading')}</p>
-      ) : items.length === 0 && !inlineNew ? (
-        <p style={{ color: '#888' }}>{t('empty')}</p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {items.map(renderRow)}
+          {/* List */}
+          {loading ? (
+            <p style={{ color: '#888' }}>{t('loading')}</p>
+          ) : items.length === 0 && !inlineNew ? (
+            <p style={{ color: '#888' }}>{t('empty')}</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {items.map(renderRow)}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Details modal */}
       <CrudModal
@@ -985,15 +1033,40 @@ const cardStyle: React.CSSProperties = {
   borderRadius: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)',
 };
 
+// The grid the column headers and every collapsed row are laid out on (#637).
+const listGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center',
+  gap: LIST_COLUMN_GAP,
+};
+
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+  ...listGridStyle, padding: `12px ${LIST_ROW_PADDING_X}px`,
   cursor: 'pointer', userSelect: 'none',
 };
 
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', padding: '6px 16px', gap: 10,
+  ...listGridStyle, padding: `6px ${LIST_ROW_PADDING_X}px`,
+  // Rows sit inside a bordered card, so the header carries a matching
+  // transparent border — without it every column would be off by 1px.
+  border: '1px solid transparent',
   fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
   marginBottom: 4,
+};
+
+/** Keeps an over-long value inside its track instead of widening the row. */
+const cellStyle: React.CSSProperties = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+
+/** Badges size themselves, so this cell only needs to not stretch them. */
+const badgeCellStyle: React.CSSProperties = {
+  minWidth: 0, display: 'flex', alignItems: 'center',
+};
+
+const actionsCellStyle: React.CSSProperties = {
+  minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
 };
 
 const inlineLabelStyle: React.CSSProperties = {

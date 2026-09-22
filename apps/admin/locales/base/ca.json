@@ -2760,6 +2760,7 @@
     "error_units_positive": "Les unitats han de ser un nombre enter positiu.",
     "error_generic": "Alguna cosa ha anat malament.",
     "col_tax_rate": "Tipus IVA",
+    "col_actions": "Accions",
     "label_tax_rate": "IVA / Impost",
     "option_no_tax": "Sense impost",
     "label_tax_behavior": "Comportament fiscal",
