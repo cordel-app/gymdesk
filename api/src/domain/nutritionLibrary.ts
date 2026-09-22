@@ -1,5 +1,11 @@
 import { db } from '../infra/db';
-import { BASE_LOCALE, SupportedLocale, TRANSLATABLE_LOCALES, isSupportedLocale } from '../infra/locale';
+import {
+  BASE_LOCALE,
+  SUPPORTED_LOCALES,
+  SupportedLocale,
+  TRANSLATABLE_LOCALES,
+  isSupportedLocale,
+} from '../infra/locale';
 
 /**
  * Shared helpers for the Nutrition Library, used by both the platform
@@ -21,24 +27,36 @@ import { BASE_LOCALE, SupportedLocale, TRANSLATABLE_LOCALES, isSupportedLocale }
 const TRANSLATIONS_TABLE = 'nutrition_library_item_translations';
 
 /**
- * SQL expression resolving an item's name in `locale`, falling back to the base
- * `name` column when that locale has no row.
+ * The SQL literal for `locale`, or null when it is the base locale (or, which
+ * cannot happen through `getRequestLocale`, not a configured locale at all) and
+ * the caller should read the base `name` column instead.
  *
- * `locale` is interpolated rather than parameterised because the same
+ * The locale is interpolated rather than parameterised because the same
  * expression is embedded in ~30 queries that each carry their own positional
  * params — threading one more `?` through every call site is where the bugs
- * would be. It is safe: the value is a {@link SupportedLocale}, which only
- * `infra/locale.ts` mints and only after matching a strict BCP-47 allowlist
- * pattern, so it can never carry a quote. Request input reaches this function
- * solely through `getRequestLocale`, which maps anything unrecognised onto the
- * base locale.
+ * would be. What makes that safe is that the string returned here is always an
+ * element of `SUPPORTED_LOCALES`, built at boot from the env var and filtered
+ * through a strict BCP-47 pattern: the argument is only ever compared against
+ * that list, never embedded, so no caller-supplied bytes reach the query — by
+ * data flow, not by trusting that the check upstream was done right.
+ */
+function localeLiteral(locale: SupportedLocale): string | null {
+  if (locale === BASE_LOCALE) return null;
+  const supported = SUPPORTED_LOCALES.find((candidate) => candidate === locale);
+  return supported ? `'${supported}'` : null;
+}
+
+/**
+ * SQL expression resolving an item's name in `locale`, falling back to the base
+ * `name` column when that locale has no row.
  *
  * @param alias table alias of `nutrition_library_items` in the enclosing query
  */
 export function localizedNameSql(alias: string, locale: SupportedLocale): string {
-  if (locale === BASE_LOCALE) return `${alias}.name`;
+  const literal = localeLiteral(locale);
+  if (!literal) return `${alias}.name`;
   return `COALESCE((SELECT nlit.name FROM ${TRANSLATIONS_TABLE} nlit
-            WHERE nlit.item_id = ${alias}.id AND nlit.locale = '${locale}'), ${alias}.name)`;
+            WHERE nlit.item_id = ${alias}.id AND nlit.locale = ${literal}), ${alias}.name)`;
 }
 
 /** {@link localizedNameSql} with an output alias, for SELECT lists. */
@@ -284,13 +302,14 @@ export function buildListWhere(
   const params: any[] = [...baseParams];
 
   if (search) {
-    if (locale === BASE_LOCALE) {
+    const literal = localeLiteral(locale);
+    if (!literal) {
       where.push('name LIKE ?');
       params.push(`%${search}%`);
     } else {
       where.push(`(name LIKE ? OR id IN (
         SELECT nlit.item_id FROM ${TRANSLATIONS_TABLE} nlit
-        WHERE nlit.locale = '${locale}' AND nlit.name LIKE ?
+        WHERE nlit.locale = ${literal} AND nlit.name LIKE ?
       ))`);
       params.push(`%${search}%`, `%${search}%`);
     }

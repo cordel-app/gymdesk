@@ -139,6 +139,15 @@ describe('localizedNameSql()', () => {
     const { localizedNameExpr } = await import('../domain/nutritionLibrary');
     expect(localizedNameExpr('nli', 'es' as any, 'item_name')).toMatch(/ AS item_name$/);
   });
+
+  it('embeds the allowlist entry, never the argument, so a forged locale cannot reach the SQL', async () => {
+    const { localizedNameSql } = await import('../domain/nutritionLibrary');
+    // Unreachable through `getRequestLocale`, which never returns a tag outside
+    // the allowlist — this pins the second line of defence at the query itself.
+    for (const forged of ["es' OR 1=1 -- ", 'de', "'", 'es-ES']) {
+      expect(localizedNameSql('nli', forged as any)).toBe('nli.name');
+    }
+  });
 });
 
 describe('validateTranslations()', () => {

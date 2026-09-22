@@ -12,7 +12,12 @@
  * every translated column falls back to when a locale has no row.
  */
 
-/** A locale that passed the allowlist — safe to interpolate into SQL. */
+/**
+ * A locale that passed the allowlist. The brand records that the check
+ * happened; it is not what keeps request bytes out of SQL — the query builders
+ * embed the matching `SUPPORTED_LOCALES` entry rather than the value handed to
+ * them, so never interpolate one of these directly.
+ */
 export type SupportedLocale = string & { readonly __brand: 'SupportedLocale' };
 
 // Locales are BCP-47 primary subtags (optionally with subtags): letters, digits
@@ -55,6 +60,18 @@ export function isSupportedLocale(value: unknown): value is SupportedLocale {
 }
 
 /**
+ * Look a tag up in the allowlist and return **the allowlist's own string**, not
+ * the caller's. The two are equal, but only this one provably originates from
+ * `parseConfiguredLocales` (pattern-checked at boot), so no caller-supplied
+ * string ever reaches `localizedNameSql`'s SQL literal — as a matter of data
+ * flow rather than of the equality check having been done correctly. Taint
+ * analysis reads it the same way.
+ */
+function fromAllowlist(tag: string): SupportedLocale | null {
+  return SUPPORTED_LOCALES.find((supported) => supported === tag) ?? null;
+}
+
+/**
  * Narrow an arbitrary tag to a supported locale, or null. `es-ES` falls back to
  * `es` so a browser's regional tag still matches.
  */
@@ -62,9 +79,7 @@ export function normalizeLocale(value: unknown): SupportedLocale | null {
   if (typeof value !== 'string') return null;
   const tag = value.trim().toLowerCase();
   if (!tag) return null;
-  if (isSupportedLocale(tag)) return tag as SupportedLocale;
-  const primary = tag.split('-')[0];
-  return isSupportedLocale(primary) ? (primary as SupportedLocale) : null;
+  return fromAllowlist(tag) ?? fromAllowlist(tag.split('-')[0]);
 }
 
 /** First acceptable tag of an `Accept-Language` header, in q-value order. */
