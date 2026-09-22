@@ -2863,6 +2863,15 @@
     "error_generic": "Algo salió mal.",
     "system_delete_blocked": "Los tipos impositivos del sistema no se pueden eliminar."
   },
+  "financials_dashboard": {
+    "title": "Panel de finanzas",
+    "subtitle": "Resumen y métricas de la gestión financiera.",
+    "membership_plans": "Planes de membresía",
+    "assigned_members": "Miembros asignados",
+    "loading": "Cargando…",
+    "empty": "No hay planes de membresía que mostrar.",
+    "error_generic": "Algo ha salido mal. Inténtalo de nuevo."
+  },
   "professional_services": {
     "title": "Servicios profesionales",
     "loading": "Cargando…",
