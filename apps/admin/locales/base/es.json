@@ -880,6 +880,7 @@
     "section_membership_fee_benefits": "Beneficios de cuota de socio",
     "no_membership_fee_benefit": "No hay ningún beneficio de cuota de socio configurado.",
     "mf_duration_max_hint": "No puede superar la duración de la promoción ({max} meses).",
+    "edit_busy_hint": "Termina primero de editar la sección abierta.",
     "col_charge_type": "Concepto",
     "col_action": "Acción",
     "col_value": "Valor",
