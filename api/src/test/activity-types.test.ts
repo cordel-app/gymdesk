@@ -993,3 +993,147 @@ describe('waitlist_mode', () => {
     expect(dup.body.waitlist_mode).toBe('open');
   });
 });
+
+// ── #647 stage 1: professional_service_id ───────────────────────────────────
+
+describe('professional_service_id (#647)', () => {
+  let psGymId: string;
+  let otherGymId: string;
+  let activeServiceId: number;
+  let inactiveServiceId: number;
+  let otherGymServiceId: number;
+
+  /** A gym-owned Professional Service plus its per-gym enable row (#484). */
+  async function createService(gid: string, name: string, status: 'active' | 'inactive' = 'active') {
+    const { insertId } = await db.query(
+      `INSERT INTO professional_services (gym_id, name, is_system) VALUES (?, ?, 0)`,
+      [gid, name],
+    );
+    await db.query(
+      `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, ?)`,
+      [gid, insertId, status],
+    );
+    return insertId;
+  }
+
+  const post = (gid: string, body: any) => request
+    .post(BASE).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid).send(body);
+  const put = (gid: string, id: number, body: any) => request
+    .put(`${BASE}/${id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid).send(body);
+
+  beforeAll(async () => {
+    psGymId = await createTestGym('AT PS Gym');
+    await createTestMembership(psGymId, 'admin');
+    otherGymId = await createTestGym('AT PS Other Gym');
+
+    activeServiceId = await createService(psGymId, `PT Individual ${Date.now()}`);
+    inactiveServiceId = await createService(psGymId, `Retired Service ${Date.now()}`, 'inactive');
+    otherGymServiceId = await createService(otherGymId, `Foreign Service ${Date.now()}`);
+  });
+
+  it('stores the service on create and returns its name', async () => {
+    const res = await post(psGymId, {
+      name: `PS create ${Date.now()}`, duration_minutes: 60, max_capacity: 5,
+      professional_service_id: activeServiceId,
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.professional_service_id).toBe(activeServiceId);
+    expect(res.body.professional_service_name).toBeTruthy();
+  });
+
+  it('defaults to null when the field is omitted', async () => {
+    const res = await post(psGymId, { name: `PS none ${Date.now()}`, duration_minutes: 60, max_capacity: 5 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.professional_service_id).toBeNull();
+  });
+
+  it('rejects a service belonging to another gym', async () => {
+    const res = await post(psGymId, {
+      name: `PS foreign ${Date.now()}`, duration_minutes: 60, max_capacity: 5,
+      professional_service_id: otherGymServiceId,
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a service the gym has switched off', async () => {
+    const res = await post(psGymId, {
+      name: `PS inactive ${Date.now()}`, duration_minutes: 60, max_capacity: 5,
+      professional_service_id: inactiveServiceId,
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a non-numeric id', async () => {
+    const res = await post(psGymId, {
+      name: `PS bad ${Date.now()}`, duration_minutes: 60, max_capacity: 5,
+      professional_service_id: 'personal-training',
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('sets, clears and leaves the service untouched via PUT', async () => {
+    const created = await post(psGymId, { name: `PS put ${Date.now()}`, duration_minutes: 60, max_capacity: 5 });
+
+    const set = await put(psGymId, created.body.id, { professional_service_id: activeServiceId });
+    expect(set.status).toBe(200);
+    expect(set.body.professional_service_id).toBe(activeServiceId);
+
+    const renamed = await put(psGymId, created.body.id, { name: `PS put renamed ${Date.now()}` });
+    expect(renamed.body.professional_service_id).toBe(activeServiceId);
+
+    const cleared = await put(psGymId, created.body.id, { professional_service_id: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.professional_service_id).toBeNull();
+  });
+
+  it('propagates a change to future occurrences only, behind confirm_propagate', async () => {
+    const created = await post(psGymId, { name: `PS prop ${Date.now()}`, duration_minutes: 60, max_capacity: 5 });
+    const atId = created.body.id;
+
+    const { insertId: pastId } = await db.query(
+      `INSERT INTO calendar_events (gym_id, title, activity_type_id, starts_at, ends_at, status)
+       VALUES (?, 'Past', ?, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 DAY), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 47 HOUR), 'scheduled')`,
+      [psGymId, atId],
+    );
+    const { insertId: futureId } = await db.query(
+      `INSERT INTO calendar_events (gym_id, title, activity_type_id, starts_at, ends_at, status)
+       VALUES (?, 'Future', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 DAY), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 49 HOUR), 'scheduled')`,
+      [psGymId, atId],
+    );
+
+    const blocked = await put(psGymId, atId, { professional_service_id: activeServiceId });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error).toBe('future_events_impacted');
+
+    const confirmed = await put(psGymId, atId, { professional_service_id: activeServiceId, confirm_propagate: true });
+    expect(confirmed.status).toBe(200);
+
+    const { rows } = await db.query(
+      'SELECT id, professional_service_id FROM calendar_events WHERE id IN (?, ?)',
+      [pastId, futureId],
+    );
+    const byId = Object.fromEntries(rows.map((r: any) => [r.id, r.professional_service_id]));
+    expect(byId[futureId]).toBe(activeServiceId);
+    expect(byId[pastId]).toBeNull();
+  });
+
+  it('carries the service over to a duplicated activity type', async () => {
+    const created = await post(psGymId, {
+      name: `PS dup ${Date.now()}`, duration_minutes: 60, max_capacity: 5,
+      professional_service_id: activeServiceId,
+    });
+
+    const dup = await request
+      .post(`${BASE}/${created.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', psGymId);
+
+    expect(dup.status).toBe(201);
+    expect(dup.body.professional_service_id).toBe(activeServiceId);
+  });
+});

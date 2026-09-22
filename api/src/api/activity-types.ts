@@ -7,6 +7,7 @@ import {
   materializeScheduleRule,
   cancelFutureOccurrencesByActivityType,
 } from '../domain/scheduleEngine';
+import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
 
 const STATUSES = ['active', 'inactive'] as const;
 // #503 stage 2: 'disabled' = no waitlist, 'open' = accepting, 'closed' = enabled
@@ -35,10 +36,12 @@ const SELECT = `
     sp.name   AS default_space_name,
     ctr.name  AS default_center_name,
     gm.name   AS default_trainer_name,
+    ps.name   AS professional_service_name,
     cb.name   AS created_by_name,
     mb.name   AS modified_by_name,
     db2.name  AS deleted_by_name
   FROM activity_types at
+  LEFT JOIN professional_services ps ON ps.id = at.professional_service_id
   LEFT JOIN spaces          sp   ON sp.id  = at.default_space_id
   LEFT JOIN centers         ctr  ON ctr.id = at.default_center_id
   LEFT JOIN gym_memberships gm   ON gm.id  = at.default_trainer_membership_id
@@ -168,7 +171,7 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
           default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
-          waitlist_mode } = req.body;
+          waitlist_mode, professional_service_id } = req.body;
   if (!name?.trim() || duration_minutes == null || max_capacity == null) {
     return res.status(400).json({ error: 'name, duration_minutes and max_capacity are required' });
   }
@@ -180,6 +183,12 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const spaceErr = await validateSpace(gymId, spaceId, centerId);
   if (spaceErr) return res.status(400).json({ error: spaceErr });
 
+  // #647: the Professional Service this activity's occurrences are delivered by.
+  const parsedService = parseProfessionalServiceId(professional_service_id);
+  if ('error' in parsedService) return res.status(400).json({ error: parsedService.error });
+  const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
+  if (serviceErr) return res.status(400).json({ error: serviceErr });
+
   // #481: public_event defaults to true when omitted — see migration 139 for
   // the backward-compatibility rationale (existing activity types must stay
   // bookable by anyone unless staff explicitly opts into the restriction).
@@ -190,8 +199,8 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
         default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
-        waitlist_mode, created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+        waitlist_mode, professional_service_id, created_by_membership_id, modified_at, modified_by_membership_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
       [gymId, name.trim(), description ?? null,
        parseInt(duration_minutes, 10),
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
@@ -201,6 +210,7 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
        is_shareable ? 1 : 0,
        publicEvent,
        waitlist_mode ?? 'disabled',
+       parsedService.id,
        gymMembershipId ?? null, gymMembershipId ?? null],
     );
     const { rows } = await db.query(`${SELECT} WHERE at.id = ?`, [insertId]);
@@ -222,6 +232,11 @@ const PROPAGATABLE_FIELDS: Array<{ atField: string; ceField: string; label: stri
   { atField: 'default_center_id', ceField: 'center_id', label: 'Center' },
   { atField: 'color', ceField: 'color', label: 'Color' },
   { atField: 'max_capacity', ceField: 'capacity', label: 'Capacity' },
+  // #647: an occurrence inherits its Professional Service from the Activity
+  // Type, so retargeting the activity must move its future occurrences too —
+  // otherwise the slots stay attached to the old service and keep matching the
+  // wrong Members.
+  { atField: 'professional_service_id', ceField: 'professional_service_id', label: 'Professional Service' },
 ];
 
 activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
@@ -229,7 +244,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
           default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
-          waitlist_mode } = req.body;
+          waitlist_mode, professional_service_id } = req.body;
 
   const { rows: currentRows } = await db.query(
     'SELECT * FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -259,9 +274,19 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   const colorVal = 'color' in req.body ? (color ?? null) : undefined;
   const capacity = max_capacity != null ? parseInt(max_capacity, 10) : undefined;
 
+  let serviceId: number | null | undefined;
+  if ('professional_service_id' in req.body) {
+    const parsedService = parseProfessionalServiceId(professional_service_id);
+    if ('error' in parsedService) return res.status(400).json({ error: parsedService.error });
+    const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
+    if (serviceErr) return res.status(400).json({ error: serviceErr });
+    serviceId = parsedService.id;
+  }
+
   const submitted: Record<string, any> = {
     default_space_id: spaceId, default_trainer_membership_id: trainerId,
     default_center_id: centerId, color: colorVal, max_capacity: capacity,
+    professional_service_id: serviceId,
   };
   const propagations = PROPAGATABLE_FIELDS.filter(
     (f) => submitted[f.atField] !== undefined && submitted[f.atField] !== current[f.atField],
@@ -313,6 +338,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
           is_shareable                   = IF(?, ?, is_shareable),
           public_event                   = IF(?, ?, public_event),
           waitlist_mode                  = COALESCE(?, waitlist_mode),
+          professional_service_id        = IF(?, ?, professional_service_id),
           modified_at                    = UTC_TIMESTAMP(),
           modified_by_membership_id      = ?
          WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -330,6 +356,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
           'is_shareable' in req.body ? 1 : 0, is_shareable ? 1 : 0,
           'public_event' in req.body ? 1 : 0, public_event ? 1 : 0,
           waitlist_mode ?? null,
+          serviceId !== undefined ? 1 : 0, serviceId ?? null,
           gymMembershipId ?? null,
           req.params.id, gymId,
         ],
@@ -392,12 +419,15 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
         default_space_id, default_trainer_membership_id, default_center_id, color, waitlist_mode,
-        created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+        professional_service_id, created_by_membership_id, modified_at, modified_by_membership_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
       [gymId, `${src.name} (copy)`, src.description, src.duration_minutes,
        src.intensity_level, src.max_capacity, 'active',
        src.default_space_id, src.default_trainer_membership_id, src.default_center_id, src.color,
        src.waitlist_mode,
+       // #647: the copy is delivered by the same Professional Service — the
+       // duplicate stays inside the gym the value was already validated against.
+       src.professional_service_id,
        gymMembershipId ?? null, gymMembershipId ?? null],
     );
 

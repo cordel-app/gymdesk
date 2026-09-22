@@ -29,6 +29,12 @@ Tick items off in the PR that completes them.
       been verified locally (#643). If migration 166 aborts with an "unexpected
       charset/collation" error, that is this check failing loudly rather than the
       nutrition endpoints breaking at runtime.
+- [ ] **Schedule migration 168 in a maintenance window** (#647). Adding the
+      `professional_service_id` foreign key to `calendar_events` is not an INPLACE
+      ALTER while `foreign_key_checks` is on, so MySQL rebuilds the table with
+      ALGORITHM=COPY and blocks concurrent DML for the duration. Harmless on the
+      dev/CI datasets it has been run against; on a large production
+      `calendar_events` it is the one statement in the file worth timing first.
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be

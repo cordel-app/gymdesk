@@ -333,3 +333,142 @@ describe('DELETE /calendar-events/:id', () => {
     expect(rows[0].deleted_at).not.toBeNull();
   });
 });
+
+// ── #647 stage 1: professional_service_id ───────────────────────────────────
+
+describe('professional_service_id (#647)', () => {
+  let psGymId: string;
+  let serviceId: number;
+  let otherServiceId: number;
+  let inactiveServiceId: number;
+  let activityTypeId: number;
+
+  /** A gym-owned Professional Service plus its per-gym enable row (#484). */
+  async function createService(gid: string, name: string, status: 'active' | 'inactive' = 'active') {
+    const { insertId } = await db.query(
+      `INSERT INTO professional_services (gym_id, name, is_system) VALUES (?, ?, 0)`,
+      [gid, name],
+    );
+    await db.query(
+      `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, ?)`,
+      [gid, insertId, status],
+    );
+    return insertId;
+  }
+
+  const SESSION_START = '2025-06-02T10:00:00';
+  const SESSION_END   = '2025-06-02T11:00:00';
+
+  beforeAll(async () => {
+    psGymId = await createTestGym('Calendar PS Gym');
+    await createTestMembership(psGymId, 'admin');
+    // classSessionsRouter resolves center_id from the gym's sole center.
+    await db.query(`INSERT INTO centers (gym_id, name, status) VALUES (?, 'PS Center', 'active')`, [psGymId]);
+
+    serviceId = await createService(psGymId, `Calendar PT ${Date.now()}`);
+    otherServiceId = await createService(psGymId, `Calendar Physio ${Date.now()}`);
+    inactiveServiceId = await createService(psGymId, `Calendar Retired ${Date.now()}`, 'inactive');
+
+    const at = await request
+      .post('/activity-types')
+      .set(headers(psGymId))
+      .send({
+        name: `PS Activity ${Date.now()}`, duration_minutes: 60, max_capacity: 5, status: 'active',
+        professional_service_id: serviceId,
+      });
+    expect(at.status).toBe(201);
+    activityTypeId = at.body.id;
+  });
+
+  describe('class sessions', () => {
+    const createSession = (body: any) => request
+      .post('/class-sessions').set(headers(psGymId))
+      .send({ activity_type_id: activityTypeId, starts_at: SESSION_START, ends_at: SESSION_END, ...body });
+
+    it('inherits the service from the activity type when the field is omitted', async () => {
+      const res = await createSession({});
+
+      expect(res.status).toBe(201);
+      expect(res.body.professional_service_id).toBe(serviceId);
+      expect(res.body.professional_service_name).toBeTruthy();
+    });
+
+    it('accepts an explicit override on this one occurrence', async () => {
+      const res = await createSession({ professional_service_id: otherServiceId });
+
+      expect(res.status).toBe(201);
+      expect(res.body.professional_service_id).toBe(otherServiceId);
+    });
+
+    it('accepts an explicit null, overriding the inherited value', async () => {
+      const res = await createSession({ professional_service_id: null });
+
+      expect(res.status).toBe(201);
+      expect(res.body.professional_service_id).toBeNull();
+    });
+
+    it('rejects a service the gym has switched off', async () => {
+      const res = await createSession({ professional_service_id: inactiveServiceId });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('updates the service via PUT and leaves it untouched when omitted', async () => {
+      const created = await createSession({});
+
+      const updated = await request
+        .put(`/class-sessions/${created.body.id}`).set(headers(psGymId))
+        .send({ professional_service_id: otherServiceId });
+      expect(updated.status).toBe(200);
+      expect(updated.body.professional_service_id).toBe(otherServiceId);
+
+      const moved = await request
+        .put(`/class-sessions/${created.body.id}`).set(headers(psGymId))
+        .send({ starts_at: '2025-06-03T10:00:00', ends_at: '2025-06-03T11:00:00' });
+      expect(moved.body.professional_service_id).toBe(otherServiceId);
+    });
+  });
+
+  describe('manually created calendar events', () => {
+    const createEvent = (body: any) => request
+      .post(BASE).set(headers(psGymId))
+      .send({ title: `PS Event ${Date.now()}`, starts_at: '2025-07-01T09:00:00', ends_at: '2025-07-01T10:00:00', ...body });
+
+    it('stores a service set directly on the event', async () => {
+      const res = await createEvent({ professional_service_id: serviceId });
+
+      expect(res.status).toBe(201);
+      expect(res.body.professional_service_id).toBe(serviceId);
+      expect(res.body.professional_service_name).toBeTruthy();
+    });
+
+    it('defaults to null when the field is omitted', async () => {
+      const res = await createEvent({});
+
+      expect(res.status).toBe(201);
+      expect(res.body.professional_service_id).toBeNull();
+    });
+
+    it('rejects a service from another gym', async () => {
+      const foreignServiceId = await createService(otherGymId, `Foreign Calendar Service ${Date.now()}`);
+      const res = await createEvent({ professional_service_id: foreignServiceId });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('sets and clears the service via PUT', async () => {
+      const created = await createEvent({});
+
+      const set = await request
+        .put(`${BASE}/${created.body.id}`).set(headers(psGymId))
+        .send({ professional_service_id: serviceId });
+      expect(set.status).toBe(200);
+      expect(set.body.professional_service_id).toBe(serviceId);
+
+      const cleared = await request
+        .put(`${BASE}/${created.body.id}`).set(headers(psGymId))
+        .send({ professional_service_id: null });
+      expect(cleared.body.professional_service_id).toBeNull();
+    });
+  });
+});
