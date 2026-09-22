@@ -3062,6 +3062,7 @@
     "how_2": "Des del teu servidor, envia una petició POST a l'endpoint amb la capçalera x-api-key i un cos JSON amb name i email.",
     "how_3": "Protegeix el formulari del teu web amb un CAPTCHA perquè els bots no el puguin enviar.",
     "how_4": "Tota petició acceptada respon 202, tant si el correu ja era conegut com si no. Mostra al visitant un missatge de «revisa el teu correu».",
+    "how_5": "Per provar la connexió, envia la mateixa petició amb el nom «test» i el correu buit. Respon 200 i no registra ningú.",
     "error_generic": "Alguna cosa ha anat malament."
   }
 }

@@ -1,8 +1,10 @@
 // Tests for public-registrations.ts router
-// #599: POST /public/gyms/:slug/registrations — website self-registration. No Clerk
+// #599: POST /public/gyms/:gymRef/registrations — website self-registration. No Clerk
 // session: the gym's website authenticates with the per-gym key in `x-api-key`. The
 // route only ever issues a Clerk invitation; the members row is created later by
 // POST /me/link (see me-link-self-registration.test.ts).
+// #645: :gymRef is `{gymId}-{gym-name}`, a bare slug is still accepted, and
+// `{ name: 'test', email: '' }` is a health check that registers nobody.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
@@ -40,6 +42,7 @@ const savedEnv: Record<string, string | undefined> = {};
 
 let gymId: string;
 let slug: string;
+let ref: string;
 let centerId: number;
 let apiKey: string;
 
@@ -72,11 +75,12 @@ async function setApiKey(id: string): Promise<string> {
 async function createRegistrationGym(name: string) {
   const id = await createTestGym(name);
   const center = await insertCenter(id);
-  return { id, slug: await slugOf(id), centerId: center, key: await setApiKey(id) };
+  const gymSlug = await slugOf(id);
+  return { id, slug: gymSlug, ref: `${id}-${gymSlug}`, centerId: center, key: await setApiKey(id) };
 }
 
-function register(gymSlug: string, key: string | undefined, body: Record<string, unknown>) {
-  const req = request.post(`/public/gyms/${gymSlug}/registrations`);
+function register(gymRef: string, key: string | undefined, body: Record<string, unknown>) {
+  const req = request.post(`/public/gyms/${gymRef}/registrations`);
   if (key !== undefined) req.set('x-api-key', key);
   return req.send(body);
 }
@@ -95,6 +99,7 @@ beforeAll(async () => {
   const gym = await createRegistrationGym('Public Reg Gym');
   gymId = gym.id;
   slug = gym.slug;
+  ref = gym.ref;
   centerId = gym.centerId;
   apiKey = gym.key;
   await createTestMembership(gymId, 'admin'); // uses TEST_USER_ID
@@ -113,36 +118,43 @@ afterAll(async () => {
   await db.end(); // must be last
 });
 
-describe('POST /public/gyms/:slug/registrations — API key guard', () => {
+describe('POST /public/gyms/:gymRef/registrations — API key guard', () => {
   it('returns 401 with no x-api-key header', async () => {
-    const res = await register(slug, undefined, { name: 'Ana', email: uniqueEmail('nokey') });
+    const res = await register(ref, undefined, { name: 'Ana', email: uniqueEmail('nokey') });
     expect(res.status).toBe(401);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
   });
 
   it('returns 401 with a wrong key', async () => {
-    const res = await register(slug, (await generateWebsiteApiKey()).key, { name: 'Ana', email: uniqueEmail('wrongkey') });
+    const res = await register(ref, (await generateWebsiteApiKey()).key, { name: 'Ana', email: uniqueEmail('wrongkey') });
     expect(res.status).toBe(401);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
   });
 
-  it('returns 401 for an unknown slug — same response as a wrong key', async () => {
-    const wrongKey = await register(slug, 'gdk_nope', { name: 'Ana', email: uniqueEmail('a') });
+  it('returns 401 for an unknown gym reference — same response as a wrong key', async () => {
+    const wrongKey = await register(ref, 'gdk_nope', { name: 'Ana', email: uniqueEmail('a') });
     const unknown = await register(`no-such-gym-${Date.now()}`, apiKey, { name: 'Ana', email: uniqueEmail('b') });
     expect(unknown.status).toBe(401);
     expect(unknown.body).toEqual(wrongKey.body);
+
+    // #645: an unknown gym id is the same 401, and so is a real gym's name
+    // carried by somebody else's id — the id is what identifies the gym.
+    const unknownId = await register(`3f9c1c6e-0000-4000-8000-000000000000-${slug}`, apiKey, { name: 'Ana', email: uniqueEmail('c') });
+    expect(unknownId.status).toBe(401);
+    expect(unknownId.body).toEqual(wrongKey.body);
+    expect(clerk.createInvitation).not.toHaveBeenCalled();
   });
 
-  it("returns 401 when gym B's valid key is used against gym A's slug (tenant isolation)", async () => {
+  it("returns 401 when gym B's valid key is used against gym A's endpoint (tenant isolation)", async () => {
     const gymB = await createRegistrationGym('Public Reg Gym B');
     const email = uniqueEmail('crossgym');
 
-    const res = await register(slug, gymB.key, { name: 'Ana', email });
+    const res = await register(ref, gymB.key, { name: 'Ana', email });
 
     expect(res.status).toBe(401);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
     // ...and the key still works where it belongs.
-    const own = await register(gymB.slug, gymB.key, { name: 'Ana', email });
+    const own = await register(gymB.ref, gymB.key, { name: 'Ana', email });
     expect(own.status).toBe(202);
     expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.gym_id).toBe(gymB.id);
   });
@@ -150,16 +162,16 @@ describe('POST /public/gyms/:slug/registrations — API key guard', () => {
   it('returns 401 when the gym has no key configured', async () => {
     const bareId = await createTestGym('Public Reg No Key');
     await insertCenter(bareId);
-    const bareSlug = await slugOf(bareId);
+    const bareRef = `${bareId}-${await slugOf(bareId)}`;
 
-    expect((await register(bareSlug, apiKey, { name: 'Ana', email: uniqueEmail('nokeygym') })).status).toBe(401);
-    expect((await register(bareSlug, '', { name: 'Ana', email: uniqueEmail('nokeygym') })).status).toBe(401);
-    expect((await register(bareSlug, undefined, { name: 'Ana', email: uniqueEmail('nokeygym') })).status).toBe(401);
+    expect((await register(bareRef, apiKey, { name: 'Ana', email: uniqueEmail('nokeygym') })).status).toBe(401);
+    expect((await register(bareRef, '', { name: 'Ana', email: uniqueEmail('nokeygym') })).status).toBe(401);
+    expect((await register(bareRef, undefined, { name: 'Ana', email: uniqueEmail('nokeygym') })).status).toBe(401);
   });
 
   it('ignores a Clerk session: a valid Authorization header without the key is still 401', async () => {
     const res = await request
-      .post(`/public/gyms/${slug}/registrations`)
+      .post(`/public/gyms/${ref}/registrations`)
       .set('Authorization', 'Bearer test-token')
       .set('x-gym-id', gymId)
       .send({ name: 'Ana', email: uniqueEmail('bearer') });
@@ -167,35 +179,35 @@ describe('POST /public/gyms/:slug/registrations — API key guard', () => {
   });
 });
 
-describe('POST /public/gyms/:slug/registrations — validation', () => {
+describe('POST /public/gyms/:gymRef/registrations — validation', () => {
   it('returns 400 for an invalid email', async () => {
-    const res = await register(slug, apiKey, { name: 'Ana', email: 'not-an-email' });
+    const res = await register(ref, apiKey, { name: 'Ana', email: 'not-an-email' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/email/i);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
   });
 
   it('returns 400 when email is missing', async () => {
-    const res = await register(slug, apiKey, { name: 'Ana' });
+    const res = await register(ref, apiKey, { name: 'Ana' });
     expect(res.status).toBe(400);
   });
 
   it('returns 400 when name is missing or blank', async () => {
-    const missing = await register(slug, apiKey, { email: uniqueEmail('noname') });
+    const missing = await register(ref, apiKey, { email: uniqueEmail('noname') });
     expect(missing.status).toBe(400);
-    const blank = await register(slug, apiKey, { name: '   ', email: uniqueEmail('blankname') });
+    const blank = await register(ref, apiKey, { name: '   ', email: uniqueEmail('blankname') });
     expect(blank.status).toBe(400);
     expect(blank.body.error).toMatch(/name/i);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
   });
 
   it('returns 400 for an unsupported locale', async () => {
-    const res = await register(slug, apiKey, { name: 'Ana', email: uniqueEmail('locale'), locale: 'fr' });
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('locale'), locale: 'fr' });
     expect(res.status).toBe(400);
   });
 
   it('returns 400 for a center_id that does not exist', async () => {
-    const res = await register(slug, apiKey, { name: 'Ana', email: uniqueEmail('badcenter'), center_id: 999999999 });
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('badcenter'), center_id: 999999999 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/center_id/);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
@@ -205,7 +217,7 @@ describe('POST /public/gyms/:slug/registrations — validation', () => {
     const otherId = await createTestGym('Public Reg Other Centers');
     const otherCenter = await insertCenter(otherId);
 
-    const res = await register(slug, apiKey, { name: 'Ana', email: uniqueEmail('othercenter'), center_id: otherCenter });
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('othercenter'), center_id: otherCenter });
 
     expect(res.status).toBe(400);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
@@ -216,7 +228,7 @@ describe('POST /public/gyms/:slug/registrations — validation', () => {
     const gone = await insertCenter(gym.id, 'Closed Center');
     await db.query('UPDATE centers SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?', [gone, gym.id]);
 
-    const res = await register(gym.slug, gym.key, { name: 'Ana', email: uniqueEmail('delcenter'), center_id: gone });
+    const res = await register(gym.ref, gym.key, { name: 'Ana', email: uniqueEmail('delcenter'), center_id: gone });
 
     expect(res.status).toBe(400);
   });
@@ -231,14 +243,14 @@ describe('POST /public/gyms/:slug/registrations — validation', () => {
     });
 
     it('returns 400 when center_id is missing', async () => {
-      const res = await register(multi.slug, multi.key, { name: 'Ana', email: uniqueEmail('multi-missing') });
+      const res = await register(multi.ref, multi.key, { name: 'Ana', email: uniqueEmail('multi-missing') });
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/center_id is required/);
       expect(clerk.createInvitation).not.toHaveBeenCalled();
     });
 
     it('returns 202 and carries the chosen center when center_id is given', async () => {
-      const res = await register(multi.slug, multi.key, {
+      const res = await register(multi.ref, multi.key, {
         name: 'Ana', email: uniqueEmail('multi-ok'), center_id: secondCenter,
       });
       expect(res.status).toBe(202);
@@ -249,11 +261,11 @@ describe('POST /public/gyms/:slug/registrations — validation', () => {
   });
 });
 
-describe('POST /public/gyms/:slug/registrations — happy path', () => {
+describe('POST /public/gyms/:gymRef/registrations — happy path', () => {
   it('returns 202, issues an invitation carrying gym_signup, and creates NO members row', async () => {
     const email = uniqueEmail('happy');
 
-    const res = await register(slug, apiKey, { name: '  Web Person ', email: email.toUpperCase() });
+    const res = await register(ref, apiKey, { name: '  Web Person ', email: email.toUpperCase() });
 
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ ok: true });
@@ -270,19 +282,19 @@ describe('POST /public/gyms/:slug/registrations — happy path', () => {
   });
 
   it("redirects to the requested member-app locale ('es')", async () => {
-    const res = await register(slug, apiKey, { name: 'Ana', email: uniqueEmail('es'), locale: 'es' });
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('es'), locale: 'es' });
     expect(res.status).toBe(202);
     expect(clerk.createInvitation.mock.calls[0][0].redirectUrl.endsWith(`/es/link?gym_id=${gymId}`)).toBe(true);
   });
 
   it('accepts an explicit center_id on a single-center gym', async () => {
-    const res = await register(slug, apiKey, { name: 'Ana', email: uniqueEmail('center'), center_id: centerId });
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('center'), center_id: centerId });
     expect(res.status).toBe(202);
     expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.center_id).toBe(centerId);
   });
 });
 
-describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)', () => {
+describe('POST /public/gyms/:gymRef/registrations — never an oracle (always 202)', () => {
   it('staff-login email → 202 and no invitation', async () => {
     const email = uniqueEmail('stafflogin');
     await db.query(
@@ -290,7 +302,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
       [`staff-user-${Date.now()}`, gymId, email],
     );
 
-    const res = await register(slug, apiKey, { name: 'Staff Person', email: email.toUpperCase() });
+    const res = await register(ref, apiKey, { name: 'Staff Person', email: email.toUpperCase() });
 
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ ok: true });
@@ -305,7 +317,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
       [`staff-user-${Date.now()}`, other, email],
     );
 
-    const res = await register(slug, apiKey, { name: 'Ana', email });
+    const res = await register(ref, apiKey, { name: 'Ana', email });
 
     expect(res.status).toBe(202);
     expect(clerk.createInvitation).toHaveBeenCalledTimes(1);
@@ -316,7 +328,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
     const { insertId } = await db.query('INSERT INTO members (name, email, gym_id) VALUES (?, ?, ?)', ['Added By Staff', email, gymId]);
     clerk.createInvitation.mockResolvedValueOnce({ id: 'inv-existing-row' });
 
-    const res = await register(slug, apiKey, { name: 'Different Name', email });
+    const res = await register(ref, apiKey, { name: 'Different Name', email });
 
     expect(res.status).toBe(202);
     expect(clerk.createInvitation).toHaveBeenCalledTimes(1);
@@ -337,7 +349,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
     const email = uniqueEmail('invited');
     await db.query('INSERT INTO members (name, email, gym_id, invitation_id) VALUES (?, ?, ?, ?)', ['Invited', email, gymId, 'inv-earlier']);
 
-    const res = await register(slug, apiKey, { name: 'Invited', email });
+    const res = await register(ref, apiKey, { name: 'Invited', email });
 
     expect(res.status).toBe(202);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
@@ -348,7 +360,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
     const email = uniqueEmail('linked');
     await db.query('INSERT INTO members (name, email, gym_id, clerk_user_id) VALUES (?, ?, ?, ?)', ['Linked', email, gymId, `user_linked_${Date.now()}`]);
 
-    const res = await register(slug, apiKey, { name: 'Linked', email });
+    const res = await register(ref, apiKey, { name: 'Linked', email });
 
     expect(res.status).toBe(202);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
@@ -358,7 +370,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
     const email = uniqueEmail('softdeleted');
     await db.query('INSERT INTO members (name, email, gym_id, deleted_at) VALUES (?, ?, ?, UTC_TIMESTAMP())', ['Gone', email, gymId]);
 
-    const res = await register(slug, apiKey, { name: 'Gone', email });
+    const res = await register(ref, apiKey, { name: 'Gone', email });
 
     expect(res.status).toBe(202);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
@@ -369,7 +381,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
     const email = uniqueEmail('elsewhere');
     await db.query('INSERT INTO members (name, email, gym_id) VALUES (?, ?, ?)', ['Elsewhere', email, other]);
 
-    const res = await register(slug, apiKey, { name: 'Elsewhere', email });
+    const res = await register(ref, apiKey, { name: 'Elsewhere', email });
 
     expect(res.status).toBe(202);
     expect(clerk.createInvitation).not.toHaveBeenCalled();
@@ -383,7 +395,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
     const email = uniqueEmail('clerk422');
     clerk.createInvitation.mockRejectedValueOnce(Object.assign(new Error('duplicate invitation'), { status: 422 }));
 
-    const res = await register(slug, apiKey, { name: 'Ana', email });
+    const res = await register(ref, apiKey, { name: 'Ana', email });
 
     expect(res.status).toBe(202);
     expect(res.body).toEqual({ ok: true });
@@ -396,7 +408,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
     await db.query('INSERT INTO members (name, email, gym_id) VALUES (?, ?, ?)', ['Row', email, gymId]);
     clerk.createInvitation.mockRejectedValueOnce(Object.assign(new Error('duplicate invitation'), { status: 422 }));
 
-    const res = await register(slug, apiKey, { name: 'Row', email });
+    const res = await register(ref, apiKey, { name: 'Row', email });
 
     expect(res.status).toBe(202);
     expect((await membersByEmail(email))[0].invitation_id).toBeNull();
@@ -405,7 +417,7 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
   it('Clerk 500 → 502 with a generic message', async () => {
     clerk.createInvitation.mockRejectedValueOnce(Object.assign(new Error('clerk exploded: secret detail'), { status: 500 }));
 
-    const res = await register(slug, apiKey, { name: 'Ana', email: uniqueEmail('clerk500') });
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('clerk500') });
 
     expect(res.status).toBe(502);
     expect(res.body.error).toBeTruthy();
@@ -413,27 +425,144 @@ describe('POST /public/gyms/:slug/registrations — never an oracle (always 202)
   });
 });
 
-describe('POST /public/gyms/:slug/registrations — per-gym rate limit', () => {
+describe('POST /public/gyms/:gymRef/registrations — gym reference (#645)', () => {
+  it('resolves the gym by id and ignores the readable name half', async () => {
+    const res = await register(`${gymId}-any-old-name`, apiKey, { name: 'Ana', email: uniqueEmail('idonly') });
+
+    expect(res.status).toBe(202);
+    expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.gym_id).toBe(gymId);
+  });
+
+  it('resolves a bare gym id with no name at all', async () => {
+    expect((await register(gymId, apiKey, { name: 'Ana', email: uniqueEmail('bareid') })).status).toBe(202);
+  });
+
+  it('still accepts the legacy bare-slug format', async () => {
+    const res = await register(slug, apiKey, { name: 'Ana', email: uniqueEmail('legacy') });
+
+    expect(res.status).toBe(202);
+    expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.gym_id).toBe(gymId);
+  });
+
+  it('gives two gyms with the same name distinct, non-interchangeable endpoints', async () => {
+    const a = await createRegistrationGym('Twin Name Gym');
+    const b = await createRegistrationGym('Twin Name Gym');
+    expect(a.id).not.toBe(b.id);
+
+    // The readable half is identical in both URLs — only the id differs.
+    const refA = `${a.id}-twin-name-gym`;
+    const refB = `${b.id}-twin-name-gym`;
+
+    expect((await register(refA, a.key, { name: 'A', email: uniqueEmail('twin-a') })).status).toBe(202);
+    expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.gym_id).toBe(a.id);
+
+    clerk.createInvitation.mockClear();
+    expect((await register(refB, b.key, { name: 'B', email: uniqueEmail('twin-b') })).status).toBe(202);
+    expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.gym_id).toBe(b.id);
+
+    // Same name, so the only thing keeping the keys apart is the id.
+    expect((await register(refA, b.key, { name: 'A', email: uniqueEmail('twin-x') })).status).toBe(401);
+    expect((await register(refB, a.key, { name: 'B', email: uniqueEmail('twin-y') })).status).toBe(401);
+  });
+});
+
+describe('POST /public/gyms/:gymRef/registrations — health check (#645)', () => {
+  const HEALTH_CHECK = { name: 'test', email: '' };
+
+  /** Everything a registration would write for this gym. */
+  async function written() {
+    const { rows } = await db.query<{ members: number; invited: number }>(
+      'SELECT COUNT(*) AS members, COUNT(invitation_id) AS invited FROM members WHERE gym_id = ?',
+      [gymId],
+    );
+    return rows[0];
+  }
+
+  it('returns 200 and creates no member, no invitation and no email', async () => {
+    const before = await written();
+
+    const res = await register(ref, apiKey, HEALTH_CHECK);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, health_check: true });
+    expect(clerk.createInvitation).not.toHaveBeenCalled();
+    expect(await written()).toEqual(before);
+  });
+
+  it('tolerates surrounding whitespace and casing', async () => {
+    expect((await register(ref, apiKey, { name: ' TEST ', email: '   ' })).status).toBe(200);
+    expect(clerk.createInvitation).not.toHaveBeenCalled();
+  });
+
+  it('works through the legacy bare-slug endpoint too', async () => {
+    expect((await register(slug, apiKey, HEALTH_CHECK)).status).toBe(200);
+  });
+
+  it('returns 401 with a missing, wrong or foreign key — the probe proves the key too', async () => {
+    const other = await createRegistrationGym('Public Reg Health Other');
+
+    expect((await register(ref, undefined, HEALTH_CHECK)).status).toBe(401);
+    expect((await register(ref, 'gdk_nope', HEALTH_CHECK)).status).toBe(401);
+    expect((await register(ref, other.key, HEALTH_CHECK)).status).toBe(401);
+    expect((await register(`no-such-gym-${Date.now()}`, apiKey, HEALTH_CHECK)).status).toBe(401);
+  });
+
+  it('is not triggered by a real registration that happens to be named "test"', async () => {
+    const res = await register(ref, apiKey, { name: 'test', email: uniqueEmail('named-test') });
+
+    expect(res.status).toBe(202);
+    expect(clerk.createInvitation).toHaveBeenCalledTimes(1);
+  });
+
+  it('a blank email on any other name is still a 400, not a health check', async () => {
+    const res = await register(ref, apiKey, { name: 'Ana', email: '' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/email/i);
+    expect(clerk.createInvitation).not.toHaveBeenCalled();
+  });
+
+  it("does not spend the gym's daily registration quota", async () => {
+    const limited = await createRegistrationGym('Public Reg Health Quota');
+    const previous = process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY;
+    process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY = '1';
+    try {
+      for (let i = 0; i < 3; i++) {
+        expect((await register(limited.ref, limited.key, HEALTH_CHECK)).status).toBe(200);
+      }
+      // The one real registration the quota allows still goes through...
+      expect((await register(limited.ref, limited.key, { name: 'One', email: uniqueEmail('hq1') })).status).toBe(202);
+      // ...and the quota is spent by registrations only.
+      expect((await register(limited.ref, limited.key, { name: 'Two', email: uniqueEmail('hq2') })).status).toBe(429);
+      expect((await register(limited.ref, limited.key, HEALTH_CHECK)).status).toBe(200);
+    } finally {
+      if (previous === undefined) delete process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY;
+      else process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY = previous;
+    }
+  });
+});
+
+describe('POST /public/gyms/:gymRef/registrations — per-gym rate limit', () => {
   it('returns 429 once the gym has spent its daily quota, without touching other gyms', async () => {
     // The gym limiter is keyed by gym id, so a dedicated gym keeps the quota isolated.
     const limited = await createRegistrationGym('Public Reg Limited');
     const previous = process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY;
     process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY = '2';
     try {
-      expect((await register(limited.slug, limited.key, { name: 'One', email: uniqueEmail('rl1') })).status).toBe(202);
-      expect((await register(limited.slug, limited.key, { name: 'Two', email: uniqueEmail('rl2') })).status).toBe(202);
+      expect((await register(limited.ref, limited.key, { name: 'One', email: uniqueEmail('rl1') })).status).toBe(202);
+      expect((await register(limited.ref, limited.key, { name: 'Two', email: uniqueEmail('rl2') })).status).toBe(202);
 
       // Unauthenticated calls must not spend the gym's quota (the limiter sits after the key check).
-      expect((await register(limited.slug, 'gdk_wrong', { name: 'X', email: uniqueEmail('rlx') })).status).toBe(401);
+      expect((await register(limited.ref, 'gdk_wrong', { name: 'X', email: uniqueEmail('rlx') })).status).toBe(401);
 
-      const third = await register(limited.slug, limited.key, { name: 'Three', email: uniqueEmail('rl3') });
+      const third = await register(limited.ref, limited.key, { name: 'Three', email: uniqueEmail('rl3') });
       expect(third.status).toBe(429);
       expect(third.body).toEqual({ error: 'Too many requests.' });
       expect(clerk.createInvitation).toHaveBeenCalledTimes(2);
 
       // A different gym is unaffected even at the same low limit.
       const other = await createRegistrationGym('Public Reg Not Limited');
-      expect((await register(other.slug, other.key, { name: 'Ok', email: uniqueEmail('rl-other') })).status).toBe(202);
+      expect((await register(other.ref, other.key, { name: 'Ok', email: uniqueEmail('rl-other') })).status).toBe(202);
     } finally {
       if (previous === undefined) delete process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY;
       else process.env.PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY = previous;

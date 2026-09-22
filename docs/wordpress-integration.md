@@ -7,7 +7,8 @@ The call is made **by the WordPress server (PHP), never by the visitor's browser
 ## 1. Get the endpoint and the key (Gymdesk admin)
 
 1. Sign in to the admin app as a gym **admin** and open **System → Website Integration**.
-2. Copy the **Registration endpoint**. It looks like `https://<api-host>/public/gyms/<gym-slug>/registrations`.
+2. Copy the **Registration endpoint**. It looks like `https://<api-host>/public/gyms/<gym-id>-<gym-name>/registrations`.
+   The id at the front is what identifies the gym, so two gyms with the same name never share an endpoint (#645). Always copy the endpoint from this page rather than typing it — the name after the id is only there for readability and is ignored.
 3. Click **Generate key** and copy the key (`gdk_…`). It is shown once. If it is lost, use **Rotate key** — the old key stops working immediately.
 
 ## 2. Store both values in `wp-config.php`
@@ -15,7 +16,7 @@ The call is made **by the WordPress server (PHP), never by the visitor's browser
 Add these lines above `/* That's all, stop editing! */`:
 
 ```php
-define( 'GYMDESK_REGISTRATION_URL', 'https://<api-host>/public/gyms/<gym-slug>/registrations' );
+define( 'GYMDESK_REGISTRATION_URL', 'https://<api-host>/public/gyms/<gym-id>-<gym-name>/registrations' );
 define( 'GYMDESK_API_KEY', 'gdk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' );
 
 // Optional but strongly recommended — Cloudflare Turnstile (free). Create a widget for
@@ -60,6 +61,23 @@ function gymdesk_register_member( string $name, string $email, ?int $center_id =
     $code = wp_remote_retrieve_response_code( $response );
     if ( 202 !== $code ) error_log( 'Gymdesk registration failed: HTTP ' . $code . ' ' . wp_remote_retrieve_body( $response ) );
     return 202 === $code;
+}
+
+/**
+ * Health check (#645): confirms the endpoint, the key and network access
+ * without registering anybody. Returns true when Gymdesk answered 200.
+ */
+function gymdesk_registration_health_check(): bool {
+    if ( ! defined( 'GYMDESK_REGISTRATION_URL' ) || ! defined( 'GYMDESK_API_KEY' ) ) return false;
+
+    $response = wp_remote_post( GYMDESK_REGISTRATION_URL, array(
+        'timeout' => 10,
+        'headers' => array( 'Content-Type' => 'application/json', 'x-api-key' => GYMDESK_API_KEY ),
+        'body'    => wp_json_encode( array( 'name' => 'test', 'email' => '' ) ),
+    ) );
+
+    if ( is_wp_error( $response ) ) return false;
+    return 200 === wp_remote_retrieve_response_code( $response );
 }
 
 function gymdesk_turnstile_enabled(): bool {
@@ -171,7 +189,9 @@ curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" 
 
 ## API reference
 
-`POST /public/gyms/:slug/registrations` — header `x-api-key`, JSON body:
+`POST /public/gyms/:gymRef/registrations` — header `x-api-key`, JSON body:
+
+`:gymRef` is `{gymId}-{gymName}` (#645). Only the id is resolved; the name is decorative, so renaming the gym does not break a configured site. The pre-#645 `{gymSlug}` form still works, so existing installs keep registering, but new integrations should use the format the admin page shows.
 
 | Field | Required | Notes |
 |-------|----------|-------|
@@ -182,11 +202,24 @@ curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" 
 
 | Status | Meaning |
 |--------|---------|
+| `200` | Health check accepted — see below. Nothing was registered. |
 | `202` | Accepted. Returned for every valid, authenticated request — **including** when the email already belongs to a member, a staff login, or a pending invitation. This is deliberate: the endpoint never reveals who belongs to the gym. Always show the visitor the same "check your inbox" message. |
 | `400` | Invalid body (bad email, missing name, unknown or missing `center_id`). |
-| `401` | Missing or wrong key, or wrong gym slug in the URL. |
+| `401` | Missing or wrong key, or the gym in the URL is unknown, inactive or not the one that owns the key. |
 | `429` | Rate limit reached (per server IP per hour, and per gym per day). |
 | `502` | The invitation service is temporarily unavailable — ask the visitor to retry later. |
+
+### Health check (#645)
+
+To verify the endpoint, the key and network access without registering anybody, send the registration request with the name `test` and an empty email:
+
+```bash
+curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" -H "x-api-key: $GYMDESK_API_KEY" -d '{"name":"test","email":""}'
+```
+
+`200` means the key is valid and the gym resolved. The call creates no member, no invitation and no email, writes nothing, and does not spend the gym's daily registration quota (the per-IP hourly limit still applies). `401` means the key or the gym reference is wrong.
+
+Any other name, or a non-empty email, is a real registration — including the name `test` with a real address.
 
 ## Known limitations
 
@@ -198,7 +231,7 @@ curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" 
 
 | Symptom | Cause |
 |---------|-------|
-| Always "Something went wrong" | Check the PHP error log for `Gymdesk registration failed`. `HTTP 401` = wrong key, or the slug in the URL does not match the gym that owns the key. |
+| Always "Something went wrong" | Check the PHP error log for `Gymdesk registration failed`. `HTTP 401` = wrong key, or the gym id in the URL does not match the gym that owns the key. Run the health check above to tell the two apart from the key's own behaviour. |
 | `HTTP 400 … center_id is required` | The gym has several centers — pass the center id as the third argument of `gymdesk_register_member()`. |
 | Form works once, then always fails | The page is cached. Exclude it from the page cache. |
 | "Check your inbox" but no email | The address is already a member, a staff login, already invited, or already has an account. This is reported as success on purpose. Check the spam folder, then the Members page in the admin app. |

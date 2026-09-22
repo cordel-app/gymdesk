@@ -7,7 +7,7 @@ import { isStaffLoginEmail } from '../infra/staff-access';
 import { verifyWebsiteApiKey } from '../infra/website-api-key';
 
 /**
- * #599: website self-registration. Mounted at /public/gyms/:slug/registrations.
+ * #599: website self-registration. Mounted at /public/gyms/:gymRef/registrations.
  *
  * Called server-to-server by the gym's website (WordPress), authenticated by
  * the per-gym API key in `x-api-key`. It only ever issues a Clerk invitation:
@@ -19,6 +19,11 @@ import { verifyWebsiteApiKey } from '../infra/website-api-key';
  * Once the caller is authenticated and the body is valid, the response is the
  * same 202 whatever the email turns out to be (new, invited, member, staff
  * login) — the endpoint must not become an oracle for who belongs to a gym.
+ *
+ * #645: `:gymRef` is `{gymId}-{gym-name}`, so the gym is identified by its id
+ * and two gyms with the same name can never share an endpoint (a bare slug,
+ * the pre-#645 format, still resolves — see parseGymRef). The same route also
+ * answers a connectivity probe that registers nobody — see isHealthCheckBody.
  */
 export const publicRegistrationsRouter = Router({ mergeParams: true });
 
@@ -51,14 +56,42 @@ const gymLimiter = rateLimit({
   message: { error: 'Too many requests.' },
 });
 
-// Unknown slug, deleted/inactive gym and wrong key all get the same 401.
+// gyms.id is a CHAR(36) UUID; the readable half that follows it is whatever the
+// gym's slug happens to be, hyphens included, so the id is taken by length.
+const GYM_ID_LENGTH = 36;
+const GYM_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type GymRef = { by: 'id' | 'slug'; value: string };
+
+/**
+ * #645: resolves `{gymId}-{gym-name}` to the gym id. The name half is there for
+ * readability only and is never matched against anything, so a renamed gym
+ * keeps working and two gyms sharing a name still get distinct endpoints.
+ *
+ * A reference that doesn't start with a gym id falls back to the pre-#645
+ * `{gym-slug}` format, so WordPress installs configured before this change keep
+ * registering. Slugs are slugified gym names, so one shaped like a UUID
+ * followed by a hyphen — the only way the two forms could overlap — is not
+ * something the platform generates.
+ */
+export function parseGymRef(ref: string): GymRef {
+  const id = ref.slice(0, GYM_ID_LENGTH);
+  if (GYM_ID_RE.test(id) && (ref.length === GYM_ID_LENGTH || ref[GYM_ID_LENGTH] === '-')) {
+    return { by: 'id', value: id.toLowerCase() };
+  }
+  return { by: 'slug', value: ref };
+}
+
+// Unknown gym, deleted/inactive gym and wrong key all get the same 401.
 async function requireWebsiteApiKey(req: Request, res: Response, next: NextFunction) {
   try {
+    const ref = parseGymRef(String((req.params as any).gymRef ?? ''));
     const { rows } = await db.query<{
       id: string; website_api_key_hash: string | null; website_api_key_prefix: string | null;
     }>(
-      "SELECT id, website_api_key_hash, website_api_key_prefix FROM gyms WHERE slug = ? AND deleted_at IS NULL AND status = 'active'",
-      [(req.params as any).slug],
+      `SELECT id, website_api_key_hash, website_api_key_prefix FROM gyms
+        WHERE ${ref.by === 'id' ? 'id' : 'slug'} = ? AND deleted_at IS NULL AND status = 'active'`,
+      [ref.value],
     );
     const gym = rows[0];
     if (!(await verifyWebsiteApiKey(req.headers['x-api-key'], gym?.website_api_key_hash, gym?.website_api_key_prefix))) {
@@ -70,6 +103,24 @@ async function requireWebsiteApiKey(req: Request, res: Response, next: NextFunct
     next(err);
   }
 }
+
+/**
+ * #645: the connectivity probe a website sends to prove the endpoint and the
+ * key work, without registering anybody. It is exactly `{ name: 'test',
+ * email: '' }` — a real registration always carries a non-empty email, which
+ * the schema below requires, so the two can never be confused.
+ */
+export function isHealthCheckBody(body: unknown): boolean {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const { name, email } = body as Record<string, unknown>;
+  return typeof name === 'string' && name.trim().toLowerCase() === 'test'
+    && typeof email === 'string' && email.trim() === '';
+}
+
+// A health check writes nothing, so it must not spend the gym's daily
+// registration quota; the per-IP limiter ahead of it still applies.
+const registrationGymLimiter = (req: Request, res: Response, next: NextFunction) =>
+  isHealthCheckBody(req.body) ? next() : (gymLimiter as any)(req, res, next);
 
 const registrationSchema = z.object({
   name: z.string().trim().min(1, 'name is required').max(255),
@@ -92,8 +143,16 @@ async function resolveCenter(gymId: string, centerId: number | undefined): Promi
   return { error: 'center_id is required — this gym has multiple centers' };
 }
 
-publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, gymLimiter as any, async (req, res, next) => {
+publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, registrationGymLimiter, async (req, res, next) => {
   const gymId: string = (req as any).registrationGymId;
+
+  // #645: the key is valid and the gym resolved — that is all the probe asks.
+  // Nothing is written, no invitation is created and no email goes out.
+  if (isHealthCheckBody(req.body)) {
+    req.log.info({ gymId }, 'Website registration health check');
+    return res.status(200).json({ ok: true, health_check: true });
+  }
+
   const body = parseBody(req, res, registrationSchema);
   if (!body) return;
 

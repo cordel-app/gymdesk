@@ -3035,6 +3035,7 @@
     "how_2": "Desde tu servidor, envía una petición POST al endpoint con la cabecera x-api-key y un cuerpo JSON con name y email.",
     "how_3": "Protege el formulario de tu web con un CAPTCHA para que los bots no puedan enviarlo.",
     "how_4": "Toda petición aceptada responde 202, tanto si el correo ya era conocido como si no. Muestra al visitante un mensaje de «revisa tu correo».",
+    "how_5": "Para probar la conexión, envía la misma petición con el nombre «test» y el correo vacío. Responde 200 y no registra a nadie.",
     "error_generic": "Algo ha ido mal."
   }
 }

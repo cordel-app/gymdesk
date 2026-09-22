@@ -6,7 +6,7 @@ import { generateWebsiteApiKey } from '../infra/website-api-key';
 
 /**
  * #599: manages the per-gym API key the gym's website uses to call
- * POST /public/gyms/:slug/registrations. The plaintext key is returned exactly
+ * POST /public/gyms/:gymRef/registrations. The plaintext key is returned exactly
  * once, by POST /key; only a scrypt digest is stored, so GET can never leak it.
  */
 export const websiteIntegrationRouter = Router();
@@ -26,19 +26,24 @@ function apiPublicOrigin(): string | null {
 
 async function loadStatus(gymId: string) {
   const { rows } = await db.query<{
-    slug: string; website_api_key_prefix: string | null; website_api_key_created_at: Date | null;
+    id: string; slug: string; website_api_key_prefix: string | null; website_api_key_created_at: Date | null;
   }>(
-    'SELECT slug, website_api_key_prefix, website_api_key_created_at FROM gyms WHERE id = ?',
+    'SELECT id, slug, website_api_key_prefix, website_api_key_created_at FROM gyms WHERE id = ?',
     [gymId],
   );
   const gym = rows[0];
-  const endpointPath = `/public/gyms/${gym.slug}/registrations`;
+  // #645: `{gymId}-{gym-name}`. The id is what the API resolves; the name is
+  // there to keep the URL readable, and is encoded because a slug set by hand
+  // is not guaranteed to be URL-safe.
+  const gymRef = `${gym.id}-${encodeURIComponent(gym.slug)}`;
+  const endpointPath = `/public/gyms/${gymRef}/registrations`;
   const origin = apiPublicOrigin();
   return {
     configured: !!gym.website_api_key_prefix,
     key_prefix: gym.website_api_key_prefix,
     created_at: gym.website_api_key_created_at,
     slug: gym.slug,
+    gym_ref: gymRef,
     endpoint_path: endpointPath,
     endpoint_url: origin ? `${origin}${endpointPath}` : null,
   };

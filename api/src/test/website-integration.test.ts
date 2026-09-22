@@ -1,7 +1,8 @@
 // Tests for website-integration.ts router
 // #599: GET /system/website-integration, POST + DELETE /system/website-integration/key —
 // an admin manages the per-gym key the gym's website presents to
-// POST /public/gyms/:slug/registrations. The plaintext key is returned exactly once.
+// POST /public/gyms/:gymRef/registrations. The plaintext key is returned exactly once.
+// #645: the endpoint the page shows is `{gymId}-{gym-name}`.
 
 import { verifyToken } from '@clerk/backend';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -13,6 +14,7 @@ const BASE = '/system/website-integration';
 
 let gymId: string;
 let slug: string;
+let ref: string;
 
 let seq = 0;
 const uniqueEmail = (tag: string) =>
@@ -32,15 +34,16 @@ const authed = (method: 'get' | 'post' | 'delete', path: string, id: string) =>
   request[method](path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', id);
 
 /** Calls the public registration route the key is meant for. */
-const registerWith = (gymSlug: string, key: string) =>
-  request.post(`/public/gyms/${gymSlug}/registrations`).set('x-api-key', key).send({ name: 'Web Person', email: uniqueEmail('reg') });
+const registerWith = (gymRef: string, key: string) =>
+  request.post(`/public/gyms/${gymRef}/registrations`).set('x-api-key', key).send({ name: 'Web Person', email: uniqueEmail('reg') });
 
 /** A fresh gym with TEST_USER_ID as admin and the single center the public route needs. */
 async function createAdminGym(name: string) {
   const id = await createTestGym(name);
   await createTestMembership(id, 'admin');
   await db.query(`INSERT INTO centers (gym_id, name, status) VALUES (?, 'Main Center', 'active')`, [id]);
-  return { id, slug: (await gymRow(id)).slug };
+  const gymSlug = (await gymRow(id)).slug;
+  return { id, slug: gymSlug, ref: `${id}-${gymSlug}` };
 }
 
 let savedIpLimit: string | undefined;
@@ -51,6 +54,7 @@ beforeAll(async () => {
   const gym = await createAdminGym('Website Integration Gym');
   gymId = gym.id;
   slug = gym.slug;
+  ref = gym.ref;
 });
 
 afterAll(async () => {
@@ -105,9 +109,23 @@ describe('website-integration — key lifecycle', () => {
       key_prefix: null,
       created_at: null,
       slug,
-      endpoint_path: `/public/gyms/${slug}/registrations`,
+      gym_ref: ref,
+      endpoint_path: `/public/gyms/${ref}/registrations`,
     });
     expect(res.body).not.toHaveProperty('key');
+  });
+
+  // #645: the id leads, so two gyms with the same name get different endpoints.
+  it('advertises the endpoint as `{gymId}-{gym-name}`, URL-encoded', async () => {
+    const odd = await createAdminGym('Website Integration Encoded');
+    await db.query('UPDATE gyms SET slug = ? WHERE id = ?', ['fit box/barcelona', odd.id]);
+
+    const res = await authed('get', BASE, odd.id);
+
+    expect(res.status).toBe(200);
+    expect(res.body.gym_ref).toBe(`${odd.id}-fit%20box%2Fbarcelona`);
+    expect(res.body.endpoint_path).toBe(`/public/gyms/${odd.id}-fit%20box%2Fbarcelona/registrations`);
+    expect(res.body.endpoint_path.startsWith(`/public/gyms/${odd.id}-`)).toBe(true);
   });
 
   it('DELETE /key with no key → 404', async () => {
@@ -124,7 +142,7 @@ describe('website-integration — key lifecycle', () => {
     expect(res.body).toMatchObject({
       configured: true,
       key_prefix: res.body.key.slice(0, 12),
-      endpoint_path: `/public/gyms/${slug}/registrations`,
+      endpoint_path: `/public/gyms/${ref}/registrations`,
     });
     expect(res.body.created_at).toBeTruthy();
     firstKey = res.body.key;
@@ -153,7 +171,7 @@ describe('website-integration — key lifecycle', () => {
   });
 
   it('the returned key authenticates against the public registration route', async () => {
-    expect((await registerWith(slug, firstKey)).status).toBe(202);
+    expect((await registerWith(ref, firstKey)).status).toBe(202);
   });
 
   it('POST /key again rotates: the old key is 401 immediately, the new key works', async () => {
@@ -167,8 +185,8 @@ describe('website-integration — key lifecycle', () => {
     expect(await verifyWebsiteApiKey(secondKey, rotated.website_api_key_hash, rotated.website_api_key_prefix)).toBe(true);
     expect(await verifyWebsiteApiKey(firstKey, rotated.website_api_key_hash, rotated.website_api_key_prefix)).toBe(false);
 
-    expect((await registerWith(slug, firstKey)).status).toBe(401);
-    expect((await registerWith(slug, secondKey)).status).toBe(202);
+    expect((await registerWith(ref, firstKey)).status).toBe(401);
+    expect((await registerWith(ref, secondKey)).status).toBe(202);
   });
 
   it('DELETE /key → configured:false, columns cleared, and the key stops working', async () => {
@@ -183,7 +201,7 @@ describe('website-integration — key lifecycle', () => {
     expect(row.website_api_key_prefix).toBeNull();
     expect(row.website_api_key_created_at).toBeNull();
 
-    expect((await registerWith(slug, secondKey)).status).toBe(401);
+    expect((await registerWith(ref, secondKey)).status).toBe(401);
     expect((await authed('get', BASE, gymId)).body.configured).toBe(false);
   });
 
@@ -232,11 +250,11 @@ describe('website-integration — tenant isolation', () => {
     // B is still unconfigured, in the API and in the DB.
     const statusB = await authed('get', BASE, gymB.id);
     expect(statusB.body).toMatchObject({
-      configured: false, key_prefix: null, endpoint_path: `/public/gyms/${gymB.slug}/registrations`,
+      configured: false, key_prefix: null, endpoint_path: `/public/gyms/${gymB.ref}/registrations`,
     });
     expect((await gymRow(gymB.id)).website_api_key_hash).toBeNull();
-    // A's key is worthless against B's slug.
-    expect((await registerWith(gymB.slug, created.body.key)).status).toBe(401);
+    // A's key is worthless against B's endpoint.
+    expect((await registerWith(gymB.ref, created.body.key)).status).toBe(401);
 
     // B gets its own key; revoking A's leaves B's working.
     const createdB = await authed('post', `${BASE}/key`, gymB.id);
@@ -244,8 +262,8 @@ describe('website-integration — tenant isolation', () => {
     expect((await authed('delete', `${BASE}/key`, gymA.id)).status).toBe(200);
     const rowB = await gymRow(gymB.id);
     expect(await verifyWebsiteApiKey(createdB.body.key, rowB.website_api_key_hash, rowB.website_api_key_prefix)).toBe(true);
-    expect((await registerWith(gymB.slug, createdB.body.key)).status).toBe(202);
-    expect((await registerWith(gymA.slug, created.body.key)).status).toBe(401);
+    expect((await registerWith(gymB.ref, createdB.body.key)).status).toBe(202);
+    expect((await registerWith(gymA.ref, created.body.key)).status).toBe(401);
   });
 });
 

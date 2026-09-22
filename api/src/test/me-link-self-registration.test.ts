@@ -1,7 +1,7 @@
 // Tests for me.ts router — POST /me/link, website self-registration extension (#599)
 // When no unlinked members row matches the Clerk user's email and the user carries
 // server-set `publicMetadata.gym_signup` for THIS gym (copied by Clerk from the
-// invitation issued by POST /public/gyms/:slug/registrations), /me/link creates the
+// invitation issued by POST /public/gyms/:gymRef/registrations), /me/link creates the
 // member on first sign-in instead of returning 404.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';

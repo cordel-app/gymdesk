@@ -90,6 +90,11 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 - [ ] nginx on the production host matches `infra/nginx/corback.conf`, including the
       `/billing/` GitHub Actions IP allowlist (refresh with
       `infra/nginx/update-github-actions-allowlist.sh`).
+- [ ] Re-point every live website integration at the `{gymId}-{gym-name}` registration
+      endpoint (#645) and decide whether to keep accepting the legacy `{gym-slug}` form.
+      The fallback exists only so sites configured before #645 keep working; each gym's
+      current URL is on **System → Website Integration**, and the health check
+      (`{"name":"test","email":""}` → `200`) confirms a site after it is updated.
 
 ## 5. Payments (Monei / PCI)
 

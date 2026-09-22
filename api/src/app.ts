@@ -133,9 +133,10 @@ app.get('/health', (_req, res) => {
 app.use('/docs', swaggerUi.serve as any);
 app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }) as any);
 
-// Public endpoints — no auth, no tenant context (identified by gym slug)
+// Public endpoints — no auth, no tenant context (identified by gym id or slug)
 // #599: website self-registration — per-gym API key, not a Clerk session.
-app.use('/public/gyms/:slug/registrations', publicRegistrationsRouter);
+// #645: :gymRef is `{gymId}-{gym-name}` (a bare slug is still accepted).
+app.use('/public/gyms/:gymRef/registrations', publicRegistrationsRouter);
 app.use('/public', publicRouter);
 
 // Payment page — no Clerk auth; authenticated by single-use page_token
