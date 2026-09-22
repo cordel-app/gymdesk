@@ -172,6 +172,110 @@ describe('Promotion CRUD with new field names', () => {
   });
 });
 
+// ─── Only applicable for new members (#633) ──────────────────────────────────
+
+// The flag is stored and returned only — no eligibility, stacking or
+// assign-plan behaviour keys off it yet (#633 §5), so these tests assert
+// persistence and the create-time default, not any application logic.
+describe('only_applicable_for_new_members', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('New Members Flag Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  function post(body: Record<string, unknown>) {
+    return request
+      .post('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Flag Promo', starts_at: '2026-08-01', ends_at: '2026-08-31', ...body });
+  }
+
+  it('POST defaults the flag to true when it is omitted', async () => {
+    const res = await post({});
+    expect(res.status).toBe(201);
+    expect(res.body.only_applicable_for_new_members).toBe(1);
+  });
+
+  it('POST persists false when the flag is unchecked', async () => {
+    const res = await post({ only_applicable_for_new_members: false });
+    expect(res.status).toBe(201);
+    expect(res.body.only_applicable_for_new_members).toBe(0);
+  });
+
+  it('GET list and GET /:id return the flag', async () => {
+    const created = await post({ only_applicable_for_new_members: false });
+    const id = created.body.id;
+
+    const list = await request
+      .get('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    expect(list.body.find((p: any) => p.id === id).only_applicable_for_new_members).toBe(0);
+
+    const detail = await request
+      .get(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(detail.status).toBe(200);
+    expect(detail.body.only_applicable_for_new_members).toBe(0);
+  });
+
+  it('PUT updates the flag, and leaves it untouched when omitted', async () => {
+    const created = await post({});
+    const id = created.body.id;
+
+    const off = await request
+      .put(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ only_applicable_for_new_members: false });
+    expect(off.status).toBe(200);
+    expect(off.body.only_applicable_for_new_members).toBe(0);
+
+    // A PUT that carries other fields must not reset the flag to its default.
+    const untouched = await request
+      .put(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Flag Promo Renamed' });
+    expect(untouched.status).toBe(200);
+    expect(untouched.body.only_applicable_for_new_members).toBe(0);
+
+    const on = await request
+      .put(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ only_applicable_for_new_members: true });
+    expect(on.status).toBe(200);
+    expect(on.body.only_applicable_for_new_members).toBe(1);
+  });
+
+  it('duplicate carries the flag over', async () => {
+    const created = await post({ only_applicable_for_new_members: false });
+    const dup = await request
+      .post(`/promotions/${created.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(dup.status).toBe(201);
+    expect(dup.body.only_applicable_for_new_members).toBe(0);
+  });
+
+  it('existing promotions inserted without the column default to true', async () => {
+    // Mirrors the migration's backfill: rows that predate the flag read as 1.
+    const legacyId = await createPromo(gymId, 'Legacy Flag Promo');
+    const res = await request
+      .get(`/promotions/${legacyId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.only_applicable_for_new_members).toBe(1);
+  });
+});
+
 // ─── Pay Beforehand (#486) ─────────────────────────────────────────────────────
 
 describe('Pay Beforehand', () => {
