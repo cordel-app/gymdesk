@@ -22,6 +22,17 @@ Tick items off in the PR that completes them.
       (`APP_NODE_ENV`), keep it when adding the production target.
 - [ ] A production MySQL database, migrated with `npm run db:migrate`. **Do not run
       `npm run db:seed` against it** (see §3).
+- [ ] **Confirm the HeatWave schema's default collation matches dev** (`utf8mb4_0900_ai_ci`).
+      Migration 166 reads `nutrition_library_items.name`'s collation and pins the
+      translations table's `name` to it, because the two are `COALESCE`d on every
+      nutrition read — but no HeatWave instance has been migrated yet, so this has only
+      been verified locally (#643). If migration 166 aborts with an "unexpected
+      charset/collation" error, that is this check failing loudly rather than the
+      nutrition endpoints breaking at runtime.
+- [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
+      (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
+      configuration today — if a locale is ever added to the frontends, the API must be
+      updated in the same deploy or the new language will silently fall back to English.
 
 ## 2. Clerk production instance
 

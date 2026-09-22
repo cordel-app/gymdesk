@@ -18,7 +18,10 @@ interface NutritionalQuality { id: number; slug: string }
 interface LibraryItem {
   id: number;
   gym_id: string | null;
+  /** Base (English) name — what the edit form submits back. */
   name: string;
+  /** `name` in the viewer's locale; equals `name` for gym-owned items (#643). */
+  display_name: string;
   status: 'active' | 'deleted';
   image_url: string | null;
   created_at: string;
@@ -183,6 +186,7 @@ export default function NutritionLibraryPage() {
   function openInlineEdit(item: LibraryItem) {
     setEditingId(item.id);
     setEditForm({
+      // Gym-owned items are never translated, so this is also what is displayed.
       name: item.name,
       categoryIds: item.categories.map((c) => c.id),
       qualityIds: item.qualities.map((q) => q.id),
@@ -309,7 +313,7 @@ export default function NutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: t('nutrition_library.label_name'), render: (item) => <strong>{item.name}</strong> },
+    { header: t('nutrition_library.label_name'), render: (item) => <strong>{item.display_name ?? item.name}</strong> },
     {
       header: t('nutrition_library.label_categories'),
       render: (item) => (

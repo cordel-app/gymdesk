@@ -5,8 +5,10 @@ import { recordAudit } from '../infra/audit';
 import {
   loadCategoriesMap, replaceCategories, validateCategoryIds,
   loadQualitiesMap, replaceQualities, validateQualityIds,
+  loadTranslationsMap, localizedNameSql,
   buildListWhere, clampLimit, clampOffset,
 } from '../domain/nutritionLibrary';
+import { getRequestLocale } from '../infra/locale';
 
 export const nutritionLibraryRouter = Router();
 
@@ -34,10 +36,11 @@ nutritionLibraryRouter.get('/nutritional-qualities', async (_req, res, next) => 
 
 nutritionLibraryRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const locale = getRequestLocale(req);
   const base = ['(gym_id IS NULL OR gym_id = ?)', "status != 'deleted'"];
   const baseParams: any[] = [gymId];
 
-  const built = buildListWhere(req, base, baseParams);
+  const built = buildListWhere(req, base, baseParams, locale);
   if ('error' in built) return res.status(400).json(built);
   const { where, params } = built;
 
@@ -54,19 +57,30 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
     // LIMIT/OFFSET must be literals, not `?` parameters: MySQL 8's prepared-statement
     // protocol rejects a parameterised LIMIT (ER_WRONG_ARGUMENTS). limit/offset are
     // already validated integers (clampLimit/clampOffset), so direct interpolation is safe.
-    const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; status: string; image_url: string | null; created_at: string; modified_at: string | null }>(
-      `SELECT id, gym_id, name, status, image_url, created_at, modified_at
-       FROM nutrition_library_items
+    // `name` stays the base (English) value — it is what edit forms submit back
+    // and what uniqueness is enforced on. `display_name` is the same item in the
+    // caller's locale, and is what every UI renders (#643).
+    const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; display_name: string; status: string; image_url: string | null; created_at: string; modified_at: string | null }>(
+      `SELECT nli.id, nli.gym_id, nli.name, ${localizedNameSql('nli', locale)} AS display_name,
+              nli.status, nli.image_url, nli.created_at, nli.modified_at
+       FROM nutrition_library_items nli
        WHERE ${where}
-       ORDER BY name ASC
+       ORDER BY display_name ASC
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     );
 
     const ids = rows.map((r) => r.id);
-    const [categoriesMap, qualitiesMap] = await Promise.all([loadCategoriesMap(ids), loadQualitiesMap(ids)]);
+    const [categoriesMap, qualitiesMap, translationsMap] = await Promise.all([
+      loadCategoriesMap(ids), loadQualitiesMap(ids), loadTranslationsMap(ids),
+    ]);
     res.json({
-      items: rows.map((r) => ({ ...r, categories: categoriesMap[r.id] ?? [], qualities: qualitiesMap[r.id] ?? [] })),
+      items: rows.map((r) => ({
+        ...r,
+        categories: categoriesMap[r.id] ?? [],
+        qualities: qualitiesMap[r.id] ?? [],
+        translations: translationsMap[r.id] ?? {},
+      })),
       total,
       limit,
       offset,
@@ -104,11 +118,15 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     }
 
     const { rows } = await db.query(
-      'SELECT id, gym_id, name, status, image_url, created_at, modified_at FROM nutrition_library_items WHERE id = ?',
+      `SELECT nli.id, nli.gym_id, nli.name, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name,
+              nli.status, nli.image_url, nli.created_at, nli.modified_at
+       FROM nutrition_library_items nli WHERE nli.id = ?`,
       [insertId],
     );
     const [categoriesMap, qualitiesMap] = await Promise.all([loadCategoriesMap([insertId]), loadQualitiesMap([insertId])]);
-    const item = { ...rows[0], categories: categoriesMap[insertId] ?? [], qualities: qualitiesMap[insertId] ?? [] };
+    // Gym-owned items carry a single entered name shown in every locale (#643),
+    // so a freshly created one never has translation rows.
+    const item = { ...rows[0], categories: categoriesMap[insertId] ?? [], qualities: qualitiesMap[insertId] ?? [], translations: {} };
     recordAudit(req, { action: 'create', entityType: 'nutrition_library_item', entityId: insertId, next: item });
     res.status(201).json(item);
   } catch (err) { next(err); }
@@ -163,11 +181,20 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
     }
 
     const { rows } = await db.query(
-      'SELECT id, gym_id, name, status, image_url, created_at, modified_at FROM nutrition_library_items WHERE id = ?',
+      `SELECT nli.id, nli.gym_id, nli.name, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name,
+              nli.status, nli.image_url, nli.created_at, nli.modified_at
+       FROM nutrition_library_items nli WHERE nli.id = ?`,
       [id],
     );
-    const [categoriesMap, qualitiesMap] = await Promise.all([loadCategoriesMap([Number(id)]), loadQualitiesMap([Number(id)])]);
-    const item = { ...rows[0], categories: categoriesMap[Number(id)] ?? [], qualities: qualitiesMap[Number(id)] ?? [] };
+    const [categoriesMap, qualitiesMap, translationsMap] = await Promise.all([
+      loadCategoriesMap([Number(id)]), loadQualitiesMap([Number(id)]), loadTranslationsMap([Number(id)]),
+    ]);
+    const item = {
+      ...rows[0],
+      categories: categoriesMap[Number(id)] ?? [],
+      qualities: qualitiesMap[Number(id)] ?? [],
+      translations: translationsMap[Number(id)] ?? {},
+    };
     recordAudit(req, { action: 'update', entityType: 'nutrition_library_item', entityId: id, previous: existing[0], next: item });
     res.json(item);
   } catch (err) { next(err); }

@@ -15,7 +15,12 @@ interface NutritionalQuality { id: number; slug: string }
 
 interface LibraryItem {
   id: number;
+  /** Base (English) name — what this page authors and what uniqueness applies to. */
   name: string;
+  /** `name` resolved into the viewer's locale; equals `name` when untranslated. */
+  display_name: string;
+  /** Per-locale names, keyed by locale (#643). Absent locales fall back to `name`. */
+  translations: Record<string, string>;
   status: 'active' | 'deleted';
   created_at: string;
   modified_at: string | null;
@@ -30,14 +35,31 @@ interface ListResponse {
   offset: number;
 }
 
+interface LocalesResponse {
+  locales: string[];
+  base_locale: string;
+  translatable: string[];
+}
+
 interface EditForm {
   name: string;
   categoryIds: number[];
   qualityIds: number[];
+  translations: Record<string, string>;
 }
 
 function emptyEditForm(): EditForm {
-  return { name: '', categoryIds: [], qualityIds: [] };
+  return { name: '', categoryIds: [], qualityIds: [], translations: {} };
+}
+
+const LOCALE_LABELS: Record<string, string> = {
+  en: 'English',
+  es: 'Spanish',
+  ca: 'Catalan',
+};
+
+function localeLabel(locale: string) {
+  return LOCALE_LABELS[locale] ?? locale.toUpperCase();
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -75,6 +97,8 @@ export default function CordelNutritionLibraryPage() {
   const [offset, setOffset] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
+  // Served by the API so the locale list isn't hardcoded a second time here.
+  const [translatableLocales, setTranslatableLocales] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeleted, setShowDeleted] = useState(false);
 
@@ -117,15 +141,19 @@ export default function CordelNutritionLibraryPage() {
       params.set('status', showDeleted ? 'deleted' : 'active');
       params.set('limit', String(LIMIT));
       params.set('offset', String(offset));
-      const [data, categoriesData, qualitiesData] = await Promise.all([
+      const [data, categoriesData, qualitiesData, localesData] = await Promise.all([
         apiFetch<ListResponse>(`/platform/nutrition-library?${params.toString()}`),
         allCategories.length ? Promise.resolve(allCategories) : apiFetch<Category[]>('/platform/nutrition-library/categories'),
         allQualities.length ? Promise.resolve(allQualities) : apiFetch<NutritionalQuality[]>('/platform/nutrition-library/nutritional-qualities'),
+        translatableLocales.length
+          ? Promise.resolve({ translatable: translatableLocales } as LocalesResponse)
+          : apiFetch<LocalesResponse>('/platform/nutrition-library/locales'),
       ]);
       setItems(data.items);
       setTotal(data.total);
       setAllCategories(categoriesData);
       setAllQualities(qualitiesData);
+      setTranslatableLocales(localesData.translatable);
     } catch { /* ignore */ } finally { setLoading(false); }
   }, [apiFetch, search, categoryFilter, qualityFilter, showDeleted, offset]);
 
@@ -167,7 +195,12 @@ export default function CordelNutritionLibraryPage() {
     try {
       await apiFetch('/platform/nutrition-library', {
         method: 'POST',
-        body: JSON.stringify({ name: newForm.name.trim(), category_ids: newForm.categoryIds, quality_ids: newForm.qualityIds }),
+        body: JSON.stringify({
+          name: newForm.name.trim(),
+          category_ids: newForm.categoryIds,
+          quality_ids: newForm.qualityIds,
+          translations: trimmedTranslations(newForm.translations),
+        }),
       });
       setCreating(false);
       toast('Item created', 'success');
@@ -182,9 +215,12 @@ export default function CordelNutritionLibraryPage() {
   function openInlineEdit(item: LibraryItem) {
     setEditingId(item.id);
     setEditForm({
+      // The base name, never `display_name` — editing in Spanish must not
+      // overwrite the English value the translations hang off (#643).
       name: item.name,
       categoryIds: item.categories.map((c) => c.id),
       qualityIds: item.qualities.map((q) => q.id),
+      translations: { ...item.translations },
     });
     setEditError(null);
   }
@@ -201,7 +237,12 @@ export default function CordelNutritionLibraryPage() {
     try {
       await apiFetch(`/platform/nutrition-library/${item.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ name: editForm.name.trim(), category_ids: editForm.categoryIds, quality_ids: editForm.qualityIds }),
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          category_ids: editForm.categoryIds,
+          quality_ids: editForm.qualityIds,
+          translations: trimmedTranslations(editForm.translations),
+        }),
       });
       setEditingId(null);
       toast('Item updated', 'success');
@@ -268,6 +309,27 @@ export default function CordelNutritionLibraryPage() {
             autoFocus={!autoFocusRef}
           />
         </div>
+        {translatableLocales.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={inlineLabelStyle}>Translations</label>
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>
+              Leave a language blank to fall back to the name above.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {translatableLocales.map((loc) => (
+                <div key={loc} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ width: 80, flexShrink: 0, fontSize: 12.5, color: '#555' }}>{localeLabel(loc)}</span>
+                  <input
+                    value={form.translations[loc] ?? ''}
+                    onChange={(e) => setForm({ ...form, translations: { ...form.translations, [loc]: e.target.value } })}
+                    placeholder={form.name ? `${form.name} in ${localeLabel(loc)}` : localeLabel(loc)}
+                    style={inlineInputStyle}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>Categories *</label>
           {renderCheckboxes(allCategories, form.categoryIds, (ids) => setForm({ ...form, categoryIds: ids }), categoryLabel)}
@@ -369,6 +431,9 @@ export default function CordelNutritionLibraryPage() {
             renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), 'Save')
           ) : (
             <div style={{ padding: '12px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {translatableLocales.map((loc) => (
+                <DetailRow key={loc} label={localeLabel(loc)} value={item.translations[loc] ?? `${item.name} (untranslated)`} />
+              ))}
               <DetailRow label="Categories" value={item.categories.length > 0 ? item.categories.map((c) => categoryLabel(c.slug)).join(', ') : '—'} />
               <DetailRow label="Qualities" value={item.qualities.length > 0 ? item.qualities.map((q) => qualityLabel(q.slug)).join(', ') : 'None'} />
               <DetailRow label="Status" value={item.status} />
@@ -399,6 +464,19 @@ export default function CordelNutritionLibraryPage() {
       />
     </div>
   );
+}
+
+/**
+ * Trim every locale and drop the blanks: an empty field means "no translation",
+ * which the API stores as a missing row so the base name shows instead.
+ */
+function trimmedTranslations(translations: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [locale, name] of Object.entries(translations)) {
+    const trimmed = (name ?? '').trim();
+    if (trimmed) out[locale] = trimmed;
+  }
+  return out;
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {

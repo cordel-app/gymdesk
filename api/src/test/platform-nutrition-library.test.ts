@@ -620,3 +620,215 @@ describe('nutritional qualities assignment', () => {
     expect(res.body.qualities[0].slug).toBe('carbohydrate');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Translations (#643)
+// ---------------------------------------------------------------------------
+
+describe('translations', () => {
+  const suffix = `${Date.now()}-i18n`;
+  let itemId: number;
+
+  it('GET /locales lists the configured locales and which need translating', async () => {
+    const res = await request
+      .get('/platform/nutrition-library/locales')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(res.status).toBe(200);
+    expect(res.body.locales).toContain('en');
+    expect(res.body.base_locale).toBe('en');
+    expect(res.body.translatable).not.toContain(res.body.base_locale);
+  });
+
+  it('POST stores translations alongside the base name', async () => {
+    const res = await request
+      .post('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({
+        name: `Lentils ${suffix}`,
+        category_ids: [mainDishId],
+        translations: { es: `Lentejas ${suffix}`, ca: `Llenties ${suffix}` },
+      });
+    expect(res.status).toBe(201);
+    itemId = res.body.id;
+    createdItemIds.push(itemId);
+    expect(res.body.name).toBe(`Lentils ${suffix}`);
+    expect(res.body.translations).toEqual({ es: `Lentejas ${suffix}`, ca: `Llenties ${suffix}` });
+  });
+
+  it('resolves display_name from the x-locale header, leaving name as the base value', async () => {
+    const res = await request
+      .get(`/platform/nutrition-library?search=${suffix}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-locale', 'ca');
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((i: any) => i.id === itemId);
+    expect(item.display_name).toBe(`Llenties ${suffix}`);
+    expect(item.name).toBe(`Lentils ${suffix}`);
+  });
+
+  it('falls back to the base name when the locale has no translation', async () => {
+    const created = await request
+      .post('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `Untranslated ${suffix}`, category_ids: [sideId], translations: { es: `Sin catalán ${suffix}` } });
+    expect(created.status).toBe(201);
+    createdItemIds.push(created.body.id);
+
+    const res = await request
+      .get(`/platform/nutrition-library?search=Untranslated ${suffix}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-locale', 'ca');
+    const item = res.body.items.find((i: any) => i.id === created.body.id);
+    expect(item.display_name).toBe(`Untranslated ${suffix}`);
+  });
+
+  it('serves the base name when no locale is requested', async () => {
+    const res = await request
+      .get(`/platform/nutrition-library?search=${suffix}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    const item = res.body.items.find((i: any) => i.id === itemId);
+    expect(item.display_name).toBe(`Lentils ${suffix}`);
+  });
+
+  it('search matches the translated name shown in that locale', async () => {
+    const res = await request
+      .get(`/platform/nutrition-library?search=Llenties ${suffix}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-locale', 'ca');
+    expect(res.status).toBe(200);
+    expect(res.body.items.map((i: any) => i.id)).toContain(itemId);
+  });
+
+  it('PUT /:id replaces the full translation set', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `Lentils ${suffix}`, translations: { es: `Lentejas editadas ${suffix}` } });
+    expect(res.status).toBe(200);
+    // ca was omitted, so it is cleared and falls back to the base name again.
+    expect(res.body.translations).toEqual({ es: `Lentejas editadas ${suffix}` });
+  });
+
+  it('PUT /:id/translations updates them without touching the rest of the item', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { es: `Lentejas ${suffix}`, ca: `Llenties ${suffix}` } });
+    expect(res.status).toBe(200);
+    expect(res.body.item_id).toBe(itemId);
+    expect(res.body.translations).toEqual({ es: `Lentejas ${suffix}`, ca: `Llenties ${suffix}` });
+
+    const after = await request
+      .get(`/platform/nutrition-library?search=${suffix}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    const item = after.body.items.find((i: any) => i.id === itemId);
+    expect(item.categories).toHaveLength(1);
+  });
+
+  it('rejects an unsupported locale', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { de: 'Linsen' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('de');
+  });
+
+  it('rejects the base locale — that is the name column', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { en: 'Lentils' } });
+    expect(res.status).toBe(400);
+  });
+
+  it('PUT /:id/translations returns 404 for an unknown item', async () => {
+    const res = await request
+      .put('/platform/nutrition-library/999999/translations')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { es: 'Lentejas' } });
+    expect(res.status).toBe(404);
+  });
+
+  it('requires superadmin', async () => {
+    mockGetUser.mockResolvedValueOnce({
+      publicMetadata: {}, fullName: 'Regular User', firstName: 'Regular', lastName: 'User',
+    });
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { es: 'Lentejas' } });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 401 without auth', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .send({ translations: { es: 'Lentejas' } });
+    expect(res.status).toBe(401);
+  });
+
+  it('seeded system items resolve to their Spanish and Catalan names', async () => {
+    for (const [locale, expected] of [['es', 'Pollo'], ['ca', 'Pollastre']] as const) {
+      const res = await request
+        .get('/platform/nutrition-library?search=Chicken')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-locale', locale);
+      expect(res.status).toBe(200);
+      const chicken = res.body.items.find((i: any) => i.name === 'Chicken');
+      expect(chicken?.display_name).toBe(expected);
+    }
+  });
+
+  // The acceptance criterion is that nothing renders untranslated *or blank*.
+  // A food whose name is the same in all three languages (Tofu, Pasta, Quinoa)
+  // is deliberately left without a row so a later rename of the base item still
+  // propagates — so assert the resolved name, not the presence of a row.
+  it('no system item resolves to an empty name in any supported locale', async () => {
+    for (const locale of ['es', 'ca']) {
+      const { rows } = await db.query<{ blank: number }>(`
+        SELECT COUNT(*) AS blank
+        FROM nutrition_library_items nli
+        WHERE nli.gym_id IS NULL
+          AND nli.status != 'deleted'
+          AND COALESCE(
+                (SELECT t.name FROM nutrition_library_item_translations t
+                 WHERE t.item_id = nli.id AND t.locale = ?),
+                nli.name
+              ) IS NULL
+      `, [locale]);
+      expect(rows[0].blank).toBe(0);
+    }
+  });
+
+  it('accepts a locale key in any case', async () => {
+    const res = await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { ES: `Lentejas mayúsculas ${suffix}` } });
+    expect(res.status).toBe(200);
+    expect(res.body.translations.es).toBe(`Lentejas mayúsculas ${suffix}`);
+  });
+
+  it('keeps created_at and stamps modified_at when a translation is edited', async () => {
+    await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { es: `Lentejas v1 ${suffix}` } });
+    const { rows: first } = await db.query<{ created_at: string; modified_at: string | null }>(
+      "SELECT created_at, modified_at FROM nutrition_library_item_translations WHERE item_id = ? AND locale = 'es'",
+      [itemId],
+    );
+
+    await request
+      .put(`/platform/nutrition-library/${itemId}/translations`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ translations: { es: `Lentejas v2 ${suffix}` } });
+    const { rows: second } = await db.query<{ created_at: string; modified_at: string | null }>(
+      "SELECT created_at, modified_at FROM nutrition_library_item_translations WHERE item_id = ? AND locale = 'es'",
+      [itemId],
+    );
+    expect(new Date(second[0].created_at).getTime()).toBe(new Date(first[0].created_at).getTime());
+    expect(second[0].modified_at).not.toBeNull();
+  });
+});

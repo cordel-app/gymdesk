@@ -14,6 +14,8 @@ import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
+import { localizedNameExpr } from '../domain/nutritionLibrary';
+import { getRequestLocale } from '../infra/locale';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -986,7 +988,7 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {
         const { rows: items } = await db.query(
-          `SELECT i.id, i.nutrition_library_item_id, nli.name AS item_name,
+          `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
                   i.component_type, i.quantity, i.unit, i.position
            FROM member_nutrition_plan_meal_items i
            JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id

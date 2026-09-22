@@ -171,3 +171,54 @@ describe('GET /me/nutrition-plan', () => {
     expect(res.body.plan.days.some((d: any) => d.weekday === 3)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Translated library names in the member app (#643)
+// ---------------------------------------------------------------------------
+
+describe('GET /me/nutrition-plan — translated item names', () => {
+  beforeAll(async () => {
+    // The translation row cascades away with the item in afterAll.
+    await db.query(
+      `INSERT INTO nutrition_library_item_translations (item_id, locale, name)
+       VALUES (?, 'ca', 'Pollastre a la Graella'), (?, 'es', 'Pollo a la Parrilla')
+       ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+      [libraryItemId, libraryItemId],
+    );
+    await insertActivePlan(gymId, memberId, 4);
+  });
+
+  it('renders meal item names in the locale the member app requests', async () => {
+    const res = await request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-locale', 'ca');
+    expect(res.status).toBe(200);
+    const names = res.body.plan.days.flatMap((d: any) => d.meals.flatMap((m: any) => m.items.map((i: any) => i.item_name)));
+    expect(names).toContain('Pollastre a la Graella');
+    expect(names).not.toContain('Grilled Chicken');
+  });
+
+  it('negotiates Accept-Language when no x-locale header is sent', async () => {
+    const res = await request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('Accept-Language', 'es-ES,es;q=0.9');
+    expect(res.status).toBe(200);
+    const names = res.body.plan.days.flatMap((d: any) => d.meals.flatMap((m: any) => m.items.map((i: any) => i.item_name)));
+    expect(names).toContain('Pollo a la Parrilla');
+  });
+
+  it('serves the base English name when the locale is unsupported', async () => {
+    const res = await request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-locale', 'de');
+    expect(res.status).toBe(200);
+    const names = res.body.plan.days.flatMap((d: any) => d.meals.flatMap((m: any) => m.items.map((i: any) => i.item_name)));
+    expect(names).toContain('Grilled Chicken');
+  });
+});

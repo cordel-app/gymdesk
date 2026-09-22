@@ -1,10 +1,12 @@
 import { useAuth } from '@clerk/nextjs';
+import { useLocale } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 
 const IMPERSONATION_KEY = 'impersonation_session';
 
 export function useApiClient() {
   const { getToken } = useAuth();
+  const locale = useLocale();
   const { gymId, activeCenterId } = useApp();
 
   async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -16,6 +18,9 @@ export function useApiClient() {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (gymId) headers['x-gym-id'] = gymId;
     if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
+    // Tells the API which language to resolve DB-stored translated content in
+    // (#643) — UI labels come from the locale files, data does not.
+    if (locale) headers['x-locale'] = locale;
 
     // Forward impersonation header when a session is active
     try {

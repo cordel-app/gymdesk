@@ -23,6 +23,8 @@ interface LibraryQuality { id: number; slug: string }
 interface LibraryItemRow {
   id: number;
   name: string;
+  /** `name` resolved into the viewer's locale (#643); absent on older payloads. */
+  display_name?: string;
   category: string;
   qualities?: LibraryQuality[];
   quality_slugs?: string[];
@@ -43,7 +45,8 @@ function normalizeLibraryItems(data: LibraryListResponse | LibraryItemRow[] | un
       : [];
   return rows.map((item) => ({
     id: item.id,
-    name: item.name,
+    // The food pickers show what the viewer reads; the API already resolved it.
+    name: item.display_name ?? item.name,
     category: item.category,
     quality_slugs: Array.isArray(item.quality_slugs)
       ? item.quality_slugs

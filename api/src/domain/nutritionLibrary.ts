@@ -1,4 +1,11 @@
 import { db } from '../infra/db';
+import {
+  BASE_LOCALE,
+  SUPPORTED_LOCALES,
+  SupportedLocale,
+  TRANSLATABLE_LOCALES,
+  isSupportedLocale,
+} from '../infra/locale';
 
 /**
  * Shared helpers for the Nutrition Library, used by both the platform
@@ -8,7 +15,142 @@ import { db } from '../infra/db';
  * fat, ...) are both global catalogues (no gym_id) joined to items through
  * an M2M table (#501) — a food classifies into one or more categories,
  * independently of the nutritional qualities it has.
+ *
+ * Item *names* are translated per locale through `nutrition_library_item_translations`
+ * (#643), following that same junction shape. `nutrition_library_items.name`
+ * remains the base (English) value and the fallback for any locale with no row,
+ * so every read surface resolves a name through `localizedNameExpr`.
  */
+
+/* ── Translated names (#643) ─────────────────────────────────────────────── */
+
+const TRANSLATIONS_TABLE = 'nutrition_library_item_translations';
+
+/**
+ * The SQL literal for `locale`, or null when it is the base locale (or, which
+ * cannot happen through `getRequestLocale`, not a configured locale at all) and
+ * the caller should read the base `name` column instead.
+ *
+ * The locale is interpolated rather than parameterised because the same
+ * expression is embedded in ~30 queries that each carry their own positional
+ * params — threading one more `?` through every call site is where the bugs
+ * would be. What makes that safe is that the string returned here is always an
+ * element of `SUPPORTED_LOCALES`, built at boot from the env var and filtered
+ * through a strict BCP-47 pattern: the argument is only ever compared against
+ * that list, never embedded, so no caller-supplied bytes reach the query — by
+ * data flow, not by trusting that the check upstream was done right.
+ */
+function localeLiteral(locale: SupportedLocale): string | null {
+  if (locale === BASE_LOCALE) return null;
+  const supported = SUPPORTED_LOCALES.find((candidate) => candidate === locale);
+  return supported ? `'${supported}'` : null;
+}
+
+/**
+ * SQL expression resolving an item's name in `locale`, falling back to the base
+ * `name` column when that locale has no row.
+ *
+ * @param alias table alias of `nutrition_library_items` in the enclosing query
+ */
+export function localizedNameSql(alias: string, locale: SupportedLocale): string {
+  const literal = localeLiteral(locale);
+  if (!literal) return `${alias}.name`;
+  return `COALESCE((SELECT nlit.name FROM ${TRANSLATIONS_TABLE} nlit
+            WHERE nlit.item_id = ${alias}.id AND nlit.locale = ${literal}), ${alias}.name)`;
+}
+
+/** {@link localizedNameSql} with an output alias, for SELECT lists. */
+export function localizedNameExpr(alias: string, locale: SupportedLocale, as = 'item_name'): string {
+  return `${localizedNameSql(alias, locale)} AS ${as}`;
+}
+
+/** Return translations for a set of item IDs as a map: item_id → { locale: name } */
+export async function loadTranslationsMap(itemIds: number[]): Promise<Record<number, Record<string, string>>> {
+  if (itemIds.length === 0) return {};
+  const marks = itemIds.map(() => '?').join(',');
+  const { rows } = await db.query<{ item_id: number; locale: string; name: string }>(
+    `SELECT item_id, locale, name FROM ${TRANSLATIONS_TABLE}
+     WHERE item_id IN (${marks})
+     ORDER BY locale`,
+    itemIds,
+  );
+  const map: Record<number, Record<string, string>> = {};
+  for (const row of rows) {
+    if (!map[row.item_id]) map[row.item_id] = {};
+    map[row.item_id][row.locale] = row.name;
+  }
+  return map;
+}
+
+/**
+ * Replace all translations for an item inside a transaction, mirroring
+ * `replaceCategories`/`replaceQualities`: the payload is the complete set, so a
+ * locale the caller omits (or sends blank) loses its row and falls back to the
+ * base name.
+ */
+export async function replaceTranslations(
+  itemId: number,
+  translations: Record<string, string>,
+): Promise<void> {
+  // Locale keys are matched case-insensitively (`validateTranslations` accepts
+  // `ES` as readily as `es`), so canonicalise them before the lookup below —
+  // otherwise a payload that validated fine would save nothing.
+  const byLocale = new Map<string, string>();
+  for (const [locale, name] of Object.entries(translations ?? {})) {
+    byLocale.set(locale.trim().toLowerCase(), typeof name === 'string' ? name.trim() : '');
+  }
+
+  const kept = TRANSLATABLE_LOCALES.filter((locale) => byLocale.get(locale));
+
+  await db.transaction(async (conn) => {
+    // Clear the locales this payload drops, then upsert the rest: an edit keeps
+    // the row's original `created_at` and stamps `modified_at`, which a
+    // delete-then-insert would lose.
+    if (kept.length === 0) {
+      await conn.query(`DELETE FROM ${TRANSLATIONS_TABLE} WHERE item_id = ?`, [itemId]);
+    } else {
+      const marks = kept.map(() => '?').join(',');
+      await conn.query(
+        `DELETE FROM ${TRANSLATIONS_TABLE} WHERE item_id = ? AND locale NOT IN (${marks})`,
+        [itemId, ...kept],
+      );
+    }
+    for (const locale of kept) {
+      await conn.query(
+        `INSERT INTO ${TRANSLATIONS_TABLE} (item_id, locale, name) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE name = VALUES(name), modified_at = UTC_TIMESTAMP()`,
+        [itemId, locale, byLocale.get(locale)],
+      );
+    }
+  });
+}
+
+/**
+ * Validate a `translations` payload: an object keyed by supported locale, with
+ * string values. The base locale is rejected — it is the item's own `name`
+ * column, not a translation — and unknown locales are rejected rather than
+ * silently dropped, so a typo'd key doesn't look like it saved.
+ */
+export function validateTranslations(value: unknown): { error: string } | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return { error: 'translations must be an object keyed by locale' };
+  }
+  for (const [locale, name] of Object.entries(value as Record<string, unknown>)) {
+    if (!isSupportedLocale(locale)) {
+      return { error: `translations contains an unsupported locale: ${locale}` };
+    }
+    if (locale === BASE_LOCALE) {
+      return { error: `translations must not contain the base locale '${BASE_LOCALE}' — use name` };
+    }
+    if (name !== null && typeof name !== 'string') {
+      return { error: `translations.${locale} must be a string` };
+    }
+    if (typeof name === 'string' && name.trim().length > 255) {
+      return { error: `translations.${locale} must be 255 characters or fewer` };
+    }
+  }
+  return null;
+}
 
 /** Return categories assigned to a set of item IDs as a map: item_id → [{id, slug}] */
 export async function loadCategoriesMap(itemIds: number[]): Promise<Record<number, { id: number; slug: string }[]>> {
@@ -134,11 +276,16 @@ export function clampOffset(value: unknown): number {
  * endpoints: name search, category filter (OR — item must have at least one
  * of the selected categories), quality filter (AND — item must have every
  * selected quality), plus a caller-supplied base predicate (e.g. `gym_id IS NULL`).
+ *
+ * Search matches the base name *or* the name shown in `locale` (#643), so
+ * searching for what is on screen finds it. Untranslated locales match on the
+ * base name alone, which is also what they render.
  */
 export function buildListWhere(
   req: { query: Record<string, unknown> },
   base: string[],
   baseParams: any[] = [],
+  locale: SupportedLocale = BASE_LOCALE,
 ): { where: string; params: any[] } | { error: string } {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const categoryIds = toQueryArray(req.query.category_id).map((v) => parseInt(v, 10));
@@ -154,7 +301,19 @@ export function buildListWhere(
   const where = [...base];
   const params: any[] = [...baseParams];
 
-  if (search) { where.push('name LIKE ?'); params.push(`%${search}%`); }
+  if (search) {
+    const literal = localeLiteral(locale);
+    if (!literal) {
+      where.push('name LIKE ?');
+      params.push(`%${search}%`);
+    } else {
+      where.push(`(name LIKE ? OR id IN (
+        SELECT nlit.item_id FROM ${TRANSLATIONS_TABLE} nlit
+        WHERE nlit.locale = ${literal} AND nlit.name LIKE ?
+      ))`);
+      params.push(`%${search}%`, `%${search}%`);
+    }
+  }
   if (categoryIds.length) {
     where.push(`id IN (
       SELECT nlic.item_id FROM nutrition_library_item_categories nlic
