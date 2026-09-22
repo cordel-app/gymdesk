@@ -9,15 +9,18 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnStyle } from '@/components/ui';
 import { canWriteModule } from '@/config/permissions';
 
-// #599: the gym's website calls POST /public/gyms/:slug/registrations with this
-// key. The API returns the plaintext key once, on generate/rotate — it is kept
-// in component state only, never persisted, and gone after a reload.
+// #599: the gym's website calls POST /public/gyms/:gymRef/registrations with
+// this key. The API returns the plaintext key once, on generate/rotate — it is
+// kept in component state only, never persisted, and gone after a reload.
+// #645: gym_ref is `{gymId}-{gym-name}`; the endpoint comes from the API
+// already built, so the URL format lives in one place.
 
 interface IntegrationStatus {
   configured: boolean;
   key_prefix: string | null;
   created_at: string | null;
   slug: string;
+  gym_ref: string;
   endpoint_path: string;
   endpoint_url: string | null;
 }
@@ -175,6 +178,7 @@ export default function WebsiteIntegrationPage() {
               <li>{t('how_2')}</li>
               <li>{t('how_3')}</li>
               <li>{t('how_4')}</li>
+              <li>{t('how_5')}</li>
             </ol>
           </div>
         </>

@@ -3050,6 +3050,7 @@
     "how_2": "From your server, send a POST request to the endpoint with the header x-api-key and a JSON body containing name and email.",
     "how_3": "Protect the form on your website with a CAPTCHA so bots cannot submit it.",
     "how_4": "Any accepted request answers 202, whether or not the email was already known. Show the visitor a \"check your inbox\" message.",
+    "how_5": "To test the connection, send the same request with the name \"test\" and an empty email. It answers 200 and registers nobody.",
     "error_generic": "Something went wrong."
   }
 }
