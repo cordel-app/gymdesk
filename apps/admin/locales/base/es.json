@@ -246,7 +246,8 @@
     "event_type_label": "Tipo de cargo",
     "event_notes": "Notas",
     "event_source": "Origen",
-    "event_receipt": "Recibo"
+    "event_receipt": "Recibo",
+    "section_additional_services": "Servicios Periódicos Adicionales"
   },
   "member_payments": {
     "title": "Pagos del socio",
@@ -2862,7 +2863,29 @@
     "detail_created_at": "Creado el",
     "detail_modified_by": "Modificado por",
     "detail_modified_at": "Modificado el",
-    "close": "Cerrar"
+    "close": "Cerrar",
+    "section_additional_services": "Servicios Periódicos Adicionales",
+    "services_none": "Sin servicios periódicos adicionales.",
+    "services_add": "+ Añadir Servicio",
+    "services_save": "Añadir",
+    "services_remove": "Eliminar",
+    "services_removed": "Eliminado",
+    "services_select_item": "Selecciona un servicio…",
+    "services_items_error": "No se han podido cargar los servicios disponibles.",
+    "services_col_item": "Artículo Vendible",
+    "services_col_quantity": "Cantidad",
+    "services_col_frequency": "Frecuencia",
+    "services_col_price": "Precio",
+    "services_col_start_date": "Fecha de Inicio",
+    "services_col_end_date": "Fecha de Fin",
+    "services_col_actions": "Acciones",
+    "services_frequency_week": "Semanal",
+    "services_frequency_four_weeks": "4 Semanas",
+    "services_frequency_month": "Mensual",
+    "services_frequency_year": "Anual",
+    "services_frequency_once": "Único",
+    "services_frequency_per_session": "Por Sesión",
+    "services_item_retired": "retirado"
   },
   "taxes": {
     "title": "Impuestos",

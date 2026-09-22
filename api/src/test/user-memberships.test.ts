@@ -2685,6 +2685,64 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     expect(fourWeeks.events[0].lines[0]).toMatchObject({ label: 'Locker Rental', gym_charge_id: itemId });
   });
 
+  // #631 — Additional Periodic Services are plain items on the assignment, so
+  // the simulation must bill them alongside everything else, at the Sellable
+  // Item's own frequency and price, and stop at their effective removal date.
+  it('bills an Additional Periodic Service attached to the assignment', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
+    const itemId = await createSellableItem(gymId, 'Personal Training', 'service', 'month', 30);
+    await db.query(
+      `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at)
+       VALUES (?, ?, ?, 2, '2026-04-01')`,
+      [gymId, umId, itemId],
+    );
+
+    const res = await getSimulation(gymId, memberId);
+    const monthly = sectionOf(res.body, 'month');
+    // The service starts a month after the plan, so its first charge extends
+    // the horizon past the plan's own first regular charge.
+    expect(monthly.events.map((e: any) => [e.date, e.total])).toEqual([
+      ['2026-03-01', 100],
+      ['2026-04-01', 160],
+    ]);
+    const serviceLine = monthly.events[1].lines.find((l: any) => l.kind === 'sellable_item');
+    expect(serviceLine).toMatchObject({
+      label: 'Personal Training', gym_charge_id: itemId,
+      quantity: 2, unit_price: 30, regular_price: 60, actual_charge: 60, benefits: [],
+    });
+  });
+
+  it('stops billing an Additional Periodic Service after its effective removal date', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    await setBillingPolicy(gymId, planId, 1, 'month');
+    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
+    const itemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month', 20);
+    const promoId = await createPromotion(gymId, planId, `Sim Service Free ${Date.now()}`);
+    await setPromotionDuration(promoId, { free: 3 });
+    await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
+    await db.query(
+      `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, ends_at)
+       VALUES (?, ?, ?, 1, '2026-03-01', '2026-04-15')`,
+      [gymId, umId, itemId],
+    );
+
+    const res = await getSimulation(gymId, memberId);
+    const monthly = sectionOf(res.body, 'month');
+    // Free months waive the fee; the service bills until its removal date and
+    // is gone from the 2026-05-01 event onwards.
+    expect(monthly.events.map((e: any) => [e.date, e.total])).toEqual([
+      ['2026-03-01', 20],
+      ['2026-04-01', 20],
+      ['2026-05-01', 0],
+      ['2026-06-01', 100],
+    ]);
+    expect(monthly.events[2].lines.every((l: any) => l.kind === 'membership_fee')).toBe(true);
+  });
+
   it('consolidates every simulated plan of the member into one simulation', async () => {
     const memberId = await createMember(gymId);
     const planA = await createPlan(gymId);

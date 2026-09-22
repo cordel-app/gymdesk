@@ -601,6 +601,23 @@ Reference implementation: Plans' Pricing section — `api/src/api/membership-pla
 
 ---
 
+## Effective-Dated Attachment, Future-Only Removal (#631)
+
+When a catalog item is attached to a record that is *already billing* (an Additional Periodic Service on an Assigned Plan), "remove" must not mean `DELETE`: charges the attachment already produced have to stay explicable, and the projection has to stop billing it from the removal date on.
+
+- **Store the window, not a flag**: `starts_at DATE NOT NULL` + `ends_at DATE NULL`, with a named CHECK (`chk_ums_ends_at`: `ends_at IS NULL OR ends_at >= starts_at`). `ends_at IS NULL` is "still attached"; a stamped `ends_at` is the effective removal date.
+- **DELETE stamps, or deletes only when nothing was billed**: the endpoint sets `ends_at = today` for an attachment already in force, and hard-deletes one whose `starts_at` is still in the future (an `ends_at` before `starts_at` would violate the CHECK, and nothing was ever billed). Return which of the two happened (`{ deleted, ends_at }`) so the UI doesn't have to guess.
+- **No unique key on (parent, item)** — the same item may be attached again over a later, non-overlapping window. Enforce *overlap* in the endpoint instead (`ends_at IS NULL OR ends_at >= :starts_at` → 409); quantity, not a second row, is how "two of them" is expressed. The endpoint check alone is a read-then-insert race, so back the one case that *is* expressible as a key — at most one **open** attachment per (parent, item) — with a `VIRTUAL` generated column (`IF(ends_at IS NULL, CONCAT(parent_id, ':', item_id), NULL)`) under a unique index, and map `ER_DUP_ENTRY` to the same 409 (`STORED` is rejected over FK columns; see migration 007).
+- **Flag a retired catalog row rather than hiding it**: the join must not filter `deleted_at`/`status` (the attachment keeps billing), but the read should report it (`sellable_item_retired`) so the UI can mark a row the write path would no longer accept.
+- **Never copy the catalog row's fields onto the attachment** (name, price, frequency): join them live on every read, so an item's price change shows up everywhere at once. Only snapshot when the ticket explicitly asks history to be frozen (contrast: `user_membership_charge_benefits`). The FK to the catalog table then gets no `ON DELETE CASCADE` — items are soft-deleted, and the attachment must outlive one being retired.
+- **Gate on the parent's status**, mirroring the same list in the frontend: a record that bills nothing further (`cancelled`/`expired`) accepts no new attachments, but keeps showing the ones it had.
+- **The projection does the rest**: the forecast (`domain/billingSimulation.ts`) treats each attachment as a stream from `max(parent.start, starts_at)` to `min(parent.end, ends_at)`. Removal needs no other code path — the window is the whole mechanism.
+- **Frontend**: inline row CRUD (no modal), the action column keyed on `ends_at == null` rather than a derived `active` flag — a row removed today is still billable today, but must not offer Remove twice.
+
+Reference implementation: `api/src/api/user-membership-services.ts` + migration 164 + `apps/admin/src/app/[locale]/financials/assigned-plans/AdditionalPeriodicServices.tsx`.
+
+---
+
 ## Duplicate Action (flat catalog item)
 
 For a single-row catalog entity (not a hierarchy — see "Duplicate at every level" below for that case), "Duplicate" is a single immediate backend action, not a pre-filled form the user reviews before saving:

@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
+import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import type { AssignedPlanDetail } from './types';
 
 const EDITABLE_STATUSES = ['draft', 'awaiting_payment'];
@@ -299,6 +300,20 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
             ))}
           </div>
         )}
+      </Section>
+
+      {/* #631: Additional Periodic Services belong to the Assigned Plan itself —
+          not to the Membership Plan and not to the Promotions above it. */}
+      <Section label={t('section_additional_services')}>
+        <AdditionalPeriodicServices
+          assignedPlanId={assignedPlanId}
+          planStartsAt={detail.starts_at}
+          planStatus={detail.status}
+          services={detail.additional_services ?? []}
+          canWrite={canWritePayments}
+          readOnlyTitle={readOnlyTitle}
+          onChanged={() => { loadDetail(); onChanged(); }}
+        />
       </Section>
 
       <Section label={t('section_billing_events')}>

@@ -47,6 +47,28 @@ export interface AppliedPromotion {
   period_benefits: Array<{ charge_type_name: string; action: string; value: number | null; duration_months: number | null }>;
 }
 
+/**
+ * #631 — an Additional Periodic Service attached to the Assigned Plan. The
+ * name, price and frequency are the Sellable Item's own, read live by the API;
+ * `ends_at` is the effective removal date (removal is future-only), `active`
+ * is false once it has passed, and `sellable_item_retired` marks an item that
+ * was soft-deleted or deactivated after being attached (it still bills).
+ */
+export interface AssignedPlanService {
+  id: number;
+  user_membership_id: number;
+  gym_charge_id: number;
+  quantity: number;
+  starts_at: string;
+  ends_at: string | null;
+  sellable_item_name: string;
+  billing_frequency: string | null;
+  unit_price: number;
+  currency: string | null;
+  active: boolean;
+  sellable_item_retired: boolean;
+}
+
 export interface BillingEventItem {
   date: string;
   amount: string | number | null;
@@ -91,5 +113,6 @@ export interface AssignedPlanDetail {
   charge_benefits: ChargeBenefitSnapshot[];
   activity_allowances: ActivityAllowanceUsage[];
   promotions: AppliedPromotion[];
+  additional_services: AssignedPlanService[];
   billing_events: BillingEventsView;
 }

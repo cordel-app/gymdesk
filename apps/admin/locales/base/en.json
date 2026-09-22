@@ -246,7 +246,8 @@
     "col_modified_by": "Modified by",
     "col_modified_at": "Modified at",
     "unsaved_changes": "You have unsaved changes. Discard them?",
-    "unsaved_discard": "Discard changes"
+    "unsaved_discard": "Discard changes",
+    "section_additional_services": "Additional Periodic Services"
   },
   "member_payments": {
     "title": "Member Payments",
@@ -2877,7 +2878,29 @@
     "detail_created_at": "Created at",
     "detail_modified_by": "Modified by",
     "detail_modified_at": "Modified at",
-    "close": "Close"
+    "close": "Close",
+    "section_additional_services": "Additional Periodic Services",
+    "services_none": "No additional periodic services.",
+    "services_add": "+ Add Service",
+    "services_save": "Add",
+    "services_remove": "Remove",
+    "services_removed": "Removed",
+    "services_select_item": "Select a service…",
+    "services_items_error": "Could not load the available services.",
+    "services_col_item": "Sellable Item",
+    "services_col_quantity": "Quantity",
+    "services_col_frequency": "Frequency",
+    "services_col_price": "Price",
+    "services_col_start_date": "Start Date",
+    "services_col_end_date": "End Date",
+    "services_col_actions": "Actions",
+    "services_frequency_week": "Weekly",
+    "services_frequency_four_weeks": "4 Weeks",
+    "services_frequency_month": "Monthly",
+    "services_frequency_year": "Yearly",
+    "services_frequency_once": "One-off",
+    "services_frequency_per_session": "Per Session",
+    "services_item_retired": "retired"
   },
   "taxes": {
     "title": "Taxes",

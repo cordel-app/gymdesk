@@ -110,7 +110,7 @@ Good candidates for unit tests:
 
 ### cleanupTestGyms dependency order
 
-When adding a new domain that has FKs pointing to `members` or `gyms`, extend `cleanupTestGyms` in `helpers.ts` to delete those rows first. Current order: `bookings → members → class_sessions → activity_types → gyms`.
+When adding a new domain that has FKs pointing to `members` or `gyms`, extend `cleanupTestGyms` in `helpers.ts` to delete those rows first. Current order: `bookings → user_membership_services → members → class_sessions → activity_types → gym_charges → gyms`. A table whose FK to a catalog table (e.g. `gym_charges`) has no `ON DELETE CASCADE` must be deleted before that catalog table, not only before `members`.
 
 ## Finishing a task
 

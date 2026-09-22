@@ -10,6 +10,8 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { MemberBillingSimulation } from './MemberBillingSimulation';
+import { AdditionalPeriodicServices } from '../financials/assigned-plans/AdditionalPeriodicServices';
+import type { AssignedPlanService } from '../financials/assigned-plans/types';
 
 interface UserMembership {
   id: number;
@@ -100,6 +102,8 @@ export function MemberExpandedRow({
   const [memberships, setMemberships] = useState<UserMembership[]>([]);
   const [membershipNotFound, setMembershipNotFound] = useState(false);
   const [allowances, setAllowances] = useState<Allowance[]>([]);
+  // #631 — Additional Periodic Services on the Member's current Assigned Plan.
+  const [additionalServices, setAdditionalServices] = useState<AssignedPlanService[]>([]);
   const [cancelling, setCancelling] = useState<UserMembership | null>(null);
   const [assigningFor, setAssigningFor] = useState<UserMembership | null>(null);
   // #629/#634 §12: the simulation must always reflect the current configuration,
@@ -154,11 +158,26 @@ export function MemberExpandedRow({
       } else {
         setAllowances([]);
       }
+      loadAdditionalServices(current);
     } catch {
       setError(t('members.expanded_error'));
     } finally {
       setLoading(false);
     }
+  }
+
+  // #631: the services attached to the Member's current Assigned Plan. Fetched
+  // on its own (the Member page never loads the full Assigned Plan card), and
+  // re-fetched after an add/remove together with the Billing Simulation, which
+  // must reflect the change immediately (#631 §6).
+  function loadAdditionalServices(current: UserMembership | null) {
+    if (!current) {
+      setAdditionalServices([]);
+      return;
+    }
+    apiFetch<AssignedPlanService[]>(`/user-memberships/${current.id}/services`)
+      .then(setAdditionalServices)
+      .catch(() => setAdditionalServices([]));
   }
 
   // Re-fetches just the plan history + benefits after a cancel/assign-new-plan
@@ -177,6 +196,7 @@ export function MemberExpandedRow({
       } else {
         setAllowances([]);
       }
+      loadAdditionalServices(current);
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'));
     }
@@ -322,6 +342,27 @@ export function MemberExpandedRow({
                             ))}
                           </ul>
                         )}
+                      </div>
+                    )}
+
+                    {/* Additional Periodic Services (#631) — only on the current
+                        plan: recurring Sellable Items attached to the Assigned
+                        Plan itself, added/removed inline. Changing them re-runs
+                        the Billing Simulation below (#631 §6). */}
+                    {idx === 0 && m.starts_at && (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={fieldLabelStyle}>{t('members.section_additional_services')}</div>
+                        <AdditionalPeriodicServices
+                          assignedPlanId={m.id}
+                          planStartsAt={m.starts_at}
+                          planStatus={m.status}
+                          services={additionalServices}
+                          canWrite={isAdmin}
+                          onChanged={() => {
+                            loadAdditionalServices(m);
+                            setSimulationKey((k) => k + 1);
+                          }}
+                        />
                       </div>
                     )}
                   </div>
