@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
+import { MemberBillingSimulation } from './MemberBillingSimulation';
 
 interface UserMembership {
   id: number;
@@ -101,6 +102,9 @@ export function MemberExpandedRow({
   const [allowances, setAllowances] = useState<Allowance[]>([]);
   const [cancelling, setCancelling] = useState<UserMembership | null>(null);
   const [assigningFor, setAssigningFor] = useState<UserMembership | null>(null);
+  // #629/#634 §12: the simulation must always reflect the current configuration,
+  // so remounting it is how a plan change here re-runs it.
+  const [simulationKey, setSimulationKey] = useState(0);
 
   const [clerkStatus, setClerkStatus] = useState<{ status: string } | null>(null);
   const [trainingPlans, setTrainingPlans] = useState<TrainingPlanAssignment[]>([]);
@@ -164,6 +168,7 @@ export function MemberExpandedRow({
       const list = await apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}`);
       setMemberships(list);
       setMembershipNotFound(list.length === 0);
+      setSimulationKey((k) => k + 1);
       const current = list[0] ?? null;
       if (current?.membership_plan_id) {
         apiFetch<Allowance[]>(`/membership-plans/${current.membership_plan_id}/allowances`)
@@ -354,6 +359,12 @@ export function MemberExpandedRow({
             ))}
           </div>
         )}
+      </Section>
+
+      {/* Billing Simulation (#629) — a section of its own, never nested inside
+          a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
+      <Section label={t('members.section_billing_simulation')}>
+        <MemberBillingSimulation key={simulationKey} memberId={memberId} />
       </Section>
 
       {/* Training Plans */}

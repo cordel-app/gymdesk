@@ -261,16 +261,39 @@ async function loadActivityAllowancesUsage(gymId: string, planId: number | null,
 // calculation needs — from the #511-stage-2 snapshot when present, falling
 // back to a live join for pre-migration-149 rows (mirrors withSnapshot's
 // fallback in membership-promotions.ts).
-async function loadPromotionApplications(
+//
+// #629: also returns the promotion's identity and Free/Paid/Bonus duration,
+// which the Billing Simulation needs to classify each projected charge into a
+// promotional period. Those come from the snapshot too when it has them;
+// `pay_beforehand_months` (migration 141) was never snapshotted, so it is
+// always read live.
+export interface PromotionApplication extends AppliedPromotionForBilling {
+  id: number;
+  promotionId: number;
+  status: string;
+  name: string | null;
+  freeMonths: number;
+  paidMonths: number;
+  bonusMonths: number;
+  payBeforehandMonths: number;
+}
+
+export async function loadPromotionApplications(
   gymId: string, umId: number,
-): Promise<Array<AppliedPromotionForBilling & { status: string }>> {
+): Promise<PromotionApplication[]> {
   const { rows } = await db.query(
-    `SELECT promotion_id, status, applied_at, revoked_at, snapshot
-     FROM user_membership_promotions WHERE user_membership_id = ? AND gym_id = ?`,
+    `SELECT ump.id, ump.promotion_id, ump.status, ump.applied_at, ump.revoked_at, ump.snapshot,
+            p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
+     FROM user_membership_promotions ump
+     LEFT JOIN promotions p ON p.id = ump.promotion_id
+     WHERE ump.user_membership_id = ? AND ump.gym_id = ?`,
     [umId, gymId],
   );
   return Promise.all(rows.map(async (row: any) => {
-    const snap = row.snapshot as { charge_benefits: any[]; period_benefits: any[] } | null;
+    const snap = row.snapshot as {
+      name?: string; free_months?: number | null; paid_months?: number | null; bonus_months?: number | null;
+      charge_benefits: any[]; period_benefits: any[];
+    } | null;
     const live = snap ? null : await fetchLiveBenefits(db, row.promotion_id);
     const chargeBenefits = snap?.charge_benefits ?? live!.charge_benefits;
     const periodBenefits = snap?.period_benefits ?? live!.period_benefits;
@@ -285,8 +308,16 @@ async function loadPromotionApplications(
           enabled: !!b.enabled, durationMonths: b.duration_months ?? null,
         })),
     ];
+    const num = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
     return {
+      id: row.id as number,
+      promotionId: row.promotion_id as number,
       status: row.status as string,
+      name: (snap?.name as string | undefined) ?? row.promotion_name ?? null,
+      freeMonths: num(snap?.free_months ?? row.free_months),
+      paidMonths: num(snap?.paid_months ?? row.paid_months),
+      bonusMonths: num(snap?.bonus_months ?? row.bonus_months),
+      payBeforehandMonths: num(row.pay_beforehand_months),
       appliedAt: toDateOnly(row.applied_at),
       revokedAt: row.revoked_at != null ? toDateOnly(row.revoked_at) : null,
       membershipFeeBenefits,

@@ -36,6 +36,7 @@ import { taxesRouter } from './api/taxes';
 import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
+import { memberBillingSimulationRouter } from './api/billing-simulation';
 import { musclesRouter, exercisesRouter } from './api/exercises';
 import { resultTypesRouter } from './api/result-types';
 import { workoutTemplatesRouter } from './api/workout-templates';
@@ -235,6 +236,9 @@ app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('
 app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), billingEventsRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipsRouter);
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), membershipPromotionsRouter);
+// #629: three path segments, so userMembershipsRouter (mounted above) never
+// matches it and the request falls through to here.
+app.use('/user-memberships/member/:memberId/billing-simulation', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), memberBillingSimulationRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('organization.class_packages'), userClassPackagesRouter);
 app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentsRouter);
 app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentRequestsRouter);
