@@ -12,6 +12,7 @@ interface PromoDetail {
   starts_at: string;
   ends_at: string;
   stackable: number;
+  only_applicable_for_new_members: number;
   lifecycle_status: string;
   created_at: string;
   created_by_name: string | null;
@@ -64,6 +65,7 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
             {field(t('detail_ends'), detail.ends_at?.slice(0, 10))}
             {field(t('detail_lifecycle_status'), detail.lifecycle_status ? tStatus(detail.lifecycle_status as any) : null)}
             {field(t('detail_stackable'), detail.stackable ? t('yes') : t('no'))}
+            {field(t('detail_only_applicable_for_new_members'), detail.only_applicable_for_new_members ? t('yes') : t('no'))}
 
             {(detail.free_months != null || detail.paid_months != null || detail.bonus_months != null) && (
               <>

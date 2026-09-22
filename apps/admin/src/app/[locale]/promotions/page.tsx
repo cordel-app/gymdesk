@@ -24,6 +24,7 @@ interface Promo {
   starts_at: string;
   ends_at: string;
   stackable: number;
+  only_applicable_for_new_members: number;
   lifecycle_status: 'active' | 'inactive';
   created_at: string;
   created_by_name: string | null;
@@ -191,6 +192,8 @@ function emptyEditForm(promo?: Promo) {
     starts_at: promo ? iso(promo.starts_at) : '',
     ends_at: promo ? iso(promo.ends_at) : '',
     stackable: promo ? !!promo.stackable : false,
+    // #633: checked by default on create; on edit it mirrors the stored value.
+    only_applicable_for_new_members: promo ? !!promo.only_applicable_for_new_members : true,
     lifecycle_status: (promo?.lifecycle_status ?? 'active') as 'active' | 'inactive',
     free_months: promo?.free_months != null ? String(promo.free_months) : '',
     paid_months: promo?.paid_months != null ? String(promo.paid_months) : '',
@@ -559,6 +562,7 @@ export default function PromotionsPage() {
       starts_at: editForm.starts_at,
       ends_at: editForm.ends_at,
       stackable: editForm.stackable,
+      only_applicable_for_new_members: editForm.only_applicable_for_new_members,
       lifecycle_status: editForm.lifecycle_status,
       free_months: editForm.free_months !== '' ? parseInt(editForm.free_months, 10) : null,
       paid_months: editForm.paid_months !== '' ? parseInt(editForm.paid_months, 10) : null,
@@ -1084,10 +1088,20 @@ export default function PromotionsPage() {
               {LIFECYCLE_STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 12 }}>
-            <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
+          {/* #633: the two Promotion booleans are grouped in one cell, the new
+              "only applicable for new members" flag directly below Stackable. */}
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 8, paddingBottom: 12 }}>
+            <label style={checkboxLabelSt}>
               <input type="checkbox" checked={editForm.stackable} onChange={(e) => setEditForm({ ...editForm, stackable: e.target.checked })} />
               {t('label_stackable')}
+            </label>
+            <label style={checkboxLabelSt}>
+              <input
+                type="checkbox"
+                checked={editForm.only_applicable_for_new_members}
+                onChange={(e) => setEditForm({ ...editForm, only_applicable_for_new_members: e.target.checked })}
+              />
+              {t('label_only_applicable_for_new_members')}
             </label>
           </div>
         </div>
@@ -1587,6 +1601,7 @@ const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px'
 const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
 const sectionLabelSt: React.CSSProperties = { margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
 const hintSt: React.CSSProperties = { color: '#aaa', fontSize: 13, margin: 0 };
+const checkboxLabelSt: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' };
 const colHeaderSt: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em', paddingBottom: 2 };
 const thSt: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, borderBottom: '1px solid #eee', fontSize: 12 };
 const tdSt: React.CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #f5f5f5', fontSize: 13 };
