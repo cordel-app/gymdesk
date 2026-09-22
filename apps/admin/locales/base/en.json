@@ -595,7 +595,10 @@
     "adv_calendar_event_hover_bg": "Event hover background",
     "adv_calendar_slot_height": "Time slot height",
     "adv_calendar_nav_btn_hover_bg": "Navigation button hover background",
-    "adv_calendar_nav_btn_radius": "Navigation button border radius"
+    "adv_calendar_nav_btn_radius": "Navigation button border radius",
+    "calendar_contrast_title": "Contrast check",
+    "calendar_contrast_summary": "combinations meet WCAG AA contrast",
+    "calendar_contrast_min": "minimum"
   },
   "system_users": {
     "title": "Superadmins",
@@ -1981,7 +1984,10 @@
     "adv_calendar_event_hover_bg": "Event hover background",
     "adv_calendar_slot_height": "Time slot height",
     "adv_calendar_nav_btn_hover_bg": "Navigation button hover background",
-    "adv_calendar_nav_btn_radius": "Navigation button border radius"
+    "adv_calendar_nav_btn_radius": "Navigation button border radius",
+    "calendar_contrast_title": "Contrast check",
+    "calendar_contrast_summary": "combinations meet WCAG AA contrast",
+    "calendar_contrast_min": "minimum"
   },
   "activity_types": {
     "title": "Activities",

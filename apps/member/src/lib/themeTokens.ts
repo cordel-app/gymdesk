@@ -112,6 +112,40 @@ export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
   calendarNavButtonBorderRadius:    '--gd-calendar-nav-btn-radius',
 };
 
+// #559 stage 4 — which calendar `advanced` attributes hold a color rather than
+// a CSS length. Admin derives this set from its `ADVANCED_ATTRIBUTES` editor
+// metadata, which Member Web has no copy of; a test asserts the two agree.
+export const CALENDAR_ADVANCED_COLOR_KEYS = new Set([
+  'calendarEventSelectedOverlay',
+  'calendarEventHoverBackground',
+  'calendarNavButtonHoverBackground',
+]);
+
+export const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+export function isHexColor(value: unknown): value is string {
+  return typeof value === 'string' && HEX_COLOR_RE.test(value);
+}
+
+/**
+ * #559 stage 4 — mirrors Admin's `calendarVarValue()`: the value to write for
+ * one `--gd-calendar-*` variable, falling back to the default when the
+ * persisted one is missing *or unusable*. A custom property holding e.g. `""`
+ * or `"blue-ish"` makes the declaration that reads it invalid at
+ * computed-value time, so the `var()` literal in the stylesheet is *not* what
+ * takes over — the property lands on `inherit`/`initial` instead.
+ */
+export function calendarVarValue(
+  key: string,
+  raw: unknown,
+  fallback: string | number | boolean,
+): string {
+  if (key in CALENDAR_COLOR_VARS || CALENDAR_ADVANCED_COLOR_KEYS.has(key)) {
+    return isHexColor(raw) ? raw : String(fallback);
+  }
+  return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : String(fallback);
+}
+
 export const DEFAULT_TOKENS: ThemeTokens = {
   v: 2,
   typography: {
@@ -225,14 +259,15 @@ export function applyTokens(tokens: ThemeTokens) {
   el.style.setProperty('--gd-link-hover',            c.linkHoverColor);
   // Calendar (#559 stage 2) — read by components/CalendarThemeStyles.tsx.
   // Themes saved before #559 carry no calendar values, so every key falls back
-  // to its default (FullCalendar's own built-in appearance).
+  // to its default (FullCalendar's own built-in appearance); since #559 stage 4
+  // an unusable persisted value falls back the same way.
   const adv = tokens.advanced ?? {};
   for (const [key, cssVar] of Object.entries(CALENDAR_COLOR_VARS)) {
-    const value = (c as Record<string, unknown>)[key] ?? (DEFAULT_TOKENS.colors as Record<string, unknown>)[key];
-    el.style.setProperty(cssVar, String(value));
+    const fallback = (DEFAULT_TOKENS.colors as Record<string, string | number>)[key];
+    el.style.setProperty(cssVar, calendarVarValue(key, (c as Record<string, unknown>)[key], fallback));
   }
   for (const [key, cssVar] of Object.entries(CALENDAR_ADVANCED_VARS)) {
-    el.style.setProperty(cssVar, String(adv[key] ?? DEFAULT_CALENDAR_ADVANCED[key]));
+    el.style.setProperty(cssVar, calendarVarValue(key, adv[key], DEFAULT_CALENDAR_ADVANCED[key]));
   }
 
   // Typography

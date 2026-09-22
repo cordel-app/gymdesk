@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { CALENDAR_THEME_CSS } from '../components/CalendarThemeStyles';
 import {
+  CALENDAR_ADVANCED_COLOR_KEYS,
   CALENDAR_ADVANCED_VARS,
   CALENDAR_COLOR_VARS,
   DEFAULT_CALENDAR_ADVANCED,
@@ -73,6 +74,29 @@ describe('Member Web calendar theming (#559 stage 2)', () => {
     const adminCss = readFileSync(join(ADMIN_DIR, 'components', 'CalendarThemeStyles.tsx'), 'utf-8');
     expect(adminCss, "Admin's calendar stylesheet and Member Web's have drifted")
       .toContain(CALENDAR_THEME_CSS);
+  });
+
+  it('falls back to the default when a persisted value is not usable (#559 stage 4)', () => {
+    applyTokens({
+      ...DEFAULT_TOKENS,
+      colors: { ...DEFAULT_TOKENS.colors, calendarSurfaceBackground: 'white', calendarEventText: '' },
+      advanced: { calendarNavButtonHoverBackground: 'not-a-color', calendarSlotHeight: '  ' },
+    } as unknown as ThemeTokens);
+    expect(written['--gd-calendar-surface-bg']).toBe(DEFAULT_TOKENS.colors.calendarSurfaceBackground);
+    expect(written['--gd-calendar-event-text']).toBe(DEFAULT_TOKENS.colors.calendarEventText);
+    expect(written['--gd-calendar-nav-btn-hover-bg']).toBe(DEFAULT_CALENDAR_ADVANCED.calendarNavButtonHoverBackground);
+    expect(written['--gd-calendar-slot-height']).toBe(DEFAULT_CALENDAR_ADVANCED.calendarSlotHeight);
+  });
+
+  it('agrees with Admin on which calendar advanced attributes are colors (#559 stage 4)', () => {
+    // Admin derives this set from its editor metadata (`ADVANCED_ATTRIBUTES`),
+    // which Member Web has no copy of — so the literal here is checked against
+    // the attributes Admin marks `type: 'color'` in the Calendar group.
+    const adminSrc = readFileSync(join(ADMIN_DIR, 'lib', 'themeTokens.ts'), 'utf-8');
+    const adminColorKeys = [...adminSrc.matchAll(/\{ key: '(calendar\w+)',\s+labelKey: '[^']+',\s+group: 'group_calendar', type: 'color' \}/g)]
+      .map((m) => m[1]);
+    expect(adminColorKeys.length).toBeGreaterThan(0);
+    expect([...CALENDAR_ADVANCED_COLOR_KEYS].sort()).toEqual(adminColorKeys.sort());
   });
 
   it('applies the styles and the wrapper class on the member calendar page', () => {

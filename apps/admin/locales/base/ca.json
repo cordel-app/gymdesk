@@ -571,7 +571,10 @@
     "adv_calendar_event_hover_bg": "Fons de l'esdeveniment en passar el cursor",
     "adv_calendar_slot_height": "Alçada de la franja horària",
     "adv_calendar_nav_btn_hover_bg": "Fons del botó de navegació en passar-hi el ratolí",
-    "adv_calendar_nav_btn_radius": "Radi de vora del botó de navegació"
+    "adv_calendar_nav_btn_radius": "Radi de vora del botó de navegació",
+    "calendar_contrast_title": "Comprovació de contrast",
+    "calendar_contrast_summary": "combinacions compleixen el contrast WCAG AA",
+    "calendar_contrast_min": "mínim"
   },
   "system_users": {
     "title": "Superadministradors",
@@ -1993,7 +1996,10 @@
     "adv_calendar_event_hover_bg": "Fons de l'esdeveniment en passar el cursor",
     "adv_calendar_slot_height": "Alçada de la franja horària",
     "adv_calendar_nav_btn_hover_bg": "Fons del botó de navegació en passar-hi el ratolí",
-    "adv_calendar_nav_btn_radius": "Radi de vora del botó de navegació"
+    "adv_calendar_nav_btn_radius": "Radi de vora del botó de navegació",
+    "calendar_contrast_title": "Comprovació de contrast",
+    "calendar_contrast_summary": "combinacions compleixen el contrast WCAG AA",
+    "calendar_contrast_min": "mínim"
   },
   "weekday": {
     "0": "Diumenge",
