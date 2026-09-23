@@ -60,6 +60,9 @@ export async function cleanupTestGyms() {
   // these rows must go before gym_charges below (deleting members cascades them
   // via user_memberships, but only for gyms whose members are deleted here).
   await db.query(`DELETE FROM user_membership_services WHERE gym_id IN (${marks})`, ids);
+  // #647 stage 3 note: `member_recurring_slots` needs no line of its own —
+  // every one of its FKs (gym, member, activity type, professional service,
+  // center) is ON DELETE CASCADE, so the members delete below clears it.
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});

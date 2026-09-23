@@ -260,7 +260,15 @@
     "pt_slots_status_no_occurrence": "Sin programar",
     "pt_slots_status_not_scheduled": "Cancelada",
     "pt_slots_status_full": "Completa",
-    "pt_slots_status_already_booked": "Reservada"
+    "pt_slots_status_already_booked": "Reservada",
+    "pt_slots_selected_count": "{count} franjas seleccionadas",
+    "pt_slots_save": "Guardar selección",
+    "pt_slots_saved": "Selección semanal de franjas guardada.",
+    "pt_slots_book": "Reservar",
+    "pt_slots_booking": "Reservando…",
+    "pt_slots_book_summary": "{created} reservadas · {skipped} omitidas · {failed} fallidas",
+    "pt_slots_result_failed": "Error ({reason})",
+    "pt_slots_unmatched": "{count} franjas seleccionadas ya no están disponibles para este miembro y no se reservarán: {slots}"
   },
   "member_payments": {
     "title": "Pagos del socio",

@@ -409,9 +409,9 @@ export function MemberExpandedRow({
         <MemberBillingSimulation key={simulationKey} memberId={memberId} />
       </Section>
 
-      {/* Personal Training Class Slots (#647 stage 2) — the Mon–Sun weekly
-          availability grid. Display only in this stage: selection and Book
-          land in stage 3. */}
+      {/* Personal Training Class Slots (#647 stages 2–3) — the Mon–Sun weekly
+          availability grid, with slot selection and Book. The nightly rolling
+          2-month window is stage 4. */}
       <Section label={t('members.section_pt_slots')}>
         <MemberPersonalTrainingSlots memberId={memberId} />
       </Section>
