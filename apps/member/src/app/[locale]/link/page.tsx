@@ -40,7 +40,9 @@ export default function LinkPage() {
         headers: { 'x-gym-id': gymId },
       });
       localStorage.setItem(ACTIVE_GYM_KEY, gymId);
-      router.replace(`/${locale}`);
+      // Full navigation, not router.replace: AppContext loaded /me/gyms and
+      // /me/profile before this link existed, and only reloads on mount.
+      window.location.replace(`/${locale}`);
     } catch (err: any) {
       setPhase('error');
       setError(err.message?.includes('404') ? t('error_no_invitation') : t('error_generic'));
