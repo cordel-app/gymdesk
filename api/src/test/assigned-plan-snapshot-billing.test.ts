@@ -17,7 +17,8 @@ import { db } from '../infra/db';
 // The nightly run's success branch is what advances `next_billing_date`, and
 // no provider is configured in tests — so the provider is stubbed here (this
 // file only) to make the branch reachable and deterministic.
-vi.mock('../payments', () => ({
+vi.mock('../payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../payments')>()),
   getPaymentProvider: () => ({
     executeRecurring: async () => ({ success: true, providerRef: 'apsb-test-ref' }),
   }),

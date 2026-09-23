@@ -384,9 +384,9 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // of the expanded card. GET /:id/services stays mounted for the lighter
     // refetch the inline editor does after an add/remove.
     loadAssignedPlanServices(gymId, um.id),
-    // #635 stage 2 — the assignment's own frozen commercial configuration.
-    // Embedded like every other section of the expanded card; billing still
-    // reads the live catalogue until the stage 3 cutover.
+    // #635 — the assignment's own frozen commercial configuration, embedded
+    // like every other section of the expanded card. Since stage 3 it is also
+    // what billing and the Billing Simulation read.
     loadAssignedPlanSnapshot(gymId, um.id),
   ]);
   const activityAllowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, members.map((m: any) => m.member_id));

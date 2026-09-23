@@ -90,10 +90,11 @@ export interface AssignedPlanServiceRow {
    */
   sellable_item_retired: boolean;
   /**
-   * #635 stage 2 — what the Sellable Item cost when the service was attached
+   * #635 — what the Sellable Item cost when the service was attached
    * (migration 174). `null` for an attachment made before that migration, which
-   * is the caller's signal to keep using the live values above. Billing and the
-   * Billing Simulation still read the live ones; the cutover is stage 3.
+   * is the caller's signal to keep using the live values above. Since stage 3
+   * the Billing Simulation bills from this; the live values are served beside
+   * it so the UI can still show that the item has been repriced since.
    */
   snapshot: {
     item_name: string;
@@ -307,11 +308,11 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   let insertId: number;
   try {
     ({ insertId } = await db.query(
-      // #635 stage 2 (migration 174): the item's commercial facts are frozen
-      // onto the attachment as well as read live. §17 — repricing the Sellable
-      // Item must not move what an already-attached service costs. The live
-      // join below still drives display and billing; the cutover to these
-      // columns is stage 3.
+      // #635 (migration 174): the item's commercial facts are frozen onto the
+      // attachment as well as read live. §17 — repricing the Sellable Item
+      // must not move what an already-attached service costs, which is what
+      // the Billing Simulation reads since stage 3; the live join below still
+      // drives display, so the UI can flag an item that has changed.
       `INSERT INTO user_membership_services
        (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, created_by_membership_id,
         item_name, item_type, item_billing_frequency, unit_price, currency)

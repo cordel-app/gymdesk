@@ -13,7 +13,8 @@ const providerResult = vi.hoisted(() => ({
     success: boolean; providerRef: string; errorCode?: string; errorMessage?: string;
   },
 }));
-vi.mock('../payments', () => ({
+vi.mock('../payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../payments')>()),
   getPaymentProvider: () => ({ executeRecurring: async () => providerResult.current }),
 }));
 
