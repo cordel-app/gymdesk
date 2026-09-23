@@ -10,6 +10,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall } from '@/components/ui';
@@ -545,6 +546,7 @@ export default function SystemGymsPage() {
         hideSave
         cancelLabel={t('details_close')}
         saveLabel=""
+        extraFooter={<ViewAuditLogButton entityType="gym" entityId={details?.id} scope="platform" onNavigate={() => setDetails(null)} />}
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >

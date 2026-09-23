@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 
 interface BillingPolicySummary {
@@ -92,7 +93,8 @@ export function PlanDetailModal({ plan, onClose }: {
           {field(t('details_modified_at'), plan.modified_at?.slice(0, 10))}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          <ViewAuditLogButton entityType="membership_plan" entityId={plan.id} onNavigate={onClose} />
           <button onClick={onClose} style={btnStyle('#444')}>{t('details_close')}</button>
         </div>
       </div>

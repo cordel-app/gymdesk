@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 
 interface PromoDetail {
@@ -90,7 +91,8 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
           </>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          <ViewAuditLogButton entityType="promotion" entityId={promotionId} onNavigate={onClose} />
           <button onClick={onClose} style={btnStyle('#444')}>{t('close')}</button>
         </div>
       </div>

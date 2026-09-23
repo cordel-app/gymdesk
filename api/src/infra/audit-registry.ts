@@ -47,6 +47,31 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   center:                         { kind: 'simple',   label: 'Centers',                  table: 'centers',                 nameColumn: 'name' },
   space:                          { kind: 'simple',   label: 'Spaces',                   table: 'spaces',                  nameColumn: 'name' },
 
+  // #675: every entity with a Details view deep-links into the Audit Log filtered
+  // by entity_type. These types were already written by recordAudit() but had no
+  // registry entry, so they resolved no name and were absent from the filter's
+  // entity-type dropdown — which is what the deep link preselects.
+  activity_type:                  { kind: 'simple',   label: 'Activity Types',           table: 'activity_types',          nameColumn: 'name' },
+  theme:                          { kind: 'simple',   label: 'Themes',                   table: 'themes',                  nameColumn: 'name' },
+  tax_rate:                       { kind: 'simple',   label: 'Tax Rates',                table: 'tax_rates',               nameColumn: 'name' },
+  gym_charge:                     { kind: 'simple',   label: 'Sellable Items',           table: 'gym_charges',             nameColumn: 'name' },
+  professional_service:           { kind: 'simple',   label: 'Professional Services',    table: 'professional_services',   nameColumn: 'name' },
+  nutrition_library_item:         { kind: 'simple',   label: 'Nutrition Library',        table: 'nutrition_library_items', nameColumn: 'name' },
+  nutrition_plan_template:        { kind: 'simple',   label: 'Nutrition Plan Templates', table: 'nutrition_plan_templates', nameColumn: 'name' },
+  member_nutrition_plan:          { kind: 'simple',   label: 'Nutrition Plans',          table: 'member_nutrition_plans',  nameColumn: 'name' },
+
+  staff: {
+    kind: 'composed', label: 'Staff',
+    resolve: async (id) => {
+      const { rows } = await db.query<{ first_name: string; last_name: string }>(
+        'SELECT first_name, last_name FROM staff WHERE id = ?',
+        [id],
+      );
+      if (!rows[0]) return null;
+      return `${rows[0].first_name} ${rows[0].last_name}`.trim();
+    },
+  },
+
   user_membership: {
     kind: 'composed', label: 'Memberships',
     resolve: async (id) => {

@@ -139,7 +139,6 @@
     "all_enrollment_statuses": "Tots els estats",
     "placeholder_search": "Cercar socis…",
     "action_details": "Detalls",
-    "action_view_audit_log": "Veure registre d'auditoria",
     "detail_title": "Detalls del soci",
     "section_profile": "Perfil",
     "label_date_of_birth": "Data de naixement",
@@ -411,7 +410,8 @@
     "image_upload_error": "No s'ha pogut pujar la imatge.",
     "image_not_configured": "L'emmagatzematge de Cloudflare no està configurat per a aquest entorn.",
     "image_not_initialized": "L'emmagatzematge de Cloudflare no s'ha inicialitzat per a aquest gimnàs, per la qual cosa no es poden pujar imatges.",
-    "read_only_hint": "Accés de només lectura"
+    "read_only_hint": "Accés de només lectura",
+    "action_view_audit_log": "Veure registre d'auditoria"
   },
   "system_gyms": {
     "title": "Gimnasos",

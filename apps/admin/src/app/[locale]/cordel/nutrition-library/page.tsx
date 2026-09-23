@@ -5,6 +5,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
@@ -439,6 +440,10 @@ export default function CordelNutritionLibraryPage() {
               <DetailRow label="Status" value={item.status} />
               <DetailRow label="Created At" value={new Date(item.created_at).toLocaleString()} />
               <DetailRow label="Modified At" value={item.modified_at ? new Date(item.modified_at).toLocaleString() : '—'} />
+              {/* #675: same deep link every Details view offers — filtered to this item. */}
+              <div style={{ marginTop: 6 }}>
+                <ViewAuditLogButton entityType="nutrition_library_item" entityId={item.id} scope="platform" size="small" />
+              </div>
             </div>
           )
         )}

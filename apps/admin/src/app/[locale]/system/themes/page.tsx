@@ -11,6 +11,7 @@ import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -743,6 +744,7 @@ export default function ThemesPage() {
         saving={false}
         cancelLabel={t('details_close')}
         saveLabel=""
+        extraFooter={<ViewAuditLogButton entityType="theme" entityId={detailsTheme?.id} scope="platform" onNavigate={() => setDetailsTheme(null)} />}
         onCancel={() => setDetailsTheme(null)}
         onSave={() => setDetailsTheme(null)}
         hideSave

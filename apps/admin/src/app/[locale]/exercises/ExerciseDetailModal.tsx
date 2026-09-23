@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 
 interface ExerciseDetail {
@@ -101,7 +102,8 @@ export function ExerciseDetailModal({ exerciseId, exerciseName, onClose }: {
           </>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          <ViewAuditLogButton entityType="exercise" entityId={exerciseId} onNavigate={onClose} />
           <button onClick={onClose} style={btnStyle('#444')}>{t('cancel')}</button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
 import { ImageUploadField } from '@/components/ImageUploadField';
@@ -421,6 +422,10 @@ export default function NutritionLibraryPage() {
                   <img src={item.image_url} alt="" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
                 </div>
               )}
+              {/* #675: same deep link every Details view offers — filtered to this item. */}
+              <div style={{ marginTop: 6 }}>
+                <ViewAuditLogButton entityType="nutrition_library_item" entityId={item.id} size="small" />
+              </div>
             </div>
           )
         )}

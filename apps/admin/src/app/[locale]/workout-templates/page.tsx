@@ -13,6 +13,7 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -661,6 +662,7 @@ export default function WorkoutTemplatesPage() {
         hideSave
         cancelLabel={t('details_close')}
         saveLabel=""
+        extraFooter={<ViewAuditLogButton entityType="workout_template" entityId={details?.id} onNavigate={() => setDetails(null)} />}
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >

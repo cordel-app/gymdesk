@@ -11,6 +11,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
@@ -1084,6 +1085,7 @@ export default function ActivityTypesPage() {
         hideSave
         cancelLabel={t('cancel')}
         saveLabel=""
+        extraFooter={<ViewAuditLogButton entityType="activity_type" entityId={details?.id} onNavigate={() => setDetails(null)} />}
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >

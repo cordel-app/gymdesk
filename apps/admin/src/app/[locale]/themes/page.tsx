@@ -12,6 +12,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
@@ -641,7 +642,7 @@ export default function GymThemesPage() {
         <FormInput value={cloneName} onChange={(e) => setCloneName(e.target.value)} autoFocus />
       </CrudModal>
 
-      <CrudModal open={details !== null} title={t('details_title')} error={null} saving={false} hideSave cancelLabel={t('details_close')} saveLabel="" onCancel={() => setDetails(null)} onSave={() => setDetails(null)}>
+      <CrudModal open={details !== null} title={t('details_title')} error={null} saving={false} hideSave cancelLabel={t('details_close')} saveLabel="" extraFooter={<ViewAuditLogButton entityType="theme" entityId={details?.id} onNavigate={() => setDetails(null)} />} onCancel={() => setDetails(null)} onSave={() => setDetails(null)}>
         {details && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <DetailRow label={t('label_name')} value={details.name} />
