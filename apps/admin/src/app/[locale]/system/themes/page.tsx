@@ -10,13 +10,14 @@ import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
-import { CrudModal } from '@/components/CrudModal';
+import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
-import { COLOR_GROUPS, ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
+import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
+import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
@@ -49,7 +50,10 @@ interface ThemeDetail extends Theme {
 const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 const EDITABLE_STATUSES = ['draft', 'active', 'inactive'] as const;
 
-type SectionKey = 'general' | 'colors' | 'typography';
+// #678 — the same section model as the Custom Themes editor. `Assignments`
+// is the one section that has no platform-level counterpart: a theme is
+// assigned to a gym's centers, and this screen is above any gym.
+type SectionKey = 'branding' | 'colors' | 'typography';
 
 const NEW_ID = 'new';
 
@@ -106,10 +110,6 @@ const selectStyle: React.CSSProperties = {
   border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff',
 };
 
-const labelStyle: React.CSSProperties = {
-  display: 'block', marginBottom: 4, marginTop: 14, fontSize: 13, fontWeight: 600, color: '#555',
-};
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ThemesPage() {
@@ -130,7 +130,7 @@ export default function ThemesPage() {
   const [hasNewRow, setHasNewRow] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['general']));
+  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['branding']));
 
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [editSaving, setEditSaving] = useState(false);
@@ -139,7 +139,6 @@ export default function ThemesPage() {
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const [logoRemovePending, setLogoRemovePending] = useState(false);
-  const editFileInputRef = useRef<HTMLInputElement>(null);
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when entering edit mode, cleared once Save succeeds.
   const origFormRef = useRef<EditForm | null>(null);
@@ -198,9 +197,7 @@ export default function ThemesPage() {
     setLogoRemovePending(true);
   }
 
-  function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function handleLogoPick(file: File) {
     setEditLogoFile(file);
     setLogoRemovePending(false);
     const reader = new FileReader();
@@ -252,41 +249,43 @@ export default function ThemesPage() {
 
   // ─── Expand / Edit ─────────────────────────────────────────────────────────
 
-  function toggleExpand(id: string) {
-    if (editingId === id) return;
+  // #678 — expanding a row opens the structured editor straight away, the same
+  // model as the Custom Themes screen: no separate read-only expanded view and
+  // no second "enter edit" step. The row menu's Edit entry lands here too.
+  function toggleExpand(theme: Theme) {
     guardUnsaved(() => {
-      if (editingId !== null) { applyTokens(currentLiveTokens()); setEditingId(null); }
-      setExpandedId((prev) => (prev === id ? null : id));
+      if (expandedId === theme.id) { closeEditor(); return; }
+      openEditor(theme);
     });
+  }
+
+  function openEditor(theme: Theme) {
+    setExpandedId(theme.id);
+    setEditingId(theme.id);
+    const form = emptyEditForm(theme);
+    setEditForm(form);
+    origFormRef.current = form;
+    setEditError(null);
+    setEditLogoFile(null);
+    setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
+    setLogoRemovePending(false);
+    setOpenSections(new Set(['branding']));
   }
 
   function enterEdit(theme: Theme) {
-    guardUnsaved(() => {
-      setExpandedId(theme.id);
-      setEditingId(theme.id);
-      const form = emptyEditForm(theme);
-      setEditForm(form);
-      origFormRef.current = form;
-      setEditError(null);
-      setEditLogoFile(null);
-      setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
-      setLogoRemovePending(false);
-      setOpenSections(new Set(['general']));
-    });
+    guardUnsaved(() => openEditor(theme));
   }
 
-  function cancelEdit() {
+  // Cancel collapses the card back down — the draft (and its live preview) is
+  // discarded, exactly as on the Custom Themes screen.
+  function closeEditor() {
     applyTokens(currentLiveTokens());
-    const theme = themes.find((th) => th.id === editingId);
-    if (editingId === NEW_ID) {
-      setHasNewRow(false);
-      setExpandedId(null);
-    } else if (theme) {
-      setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
-    }
+    if (editingId === NEW_ID) setHasNewRow(false);
+    setExpandedId(null);
     setEditingId(null);
     setEditError(null);
     setEditLogoFile(null);
+    setEditLogoPreview(null);
     setLogoRemovePending(false);
   }
 
@@ -303,7 +302,7 @@ export default function ThemesPage() {
       origFormRef.current = form;
       setEditError(null);
       setLogoRemovePending(false);
-      setOpenSections(new Set(['general']));
+      setOpenSections(new Set<SectionKey>(['branding']));
     });
   }
 
@@ -422,44 +421,17 @@ export default function ThemesPage() {
     return n === 1 ? t('usage_org_singular') : t('usage_org_plural').replace('{count}', String(n));
   }
 
-  // ─── Section helper (edit mode) ────────────────────────────────────────────
+  // ─── Section helper ────────────────────────────────────────────────────────
 
   function renderSection(key: SectionKey, title: string, content: React.ReactNode) {
-    const open = openSections.has(key);
     return (
-      <div style={{ borderTop: '1px solid var(--gd-border, #eee)' }}>
-        <button
-          type="button"
-          onClick={() => setOpenSections((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--gd-section-heading-text, #888888)', textAlign: 'left' }}
-        >
-          {title}
-          <span style={{ fontSize: 12, color: '#aaa', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>&#9662;</span>
-        </button>
-        {open && <div style={{ paddingBottom: 16 }}>{content}</div>}
-      </div>
-    );
-  }
-
-  // ─── Read-only expanded view ────────────────────────────────────────────────
-
-  function renderReadOnly(theme: Theme) {
-    const colors = theme.tokens?.colors ?? DEFAULT_TOKENS.colors;
-    return (
-      <div style={{ padding: '16px 24px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
-          {COLOR_GROUPS.filter(({ fields }) => fields.length > 0).map(({ groupKey, fields }) => (
-            <div key={groupKey}>
-              <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, color: 'var(--gd-section-heading-text, #888888)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{t(groupKey as any)}</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {fields.map(({ key, labelKey }) => (
-                  <ColorSwatch key={key} color={colors[key] as string | undefined} title={`${t(labelKey as any)}: ${colors[key] ?? '?'}`} size={22} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <ThemeSection
+        title={title}
+        open={openSections.has(key)}
+        onToggle={() => setOpenSections((prev) => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
+      >
+        {content}
+      </ThemeSection>
     );
   }
 
@@ -471,19 +443,22 @@ export default function ThemesPage() {
         {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
 
         <div style={{ marginTop: 12 }}>
-          {renderSection('general', t('section_general'), (
-            <div>
-              <label style={labelStyle}>{t('label_name')}</label>
-              <input
-                type="text"
-                value={editForm.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                placeholder={t('label_name')}
-                style={{ ...selectStyle, marginBottom: 0 }}
-                autoFocus={isNew}
-              />
-
-              <label style={labelStyle}>{t('label_status')}</label>
+          {renderSection('branding', t('section_branding'), (
+            <ThemeBrandingEditor
+              values={{ name: editForm.name, description: editForm.description, logoContainsGymName: editForm.logoContainsGymName }}
+              onChange={(next) => setEditForm({ ...editForm, ...next })}
+              t={t}
+              logoPreview={editLogoPreview}
+              onLogoPick={handleLogoPick}
+              onLogoRemove={queueLogoRemove}
+              // A theme that does not exist yet has no id to upload a logo to;
+              // the logo controls appear once it has been created (unchanged).
+              showLogo={!isNew}
+              autoFocusName={isNew}
+            >
+              {/* Status is platform-only: on the Custom Themes screen a theme's
+                  status is driven from its row menu, not from the editor. */}
+              <FormLabel>{t('label_status')}</FormLabel>
               <select
                 value={editForm.status}
                 onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
@@ -493,46 +468,7 @@ export default function ThemesPage() {
                   <option key={s} value={s}>{tStatus(s)}</option>
                 ))}
               </select>
-
-              {!isNew && (
-                <>
-                  <label style={labelStyle}>{t('label_description')}</label>
-                  <textarea
-                    value={editForm.description}
-                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                    rows={2}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
-                  />
-
-                  <label style={labelStyle}>{t('label_logo')}</label>
-                  <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_hint')}</p>
-                  {editLogoPreview && (
-                    <div style={{ marginBottom: 8 }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={editLogoPreview} alt="logo preview" style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }} />
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" onClick={() => editFileInputRef.current?.click()} style={btnSmall('#444')}>{t('logo_upload')}</button>
-                    {editLogoPreview && (
-                      <button type="button" onClick={queueLogoRemove} style={btnSmall('#c0392b')}>
-                        {t('logo_clear')}
-                      </button>
-                    )}
-                  </div>
-                  <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
-
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      checked={editForm.logoContainsGymName}
-                      onChange={(e) => setEditForm({ ...editForm, logoContainsGymName: e.target.checked })}
-                    />
-                    {t('logo_contains_gym_name')}
-                  </label>
-                </>
-              )}
-            </div>
+            </ThemeBrandingEditor>
           ))}
 
           {!isNew && renderSection('colors', t('section_colors'), (
@@ -545,7 +481,7 @@ export default function ThemesPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={closeEditor} style={btnSmall('#888')}>{t('cancel')}</button>
           <button
             onClick={() => handleSave(id)}
             disabled={editSaving || !isDirty()}
@@ -558,11 +494,10 @@ export default function ThemesPage() {
     );
   }
 
-  // ─── Expanded row router ────────────────────────────────────────────────────
+  // ─── Expanded row ───────────────────────────────────────────────────────────
 
   function renderExpanded(theme: Theme) {
-    if (editingId === theme.id) return renderEditForm(theme.id, theme.id === NEW_ID);
-    return renderReadOnly(theme);
+    return renderEditForm(theme.id, theme.id === NEW_ID);
   }
 
   // ─── Columns ───────────────────────────────────────────────────────────────
@@ -733,7 +668,7 @@ export default function ThemesPage() {
         renderExpanded={(th) => renderExpanded(th)}
         onToggleExpand={(th) => {
           if (th.id === NEW_ID) return;
-          if (th.status !== 'deleted') toggleExpand(th.id);
+          if (th.status !== 'deleted') toggleExpand(th);
         }}
       />
 
@@ -769,7 +704,7 @@ export default function ThemesPage() {
         onConfirm={() => {
           const action = pendingAction!;
           setPendingAction(null);
-          cancelEdit();
+          closeEditor();
           action();
         }}
         onCancel={() => setPendingAction(null)}
