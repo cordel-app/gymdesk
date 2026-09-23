@@ -179,4 +179,12 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
 - [ ] **Time migration 174's backfill** (#636): it sets `gyms.payment_provider_id` for
       every existing gym and then runs `ALTER TABLE gyms MODIFY COLUMN … NOT NULL`
       (an ALGORITHM=COPY rebuild). Cheap on a handful of gyms, but it is the busiest
-      table in the schema — run it in the deploy's migration window, not live.
+      table in the schema — run it in the deploy's migration window, not live. The
+      column is created with a temporary `DEFAULT` so a gym created by the *old*
+      build while the migration runs still lands on the platform default instead of
+      a NULL that would abort the `MODIFY`; the default is dropped again at the end.
+- [ ] **Migration 174's `down()` is lossy** (#636): dropping the column discards each
+      gym's chosen provider, so a rollback-then-reapply puts every gym back on the
+      platform default. Harmless while every gym is still on the default (the state
+      on every environment today). Once a gym has been moved to another provider,
+      capture `SELECT id, payment_provider_id FROM gyms` before rolling back.

@@ -16,13 +16,23 @@ const _createdGymIds: string[] = [];
 /** Creates a gym and returns its UUID. */
 export async function createTestGym(name = 'Test Gym'): Promise<string> {
   const slug = `test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  // #636: gyms.payment_provider_id is NOT NULL — take the platform default, the
-  // same row POST /platform/gyms resolves (seeded by migration 174).
+  // #636: gyms.payment_provider_id is NOT NULL — take the platform default,
+  // resolved with the same predicate as the router's
+  // resolveDefaultPaymentProviderId() (seeded by migration 174). Looked up
+  // first so a database with no default says so, instead of inserting zero rows
+  // and failing one line later on `rows[0].id`.
+  const { rows: providerRows } = await db.query<{ id: number }>(
+    "SELECT id FROM payment_providers WHERE is_default = 1 AND status = 'active' AND deleted_at IS NULL LIMIT 1",
+  );
+  if (!providerRows[0]) {
+    throw new Error(
+      'createTestGym: no active default payment provider (#636). Run `npm run db:migrate`, '
+      + "or repair it with: UPDATE payment_providers SET is_default = 1 WHERE provider_key = 'monei'",
+    );
+  }
   await db.query(
-    `INSERT INTO gyms (name, slug, plan, payment_provider_id)
-     SELECT ?, ?, 'free', id FROM payment_providers
-     WHERE is_default = 1 AND deleted_at IS NULL LIMIT 1`,
-    [name, slug],
+    `INSERT INTO gyms (name, slug, plan, payment_provider_id) VALUES (?, ?, 'free', ?)`,
+    [name, slug, providerRows[0].id],
   );
   const { rows } = await db.query<{ id: string }>('SELECT id FROM gyms WHERE slug = ?', [slug]);
   _createdGymIds.push(rows[0].id);
@@ -113,4 +123,11 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM gym_holiday_hours WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_operating_hours WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, ids);
+  // #636: `payment_providers` is deliberately NOT cleaned here. It is
+  // platform-level (no gym_id), so nothing cascades it and a blanket delete
+  // would take rows a developer created by hand in their own database — plus the
+  // migration-seeded default every other test file's createTestGym depends on.
+  // A test that creates providers owns them: hard-delete them in its own
+  // afterAll, *after* this call (gyms.payment_provider_id is RESTRICT), and hand
+  // the default flag back if it borrowed it. See payment-providers.test.ts.
 }

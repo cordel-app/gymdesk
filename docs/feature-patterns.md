@@ -737,6 +737,17 @@ of the relation is the FK column on `gyms`.
   keys stay in the environment, and a read-only endpoint (`GET .../deployment`) reports the
   env-derived status from the **API** process — the one whose env actually decides whether a
   charge can be made — rather than the admin container's.
+- **Don't widen a shared SELECT fragment to carry it.** The gym's joined provider goes into a
+  platform-only fragment (`PLATFORM_GYM_SELECT`/`_JOIN`), because the theme fragment it would
+  otherwise have joined is shared with the member-readable `GET /gyms` — and a catalogue row's
+  status and default flag are platform state a gym member has no business reading. The shaping
+  helper keys the field on whether the column was selected, so the response omits it rather than
+  serialising `null`.
+- **The NOT NULL conversion races the running old build.** `db:migrate` runs *before* the new
+  code is live, so add the column `NULL DEFAULT <the default row>`, backfill, flip to NOT NULL,
+  then `DROP DEFAULT`: an insert from the old build during the window lands on the default
+  instead of writing the NULL that would abort the `MODIFY` half-way. Guard the `MODIFY` on
+  `information_schema` too — it rebuilds the table, and a re-run must not pay for it twice.
 
 Reference implementation: `api/src/api/payment-providers.ts` + migration 174 +
 `apps/admin/src/app/[locale]/cordel/payment-providers/page.tsx`, with the gym-side field in

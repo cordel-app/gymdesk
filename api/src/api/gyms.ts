@@ -20,19 +20,29 @@ export const gymsRouter = Router();
 export const platformRouter = Router();
 
 // SQL fragment to LEFT JOIN theme data onto a gyms query.
-// #636: the gym's Payment Provider joins here too — the field is NOT NULL, but
-// the join stays LEFT so a gym still reads back if its provider row ever went
-// missing (the FK makes that impossible; a read is the wrong place to find out).
 const THEME_JOIN = `
   LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
-  LEFT JOIN payment_providers pp ON pp.id = g.payment_provider_id
 `;
 const THEME_SELECT = `
   , t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
     t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
     t.logo_contains_gym_name AS theme_logo_contains_gym_name,
-    t.tokens AS theme_tokens,
-    pp.id AS payment_provider_id_val, pp.name AS payment_provider_name,
+    t.tokens AS theme_tokens
+`;
+
+// #636: the gym's Payment Provider, joined only into the superadmin reads below.
+// It is deliberately absent from the user-facing `GET /gyms` (any member of the
+// gym can call that): the row carries platform state — the provider's status and
+// whether it is the platform default — that belongs to Cordel, not to a member.
+// The join stays LEFT although the column is NOT NULL: a read is the wrong place
+// to discover that a FK the database enforces has somehow been broken.
+const PLATFORM_GYM_JOIN = `
+  ${THEME_JOIN}
+  LEFT JOIN payment_providers pp ON pp.id = g.payment_provider_id
+`;
+const PLATFORM_GYM_SELECT = `
+  ${THEME_SELECT}
+  , pp.id AS payment_provider_id_val, pp.name AS payment_provider_name,
     pp.provider_key AS payment_provider_key, pp.status AS payment_provider_status,
     pp.is_default AS payment_provider_is_default
 `;
@@ -75,7 +85,10 @@ function attachTheme(row: any) {
     ...rest
   } = stripGymSecrets(row);
   // #636: the joined provider, alongside the raw `payment_provider_id` the edit
-  // form submits back — same split as `theme_id` / `theme`.
+  // form submits back — same split as `theme_id` / `theme`. Only the superadmin
+  // reads select these columns (PLATFORM_GYM_SELECT); the key is left off the
+  // response entirely for the ones that don't, rather than serialised as null.
+  const selectedProvider = 'payment_provider_id_val' in row;
   const payment_provider = payment_provider_id_val ? {
     id: payment_provider_id_val,
     name: payment_provider_name,
@@ -94,7 +107,12 @@ function attachTheme(row: any) {
   } : null;
   // #417: platform-wide flag (same for every gym on this deployment), not a
   // per-row DB column — lets the admin UI disable the init action.
-  return { ...rest, theme, payment_provider, storage_configured: isStorageConfigured() };
+  return {
+    ...rest,
+    theme,
+    ...(selectedProvider ? { payment_provider } : {}),
+    storage_configured: isStorageConfigured(),
+  };
 }
 
 /**
@@ -215,7 +233,7 @@ platformRouter.get('/gyms', requireSuperadmin, async (req, res) => {
     params.push(status);
   }
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN}
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN}
      WHERE ${conditions.join(' AND ')}
      ORDER BY g.created_at ASC`,
     params,
@@ -225,7 +243,7 @@ platformRouter.get('/gyms', requireSuperadmin, async (req, res) => {
 
 platformRouter.get('/gyms/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Gym not found' });
@@ -294,7 +312,7 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     );
     await seedSystemPtPackage(id);
     const { rows } = await db.query(
-      `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+      `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
       [id],
     );
     recordAudit(req, { action: 'create', entityType: 'gym', entityId: id, next: attachTheme(rows[0]) });
@@ -364,7 +382,7 @@ platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
   );
 
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]), next: attachTheme(rows[0]) });
@@ -398,7 +416,7 @@ platformRouter.patch('/gyms/:id', requireSuperadmin, async (req, res) => {
     [name ?? null, themeIdValue !== undefined ? 1 : 0, themeIdValue ?? null, actorName, req.params.id],
   );
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]), next: attachTheme(rows[0]) });
@@ -462,7 +480,7 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   );
   await seedSystemPtPackage(newId);
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [newId],
   );
   recordAudit(req, { action: 'create', entityType: 'gym', entityId: newId, next: attachTheme(rows[0]) });
@@ -523,7 +541,7 @@ platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (re
   );
 
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(gym), next: attachTheme(rows[0]) });
