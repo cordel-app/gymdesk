@@ -168,20 +168,18 @@ export default function LinkPage() {
         <p style={{ color: '#666', marginBottom: 24 }}>{t('set_password_hint')}</p>
         <form onSubmit={handlePasswordSubmit}>
           <label style={{ display: 'block', marginBottom: 4 }}>{t('password_label')}</label>
-          <input
-            type="password"
+          <PasswordInput
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            style={{ width: '100%', padding: 10, marginBottom: 16, boxSizing: 'border-box' }}
+            onChange={setPassword}
+            showLabel={t('show_password')}
+            hideLabel={t('hide_password')}
           />
           <label style={{ display: 'block', marginBottom: 4 }}>{t('confirm_password_label')}</label>
-          <input
-            type="password"
+          <PasswordInput
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            autoComplete="new-password"
-            style={{ width: '100%', padding: 10, marginBottom: 16, boxSizing: 'border-box' }}
+            onChange={setConfirmPassword}
+            showLabel={t('show_password')}
+            hideLabel={t('hide_password')}
           />
           {passwordError && <p style={{ color: '#c0392b', marginBottom: 16 }}>{passwordError}</p>}
           <button type="submit" disabled={submitting} style={{ width: '100%', padding: 12 }}>
@@ -199,6 +197,45 @@ export default function LinkPage() {
       {/* Required mount point for Clerk's bot-protection CAPTCHA — sign-up
           (including ticket-based) fails with a captcha_invalid error without it. */}
       <div id="clerk-captcha" />
+    </div>
+  );
+}
+
+// A password field with an eye button that toggles the characters visible.
+function PasswordInput({ value, onChange, showLabel, hideLabel }: {
+  value: string;
+  onChange: (value: string) => void;
+  showLabel: string;
+  hideLabel: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div style={{ position: 'relative', marginBottom: 16 }}>
+      <input
+        type={visible ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="new-password"
+        style={{ width: '100%', padding: '10px 44px 10px 10px', boxSizing: 'border-box' }}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? hideLabel : showLabel}
+        aria-pressed={visible}
+        title={visible ? hideLabel : showLabel}
+        style={{
+          position: 'absolute', top: 0, right: 0, bottom: 0, width: 40,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#666',
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+          <circle cx="12" cy="12" r="3" />
+          {visible && <line x1="3" y1="3" x2="21" y2="21" />}
+        </svg>
+      </button>
     </div>
   );
 }
