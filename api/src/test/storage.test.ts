@@ -49,7 +49,16 @@ describe('sanitizeGymFolderName()', () => {
 describe('buildGymFolderPrefix()', () => {
   it('joins gym id and sanitized name with a hyphen, no spaces', async () => {
     const { buildGymFolderPrefix } = await import('../infra/storage');
-    expect(buildGymFolderPrefix('gym_123', 'Gym Name')).toBe('gym_123-GymName');
+    expect(buildGymFolderPrefix('gym_123', 'Gym Name')).toBe('gyms/gym_123-GymName');
+  });
+
+  // #668: the gym root moved from `<bucket>/<gym_id>-<gym_name>/` to
+  // `<bucket>/gyms/<gym_id>-<gym_name>/`.
+  it('puts the gym root under the gyms/ prefix', async () => {
+    const { buildGymFolderPrefix } = await import('../infra/storage');
+    expect(buildGymFolderPrefix('d3af0239-c3e0-466a-b9bf-8ea1048fbe09', 'MyGym')).toBe(
+      'gyms/d3af0239-c3e0-466a-b9bf-8ea1048fbe09-MyGym',
+    );
   });
 });
 
@@ -127,6 +136,19 @@ describe('initializeGymBucket()', () => {
       expect(call[0].input.Bucket).toBe('test-bucket');
     }
   });
+
+  // #668: with the prefix the initialize endpoint actually builds, every marker
+  // key — root included — sits under `gyms/`, and the tree below it is unchanged.
+  it('writes every marker under gyms/ when given a prefix from buildGymFolderPrefix()', async () => {
+    setConfigured();
+    const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket(buildGymFolderPrefix('gym_123', 'Gym Name'));
+
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
+    expect(keys[0]).toBe('gyms/gym_123-GymName/');
+    expect(keys).toContain('gyms/gym_123-GymName/Branding/Logo/');
+    for (const key of keys) expect(key.startsWith('gyms/gym_123-GymName/')).toBe(true);
+  });
 });
 
 describe('uploadGymImage()', () => {
@@ -165,6 +187,17 @@ describe('uploadGymImage()', () => {
       const url = await uploadGymImage('gym_123-GymName', 'Exercises/Images', mime, Buffer.from('x'));
       expect(url.endsWith(`.${ext}`)).toBe(true);
     }
+  });
+
+  // #668: uploads inherit the gyms/ root from the stored prefix — the folder
+  // structure below the gym root is untouched.
+  it('uploads under the gyms/ root when the prefix comes from buildGymFolderPrefix()', async () => {
+    setConfigured();
+    const { buildGymFolderPrefix, uploadGymImage } = await import('../infra/storage');
+    await uploadGymImage(buildGymFolderPrefix('gym_123', 'Gym Name'), 'Exercises/Images', 'image/png', Buffer.from('x'));
+    expect(sendMock.mock.calls[0][0].input.Key).toMatch(
+      /^gyms\/gym_123-GymName\/Exercises\/Images\/[0-9a-f-]{36}\.png$/,
+    );
   });
 
   it('generates a distinct key for every upload (no filename collisions)', async () => {

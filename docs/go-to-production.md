@@ -54,6 +54,15 @@ Tick items off in the PR that completes them.
       list is a strict superset of the old one, so it cannot fail on data; time it
       against a copy of the table first. (The statement is guarded, so re-running
       migrations after it lands is a no-op rather than a second rebuild.)
+- [ ] **Decide what happens to gym storage roots created before #668.** The gym root moved
+      from `<bucket>/<gym_id>-<gym_name>/` to `<bucket>/gyms/<gym_id>-<gym_name>/`, and the
+      ticket explicitly ruled out migrating existing gyms. A gym initialized earlier keeps
+      the old prefix stored in `gyms.storage_folder_prefix`, so its objects — and the
+      `image_url`s already pointing at them — keep resolving, but the bucket holds two
+      shapes at once. Before launch, either copy those objects under `gyms/` and rewrite
+      the stored prefix plus the affected `image_url` columns, or accept the split and
+      document it. Re-running **Initialize Cloudflare Bucket** does *not* fix it: it
+      deliberately reuses the captured prefix rather than recomputing it.
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be

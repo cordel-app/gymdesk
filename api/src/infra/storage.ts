@@ -8,8 +8,17 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
  * Every gym gets its own folder prefix inside the single shared bucket.
  */
 
-// Folder-marker keys under `<gym_id>-<gym_name>/` (#417). Parents are written
-// as well as leaves so the R2 browser shows the exact tree from the ticket.
+/**
+ * #668: every gym root lives under a single `gyms/` prefix inside the shared
+ * bucket, so the bucket root stays free for other platform-level trees. It is
+ * part of the object key, not a bucket/endpoint setting — see
+ * `buildGymFolderPrefix()`. Gyms initialized before #668 keep the prefix
+ * captured in `gyms.storage_folder_prefix` (no migration of existing objects).
+ */
+const GYM_STORAGE_ROOT = 'gyms';
+
+// Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
+// written as well as leaves so the R2 browser shows the exact tree from the ticket.
 const GYM_FOLDERS = [
   'Nutrition/',
   'Nutrition/Images/',
@@ -201,13 +210,19 @@ export function sanitizeGymFolderName(name: string): string {
     .replace(/[^A-Za-z0-9_-]/g, '');
 }
 
-/** `<gym_id>-<sanitized_gym_name>`, guaranteed to contain no spaces. */
+/**
+ * `gyms/<gym_id>-<sanitized_gym_name>`, guaranteed to contain no spaces.
+ * The `gyms/` root (#668) is part of the key prefix that gets captured in
+ * `gyms.storage_folder_prefix` at initialize time, so both the folder markers
+ * and every later upload land under it without a second concatenation site.
+ */
 export function buildGymFolderPrefix(gymId: string, gymName: string): string {
-  return `${gymId}-${sanitizeGymFolderName(gymName)}`;
+  return `${GYM_STORAGE_ROOT}/${gymId}-${sanitizeGymFolderName(gymName)}`;
 }
 
 /**
- * Creates the standard folder structure for a gym inside the shared bucket.
+ * Creates the standard folder structure for a gym inside the shared bucket,
+ * under the root `folderPrefix` (`gyms/<gym_id>-<gym_name>` since #668).
  * R2/S3 has no real directories — a zero-byte object whose key ends in `/`
  * is the conventional "folder marker" most S3-compatible browsers render.
  */
