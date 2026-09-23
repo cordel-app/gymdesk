@@ -2,11 +2,14 @@ import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { verifyWebhook } from '@clerk/backend/webhooks';
 import { linkGymInvite } from '../infra/staff-access';
+import { unlinkClerkAccount } from '../infra/clerk-account-links';
+import { recordPlatformAudit } from '../infra/audit';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 
 /**
- * Clerk webhook receiver. Backstops the admin-app self-heal: when an invited
+ * Clerk webhook receiver. `user.deleted` (#709) removes every Gymdesk link to
+ * the deleted account. `user.created` backstops the admin-app self-heal: when an invited
  * team member finishes sign-up, Clerk fires `user.created` with the
  * invitation's `public_metadata` (including `gym_invite`) copied onto the user.
  * We materialize their gym_memberships row here, so activation no longer
@@ -53,6 +56,26 @@ clerkWebhookRouter.post('/', async (req: Request, res: Response) => {
         const row = await linkGymInvite(userId);
         if (row) {
           console.log(`Clerk webhook ${evt.type}: linked gym invite for user ${userId}`);
+        }
+      }
+    }
+    // #709: an account deleted in Clerk (Dashboard, or our own deletes echoing
+    // back) must leave no Gymdesk rows pointing at it. Idempotent, so a retry or
+    // the echo of a delete we already cleaned up is a no-op.
+    if (evt.type === 'user.deleted') {
+      const userId = evt.data?.id;
+      if (userId) {
+        const cleaned = await unlinkClerkAccount(userId);
+        if (cleaned.memberships > 0 || cleaned.members > 0) {
+          console.log(`Clerk webhook ${evt.type}: unlinked user ${userId}`, cleaned);
+          recordPlatformAudit(null, {
+            action: 'delete',
+            entityType: 'clerk_account',
+            entityId: userId,
+            next: { removed_gym_memberships: cleaned.memberships, unlinked_members: cleaned.members },
+            actor: { userId: null, name: 'Clerk (user.deleted)' },
+            source: 'system',
+          });
         }
       }
     }

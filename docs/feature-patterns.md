@@ -675,12 +675,28 @@ When a catalog item is attached to a record that is *already billing* (an Additi
 - **DELETE stamps, or deletes only when nothing was billed**: the endpoint sets `ends_at = today` for an attachment already in force, and hard-deletes one whose `starts_at` is still in the future (an `ends_at` before `starts_at` would violate the CHECK, and nothing was ever billed). Return which of the two happened (`{ deleted, ends_at }`) so the UI doesn't have to guess.
 - **No unique key on (parent, item)** — the same item may be attached again over a later, non-overlapping window. Enforce *overlap* in the endpoint instead (`ends_at IS NULL OR ends_at >= :starts_at` → 409); quantity, not a second row, is how "two of them" is expressed. The endpoint check alone is a read-then-insert race, so back the one case that *is* expressible as a key — at most one **open** attachment per (parent, item) — with a `VIRTUAL` generated column (`IF(ends_at IS NULL, CONCAT(parent_id, ':', item_id), NULL)`) under a unique index, and map `ER_DUP_ENTRY` to the same 409 (`STORED` is rejected over FK columns; see migration 007).
 - **Flag a retired catalog row rather than hiding it**: the join must not filter `deleted_at`/`status` (the attachment keeps billing), but the read should report it (`sellable_item_retired`) so the UI can mark a row the write path would no longer accept.
-- **Never copy the catalog row's fields onto the attachment** (name, price, frequency): join them live on every read, so an item's price change shows up everywhere at once. Only snapshot when the ticket explicitly asks history to be frozen (contrast: `user_membership_charge_benefits`). The FK to the catalog table then gets no `ON DELETE CASCADE` — items are soft-deleted, and the attachment must outlive one being retired.
+- **Never copy the catalog row's fields onto the attachment** (name, price, frequency): join them live on every read, so an item's price change shows up everywhere at once. Only snapshot when the ticket explicitly asks history to be frozen (contrast: `user_membership_charge_benefits`; #635 asked for exactly that, so `user_membership_services` now carries both — snapshot columns written at attach time *and* the live join, see the next section). The FK to the catalog table then gets no `ON DELETE CASCADE` — items are soft-deleted, and the attachment must outlive one being retired.
 - **Gate on the parent's status**, mirroring the same list in the frontend: a record that bills nothing further (`cancelled`/`expired`) accepts no new attachments, but keeps showing the ones it had.
 - **The projection does the rest**: the forecast (`domain/billingSimulation.ts`) treats each attachment as a stream from `max(parent.start, starts_at)` to `min(parent.end, ends_at)`. Removal needs no other code path — the window is the whole mechanism.
 - **Frontend**: inline row CRUD (no modal), the action column keyed on `ends_at == null` rather than a derived `active` flag — a row removed today is still billable today, but must not offer Remove twice.
 
 Reference implementation: `api/src/api/user-membership-services.ts` + migration 164 + `apps/admin/src/app/[locale]/financials/assigned-plans/AdditionalPeriodicServices.tsx`.
+
+---
+
+## Assignment-Time Snapshot (#635 stage 2)
+
+When a ticket says an instantiated record is *its own contract* — an Assigned Plan whose billing must not move when the Membership Plan, a Promotion or a Sellable Item is later edited (#635 §11–§17) — the record needs parallel structures it owns, not a chain of live joins back to the catalogue.
+
+- **Snapshot everything that decides an amount, not just names.** Durations, the billing cadence, the regular price, every benefit row *and* each item's price, type, frequency and currency. A name and a quantity cannot reproduce a charge, which is why migration 156's promotion snapshot tables were unusable until 174 added pricing to them.
+- **Write it inside the creating transaction**, from a single helper (`snapshotAssignedPlan()`), and call that helper from **every** entry point that creates the record. Three routes create an assignment here; a snapshot written by only two of them is worse than none, because the reader can no longer tell "nothing agreed" from "nobody wrote it down".
+- **`INSERT … SELECT` per section** keeps each copy one statement and keeps the catalogue join (for the price) in the database rather than in a loop.
+- **Drop `ON DELETE CASCADE` on the FK back to the catalogue.** The snapshot outlives a retired item by design; catalogue rows are soft-deleted, so the FK is a reference, never the source of truth again. Then add the table to `cleanupTestGyms` *before* the catalogue table it points at — a cascade is no longer doing that for you.
+- **Keep "not captured" expressible.** Rows created before the snapshot existed must read back as an explicit `snapshot_captured: false` (and `null`, not `0`, for unconfigured numbers), so the reader falls back to the live catalogue instead of billing nothing.
+- **Split writing from reading across two PRs.** Stage 2 writes the snapshot and serves it additively; the cutover that makes billing *read* it — with the fallback above and a regression test per row of the ticket's "must NOT change" table — is its own change. Nothing an existing record bills moves on the day the tables land.
+- **Backfill rather than delete**, when the values are recoverable: the backfill writes down what those rows already resolved to live, so behaviour is unchanged, and history survives. Guard every backfill statement on `IS NULL` so a re-run is a no-op.
+
+Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 174 + `snapshotPromotionGrants()` in `api/src/api/membership-promotions.ts`.
 
 ---
 

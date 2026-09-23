@@ -267,6 +267,10 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.system_users',
       },
       {
+        href: '/{{locale}}/system/orphaned-accounts',
+        labelKey: 'nav.orphaned_accounts',
+      },
+      {
         href: '/{{locale}}/cordel/audit',
         labelKey: 'nav.audit',
       },

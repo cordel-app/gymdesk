@@ -54,6 +54,18 @@ Tick items off in the PR that completes them.
       list is a strict superset of the old one, so it cannot fail on data; time it
       against a copy of the table first. (The statement is guarded, so re-running
       migrations after it lands is a no-op rather than a second rebuild.)
+- [ ] **Time migration 174's backfill before running it** (#635 stage 2). The DDL is
+      cheap — six nullable column adds on `user_memberships` plus three new tables —
+      but the file ends with data statements that touch every existing row: one
+      `UPDATE … JOIN` over `user_memberships` (with a correlated price-window
+      subquery per row), one over `user_membership_services`, and one per
+      `user_membership_promotion_*_snapshot` table. They are guarded on `IS NULL`, so
+      a re-run is a no-op, and they are safe to run in slices if the dataset is large
+      enough for one statement to hold locks too long. The #635 Q3 answer allowed
+      hard-deleting existing assigned plans instead; this migration deliberately does
+      not, so nothing has to be decided at deploy time — but if a production dataset
+      ever makes the backfill impractical, dropping the rows is the sanctioned
+      alternative, not skipping the migration.
 - [ ] **Decide what happens to gym storage roots created before #668.** The gym root moved
       from `<bucket>/<gym_id>-<gym_name>/` to `<bucket>/gyms/<gym_id>-<gym_name>/`, and the
       ticket explicitly ruled out migrating existing gyms. A gym initialized earlier keeps
@@ -75,7 +87,7 @@ Clerk Development and Production instances are separate: users, user ids and met
 
 - [ ] Create the Clerk Production instance and configure its domain / DNS records.
 - [ ] API: `CLERK_SECRET_KEY` (`sk_live_…`), `CLERK_PUBLISHABLE_KEY` (`pk_live_…`).
-- [ ] Re-create the Clerk webhook endpoint (`/webhooks/clerk`) on the production instance
+- [ ] Re-create the Clerk webhook endpoint (`/webhooks/clerk`) on the production instance, subscribed to **`user.created` and `user.deleted`** (#709)
       and set its `CLERK_WEBHOOK_SIGNING_SECRET`.
 - [ ] Recreate the customised *Invitation* email template (Spanish/Catalan/English via `lang`
       conditionals — see `docs/wordpress-integration.md`) on the production instance; templates

@@ -10,6 +10,7 @@ import { userMembershipsRouter } from './api/user-memberships';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { storageRouter } from './api/storage';
 import { superadminsRouter } from './api/superadmins';
+import { orphanedAccountsRouter } from './api/orphaned-accounts';
 import { impersonationRouter } from './api/impersonation';
 import { membershipPlansRouter } from './api/membership-plans';
 import { benefitTypesRouter } from './api/benefit-types';
@@ -172,6 +173,7 @@ app.use('/platform/workout-templates', requireAuth(), platformWorkoutTemplatesRo
 app.use('/platform/training-plan-templates', requireAuth(), platformTrainingPlanTemplatesRouter);
 app.use('/platform', requireAuth(), platformRouter);
 app.use('/platform/superadmins', requireAuth(), superadminsRouter);
+app.use('/platform/orphaned-accounts', requireAuth(), orphanedAccountsRouter);
 app.use('/platform/impersonation', requireAuth(), impersonationRouter);
 app.use('/platform/feature-flags', requireAuth(), platformFeatureFlagsRouter);
 // #636: Payment Providers are Cordel-level configuration — no tenantContext,
