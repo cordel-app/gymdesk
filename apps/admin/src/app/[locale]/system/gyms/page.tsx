@@ -102,7 +102,7 @@ export default function SystemGymsPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { isSuperadmin, setActiveGymId, refreshGyms, loading: gymLoading } = useGym();
+  const { isSuperadmin, refreshGyms, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
   const [gyms, setGyms] = useState<Gym[]>([]);
@@ -245,13 +245,6 @@ export default function SystemGymsPage() {
       setDeleting(null);
       toast(err.message ?? t('error_generic'));
     }
-  }
-
-  // ─── Manage ──────────────────────────────────────────────────────────────────
-
-  function handleManage(gymId: string) {
-    setActiveGymId(gymId);
-    router.push(`/${locale}/members`);
   }
 
   // ─── Storage (#417) ─────────────────────────────────────────────────────────
@@ -491,10 +484,6 @@ export default function SystemGymsPage() {
 
             <SectionHeader title={t('section_notes')} />
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('notes_placeholder')}</p>
-
-            <div style={{ marginTop: 12 }}>
-              <button onClick={() => handleManage(gym.id)} style={btnSmall('#444')}>Manage</button>
-            </div>
           </div>
         )}
       </div>
