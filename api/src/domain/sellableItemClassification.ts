@@ -34,3 +34,17 @@ export function benefitTableForCategory(category: SellableItemBenefitCategory): 
     case 'periodical': return 'promotion_periodical';
   }
 }
+
+/**
+ * Table (migration 173) that holds Membership Plan benefits for a given
+ * category — #635 stage 1 gives a Plan the same three sections a Promotion has,
+ * classified by the same `classifySellableItem()` above so an item can never
+ * land in a different section depending on which entity it is attached to.
+ */
+export function planBenefitTableForCategory(category: SellableItemBenefitCategory): string {
+  switch (category) {
+    case 'session': return 'membership_plan_session';
+    case 'oneoff': return 'membership_plan_oneoff';
+    case 'periodical': return 'membership_plan_periodical';
+  }
+}

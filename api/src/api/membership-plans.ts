@@ -8,6 +8,11 @@ import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { computeBillingForecast } from '../domain/billingForecast';
+import {
+  classifySellableItem,
+  planBenefitTableForCategory,
+  SellableItemBenefitCategory,
+} from '../domain/sellableItemClassification';
 
 interface PlanRow {
   id: number;
@@ -19,6 +24,11 @@ interface PlanRow {
   member_limit: '1' | '2' | 'family';
   tax_rate_id: number | null;
   tax_behavior: 'inclusive' | 'exclusive';
+  // #635 §7 — Billing & Duration, the same free/paid/bonus a Promotion carries.
+  // Nullable: "never configured" stays distinguishable from an explicit 0.
+  free_months: number | null;
+  paid_months: number | null;
+  bonus_months: number | null;
   created_by: number | null;
   created_by_name?: string | null;
   modified_at: string | null;
@@ -76,6 +86,22 @@ interface ChargeBenefitRow {
   value: string | null;
 }
 
+// #635 stage 1: one row of a Plan's Session / One-off / Period Benefits
+// (migration 173). `gym_charge_*` comes from the join, so an item that has
+// since gone inactive still resolves to its real name and status instead of a
+// bare id — same shape the Promotion benefit endpoints return.
+interface PlanSellableItemBenefitRow {
+  id: number;
+  gym_id: string;
+  membership_plan_id: number;
+  gym_charge_id: number;
+  quantity: number;
+  gym_charge_name: string;
+  gym_charge_type: string;
+  gym_charge_billing_frequency: string | null;
+  gym_charge_status: string;
+}
+
 interface SellableItemRow {
   id: number;
   gym_id: string;
@@ -97,6 +123,20 @@ export const membershipPlansRouter = Router();
 const VALID_MEMBER_LIMIT = ['1', '2', 'family'];
 const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'];
 
+// #635 §7: Billing & Duration, with the Promotion's semantics (migration 102) —
+// whole months, never negative. Sent together by the section's own Save, and an
+// empty field clears the value back to "not configured" rather than writing 0.
+const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
+
+/** null = absent (leave as is), or a parsed non-negative integer. Throws the error string for a bad value. */
+function parseDurationMonths(raw: unknown, field: string): number | null | string {
+  if (raw === undefined) return null;
+  if (raw === null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+  if (!Number.isInteger(n) || n < 0) return `${field} must be a non-negative integer`;
+  return n;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getCallerMembershipId(req: Request): Promise<number | null> {
@@ -111,7 +151,8 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems, taxRateRows, promotionCount] = await Promise.all([
+  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems, taxRateRows, promotionCount,
+         sessionBenefits, oneoffBenefits, periodicalBenefits] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
       [plan.id, gymId],
@@ -174,6 +215,15 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
        WHERE pmp.membership_plan_id = ? AND pmp.gym_id = ? AND p.deleted_at IS NULL`,
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
+    // #635 stage 1: the three Sellable-Item-keyed Benefit sections (migration
+    // 173), served with the plan so the Plans page renders them without three
+    // extra round trips per card — same reason `sellable_items` is inlined above.
+    ...(['session', 'oneoff', 'periodical'] as SellableItemBenefitCategory[]).map(category =>
+      db.query<PlanSellableItemBenefitRow>(
+        selectPlanSellableItemBenefits(planBenefitTableForCategory(category)),
+        [plan.id, gymId],
+      ).then(r => r.rows),
+    ),
   ]);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -239,6 +289,9 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     member_count: memberCount,
     promotion_count: promotionCount,
     charge_benefits: chargeBenefits,
+    session_benefits: sessionBenefits,
+    oneoff_benefits: oneoffBenefits,
+    periodical_benefits: periodicalBenefits,
     sellable_items: sellableItems,
     tax_rate_name: taxRate ? taxRate.name : null,
     tax_rate_percent: taxRate ? taxRate.rate_percent : null,
@@ -363,6 +416,15 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   if (member_limit !== undefined && !VALID_MEMBER_LIMIT.includes(member_limit)) {
     return res.status(400).json({ error: 'member_limit must be one of: 1, 2, family' });
   }
+  // #635 §7: Billing & Duration. Each field is independently optional — the
+  // section's Save sends all three, but a caller touching only `name` must not
+  // have the plan's duration wiped, hence the "field present in body" gate below.
+  const durations: Record<string, number | null> = {};
+  for (const field of DURATION_FIELDS) {
+    const parsed = parseDurationMonths(req.body[field], field);
+    if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
+    durations[field] = parsed;
+  }
   // Shrinking the cap must not orphan Members already covered by an active
   // Membership on this plan (#374 — the limit is enforced server-side).
   if (member_limit && member_limit !== 'family') {
@@ -394,6 +456,9 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         member_limit      = COALESCE(?, member_limit),
         tax_rate_id       = COALESCE(?, tax_rate_id),
         tax_behavior      = COALESCE(?, tax_behavior),
+        free_months       = IF(?, ?, free_months),
+        paid_months       = IF(?, ?, paid_months),
+        bonus_months      = IF(?, ?, bonus_months),
         modified_at       = NOW(),
         modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -405,6 +470,12 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         member_limit ?? null,
         tax_rate_id != null ? Number(tax_rate_id) : null,
         tax_behavior ?? null,
+        // COALESCE can't express "clear this back to NULL", which Billing &
+        // Duration needs — an emptied field means "not configured", not 0. The
+        // IF(present, value, current) pair writes only the fields actually sent.
+        'free_months' in req.body ? 1 : 0, durations.free_months,
+        'paid_months' in req.body ? 1 : 0, durations.paid_months,
+        'bonus_months' in req.body ? 1 : 0, durations.bonus_months,
         callerMemberId,
         req.params.id, gymId,
       ],
@@ -560,9 +631,13 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
     const newPlanId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO membership_plans
-         (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior, created_by)
-         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?)`,
-        [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, orig.tax_rate_id, orig.tax_behavior, callerMemberId],
+         (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior,
+          free_months, paid_months, bonus_months, created_by)
+         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, orig.tax_rate_id, orig.tax_behavior,
+         // #635: Billing & Duration is part of the plan's commercial config, so
+         // a copy that dropped it would quietly differ from its original.
+         orig.free_months ?? null, orig.paid_months ?? null, orig.bonus_months ?? null, callerMemberId],
       );
 
       // Copy billing policy
@@ -640,6 +715,23 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
           'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
           [gymId, insertId, cb.gym_charge_id, cb.action, cb.value],
         );
+      }
+
+      // #635 stage 1: Session / One-off / Period Benefits. `created_by_membership_id`
+      // records who made the copy, not who configured the original.
+      for (const category of ['session', 'oneoff', 'periodical'] as SellableItemBenefitCategory[]) {
+        const table = planBenefitTableForCategory(category);
+        const { rows: benefits } = await tx.query(
+          `SELECT gym_charge_id, quantity FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`,
+          [req.params.id, gymId],
+        );
+        for (const b of benefits) {
+          await tx.query(
+            `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity, created_by_membership_id)
+             VALUES (?, ?, ?, ?, ?)`,
+            [gymId, insertId, b.gym_charge_id, b.quantity, callerMemberId],
+          );
+        }
       }
 
       return insertId;
@@ -1252,3 +1344,118 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
     next(err);
   }
 });
+
+// ─── Session / One-off / Period Benefits (#635 stage 1) ───────────────────────
+// The same three Sellable-Item-keyed sections a Promotion has had since #550,
+// now on the Membership Plan itself (migration 173). Deliberately a copy of the
+// Promotion contract in `promotion-details.ts` rather than a new one — the
+// ticket asks for sections that "behave like the existing ... Benefits in
+// Promotions", and the admin editors are shared, so the payload
+// (`{ items: [{ gym_charge_id, quantity }] }`, replace-all) and every rejection
+// must match what the Promotion endpoints already do.
+//
+// These are additive: nothing bills off them yet. Included Services
+// (`plan_allowances`) and Charge Benefits (`plan_charge_benefits`) stay exactly
+// where they are until stage 4 retires them, so no existing plan changes shape.
+
+function selectPlanSellableItemBenefits(table: string): string {
+  return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
+                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status
+          FROM ${table} b
+          JOIN gym_charges gc ON gc.id = b.gym_charge_id
+          WHERE b.membership_plan_id = ? AND b.gym_id = ?
+          ORDER BY gym_charge_name ASC`;
+}
+
+const PLAN_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
+  { path: 'session-benefits', category: 'session' },
+  { path: 'oneoff-benefits', category: 'oneoff' },
+  { path: 'periodical-benefits', category: 'periodical' },
+];
+
+for (const { path, category } of PLAN_BENEFIT_ROUTES) {
+  const table = planBenefitTableForCategory(category);
+
+  membershipPlansRouter.get(`/:id/${path}`, async (req, res, next) => {
+    const { gymId } = getTenantContext(req);
+    try {
+      if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+      const { rows } = await db.query(selectPlanSellableItemBenefits(table), [req.params.id, gymId]);
+      res.json(rows);
+    } catch (err) { next(err); }
+  });
+
+  membershipPlansRouter.put(`/:id/${path}`, requireRole('admin'), async (req, res, next) => {
+    const { gymId } = getTenantContext(req);
+    const planId = parseInt(String(req.params.id), 10);
+    const { items } = req.body;
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
+    if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
+
+    const gymChargeIds: number[] = [];
+    const seen = new Set<number>();
+    for (const item of items) {
+      const gymChargeId = parseInt(item.gym_charge_id, 10);
+      const quantity = parseInt(item.quantity, 10);
+      if (!Number.isInteger(gymChargeId) || gymChargeId <= 0) {
+        return res.status(400).json({ error: 'gym_charge_id is required' });
+      }
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({ error: 'quantity must be a positive integer' });
+      }
+      if (seen.has(gymChargeId)) {
+        return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
+      }
+      seen.add(gymChargeId);
+      gymChargeIds.push(gymChargeId);
+    }
+
+    if (gymChargeIds.length > 0) {
+      // Only *newly* selected items must be active — an item already attached to
+      // this plan stays selectable after it goes inactive elsewhere, so an
+      // unrelated catalog change never 400s the whole save or silently drops a
+      // pre-existing selection. Same rule as the Promotion benefits and
+      // Suitable Membership Plans.
+      const { rows: existingAssoc } = await db.query(
+        `SELECT gym_charge_id FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`,
+        [planId, gymId],
+      );
+      const existingIds = new Set<number>(existingAssoc.map((r: any) => r.gym_charge_id));
+
+      const placeholders = gymChargeIds.map(() => '?').join(',');
+      const { rows: sellableItems } = await db.query(
+        `SELECT id, type, billing_frequency, status FROM gym_charges
+         WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
+        [gymId, ...gymChargeIds],
+      );
+      if (sellableItems.length !== gymChargeIds.length) {
+        return res.status(400).json({ error: 'One or more Sellable Items not found in this gym' });
+      }
+      const newlyInactive = sellableItems.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
+      if (newlyInactive) {
+        return res.status(400).json({ error: `Sellable Item ${newlyInactive.id} is not active in this gym` });
+      }
+      const mismatched = sellableItems.find((si: any) => classifySellableItem(si) !== category);
+      if (mismatched) {
+        return res.status(400).json({ error: `Sellable Item ${mismatched.id} does not belong in the '${category}' category` });
+      }
+    }
+
+    const callerMemberId = await getCallerMembershipId(req);
+    try {
+      await db.transaction(async (tx) => {
+        await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
+        for (const item of items) {
+          await tx.query(
+            `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity, created_by_membership_id)
+             VALUES (?, ?, ?, ?, ?)`,
+            [gymId, planId, parseInt(item.gym_charge_id, 10), parseInt(item.quantity, 10), callerMemberId],
+          );
+        }
+      });
+      recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: planId, next: { [`${category}_benefits`]: items } });
+      const { rows } = await db.query(selectPlanSellableItemBenefits(table), [planId, gymId]);
+      res.json(rows);
+    } catch (err) { next(err); }
+  });
+}
