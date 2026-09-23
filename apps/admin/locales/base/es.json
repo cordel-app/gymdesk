@@ -1247,12 +1247,39 @@
       "revoke": "Revocar",
       "revoke_invite": "Revocar invitación",
       "link": "Vincular",
-      "status_change": "Cambio de estado"
+      "status_change": "Cambio de estado",
+      "activate": "Activar",
+      "add_member": "Añadir socio",
+      "add_service": "Añadir servicio",
+      "approve": "Aprobar",
+      "assign_new_plan": "Asignar nuevo plan",
+      "assign_plan": "Asignar plan",
+      "book_recurring_slots": "Reservar franjas recurrentes",
+      "clone": "Clonar",
+      "close": "Cerrar",
+      "complete": "Completar",
+      "deactivate": "Desactivar",
+      "duplicate": "Duplicar",
+      "extend_expiration": "Ampliar caducidad",
+      "issue_receipt": "Emitir recibo",
+      "manual_payment": "Pago manual",
+      "refund_credit": "Reembolsar crédito",
+      "reject": "Rechazar",
+      "remove_member": "Quitar socio",
+      "remove_service": "Quitar servicio",
+      "restore": "Restaurar",
+      "retry_payment": "Reintentar pago",
+      "update_recurring_slots": "Actualizar franjas recurrentes",
+      "waive": "Condonar",
+      "impersonation_started": "Suplantación iniciada",
+      "impersonation_ended": "Suplantación finalizada"
     },
     "source": {
       "admin": "Administrador",
       "employee": "Empleado",
-      "customer": "Cliente"
+      "customer": "Cliente",
+      "system": "Sistema",
+      "provider": "Proveedor"
     }
   },
   "workouts": {

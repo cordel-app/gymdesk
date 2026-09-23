@@ -8,6 +8,11 @@ export const AUDIT_ACTIONS: string[] = [
   'impersonation_started', 'impersonation_ended',
   // #640: manual financial interventions on a Billing Event.
   'retry_payment', 'manual_payment',
+  // Written by recordAudit() across the API but missing from the filter list.
+  'activate', 'deactivate', 'approve', 'reject', 'restore', 'duplicate', 'clone',
+  'close', 'complete', 'waive', 'extend_expiration', 'issue_receipt', 'refund_credit',
+  'assign_plan', 'assign_new_plan', 'add_member', 'remove_member', 'add_service', 'remove_service',
+  'book_recurring_slots', 'update_recurring_slots',
 ];
 
 interface SimpleEntity {
