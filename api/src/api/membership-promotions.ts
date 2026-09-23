@@ -130,6 +130,50 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
   };
 }
 
+// #635 stage 2 — the Sellable Items a Promotion grants, frozen onto the
+// application the moment it is applied.
+//
+// Migration 156 created these three tables for exactly this and left them
+// unwritten ("the assignment flow that populates these is out of scope for
+// this ticket"), with only the item's name and quantity. Migration 174 adds
+// the pricing columns, because a name and a quantity cannot reproduce a
+// charge: §16/§17 require that repricing a Sellable Item, or editing the
+// Promotion's benefits, leave an already-applied Promotion alone.
+//
+// `gym_charges` is joined without a `deleted_at` filter (as everywhere else a
+// snapshot is taken) so an item retired later still reads back with its real
+// name and price rather than disappearing from the record. `gym_charge_name`
+// is NOT NULL while `gym_charges.name`/`.type` are nullable (a system charge
+// displays under its `charge_types` name), so both resolve the same fallback
+// `assigned-plan-snapshot.ts` and migration 174 use — otherwise applying a
+// Promotion that grants a system item would fail on the insert.
+const PROMOTION_GRANT_SNAPSHOTS: { source: string; target: string }[] = [
+  { source: 'promotion_session', target: 'user_membership_promotion_session_snapshot' },
+  { source: 'promotion_oneoff', target: 'user_membership_promotion_oneoff_snapshot' },
+  { source: 'promotion_periodical', target: 'user_membership_promotion_periodical_snapshot' },
+];
+
+async function snapshotPromotionGrants(
+  tx: Tx, gymId: string, userMembershipPromotionId: number, promotionId: number,
+): Promise<void> {
+  for (const { source, target } of PROMOTION_GRANT_SNAPSHOTS) {
+    await tx.query(
+      `INSERT INTO ${target}
+         (gym_id, user_membership_promotion_id, gym_charge_id, gym_charge_name, quantity,
+          item_type, item_billing_frequency, unit_price, currency)
+       SELECT ?, ?, b.gym_charge_id,
+              COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)), b.quantity,
+              COALESCE(gc.type, 'other'), gc.billing_frequency,
+              COALESCE(gc.amount, 0), gc.currency
+       FROM ${source} b
+       JOIN gym_charges gc ON gc.id = b.gym_charge_id
+       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+       WHERE b.promotion_id = ? AND b.gym_id = ?`,
+      [gymId, userMembershipPromotionId, promotionId, gymId],
+    );
+  }
+}
+
 // Merges a row's `snapshot` (if present — only populated going forward, see
 // migration 149) over its live-joined promotion fields, so historically
 // applied promotions display what was actually granted rather than the
@@ -313,15 +357,18 @@ export async function applyPromotionToMembership(
     }
 
     const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
+    let applicationId: number;
     try {
-      await tx.query(
+      const { insertId } = await tx.query(
         "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', ?)",
         [gymId, umId, promotionId, userId, snapshot != null ? JSON.stringify(snapshot) : null],
       );
+      applicationId = insertId;
     } catch (e: any) {
       if (e.code === 'ER_DUP_ENTRY') throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
       throw e;
     }
+    await snapshotPromotionGrants(tx, gymId, applicationId, promotionId);
 
     const calc = await computeFinalPrice(tx, gymId, umId);
     if (!calc) throw Object.assign(new Error('Recompute failed'), { status: 500 });
@@ -408,15 +455,18 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
 
       // Insert row (unique constraint catches double-apply)
       const snapshot = await buildPromotionSnapshot(tx, gymId, promotion_id);
+      let applicationId: number;
       try {
-        await tx.query(
+        const { insertId } = await tx.query(
           "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', ?)",
           [gymId, umId, promotion_id, userId, snapshot != null ? JSON.stringify(snapshot) : null],
         );
+        applicationId = insertId;
       } catch (e: any) {
         if (e.code === 'ER_DUP_ENTRY') throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
         throw e;
       }
+      await snapshotPromotionGrants(tx, gymId, applicationId, Number(promotion_id));
 
       // Recompute final_price
       const calc = await computeFinalPrice(tx, gymId, umId);
