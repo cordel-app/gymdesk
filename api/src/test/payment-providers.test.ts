@@ -85,7 +85,7 @@ beforeAll(async () => {
      FROM payment_providers
      WHERE is_default = 1 AND deleted_at IS NULL LIMIT 1`,
   );
-  // Migration 174 seeds it; without it createTestGym cannot insert a gym at all.
+  // Migration 175 seeds it; without it createTestGym cannot insert a gym at all.
   expect(rows).toHaveLength(1);
   seeded = { ...rows[0], id: Number(rows[0].id) };
 

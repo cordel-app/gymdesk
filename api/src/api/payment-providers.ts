@@ -11,7 +11,7 @@ import {
 /**
  * #636: Payment Providers as Cordel-level (platform-wide) configuration.
  *
- * Superadmin-only CRUD over the `payment_providers` catalogue (migration 174).
+ * Superadmin-only CRUD over the `payment_providers` catalogue (migration 175).
  * A row says *which* adapter a gym transacts through (`provider_key`, the key
  * `getPaymentProvider()` switches on) and never how to authenticate as it —
  * credentials stay in the API's environment, so nothing here is a secret.

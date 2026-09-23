@@ -18,7 +18,7 @@ export async function createTestGym(name = 'Test Gym'): Promise<string> {
   const slug = `test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   // #636: gyms.payment_provider_id is NOT NULL — take the platform default,
   // resolved with the same predicate as the router's
-  // resolveDefaultPaymentProviderId() (seeded by migration 174). Looked up
+  // resolveDefaultPaymentProviderId() (seeded by migration 175). Looked up
   // first so a database with no default says so, instead of inserting zero rows
   // and failing one line later on `rows[0].id`.
   const { rows: providerRows } = await db.query<{ id: number }>(

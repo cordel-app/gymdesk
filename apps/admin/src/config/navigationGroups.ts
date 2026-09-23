@@ -218,7 +218,7 @@ export const navigationGroups: NavGroup[] = [
       },
       // #636: Payment Providers moved to the Cordel group — they are platform-wide
       // configuration, and a gym only picks one of them. Its `financials.payment_providers`
-      // feature flag is dropped by migration 174.
+      // feature flag is dropped by migration 175.
     ],
   },
   {

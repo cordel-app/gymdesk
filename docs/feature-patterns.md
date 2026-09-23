@@ -696,7 +696,7 @@ When a ticket says an instantiated record is *its own contract* — an Assigned 
 - **Split writing from reading across two PRs.** Stage 2 writes the snapshot and serves it additively; the cutover that makes billing *read* it — with the fallback above and a regression test per row of the ticket's "must NOT change" table — is its own change. Nothing an existing record bills moves on the day the tables land.
 - **Backfill rather than delete**, when the values are recoverable: the backfill writes down what those rows already resolved to live, so behaviour is unchanged, and history survives. Guard every backfill statement on `IS NULL` so a re-run is a no-op.
 
-Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 174 + `snapshotPromotionGrants()` in `api/src/api/membership-promotions.ts`.
+Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 175 + `snapshotPromotionGrants()` in `api/src/api/membership-promotions.ts`.
 
 ---
 
@@ -765,7 +765,7 @@ of the relation is the FK column on `gyms`.
   instead of writing the NULL that would abort the `MODIFY` half-way. Guard the `MODIFY` on
   `information_schema` too — it rebuilds the table, and a re-run must not pay for it twice.
 
-Reference implementation: `api/src/api/payment-providers.ts` + migration 174 +
+Reference implementation: `api/src/api/payment-providers.ts` + migration 175 +
 `apps/admin/src/app/[locale]/cordel/payment-providers/page.tsx`, with the gym-side field in
 `apps/admin/src/app/[locale]/system/gyms/page.tsx`.
 

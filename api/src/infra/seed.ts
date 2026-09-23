@@ -14,7 +14,7 @@ async function seed() {
   });
   console.log('✓ Set platform_role=superadmin for seed user');
 
-  // #636: gyms.payment_provider_id is NOT NULL — migration 174 seeds the
+  // #636: gyms.payment_provider_id is NOT NULL — migration 175 seeds the
   // platform default, so a migrated database always has one to hand.
   const { rows: [defaultProvider] } = await db.query<{ id: number }>(
     `SELECT id FROM payment_providers WHERE is_default = 1 AND deleted_at IS NULL LIMIT 1`,

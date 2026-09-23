@@ -68,9 +68,8 @@
  * default, which is the state on every environment today — see
  * `docs/go-to-production.md` before rolling this back with real assignments.
  *
- * Migration number: 174 is also taken by the in-flight #635 stage 2 branch
- * (a different file name, so knex runs both in name order — the repo already
- * carries duplicate numbers from parallel agents, e.g. two 067s).
+ * Migration number: this was 174 while #635 stage 2 was still in review; it was
+ * renumbered to 175 when that branch merged and took 174.
  */
 
 const TABLE = 'payment_providers';
@@ -169,7 +168,7 @@ exports.up = async (knex) => {
         [
           SEED_PROVIDER_NAME,
           SEED_PROVIDER_KEY,
-          'Seeded by migration 174 (#636). Credentials come from the API environment (MONEI_API_KEY / MONEI_WEBHOOK_SECRET).',
+          'Seeded by migration 175 (#636). Credentials come from the API environment (MONEI_API_KEY / MONEI_WEBHOOK_SECRET).',
         ],
       );
     }
