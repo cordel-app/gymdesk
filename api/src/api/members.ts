@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
+import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
@@ -41,12 +42,9 @@ async function resolveMemberCenters(
     if (rows.length !== new Set(ids).size) return { error: 'One or more center_ids are invalid for this gym' };
     return { ids, defaultId };
   }
-  const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
-    [gymId],
-  );
-  if (rows.length === 1) return { ids: [rows[0].id], defaultId: rows[0].id };
-  return { error: 'default_center_id is required — this gym has multiple centers' };
+  const soleId = await soleActiveCenterId(gymId);
+  if (soleId != null) return { ids: [soleId], defaultId: soleId };
+  return { error: 'default_center_id is required as the gym has more than one center' };
 }
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });

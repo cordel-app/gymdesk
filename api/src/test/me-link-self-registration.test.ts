@@ -276,6 +276,20 @@ describe('POST /me/link — website self-registration (#599)', () => {
     expect(mc[0]).toMatchObject({ center_id: centerId, is_default: 1 });
   });
 
+  it('an inactive center_id in the metadata is treated like a deleted one — falls back to the active center', async () => {
+    const closedCenter = await insertCenter(gymId, 'Deactivated Center');
+    await db.query("UPDATE centers SET status = 'inactive' WHERE id = ? AND gym_id = ?", [closedCenter, gymId]);
+    const email = uniqueEmail('inactivecenter');
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: closedCenter }));
+
+    const res = await link(gymId);
+
+    expect(res.status).toBe(201);
+    const { rows: mc } = await db.query<any>('SELECT center_id, is_default FROM member_centers WHERE member_id = ?', [res.body.id]);
+    expect(mc).toHaveLength(1);
+    expect(mc[0]).toMatchObject({ center_id: centerId, is_default: 1 });
+  });
+
   it("another gym's center_id in the metadata is never used", async () => {
     const otherGym = await newGym('Self Reg Foreign Center');
     const foreignCenter = await insertCenter(otherGym);

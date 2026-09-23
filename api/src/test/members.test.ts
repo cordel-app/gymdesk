@@ -927,6 +927,34 @@ describe('POST /members — nif_nie_passport', () => {
   });
 });
 
+describe('POST /members — default center ignores inactive centers', () => {
+  let gymId: string;
+  let activeCenter: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members Inactive Center Gym');
+    await createTestMembership(gymId, 'admin');
+    const { insertId } = await db.query(`INSERT INTO centers (gym_id, name) VALUES (?, 'Main Center')`, [gymId]);
+    activeCenter = insertId as number;
+    await db.query(`INSERT INTO centers (gym_id, name, status) VALUES (?, 'Closed Center', 'inactive')`, [gymId]);
+  });
+
+  it('assigns the sole active center when the gym also has an inactive one', async () => {
+    const res = await request
+      .post('/members')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Inactive Center Member', email: `inactive-center-${Date.now()}@test.com` });
+    expect(res.status).toBe(201);
+
+    const { rows } = await db.query<{ center_id: number }>(
+      'SELECT center_id FROM member_centers WHERE member_id = ? AND gym_id = ? AND is_default = 1',
+      [res.body.id, gymId],
+    );
+    expect(rows.map((r) => r.center_id)).toEqual([activeCenter]);
+  });
+});
+
 describe('PUT /members/:id — nif_nie_passport', () => {
   let gymId: string;
   let memberId: number;

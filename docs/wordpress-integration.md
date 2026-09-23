@@ -197,7 +197,7 @@ curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" 
 |-------|----------|-------|
 | `name` | yes | Up to 255 characters. |
 | `email` | yes | |
-| `center_id` | only for gyms with more than one center | The center the member joins. |
+| `center_id` | only for gyms with more than one active center | The center the member joins. An inactive center is treated as non-existent: it is rejected like an unknown id and never counts towards "more than one center". |
 | `locale` | no | `en`, `es` or `ca` — language of the page the invitation link opens. Defaults to `en`. |
 
 | Status | Meaning |
@@ -232,6 +232,6 @@ Any other name, or a non-empty email, is a real registration — including the n
 | Symptom | Cause |
 |---------|-------|
 | Always "Something went wrong" | Check the PHP error log for `Gymdesk registration failed`. `HTTP 401` = wrong key, or the gym id in the URL does not match the gym that owns the key. Run the health check above to tell the two apart from the key's own behaviour. |
-| `HTTP 400 … center_id is required` | The gym has several centers — pass the center id as the third argument of `gymdesk_register_member()`. |
+| `HTTP 400 … center_id is required as the gym has more than one center` | The gym has several active centers (inactive ones don't count) — pass the center id as the third argument of `gymdesk_register_member()`. |
 | Form works once, then always fails | The page is cached. Exclude it from the page cache. |
 | "Check your inbox" but no email | The address is already a member, a staff login, already invited, or already has an account. This is reported as success on purpose. Check the spam folder, then the Members page in the admin app. |
