@@ -247,7 +247,20 @@
     "col_modified_at": "Modified at",
     "unsaved_changes": "You have unsaved changes. Discard them?",
     "unsaved_discard": "Discard changes",
-    "section_additional_services": "Additional Periodic Services"
+    "section_additional_services": "Additional Periodic Services",
+    "section_pt_slots": "Personal Training Class Slots",
+    "pt_slots_loading": "Loading slots…",
+    "pt_slots_error": "Could not load Personal Training slots.",
+    "pt_slots_no_services": "This member holds no Professional Service sessions, so no slots are eligible.",
+    "pt_slots_none": "No recurring slots available for this member in the next 2 months.",
+    "pt_slots_window": "Recurring weekly availability, {from} → {to}",
+    "pt_slots_available_count": "{available} of {total} dates free",
+    "pt_slots_already_booked_count": "{count} already booked",
+    "pt_slots_status_available": "Free",
+    "pt_slots_status_no_occurrence": "Not scheduled",
+    "pt_slots_status_not_scheduled": "Cancelled",
+    "pt_slots_status_full": "Full",
+    "pt_slots_status_already_booked": "Booked"
   },
   "member_payments": {
     "title": "Member Payments",

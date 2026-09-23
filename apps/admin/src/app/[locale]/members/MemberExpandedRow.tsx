@@ -10,6 +10,7 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { MemberBillingSimulation } from './MemberBillingSimulation';
+import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { AdditionalPeriodicServices } from '../financials/assigned-plans/AdditionalPeriodicServices';
 import type { AssignedPlanService } from '../financials/assigned-plans/types';
 
@@ -406,6 +407,13 @@ export function MemberExpandedRow({
           a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
       <Section label={t('members.section_billing_simulation')}>
         <MemberBillingSimulation key={simulationKey} memberId={memberId} />
+      </Section>
+
+      {/* Personal Training Class Slots (#647 stage 2) — the Mon–Sun weekly
+          availability grid. Display only in this stage: selection and Book
+          land in stage 3. */}
+      <Section label={t('members.section_pt_slots')}>
+        <MemberPersonalTrainingSlots memberId={memberId} />
       </Section>
 
       {/* Training Plans */}
