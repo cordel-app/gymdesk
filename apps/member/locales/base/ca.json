@@ -291,6 +291,8 @@
     "set_password_hint": "Tria una contrasenya per acabar de configurar el teu compte.",
     "password_label": "Contrasenya",
     "confirm_password_label": "Confirma la contrasenya",
+    "show_password": "Mostra la contrasenya",
+    "hide_password": "Amaga la contrasenya",
     "password_too_short": "La contrasenya ha de tenir com a mínim 8 caràcters.",
     "password_mismatch": "Les contrasenyes no coincideixen.",
     "submit": "Continua",

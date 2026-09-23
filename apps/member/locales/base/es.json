@@ -291,6 +291,8 @@
     "set_password_hint": "Elige una contraseña para terminar de configurar tu cuenta.",
     "password_label": "Contraseña",
     "confirm_password_label": "Confirmar contraseña",
+    "show_password": "Mostrar contraseña",
+    "hide_password": "Ocultar contraseña",
     "password_too_short": "La contraseña debe tener al menos 8 caracteres.",
     "password_mismatch": "Las contraseñas no coinciden.",
     "submit": "Continuar",
