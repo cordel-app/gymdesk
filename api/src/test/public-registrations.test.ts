@@ -312,7 +312,8 @@ describe('POST /public/gyms/:gymRef/registrations — happy path', () => {
     const arg = clerk.createInvitation.mock.calls[0][0];
     expect(arg.emailAddress).toBe(email); // lowercased
     expect(arg.publicMetadata).toEqual({ gym_signup: { gym_id: gymId, name: 'Web Person', center_id: centerId } });
-    expect(arg.redirectUrl.endsWith(`/en/link?gym_id=${gymId}`)).toBe(true);
+    // #701: no locale → Spanish, the Clerk template's fallback, so no lang flag.
+    expect(arg.redirectUrl.endsWith(`/es/link?gym_id=${gymId}`)).toBe(true);
     expect(arg.redirectUrl.startsWith(process.env.CORDEL_FITNESS_MEMBERS_URL ?? '')).toBe(true);
 
     expect(await membersByEmail(email)).toHaveLength(0);
@@ -320,10 +321,21 @@ describe('POST /public/gyms/:gymRef/registrations — happy path', () => {
     expect(gm).toHaveLength(0);
   });
 
-  it("redirects to the requested member-app locale ('es')", async () => {
+  it("redirects to the requested member-app locale ('es') with no lang flag", async () => {
     const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('es'), locale: 'es' });
     expect(res.status).toBe(202);
-    expect(clerk.createInvitation.mock.calls[0][0].redirectUrl.endsWith(`/es/link?gym_id=${gymId}`)).toBe(true);
+    const arg = clerk.createInvitation.mock.calls[0][0];
+    expect(arg.redirectUrl.endsWith(`/es/link?gym_id=${gymId}`)).toBe(true);
+    expect(arg.publicMetadata).not.toHaveProperty('lang');
+  });
+
+  it.each(['ca', 'en'] as const)("locale '%s' → that link page and a lang flag the email template reads", async (locale) => {
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail(`lang-${locale}`), locale });
+    expect(res.status).toBe(202);
+    const arg = clerk.createInvitation.mock.calls[0][0];
+    expect(arg.redirectUrl.endsWith(`/${locale}/link?gym_id=${gymId}`)).toBe(true);
+    expect(arg.publicMetadata.lang).toEqual({ [locale]: true });
+    expect(arg.publicMetadata.gym_signup).toMatchObject({ gym_id: gymId, name: 'Ana' });
   });
 
   it('accepts an explicit center_id on a single-center gym', async () => {
@@ -374,7 +386,7 @@ describe('POST /public/gyms/:gymRef/registrations — never an oracle (always 20
     const arg = clerk.createInvitation.mock.calls[0][0];
     expect(arg.emailAddress).toBe(email);
     expect(arg).not.toHaveProperty('publicMetadata');
-    expect(arg.redirectUrl.endsWith(`/en/link?gym_id=${gymId}`)).toBe(true);
+    expect(arg.redirectUrl.endsWith(`/es/link?gym_id=${gymId}`)).toBe(true);
 
     const rows = await membersByEmail(email);
     expect(rows).toHaveLength(1);
@@ -382,6 +394,18 @@ describe('POST /public/gyms/:gymRef/registrations — never an oracle (always 20
     expect(rows[0].invitation_id).toBe('inv-existing-row');
     expect(rows[0].name).toBe('Added By Staff'); // the website never edits the roster
     expect(rows[0].clerk_user_id).toBeNull();
+  });
+
+  it('existing member row + locale ca → invitation carries only the lang flag, no gym_signup', async () => {
+    const email = uniqueEmail('staffadded-ca');
+    await db.query('INSERT INTO members (name, email, gym_id) VALUES (?, ?, ?)', ['Added By Staff', email, gymId]);
+
+    const res = await register(ref, apiKey, { name: 'Ana', email, locale: 'ca' });
+
+    expect(res.status).toBe(202);
+    const arg = clerk.createInvitation.mock.calls[0][0];
+    expect(arg.publicMetadata).toEqual({ lang: { ca: true } });
+    expect(arg.redirectUrl.endsWith(`/ca/link?gym_id=${gymId}`)).toBe(true);
   });
 
   it('already-invited member → 202 and no second invitation', async () => {

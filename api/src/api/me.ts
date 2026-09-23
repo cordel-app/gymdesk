@@ -383,7 +383,7 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
       }
       // Best-effort: the metadata has done its job. A failure here is harmless —
       // the next /me/link finds the linked row, not the metadata.
-      clerkClient.users.updateUserMetadata(userId, { publicMetadata: { gym_signup: null } })
+      clerkClient.users.updateUserMetadata(userId, { publicMetadata: { gym_signup: null, lang: null } })
         .catch((err: any) => req.log.warn({ userId, message: err.message }, 'Failed to clear gym_signup metadata'));
       req.log.info({ gymId, memberId: created.id }, 'Website registration: member created on first sign-in');
       return res.status(201).json(created);
