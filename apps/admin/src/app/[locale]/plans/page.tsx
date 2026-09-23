@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
+import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
@@ -1363,10 +1363,9 @@ function DetailRow({ label, value, description }: { label: string; value: React.
 // for the not-yet-saved "new plan" row, mirroring Promotions' "new" row treatment
 // (existing rows keep a plain border while being edited).
 const cardStyle = (highlighted: boolean): React.CSSProperties => ({
-  border: highlighted ? '1px solid #6c63ff' : '1px solid var(--gd-card-border, #e2e2e6)',
-  borderRadius: 8,
+  ...cardSurfaceStyle,
+  ...(highlighted ? { border: '1px solid #6c63ff' } : {}),
   overflow: 'hidden',
-  background: 'var(--gd-card-bg, #ffffff)',
 });
 
 const rowStyle: React.CSSProperties = {

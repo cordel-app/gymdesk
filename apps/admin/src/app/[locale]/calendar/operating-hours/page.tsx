@@ -9,7 +9,7 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
+import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -471,9 +471,7 @@ function SectionHeader({ title }: { title: string }) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const cardStyle: React.CSSProperties = {
-  border: '1px solid #e2e2e6', borderRadius: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)',
-};
+const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
 
 const colHeaderStyle: React.CSSProperties = {
   display: 'flex', padding: '6px 16px', gap: 10,

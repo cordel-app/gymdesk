@@ -14,7 +14,7 @@ import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
+import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 
@@ -1230,9 +1230,7 @@ function ModalDetail({ label, value }: { label: string; value: string }) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const cardStyle: React.CSSProperties = {
-  border: '1px solid #e2e2e6', borderRadius: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)',
-};
+const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
 
 const rowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',

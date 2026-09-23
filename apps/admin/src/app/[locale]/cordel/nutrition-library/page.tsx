@@ -9,7 +9,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnStyle, btnSmall, cardSurfaceStyle } from '@/components/ui';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
@@ -529,10 +529,9 @@ function qualityCheckboxLabel(checked: boolean): React.CSSProperties {
 }
 
 const cardStyle = (highlighted: boolean): React.CSSProperties => ({
-  border: highlighted ? '1.5px solid #4b45c6' : '1px solid var(--gd-card-border, #ececf0)',
-  borderRadius: 10,
+  ...cardSurfaceStyle,
+  ...(highlighted ? { border: '1.5px solid #4b45c6' } : {}),
   overflow: 'hidden',
-  background: 'var(--gd-card-bg, #ffffff)',
   marginBottom: 12,
 });
 

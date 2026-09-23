@@ -14,6 +14,7 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
+import { cardSurfaceStyle } from '@/components/ui';
 
 interface MembershipPlanCard {
   id: number;
@@ -101,9 +102,4 @@ const gridStyle: React.CSSProperties = {
   gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
 };
 
-const cardStyle: React.CSSProperties = {
-  border: '1px solid var(--gd-card-border, #e2e2e6)',
-  borderRadius: 10,
-  background: 'var(--gd-card-bg, #ffffff)',
-  padding: '20px 22px',
-};
+const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, padding: '20px 22px' };

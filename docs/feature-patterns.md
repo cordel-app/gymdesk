@@ -567,6 +567,24 @@ A widget the app doesn't own (FullCalendar today) is themed through the same `th
 
 ---
 
+## Themed Card Surface (#677)
+
+A card in the admin app never declares its own border or corner radius — it spreads `cardSurfaceStyle` from `apps/admin/src/components/ui.tsx`:
+
+```tsx
+const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
+// highlighted / being edited: keep the themed radius, override only the border
+const cardStyle = (editing: boolean): React.CSSProperties => ({
+  ...cardSurfaceStyle,
+  ...(editing ? { border: '1.5px solid #4b45c6' } : {}),
+  overflow: 'hidden',
+});
+```
+
+It carries the three themed properties (`--gd-card-border`, `--gd-card-radius`, `--gd-card-bg`), each with its default token value as the CSS fallback, so the Theme editor's **Card Border** and **Card Border Radius** move every card at once. Two rules make that hold: an advanced attribute is only configurable if `applyTokens()` maps it to a variable (add it to `CARD_ADVANCED_VARS`, never a one-off `setProperty`), and a card that restates `borderRadius` or a literal border colour silently opts out of the theme — `apps/admin/src/test/theme-card-css.test.ts` scans every `.tsx` for that and fails.
+
+---
+
 ## Dependency Awareness (shared catalog entities)
 
 Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:

@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
-import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
+import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { PROFILE_ROLE_MAP } from '@/config/permissions';
 
@@ -781,7 +781,7 @@ export default function StaffPage() {
     menuItems.push({ label: t('action_delete'), onClick: () => setDeleting(member), danger: true, disabled: !canWrite, title: readOnlyTitle });
 
     return (
-      <div key={member.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
+      <div key={member.id} style={{ ...cardSurfaceStyle, marginBottom: 10, overflow: 'hidden' }}>
         <div
           style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
           onClick={() => openExpand(member)}
@@ -845,7 +845,7 @@ export default function StaffPage() {
 
   function renderNewRow() {
     return (
-      <div style={{ border: '2px solid #4c6ef5', borderRadius: 8, marginBottom: 10, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
+      <div style={{ ...cardSurfaceStyle, border: '2px solid #4c6ef5', marginBottom: 10, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', fontWeight: 600, fontSize: 15, color: '#4c6ef5' }}>
           {t('new_member_title')}
         </div>
