@@ -1261,12 +1261,39 @@
       "revoke": "Revoke",
       "revoke_invite": "Revoke invite",
       "link": "Link",
-      "status_change": "Status change"
+      "status_change": "Status change",
+      "activate": "Activate",
+      "add_member": "Add member",
+      "add_service": "Add service",
+      "approve": "Approve",
+      "assign_new_plan": "Assign new plan",
+      "assign_plan": "Assign plan",
+      "book_recurring_slots": "Book recurring slots",
+      "clone": "Clone",
+      "close": "Close",
+      "complete": "Complete",
+      "deactivate": "Deactivate",
+      "duplicate": "Duplicate",
+      "extend_expiration": "Extend expiration",
+      "issue_receipt": "Issue receipt",
+      "manual_payment": "Manual payment",
+      "refund_credit": "Refund credit",
+      "reject": "Reject",
+      "remove_member": "Remove member",
+      "remove_service": "Remove service",
+      "restore": "Restore",
+      "retry_payment": "Retry payment",
+      "update_recurring_slots": "Update recurring slots",
+      "waive": "Waive",
+      "impersonation_started": "Impersonation started",
+      "impersonation_ended": "Impersonation ended"
     },
     "source": {
       "admin": "Admin",
       "employee": "Employee",
-      "customer": "Customer"
+      "customer": "Customer",
+      "system": "System",
+      "provider": "Provider"
     }
   },
   "workouts": {

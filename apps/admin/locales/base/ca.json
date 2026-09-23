@@ -1247,12 +1247,39 @@
       "revoke": "Revocar",
       "revoke_invite": "Revocar invitació",
       "link": "Vincular",
-      "status_change": "Canvi d'estat"
+      "status_change": "Canvi d'estat",
+      "activate": "Activar",
+      "add_member": "Afegir soci",
+      "add_service": "Afegir servei",
+      "approve": "Aprovar",
+      "assign_new_plan": "Assignar pla nou",
+      "assign_plan": "Assignar pla",
+      "book_recurring_slots": "Reservar franges recurrents",
+      "clone": "Clonar",
+      "close": "Tancar",
+      "complete": "Completar",
+      "deactivate": "Desactivar",
+      "duplicate": "Duplicar",
+      "extend_expiration": "Ampliar caducitat",
+      "issue_receipt": "Emetre rebut",
+      "manual_payment": "Pagament manual",
+      "refund_credit": "Reemborsar crèdit",
+      "reject": "Rebutjar",
+      "remove_member": "Treure soci",
+      "remove_service": "Treure servei",
+      "restore": "Restaurar",
+      "retry_payment": "Reintentar pagament",
+      "update_recurring_slots": "Actualitzar franges recurrents",
+      "waive": "Condonar",
+      "impersonation_started": "Suplantació iniciada",
+      "impersonation_ended": "Suplantació finalitzada"
     },
     "source": {
       "admin": "Administrador",
       "employee": "Empleat",
-      "customer": "Client"
+      "customer": "Client",
+      "system": "Sistema",
+      "provider": "Proveïdor"
     }
   },
   "workouts": {

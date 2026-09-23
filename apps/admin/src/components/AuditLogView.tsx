@@ -31,7 +31,7 @@ interface AuditMeta {
 }
 
 const PAGE = 50;
-const SOURCES = ['admin', 'employee', 'customer'];
+const SOURCES = ['admin', 'employee', 'customer', 'system', 'provider'];
 
 /**
  * #66: one audit table, two scopes. 'gym' shows the active gym's events and is
