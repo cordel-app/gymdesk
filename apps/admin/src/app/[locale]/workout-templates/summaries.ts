@@ -1,4 +1,4 @@
-import { isBlockFieldVisible } from './blockFieldConfig';
+import { blockConfigDisplayValue, getBlockConfig } from './blockFieldConfig';
 
 /* Block/exercise shapes shared by the Workout Template tree (#63) and the
  * Training Plan Template tree (#61) — both are fed by JSON_ARRAYAGG hierarchy
@@ -19,20 +19,13 @@ export interface HierBlock {
 
 export type TFn = (key: string, values?: Record<string, any>) => string;
 
-/** Compact block execution summary; only fields relevant to the block type are shown. */
+/** Compact block execution summary: the type, plus its one configuration value (#672). */
 export function blockSummary(b: HierBlock, t: TFn): string {
   const parts: string[] = [t(`workout_template_blocks.type_${b.type.toLowerCase()}`)];
-  if (isBlockFieldVisible(b.type, 'rounds') && b.rounds != null) {
-    parts.push(t('training_plan_templates.summary_rounds', { n: b.rounds }));
-  }
-  if (isBlockFieldVisible(b.type, 'duration_seconds') && b.duration_seconds != null) {
-    parts.push(t('training_plan_templates.summary_min', { n: Math.round(b.duration_seconds / 60) }));
-  }
-  if (isBlockFieldVisible(b.type, 'work_seconds') && b.work_seconds != null) {
-    parts.push(t('training_plan_templates.summary_work', { n: b.work_seconds }));
-  }
-  if (isBlockFieldVisible(b.type, 'rest_seconds') && b.rest_seconds != null) {
-    parts.push(t('training_plan_templates.summary_rest', { n: b.rest_seconds }));
+  const cfg = getBlockConfig(b.type);
+  if (cfg) {
+    const value = blockConfigDisplayValue(cfg, b);
+    if (value != null) parts.push(t(cfg.summaryKey, { n: value }));
   }
   return parts.join(' • ');
 }

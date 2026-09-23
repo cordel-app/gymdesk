@@ -10,7 +10,10 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { HierBlock, HierExercise } from './summaries';
-import { BLOCK_TYPES, isBlockFieldVisible, BLOCK_TYPE_MAX_EXERCISES } from './blockFieldConfig';
+import {
+  BLOCK_TYPES, BLOCK_TYPE_MAX_EXERCISES,
+  blockConfigInput, blockConfigPatch, getBlockConfig,
+} from './blockFieldConfig';
 
 /* Shape returned by GET /workout-templates/:id */
 export interface WtHierarchy {
@@ -269,12 +272,15 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
 
   const [name, setName] = useState(block.name ?? '');
   const [type, setType] = useState(block.type);
-  const [rounds, setRounds] = useState(block.rounds != null ? String(block.rounds) : '');
+  // #672: one configuration input, chosen by block type (Rounds / Minutes / Intervals).
+  const [configInput, setConfigInput] = useState(() => blockConfigInput(block));
 
   // Keep local state in sync when parent hierarchy refreshes
   useEffect(() => { setName(block.name ?? ''); }, [block.name]);
   useEffect(() => { setType(block.type); }, [block.type]);
-  useEffect(() => { setRounds(block.rounds != null ? String(block.rounds) : ''); }, [block.rounds]);
+  useEffect(() => {
+    setConfigInput(blockConfigInput(block));
+  }, [block.type, block.rounds, block.duration_seconds]);
 
   const blockExercises = block.exercises ?? [];
   const maxEx = BLOCK_TYPE_MAX_EXERCISES[type];
@@ -310,7 +316,8 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
     background: 'var(--gd-card-bg, #ffffff)',
   };
 
-  const showRounds = isBlockFieldVisible(type, 'rounds');
+  const config = getBlockConfig(type);
+  const savedConfig = getBlockConfig(block.type);
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -350,29 +357,29 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
                 <option key={ty} value={ty}>{t(`workout_template_blocks.type_${ty.toLowerCase()}`)}</option>
               ))}
             </select>
-            {showRounds && (
+            {config && (
               <>
                 <span style={{ color: '#aaa', fontSize: 13 }}>•</span>
                 <input
                   type="number"
                   min="1"
-                  value={rounds}
-                  onChange={(e) => setRounds(e.target.value)}
-                  onBlur={() => patchBlock({ rounds: rounds ? parseInt(rounds, 10) : null })}
+                  value={configInput}
+                  onChange={(e) => setConfigInput(e.target.value)}
+                  onBlur={() => patchBlock(blockConfigPatch(config, configInput))}
                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                   placeholder="—"
                   style={{ ...headerInput, width: 56, textAlign: 'center' }}
                 />
-                <span style={{ color: '#666', fontSize: 13 }}>{t('training_plan_templates.summary_rounds', { n: '' }).trim()}</span>
+                <span style={{ color: '#666', fontSize: 13 }}>{t(config.labelKey)}</span>
               </>
             )}
           </>
         ) : (
           <span style={{ fontWeight: 600, fontSize: 14 }}>
             {block.name || t(`workout_template_blocks.type_${block.type.toLowerCase()}`)}
-            {showRounds && block.rounds != null && (
+            {savedConfig && blockConfigInput(block) !== '' && (
               <span style={{ fontWeight: 400, color: '#888', fontSize: 12.5, marginLeft: 6 }}>
-                {t(`workout_template_blocks.type_${block.type.toLowerCase()}`)} • {t('training_plan_templates.summary_rounds', { n: block.rounds })}
+                {t(`workout_template_blocks.type_${block.type.toLowerCase()}`)} • {t(savedConfig.summaryKey, { n: blockConfigInput(block) })}
               </span>
             )}
           </span>

@@ -335,27 +335,29 @@ When a form's field visibility (or requiredness) depends on another field in the
 
 ```ts
 // blockFieldConfig.ts
-export const BLOCK_TYPE_FIELDS: Record<string, FieldKey[]> = {
-  Standard: ['result_type', 'rounds'],
-  Circuit: ['result_type', 'rounds', 'work_seconds', 'rest_seconds'],
-  EMOM: ['duration_seconds'],
+export const BLOCK_TYPE_CONFIG: Record<string, BlockConfig | null> = {
+  Standard: null,
+  Circuit: { column: 'rounds', storedPerUnit: 1, labelKey: '…col_rounds', summaryKey: '…summary_rounds' },
+  EMOM: { column: 'duration_seconds', storedPerUnit: 60, labelKey: '…col_minutes', summaryKey: '…summary_min' },
   // ...
 };
-export function isBlockFieldVisible(type: string, field: FieldKey): boolean {
-  return (BLOCK_TYPE_FIELDS[type] ?? []).includes(field);
+export function getBlockConfig(type: string): BlockConfig | null {
+  return BLOCK_TYPE_CONFIG[type] ?? null;
 }
 ```
 
 ```tsx
-{isBlockFieldVisible(form.type, 'rounds') && (
-  <Field label={t('...')}>...</Field>
+const config = getBlockConfig(form.type);
+{config && (
+  <Field label={t(config.labelKey)}>...</Field>
 )}
 ```
 
 Rules of thumb:
 - Keep the map in its own file, imported by every form that needs the same visibility rules — don't duplicate it per component (see Workout Block editors below).
 - Don't clear a field's value in local state when it becomes hidden — a user switching the type back and forth in the same session should see their prior input return. Continue submitting the full form object on save so the backend's normal full-column-overwrite update doesn't clobber a hidden field's previously stored value.
-- Reference implementation: `blockFieldConfig.ts` (also home of the shared `BLOCK_TYPES`/`RESULT_TYPES` constants and `BLOCK_TYPE_MAX_EXERCISES`), used by `workout-templates/BlockModal.tsx` and `members/PlanWorkoutBlocksModal.tsx` (Workout Block "Type" governs which of Result Type/Rounds/Duration/Work/Rest are shown).
+- Reference implementation: `blockFieldConfig.ts` (also home of the shared `BLOCK_TYPES`/`RESULT_TYPES` constants and `BLOCK_TYPE_MAX_EXERCISES`), used by `workout-templates/WorkoutBlockBuilder.tsx`, `workout-templates/WorkoutTemplateTree.tsx` and `members/PlanWorkoutBlocksModal.tsx` (Workout Block "Type" governs the one configuration field on offer).
+- When the map carries *which* field rather than a list of fields (#672 narrowed each Workout Block type to a single configuration value), give each entry the column it persists to, the i18n keys it renders with, and the conversion factor between the stored unit and the displayed one (`storedPerUnit: 60` renders `duration_seconds` as "Minutes"). Then keep the stored↔displayed conversion in that file too — `blockConfigInput()` for reads and `blockConfigPatch()` for writes — so no editor re-derives it and a relabel never becomes a schema change. A type change simply points the same input at a different column; because the editors submit the whole block body, the column the new type does not show keeps its stored value.
 - `BLOCK_TYPE_MAX_EXERCISES` in `blockFieldConfig.ts` maps each block type to its max exercise count (`null` = unlimited). The same map is duplicated in `workout-templates.ts` and `training-plans.ts` for API-layer enforcement. UI uses it to hide the "+ Exercise" button at the limit and show a `(n/max)` count badge; the API returns 422 `MaximumExercisesExceeded` when the limit is exceeded on add-exercise or type-change. The `CrudModal` component accepts an optional `saveDisabled` prop to block submission on type-change validation errors (#71).
 
 ---
