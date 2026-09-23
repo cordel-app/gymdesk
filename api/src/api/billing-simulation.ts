@@ -13,6 +13,11 @@ import {
 } from '../domain/billingSimulation';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 import { loadServicesForSimulation } from './user-membership-services';
+import {
+  ASSIGNMENT_CADENCE,
+  loadPlanBenefitsForSimulation,
+  loadPromotionGrantSnapshots,
+} from './assigned-plan-snapshot';
 
 /**
  * #629 (stage 1) — Billing Simulation.
@@ -27,6 +32,13 @@ import { loadServicesForSimulation } from './user-membership-services';
  * answer: the engine lands once and renders where #634 wants it — a single
  * consolidated simulation for everything the Member pays for, not one per
  * Membership Plan card.
+ *
+ * #635 stage 3: every input is read from the assignment's own snapshot first
+ * (§14 — "do not resolve the current Membership Plan or Promotion dynamically
+ * when calculating billing for an existing assignment"). The live catalogue is
+ * consulted only for an assignment that captured no snapshot, so repricing a
+ * Plan, editing a Promotion or repricing a Sellable Item changes nothing here
+ * for anyone already holding it.
  */
 
 // Statuses whose charges are still ahead of the Member. `cancelled`/`expired`
@@ -48,23 +60,27 @@ interface AssignmentRow {
   starts_at: unknown;
   ends_at: unknown;
   plan_name: string | null;
+  /** Resolved in SQL: the assignment's frozen cadence, else its Plan's live one. */
   recurring_billing_interval: number | null;
   recurring_billing_unit: string | null;
+  /** The regular Membership Fee frozen at assignment time — NULL for a pre-snapshot row. */
+  membership_fee_price: string | number | null;
+  /** 1 when any of the six snapshot columns is set; decides the benefit fallback. */
+  has_billing_snapshot: number;
 }
 
 /**
- * Sellable Items granted by the given Promotions, from the three #550
- * benefit tables, joined live to their catalogue row for the name, price and
- * billing frequency.
+ * Sellable Items granted by the given Promotions, from the three #550 benefit
+ * tables, joined live to their catalogue row for the name, price and billing
+ * frequency.
  *
- * Read live rather than from the `user_membership_promotion_*_snapshot`
- * tables (migration 156): those are created but nothing writes to them yet —
- * the assignment-time snapshot flow is an explicit follow-up to #550. When it
- * lands, this loader should prefer a snapshot row over the live catalogue,
- * exactly as `loadPromotionApplications` already does for Membership Fee
- * benefits. `gym_charges` is deliberately not filtered on `deleted_at`, so a
- * granted item still displays after it is retired (mirrors
- * `loadChargeBenefitsSnapshot`).
+ * Since #635 stage 3 this is only the **fallback**: an application that has
+ * rows in `user_membership_promotion_*_snapshot` is priced from those instead
+ * (`loadPromotionGrantSnapshots`), so editing or deleting the Promotion leaves
+ * it alone (§16). Applications that predate the snapshot flow have nothing to
+ * read, and still simulate from the Promotion as it stands today.
+ * `gym_charges` is deliberately not filtered on `deleted_at`, so a granted
+ * item still displays after it is retired (mirrors `loadChargeBenefitsSnapshot`).
  */
 async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promise<Map<number, SimulationGrant[]>> {
   const byPromotion = new Map<number, SimulationGrant[]>();
@@ -105,8 +121,9 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
 }
 
 /**
- * The regular (pre-Promotion) Membership Fee for an assignment: the Plan's
- * price window covering its start date.
+ * The regular (pre-Promotion) Membership Fee for an assignment: the price
+ * frozen onto it at assignment time (#635 stage 3), falling back to the Plan's
+ * price window covering its start date only when it has none.
  *
  * `user_memberships.base_price` is not usable as the regular price — it is
  * snapshotted from `effectivePrice()`, which has returned a constant 0 for
@@ -116,6 +133,7 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
  * rather than a column of zeros.
  */
 async function regularMembershipFee(gymId: string, row: AssignmentRow, startsAt: string): Promise<number | null> {
+  if (row.membership_fee_price != null) return Number(row.membership_fee_price);
   if (row.membership_plan_id != null) {
     const eff = await effectivePrice(row.membership_plan_id, gymId, startsAt);
     if (eff && eff.plan_price_id != null) return eff.price;
@@ -127,8 +145,14 @@ async function regularMembershipFee(gymId: string, row: AssignmentRow, startsAt:
 export async function computeMemberBillingSimulation(gymId: string, memberId: number): Promise<BillingSimulationResult> {
   const { rows } = await db.query<AssignmentRow>(
     `SELECT um.id, um.membership_plan_id, um.status, um.final_price, um.starts_at, um.ends_at,
+            um.membership_fee_price,
             p.name AS plan_name,
-            bp.recurring_billing_interval, bp.recurring_billing_unit
+            ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
+            ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
+            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+             OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+             OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
+            ) AS has_billing_snapshot
      FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      LEFT JOIN billing_policies bp
@@ -142,15 +166,25 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
   const applicationsPerAssignment = await Promise.all(
     rows.map((row) => loadPromotionApplications(gymId, row.id).then((apps) => apps.filter((a) => a.status === 'applied'))),
   );
+  const applications = applicationsPerAssignment.flat();
+  // §16 — what the Promotion granted when it was applied. Only applications
+  // with no snapshot at all fall back to the Promotion's live benefits.
+  const grantsByApplication = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
   const grantsByPromotion = await loadPromotionGrants(
     gymId,
-    [...new Set(applicationsPerAssignment.flat().map((a) => a.promotionId))],
+    [...new Set(applications.filter((a) => !grantsByApplication.has(a.id)).map((a) => a.promotionId))],
   );
-  // #631 — Additional Periodic Services attached to these assignments. Read
-  // live (name, price, frequency from `gym_charges`) like the Promotion grants
-  // above, so an item's price change is reflected the next time the simulation
-  // runs rather than being frozen at attachment time.
+  // #631 — Additional Periodic Services attached to these assignments, priced
+  // from the snapshot taken when each was attached (§17), live for a row that
+  // predates migration 174.
   const servicesByAssignment = await loadServicesForSimulation(gymId, rows.map((row) => row.id));
+  // #635 — the Plan's own One-off / Session / Period Benefits, as frozen onto
+  // each assignment.
+  const planBenefitsByAssignment = await loadPlanBenefitsForSimulation(gymId, rows.map((row) => ({
+    id: row.id,
+    membershipPlanId: row.membership_plan_id,
+    hasBillingSnapshot: Number(row.has_billing_snapshot) === 1,
+  })));
 
   const assignments: SimulationAssignment[] = await Promise.all(rows.map(async (row, i) => {
     const startsAt = toDateOnly(row.starts_at);
@@ -163,7 +197,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       payBeforehandMonths: a.payBeforehandMonths,
       bonusMonths: a.bonusMonths,
       membershipFeeBenefits: a.membershipFeeBenefits,
-      grants: grantsByPromotion.get(a.promotionId) ?? [],
+      grants: grantsByApplication.get(a.id) ?? grantsByPromotion.get(a.promotionId) ?? [],
     }));
     return {
       userMembershipId: row.id,
@@ -175,6 +209,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       recurringUnit: (row.recurring_billing_unit ?? null) as BillingUnit | null,
       promotions,
       services: servicesByAssignment.get(row.id) ?? [],
+      planBenefits: planBenefitsByAssignment.get(row.id) ?? [],
     };
   }));
 

@@ -15,6 +15,7 @@ import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { advanceBillingDate } from './billing';
+import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 
 export const paymentsDashboardRouter = Router();
 
@@ -149,14 +150,17 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
       recurring_billing_interval: number;
       recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
     }>(
-      `SELECT um.next_billing_date, bp.recurring_billing_interval, bp.recurring_billing_unit
+      `SELECT um.next_billing_date,
+              ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
+              ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit
          FROM user_memberships um
-         JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
-                                 AND bp.gym_id = um.gym_id
+         LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
+                                      AND bp.gym_id = um.gym_id
         WHERE um.gym_id = ?
           AND um.status = 'active'
           AND um.next_billing_date IS NOT NULL
-          AND bp.recurring_billing_interval IS NOT NULL`,
+          AND ${ASSIGNMENT_CADENCE.interval()} IS NOT NULL
+          AND ${ASSIGNMENT_CADENCE.unit()} IS NOT NULL`,
       [gymId],
     );
 

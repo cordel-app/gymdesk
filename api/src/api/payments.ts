@@ -13,6 +13,7 @@ import {
   isPaymentActionable,
 } from '../domain/billingEventStatus';
 import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
+import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 
 /**
  * #129: Payments module — operational payment actions over billing_events.
@@ -303,7 +304,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       'um.gym_id = ?',
       "um.status = 'active'",
       'um.next_billing_date IS NOT NULL',
-      'bp.recurring_billing_interval IS NOT NULL',
+      // #635 stage 3 — the assignment's own cadence, else its Plan's live one.
+      `${ASSIGNMENT_CADENCE.interval()} IS NOT NULL`,
+      `${ASSIGNMENT_CADENCE.unit()} IS NOT NULL`,
     ];
     const futureParams: any[] = [gymId];
     if (q.member_id !== undefined) { futureWhere.push('um.member_id = ?'); futureParams.push(q.member_id); }
@@ -317,10 +320,11 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     }>(
       `SELECT um.id AS user_membership_id, um.member_id, m.name AS member_name,
               mp.name AS plan_name, um.next_billing_date,
-              bp.recurring_billing_interval, bp.recurring_billing_unit,
+              ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
+              ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
               um.final_price, NULL AS currency
        FROM user_memberships um
-       JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
+       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
        LEFT JOIN members m ON m.id = um.member_id
        LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
        WHERE ${futureWhere.join(' AND ')}`,

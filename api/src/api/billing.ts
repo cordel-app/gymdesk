@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
+import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 
 export function advanceBillingDate(
   current: Date | string,
@@ -85,15 +86,18 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
     }>(
       `SELECT um.id, um.gym_id, um.member_id,
               um.next_billing_date,
-              bp.recurring_billing_interval, bp.recurring_billing_unit,
+              ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
+              ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
               um.final_price,
               pm.payment_token, pm.sequence_id, pm.provider
        FROM user_memberships um
-       JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
+       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
        JOIN payment_methods pm ON pm.member_id = um.member_id AND pm.gym_id = um.gym_id
        WHERE um.status = 'active'
          AND um.next_billing_date IS NOT NULL
-         AND um.next_billing_date <= UTC_DATE()`,
+         AND um.next_billing_date <= UTC_DATE()
+         AND ${ASSIGNMENT_CADENCE.interval()} IS NOT NULL
+         AND ${ASSIGNMENT_CADENCE.unit()} IS NOT NULL`,
     );
 
     req.log.info({ count: due.length }, 'billing/run: memberships due for billing');
@@ -135,14 +139,19 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
           );
 
           await db.transaction(async (tx) => {
-            const { rows: beRows } = await tx.query<{ id: number }>(
+            // `insertId` is a property of the query result, not of `rows` —
+            // reading it off `rows` yielded `undefined`, which mysql2 rejects
+            // as a bind parameter on the next INSERT. The whole successful
+            // branch therefore threw, was caught below as a "provider error"
+            // and rolled back, so a charge the provider had already taken was
+            // recorded as a failure and `next_billing_date` never moved on.
+            const { insertId: billingEventId } = await tx.query(
               `INSERT INTO billing_events
                  (gym_id, user_membership_id, member_id, event_type, amount,
                   charge_type_id, source, actor_user_id)
                VALUES (?, ?, ?, 'recurring_payment', ?, ?, 'system', NULL)`,
               [row.gym_id, row.id, row.member_id, amount, membershipFeeChargeTypeId],
             );
-            const billingEventId = (beRows as any).insertId as number;
 
             await tx.query(
               `INSERT INTO payment_requests
@@ -174,14 +183,16 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
         } else {
           // Failed charge — billing event first, then payment_requests.
           const failNote = [result.errorCode, result.errorMessage].filter(Boolean).join(': ');
-          const { rows: beRows } = await db.query<{ id: number }>(
+          // Same `insertId` fix as the successful branch above: the rejected
+          // charge's `payment_requests` row was being written with an
+          // undefined `billing_event_id`, which threw before it was inserted.
+          const { insertId: billingEventId } = await db.query(
             `INSERT INTO billing_events
                (gym_id, user_membership_id, member_id, event_type, amount,
                 charge_type_id, source, actor_user_id, notes)
              VALUES (?, ?, ?, 'failed_billing', ?, ?, 'system', NULL, ?)`,
             [row.gym_id, row.id, row.member_id, amount, membershipFeeChargeTypeId, failNote || null],
           );
-          const billingEventId = (beRows as any).insertId as number;
 
           // #640: the rejection reason is stored on the transaction too, not
           // only in the ledger row's notes, so the Billing Event Details view

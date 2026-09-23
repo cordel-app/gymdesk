@@ -8,6 +8,7 @@ import {
   BillingSimulationResult,
   SimulationAssignment,
   SimulationGrant,
+  SimulationPlanBenefit,
   SimulationPromotion,
   SimulationService,
   computeBillingSimulation,
@@ -26,6 +27,7 @@ function assignment(over: Partial<SimulationAssignment> = {}): SimulationAssignm
     recurringUnit: 'month',
     promotions: [],
     services: [],
+    planBenefits: [],
     ...over,
   };
 }
@@ -68,6 +70,20 @@ function grant(over: Partial<SimulationGrant> = {}): SimulationGrant {
     billingFrequency: 'four_weeks',
     unitPrice: 20,
     quantity: 2,
+    ...over,
+  };
+}
+
+// #635 — a benefit the Assigned Plan carries in its own right (charged), as
+// opposed to a Promotion grant (free for as long as it covers the item).
+function planBenefit(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanBenefit {
+  return {
+    gymChargeId: 7,
+    name: 'Locker Rental',
+    category: 'periodical',
+    billingFrequency: 'month',
+    unitPrice: 20,
+    quantity: 1,
     ...over,
   };
 }
@@ -467,5 +483,93 @@ describe('computeBillingSimulation — additional periodic services (#631)', () 
     });
     expect(section(result, 'month')!.events[0].lines).toHaveLength(1);
     expect(section(result, 'one_off')).toBeUndefined();
+  });
+});
+
+// ─── #635 stage 3 — the Plan's own benefit sections ──────────────────────────
+
+describe('computeBillingSimulation — Membership Plan benefits (#635)', () => {
+  it('bills a Period Benefit alongside the membership fee, at the frozen price', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ planBenefits: [planBenefit()] })],
+    });
+    const monthly = section(result, 'month')!;
+    expect(monthly.events[0].lines.map((l) => [l.label, l.actual_charge])).toEqual([
+      ['Standard', 100],
+      ['Locker Rental', 20],
+    ]);
+    expect(monthly.events[0].total).toBe(120);
+  });
+
+  it('multiplies a Period Benefit by its quantity', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ planBenefits: [planBenefit({ quantity: 3 })] })],
+    });
+    const line = section(result, 'month')!.events[0].lines[1];
+    expect(line).toMatchObject({ quantity: 3, unit_price: 20, regular_price: 60, actual_charge: 60 });
+  });
+
+  it('charges a One-off Benefit and a Session Benefit in full — they are not free', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        planBenefits: [
+          planBenefit({ gymChargeId: 11, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPrice: 50 }),
+          planBenefit({ gymChargeId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 10 }),
+        ],
+      })],
+    });
+    expect(section(result, 'one_off')!.events[0].lines[0]).toMatchObject({
+      label: 'Registration Fee', regular_price: 50, actual_charge: 50, benefits: [],
+    });
+    expect(section(result, 'session')!.events[0].lines[0]).toMatchObject({
+      label: 'Personal Training', quantity: 10, regular_price: 300, actual_charge: 300,
+    });
+  });
+
+  it('merges a Promotion grant of the same item into one stream instead of billing it twice', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        planBenefits: [planBenefit()],
+        promotions: [promotion({ grants: [grant({ gymChargeId: 7, billingFrequency: 'month', quantity: 2 })] })],
+      })],
+    });
+    const monthly = section(result, 'month')!;
+    // One locker line per event, free for the two granted months.
+    expect(monthly.events.map((e) => e.lines.filter((l) => l.gym_charge_id === 7).length)).toEqual([1, 1, 1]);
+    expect(monthly.events.map((e) => e.lines.find((l) => l.gym_charge_id === 7)!.actual_charge)).toEqual([0, 0, 20]);
+    expect(monthly.events[0].lines[1].benefits[0]).toMatchObject({ action: 'included', name: 'October Promotion' });
+  });
+
+  it('charges the units a Promotion does not cover on a session benefit', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        planBenefits: [planBenefit({ gymChargeId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 10 })],
+        promotions: [promotion({
+          grants: [grant({ gymChargeId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 4 })],
+        })],
+      })],
+    });
+    const line = section(result, 'session')!.events[0].lines[0];
+    expect(line).toMatchObject({ quantity: 10, regular_price: 300, actual_charge: 180 });
+    expect(line.benefits[0].action).toBe('included');
+  });
+
+  it('never charges a negative amount when the grant exceeds the Plan quantity', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        planBenefits: [planBenefit({ gymChargeId: 12, category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 1 })],
+        promotions: [promotion({
+          grants: [grant({ gymChargeId: 12, category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 5 })],
+        })],
+      })],
+    });
+    expect(section(result, 'one_off')!.events[0].lines[0].actual_charge).toBe(0);
+  });
+
+  it('keeps a Plan item with no projectable frequency out of the simulation', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ planBenefits: [planBenefit({ billingFrequency: null })] })],
+    });
+    expect(section(result, 'month')!.events[0].lines).toHaveLength(1);
   });
 });

@@ -158,6 +158,13 @@ export async function loadServicesForAssignments(
  * The same rows, grouped per Assigned Plan and mapped onto the Billing
  * Simulation engine's input — one query for every assignment the simulation
  * covers, rather than one per assignment.
+ *
+ * #635 stage 3: the name, price and billing frequency come from the snapshot
+ * taken when the service was attached (§11, §17), so repricing the Sellable
+ * Item leaves every assignment already paying for it alone. A row attached
+ * before migration 174 has no snapshot and keeps resolving live — which is
+ * what it has always done. The rows the *UI* renders still show both (`snapshot`
+ * alongside the live values), so a repriced item is still visible as such.
  */
 export async function loadServicesForSimulation(
   gymId: string, umIds: number[],
@@ -173,12 +180,19 @@ export async function loadServicesForSimulation(
   for (const row of rows) {
     const shaped = shape(row);
     const list = byAssignment.get(shaped.user_membership_id) ?? [];
+    // Either the whole snapshot or none of it: a snapshot that recorded "no
+    // billing frequency" must not silently pick the item's current one up.
+    const priced = shaped.snapshot ?? {
+      item_name: shaped.sellable_item_name,
+      billing_frequency: shaped.billing_frequency,
+      unit_price: shaped.unit_price,
+    };
     list.push({
       id: shaped.id,
       gymChargeId: shaped.gym_charge_id,
-      name: shaped.sellable_item_name,
-      billingFrequency: shaped.billing_frequency,
-      unitPrice: shaped.unit_price,
+      name: priced.item_name,
+      billingFrequency: priced.billing_frequency,
+      unitPrice: priced.unit_price,
       quantity: shaped.quantity,
       startsOn: shaped.starts_at,
       endsOn: shaped.ends_at,
