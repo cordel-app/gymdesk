@@ -260,7 +260,15 @@
     "pt_slots_status_no_occurrence": "Not scheduled",
     "pt_slots_status_not_scheduled": "Cancelled",
     "pt_slots_status_full": "Full",
-    "pt_slots_status_already_booked": "Booked"
+    "pt_slots_status_already_booked": "Booked",
+    "pt_slots_selected_count": "{count} slots selected",
+    "pt_slots_save": "Save selection",
+    "pt_slots_saved": "Weekly slot selection saved.",
+    "pt_slots_book": "Book",
+    "pt_slots_booking": "Booking…",
+    "pt_slots_book_summary": "{created} booked · {skipped} skipped · {failed} failed",
+    "pt_slots_result_failed": "Failed ({reason})",
+    "pt_slots_unmatched": "{count} selected slots are no longer available for this member and will not be booked: {slots}"
   },
   "member_payments": {
     "title": "Member Payments",

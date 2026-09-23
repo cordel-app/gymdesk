@@ -88,17 +88,24 @@ export interface SlotDate {
   status: SlotDateStatus;
 }
 
-export interface WeeklySlot {
-  /** ISO weekday, 1=Monday … 7=Sunday — the grid's column order. */
+/**
+ * The six columns that identify one recurring slot — the projection's grouping
+ * key, and (stage 3, migration 169) the identity of a stored selection.
+ */
+export interface SlotIdentity {
+  /** ISO weekday, 1=Monday … 7=Sunday. */
   weekday: number;
   /** Gym-local HH:MM. */
   start_time: string;
   end_time: string;
-  professional_service_id: number;
-  professional_service_name: string;
   activity_type_id: number;
-  activity_type_name: string;
+  professional_service_id: number;
   center_id: number | null;
+}
+
+export interface WeeklySlot extends SlotIdentity {
+  professional_service_name: string;
+  activity_type_name: string;
   center_name: string | null;
   /** Dates in the window on which this weekday/time is expected, in order. */
   dates: SlotDate[];
@@ -110,6 +117,8 @@ export interface WeeklySlot {
   already_booked_count: number;
   /** §1's stricter reading: every expected date is bookable. */
   fully_available: boolean;
+  /** Stage 3: the Member has this weekly pattern stored in `member_recurring_slots`. */
+  selected: boolean;
 }
 
 export interface WeeklySlotDay {
@@ -131,6 +140,12 @@ export interface WeeklySlotProjectionInput {
    * reject with 403 is worse than not showing it.
    */
   eligibleActivityTypeIds: Set<number>;
+  /**
+   * Stage 3: `slotIdentityKey()` of every stored selection, so each projected
+   * slot can report whether it is one the Member picked. Omitted by callers
+   * that only want availability.
+   */
+  selectedKeys?: Set<string>;
 }
 
 function toLocal(value: Date | string, timezone: string): DateTime {
@@ -150,10 +165,7 @@ function toLocal(value: Date | string, timezone: string): DateTime {
  * and those are two slots a Member picks between — collapsing them would drop
  * one center's occurrences on the floor (only the first row per date survives).
  */
-function slotKey(s: {
-  weekday: number; start_time: string; end_time: string;
-  activity_type_id: number; professional_service_id: number; center_id: number | null;
-}): string {
+export function slotIdentityKey(s: SlotIdentity): string {
   return `${s.weekday}|${s.start_time}|${s.end_time}|${s.activity_type_id}|${s.professional_service_id}|${s.center_id ?? ''}`;
 }
 
@@ -208,14 +220,14 @@ function dateStatus(row: SlotOccurrenceRow): SlotDateStatus {
  * seven columns without inventing the missing ones.
  */
 export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlotDay[] {
-  const { timezone, from, to, occurrences, eligibleActivityTypeIds } = input;
+  const { timezone, from, to, occurrences, eligibleActivityTypeIds, selectedKeys } = input;
 
   // One pass to bucket occurrences by slot and by local date. A slot can hold
   // at most one occurrence per date; when a gym has somehow scheduled two
   // identical events, the first wins and the duplicate is ignored rather than
   // counted twice.
   const groups = new Map<string, {
-    slot: Omit<WeeklySlot, 'dates' | 'occurrence_count' | 'available_count' | 'already_booked_count' | 'fully_available'>;
+    slot: Omit<WeeklySlot, 'dates' | 'occurrence_count' | 'available_count' | 'already_booked_count' | 'fully_available' | 'selected'>;
     byDate: Map<string, SlotOccurrenceRow>;
   }>();
 
@@ -234,7 +246,7 @@ export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlot
       professional_service_id: row.professional_service_id,
       center_id: row.center_id ?? null,
     };
-    const key = slotKey(identity);
+    const key = slotIdentityKey(identity);
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -273,10 +285,11 @@ export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlot
       available_count: availableCount,
       already_booked_count: alreadyBookedCount,
       fully_available: dates.length > 0 && availableCount === dates.length,
+      selected: selectedKeys?.has(slotIdentityKey(slot)) ?? false,
     });
   }
 
-  return [...byWeekday.entries()].map(([weekday, slots]) => ({
+  return [...byWeekday.entries()].map(([weekday, slots]): WeeklySlotDay => ({
     weekday,
     slots: slots.sort(
       (a, b) =>
@@ -287,4 +300,156 @@ export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlot
         (a.center_name ?? '').localeCompare(b.center_name ?? ''),
     ),
   }));
+}
+
+/* ── Stage 3: turning stored selections into work ──────────────────────────── */
+
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * Parse the `slots` array of a selection request into slot identities.
+ *
+ * Returns `{ error }` rather than throwing so the router can answer 400 with
+ * the offending entry's index. Times are normalised to `HH:MM` — the form the
+ * projection groups on — and `center_id` is optional, since a single-center
+ * gym's occurrences carry none.
+ *
+ * Whether the identity actually exists in the Member's grid is *not* decided
+ * here: that needs the projection, and the router checks it against the very
+ * same `slotIdentityKey()` this file builds.
+ */
+export function parseSlotIdentities(
+  raw: unknown,
+): { slots: SlotIdentity[] } | { error: string } {
+  if (!Array.isArray(raw)) return { error: 'slots must be an array' };
+
+  const slots: SlotIdentity[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, entry] of raw.entries()) {
+    const at = `slots[${index}]`;
+    if (typeof entry !== 'object' || entry === null) return { error: `${at} must be an object` };
+    const e = entry as Record<string, unknown>;
+
+    const weekday = Number(e.weekday);
+    if (!Number.isInteger(weekday) || weekday < 1 || weekday > 7) {
+      return { error: `${at}.weekday must be an integer 1..7 (1=Monday)` };
+    }
+
+    const times: Record<string, string> = {};
+    for (const field of ['start_time', 'end_time'] as const) {
+      const value = typeof e[field] === 'string' ? (e[field] as string).slice(0, 5) : '';
+      if (!TIME_RE.test(value)) return { error: `${at}.${field} must be HH:MM` };
+      times[field] = value;
+    }
+    if (times.end_time <= times.start_time) {
+      return { error: `${at}.end_time must be later than start_time` };
+    }
+
+    const ids: Record<string, number> = {};
+    for (const field of ['activity_type_id', 'professional_service_id'] as const) {
+      const value = Number(e[field]);
+      if (!Number.isInteger(value) || value <= 0) {
+        return { error: `${at}.${field} must be a positive integer` };
+      }
+      ids[field] = value;
+    }
+
+    let centerId: number | null = null;
+    if (e.center_id != null) {
+      const value = Number(e.center_id);
+      if (!Number.isInteger(value) || value <= 0) {
+        return { error: `${at}.center_id must be a positive integer or null` };
+      }
+      centerId = value;
+    }
+
+    const identity: SlotIdentity = {
+      weekday,
+      start_time: times.start_time,
+      end_time: times.end_time,
+      activity_type_id: ids.activity_type_id,
+      professional_service_id: ids.professional_service_id,
+      center_id: centerId,
+    };
+    // A repeated identity is dropped rather than rejected: the stored set is a
+    // set, and `mrs_selection_unique` would fail the whole PUT on the second
+    // INSERT of the pair.
+    const key = slotIdentityKey(identity);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    slots.push(identity);
+  }
+
+  return { slots };
+}
+
+/** A date of a selected slot that will not be booked, and why not. */
+export interface SkippedSlotDate {
+  date: string;
+  calendar_event_id: number | null;
+  /** The projection status that ruled it out — never 'available'. */
+  reason: Exclude<SlotDateStatus, 'available'>;
+}
+
+/** What the Book action (and stage 4's nightly job) should do for one selection. */
+export interface SlotBookingPlan {
+  selection: SlotIdentity;
+  /**
+   * The projected slot this selection resolves to, or `null` when it no longer
+   * appears in the grid — the Member lost the Professional Service, the plan
+   * stopped being eligible for the Activity Type (#481), or the schedule rule
+   * that produced the occurrences was retired. §5: no new bookings then, and
+   * the bookings already made are left exactly as they are.
+   */
+  slot: WeeklySlot | null;
+  /** Occurrences to put through the booking path, in date order. */
+  book: { date: string; calendar_event_id: number }[];
+  /** Occurrences deliberately passed over, with the projection's reason. */
+  skip: SkippedSlotDate[];
+}
+
+/**
+ * Resolve stored weekly selections against a projection.
+ *
+ * Pure on purpose: the same fold serves the Book button (stage 3) and the
+ * nightly rolling-window job (stage 4), and the "which dates does this weekly
+ * pattern mean *this* week?" question is the one most worth testing without a
+ * database.
+ *
+ * Only `available` dates are handed to the booking path. `already_booked` is
+ * how §3's "do not create duplicate bookings" is honoured before the unique
+ * index has to; `full`, `not_scheduled` and `no_occurrence` are the thread's
+ * Q5 answer ("system will silently ignore it") — reported, never fatal. The
+ * booking path revalidates each one anyway, so a date that goes stale between
+ * this plan and the INSERT is caught there too.
+ */
+export function planSlotBookings(
+  days: WeeklySlotDay[],
+  selections: SlotIdentity[],
+): SlotBookingPlan[] {
+  const byKey = new Map<string, WeeklySlot>();
+  for (const day of days) {
+    for (const slot of day.slots) byKey.set(slotIdentityKey(slot), slot);
+  }
+
+  return selections.map((selection) => {
+    const slot = byKey.get(slotIdentityKey(selection)) ?? null;
+    if (!slot) return { selection, slot: null, book: [], skip: [] };
+
+    const book: { date: string; calendar_event_id: number }[] = [];
+    const skip: SkippedSlotDate[] = [];
+    for (const d of slot.dates) {
+      if (d.status === 'available' && d.calendar_event_id != null) {
+        book.push({ date: d.date, calendar_event_id: d.calendar_event_id });
+      } else {
+        skip.push({
+          date: d.date,
+          calendar_event_id: d.calendar_event_id,
+          reason: d.status === 'available' ? 'no_occurrence' : d.status,
+        });
+      }
+    }
+    return { selection, slot, book, skip };
+  });
 }
