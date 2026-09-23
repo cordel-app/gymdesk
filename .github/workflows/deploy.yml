@@ -85,6 +85,12 @@ jobs:
 
             echo "${{ secrets.GHCR_PAT }}" | podman login ghcr.io -u ${{ github.repository_owner }} --password-stdin
 
+            # Each deploy pulls a new :latest and the previous image loses its
+            # tag; those dangling images filled the disk and deploys stopped at
+            # the check below. Prune only dangling images: a tagged image another
+            # app's deploy (admin/member/payment, same host) just pulled is safe.
+            podman image prune -f || true
+
             # Check disk space before pulling (fail if less than 1GB free)
             AVAILABLE=$(df / --output=avail | tail -1)
             if [ "$AVAILABLE" -lt 1048576 ]; then

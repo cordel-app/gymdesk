@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 import { SIGNUP_GRACE_MS } from '../infra/clerk-account-links';
-import { TEST_AUTH_HEADER, TEST_USER_ID, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, TEST_USER_ID, cleanupTestGyms, createTestGym, createTestMembership, eventually, request } from './helpers';
 
 const clerk = vi.hoisted(() => ({
   users: new Map<string, any>(),
@@ -158,10 +158,9 @@ describe('DELETE /platform/orphaned-accounts/:userId', () => {
     const { rows: m } = await db.query<any>('SELECT clerk_user_id, deleted_at FROM members WHERE id = ?', [memberId]);
     expect(m[0].clerk_user_id).toBeNull();
     expect(m[0].deleted_at).not.toBeNull();
-    await new Promise((r) => setTimeout(r, 50)); // audit is fire-and-forget
-    const { rows: audit } = await db.query<any>(
+    const audit = await eventually(async () => (await db.query<any>( // audit is fire-and-forget
       "SELECT gym_id, action, entity_name FROM audit_logs WHERE entity_type = 'clerk_account' AND entity_id = ?", [id],
-    );
+    )).rows, (r) => r.length > 0);
     expect(audit[0]).toMatchObject({ gym_id: null, action: 'delete', entity_name: `${id}@orphan.test` });
   });
 
