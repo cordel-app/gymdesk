@@ -640,6 +640,21 @@ Reference implementation: `api/src/api/user-membership-services.ts` + migration 
 
 ---
 
+## Parent-Level Configuration Read over Child-Owned Writes (#634)
+
+When a ticket splits one record's configuration into **independent sections** that each live on a *child* row (a Member's Promotions and Additional Services both belong to an Assigned Plan, but §13 requires them to be rendered at Member level, not inside a plan card), don't let the browser fan out one request per child.
+
+- **One aggregated GET, no new write surface.** Add a read-only endpoint on the parent (`GET /user-memberships/member/:memberId/configuration` → `{plans, promotions, services}`) that stitches the sections together and tags every row with the child it belongs to (`user_membership_id`, `plan_name`). Writes stay on the existing per-child routes, so each rule keeps exactly one enforcement point and the aggregator holds no business logic.
+- **Why not N requests**: they are an N+1 *and* they tear — a child added between two of them shows up with none of its sections. One query set is also one consistent snapshot to render.
+- **Share the "which children count" list with whatever else reads them.** Here `LIVE_STATUSES` is deliberately the same list the Billing Simulation consolidates, so the configuration sections and the forecast below them can never disagree about which plans are in play. Give each row an `is_live` flag rather than filtering: history still has to render, it just can't be written to.
+- **Reuse the per-child loaders verbatim** (`fetchAppliedPromotions`, `loadServicesForAssignments`) so a row reads identically whichever surface lists it. Batch the ones that take a list; a per-child call in `Promise.all` is fine when the fan-out is a handful, not a page.
+- **Frontend**: one `reloadConfiguration()` that every section's `onChanged` calls, plus a `key` bump on any derived read-only view (the simulation) — so a change in any section re-reads all of them and the forecast follows, without each section knowing about the others.
+- **Reuse the child's own inline editor** rather than writing a parent-level one: render it once per child under the child's name (`MemberAdditionalServices` wraps #631's `AdditionalPeriodicServices`). The section stays parent-level; the editing rules stay in one place.
+
+Reference implementation: `api/src/api/member-membership-configuration.ts` + `apps/admin/src/app/[locale]/members/` (`MemberExpandedRow.tsx` and the three section components).
+
+---
+
 ## Recurring-Slot Projection over Existing Rows (#647 stage 2)
 
 When a ticket asks for a *recurring weekly* view of something the database stores as individual dated rows (Personal Training slots over `calendar_events`), don't add a table for the pattern and don't recompute availability in the frontend. Project it:

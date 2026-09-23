@@ -170,6 +170,12 @@ export function MemberBillingSimulation({ memberId }: { memberId: number }) {
                       {line.quantity > 1 && <span style={{ color: '#888' }}> ×{line.quantity}</span>}
                       {line.price_may_change && <span style={{ color: '#888' }}> *</span>}
                     </div>
+                    {/* #634 §7: with several Membership Plans consolidated into
+                        one simulation, each charge has to say which plan
+                        generated it. */}
+                    {line.plan_name && (
+                      <div style={{ fontSize: 12, color: '#888' }}>{line.plan_name}</div>
+                    )}
                     <div style={{ fontSize: 12, color: '#888' }}>
                       {t('billing_simulation_regular')}: {fmtMoney(line.regular_price)}
                       {line.benefits.map((b, bi) => (

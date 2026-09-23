@@ -39,6 +39,7 @@ import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
 import { memberBillingSimulationRouter } from './api/billing-simulation';
+import { memberMembershipConfigurationRouter } from './api/member-membership-configuration';
 import { userMembershipServicesRouter } from './api/user-membership-services';
 import { musclesRouter, exercisesRouter } from './api/exercises';
 import { resultTypesRouter } from './api/result-types';
@@ -259,6 +260,9 @@ app.use('/user-memberships/:id/services', requireAuth(), tenantContext, requireM
 // #629: three path segments, so userMembershipsRouter (mounted above) never
 // matches it and the request falls through to here.
 app.use('/user-memberships/member/:memberId/billing-simulation', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), memberBillingSimulationRouter);
+// #634: the Member's Membership Plans / Promotions / Additional Services in one
+// read — the three configuration sections that sit above the simulation.
+app.use('/user-memberships/member/:memberId/configuration', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), memberMembershipConfigurationRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('organization.class_packages'), userClassPackagesRouter);
 // #674: mounted before `/payments` so the Dashboard is gated by its own flag —
 // `/payments` would otherwise match `/payments/dashboard/*` first and 403 it

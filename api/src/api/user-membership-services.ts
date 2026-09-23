@@ -115,6 +115,24 @@ export async function loadAssignedPlanServices(gymId: string, umId: number): Pro
 }
 
 /**
+ * The same rows for several Assigned Plans in one query, flat and oldest
+ * window first. Used by the Member-level ADDITIONAL SERVICES section (#634
+ * §4), which lists every service the Member pays for across all of their
+ * Membership Plans rather than one plan at a time.
+ */
+export async function loadServicesForAssignments(
+  gymId: string, umIds: number[],
+): Promise<AssignedPlanServiceRow[]> {
+  if (umIds.length === 0) return [];
+  const { rows } = await db.query(
+    `${SELECT} WHERE ums.gym_id = ? AND ums.user_membership_id IN (${umIds.map(() => '?').join(',')})
+     ORDER BY ums.starts_at ASC, ums.id ASC`,
+    [gymId, ...umIds],
+  );
+  return rows.map(shape);
+}
+
+/**
  * The same rows, grouped per Assigned Plan and mapped onto the Billing
  * Simulation engine's input — one query for every assignment the simulation
  * covers, rather than one per assignment.

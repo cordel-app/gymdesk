@@ -27,6 +27,10 @@ function read(file: string): string {
 
 const editorSrc = read('AssignPlanInlineEditor.tsx');
 const expandedRowSrc = read('MemberExpandedRow.tsx');
+// #634 moved the plan cards (and with them the per-plan action menu) into the
+// MEMBERSHIP PLANS section component; the expanded row still owns the single
+// `assigningFor` state the guard is derived from.
+const plansSectionSrc = read('MemberMembershipPlans.tsx');
 
 const PROMOTION_KEYS = [
   'assign_new_plan_section_promotions',
@@ -80,7 +84,15 @@ describe('Assign Plan to Member: inline editor (#628)', () => {
   });
 
   it('keeps a single assignment editor open at a time', () => {
-    expect(expandedRowSrc).toContain('disabled: assigningFor !== null');
+    expect(expandedRowSrc).toContain('assignBusy={assigningFor !== null}');
+    expect(plansSectionSrc).toContain('disabled: assignBusy');
+  });
+
+  it('renders the inline editor inside the plan card it supersedes', () => {
+    // #634 §15 keeps this inline and additive-free: "Assign New Plan" is still
+    // the supersede action, distinct from the section's "+ Add Membership Plan".
+    expect(expandedRowSrc).toContain('<AssignPlanInlineEditor');
+    expect(expandedRowSrc).toContain('assigningFor?.id === m.id');
   });
 
   it('defines every promotion-selection key in all locales', () => {

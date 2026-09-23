@@ -134,7 +134,12 @@ export default function MembersPage() {
       const params = buildParams();
       const [membersData, plansData] = await Promise.all([
         apiFetch<Member[]>(`/members${params.toString() ? `?${params}` : ''}`),
-        apiFetch<Plan[]>('/membership-plans?status=active').catch(() => []),
+        // #634 §2: only Active + Public Membership Plans are assignable, so
+        // only those are offered — by the new-member form's fare picker and by
+        // the Assign New Plan editor in the expanded row alike. (The previous
+        // `status=active` had no effect: the endpoint's filter is
+        // `lifecycle_status`, so every plan came back.)
+        apiFetch<Plan[]>('/membership-plans?lifecycle_status=active&enrollment_status=public').catch(() => []),
       ]);
       setMembers(membersData);
       setPlans(plansData);
