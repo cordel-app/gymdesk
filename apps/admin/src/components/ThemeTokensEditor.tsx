@@ -273,14 +273,16 @@ export function ThemeColorsEditor({ tokens, onChange, namespace, t, readOnly }: 
                     />
                   </div>
                 )}
-                {!readOnly && (
-                  <ThemeAdvancedSection
-                    group={groupKey}
-                    advanced={advanced}
-                    onChange={(next) => onChange({ ...tokens, advanced: next })}
-                    namespace={namespace}
-                  />
-                )}
+                {/* #678 — a read-only theme shows its advanced attributes too,
+                    disabled, rather than hiding them: the same categories are
+                    exposed whether the theme can be edited here or not. */}
+                <ThemeAdvancedSection
+                  group={groupKey}
+                  advanced={advanced}
+                  onChange={(next) => onChange({ ...tokens, advanced: next })}
+                  namespace={namespace}
+                  readOnly={readOnly}
+                />
                 {groupKey === 'group_calendar' && <CalendarContrastReport tokens={tokens} t={t} />}
               </div>
             )}
@@ -291,7 +293,7 @@ export function ThemeColorsEditor({ tokens, onChange, namespace, t, readOnly }: 
   );
 }
 
-export function ThemeTypographyEditor({ tokens, onChange, t }: Omit<EditorProps, 'namespace' | 'readOnly'>) {
+export function ThemeTypographyEditor({ tokens, onChange, t, readOnly }: Omit<EditorProps, 'namespace'>) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 100px', gap: '8px 12px', alignItems: 'center' }}>
       <span style={{ fontSize: 12, fontWeight: 600, color: '#666' }}>{t('typography_level')}</span>
@@ -305,6 +307,7 @@ export function ThemeTypographyEditor({ tokens, onChange, t }: Omit<EditorProps,
             <select
               key={`${lv}-font`}
               value={typo.fontFamily}
+              disabled={readOnly}
               onChange={(e) => onChange({ ...tokens, typography: { ...tokens.typography, [lv]: { ...typo, fontFamily: e.target.value } } })}
               style={selectStyle}
             >
@@ -313,9 +316,10 @@ export function ThemeTypographyEditor({ tokens, onChange, t }: Omit<EditorProps,
             <input
               key={`${lv}-color`}
               type="color"
+              disabled={readOnly}
               value={typo.color}
               onChange={(e) => onChange({ ...tokens, typography: { ...tokens.typography, [lv]: { ...typo, color: e.target.value } } })}
-              style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+              style={{ width: 48, height: 36, border: '1px solid #ccc', borderRadius: 4, cursor: readOnly ? 'default' : 'pointer', padding: 2 }}
             />
           </>
         );

@@ -16,6 +16,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
+import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { btnSmall, cardSurfaceStyle } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
@@ -52,9 +53,9 @@ interface UnassignedCenter {
 
 const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 
+// Assignments first, then Branding → Colors → Typography — the same set for a
+// Base Theme and a Custom one (#678); see renderInlineEditor().
 type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments';
-// Assignments first, then Branding → Colors → Typography
-const ALL_SECTIONS: SectionKey[] = ['assignments', 'branding', 'colors', 'typography'];
 const CENTERS_INITIAL_LIMIT = 10;
 
 const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
@@ -83,7 +84,6 @@ export default function GymThemesPage() {
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const [logoRemovePending, setLogoRemovePending] = useState(false);
-  const editFileInputRef = useRef<HTMLInputElement>(null);
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when a row is expanded for editing, cleared on Save.
   const origFormRef = useRef<typeof emptyForm | null>(null);
@@ -327,9 +327,7 @@ export default function GymThemesPage() {
     setLogoRemovePending(true);
   }
 
-  function handleEditFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function handleLogoPick(file: File) {
     setEditLogoFile(file);
     setLogoRemovePending(false);
     const reader = new FileReader();
@@ -387,19 +385,10 @@ export default function GymThemesPage() {
   if (gymLoading || !isAdmin) return null;
 
   function renderSection(title: string, key: SectionKey, content: React.ReactNode) {
-    const open = openSections.has(key);
     return (
-      <div key={key} style={{ borderTop: '1px solid var(--gd-border, #eee)' }}>
-        <button
-          type="button"
-          onClick={() => toggleSection(key)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: 'var(--gd-section-heading-text, #888888)', textAlign: 'left' }}
-        >
-          {title}
-          <span style={{ fontSize: 12, color: '#aaa', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-        </button>
-        {open && <div style={{ paddingBottom: 16 }}>{content}</div>}
-      </div>
+      <ThemeSection key={key} title={title} open={openSections.has(key)} onToggle={() => toggleSection(key)}>
+        {content}
+      </ThemeSection>
     );
   }
 
@@ -468,7 +457,9 @@ export default function GymThemesPage() {
   function renderInlineEditor(theme: Theme) {
     if (expandedId !== theme.id) return null;
     const isBase = theme.is_base;
-    const sections: SectionKey[] = isBase ? ['assignments', 'colors'] : ALL_SECTIONS;
+    // #678 — a Base Theme exposes the same sections as a Custom one; what
+    // differs is that its configuration is read-only here (it belongs to the
+    // platform, and `PUT /system/themes/:id` only accepts this gym's themes).
     const dirty = isDirty();
 
     return (
@@ -477,46 +468,26 @@ export default function GymThemesPage() {
         {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
 
         <div style={{ marginTop: 12 }}>
-          {sections.includes('assignments') && renderSection(t('section_assignments'), 'assignments', renderAssignmentsContent(theme))}
+          {renderSection(t('section_assignments'), 'assignments', renderAssignmentsContent(theme))}
 
-          {sections.includes('branding') && renderSection(t('section_branding'), 'branding', (
-            <div>
-              <FormLabel>{t('label_name')}</FormLabel>
-              <FormInput value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} placeholder="My Brand" />
-              <FormLabel>{t('label_description')}</FormLabel>
-              <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={2} style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }} />
-              <FormLabel>{t('label_logo')}</FormLabel>
-              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_hint')}</p>
-              {editLogoPreview && (
-                <div style={{ marginBottom: 8 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={editLogoPreview} alt="logo preview" style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }} />
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => editFileInputRef.current?.click()} style={btnSmall('#444')}>{t('logo_upload')}</button>
-                {editLogoPreview && (
-                  <button type="button" onClick={queueLogoRemove} style={btnSmall('#c0392b')}>{t('logo_clear')}</button>
-                )}
-              </div>
-              <input ref={editFileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleEditFileChange} />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={editForm.logoContainsGymName}
-                  onChange={(e) => setEditForm({ ...editForm, logoContainsGymName: e.target.checked })}
-                />
-                {t('logo_contains_gym_name')}
-              </label>
-            </div>
+          {renderSection(t('section_branding'), 'branding', (
+            <ThemeBrandingEditor
+              values={{ name: editForm.name, description: editForm.description, logoContainsGymName: editForm.logoContainsGymName }}
+              onChange={(next) => setEditForm({ ...editForm, ...next })}
+              t={t}
+              logoPreview={editLogoPreview}
+              onLogoPick={handleLogoPick}
+              onLogoRemove={queueLogoRemove}
+              readOnly={isBase}
+            />
           ))}
 
-          {sections.includes('colors') && renderSection(t('section_colors'), 'colors', (
+          {renderSection(t('section_colors'), 'colors', (
             <ThemeColorsEditor tokens={editForm.tokens} onChange={updateTokens} namespace="gym_themes" t={t} readOnly={isBase} />
           ))}
 
-          {sections.includes('typography') && renderSection(t('section_typography'), 'typography', (
-            <ThemeTypographyEditor tokens={editForm.tokens} onChange={updateTokens} t={t} />
+          {renderSection(t('section_typography'), 'typography', (
+            <ThemeTypographyEditor tokens={editForm.tokens} onChange={updateTokens} t={t} readOnly={isBase} />
           ))}
         </div>
 

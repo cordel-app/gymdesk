@@ -8,6 +8,10 @@ interface Props {
   onChange: (next: Record<string, string | number | boolean | null>) => void;
   namespace: string; // 'gym_themes' or 'themes'
   group: string; // one of COLOR_GROUPS' groupKey values — renders only this group's attributes
+  // #678 — a theme that cannot be edited on this screen (a Base Theme seen from
+  // a gym) still lists its attributes; the controls are disabled and the
+  // restore-to-inherited action is not offered.
+  readOnly?: boolean;
 }
 
 const SOURCE_BADGE: React.CSSProperties = {
@@ -17,7 +21,7 @@ const SOURCE_BADGE: React.CSSProperties = {
 // Renders the fine-grained attributes for one theme editor section (e.g. Header, Buttons),
 // inline below that section's color pickers — see #489 stage 2, which retired the standalone
 // "Advanced" section in favor of grouping every attribute with its component.
-export function ThemeAdvancedSection({ advanced, onChange, namespace, group }: Props) {
+export function ThemeAdvancedSection({ advanced, onChange, namespace, group, readOnly }: Props) {
   const t = useTranslations(namespace as any);
 
   function getValue(key: string): string | number | boolean {
@@ -66,12 +70,14 @@ export function ThemeAdvancedSection({ advanced, onChange, namespace, group }: P
                 <input
                   type="checkbox"
                   checked={Boolean(value)}
+                  disabled={readOnly}
                   onChange={(e) => set(attr.key, e.target.checked)}
-                  style={{ width: 16, height: 16, cursor: 'pointer' }}
+                  style={{ width: 16, height: 16, cursor: readOnly ? 'default' : 'pointer' }}
                 />
               ) : attr.type === 'select' ? (
                 <select
                   value={String(value)}
+                  disabled={readOnly}
                   onChange={(e) => set(attr.key, e.target.value)}
                   style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ddd', fontSize: 13, background: '#fff' }}
                 >
@@ -81,18 +87,20 @@ export function ThemeAdvancedSection({ advanced, onChange, namespace, group }: P
                 <input
                   type="color"
                   value={String(value)}
+                  disabled={readOnly}
                   onChange={(e) => set(attr.key, e.target.value)}
-                  style={{ width: 40, height: 30, border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer', padding: 2 }}
+                  style={{ width: 40, height: 30, border: '1px solid #ddd', borderRadius: 4, cursor: readOnly ? 'default' : 'pointer', padding: 2 }}
                 />
               ) : (
                 <input
                   type="text"
                   value={String(value)}
+                  disabled={readOnly}
                   onChange={(e) => set(attr.key, e.target.value)}
                   style={{ width: 110, padding: '4px 8px', borderRadius: 4, border: '1px solid #ddd', fontSize: 13 }}
                 />
               )}
-              {custom && (
+              {custom && !readOnly && (
                 <button
                   type="button"
                   onClick={() => restore(attr.key)}

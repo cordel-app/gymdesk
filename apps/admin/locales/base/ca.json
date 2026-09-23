@@ -514,6 +514,7 @@
     "tab_typography": "Tipografia",
     "tab_colors": "Colors",
     "label_name": "Nom *",
+    "label_description": "Descripció",
     "label_logo": "Logo",
     "logo_hint": "PNG, SVG, JPEG o WebP · màx. 512 KB",
     "logo_upload": "Pujar logo",
