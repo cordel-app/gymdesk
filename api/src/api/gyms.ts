@@ -112,6 +112,10 @@ async function resolveDefaultPaymentProviderId(): Promise<number | null> {
 
 /** Validates an explicitly supplied provider: it must exist and be active. */
 async function assertAssignablePaymentProvider(id: unknown): Promise<number | null> {
+  // Numeric strings are accepted (a form field submits one), but nothing else
+  // is coerced: `Number(true)` is 1, which would silently re-point the gym at
+  // whichever provider happens to be id 1.
+  if (typeof id !== 'number' && typeof id !== 'string') return null;
   const numeric = Number(id);
   if (!Number.isInteger(numeric) || numeric <= 0) return null;
   const { rows } = await db.query<{ id: number }>(

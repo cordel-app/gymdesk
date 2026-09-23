@@ -311,6 +311,19 @@ paymentProvidersRouter.delete('/:id', requireSuperadmin, async (req, res) => {
   const existing = await loadProvider(req.params.id);
   if (!existing || existing.deleted_at) return res.status(404).json({ error: 'Payment provider not found' });
 
+  // The default is checked first on purpose: every new gym is pre-populated
+  // with it, so it almost always has gyms too — and "move them to another
+  // provider first" would then be advice that cannot work, since moving them
+  // all off still leaves the default undeletable.
+  if (existing.is_default) {
+    const { usageCount, references } = await gymsUsingProvider(existing.id);
+    return res.status(409).json({
+      error: 'The default payment provider cannot be deleted. Make another provider the default first.',
+      usageCount,
+      references,
+    });
+  }
+
   // §1: "in case 'delete' system will launch an error in case there are gyms
   // linked to such payment provider". The FK is RESTRICT, so this 409 is the
   // readable version of a constraint that would fail anyway.
@@ -320,14 +333,6 @@ paymentProvidersRouter.delete('/:id', requireSuperadmin, async (req, res) => {
       error: `This payment provider is used by ${usageCount} gym(s) and cannot be deleted. Move them to another provider first.`,
       usageCount,
       references,
-    });
-  }
-
-  if (existing.is_default) {
-    return res.status(409).json({
-      error: 'The default payment provider cannot be deleted. Make another provider the default first.',
-      usageCount: 0,
-      references: [],
     });
   }
 

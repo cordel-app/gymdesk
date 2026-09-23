@@ -433,6 +433,27 @@ describe('DELETE /platform/payment-providers/:id', () => {
     expect(rows[0].deleted_at).toBeNull();
   });
 
+  it('says the default cannot be deleted even when gyms also point at it', async () => {
+    // The default is checked before usage on purpose: "move them to another
+    // provider first" is advice that cannot work for the default, since moving
+    // every gym off it still leaves it undeletable.
+    const providerId = await createSupportedProvider('Delete Default Used', { is_default: true });
+    try {
+      const usingGymId = await createTestGym(`PP Default Used Gym ${SUFFIX}`);
+      await pointGymAtProvider(usingGymId, providerId);
+
+      const res = await request
+        .delete(`/platform/payment-providers/${providerId}`)
+        .set('Authorization', TEST_AUTH_HEADER);
+      expect(res.status).toBe(409);
+      expect(res.body.error).toMatch(/default payment provider cannot be deleted/i);
+      expect(res.body.usageCount).toBeGreaterThanOrEqual(1);
+      expect(res.body.references.map((r: any) => r.name)).toContain(`PP Default Used Gym ${SUFFIX}`);
+    } finally {
+      await restoreSeededDefault();
+    }
+  });
+
   it('returns 409 for the default provider even when no gym uses it', async () => {
     // Owning the default flag for a moment is the only way to reach this branch:
     // the seeded default always has gyms, which the usage check catches first.
@@ -545,6 +566,27 @@ describe('Gym payment_provider_id (platform gyms router)', () => {
       .send({ name: `PP Bad Provider Gym ${SUFFIX}`, payment_provider_id: UNKNOWN_PROVIDER_ID });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/payment_provider_id/);
+  });
+
+  it('returns 400 for a payment_provider_id that is not an id at all', async () => {
+    // `Number(true)` is 1, so a coercing check would have silently re-pointed
+    // the gym at whichever provider happens to be id 1.
+    const { rows: before } = await db.query<{ payment_provider_id: number }>(
+      'SELECT payment_provider_id FROM gyms WHERE id = ?',
+      [gymId],
+    );
+    for (const value of [true, {}, [], 'abc']) {
+      const res = await request
+        .put(`/platform/gyms/${gymId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .send({ payment_provider_id: value });
+      expect(res.status, `payment_provider_id: ${JSON.stringify(value)}`).toBe(400);
+    }
+    const { rows: after } = await db.query<{ payment_provider_id: number }>(
+      'SELECT payment_provider_id FROM gyms WHERE id = ?',
+      [gymId],
+    );
+    expect(after[0].payment_provider_id).toBe(before[0].payment_provider_id);
   });
 
   it('returns 400 when PUT /platform/gyms/:id tries to null payment_provider_id', async () => {
