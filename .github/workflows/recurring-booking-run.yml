@@ -1,0 +1,26 @@
+name: Recurring Booking Run
+
+# #647 stage 4: maintains the rolling 2-month Personal Training booking window.
+# The issue thread's Q4 answer asks for "a daily activity at night"; the API
+# exposes the run as an endpoint (like /billing/run) and this workflow is what
+# fires it, so nothing has to run a timer inside the API process.
+on:
+  schedule:
+    # 03:00 UTC = 04:00 CET (05:00 CEST) — night in the gyms' timezone, and
+    # three hours clear of the 06:00 billing run so the two never overlap.
+    - cron: '0 3 * * *'
+  workflow_dispatch: # manual trigger for testing
+
+jobs:
+  recurring-booking-run:
+    name: Rolling 2-month PT booking window
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: POST /recurring-bookings/run
+        run: |
+          curl -sf -X POST https://api.vdicube.com/recurring-bookings/run \
+            -H "X-Internal-Secret: ${{ secrets.RECURRING_BOOKINGS_INTERNAL_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 600

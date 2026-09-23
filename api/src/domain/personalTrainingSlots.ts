@@ -384,6 +384,16 @@ export function parseSlotIdentities(
   return { slots };
 }
 
+/** How one occurrence of a selected slot ended up. */
+export interface BookingResult {
+  date: string;
+  calendar_event_id: number | null;
+  outcome: 'booked' | 'skipped' | 'failed';
+  /** Why it was skipped (a projection status) or why it failed (an error code). */
+  reason?: string;
+  booking_id?: number;
+}
+
 /** A date of a selected slot that will not be booked, and why not. */
 export interface SkippedSlotDate {
   date: string;
@@ -452,4 +462,122 @@ export function planSlotBookings(
     }
     return { selection, slot, book, skip };
   });
+}
+
+/* ── Stage 4: telling the Member what the nightly job could not book ───────── */
+
+/**
+ * Skip reasons the Member is told about, and the shape the member app reads.
+ *
+ * The thread's Q5 answer asks for exactly this:
+ *
+ *   > What we could do is that the night scheduler when trying to book the new
+ *   > calendar_events, can publish an alert into the membership app informing
+ *   > that the booking on May 1st could not be completed because it is a
+ *   > festivity or the gym is closed or it was already booked by another event.
+ *
+ * So the three reasons that map onto "your recurring slot will not happen on
+ * this date" are alerted, and nothing else:
+ *
+ * - `no_occurrence` — no session was scheduled at all (a holiday, the gym
+ *   closed, or the schedule rule stopped before the window did);
+ * - `not_scheduled` — the session exists but was cancelled;
+ * - `full` — every seat was taken by someone else first.
+ *
+ * `already_booked` is deliberately absent: the Member holding the place *is*
+ * the desired outcome, and a nightly "you are already booked" notice is noise.
+ * A `failed` outcome is absent too — an unexpected error is an operator's
+ * problem (it is counted in the run report and logged), not something a Member
+ * can act on, and alerting on it would turn a broken deploy into a per-member
+ * inbox flood.
+ */
+export const NOTIFIED_SKIP_REASONS = ['no_occurrence', 'not_scheduled', 'full'] as const;
+
+export type NotifiedSkipReason = (typeof NOTIFIED_SKIP_REASONS)[number];
+
+function isNotifiedSkipReason(reason: string | undefined): reason is NotifiedSkipReason {
+  return (NOTIFIED_SKIP_REASONS as readonly string[]).includes(reason ?? '');
+}
+
+/** One alert the nightly job will write to `member_notifications`. */
+export interface SkipNotification {
+  /** Gym-local date the slot was expected on, YYYY-MM-DD. */
+  date: string;
+  /** The occurrence that could not be taken — null when none was scheduled. */
+  calendar_event_id: number | null;
+  reason: NotifiedSkipReason;
+  /** `slotIdentityKey()` of the selection, so a repeat can be recognised. */
+  slot_key: string;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  professional_service_name: string | null;
+  activity_type_name: string | null;
+}
+
+/** One selection's outcome, as the booking run reports it. */
+export interface SlotRunReport {
+  selection: SlotIdentity;
+  slot: WeeklySlot | null;
+  results: BookingResult[];
+}
+
+/**
+ * Identity of an alert: one per (slot, date).
+ *
+ * Not per calendar event — a `no_occurrence` date has no event to key on, and
+ * the whole point is to say "your Monday slot will not happen on the 1st".
+ */
+export function skipNotificationKey(slotKey: string, date: string): string {
+  return `${slotKey}@${date}`;
+}
+
+/**
+ * Which alerts the run should write, given the ones the Member already has.
+ *
+ * Dedupe is the reason this is a function and not a loop inside the job. The
+ * window is *rolling*, so a date the job cannot book is re-examined on every
+ * one of the ~60 nightly runs before it passes: without `alreadySent` a single
+ * closed Monday would send the Member sixty identical notices. Keyed on
+ * (slot, date) rather than (slot, date, reason) on purpose — a date that is
+ * first `full` and later `not_scheduled` is still the same disappointment, and
+ * re-alerting on the reason changing would reintroduce the flood for any
+ * occurrence whose status wobbles.
+ *
+ * Only dates in the *future* part of the window are considered; a date already
+ * past is nothing the Member can do anything about, and the projection stops
+ * offering it anyway.
+ */
+export function planSkipNotifications(
+  slots: SlotRunReport[],
+  alreadySent: Set<string>,
+): SkipNotification[] {
+  const notifications: SkipNotification[] = [];
+  const seen = new Set<string>(alreadySent);
+
+  for (const report of slots) {
+    const slotKey = slotIdentityKey(report.selection);
+    for (const result of report.results) {
+      if (result.outcome !== 'skipped') continue;
+      if (!isNotifiedSkipReason(result.reason)) continue;
+
+      const key = skipNotificationKey(slotKey, result.date);
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      notifications.push({
+        date: result.date,
+        calendar_event_id: result.calendar_event_id,
+        reason: result.reason,
+        slot_key: slotKey,
+        weekday: report.selection.weekday,
+        start_time: report.selection.start_time,
+        end_time: report.selection.end_time,
+        professional_service_name: report.slot?.professional_service_name ?? null,
+        activity_type_name: report.slot?.activity_type_name ?? null,
+      });
+    }
+  }
+
+  return notifications.sort((a, b) => a.date.localeCompare(b.date) || a.slot_key.localeCompare(b.slot_key));
 }

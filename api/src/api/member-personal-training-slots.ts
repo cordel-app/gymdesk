@@ -7,8 +7,10 @@ import { resolveMemberProfessionalServices } from '../domain/memberProfessionalS
 import { isActivityTypeEligibleForMember } from './activity-eligibility';
 import { bookMemberOnSession } from './bookings';
 import {
+  BookingResult,
   SlotIdentity,
   SlotOccurrenceRow,
+  SlotRunReport,
   WeeklySlotDay,
   parseSlotIdentities,
   planSlotBookings,
@@ -51,7 +53,7 @@ export const memberPersonalTrainingSlotsRouter = Router({ mergeParams: true });
 const WINDOW_MONTHS = 2;
 
 /** One stored row of `member_recurring_slots`, as the selection reads return it. */
-interface StoredSelection extends SlotIdentity {
+export interface StoredSelection extends SlotIdentity {
   id: number;
 }
 
@@ -120,7 +122,7 @@ async function loadCandidateOccurrences(
  * does not map TIME onto a JS type), so they are trimmed to the `HH:MM` the
  * projection groups on — otherwise no selection would ever match a slot.
  */
-async function loadSelections(gymId: string, memberId: number): Promise<StoredSelection[]> {
+export async function loadSelections(gymId: string, memberId: number): Promise<StoredSelection[]> {
   // `iso_weekday` is named for its base (1=Mon … 7=Sun, luxon's numbering)
   // because the rest of the schema counts weekdays 0=Sun … 6=Sat — see
   // migration 169. The API speaks ISO throughout, so it is aliased back to the
@@ -142,8 +144,11 @@ async function loadSelections(gymId: string, memberId: number): Promise<StoredSe
   }));
 }
 
-/** Everything the grid needs, in the gym's timezone. Shared by all three routes. */
-async function loadProjection(gymId: string, memberId: number, selections: StoredSelection[]) {
+/**
+ * Everything the grid needs, in the gym's timezone. Shared by all three routes
+ * and by stage 4's nightly job.
+ */
+export async function loadProjection(gymId: string, memberId: number, selections: SlotIdentity[]) {
   // The grid is drawn in gym-local time — the same conversion
   // `materializeScheduleRule` used to write the occurrences.
   const { rows: gymRows } = await db.query<{ timezone: string }>(
@@ -352,14 +357,73 @@ async function replaceSelections(
   }
 }
 
-/** One occurrence's outcome in the Book report. */
-interface BookingResult {
-  date: string;
-  calendar_event_id: number | null;
-  outcome: 'booked' | 'skipped' | 'failed';
-  /** Why it was skipped (a projection status) or why it failed (an error code). */
-  reason?: string;
-  booking_id?: number;
+/** What one pass over a Member's selections did. */
+export interface SlotBookingRun {
+  created: number;
+  skipped: number;
+  failed: number;
+  slots: SlotRunReport[];
+}
+
+/**
+ * Book every free date of the Member's stored selections.
+ *
+ * The whole of §3's action, and — unchanged — the whole of §4's nightly pass:
+ * `POST .../book` calls it for one Member on demand, and
+ * `api/recurring-bookings.ts` calls it for every Member with a stored pattern.
+ * Keeping one implementation is what makes "the scheduled task respects all
+ * existing calendar availability, capacity and booking rules" true by
+ * construction rather than by a second reading of the same rules.
+ *
+ * Each occurrence goes through `bookMemberOnSession` in its own transaction,
+ * so one rejected date cannot roll back the others and the report can say
+ * exactly which ones landed.
+ */
+export async function bookSelectedSlots(
+  gymId: string,
+  memberId: number,
+  selections: SlotIdentity[],
+  days: WeeklySlotDay[],
+): Promise<SlotBookingRun> {
+  const plans = planSlotBookings(days, selections);
+  const slots: SlotRunReport[] = [];
+  let created = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const plan of plans) {
+    const results: BookingResult[] = plan.skip.map((s) => ({
+      date: s.date,
+      calendar_event_id: s.calendar_event_id,
+      outcome: 'skipped' as const,
+      reason: s.reason,
+    }));
+    skipped += plan.skip.length;
+
+    for (const occurrence of plan.book) {
+      const result = await bookOccurrence(gymId, memberId, occurrence);
+      if (result.outcome === 'booked') created += 1;
+      else if (result.outcome === 'skipped') skipped += 1;
+      else failed += 1;
+      results.push(result);
+    }
+
+    results.sort((a, b) => a.date.localeCompare(b.date));
+    slots.push({ selection: plan.selection, slot: plan.slot, results });
+  }
+
+  return { created, skipped, failed, slots };
+}
+
+/** A run's per-slot report, flattened the way both endpoints return it. */
+export function describeSlotRun(slots: SlotRunReport[]) {
+  return slots.map(({ selection, slot, results }) => ({
+    ...selection,
+    matched: slot !== null,
+    professional_service_name: slot?.professional_service_name ?? null,
+    activity_type_name: slot?.activity_type_name ?? null,
+    results,
+  }));
 }
 
 /**
@@ -416,38 +480,8 @@ memberPersonalTrainingSlotsRouter.post('/book', requireModuleWrite('MEMBERS'), a
       projection = await loadProjection(gymId, memberId, selections);
     }
 
-    const plans = planSlotBookings(projection.days, selections);
-    const slotReports = [];
-    let created = 0;
-    let skipped = 0;
-    let failed = 0;
-
-    for (const plan of plans) {
-      const results: BookingResult[] = plan.skip.map((s) => ({
-        date: s.date,
-        calendar_event_id: s.calendar_event_id,
-        outcome: 'skipped' as const,
-        reason: s.reason,
-      }));
-      skipped += plan.skip.length;
-
-      for (const occurrence of plan.book) {
-        const result = await bookOccurrence(gymId, memberId, occurrence);
-        if (result.outcome === 'booked') created += 1;
-        else if (result.outcome === 'skipped') skipped += 1;
-        else failed += 1;
-        results.push(result);
-      }
-
-      results.sort((a, b) => a.date.localeCompare(b.date));
-      slotReports.push({
-        ...plan.selection,
-        matched: plan.slot !== null,
-        professional_service_name: plan.slot?.professional_service_name ?? null,
-        activity_type_name: plan.slot?.activity_type_name ?? null,
-        results,
-      });
-    }
+    const { created, skipped, failed, slots: slotReports } =
+      await bookSelectedSlots(gymId, memberId, selections, projection.days);
 
     recordAudit(req, {
       action: 'book_recurring_slots',
@@ -462,7 +496,7 @@ memberPersonalTrainingSlotsRouter.post('/book', requireModuleWrite('MEMBERS'), a
       skipped,
       failed,
       selections: describeSelections(selections, projection.days),
-      slots: slotReports,
+      slots: describeSlotRun(slotReports),
     });
   } catch (err) { next(err); }
 });

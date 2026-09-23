@@ -23,6 +23,28 @@ export function invalidateFeatureFlagsCache(): void {
 }
 
 /**
+ * Is a feature available? Checks the given key AND every ancestor key (split on
+ * '.'), so disabling 'nutrition' also blocks 'nutrition.nutrition_library'.
+ * A key with no row defaults to enabled (features not yet seeded).
+ *
+ * Flags are platform-wide, not per-gym — there is no `gym_id` on
+ * `feature_flags`. Extracted from `requireFeatureEnabled` for callers with no
+ * request to guard: #647 stage 4's nightly job has to honour the same
+ * 'organization.professional_services' flag the slot endpoints are mounted
+ * behind, or turning the feature off would stop the UI while a scheduler kept
+ * quietly creating bookings.
+ */
+export async function isFeatureEnabled(key: string): Promise<boolean> {
+  const flags = await getFeatureFlags();
+  const parts = key.split('.');
+  for (let i = 1; i <= parts.length; i++) {
+    const ancestor = parts.slice(0, i).join('.');
+    if (ancestor in flags && !flags[ancestor]) return false;
+  }
+  return true;
+}
+
+/**
  * Express middleware that blocks access to a navigation feature when it is
  * disabled. Checks the given key AND every ancestor key (split on '.'), so
  * disabling 'nutrition' also blocks 'nutrition.nutrition_library'.
@@ -39,13 +61,8 @@ export function requireFeatureEnabled(key: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.tenantCtx?.isSuperadmin && !req.tenantCtx?.impersonatedUserId) return next();
     try {
-      const flags = await getFeatureFlags();
-      const parts = key.split('.');
-      for (let i = 1; i <= parts.length; i++) {
-        const ancestor = parts.slice(0, i).join('.');
-        if (ancestor in flags && !flags[ancestor]) {
-          return res.status(403).json({ error: 'Feature not available.' });
-        }
+      if (!(await isFeatureEnabled(key))) {
+        return res.status(403).json({ error: 'Feature not available.' });
       }
       next();
     } catch (err) {

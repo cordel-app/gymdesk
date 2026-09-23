@@ -35,6 +35,25 @@ Tick items off in the PR that completes them.
       ALGORITHM=COPY and blocks concurrent DML for the duration. Harmless on the
       dev/CI datasets it has been run against; on a large production
       `calendar_events` it is the one statement in the file worth timing first.
+- [ ] **Set `RECURRING_BOOKINGS_INTERNAL_SECRET`** in the API's environment and as the
+      GitHub secret of the same name (#647 stage 4). `POST /recurring-bookings/run`
+      returns 401 to everyone while it is unset — including the nightly
+      `.github/workflows/recurring-booking-run.yml` — so the rolling 2-month booking
+      window silently stops advancing rather than failing loudly. Deliberately a
+      separate secret from `BILLING_INTERNAL_SECRET`: the two jobs have different
+      blast radii, and rotating one should not disarm the other.
+- [ ] **Run migration 170 in the same maintenance window as 168** (#647 stage 4).
+      `ALTER TABLE member_notifications ADD CONSTRAINT chk_member_notifications_type`
+      accepts neither ALGORITHM=INPLACE nor LOCK=NONE (errno 1845 then 1846, verified
+      on MySQL 8.4): MySQL rebuilds the table with ALGORITHM=COPY under LOCK=SHARED,
+      so reads continue but every write to this append-only log blocks until it
+      finishes, and it needs free disk of roughly the table plus its indexes. Because
+      `sendNotification()` is fire-and-forget, a blocked insert does not fail the
+      member's request — it holds one of the API pool's ten connections until the
+      ALTER completes, so a long rebuild can stall unrelated endpoints. The new value
+      list is a strict superset of the old one, so it cannot fail on data; time it
+      against a copy of the table first. (The statement is guarded, so re-running
+      migrations after it lands is a no-op rather than a second rebuild.)
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be
