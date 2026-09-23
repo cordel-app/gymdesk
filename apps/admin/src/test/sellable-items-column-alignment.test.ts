@@ -25,7 +25,7 @@ const EXPECTED_COLUMNS = [
   'col_name',
   'col_type',
   'col_units',
-  'col_amount',
+  'col_price',
   'col_tax_rate',
   'col_frequency',
   'col_created_by',
