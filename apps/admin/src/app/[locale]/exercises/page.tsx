@@ -279,6 +279,25 @@ export default function ExercisesPage() {
     }
   }
 
+  // ─── Activate / Deactivate ────────────────────────────────────────────────
+
+  // #673: quick status toggle from the context menu. Reuses PUT /exercises/:id,
+  // which applies `status` on its own and leaves every other column untouched.
+  async function handleToggleStatus(ex: Exercise) {
+    const next = ex.status === 'active' ? 'inactive' : 'active';
+    try {
+      await apiFetch(`/exercises/${ex.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: next }),
+      });
+      // Keep an open inline editor in sync so saving it doesn't revert the toggle.
+      if (editingId === ex.id) setEditForm((prev) => ({ ...prev, status: next }));
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    }
+  }
+
   // ─── Delete ───────────────────────────────────────────────────────────────
 
   async function handleDelete() {
@@ -545,6 +564,9 @@ export default function ExercisesPage() {
           { label: t('details'), onClick: () => setDetailFor(ex) },
           { label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
           { label: t('duplicate'), onClick: () => handleDuplicate(ex), disabled: !canWrite, title: readOnlyTitle },
+          ex.status === 'active'
+            ? { label: t('deactivate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle }
+            : { label: t('activate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle },
           { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true, disabled: !canWrite, title: readOnlyTitle },
         ];
 

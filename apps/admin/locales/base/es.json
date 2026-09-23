@@ -1200,6 +1200,8 @@
     "details": "Detalles",
     "edit": "Editar",
     "duplicate": "Duplicar",
+    "activate": "Activar",
+    "deactivate": "Desactivar",
     "clone": "Clonar al gym",
     "cloned": "Ejercicio clonado al catálogo del gym.",
     "delete": "Eliminar",
