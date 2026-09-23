@@ -9,7 +9,7 @@
  *
  * So both tables go:
  *
- *   - `plan_charge_benefits`            (migrations 089 / 091 / 145) — the
+ *   - `plan_charge_benefits`            (migrations 089 / 091) — the
  *     Membership Plan's waive/discount configuration per Sellable Item.
  *   - `user_membership_charge_benefits` (migration 130) — its assignment-time
  *     snapshot.
@@ -37,11 +37,20 @@
  * activity type, so there is no one-to-one mapping §18 would accept. See the
  * open question on #635.
  *
- * `down` recreates both tables empty, with the shape migrations 130/145 left
- * them in. The rows themselves are gone for good: a Plan's Charge Benefits
- * have no home in the new benefit structure, which is what "clean up
- * completely" was answered to. Anything historical an assignment needs to bill
- * correctly already lives in its own snapshot (§13/§14).
+ * `down` recreates both tables empty, with the shape migrations 089/091 and
+ * 130 left them in. The rows themselves are gone for good, and deliberately
+ * not archived into a side table: a Plan's Charge Benefits have no home in the
+ * new benefit structure (a Charge Benefit was a waive/discount *on* an item,
+ * while a Plan's Period Benefit is a *charged* item — no one-to-one mapping,
+ * which is what §18 would require), Q3 answered that existing assignments may
+ * simply be hard-deleted, and anything historical an assignment needs to bill
+ * correctly already lives in its own #635 snapshot (§13/§14). A table nothing
+ * can read would be schema cruft, not insurance.
+ *
+ * One deployment note, since this is the first non-additive migration in the
+ * #635 chain: run it *after* the API build that stops reading the tables is
+ * live. The reverse order leaves the previous build 500ing on
+ * `ER_NO_SUCH_TABLE`. Tracked in `docs/go-to-production.md`.
  */
 
 exports.up = async (knex) => {
@@ -50,6 +59,19 @@ exports.up = async (knex) => {
   // readable and matches how they were created.
   await knex.schema.dropTableIfExists('user_membership_charge_benefits');
   await knex.schema.dropTableIfExists('plan_charge_benefits');
+};
+
+// CREATE TABLE and each ADD CONSTRAINT are separate non-transactional
+// statements, so one hasTable() guard around all of them would let a crash
+// mid-way leave a re-run skipping the constraints for good. Each is guarded on
+// its own, the way migrations 089 and 173 do it.
+const hasConstraint = async (knex, table, name) => {
+  const [rows] = await knex.raw(
+    `SELECT COUNT(*) AS cnt FROM information_schema.TABLE_CONSTRAINTS
+     WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?`,
+    [table, name],
+  );
+  return Number(rows[0].cnt) > 0;
 };
 
 exports.down = async (knex) => {
@@ -65,14 +87,20 @@ exports.down = async (knex) => {
       t.decimal('value', 10, 2).nullable();
       t.unique(['membership_plan_id', 'gym_charge_id'], { indexName: 'pcb_plan_gym_charge_unique' });
     });
+  }
+  if (!(await hasConstraint(knex, 'plan_charge_benefits', 'pcb_gym_charge_id_foreign'))) {
     await knex.raw(
       'ALTER TABLE plan_charge_benefits ADD CONSTRAINT `pcb_gym_charge_id_foreign` ' +
       'FOREIGN KEY (`gym_charge_id`) REFERENCES `gym_charges` (`id`) ON DELETE CASCADE',
     );
+  }
+  if (!(await hasConstraint(knex, 'plan_charge_benefits', 'chk_pcb_action'))) {
     await knex.raw(
       "ALTER TABLE plan_charge_benefits ADD CONSTRAINT chk_pcb_action " +
       "CHECK (action IN ('no_benefit','waive','percentage_discount','fixed_discount'))",
     );
+  }
+  if (!(await hasConstraint(knex, 'plan_charge_benefits', 'chk_pcb_value'))) {
     await knex.raw(
       "ALTER TABLE plan_charge_benefits ADD CONSTRAINT chk_pcb_value " +
       "CHECK (action IN ('no_benefit','waive') " +
@@ -97,10 +125,14 @@ exports.down = async (knex) => {
       t.unique(['user_membership_id', 'gym_charge_id'], { indexName: 'umcb_membership_charge_unique' });
       t.index(['user_membership_id'], 'umcb_membership_index');
     });
+  }
+  if (!(await hasConstraint(knex, 'user_membership_charge_benefits', 'chk_umcb_action'))) {
     await knex.raw(
       "ALTER TABLE user_membership_charge_benefits ADD CONSTRAINT chk_umcb_action " +
       "CHECK (action IN ('waive','percentage_discount','fixed_discount'))",
     );
+  }
+  if (!(await hasConstraint(knex, 'user_membership_charge_benefits', 'chk_umcb_value'))) {
     await knex.raw(
       "ALTER TABLE user_membership_charge_benefits ADD CONSTRAINT chk_umcb_value " +
       "CHECK (action = 'waive' OR value IS NOT NULL)",
