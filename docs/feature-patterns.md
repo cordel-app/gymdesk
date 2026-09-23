@@ -633,6 +633,23 @@ Reference implementation: `api/src/domain/personalTrainingSlots.ts` + `api/src/a
 
 ---
 
+## Scheduled Background Task (#647 stage 4)
+
+When a ticket asks for a "scheduled/background task", it means an **endpoint plus a cron**, not a timer inside the API process. `POST /billing/run` set the shape and `POST /recurring-bookings/run` follows it:
+
+- **Mount it unauthenticated but secret-guarded**, next to `/billing` in `app.ts` — no Clerk, no `tenantContext` (there is no acting user and no single gym), and an `X-Internal-Secret` header checked against a **job-specific** env var. One shared secret across jobs means rotating one disarms the others.
+- **A workflow fires it** (`.github/workflows/<job>-run.yml`, `schedule:` + `workflow_dispatch:`). An in-process `setInterval` would run once per API replica; nothing in this codebase runs a scheduler.
+- **Call the request path's function, don't re-implement it.** Extract the endpoint's body into an exported function (`bookSelectedSlots()`) and have both the interactive route and the job call it. Every "the task must respect the existing rules" acceptance criterion is then true by construction rather than by a second reading of those rules.
+- **Derive the work from current state, don't track progress.** A rolling window advances because "now" moved: re-project each run and act on what is missing. A `last_processed_through` column is a second source of truth that drifts the first time a run dies half way, and "never create duplicates" stops being free.
+- **Guard against overlap with a singleton run-log row** (`billing_run_log`, `recurring_booking_run_log`) — a deliberate exception to the `gym_id` rule, since it locks a platform-wide job rather than holding tenant data. Stamp it when the run *starts*, and let an explicitly scoped re-run (`{ gym_id }` / `{ member_id }` in the body) bypass the lock, or an operator has no way to retry one tenant after a fix.
+- **One tenant's failure must not end the run.** Catch per iteration, report it in the response, carry on — and return counts (`processed`/`created`/`skipped`/`failed`) that a failed cron run can be read from, since nobody is watching it happen.
+- **Honour the feature flag the interactive routes are mounted behind** (`isFeatureEnabled()` in `infra/featureFlags.ts`). Turning a feature off must stop the scheduler too, or rows keep appearing for a feature nobody can see.
+- **Notify idempotently, or not at all.** A nightly job re-examining the same window will re-raise the same alert ~60 times. Dedupe on a stable key read back from what was already sent (`planSkipNotifications()` + `skipNotificationKey()`), and alert only on states the user can act on — never on "already done" or on an internal error.
+
+Reference implementation: `api/src/api/recurring-bookings.ts` + `api/src/infra/migrations/170_recurring_booking_run.js` + `.github/workflows/recurring-booking-run.yml`.
+
+---
+
 ## Translated Catalog Content (#643)
 
 UI labels belong in `locales/base/{en,es,ca}.json`. When the *data* itself needs

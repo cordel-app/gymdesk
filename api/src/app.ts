@@ -81,6 +81,7 @@ import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
 import { paymentRequestsRouter } from './api/payment-requests';
 import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
+import { recurringBookingsRouter } from './api/recurring-bookings';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
 import { publicRegistrationsRouter } from './api/public-registrations';
@@ -148,6 +149,10 @@ app.use('/payment-page', paymentPageRouter);
 
 // Internal billing runner — authenticated by X-Internal-Secret header
 app.use('/billing', billingRouter);
+
+// #647 stage 4: internal nightly runner that maintains the rolling 2-month
+// Personal Training booking window — same X-Internal-Secret pattern as /billing.
+app.use('/recurring-bookings', recurringBookingsRouter);
 
 // Theme logo — no auth (img tags in both apps need this)
 app.use('/themes', themesPublicRouter);
