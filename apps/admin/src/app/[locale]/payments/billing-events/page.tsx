@@ -316,7 +316,7 @@ function ExpandedRow({
         method: 'POST',
         body: JSON.stringify({ amount: manualAmount, notes: manualNotes || undefined }),
       });
-      toast(t('billing_events_page.manual_success'));
+      toast(t('billing_events_page.manual_success'), 'success');
       onManualOpenChange(false);
       setManualNotes('');
       await load();
@@ -596,7 +596,7 @@ export default function BillingEventsPage() {
     try {
       const result = await apiFetch<RetryResult>(`/payments/billing-events/${id}/retry`, { method: 'POST' });
       if (result.new_status === 'paid') {
-        toast(t('billing_events_page.retry_success'));
+        toast(t('billing_events_page.retry_success'), 'success');
       } else if (result.membership_paused) {
         toast(t('billing_events_page.retry_failed_paused', { attempts: result.attempts.length }));
       } else {

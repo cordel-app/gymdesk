@@ -484,7 +484,7 @@ export default function SystemGymsPage() {
                 failure={storageFailure}
                 report={storageFailureReport(storageFailure)}
                 onDismiss={() => setStorageFailure(null)}
-                onCopied={() => toast(t('storage_report_copied'))}
+                onCopied={() => toast(t('storage_report_copied'), 'success')}
                 t={t}
               />
             )}

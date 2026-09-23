@@ -13,7 +13,9 @@ interface ToastItem {
 interface ToastContextValue {
   /**
    * `type` defaults to 'error' — most calls report a failed request. A confirmation
-   * (saved, created, invited, impersonation ended…) must pass 'success' to show green.
+   * (saved, created, invited, copied, impersonation ended…) must pass 'success' to
+   * show green, and a non-blocking advisory 'info' to show blue. Omitting it renders
+   * the message with the red border and the ✕ icon (#667).
    */
   toast: (message: string, type?: ToastType) => void;
 }

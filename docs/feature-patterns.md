@@ -73,14 +73,16 @@ For tables with a JOIN in the SELECT (e.g. `activity_types`), pass the join quer
 - `apiFetch` in `lib/apiClient.ts` reads `body.error` from non-2xx responses and throws it as an `Error`.
 - Pages catch the thrown error and call `toast(err.message)` from `useToast()` — never `alert()`.
 - Inline `setError` state is only used for **client-side validation** (required fields, format checks) shown inside the modal/form. API errors always go to the toast.
+- `toast(message, type?)` defaults `type` to `'error'` (red border + ✕), because most call sites report a failed request. **A confirmation must pass `'success'` explicitly**, and a non-blocking advisory `'info'` — omitting the argument renders it as an error (#667). `apps/admin/src/test/toast-severity.test.ts` scans the call sites and fails when a confirmation is left on the default.
 
 ```ts
 // Pattern for a save handler:
 try {
   await apiFetch('/things', { method: 'POST', body: JSON.stringify(body) });
+  toast(t('things.saved'), 'success'); // confirmations are never the default variant
   closeModal();
 } catch (err: any) {
-  toast(err.message ?? t('things.error_generic')); // bottom-right toast
+  toast(err.message ?? t('things.error_generic')); // bottom-right toast, error variant
 }
 ```
 
