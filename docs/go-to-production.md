@@ -209,3 +209,19 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       platform default. Harmless while every gym is still on the default (the state
       on every environment today). Once a gym has been moved to another provider,
       capture `SELECT id, payment_provider_id FROM gyms` before rolling back.
+- [ ] **Migration 176 must run *after* the API build that stops reading the tables**
+      (#635 stage 4): it is the first non-additive migration in the #635 chain — it
+      `DROP`s `plan_charge_benefits` and `user_membership_charge_benefits`. Every
+      earlier migration in the chain was additive and therefore order-insensitive;
+      this one is not. Run the migration before the new build is live and the
+      previous build 500s with `ER_NO_SUCH_TABLE` on
+      `GET /membership-plans/:id/charge-benefits`, the Assigned Plan detail and the
+      Plan Billing Forecast. Deploy the API first (it runs fine against the old
+      schema, since it no longer touches either table), then migrate.
+- [ ] **Migration 176 drops rows with no archive** (#635 stage 4, Q4's "clean up
+      completely these legacy structure"): a Plan's Charge Benefits have no
+      one-to-one mapping into the new benefit structure, so nothing was backfilled
+      and `down()` recreates both tables empty. Harmless while no environment has
+      Charge Benefits configured. If any gym still has rows when this ships, capture
+      `SELECT * FROM plan_charge_benefits` and `… FROM user_membership_charge_benefits`
+      first — the drop is not recoverable from the migration alone.

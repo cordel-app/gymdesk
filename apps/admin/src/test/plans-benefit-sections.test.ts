@@ -124,10 +124,12 @@ describe('Plans: One-off / Session / Period Benefits (#635 §3–§5)', () => {
   });
 });
 
-describe('Plans: stage 1 is additive — legacy sections survive', () => {
-  it('still renders Included Services and Charge Benefits', () => {
+// Stage 4 retired Charge Benefits (see plans-charge-benefits-removed.test.ts).
+// Included Services is booking-access rather than commercial configuration —
+// `plan-allowances.ts` gates every booking on it — so it is still rendered.
+describe('Plans: Included Services survives stage 4', () => {
+  it('still renders Included Services', () => {
     expect(pageSrc).toContain('plans.section_allowances');
-    expect(pageSrc).toContain('plans.section_charge_benefits');
   });
 });
 

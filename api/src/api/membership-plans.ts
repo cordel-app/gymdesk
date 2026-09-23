@@ -74,19 +74,6 @@ interface BillingPolicyRow {
   auto_renew: boolean;
 }
 
-interface ChargeBenefitRow {
-  id: number;
-  gym_id: string;
-  membership_plan_id: number;
-  gym_charge_id: number;
-  gym_charge_code: string;
-  gym_charge_name: string;
-  gym_charge_availability: string;
-  gym_charge_amount: string | null;
-  action: string;
-  value: string | null;
-}
-
 // #635 stage 1: one row of a Plan's Session / One-off / Period Benefits
 // (migration 173). `gym_charge_*` comes from the join, so an item that has
 // since gone inactive still resolves to its real name and status instead of a
@@ -152,7 +139,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, allowances, centers, memberCount, chargeBenefits, sellableItems, taxRateRows, promotionCount,
+  const [prices, bpRows, allowances, centers, memberCount, sellableItems, taxRateRows, promotionCount,
          sessionBenefits, oneoffBenefits, periodicalBenefits] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
@@ -181,17 +168,8 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
        WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
-    db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
-              gc.status AS gym_charge_status, gc.amount AS gym_charge_amount
-       FROM plan_charge_benefits pcb
-       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id AND gc.deleted_at IS NULL
-       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-       WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
-      [plan.id, gymId],
-    ).then(r => r.rows),
     // Full catalog of active sellable items for this gym, so the admin UI can
-    // populate the charge-benefits selector without a separate round trip.
+    // populate the Benefit selectors without a separate round trip.
     db.query<SellableItemRow>(
       `SELECT gc.id, gc.gym_id, gc.name, gc.type, gc.amount, gc.currency, gc.billing_frequency,
               gc.status, gc.availability, gc.enrollment_status, gc.is_system,
@@ -261,12 +239,12 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     price: currentPrice ? parseFloat(currentPrice.price) : null,
     recurringBillingInterval: billingPolicy ? billingPolicy.recurring_billing_interval : null,
     recurringBillingUnit: (billingPolicy ? billingPolicy.recurring_billing_unit : null) as any,
-    benefitLines: chargeBenefits.map(cb => ({
-      label: cb.gym_charge_name,
-      amount: cb.gym_charge_amount != null ? parseFloat(cb.gym_charge_amount) : null,
-      action: cb.action as any,
-      value: cb.value != null ? parseFloat(cb.value) : null,
-    })),
+    // #635 stage 4: Charge Benefits were the only source of benefit lines, and
+    // they are gone. The forecast is now the plan fee and its cadence alone —
+    // `computeBillingForecast` keeps supporting benefit lines because the
+    // Assigned Plan's own projection (billing-simulation.ts) still applies
+    // Promotion benefits to a charge.
+    benefitLines: [],
   });
 
   // #547: the stored status is a projection of the validity windows, refreshed on
@@ -289,7 +267,6 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     centers,
     member_count: memberCount,
     promotion_count: promotionCount,
-    charge_benefits: chargeBenefits,
     session_benefits: sessionBenefits,
     oneoff_benefits: oneoffBenefits,
     periodical_benefits: periodicalBenefits,
@@ -573,21 +550,11 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
           [gymId, insertId, memberId, memberId === ownerId ? 1 : 0],
         );
       }
-      // Snapshot the Plan's current charge benefits onto the Membership (#376 item 6/9).
-      const { rows: benefits } = await tx.query(
-        "SELECT gym_charge_id, action, value FROM plan_charge_benefits WHERE membership_plan_id = ? AND gym_id = ? AND action <> 'no_benefit'",
-        [req.params.id, gymId],
-      );
-      for (const b of benefits) {
-        await tx.query(
-          'INSERT INTO user_membership_charge_benefits (gym_id, user_membership_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
-          [gymId, insertId, b.gym_charge_id, b.action, b.value],
-        );
-      }
-      // #635 stage 2 — the rest of the commercial configuration (Billing &
-      // Duration, cadence, regular fee, and the three benefit sections) is
-      // frozen onto the assignment here, alongside the #376 charge-benefit
-      // snapshot above, so every assignment entry point captures the same set.
+      // #635 stage 2 — the commercial configuration (Billing & Duration,
+      // cadence, regular fee, and the three benefit sections) is frozen onto
+      // the assignment here, so every assignment entry point captures the same
+      // set. Stage 4 removed the separate #376 charge-benefit snapshot this
+      // used to sit next to: Charge Benefits no longer exist.
       await snapshotAssignedPlan(tx, {
         gymId, userMembershipId: insertId,
         membershipPlanId: Number(req.params.id),
@@ -712,18 +679,6 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
         await tx.query(
           'INSERT INTO membership_plan_centers (gym_id, membership_plan_id, center_id) VALUES (?, ?, ?)',
           [gymId, insertId, c.center_id],
-        );
-      }
-
-      // Copy charge benefits
-      const { rows: cbs } = await tx.query(
-        'SELECT * FROM plan_charge_benefits WHERE membership_plan_id = ? AND gym_id = ?',
-        [req.params.id, gymId],
-      );
-      for (const cb of cbs) {
-        await tx.query(
-          'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
-          [gymId, insertId, cb.gym_charge_id, cb.action, cb.value],
         );
       }
 
@@ -1282,79 +1237,6 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
   }
 });
 
-// ─── Charge Benefits ──────────────────────────────────────────────────────────
-
-membershipPlansRouter.get('/:id/charge-benefits', async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const { rows } = await db.query<ChargeBenefitRow>(
-    `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
-            gc.availability AS gym_charge_availability
-     FROM plan_charge_benefits pcb
-     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id AND gc.deleted_at IS NULL
-     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-     WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
-    [req.params.id, gymId],
-  );
-  res.json(rows);
-});
-
-const VALID_CB_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'];
-
-membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const items = req.body;
-  if (!Array.isArray(items)) return res.status(400).json({ error: 'body must be an array' });
-
-  for (const item of items) {
-    if (!item.gym_charge_id || !VALID_CB_ACTIONS.includes(item.action)) {
-      return res.status(400).json({ error: 'Each item requires gym_charge_id and a valid action' });
-    }
-    if (['percentage_discount', 'fixed_discount'].includes(item.action) && item.value == null) {
-      return res.status(400).json({ error: `action ${item.action} requires a value` });
-    }
-  }
-
-  if (items.length > 0) {
-    const ids = items.map((i: any) => i.gym_charge_id);
-    const placeholders = ids.map(() => '?').join(',');
-    const { rows: gcRows } = await db.query(
-      `SELECT id FROM gym_charges WHERE gym_id = ? AND status = 'active' AND deleted_at IS NULL AND id IN (${placeholders})`,
-      [gymId, ...ids],
-    );
-    if (gcRows.length !== ids.length) {
-      return res.status(400).json({ error: 'One or more gym_charge_id values not found or not available in this gym' });
-    }
-  }
-
-  try {
-    await db.query(
-      'DELETE FROM plan_charge_benefits WHERE membership_plan_id = ? AND gym_id = ?',
-      [req.params.id, gymId],
-    );
-    for (const item of items) {
-      const value = ['no_benefit', 'waive'].includes(item.action) ? null : parseFloat(item.value);
-      await db.query(
-        'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
-        [gymId, req.params.id, item.gym_charge_id, item.action, value ?? null],
-      );
-    }
-    const { rows } = await db.query<ChargeBenefitRow>(
-      `SELECT pcb.*, ct.code AS gym_charge_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
-              gc.status AS gym_charge_status
-       FROM plan_charge_benefits pcb
-       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id AND gc.deleted_at IS NULL
-       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-       WHERE pcb.membership_plan_id = ? AND pcb.gym_id = ?`,
-      [req.params.id, gymId],
-    );
-    res.json(rows);
-  } catch (err) {
-    next(err);
-  }
-});
-
 // ─── Session / One-off / Period Benefits (#635 stage 1) ───────────────────────
 // The same three Sellable-Item-keyed sections a Promotion has had since #550,
 // now on the Membership Plan itself (migration 173). Deliberately a copy of the
@@ -1364,9 +1246,11 @@ membershipPlansRouter.put('/:id/charge-benefits', requireRole('admin'), async (r
 // (`{ items: [{ gym_charge_id, quantity }] }`, replace-all) and every rejection
 // must match what the Promotion endpoints already do.
 //
-// These are additive: nothing bills off them yet. Included Services
-// (`plan_allowances`) and Charge Benefits (`plan_charge_benefits`) stay exactly
-// where they are until stage 4 retires them, so no existing plan changes shape.
+// Since stage 3 (#714) these sections are what an assignment bills from, via
+// the snapshot it captures at assignment time. Charge Benefits, which used to
+// sit above them, were retired in stage 4 (migration 176). Included Services
+// (`plan_allowances`) is still here: it is booking-access, not commercial
+// configuration — see the note in that migration's header.
 
 function selectPlanSellableItemBenefits(table: string): string {
   return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,

@@ -41,10 +41,10 @@ import type {
 
 /**
  * `gym_charges.name` and `.type` are nullable — a system charge displays under
- * its `charge_types` name (see `loadChargeBenefitsSnapshot`, which resolves the
- * same way) — while the snapshot columns are NOT NULL. Copying them raw would
- * 500 the assignment for any Plan carrying such an item, so both are resolved
- * here and in migration 174's backfill with the identical fallback.
+ * its `charge_types` name — while the snapshot columns are NOT NULL. Copying
+ * them raw would 500 the assignment for any Plan carrying such an item, so
+ * both are resolved here and in migration 174's backfill with the identical
+ * fallback.
  */
 const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id))";
 const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";

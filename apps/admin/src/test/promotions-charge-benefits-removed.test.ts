@@ -107,12 +107,13 @@ describe('Promotions: Charge Benefits removed (#626)', () => {
     }
   });
 
-  // The Membership Plans editor has its own, unrelated Charge Benefits section
-  // (plans namespace) — #626 only removes the Promotion one.
-  it('leaves the Membership Plans Charge Benefits section untouched', () => {
+  // The Membership Plans editor had its own, unrelated Charge Benefits section
+  // (plans namespace). #626 removed only the Promotion one; #635 stage 4 then
+  // removed the Plan one too, so neither namespace carries these keys now.
+  it('leaves no Charge Benefit keys in the "plans" namespace either', () => {
     for (const code of LOCALE_CODES) {
-      expect(resolveKey(locales[code], 'plans.section_charge_benefits'), `${code}.json lost plans.section_charge_benefits`).toBeTypeOf('string');
-      expect(resolveKey(locales[code], 'plans.no_charge_benefits'), `${code}.json lost plans.no_charge_benefits`).toBeTypeOf('string');
+      expect(resolveKey(locales[code], 'plans.section_charge_benefits'), `${code}.json still has plans.section_charge_benefits`).toBeUndefined();
+      expect(resolveKey(locales[code], 'plans.no_charge_benefits'), `${code}.json still has plans.no_charge_benefits`).toBeUndefined();
     }
   });
 

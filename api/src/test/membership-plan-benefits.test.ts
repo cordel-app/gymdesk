@@ -455,16 +455,15 @@ describe('Membership Plan legacy sections (stage 1 is additive)', () => {
   });
 
   // Included Services (`plan_allowances`) still feeds package credits and
-  // booking checks, and Charge Benefits still drives the Billing Forecast —
-  // retiring either is stage 4, not this one.
-  it('still serves allowances and charge_benefits', async () => {
+  // booking checks, so it survives stage 4 (which retired Charge Benefits —
+  // see charge-benefits-retired.test.ts).
+  it('still serves allowances and the billing forecast', async () => {
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.allowances)).toBe(true);
-    expect(Array.isArray(res.body.charge_benefits)).toBe(true);
     expect(res.body.billing_forecast).toBeDefined();
   });
 });

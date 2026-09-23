@@ -441,10 +441,14 @@ presentation; do not re-decide anything.
    Pay Beforehand stayed Promotion-only because §6/§7 said so — "behaves like"
    is not a licence to copy the whole entity.
 6. **Land it additive when the legacy concept is still load-bearing.** The new
-   tables are written and read, but nothing bills off them; Included Services
-   still feeds `package-credits.ts` and Charge Benefits still drives the
-   Billing Forecast. Removing them is its own stage, after the replacement is
-   actually wired into billing.
+   tables were written and read before anything billed off them, while Included
+   Services still fed `package-credits.ts` and Charge Benefits still drove the
+   Billing Forecast. Removing a legacy concept is its own stage, after the
+   replacement is actually wired into billing — and only for the concepts the
+   replacement really replaces: stage 4 retired Charge Benefits (migration 176,
+   nothing read it once billing moved to the snapshot) but kept
+   `plan_allowances`, which is booking-access keyed by activity type, not
+   commercial configuration keyed by Sellable Item.
 
 Reference implementation: `api/src/api/membership-plans.ts` (the
 `PLAN_BENEFIT_ROUTES` loop) + `[locale]/plans/page.tsx`. Tests:
@@ -675,7 +679,7 @@ When a catalog item is attached to a record that is *already billing* (an Additi
 - **DELETE stamps, or deletes only when nothing was billed**: the endpoint sets `ends_at = today` for an attachment already in force, and hard-deletes one whose `starts_at` is still in the future (an `ends_at` before `starts_at` would violate the CHECK, and nothing was ever billed). Return which of the two happened (`{ deleted, ends_at }`) so the UI doesn't have to guess.
 - **No unique key on (parent, item)** — the same item may be attached again over a later, non-overlapping window. Enforce *overlap* in the endpoint instead (`ends_at IS NULL OR ends_at >= :starts_at` → 409); quantity, not a second row, is how "two of them" is expressed. The endpoint check alone is a read-then-insert race, so back the one case that *is* expressible as a key — at most one **open** attachment per (parent, item) — with a `VIRTUAL` generated column (`IF(ends_at IS NULL, CONCAT(parent_id, ':', item_id), NULL)`) under a unique index, and map `ER_DUP_ENTRY` to the same 409 (`STORED` is rejected over FK columns; see migration 007).
 - **Flag a retired catalog row rather than hiding it**: the join must not filter `deleted_at`/`status` (the attachment keeps billing), but the read should report it (`sellable_item_retired`) so the UI can mark a row the write path would no longer accept.
-- **Never copy the catalog row's fields onto the attachment** (name, price, frequency): join them live on every read, so an item's price change shows up everywhere at once. Only snapshot when the ticket explicitly asks history to be frozen (contrast: `user_membership_charge_benefits`; #635 asked for exactly that, so `user_membership_services` now carries both — snapshot columns written at attach time *and* the live join, see the next section). The FK to the catalog table then gets no `ON DELETE CASCADE` — items are soft-deleted, and the attachment must outlive one being retired.
+- **Never copy the catalog row's fields onto the attachment** (name, price, frequency): join them live on every read, so an item's price change shows up everywhere at once. Only snapshot when the ticket explicitly asks history to be frozen (the pattern migration 130 set for the since-retired charge-benefit snapshot; #635 asked for exactly that, so `user_membership_services` now carries both — snapshot columns written at attach time *and* the live join, see the next section). The FK to the catalog table then gets no `ON DELETE CASCADE` — items are soft-deleted, and the attachment must outlive one being retired.
 - **Gate on the parent's status**, mirroring the same list in the frontend: a record that bills nothing further (`cancelled`/`expired`) accepts no new attachments, but keeps showing the ones it had.
 - **The projection does the rest**: the forecast (`domain/billingSimulation.ts`) treats each attachment as a stream from `max(parent.start, starts_at)` to `min(parent.end, ends_at)`. Removal needs no other code path — the window is the whole mechanism.
 - **Frontend**: inline row CRUD (no modal), the action column keyed on `ends_at == null` rather than a derived `active` flag — a row removed today is still billable today, but must not offer Remove twice.

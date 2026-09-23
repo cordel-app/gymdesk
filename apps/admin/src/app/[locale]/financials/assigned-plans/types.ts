@@ -12,15 +12,6 @@ export interface BillingPolicy {
   auto_renew: number | boolean;
 }
 
-export interface ChargeBenefitSnapshot {
-  id: number;
-  charge_type_code: string | null;
-  gym_charge_name: string | null;
-  gym_charge_amount: string | number | null;
-  action: string;
-  value: number | null;
-}
-
 export interface ActivityAllowanceUsage {
   activity_type_id: number;
   activity_type_name: string;
@@ -110,7 +101,6 @@ export interface AssignedPlanDetail {
   modified_at: string | null;
   members: AssignedPlanMember[];
   billing_policy: BillingPolicy | null;
-  charge_benefits: ChargeBenefitSnapshot[];
   activity_allowances: ActivityAllowanceUsage[];
   promotions: AppliedPromotion[];
   additional_services: AssignedPlanService[];
