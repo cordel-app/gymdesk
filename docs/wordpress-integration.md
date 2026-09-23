@@ -198,7 +198,9 @@ curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" 
 | `name` | yes | Up to 255 characters. |
 | `email` | yes | |
 | `center_id` | only for gyms with more than one active center | The center the member joins. An inactive center is treated as non-existent: it is rejected like an unknown id and never counts towards "more than one center". |
-| `locale` | no | `en`, `es` or `ca` — language of the page the invitation link opens. Defaults to `en`. |
+| `locale` | no | `en`, `es` or `ca` — language of the page the invitation link opens. Defaults to `en`. Does **not** change the email's language — see below. |
+
+**Invitation email language.** `locale` only sets the language of the page the link opens (`/{locale}/link`). A Spanish site should send `'locale' => 'es'`. The invitation **email** is Clerk's *Invitation* template, which Clerk sends as written: its invitation API takes no language, and there is one template per Clerk instance, shared by every gym and by every invitation (website registration, members created in the admin, staff). To change its wording or language, edit it in the Clerk Dashboard → Customization → Emails → *Invitation*. A bilingual template is the safe choice while gyms with different languages share the instance.
 
 | Status | Meaning |
 |--------|---------|
