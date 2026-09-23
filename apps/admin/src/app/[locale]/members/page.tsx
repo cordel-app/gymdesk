@@ -418,6 +418,10 @@ export default function MembersPage() {
       ),
     },
     {
+      header: t('members.col_email'),
+      render: (m) => <span style={{ wordBreak: 'break-all' }}>{m.email}</span>,
+    },
+    {
       header: t('members.col_document'),
       render: (m) => m.nif_nie_passport || '—',
     },

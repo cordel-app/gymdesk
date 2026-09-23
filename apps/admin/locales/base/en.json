@@ -232,6 +232,7 @@
     "label_emergency_contact": "Emergency contact",
     "label_notes": "Notes",
     "label_document": "NIF/NIE/Passport",
+    "col_email": "Email",
     "col_document": "NIF/NIE/Passport",
     "placeholder_address": "Street, city, postcode",
     "placeholder_emergency_contact": "Name and phone",

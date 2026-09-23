@@ -146,6 +146,7 @@
     "label_emergency_contact": "Contacto de emergencia",
     "label_notes": "Notas",
     "label_document": "NIF/NIE/Pasaporte",
+    "col_email": "Correo electrónico",
     "col_document": "NIF/NIE/Pasaporte",
     "placeholder_address": "Calle, ciudad, código postal",
     "placeholder_emergency_contact": "Nombre y teléfono",
