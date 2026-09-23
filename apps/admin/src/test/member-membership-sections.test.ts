@@ -65,6 +65,7 @@ const PROMOTION_KEYS = [
   'promotions_pick_plan',
   'promotions_pick_plan_first',
   'promotions_already_applied',
+  'promotions_blocked_new_members_only',
   'promotions_error_no_plan',
   'promotions_error_no_promotion',
   'promotions_needs_plan',
@@ -124,6 +125,14 @@ describe('Member Membership sections (#634)', () => {
     expect(promotionsSrc).toContain('nonStackableApplied');
     expect(promotionsSrc).toContain('appliedIdsOnTarget');
     expect(promotionsSrc).toContain('disabled={saving || blocked !== null}');
+  });
+
+  it('respects "Only applicable for new members" in the picker (§3)', () => {
+    // The API is the enforcement point; the picker disables the option and says
+    // why, using the server's own per-plan answer.
+    expect(promotionsSrc).toContain('p.only_applicable_for_new_members');
+    expect(promotionsSrc).toContain('target.new_member_eligible');
+    expect(promotionsSrc).toContain("t('promotions_blocked_new_members_only')");
   });
 
   it('reuses the #631 inline editor for Additional Services, once per live plan (§4)', () => {

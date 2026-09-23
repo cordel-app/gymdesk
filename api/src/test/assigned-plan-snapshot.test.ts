@@ -428,8 +428,9 @@ describe('applying a Promotion snapshots what it grants', () => {
     umId = created.body.id;
 
     const { insertId } = await db.query(
-      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, stackable, lifecycle_status, free_months, paid_months, bonus_months)
-       VALUES (?, ?, ?, ?, 1, 'active', 1, 3, 0)`,
+      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, stackable, only_applicable_for_new_members,
+                               lifecycle_status, free_months, paid_months, bonus_months)
+       VALUES (?, ?, ?, ?, 1, 0, 'active', 1, 3, 0)`,
       [gymId, `APS-Promo-${uniq()}`, `${dayOffset(-5)} 00:00:00`, `${dayOffset(30)} 00:00:00`],
     );
     promotionId = insertId;

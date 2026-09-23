@@ -60,11 +60,19 @@ async function createUserMembership(gymId: string, memberId: number, planId: num
   return insertId;
 }
 
-async function createPromo(gymId: string, name: string, stackable = false): Promise<number> {
+// `only_applicable_for_new_members` is explicit (and off by default here)
+// because the column defaults to 1 in the schema (#633, migration 163) and,
+// since #634 §3, that flag refuses the apply for a Member who held another
+// Membership Plan in the trailing 12 months. Promotions that are not about
+// that rule opt out; the rule's own tests below pass `newMembersOnly`.
+async function createPromo(
+  gymId: string, name: string, stackable = false, newMembersOnly = false,
+): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable)
-     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', ?)`,
-    [gymId, name, stackable ? 1 : 0],
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
+                             only_applicable_for_new_members)
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', ?, ?)`,
+    [gymId, name, stackable ? 1 : 0, newMembersOnly ? 1 : 0],
   );
   return insertId;
 }
@@ -447,4 +455,122 @@ describe('POST /user-memberships/:id/promotions — auth', () => {
       .send({ promotion_id: promoId });
     expect(res.status).toBe(403);
   });
+});
+
+// ─── "Only applicable for new members" (#634 §3) ──────────────────────────────
+//
+// "A member that books his/her first membership plan in 12 months. If a user
+// was member of the gym 12 months ago and now is coming back, the flag only
+// applicable to new users will apply." (issue thread)
+//
+// The window arithmetic itself is covered by the unit tests in
+// new-member-eligibility.test.ts; these check that the rule actually gates the
+// apply paths, and that the assignment being configured never disqualifies its
+// own Member.
+
+describe('POST /user-memberships/:id/promotions — new-members-only promotions', () => {
+  let gymId: string;
+  let planId: number;
+  let otherPlanId: number;
+  let promoId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MP New Member Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, 'NM Plan');
+    otherPlanId = await createPlan(gymId, 'NM Other Plan');
+    promoId = await createPromo(gymId, 'NM Promo', true, true);
+    await targetPlan(gymId, promoId, planId);
+  });
+
+  const apply = (umId: number) =>
+    request
+      .post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ promotion_id: promoId });
+
+  /** An assignment with explicit dates, so each case controls its own history. */
+  async function createAssignment(
+    memberId: number, membershipPlanId: number,
+    opts: { status?: string; startsAt?: string; endsAt?: string | null; createdMonthsAgo?: number } = {},
+  ): Promise<number> {
+    const { status = 'active', startsAt = 'CURDATE()', endsAt = null, createdMonthsAgo = 0 } = opts;
+    const { insertId } = await db.query(
+      `INSERT INTO user_memberships
+         (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price, final_price, created_at)
+       VALUES (?, ?, ?, ?, ${startsAt}, ?, 100, 100, UTC_TIMESTAMP() - INTERVAL ? MONTH)`,
+      [gymId, memberId, membershipPlanId, status, endsAt, createdMonthsAgo],
+    );
+    return insertId;
+  }
+
+  it("applies to a Member's first Membership Plan", async () => {
+    const memberId = await createMember(gymId, 'NM First');
+    const umId = await createAssignment(memberId, planId);
+
+    const res = await apply(umId);
+    expect(res.status).toBe(201);
+  });
+
+  it('refuses a Member who already holds another Membership Plan', async () => {
+    const memberId = await createMember(gymId, 'NM Parallel');
+    await createAssignment(memberId, otherPlanId, { startsAt: 'CURDATE() - INTERVAL 2 MONTH' });
+    const umId = await createAssignment(memberId, planId);
+
+    const res = await apply(umId);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/new members/i);
+  });
+
+  it('refuses a Member whose previous plan ended inside the last 12 months', async () => {
+    const memberId = await createMember(gymId, 'NM Recent');
+    await createAssignment(memberId, otherPlanId, {
+      status: 'expired',
+      startsAt: 'CURDATE() - INTERVAL 24 MONTH',
+      endsAt: null,
+      createdMonthsAgo: 24,
+    });
+    await db.query(
+      "UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH WHERE member_id = ? AND status = 'expired'",
+      [memberId],
+    );
+    const umId = await createAssignment(memberId, planId);
+
+    const res = await apply(umId);
+    expect(res.status).toBe(400);
+  });
+
+  it('applies for a Member coming back more than 12 months later', async () => {
+    const memberId = await createMember(gymId, 'NM Returning');
+    const lapsedId = await createAssignment(memberId, otherPlanId, {
+      status: 'expired',
+      startsAt: 'CURDATE() - INTERVAL 36 MONTH',
+      createdMonthsAgo: 36,
+    });
+    await db.query(
+      'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 18 MONTH WHERE id = ?',
+      [lapsedId],
+    );
+    const umId = await createAssignment(memberId, planId);
+
+    const res = await apply(umId);
+    expect(res.status).toBe(201);
+  });
+
+  it('still applies a promotion that is not flagged, to a long-standing Member', async () => {
+    const openPromoId = await createPromo(gymId, 'NM Open Promo', true, false);
+    await targetPlan(gymId, openPromoId, planId);
+    const memberId = await createMember(gymId, 'NM Long Standing');
+    await createAssignment(memberId, otherPlanId, { startsAt: 'CURDATE() - INTERVAL 2 MONTH' });
+    const umId = await createAssignment(memberId, planId);
+
+    const res = await request
+      .post(`/user-memberships/${umId}/promotions`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ promotion_id: openPromoId });
+    expect(res.status).toBe(201);
+  });
+
 });

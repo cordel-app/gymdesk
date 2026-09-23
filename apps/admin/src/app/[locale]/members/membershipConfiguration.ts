@@ -25,6 +25,14 @@ export interface MemberPlanRow {
    * #634 — but nothing can be attached to them.
    */
   is_live: boolean;
+  /**
+   * #634 §3 — whether a Promotion flagged "Only applicable for new members"
+   * would be accepted on this plan: the Member held no other Membership Plan
+   * in the trailing 12 months. Reported per plan because the plan a Promotion
+   * is attached to never counts against its own Member, so a Member's first
+   * plan and their second can differ. Server-computed; the API enforces it.
+   */
+  new_member_eligible: boolean;
   /** The Plan's included activity allowances — empty for a plan that is not live. */
   activity_allowances: PlanAllowance[];
 }

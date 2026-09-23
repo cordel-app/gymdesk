@@ -123,16 +123,23 @@ async function getChargeTypeId(code: string): Promise<number> {
   return rows[0].id;
 }
 
+// `only_applicable_for_new_members` is explicit (off unless a case asks for
+// it) because the column defaults to 1 in the schema (#633, migration 163) and,
+// since #634 §3, that flag refuses the apply for a Member who held another
+// Membership Plan in the trailing 12 months — which every Member reaching
+// Assign New Plan from a live assignment has.
 async function createPromotion(
   gymId: string,
   planId: number,
   name: string,
   stackable = false,
+  newMembersOnly = false,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable)
-     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', ?)`,
-    [gymId, name, stackable ? 1 : 0],
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
+                            only_applicable_for_new_members)
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', ?, ?)`,
+    [gymId, name, stackable ? 1 : 0, newMembersOnly ? 1 : 0],
   );
   await db.query(
     'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
@@ -1198,6 +1205,29 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       [res.body.id],
     );
     expect(rows.map((r: any) => r.promotion_id).sort()).toEqual([promoA, promoB].sort());
+  });
+
+  it('refuses a new-members-only promotion for a Member who already has a plan (#634 §3)', async () => {
+    const memberId = await createMember(gymId, 'UM Assign New Members Member');
+    const oldPlanId = await createPlan(gymId);
+    const newPlanId = await createPlan(gymId);
+    const oldUmId = await createUserMembershipDirect(gymId, memberId, oldPlanId, 'active');
+    const promoId = await createPromotion(gymId, newPlanId, `Assign-NewOnly-${Date.now()}`, true, true);
+
+    const res = await request
+      .post(`/user-memberships/${oldUmId}/assign-new-plan`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: [promoId] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/new members/i);
+
+    // Validated up front: the plan must not have been assigned (#628).
+    const { rows } = await db.query(
+      'SELECT id FROM user_memberships WHERE member_id = ? AND membership_plan_id = ?',
+      [memberId, newPlanId],
+    );
+    expect(rows).toHaveLength(0);
   });
 
   it('assigns with no promotions when promotion_ids is omitted', async () => {

@@ -214,8 +214,9 @@ async function applyPromotionWithSessionBenefit(
   status: 'applied' | 'consumed' | 'revoked' = 'applied',
 ): Promise<number> {
   const { insertId: promotionId } = await db.query(
-    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable)
-     VALUES (?, ?, ?, '2099-12-31', 'active', 1)`,
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
+                            only_applicable_for_new_members)
+     VALUES (?, ?, ?, '2099-12-31', 'active', 1, 0)`,
     [gymId, `MPS-Promo-${uniq()}`, dayOffset(-60)],
   );
   await db.query(

@@ -96,8 +96,9 @@ async function createGymCharge(gymId: string): Promise<number> {
 // so enrichPlan()'s promotion_count can be exercised.
 async function createPromoTargetingPlan(gymId: string, planId: number): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status)
-     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active')`,
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status,
+                            only_applicable_for_new_members)
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', 0)`,
     [gymId, `Plan Detail Promo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`],
   );
   await db.query(
