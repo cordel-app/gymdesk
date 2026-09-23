@@ -342,13 +342,32 @@ export default function MembersPage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm(t('members.confirm_delete'))) return;
+  // #709: ConfirmDialog, not window.confirm() — like the rest of the admin
+  // (confirm() is also auto-cancelled by embedded browsers).
+  const [confirming, setConfirming] = useState<{ kind: 'delete' | 'revoke'; id: number } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+
+  function handleDelete(id: number) {
+    setConfirming({ kind: 'delete', id });
+  }
+
+  async function runConfirmed() {
+    if (!confirming) return;
+    const { kind, id } = confirming;
+    setConfirmBusy(true);
     try {
-      await apiFetch(`/members/${id}`, { method: 'DELETE' });
+      if (kind === 'delete') {
+        await apiFetch(`/members/${id}`, { method: 'DELETE' });
+      } else {
+        await apiFetch(`/members/${id}/revoke-invite`, { method: 'POST' });
+        toast(t('members.toast_revoked'), 'success');
+      }
       load();
     } catch (err: any) {
-      toast(err.message ?? t('members.error_generic'));
+      toast(err.message ?? t('members.error_generic'), 'error');
+    } finally {
+      setConfirmBusy(false);
+      setConfirming(null);
     }
   }
 
@@ -372,15 +391,8 @@ export default function MembersPage() {
     }
   }
 
-  async function handleRevokeInvite(id: number) {
-    if (!confirm(t('members.confirm_revoke'))) return;
-    try {
-      await apiFetch(`/members/${id}/revoke-invite`, { method: 'POST' });
-      toast(t('members.toast_revoked'), 'success');
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('members.error_generic'), 'error');
-    }
+  function handleRevokeInvite(id: number) {
+    setConfirming({ kind: 'revoke', id });
   }
 
   function toggleExpand(m: Member) {
@@ -607,6 +619,16 @@ export default function MembersPage() {
       {detailFor && (
         <MemberDetailModal memberId={detailFor.id} memberName={detailFor.name} onClose={() => setDetailFor(null)} />
       )}
+
+      <ConfirmDialog
+        open={confirming !== null}
+        message={t(confirming?.kind === 'revoke' ? 'members.confirm_revoke' : 'members.confirm_delete')}
+        confirmLabel={t(confirming?.kind === 'revoke' ? 'members.action_revoke' : 'members.delete')}
+        cancelLabel={t('members.cancel')}
+        onConfirm={runConfirmed}
+        onCancel={() => setConfirming(null)}
+        busy={confirmBusy}
+      />
 
       <ConfirmDialog
         open={pendingAction !== null}

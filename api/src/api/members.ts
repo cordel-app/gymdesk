@@ -7,6 +7,7 @@ import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
 import { validateDocumentId, maskDocumentId } from '../domain/documentId';
 import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
+import { classifyAccount, loadAccountLinksFor } from '../infra/clerk-account-links';
 
 /**
  * #513: never write the raw nif_nie_passport value into audit_logs — mask it
@@ -340,14 +341,15 @@ membersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, actorName } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      'SELECT clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT id, clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+    const clerkUserId: string | null = rows[0].clerk_user_id;
 
     // If a portal invitation is still pending (never accepted), revoke it so the
     // invite link can't be used to resurrect access after the member is removed.
-    if (!rows[0].clerk_user_id && rows[0].invitation_id) {
+    if (!clerkUserId && rows[0].invitation_id) {
       try {
         await clerkClient.invitations.revokeInvitation(rows[0].invitation_id);
       } catch (err: any) {
@@ -356,12 +358,57 @@ membersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
       }
     }
 
+    // #709: a login whose last link was this member would be left orphaned in
+    // Clerk. Delete it FIRST, as staff revokeAccess() does: if Clerk fails,
+    // nothing changes here. Only then (or when Clerk no longer has the account)
+    // is the member unlinked. A login still linked elsewhere (another gym,
+    // staff, superadmin) is kept and the member stays linked to it, so a
+    // Recycle Bin restore reconnects them exactly as before.
+    let unlinkLogin = false;
+    let clerkAccountDeleted = false;
+    if (clerkUserId) {
+      let clerkUser: any = null;
+      try {
+        clerkUser = await clerkClient.users.getUser(clerkUserId);
+      } catch (err: any) {
+        if (err.status !== 404) throw err;
+      }
+      if (!clerkUser) {
+        unlinkLogin = true; // already gone in Clerk
+      } else {
+        const links = await loadAccountLinksFor(clerkUserId);
+        links.activeMemberGyms = links.activeMemberGyms.filter((g) => g.gym_id !== gymId);
+        if (!classifyAccount(clerkUser, links).linked) {
+          try {
+            await clerkClient.users.deleteUser(clerkUserId);
+          } catch (err: any) {
+            console.error('Failed to delete Clerk user on member delete:', { memberId: req.params.id, error: err.message });
+            return res.status(502).json({ error: 'Failed to delete the member\'s login in Clerk. The member was not deleted.' });
+          }
+          clerkAccountDeleted = true;
+          unlinkLogin = true;
+        }
+      }
+      if (unlinkLogin) {
+        await db.query(
+          "DELETE FROM gym_memberships WHERE user_id = ? AND gym_id = ? AND role = 'member'",
+          [clerkUserId, gymId],
+        );
+      }
+    }
+
     const { rowCount } = await db.query(
-      'UPDATE members SET deleted_at = UTC_TIMESTAMP(), invitation_id = NULL, deleted_by_name = ? WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      `UPDATE members SET deleted_at = UTC_TIMESTAMP(), invitation_id = NULL, deleted_by_name = ?${unlinkLogin ? ', clerk_user_id = NULL' : ''}
+       WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [actorName, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Member not found' });
-    recordAudit(req, { action: 'soft_delete', entityType: 'member', entityId: req.params.id });
+    recordAudit(req, {
+      action: 'soft_delete',
+      entityType: 'member',
+      entityId: req.params.id,
+      ...(clerkUserId ? { next: { login_unlinked: unlinkLogin, clerk_account_deleted: clerkAccountDeleted } } : {}),
+    });
     res.status(204).send();
   } catch (err) { next(err); }
 });
