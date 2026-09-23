@@ -618,6 +618,21 @@ Reference implementation: `api/src/api/user-membership-services.ts` + migration 
 
 ---
 
+## Recurring-Slot Projection over Existing Rows (#647 stage 2)
+
+When a ticket asks for a *recurring weekly* view of something the database stores as individual dated rows (Personal Training slots over `calendar_events`), don't add a table for the pattern and don't recompute availability in the frontend. Project it:
+
+- **A pure `domain/` module does the folding**, an `api/` file only loads rows. The grouping key, the per-date reasons and the window arithmetic then get unit tests with no DB (`domain/personalTrainingSlots.ts` ↔ `test/personal-training-slots-projection.test.ts`), and the SQL stays one readable query.
+- **Group on gym-local time, never UTC.** Occurrences are stored in UTC (`materializeScheduleRule` converts through `gyms.timezone`), so "Monday 10:00" is a different UTC instant either side of a DST change. Grouping on the local weekday + `HH:mm` keeps one slot whole; grouping on UTC silently splits it into two half-empty ones at the end of March.
+- **Report the dates that are missing, don't shorten the list.** Compute the dates the slot is *expected* on (every matching weekday in the window, skipping today when its time has passed) and pair each with its occurrence or a reason — `no_occurrence` for a closure or a rule that ended, plus the per-occurrence states. A view that only lists what exists can't tell "runs every week" apart from "runs twice more".
+- **One blocked date must not erase the slot** unless the ticket really means it. Report both readings — a count of bookable dates *and* an all-or-nothing flag — and let the UI choose; that way a later answer on the issue thread doesn't need a schema change.
+- **Ask the write path's own rule, don't re-implement it.** Export the predicate the booking hook uses (`isActivityTypeEligibleForMember()` in `api/activity-eligibility.ts`) and call it from the projection, once per distinct entity rather than per occurrence. A projection that shows what the booking endpoint would 403 on is worse than one that shows nothing.
+- **Reuse the sibling read endpoint** for the entitlement side (`resolveMemberProfessionalServices()`) instead of re-deriving it, and echo it in the response so the UI can explain an empty grid.
+
+Reference implementation: `api/src/domain/personalTrainingSlots.ts` + `api/src/api/member-personal-training-slots.ts` + `apps/admin/src/app/[locale]/members/MemberPersonalTrainingSlots.tsx`.
+
+---
+
 ## Translated Catalog Content (#643)
 
 UI labels belong in `locales/base/{en,es,ca}.json`. When the *data* itself needs

@@ -22,6 +22,7 @@ import { activityTypesRouter } from './api/activity-types';
 import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-rules';
 import { professionalServicesRouter } from './api/professional-services';
 import { memberProfessionalServicesRouter } from './api/member-professional-services';
+import { memberPersonalTrainingSlotsRouter } from './api/member-personal-training-slots';
 import { classSessionsRouter } from './api/calendar-events';
 // Side-effect import: registers the booking access hook for activity-type eligibility
 // (public_event / activity_type_eligible_plans). Must be imported BEFORE plan-allowances
@@ -198,6 +199,10 @@ app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContex
 // MEMBERS module (it reads one Member's entitlements) but on the Professional
 // Services feature flag, since it has nothing to return when that is off.
 app.use('/members/:memberId/professional-services', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('organization.professional_services'), memberProfessionalServicesRouter);
+// #647 stage 2: the weekly Personal Training availability projection. Same
+// gating as stage 1 — it is a read of one Member's slots, and it has nothing
+// to project when Professional Services are switched off.
+app.use('/members/:memberId/personal-training-slots', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('organization.professional_services'), memberPersonalTrainingSlotsRouter);
 app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), bookingsRouter);
 
 // TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE

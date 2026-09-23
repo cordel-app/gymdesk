@@ -247,7 +247,20 @@
     "event_notes": "Notas",
     "event_source": "Origen",
     "event_receipt": "Recibo",
-    "section_additional_services": "Servicios Periódicos Adicionales"
+    "section_additional_services": "Servicios Periódicos Adicionales",
+    "section_pt_slots": "Franjas de Entrenamiento Personal",
+    "pt_slots_loading": "Cargando franjas…",
+    "pt_slots_error": "No se han podido cargar las franjas de Entrenamiento Personal.",
+    "pt_slots_no_services": "Este miembro no dispone de sesiones de ningún Servicio Profesional, por lo que no hay franjas elegibles.",
+    "pt_slots_none": "No hay franjas recurrentes disponibles para este miembro en los próximos 2 meses.",
+    "pt_slots_window": "Disponibilidad semanal recurrente, {from} → {to}",
+    "pt_slots_available_count": "{available} de {total} fechas libres",
+    "pt_slots_already_booked_count": "{count} ya reservadas",
+    "pt_slots_status_available": "Libre",
+    "pt_slots_status_no_occurrence": "Sin programar",
+    "pt_slots_status_not_scheduled": "Cancelada",
+    "pt_slots_status_full": "Completa",
+    "pt_slots_status_already_booked": "Reservada"
   },
   "member_payments": {
     "title": "Pagos del socio",

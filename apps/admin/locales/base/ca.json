@@ -248,7 +248,20 @@
     "event_notes": "Notes",
     "event_source": "Origen",
     "event_receipt": "Rebut",
-    "section_additional_services": "Serveis Periòdics Addicionals"
+    "section_additional_services": "Serveis Periòdics Addicionals",
+    "section_pt_slots": "Franges d’Entrenament Personal",
+    "pt_slots_loading": "Carregant franges…",
+    "pt_slots_error": "No s’han pogut carregar les franges d’Entrenament Personal.",
+    "pt_slots_no_services": "Aquest membre no disposa de sessions de cap Servei Professional, per tant no hi ha franges elegibles.",
+    "pt_slots_none": "No hi ha franges recurrents disponibles per a aquest membre en els pròxims 2 mesos.",
+    "pt_slots_window": "Disponibilitat setmanal recurrent, {from} → {to}",
+    "pt_slots_available_count": "{available} de {total} dates lliures",
+    "pt_slots_already_booked_count": "{count} ja reservades",
+    "pt_slots_status_available": "Lliure",
+    "pt_slots_status_no_occurrence": "Sense programar",
+    "pt_slots_status_not_scheduled": "Cancel·lada",
+    "pt_slots_status_full": "Completa",
+    "pt_slots_status_already_booked": "Reservada"
   },
   "member_payments": {
     "title": "Pagaments del soci",
