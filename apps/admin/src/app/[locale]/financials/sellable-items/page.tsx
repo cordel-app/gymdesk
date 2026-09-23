@@ -52,7 +52,7 @@ const LIST_COLUMNS: ListColumn[] = [
   { labelKey: 'col_name', width: 180, grow: 2 },
   { labelKey: 'col_type', width: 100 },
   { labelKey: 'col_units', width: 70, align: 'right' },
-  { labelKey: 'col_amount', width: 150 },
+  { labelKey: 'col_price', width: 150 },
   { labelKey: 'col_tax_rate', width: 80 },
   { labelKey: 'col_frequency', width: 110 },
   { labelKey: 'col_created_by', width: 100 },
@@ -506,7 +506,7 @@ export default function SellableItemsPage() {
               />
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('label_amount')}</label>
+              <label style={inlineLabelStyle}>{t('label_price')}</label>
               <input
                 type="number" min="0" step="0.01"
                 value={inlineNew.amount}
@@ -704,7 +704,7 @@ export default function SellableItemsPage() {
             <SectionHeader title={t('section_billing')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
-                <label style={inlineLabelStyle}>{t('label_amount')}</label>
+                <label style={inlineLabelStyle}>{t('label_price')}</label>
                 <input
                   type="number" min="0" step="0.01"
                   value={editForm.amount}
@@ -803,7 +803,7 @@ export default function SellableItemsPage() {
             <DetailRow label={t('label_enrollment_status')} value={tStatus(item.enrollment_status)} />
 
             <SectionHeader title={t('section_billing')} />
-            <DetailRow label={t('label_amount')} value={fmtAmount(item.amount, item.currency)} />
+            <DetailRow label={t('label_price')} value={fmtAmount(item.amount, item.currency)} />
             <DetailRow label={t('label_frequency')} value={item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'} />
             {!isSystem && <DetailRow label={t('label_validity_days')} value={item.validity_days != null ? String(item.validity_days) : '—'} />}
             <DetailRow
@@ -931,7 +931,7 @@ export default function SellableItemsPage() {
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <ModalSection title={t('section_billing')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <ModalField label={t('label_amount')} value={fmtAmount(details.amount, details.currency)} />
+              <ModalField label={t('label_price')} value={fmtAmount(details.amount, details.currency)} />
               <ModalField label={t('label_frequency')} value={details.billing_frequency ? t(`frequency_${details.billing_frequency}`) : '—'} />
               <ModalField label={t('label_validity_days')} value={details.validity_days != null ? String(details.validity_days) : '—'} />
               <ModalField
