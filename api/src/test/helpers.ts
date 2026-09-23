@@ -138,3 +138,18 @@ export async function cleanupTestGyms() {
   // afterAll, *after* this call (gyms.payment_provider_id is RESTRICT), and hand
   // the default flag back if it borrowed it. See payment-providers.test.ts.
 }
+
+/**
+ * Polls `fn` until `done(result)` holds, or the timeout passes (then returns
+ * the last result so the caller's assertion reports it). For fire-and-forget
+ * writes such as audit rows, whose timing a fixed sleep can't guarantee on CI.
+ */
+export async function eventually<T>(fn: () => Promise<T>, done: (v: T) => boolean, timeoutMs = 5000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let last = await fn();
+  while (!done(last) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+    last = await fn();
+  }
+  return last;
+}

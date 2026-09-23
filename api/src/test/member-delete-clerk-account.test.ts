@@ -4,7 +4,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, TEST_USER_ID, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, TEST_USER_ID, cleanupTestGyms, createTestGym, createTestMembership, eventually, request } from './helpers';
 
 const clerk = vi.hoisted(() => ({
   users: new Map<string, any>(),
@@ -94,11 +94,10 @@ describe('DELETE /members/:id — Clerk login (#709)', () => {
     expect(await memberRow(memberId)).toMatchObject({ clerk_user_id: null });
     expect((await memberRow(memberId)).deleted_at).not.toBeNull();
     expect(await loginRows(cid)).toHaveLength(0);
-    await new Promise((r) => setTimeout(r, 50));
-    const { rows: audit } = await db.query<any>(
+    const audit = await eventually(async () => (await db.query<any>(
       "SELECT new_values FROM audit_logs WHERE gym_id = ? AND entity_type = 'member' AND entity_id = ? AND action = 'soft_delete'",
       [gymId, String(memberId)],
-    );
+    )).rows, (r) => r.length > 0);
     const next = typeof audit[0].new_values === 'string' ? JSON.parse(audit[0].new_values) : audit[0].new_values;
     expect(next).toMatchObject({ login_unlinked: true, clerk_account_deleted: true });
   });
