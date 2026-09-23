@@ -2255,6 +2255,8 @@
     "col_actions": "Actions",
     "col_default_center": "Default Center",
     "col_default_trainer": "Default Trainer",
+    "col_description": "Description",
+    "col_color": "Colour",
     "col_created_at": "Created",
     "col_created_by": "Created by",
     "details": "Details",

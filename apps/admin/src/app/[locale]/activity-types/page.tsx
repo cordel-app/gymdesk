@@ -783,16 +783,29 @@ export default function ActivityTypesPage() {
         {/* Collapsed header */}
         <div style={rowStyle} onClick={() => toggleExpand(row.id)}>
           <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {row.color && (
-              <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: row.color, marginRight: 8, verticalAlign: 'middle' }} />
-            )}
             {row.name}
           </div>
-          <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
-            {fmtDate(row.created_at)}
+          <div style={{ flex: 3, fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description ?? undefined}>
+            {row.description ?? '—'}
+          </div>
+          <div style={{ width: 90, minWidth: 90, fontSize: 13, color: '#888', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+            {row.color ? (
+              <>
+                <span
+                  aria-hidden
+                  style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: row.color, border: '1px solid rgba(0,0,0,0.15)', flexShrink: 0 }}
+                />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.color.toUpperCase()}</span>
+              </>
+            ) : (
+              '—'
+            )}
           </div>
           <div style={{ minWidth: 110, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.created_by_name ?? '—'}
+          </div>
+          <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
+            {fmtDate(row.created_at)}
           </div>
           <div style={{ minWidth: 90, flexShrink: 0 }}>
             <StatusBadge status={row.status} label={tStatus(row.status)} />
@@ -1053,8 +1066,10 @@ export default function ActivityTypesPage() {
       {(rows.length > 0 || inlineNew) && (
         <div style={colHeaderStyle}>
           <div style={{ flex: 2 }}>{t('col_name')}</div>
-          <div style={{ minWidth: 100 }}>{t('col_created_at')}</div>
+          <div style={{ flex: 3 }}>{t('col_description')}</div>
+          <div style={{ width: 90, minWidth: 90 }}>{t('col_color')}</div>
           <div style={{ minWidth: 110 }}>{t('col_created_by')}</div>
+          <div style={{ minWidth: 100 }}>{t('col_created_at')}</div>
           <div style={{ minWidth: 90 }}>{t('col_status')}</div>
           <div style={{ minWidth: 120 }}>{t('col_default_center')}</div>
           <div style={{ minWidth: 120 }}>{t('col_default_trainer')}</div>
