@@ -335,6 +335,7 @@ export async function loadPromotionApplications(
 async function computeBillingEventsView(gymId: string, um: {
   id: number; membership_plan_id: number | null; status: string;
   base_price: string | number | null; starts_at: unknown; ends_at: unknown;
+  recurring_billing_interval?: number | null; recurring_billing_unit?: string | null;
 }) {
   const billingStart = toDateOnly(um.starts_at);
   const endsAt = um.ends_at != null ? toDateOnly(um.ends_at) : null;
@@ -342,12 +343,18 @@ async function computeBillingEventsView(gymId: string, um: {
   const windows: PromotionApplicationWindow[] = applications.map((p) => ({ appliedAt: p.appliedAt, revokedAt: p.revokedAt }));
 
   if (um.status === 'draft') {
-    const billingPolicy = await loadBillingPolicy(gymId, um.membership_plan_id);
+    // #635 stage 3 — the cadence frozen onto the assignment decides its
+    // projection; the Plan's live policy is only the fallback for an
+    // assignment that captured none (§13: editing the Plan's billing
+    // frequency must not move an assignment that already exists).
+    const billingPolicy = um.recurring_billing_interval != null
+      ? null
+      : await loadBillingPolicy(gymId, um.membership_plan_id);
     return projectDraftBillingEvents({
       billingStart, endsAt,
       basePrice: Number(um.base_price ?? 0),
-      recurringInterval: billingPolicy?.recurring_billing_interval ?? null,
-      recurringUnit: (billingPolicy?.recurring_billing_unit ?? null) as BillingUnit | null,
+      recurringInterval: um.recurring_billing_interval ?? billingPolicy?.recurring_billing_interval ?? null,
+      recurringUnit: (um.recurring_billing_unit ?? billingPolicy?.recurring_billing_unit ?? null) as BillingUnit | null,
       promotions: applications.filter((p) => p.status === 'applied'),
     });
   }
@@ -377,9 +384,9 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // of the expanded card. GET /:id/services stays mounted for the lighter
     // refetch the inline editor does after an add/remove.
     loadAssignedPlanServices(gymId, um.id),
-    // #635 stage 2 — the assignment's own frozen commercial configuration.
-    // Embedded like every other section of the expanded card; billing still
-    // reads the live catalogue until the stage 3 cutover.
+    // #635 — the assignment's own frozen commercial configuration, embedded
+    // like every other section of the expanded card. Since stage 3 it is also
+    // what billing and the Billing Simulation read.
     loadAssignedPlanSnapshot(gymId, um.id),
   ]);
   const activityAllowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, members.map((m: any) => m.member_id));
@@ -405,7 +412,9 @@ userMembershipsRouter.get('/:id', async (req, res) => {
 userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query(
-    'SELECT id, membership_plan_id, status, base_price, starts_at, ends_at FROM user_memberships WHERE id = ? AND gym_id = ?',
+    `SELECT id, membership_plan_id, status, base_price, starts_at, ends_at,
+            recurring_billing_interval, recurring_billing_unit
+     FROM user_memberships WHERE id = ? AND gym_id = ?`,
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });

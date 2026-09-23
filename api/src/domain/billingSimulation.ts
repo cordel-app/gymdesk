@@ -26,6 +26,14 @@
 // Promotion benefits (#631 §7) — each is its own stream, billed at the
 // Sellable Item's own frequency and price over its own effective window, so
 // the horizon rule below covers them exactly as it covers everything else.
+//
+// #635 stage 3 adds the Assigned Plan's own benefit sections (One-off /
+// Session / Period Benefits, frozen onto the assignment at assignment time).
+// They are *charged* items, not free ones: the Plan says the member gets a
+// locker, the member pays the frozen price for it, and a Promotion granting
+// the same Sellable Item is what makes a period free. A Plan item and the
+// Promotion grants covering it are therefore merged into one stream per
+// Sellable Item — two independent streams would bill the locker twice.
 
 import { advanceBillingDate } from '../api/billing';
 import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
@@ -112,6 +120,24 @@ export interface SimulationService {
   endsOn: string | null;
 }
 
+/**
+ * #635 — a Sellable Item the Assigned Plan itself carries: a One-off, Session
+ * or Period Benefit of the Membership Plan, copied onto the assignment when it
+ * was created (`user_membership_oneoff` / `_session` / `_periodical`).
+ *
+ * Unlike a Promotion grant it is charged, at the price frozen with it: the
+ * Plan decides the member gets a locker, not that the locker is free.
+ */
+export interface SimulationPlanBenefit {
+  gymChargeId: number;
+  name: string;
+  category: SellableItemBenefitCategory;
+  billingFrequency: SellableItemFrequency | null;
+  unitPrice: number;
+  /** Units billed — per period for a Period Benefit, once for the other two. */
+  quantity: number;
+}
+
 export interface SimulationAssignment {
   userMembershipId: number;
   planName: string | null;
@@ -124,6 +150,8 @@ export interface SimulationAssignment {
   promotions: SimulationPromotion[];
   /** #631 — Additional Periodic Services attached to this assignment. */
   services: SimulationService[];
+  /** #635 — the Plan's own benefit sections, as frozen onto this assignment. */
+  planBenefits: SimulationPlanBenefit[];
 }
 
 export interface BillingSimulationInput {
@@ -420,48 +448,132 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
   };
 }
 
+/* ── Billable Sellable Items ─────────────────────────────────────────────── */
+
+/** One Promotion grant, kept with the Promotion that granted it. */
+interface GrantCoverage {
+  promo: SimulationPromotion;
+  grant: SimulationGrant;
+}
+
 /**
- * A Promotion's periodical grant: the item is billed at its own
- * `billing_frequency`, waived for the `quantity` periods the Promotion covers
- * and charged at its regular price from then on (#629 thread Q3).
+ * One Sellable Item the assignment bills, with every Promotion grant that
+ * covers it. Merging on `gymChargeId` is what keeps a Plan's Period Benefit
+ * and a Promotion granting the same item one charge — the Promotion covers
+ * periods of it rather than adding a second locker.
  */
-function buildGrantStream(a: SimulationAssignment, promo: SimulationPromotion, grant: SimulationGrant): Stream | null {
-  const cadence = grant.billingFrequency ? cadenceForSellableItem(grant.billingFrequency) : null;
+interface BillableItem {
+  gymChargeId: number;
+  name: string;
+  category: SellableItemBenefitCategory;
+  billingFrequency: SellableItemFrequency | null;
+  unitPrice: number;
+  /** Units billed each occurrence (Period Benefit) or once (one-off/session). */
+  quantity: number;
+  coverage: GrantCoverage[];
+}
+
+/**
+ * The Plan's own benefits plus everything the applied Promotions grant, keyed
+ * by Sellable Item.
+ *
+ * An item the Plan does not carry behaves exactly as it did before #635 stage
+ * 3: quantity 1 for a periodical grant (the grant covers periods, it does not
+ * say how many lockers) and the granted quantity for a one-off/session grant,
+ * charged at 0 for as long as the grant covers it.
+ */
+function collectBillableItems(a: SimulationAssignment): BillableItem[] {
+  const byCharge = new Map<string, BillableItem>();
+  // A snapshotted grant whose Sellable Item has since been deleted carries no
+  // id (0). Those never merge with each other — two forgotten items are still
+  // two items — so each takes a key of its own.
+  let orphan = 0;
+  const keyOf = (gymChargeId: number) => (gymChargeId > 0 ? `item:${gymChargeId}` : `orphan:${orphan++}`);
+
+  for (const benefit of a.planBenefits) {
+    byCharge.set(keyOf(benefit.gymChargeId), {
+      gymChargeId: benefit.gymChargeId,
+      name: benefit.name,
+      category: benefit.category,
+      billingFrequency: benefit.billingFrequency,
+      unitPrice: benefit.unitPrice,
+      quantity: Math.max(1, Math.trunc(benefit.quantity) || 1),
+      coverage: [],
+    });
+  }
+
+  for (const promo of a.promotions) {
+    for (const grant of promo.grants) {
+      const existing = grant.gymChargeId > 0 ? byCharge.get(`item:${grant.gymChargeId}`) : undefined;
+      if (existing) {
+        existing.coverage.push({ promo, grant });
+        continue;
+      }
+      byCharge.set(keyOf(grant.gymChargeId), {
+        gymChargeId: grant.gymChargeId,
+        name: grant.name,
+        category: grant.category,
+        billingFrequency: grant.billingFrequency,
+        unitPrice: grant.unitPrice,
+        quantity: grant.category === 'periodical' ? 1 : Math.max(1, Math.trunc(grant.quantity) || 1),
+        coverage: [{ promo, grant }],
+      });
+    }
+  }
+
+  return [...byCharge.values()];
+}
+
+/**
+ * A recurring Sellable Item: billed at its own `billing_frequency` from the
+ * assignment's start date, waived for the periods a Promotion grant covers and
+ * charged at its regular price otherwise (#629 thread Q3, #635 §14).
+ */
+function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | null {
+  const cadence = item.billingFrequency ? cadenceForSellableItem(item.billingFrequency) : null;
   if (!cadence) return null;
-  const regular = round2(grant.unitPrice);
-  // The item is billed from the assignment's start date, but the grant only
-  // starts covering periods once the Promotion was applied — which can be
+  const unit = round2(item.unitPrice);
+  const regular = round2(unit * item.quantity);
+  // The item is billed from the assignment's start date, but a grant only
+  // starts covering periods once its Promotion was applied — which can be
   // later. Counting the granted periods from the first *covered* occurrence
   // keeps a Promotion applied mid-assignment worth its full quantity.
-  const firstCovered = occurrenceIndexOf(a.startsAt, promo.appliedAt, cadence);
+  const coverage = item.coverage.map((c) => ({
+    ...c,
+    firstCovered: occurrenceIndexOf(a.startsAt, c.promo.appliedAt, cadence),
+  }));
   return {
     cadence,
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
     resolve: (date, occurrence) => {
-      const covered = occurrence >= firstCovered
-        && occurrence < firstCovered + grant.quantity
-        && promotionCoversDate(promo, date);
-      if (covered) {
+      const covering = coverage.filter((c) => occurrence >= c.firstCovered
+        && occurrence < c.firstCovered + c.grant.quantity
+        && promotionCoversDate(c.promo, date));
+      if (covering.length > 0) {
         return {
           amount: 0,
-          benefits: [{ source: 'promotion' as const, name: promo.name, action: 'included' as const, value: null, period_status: null }],
+          benefits: covering.map((c) => ({
+            source: 'promotion' as const, name: c.promo.name,
+            action: 'included' as const, value: null, period_status: null,
+          })),
           promotional: true,
           pending: false,
         };
       }
-      const pending = occurrence < firstCovered && (promo.revokedAt == null || date <= promo.revokedAt);
+      const pending = coverage.some((c) => occurrence < c.firstCovered
+        && (c.promo.revokedAt == null || date <= c.promo.revokedAt));
       return { amount: regular, benefits: [], promotional: false, pending };
     },
     line: (date, resolved) => ({
       kind: 'sellable_item',
-      label: grant.name,
+      label: item.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
-      gym_charge_id: grant.gymChargeId,
-      quantity: 1,
-      unit_price: regular,
+      gym_charge_id: item.gymChargeId > 0 ? item.gymChargeId : null,
+      quantity: item.quantity,
+      unit_price: unit,
       regular_price: regular,
       benefits: resolved.benefits,
       actual_charge: resolved.amount,
@@ -520,27 +632,39 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
 }
 
 /**
- * A Promotion's one-off or session grant: no schedule to project, so it is a
- * single line on the assignment's start date covering the granted quantity
- * (#629 thread Q5 — `per_session` items appear as "N sessions").
+ * A one-off or session item: no schedule to project, so it is a single line on
+ * the assignment's start date covering the whole quantity (#629 thread Q5 —
+ * `per_session` items appear as "N sessions").
+ *
+ * The Promotion grants covering it pay for as many units as they grant, capped
+ * at the quantity actually billed: a Plan carrying 10 sessions and a Promotion
+ * granting 4 of them charges the remaining 6, while an item the Plan does not
+ * carry at all is granted in full and charges nothing.
  */
-function buildGrantSingleCharge(a: SimulationAssignment, promo: SimulationPromotion, grant: SimulationGrant): SingleCharge {
-  const unit = round2(grant.unitPrice);
-  const regular = round2(unit * grant.quantity);
+function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): SingleCharge {
+  const unit = round2(item.unitPrice);
+  const regular = round2(unit * item.quantity);
+  const granted = item.coverage.reduce((sum, c) => sum + Math.max(0, Math.trunc(c.grant.quantity) || 0), 0);
+  const covered = Math.min(item.quantity, granted);
   return {
-    section: grant.category === 'session' ? 'session' : 'one_off',
+    section: item.category === 'session' ? 'session' : 'one_off',
     date: a.startsAt,
     line: {
       kind: 'sellable_item',
-      label: grant.name,
+      label: item.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
-      gym_charge_id: grant.gymChargeId,
-      quantity: grant.quantity,
+      gym_charge_id: item.gymChargeId > 0 ? item.gymChargeId : null,
+      quantity: item.quantity,
       unit_price: unit,
       regular_price: regular,
-      benefits: [{ source: 'promotion', name: promo.name, action: 'included', value: null, period_status: null }],
-      actual_charge: 0,
+      benefits: covered > 0
+        ? item.coverage.map((c) => ({
+          source: 'promotion' as const, name: c.promo.name,
+          action: 'included' as const, value: null, period_status: null,
+        }))
+        : [],
+      actual_charge: round2(unit * (item.quantity - covered)),
       price_may_change: false,
     },
   };
@@ -607,14 +731,12 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
   for (const a of assignments) {
     const fee = buildMembershipFeeStream(a);
     if (fee) streams.push(fee);
-    for (const promo of a.promotions) {
-      for (const grant of promo.grants) {
-        if (grant.category === 'periodical') {
-          const s = buildGrantStream(a, promo, grant);
-          if (s) streams.push(s);
-        } else {
-          singles.push(buildGrantSingleCharge(a, promo, grant));
-        }
+    for (const item of collectBillableItems(a)) {
+      if (item.category === 'periodical') {
+        const s = buildItemStream(a, item);
+        if (s) streams.push(s);
+      } else {
+        singles.push(buildItemSingleCharge(a, item));
       }
     }
     for (const service of a.services) {

@@ -1,8 +1,22 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 import { cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
 const SECRET = 'test-billing-secret';
+
+// No payment provider is configured in tests, so the run's charge branches
+// were never reachable — which is how the `insertId` defect below survived.
+// The stub makes both of them deterministic; the cases that assert a
+// membership is *not* selected never reach it.
+const providerResult = vi.hoisted(() => ({
+  current: { success: true, providerRef: 'test-provider-ref' } as {
+    success: boolean; providerRef: string; errorCode?: string; errorMessage?: string;
+  },
+}));
+vi.mock('../payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../payments')>()),
+  getPaymentProvider: () => ({ executeRecurring: async () => providerResult.current }),
+}));
 
 beforeAll(() => {
   process.env.BILLING_INTERNAL_SECRET = SECRET;
@@ -11,6 +25,7 @@ beforeAll(() => {
 afterEach(async () => {
   // Reset the rate-limit singleton between tests.
   await db.query('UPDATE billing_run_log SET last_run_at = NULL WHERE id = 1');
+  providerResult.current = { success: true, providerRef: 'test-provider-ref' };
 });
 
 afterAll(async () => {
@@ -123,6 +138,92 @@ describe('POST /billing/run', () => {
       [memberId, gymId],
     );
     expect(rows).toHaveLength(0);
+  });
+
+  // Regression (#635 stage 3): `insertId` is a property of the query result,
+  // not of `rows`. Reading it off `rows` made every settled charge throw on
+  // the next INSERT, be swallowed as a "provider error" and roll back — the
+  // member had paid, the ledger said failed, and `next_billing_date` never
+  // moved, so the same period was charged again the following night.
+  it('records a settled charge, links its transaction and advances the schedule', async () => {
+    const gymId = await createTestGym('Billing Settled Gym');
+    await createTestMembership(gymId);
+    const memberId = await createMember(gymId);
+    const planId = await createPlanWithPolicy(gymId);
+    const umId = await createDueMembership(gymId, memberId, planId);
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)
+       VALUES (?, ?, 'monei', 'tok_settled', 'seq_settled')`,
+      [gymId, memberId],
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+    expect(res.status).toBe(200);
+    expect(res.body.succeeded).toBeGreaterThan(0);
+
+    const { rows: events } = await db.query(
+      `SELECT id, event_type FROM billing_events WHERE user_membership_id = ?`, [umId],
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].event_type).toBe('recurring_payment');
+
+    const { rows: txs } = await db.query(
+      `SELECT status, billing_event_id, provider_ref FROM payment_requests WHERE user_membership_id = ?`, [umId],
+    );
+    expect(txs).toHaveLength(1);
+    expect(txs[0]).toMatchObject({ status: 'completed', billing_event_id: events[0].id, provider_ref: 'test-provider-ref' });
+
+    const { rows: um } = await db.query(
+      'SELECT next_billing_date, last_billed_at FROM user_memberships WHERE id = ?', [umId],
+    );
+    const next = um[0].next_billing_date instanceof Date
+      ? um[0].next_billing_date.toISOString().slice(0, 10)
+      : String(um[0].next_billing_date).slice(0, 10);
+    expect(next).toBe('2000-02-01');
+    expect(um[0].last_billed_at).not.toBeNull();
+  });
+
+  it('records a rejected charge with its reason on both the event and the transaction', async () => {
+    providerResult.current = {
+      success: false, providerRef: 'test-rejected-ref',
+      errorCode: 'E101', errorMessage: 'Card declined',
+    };
+    const gymId = await createTestGym('Billing Rejected Gym');
+    await createTestMembership(gymId);
+    const memberId = await createMember(gymId);
+    const planId = await createPlanWithPolicy(gymId);
+    const umId = await createDueMembership(gymId, memberId, planId);
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)
+       VALUES (?, ?, 'monei', 'tok_rejected', 'seq_rejected')`,
+      [gymId, memberId],
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+    expect(res.body.failed).toBeGreaterThan(0);
+
+    const { rows: events } = await db.query(
+      `SELECT id, event_type, notes FROM billing_events WHERE user_membership_id = ?`, [umId],
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ event_type: 'failed_billing', notes: 'E101: Card declined' });
+
+    const { rows: txs } = await db.query(
+      `SELECT status, billing_event_id, failure_code, failure_message
+         FROM payment_requests WHERE user_membership_id = ?`, [umId],
+    );
+    expect(txs).toHaveLength(1);
+    expect(txs[0]).toMatchObject({
+      status: 'failed', billing_event_id: events[0].id,
+      failure_code: 'E101', failure_message: 'Card declined',
+    });
+
+    // A rejected charge never moves the schedule on.
+    const { rows: um } = await db.query('SELECT next_billing_date FROM user_memberships WHERE id = ?', [umId]);
+    const next = um[0].next_billing_date instanceof Date
+      ? um[0].next_billing_date.toISOString().slice(0, 10)
+      : String(um[0].next_billing_date).slice(0, 10);
+    expect(next).toBe('2000-01-01');
   });
 
   it('does not process memberships whose next_billing_date is in the future', async () => {

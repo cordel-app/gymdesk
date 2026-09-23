@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { db } from '../infra/db';
 import { advanceBillingDate } from '../api/billing';
 import { recordStatusChange } from '../api/billing-events';
+import { ASSIGNMENT_CADENCE } from '../api/assigned-plan-snapshot';
 import { getPaymentProvider } from '../payments';
 import {
   BillingEventStatus,
@@ -94,7 +95,8 @@ async function loadEventContext(gymId: string, billingEventId: number): Promise<
             (SELECT MAX(pr.attempt) FROM payment_requests pr
               WHERE pr.billing_event_id = be.id) AS last_attempt,
             um.status AS membership_status, um.next_billing_date,
-            bp.recurring_billing_interval, bp.recurring_billing_unit
+            ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
+            ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit
        FROM billing_events be
        LEFT JOIN user_memberships um ON um.id = be.user_membership_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id

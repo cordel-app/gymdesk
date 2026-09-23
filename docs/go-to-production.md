@@ -176,6 +176,15 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       against Monei's test endpoint; before the first real gym, either bound it with a
       provider-side timeout or move the retry onto the same background path as the nightly
       run.
+- [ ] **Verify the nightly run's settled-charge path against the real provider** (#635
+      stage 3): until that ticket, `POST /billing/run` read `insertId` off `rows`, so
+      every charge the provider actually settled threw on the next INSERT, was caught as
+      a "provider error", rolled back, and left `next_billing_date` where it was — which
+      would have re-charged the same period the following night. No environment has a
+      configured provider yet, so the fix is covered only by a stubbed-provider test.
+      Run one real charge end to end in staging and confirm the `billing_events` row,
+      its `payment_requests` row and the advanced `next_billing_date` before the first
+      live gym.
 - [ ] **The nightly billing run still neither auto-retries nor pauses** (#640): the
       retry-once-then-pause rule from that ticket's Q3 is implemented for the *manual*
       Retry Payment action only, because issue §6 forbids changing automatic payment

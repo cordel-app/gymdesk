@@ -6,6 +6,7 @@ import { unlinkClerkAccount } from '../infra/clerk-account-links';
 import { recordPlatformAudit } from '../infra/audit';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
+import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 
 /**
  * Clerk webhook receiver. `user.deleted` (#709) removes every Gymdesk link to
@@ -205,17 +206,20 @@ paymentWebhookRouter.post(
               [pr.gym_id, pr.member_id, payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
             );
 
-            // Stamp next_billing_date on the membership (only if not yet set).
-            // Uses billing_policies.recurring_billing_interval/unit to compute
-            // the first due date relative to starts_at.
+            // Stamp next_billing_date on the membership (only if not yet set),
+            // relative to starts_at. #635 stage 3: the cadence is the one
+            // frozen onto the assignment, falling back to its Plan's live
+            // `billing_policies` row only for an assignment that has none —
+            // hence the LEFT JOIN, which also keeps a Plan whose policy was
+            // deleted from stranding its assignments without a due date.
             await tx.query(
               `UPDATE user_memberships um
-               JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
-               SET um.next_billing_date = CASE bp.recurring_billing_unit
-                 WHEN 'day'   THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval DAY)
-                 WHEN 'week'  THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval WEEK)
-                 WHEN 'month' THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval MONTH)
-                 WHEN 'year'  THEN DATE_ADD(um.starts_at, INTERVAL bp.recurring_billing_interval YEAR)
+               LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
+               SET um.next_billing_date = CASE ${ASSIGNMENT_CADENCE.unit()}
+                 WHEN 'day'   THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} DAY)
+                 WHEN 'week'  THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} WEEK)
+                 WHEN 'month' THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} MONTH)
+                 WHEN 'year'  THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} YEAR)
                END
                WHERE um.id = ? AND um.next_billing_date IS NULL`,
               [pr.user_membership_id],

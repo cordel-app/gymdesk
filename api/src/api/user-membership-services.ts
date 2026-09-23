@@ -90,10 +90,11 @@ export interface AssignedPlanServiceRow {
    */
   sellable_item_retired: boolean;
   /**
-   * #635 stage 2 — what the Sellable Item cost when the service was attached
+   * #635 — what the Sellable Item cost when the service was attached
    * (migration 174). `null` for an attachment made before that migration, which
-   * is the caller's signal to keep using the live values above. Billing and the
-   * Billing Simulation still read the live ones; the cutover is stage 3.
+   * is the caller's signal to keep using the live values above. Since stage 3
+   * the Billing Simulation bills from this; the live values are served beside
+   * it so the UI can still show that the item has been repriced since.
    */
   snapshot: {
     item_name: string;
@@ -158,6 +159,13 @@ export async function loadServicesForAssignments(
  * The same rows, grouped per Assigned Plan and mapped onto the Billing
  * Simulation engine's input — one query for every assignment the simulation
  * covers, rather than one per assignment.
+ *
+ * #635 stage 3: the name, price and billing frequency come from the snapshot
+ * taken when the service was attached (§11, §17), so repricing the Sellable
+ * Item leaves every assignment already paying for it alone. A row attached
+ * before migration 174 has no snapshot and keeps resolving live — which is
+ * what it has always done. The rows the *UI* renders still show both (`snapshot`
+ * alongside the live values), so a repriced item is still visible as such.
  */
 export async function loadServicesForSimulation(
   gymId: string, umIds: number[],
@@ -173,12 +181,19 @@ export async function loadServicesForSimulation(
   for (const row of rows) {
     const shaped = shape(row);
     const list = byAssignment.get(shaped.user_membership_id) ?? [];
+    // Either the whole snapshot or none of it: a snapshot that recorded "no
+    // billing frequency" must not silently pick the item's current one up.
+    const priced = shaped.snapshot ?? {
+      item_name: shaped.sellable_item_name,
+      billing_frequency: shaped.billing_frequency,
+      unit_price: shaped.unit_price,
+    };
     list.push({
       id: shaped.id,
       gymChargeId: shaped.gym_charge_id,
-      name: shaped.sellable_item_name,
-      billingFrequency: shaped.billing_frequency,
-      unitPrice: shaped.unit_price,
+      name: priced.item_name,
+      billingFrequency: priced.billing_frequency,
+      unitPrice: priced.unit_price,
       quantity: shaped.quantity,
       startsOn: shaped.starts_at,
       endsOn: shaped.ends_at,
@@ -293,11 +308,11 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   let insertId: number;
   try {
     ({ insertId } = await db.query(
-      // #635 stage 2 (migration 174): the item's commercial facts are frozen
-      // onto the attachment as well as read live. §17 — repricing the Sellable
-      // Item must not move what an already-attached service costs. The live
-      // join below still drives display and billing; the cutover to these
-      // columns is stage 3.
+      // #635 (migration 174): the item's commercial facts are frozen onto the
+      // attachment as well as read live. §17 — repricing the Sellable Item
+      // must not move what an already-attached service costs, which is what
+      // the Billing Simulation reads since stage 3; the live join below still
+      // drives display, so the UI can flag an item that has changed.
       `INSERT INTO user_membership_services
        (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, created_by_membership_id,
         item_name, item_type, item_billing_frequency, unit_price, currency)
