@@ -409,6 +409,50 @@ Reference implementation: `[locale]/promotions/page.tsx`. Regression test
 
 ---
 
+## Giving a Second Entity an Existing Entity's Sections (#635 stage 1)
+
+When a ticket asks that entity B gain sections that "behave like" entity A's
+(Membership Plans getting the Promotion benefit structure), the work is a
+deliberate copy of a contract, not a new design. Copy it exactly and share the
+presentation; do not re-decide anything.
+
+1. **Mirror the schema, including the guards.** Migration 173 is migration 155
+   with `promotion_id` swapped for `membership_plan_id` — same columns, same
+   unique key, same `CHECK`, same per-statement `information_schema` guard.
+   Divergence here is what makes the two sets of rows impossible to reason
+   about together later.
+2. **Reuse the classifier, don't add a second one.**
+   `domain/sellableItemClassification.ts` gained
+   `planBenefitTableForCategory()` next to `benefitTableForCategory()`, but
+   `classifySellableItem()` stayed single. Two classifiers would let the same
+   Sellable Item land in a different section depending on what it is attached
+   to.
+3. **Copy the endpoint contract verbatim**, including its rejections and its
+   loosenings — replace-all body shape, duplicate/quantity/category checks,
+   and the rule that only a *newly* selected item must be `active`. A shared
+   frontend editor can only be shared if both endpoints answer the same way.
+4. **Extract the renderers, not the state.**
+   `components/SellableItemBenefits.tsx` holds the editor, the view and the
+   row helpers; each page keeps its own drafts and decides what is editable.
+   That is what lets one component serve two different editing models (#627's
+   single `editingSection` on Promotions, a `{planId, section}` pair on Plans)
+   without either page's state leaking into the other's.
+5. **Take only the sections the ticket names.** Membership Fee Benefits and
+   Pay Beforehand stayed Promotion-only because §6/§7 said so — "behaves like"
+   is not a licence to copy the whole entity.
+6. **Land it additive when the legacy concept is still load-bearing.** The new
+   tables are written and read, but nothing bills off them; Included Services
+   still feeds `package-credits.ts` and Charge Benefits still drives the
+   Billing Forecast. Removing them is its own stage, after the replacement is
+   actually wired into billing.
+
+Reference implementation: `api/src/api/membership-plans.ts` (the
+`PLAN_BENEFIT_ROUTES` loop) + `[locale]/plans/page.tsx`. Tests:
+`api/src/test/membership-plan-benefits.test.ts`,
+`apps/admin/src/test/plans-benefit-sections.test.ts`.
+
+---
+
 ## Mutually-Exclusive Multi-Select (#628)
 
 A checkbox list where the options constrain each other — Promotions, where a

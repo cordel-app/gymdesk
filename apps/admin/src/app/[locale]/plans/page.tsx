@@ -16,6 +16,13 @@ import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/component
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
+import {
+  SellableItemBenefitEditor,
+  SellableItemBenefitView,
+  SellableItemBenefitRow,
+  SellableItemOption,
+  toBenefitItems,
+} from '@/components/SellableItemBenefits';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +64,15 @@ interface PriceRow {
   tax_rate_percent: string | null;
 }
 interface ActivityType { id: number; name: string; }
-interface GymCharge { id: number; name: string; charge_type_name: string | null; charge_type_code: string | null; amount: string | null; availability: string; }
+// `type` / `billing_frequency` / `status` / `benefit_category` back the #635
+// Benefit pickers; `benefit_category` is computed server-side (#550) and is the
+// only classification source of truth — never re-derived here.
+interface GymCharge extends SellableItemOption {
+  charge_type_name: string | null;
+  charge_type_code: string | null;
+  amount: string | null;
+  availability: string;
+}
 interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
 interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; is_system: boolean | number; }
 
@@ -90,6 +105,16 @@ interface Plan {
   modified_by_name: string | null;
   deleted_at: string | null;
   charge_benefits: ChargeBenefit[];
+  // #635 stage 1: the three Sellable-Item-keyed Benefit sections, served with
+  // the plan so a card renders them without three extra round trips.
+  session_benefits: SellableItemBenefitRow[];
+  oneoff_benefits: SellableItemBenefitRow[];
+  periodical_benefits: SellableItemBenefitRow[];
+  // #635 §7: Billing & Duration. null = never configured, which reads
+  // differently from an explicit 0.
+  free_months: number | null;
+  paid_months: number | null;
+  bonus_months: number | null;
   tax_rate_id: number | null;
   tax_behavior: 'inclusive' | 'exclusive';
   tax_rate_name: string | null;
@@ -120,6 +145,35 @@ const DEFAULT_BILLING_POLICY = {
 };
 
 const BILLING_POLICY_FIELDS = ['initial_billing', 'recurring_billing', 'initial_service', 'recurring_service'] as const;
+
+// #635 §7: Billing & Duration — the Promotion's three fields, minus Pay
+// Beforehand (the ticket lists Free Period, Paid Duration and Bonus Duration).
+const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
+type DurationField = typeof DURATION_FIELDS[number];
+
+// #635 §3–§5: the three Sellable-Item-keyed Benefit sections a Plan now has,
+// same shape and same endpoints' contract as the Promotion ones (#550). Each is
+// edited and saved on its own (§10) — `showFrequency` is read-only either way,
+// since a periodical item's period is the Sellable Item's own billing frequency.
+type BenefitSection = 'session' | 'oneoff' | 'periodical';
+const BENEFIT_SECTIONS: {
+  section: BenefitSection;
+  endpoint: string;
+  titleKey: string;
+  emptyKey: string;
+  addKey: string;
+  showFrequency: boolean;
+}[] = [
+  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: false },
+  { section: 'session', endpoint: 'session-benefits', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: false },
+  { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'section_plan_period_benefits', emptyKey: 'no_plan_period_benefits', addKey: 'add_period_benefit', showFrequency: true },
+];
+
+function savedBenefits(plan: Plan, section: BenefitSection): SellableItemBenefitRow[] {
+  if (section === 'session') return plan.session_benefits ?? [];
+  if (section === 'oneoff') return plan.oneoff_benefits ?? [];
+  return plan.periodical_benefits ?? [];
+}
 
 const emptyEditForm = {
   name: '',
@@ -230,6 +284,18 @@ export default function PlansPage() {
   const [cbEditForPlanId, setCbEditForPlanId] = useState<number | null>(null);
   const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
   const [cbSaving, setCbSaving] = useState(false);
+
+  // Billing & Duration (#635 §7) — its own section, edited independently.
+  const [durationEditForPlanId, setDurationEditForPlanId] = useState<number | null>(null);
+  const [durationForm, setDurationForm] = useState<Record<DurationField, string>>({ free_months: '', paid_months: '', bonus_months: '' });
+  const [durationSaving, setDurationSaving] = useState(false);
+
+  // Session / One-off / Period Benefits (#635 §3–§5). Exactly one section of
+  // one plan is editable at a time, which is what keeps a single draft
+  // unambiguous — same rule Promotions adopted in #627.
+  const [benefitEditFor, setBenefitEditFor] = useState<{ planId: number; section: BenefitSection } | null>(null);
+  const [benefitDraft, setBenefitDraft] = useState<SellableItemBenefitRow[]>([]);
+  const [benefitSaving, setBenefitSaving] = useState(false);
 
   // Tax rates (#413)
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
@@ -613,6 +679,81 @@ export default function PlansPage() {
     }
   }
 
+  // ─── Billing & Duration (#635 §7) ───────────────────────────────────────────
+
+  function openDurationEdit(plan: Plan) {
+    setDurationForm({
+      free_months: plan.free_months != null ? String(plan.free_months) : '',
+      paid_months: plan.paid_months != null ? String(plan.paid_months) : '',
+      bonus_months: plan.bonus_months != null ? String(plan.bonus_months) : '',
+    });
+    setDurationEditForPlanId(plan.id);
+  }
+
+  function cancelDurationEdit() {
+    setDurationEditForPlanId(null);
+  }
+
+  async function saveDurationEdit(planId: number) {
+    setDurationSaving(true);
+    try {
+      // An emptied field is sent as null, restoring "not configured" rather
+      // than writing a 0 the admin never typed.
+      const body: Record<string, number | null> = {};
+      for (const field of DURATION_FIELDS) {
+        const raw = durationForm[field].trim();
+        body[field] = raw === '' ? null : parseInt(raw, 10);
+      }
+      await apiFetch(`/membership-plans/${planId}`, { method: 'PUT', body: JSON.stringify(body) });
+      setDurationEditForPlanId(null);
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('plans.error_generic'));
+    } finally {
+      setDurationSaving(false);
+    }
+  }
+
+  // ─── Session / One-off / Period Benefits (#635 §3–§5) ───────────────────────
+
+  function openBenefitEdit(plan: Plan, section: BenefitSection) {
+    setBenefitDraft(savedBenefits(plan, section).map((b) => ({ ...b })));
+    setBenefitEditFor({ planId: plan.id, section });
+  }
+
+  function cancelBenefitEdit() {
+    setBenefitEditFor(null);
+    setBenefitDraft([]);
+  }
+
+  function isEditingBenefit(planId: number, section: BenefitSection) {
+    return benefitEditFor?.planId === planId && benefitEditFor.section === section;
+  }
+
+  async function saveBenefitEdit(planId: number, endpoint: string) {
+    setBenefitSaving(true);
+    try {
+      await apiFetch(`/membership-plans/${planId}/${endpoint}`, {
+        method: 'PUT',
+        body: JSON.stringify({ items: toBenefitItems(benefitDraft) }),
+      });
+      setBenefitEditFor(null);
+      setBenefitDraft([]);
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('plans.error_generic'));
+    } finally {
+      setBenefitSaving(false);
+    }
+  }
+
+  // Active, tenant-scoped items grouped by the server-computed category. New
+  // selections only ever come from these; an item already attached to the plan
+  // but since deactivated is merged back per-row by benefitRowOptions().
+  function categoryItems(section: BenefitSection): GymCharge[] {
+    return gymCharges.filter((gc) => gc.benefit_category === section && gc.status === 'active');
+  }
+
   // ─── Render helpers ─────────────────────────────────────────────────────────
 
   function renderInlineNewRow() {
@@ -932,6 +1073,93 @@ export default function PlansPage() {
                     ) : (
                       <p style={hintSt}>{t('plans.no_billing')}</p>
                     )}
+
+                    {/* #635 §7: Billing & Duration — the Promotion's Free Period /
+                        Paid Duration / Bonus Duration, on the Plan itself. Its own
+                        Edit/Save/Cancel (§10); nothing else on the card is unlocked
+                        by it, and nothing bills off it yet (stage 3). */}
+                    <SectionHeader
+                      title={t('plans.section_billing_duration')}
+                      action={durationEditForPlanId === plan.id ? null : (
+                        <button onClick={() => openDurationEdit(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
+                          {t('plans.edit')}
+                        </button>
+                      )}
+                    />
+                    {durationEditForPlanId === plan.id ? (
+                      <div style={{ margin: '6px 0 10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 8 }}>
+                          {DURATION_FIELDS.map((field) => (
+                            <div key={field}>
+                              <label style={inlineLabelStyle}>{t(`plans.label_${field}`)}</label>
+                              <input
+                                type="number" min="0"
+                                value={durationForm[field]}
+                                onChange={(e) => setDurationForm({ ...durationForm, [field]: e.target.value })}
+                                placeholder="0"
+                                style={inlineInputStyle}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.desc_billing_duration')}</p>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button onClick={cancelDurationEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={() => saveDurationEdit(plan.id)} disabled={durationSaving} style={btnSmall()}>
+                            {durationSaving ? t('plans.saving') : t('plans.save_changes')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      DURATION_FIELDS.map((field) => (
+                        <DetailRow
+                          key={field}
+                          label={t(`plans.label_${field}`)}
+                          value={plan[field] != null ? t('plans.months_value', { n: plan[field] }) : t('plans.not_configured')}
+                        />
+                      ))
+                    )}
+
+                    {/* #635 §3–§5: One-off / Session / Period Benefits, the same
+                        three Sellable-Item-keyed sections a Promotion has, each with
+                        its own independent Edit/Save/Cancel (§10) and no modal (§15). */}
+                    {BENEFIT_SECTIONS.map(({ section, endpoint, titleKey, emptyKey, addKey, showFrequency }) => (
+                      <div key={section}>
+                        <SectionHeader
+                          title={t(`plans.${titleKey}`)}
+                          action={isEditingBenefit(plan.id, section) ? null : (
+                            <button onClick={() => openBenefitEdit(plan, section)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
+                              {t('plans.edit')}
+                            </button>
+                          )}
+                        />
+                        {isEditingBenefit(plan.id, section) ? (
+                          <div style={{ margin: '6px 0 10px' }}>
+                            <SellableItemBenefitEditor
+                              t={(key, values) => t(`plans.${key}` as any, values as any)}
+                              addKey={addKey}
+                              draft={benefitDraft}
+                              setDraft={setBenefitDraft}
+                              categoryItems={categoryItems(section)}
+                              showFrequency={showFrequency}
+                            />
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                              <button onClick={cancelBenefitEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                              <button onClick={() => saveBenefitEdit(plan.id, endpoint)} disabled={benefitSaving} style={btnSmall()}>
+                                {benefitSaving ? t('plans.saving') : t('plans.save_changes')}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <SellableItemBenefitView
+                            t={(key, values) => t(`plans.${key}` as any, values as any)}
+                            emptyKey={emptyKey}
+                            rows={savedBenefits(plan, section)}
+                            showFrequency={showFrequency}
+                          />
+                        )}
+                      </div>
+                    ))}
 
                     <SectionHeader
                       title={t('plans.section_centers')}
