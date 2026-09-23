@@ -77,6 +77,10 @@ Clerk Development and Production instances are separate: users, user ids and met
 - [ ] API: `CLERK_SECRET_KEY` (`sk_live_…`), `CLERK_PUBLISHABLE_KEY` (`pk_live_…`).
 - [ ] Re-create the Clerk webhook endpoint (`/webhooks/clerk`) on the production instance
       and set its `CLERK_WEBHOOK_SIGNING_SECRET`.
+- [ ] Recreate the customised *Invitation* email template (Spanish/Catalan/English via `lang`
+      conditionals — see `docs/wordpress-integration.md`) on the production instance; templates
+      belong to each instance and are not copied over. Custom templates are a Clerk **premium**
+      feature: free on Development, a paid plan on Production.
 - [ ] Admin and member apps: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is a Docker build `ARG`,
       baked in at **build time** — the production images must be built with the `pk_live_…`
       key; changing a runtime variable is not enough.

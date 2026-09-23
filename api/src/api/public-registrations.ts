@@ -165,7 +165,13 @@ publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, regi
     if (typeof center !== 'number') return res.status(400).json({ error: center.error });
 
     const accepted = () => res.status(202).json({ ok: true });
-    const redirectUrl = `${process.env.CORDEL_FITNESS_MEMBERS_URL ?? ''}/${body.locale ?? 'en'}/link?gym_id=${gymId}`;
+    // #701: Spanish is the default, matching the Clerk Invitation template's
+    // fallback language, so the email and the page the link opens always agree.
+    const locale = body.locale ?? 'es';
+    const redirectUrl = `${process.env.CORDEL_FITNESS_MEMBERS_URL ?? ''}/${locale}/link?gym_id=${gymId}`;
+    // The template picks Catalan / English from these flags and falls back to
+    // Spanish, so Spanish needs none (Handlebars `#if` can't compare strings).
+    const lang = locale === 'es' ? {} : { lang: { [locale]: true } };
 
     // #594: one email is never both member and staff of the same gym.
     if (await isStaffLoginEmail(gymId, body.email)) {
@@ -188,12 +194,17 @@ publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, regi
       return accepted();
     }
 
+    // Staff already added this person: the row exists, /me/link just links it.
+    const publicMetadata = {
+      ...lang,
+      ...(member ? {} : { gym_signup: { gym_id: gymId, name: body.name, center_id: center } }),
+    };
+
     try {
       const invitation = await clerkClient.invitations.createInvitation({
         emailAddress: body.email,
         redirectUrl,
-        // Staff already added this person: the row exists, /me/link just links it.
-        ...(member ? {} : { publicMetadata: { gym_signup: { gym_id: gymId, name: body.name, center_id: center } } }),
+        ...(Object.keys(publicMetadata).length ? { publicMetadata } : {}),
       });
       if (member) {
         await db.query('UPDATE members SET invitation_id = ? WHERE id = ? AND gym_id = ?', [invitation.id, member.id, gymId]);

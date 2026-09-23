@@ -198,7 +198,11 @@ curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" 
 | `name` | yes | Up to 255 characters. |
 | `email` | yes | |
 | `center_id` | only for gyms with more than one active center | The center the member joins. An inactive center is treated as non-existent: it is rejected like an unknown id and never counts towards "more than one center". |
-| `locale` | no | `en`, `es` or `ca` — language of the page the invitation link opens. Defaults to `en`. |
+| `locale` | no | `es`, `ca` or `en` — language of the invitation **email** and of the page its link opens (`/{locale}/link`). Defaults to `es`. |
+
+**Invitation email language (#701).** The email is Clerk's *Invitation* template: one per Clerk instance, shared by every gym and every invitation (website registration, members created in the admin, staff), and Clerk's invitation API takes no language. The template therefore picks its language itself with Handlebars conditionals on the invitation's public metadata: `lang.ca` → Catalan, `lang.en` → English, anything else → **Spanish**. The registration endpoint sets `lang` from `locale` (`ca`/`en` only; Spanish needs no flag) and uses the same `locale` for the link, so the email and the page always match. A site that sends no `locale` gets Spanish for both. `lang` is cleared with `gym_signup` on first sign-in. Invitations created in the admin and staff invitations carry no `lang` yet, so they arrive in Spanish.
+
+Editing the template (Clerk Dashboard → Customization → Emails → *Invitation*): keep every `{{#if}}` **inside** an element's text (`re-heading`, `re-text`, `re-button`) — between elements the editor drops the change silently; switch from the code view to the visual view before **Save**; keep the subject under Clerk's 256-character limit by leaving `{{app.name}}` outside the conditionals. Handlebars `#if` only tests truthiness, which is why the flag is `{ ca: true }` rather than a string.
 
 | Status | Meaning |
 |--------|---------|

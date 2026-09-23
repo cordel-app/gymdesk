@@ -150,7 +150,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
     expect(gm).toMatchObject({ role: 'member', status: 'active' });
 
     expect(clerk.updateUserMetadata).toHaveBeenCalledTimes(1);
-    expect(clerk.updateUserMetadata).toHaveBeenCalledWith(TEST_USER_ID, { publicMetadata: { gym_signup: null } });
+    expect(clerk.updateUserMetadata).toHaveBeenCalledWith(TEST_USER_ID, { publicMetadata: { gym_signup: null, lang: null } });
   });
 
   it("falls back to the Clerk name when the metadata carries no name", async () => {
