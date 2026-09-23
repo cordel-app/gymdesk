@@ -270,6 +270,15 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
   calendarNavButtonText:          '--gd-calendar-nav-btn-text',
 };
 
+// #677 — the Cards group's `advanced` attributes, wired exactly like the
+// calendar ones above. Before this, `cardBorderRadius` was editable and
+// persisted but never reached a CSS variable, so configuring it did nothing.
+// The Card Border *color* (`colors.cardBorder`) is written with the other
+// application colors, as `--gd-card-border`.
+export const CARD_ADVANCED_VARS: Record<string, string> = {
+  cardBorderRadius: '--gd-card-radius',
+};
+
 export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
   calendarEventBorderRadius:        '--gd-calendar-event-radius',
   calendarEventSelectedOverlay:     '--gd-calendar-event-selected-overlay',
@@ -315,8 +324,16 @@ export function calendarVarValue(
   if (key in CALENDAR_COLOR_VARS || CALENDAR_ADVANCED_COLOR_KEYS.has(key)) {
     return isHexColor(raw) ? raw : String(fallback);
   }
-  // A length (`3px`, `1.5em`). Not parsed further — anything CSS rejects is
-  // dropped by the browser and the rule's own `var()` literal takes over.
+  return cssLengthValue(raw, fallback);
+}
+
+/**
+ * The value to write for one CSS variable holding a length (`3px`, `1.5em`),
+ * falling back to the default when the persisted one is missing or blank.
+ * Not parsed further — anything CSS rejects is dropped by the browser and the
+ * rule's own `var()` literal takes over.
+ */
+export function cssLengthValue(raw: unknown, fallback: string | number | boolean): string {
   return typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : String(fallback);
 }
 
@@ -470,6 +487,12 @@ export function applyTokens(tokens: ThemeTokens) {
   }
   for (const [key, cssVar] of Object.entries(CALENDAR_ADVANCED_VARS)) {
     el.style.setProperty(cssVar, calendarVarValue(key, adv[key], DEFAULT_ADVANCED[key]));
+  }
+  // Cards (#677) — the Card Border Radius the theme editor already persisted.
+  // A theme saved before this (no `advanced` map, or no card entry in it)
+  // still gets the variable, holding the default radius.
+  for (const [key, cssVar] of Object.entries(CARD_ADVANCED_VARS)) {
+    el.style.setProperty(cssVar, cssLengthValue(adv[key], DEFAULT_ADVANCED[key]));
   }
 
   // Typography

@@ -6,7 +6,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { btnStyle } from '@/components/ui';
+import { btnStyle, cardSurfaceStyle } from '@/components/ui';
 import { canWriteModule } from '@/config/permissions';
 
 // #599: the gym's website calls POST /public/gyms/:gymRef/registrations with
@@ -27,13 +27,7 @@ interface IntegrationStatus {
 
 type PendingAction = 'rotate' | 'revoke' | null;
 
-const cardStyle: React.CSSProperties = {
-  background: 'var(--gd-card-bg, #fff)',
-  border: '1px solid var(--gd-card-border, #eee)',
-  borderRadius: 10,
-  padding: 20,
-  marginBottom: 18,
-};
+const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, padding: 20, marginBottom: 18 };
 const labelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 };
 const codeStyle: React.CSSProperties = {
   flex: 1, minWidth: 0, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13,

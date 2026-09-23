@@ -12,7 +12,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
-import { btnStyle, readOnlyStyle } from '@/components/ui';
+import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { NutritionPlanTree, Hierarchy } from '../nutrition-plan-templates/NutritionPlanTree';
 import { NewNutritionPlanDialog } from '../NewNutritionPlanDialog';
 
@@ -507,7 +507,9 @@ const filterInputStyle: React.CSSProperties = {
 };
 
 const cardStyle = (editing: boolean): React.CSSProperties => ({
-  border: editing ? '1.5px solid #4b45c6' : '1px solid #e0e0e8', borderRadius: 10, background: '#fff', overflow: 'hidden',
+  ...cardSurfaceStyle,
+  ...(editing ? { border: '1.5px solid #4b45c6' } : {}),
+  overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', cursor: 'pointer', userSelect: 'none',

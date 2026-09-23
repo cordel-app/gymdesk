@@ -13,7 +13,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
+import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
 
@@ -707,9 +707,8 @@ const colHeaderStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: '0.05em', textTransform: 'uppercase',
 };
 const cardStyle = (editing: boolean): React.CSSProperties => ({
-  border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
-  borderRadius: 10,
-  background: 'var(--gd-card-bg, #ffffff)',
+  ...cardSurfaceStyle,
+  ...(editing ? { border: '1.5px solid #4b45c6' } : {}),
   overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {

@@ -13,7 +13,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { btnStyle, readOnlyStyle } from '@/components/ui';
+import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { NewTrainingPlanDialog } from './NewTrainingPlanDialog';
 import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
 import { HierBlock } from '../workout-templates/summaries';
@@ -907,8 +907,9 @@ const pagerStyle = (disabled: boolean): React.CSSProperties => ({
   cursor: disabled ? 'default' : 'pointer', color: disabled ? '#bbb' : '#333', fontSize: 16,
 });
 const cardStyle = (editing: boolean): React.CSSProperties => ({
-  border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
-  borderRadius: 10, background: 'var(--gd-card-bg, #ffffff)', overflow: 'hidden',
+  ...cardSurfaceStyle,
+  ...(editing ? { border: '1.5px solid #4b45c6' } : {}),
+  overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',

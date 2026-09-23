@@ -13,7 +13,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
-import { btnStyle, readOnlyStyle } from '@/components/ui';
+import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { NutritionPlanTree, Hierarchy } from './NutritionPlanTree';
 import { AssignNutritionPlanDialog, AssignedNutritionPlan } from '../AssignNutritionPlanDialog';
 
@@ -559,7 +559,7 @@ function PendingNewCard({
   onCancel: () => void;
 }) {
   return (
-    <div style={{ border: '1.5px solid #4b45c6', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+    <div style={{ ...cardSurfaceStyle, border: '1.5px solid #4b45c6', overflow: 'hidden' }}>
       <div style={{ padding: '16px 16px 0' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div>
@@ -673,8 +673,9 @@ const sortBtnStyle = (active: boolean): React.CSSProperties => ({
   fontSize: 13, color: active ? '#4b45c6' : '#666', fontWeight: active ? 600 : 400, borderRadius: 4,
 });
 const cardStyle = (editing: boolean): React.CSSProperties => ({
-  border: editing ? '1.5px solid #4b45c6' : '1px solid #ececf0',
-  borderRadius: 10, background: '#fff', overflow: 'hidden',
+  ...cardSurfaceStyle,
+  ...(editing ? { border: '1.5px solid #4b45c6' } : {}),
+  overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',

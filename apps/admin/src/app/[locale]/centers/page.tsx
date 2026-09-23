@@ -15,7 +15,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { btnStyle, readOnlyStyle } from '@/components/ui';
+import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 
 interface Center {
   id: number;
@@ -227,7 +227,7 @@ export default function CentersPage() {
     ];
 
     return (
-      <div key={center.id} style={{ border: '1px solid #e2e2e6', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--gd-card-bg, #ffffff)' }}>
+      <div key={center.id} style={{ ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' }}>
         <div
           style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
           onClick={() => setExpandedId(isExpanded ? null : center.id)}

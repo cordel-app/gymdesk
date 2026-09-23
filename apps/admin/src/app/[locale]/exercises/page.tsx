@@ -14,7 +14,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ImageUploadField } from '@/components/ImageUploadField';
-import { btnSmall, btnStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -771,7 +771,7 @@ export default function ExercisesPage() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const cardSt: React.CSSProperties = { border: '1px solid var(--gd-card-border, #e2e2e6)', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--gd-card-bg, #fff)' };
+const cardSt: React.CSSProperties = { ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' };
 const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '12px 20px', gap: 12, cursor: 'pointer' };
 const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };

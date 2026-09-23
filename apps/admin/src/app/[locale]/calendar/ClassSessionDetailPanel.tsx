@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
+import { cardSurfaceStyle } from '@/components/ui';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
 
 interface ClassSession {
@@ -47,8 +48,9 @@ const sectionLabel: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = {
-  background: 'var(--gd-bg, #f9fafb)', borderRadius: 8,
-  padding: '12px 14px', border: '1px solid #e5e7eb',
+  ...cardSurfaceStyle,
+  background: 'var(--gd-bg, #f9fafb)',
+  padding: '12px 14px',
 };
 
 const btnBase: React.CSSProperties = {
