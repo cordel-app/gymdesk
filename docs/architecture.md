@@ -501,9 +501,13 @@ Revoking the invitation closes the race for the *link itself* (Clerk shows "The 
 
 The registry (`AUDIT_ENTITY_REGISTRY`) and action list (`AUDIT_ACTIONS`) are served by `GET /audit-logs/meta` for frontend dropdown population. High-value mutations call `recordAudit` after the business write; `class-types.ts` and `promotions.ts` were added in #69.
 
+**A new `entityType` belongs in the registry, not only in the `recordAudit` call.** An unregistered type still writes rows, but they resolve no `entity_name` and the type is absent from `GET /audit-logs/meta` — so the Audit Log's entity-type dropdown cannot show it, and a Details view deep-linking to it (below) lands on a filter whose select has no matching option. #675 registered the nine types the Details views needed (`activity_type`, `theme`, `tax_rate`, `gym_charge`, `professional_service`, `nutrition_library_item`, `nutrition_plan_template`, `member_nutrition_plan`, `staff`).
+
 Two read views share one endpoint and one React component (`AuditLogView`): **System → Audit log** (`/audit`, admin+) is scoped to the active gym; **Cordel → Audit log** (`/cordel/audit`, superadmin) sends `?scope=all` to see every gym's events with a Gym column joined in (#66). Filters: `entity_type` (dropdown), `entity_id` (exact match), `entity_name` (LIKE on stored snapshot), `actor` (name LIKE or Clerk ID exact), `action` (dropdown), `source` (dropdown), `from`/`to` date range.
 
 `entity_type`, `entity_id` and `entity_name` are also read from the query string on mount, so any page can deep-link to one record's history — the Members → Details modal's **View Audit Log** button opens `/{locale}/audit?entity_type=member&entity_id=<id>` (#642). Link by id, never by name: `entity_name` is a snapshot and is neither unique nor stable. The `entity_id` filter is served by the existing `(gym_id, entity_type, entity_id)` index.
+
+**Every** Details view offers that deep link (#675), through one component — `apps/admin/src/components/ViewAuditLogButton.tsx`. It owns the permission rule (superadmin, or a gym `admin` with the `system` and `system.audit` flags on — the same rule the sidebar applies, re-checked in `AuditLogView` and in the API) and the URL shape, and renders nothing when the viewer may not read the log or the record has no id. `scope="platform"` targets `/cordel/audit` instead of `/audit`, for entities administered outside a single gym (Gyms, base Themes, the Cordel Nutrition Library); `size="small"` suits an inline expanded row rather than a modal footer. In a `CrudModal` it goes in `extraFooter`. Its label is `common.action_view_audit_log`. See `docs/feature-patterns.md` → *Details view → View Audit Log*.
 
 ---
 

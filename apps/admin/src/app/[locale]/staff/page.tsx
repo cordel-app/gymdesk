@@ -10,6 +10,7 @@ import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 import { useModuleAccess } from '@/lib/useModuleAccess';
@@ -886,7 +887,8 @@ export default function StaffPage() {
           <hr style={{ border: 'none', borderTop: '1px solid #e8e8ed', margin: '20px 0' }} />
           {field(t('label_created_at'), member.created_at ? new Date(member.created_at).toLocaleString() : null)}
           {field(t('label_updated_at'), member.updated_at ? new Date(member.updated_at).toLocaleString() : null)}
-          <div style={{ marginTop: 24 }}>
+          <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
+            <ViewAuditLogButton entityType="staff" entityId={member.id} onNavigate={() => setDetailsMember(null)} />
             <button onClick={() => setDetailsMember(null)} style={btnStyle('#888')}>{t('close')}</button>
           </div>
         </div>

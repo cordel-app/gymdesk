@@ -8,6 +8,7 @@ import { useGym } from '@/context/GymContext';
 import { useLocale } from 'next-intl';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { readOnlyStyle } from '@/components/ui';
@@ -382,6 +383,10 @@ function ExpandedRow({
               {details.notes && (
                 <DetailField label={t('billing_events_page.det_notes')}>{details.notes}</DetailField>
               )}
+            </div>
+            {/* #675: same deep link every Details view offers — filtered to this event. */}
+            <div style={{ marginBottom: 16 }}>
+              <ViewAuditLogButton entityType="billing_event" entityId={details.id} size="small" />
             </div>
           </>
         )}

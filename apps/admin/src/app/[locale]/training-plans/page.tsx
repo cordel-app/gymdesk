@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { btnStyle, readOnlyStyle } from '@/components/ui';
 import { NewTrainingPlanDialog } from './NewTrainingPlanDialog';
 import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
@@ -850,6 +851,7 @@ function DetailsDialog({ plan, locale, t, onClose }: {
       saving={false}
       cancelLabel={t('training_plans.cancel')}
       saveLabel=""
+      extraFooter={<ViewAuditLogButton entityType="training_plan" entityId={plan.id} onNavigate={onClose} />}
       onCancel={onClose}
       onSave={onClose}
       hideSave

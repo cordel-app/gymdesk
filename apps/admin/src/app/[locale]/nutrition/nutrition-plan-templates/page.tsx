@@ -8,6 +8,7 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { CrudModal } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -624,6 +625,7 @@ function DetailsDialog({
       saving={false}
       cancelLabel={t('nutrition_plan_templates.cancel')}
       saveLabel=""
+      extraFooter={<ViewAuditLogButton entityType="nutrition_plan_template" entityId={template.id} onNavigate={onClose} />}
       onCancel={onClose}
       onSave={onClose}
       hideSave

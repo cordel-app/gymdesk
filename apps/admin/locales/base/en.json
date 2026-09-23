@@ -224,7 +224,6 @@
     "all_enrollment_statuses": "All statuses",
     "placeholder_search": "Search members…",
     "action_details": "Details",
-    "action_view_audit_log": "View Audit Log",
     "detail_title": "Member Details",
     "section_profile": "Profile",
     "label_date_of_birth": "Date of birth",
@@ -410,7 +409,8 @@
     "image_upload_error": "Failed to upload image.",
     "image_not_configured": "Cloudflare storage has not been configured for this deployment.",
     "image_not_initialized": "Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.",
-    "read_only_hint": "Read-only access"
+    "read_only_hint": "Read-only access",
+    "action_view_audit_log": "View Audit Log"
   },
   "system_gyms": {
     "title": "Gyms",

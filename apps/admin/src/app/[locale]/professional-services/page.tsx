@@ -11,6 +11,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle, btnSmall, readOnlyStyle } from '@/components/ui';
 
@@ -385,6 +386,7 @@ export default function ProfessionalServicesPage() {
         hideSave
         cancelLabel={t('close')}
         saveLabel=""
+        extraFooter={<ViewAuditLogButton entityType="professional_service" entityId={details?.id} onNavigate={() => setDetails(null)} />}
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >

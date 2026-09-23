@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import type { AssignedPlanDetail } from './types';
 
@@ -55,7 +56,8 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
           {field(t('detail_modified_at'), detail.modified_at ? fmtDate(detail.modified_at) : null)}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+          <ViewAuditLogButton entityType="user_membership" entityId={detail.id} onNavigate={onClose} />
           <button onClick={onClose} style={btnStyle('#444')}>{t('close')}</button>
         </div>
       </div>

@@ -795,6 +795,35 @@ recordAudit(req, {
 
 Actor, gym, IP, user-agent, and `source` are pulled from `req.tenantCtx` automatically. Rows are read back through `GET /audit-logs` (admin only, scoped to the active gym) in the admin **System → Audit log** page. Platform superadmins can pass `?scope=all` to see every gym's events (with `gym_name` joined in) — surfaced as **Cordel → Audit log** (`/cordel/audit`); both pages render the shared `AuditLogView` component.
 
+A new `entityType` also needs an `AUDIT_ENTITY_REGISTRY` entry in `api/src/infra/audit-registry.ts` — a `simple` entry (table + name column) for anything with its own `name`, a `composed` one when the label is a join. Without it the rows still write, but they carry no `entity_name` and the type never reaches the Audit Log's entity-type dropdown (`GET /audit-logs/meta`), which is what the deep link below preselects.
+
+## Details view → View Audit Log (#675)
+
+Every entity's Details view offers a **View Audit Log** action that opens the Audit Log already filtered to that record. Use the shared component — never a hand-rolled `router.push`:
+
+```tsx
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+
+// In a plain modal footer, next to Close:
+<ViewAuditLogButton entityType="tax_rate" entityId={detail.id} onNavigate={onClose} />
+
+// In a CrudModal, the footer slot:
+<CrudModal … extraFooter={<ViewAuditLogButton entityType="space" entityId={details?.id} onNavigate={() => setDetails(null)} />} … />
+
+// In an inline expanded row (no modal to close):
+<ViewAuditLogButton entityType="billing_event" entityId={details.id} size="small" />
+```
+
+Rules:
+
+- **`entityType` is the canonical audit key** — the exact string the router passes to `recordAudit({ entityType })`, not a display name and not the route segment. It must exist in `AUDIT_ENTITY_REGISTRY` (above).
+- **Filter by id, never by name.** `entity_name` is a write-time snapshot: neither unique nor stable.
+- **Permission and URL shape live in the component**, so they cannot drift per page: it renders nothing unless the viewer is a superadmin or a gym `admin` with `system` + `system.audit` enabled, and nothing when `entityId` is null (a Details modal's props are evaluated even while it is closed — pass `details?.id`).
+- **`scope="platform"`** targets **Cordel → Audit log** instead of the gym one, for entities administered outside a single gym (Gyms, base Themes, the Cordel Nutrition Library).
+- The label is `common.action_view_audit_log` — already present in en/es/ca, so a new Details view adds no translation key.
+
+`apps/admin/src/test/view-audit-log-everywhere.test.ts` enumerates every Details view and fails when one is added without the action.
+
 ## Read-only access in admin pages (#613)
 
 A role with read-only access to a module (`R` / `R_ASSIGNED`) **sees the page and its data, with every write control disabled** — never hidden, never redirected away. The API rejects the write independently (`requireModuleWrite` / `requireRole`); `api/src/test/read-only-writes.test.ts` pins that per module.

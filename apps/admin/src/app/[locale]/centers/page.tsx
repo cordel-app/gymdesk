@@ -14,6 +14,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { btnStyle, readOnlyStyle } from '@/components/ui';
 
 interface Center {
@@ -369,6 +370,7 @@ export default function CentersPage() {
           cancelLabel={t('cancel')}
           saveLabel=""
           hideSave
+          extraFooter={<ViewAuditLogButton entityType="center" entityId={detailsCenter.id} onNavigate={() => setDetailsCenter(null)} />}
           onCancel={() => setDetailsCenter(null)}
           onSave={() => setDetailsCenter(null)}
         >
