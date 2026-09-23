@@ -14,10 +14,20 @@ async function seed() {
   });
   console.log('✓ Set platform_role=superadmin for seed user');
 
+  // #636: gyms.payment_provider_id is NOT NULL — migration 175 seeds the
+  // platform default, so a migrated database always has one to hand.
+  const { rows: [defaultProvider] } = await db.query<{ id: number }>(
+    `SELECT id FROM payment_providers WHERE is_default = 1 AND deleted_at IS NULL LIMIT 1`,
+  );
+  if (!defaultProvider) {
+    throw new Error('No default payment provider found — run npm run db:migrate before seeding');
+  }
+
   // Create a default gym
   await db.query(
-    `INSERT INTO gyms (name, slug, plan) VALUES ('My Gym', 'my-gym', 'free') AS new
+    `INSERT INTO gyms (name, slug, plan, payment_provider_id) VALUES ('My Gym', 'my-gym', 'free', ?) AS new
      ON DUPLICATE KEY UPDATE name = new.name`,
+    [defaultProvider.id],
   );
   const { rows: [gym] } = await db.query(`SELECT * FROM gyms WHERE slug = 'my-gym'`);
   console.log(`✓ Gym ready: ${gym.name} (${gym.id})`);

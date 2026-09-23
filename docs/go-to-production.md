@@ -54,7 +54,7 @@ Tick items off in the PR that completes them.
       list is a strict superset of the old one, so it cannot fail on data; time it
       against a copy of the table first. (The statement is guarded, so re-running
       migrations after it lands is a no-op rather than a second rebuild.)
-- [ ] **Time migration 174's backfill before running it** (#635 stage 2). The DDL is
+- [ ] **Time migration 175's backfill before running it** (#635 stage 2). The DDL is
       cheap — six nullable column adds on `user_memberships` plus three new tables —
       but the file ends with data statements that touch every existing row: one
       `UPDATE … JOIN` over `user_memberships` (with a correlated price-window
@@ -190,3 +190,22 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       Retry Payment action only, because issue §6 forbids changing automatic payment
       processing. Decide before production whether an unattended failed charge should
       follow the same rule, and open a ticket if so.
+- [ ] **A gym's Payment Provider is metadata, not yet the adapter selector** (#636):
+      `gyms.payment_provider_id` is mandatory and administered from Cordel → Payment
+      Providers, but `getPaymentProvider()` still resolves the adapter (and its
+      credentials) from `PAYMENT_PROVIDER` / `MONEI_*`. With `monei` the only adapter
+      implemented the two can't disagree; before a second one ships, point the charge
+      path at the gym's `provider_key` and decide where that provider's credentials
+      come from (per-gym env vars, or a secret store — never MySQL, per CLAUDE.md).
+- [ ] **Time migration 175's backfill** (#636): it sets `gyms.payment_provider_id` for
+      every existing gym and then runs `ALTER TABLE gyms MODIFY COLUMN … NOT NULL`
+      (an ALGORITHM=COPY rebuild). Cheap on a handful of gyms, but it is the busiest
+      table in the schema — run it in the deploy's migration window, not live. The
+      column is created with a temporary `DEFAULT` so a gym created by the *old*
+      build while the migration runs still lands on the platform default instead of
+      a NULL that would abort the `MODIFY`; the default is dropped again at the end.
+- [ ] **Migration 175's `down()` is lossy** (#636): dropping the column discards each
+      gym's chosen provider, so a rollback-then-reapply puts every gym back on the
+      platform default. Harmless while every gym is still on the default (the state
+      on every environment today). Once a gym has been moved to another provider,
+      capture `SELECT id, payment_provider_id FROM gyms` before rolling back.

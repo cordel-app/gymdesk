@@ -216,11 +216,9 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.taxes',
         featureKey: 'financials.taxes',
       },
-      {
-        href: '/{{locale}}/financials/payment-providers',
-        labelKey: 'nav.payment_providers',
-        featureKey: 'financials.payment_providers',
-      },
+      // #636: Payment Providers moved to the Cordel group — they are platform-wide
+      // configuration, and a gym only picks one of them. Its `financials.payment_providers`
+      // feature flag is dropped by migration 175.
     ],
   },
   {
@@ -275,6 +273,10 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/cordel/audit',
         labelKey: 'nav.audit',
+      },
+      {
+        href: '/{{locale}}/cordel/payment-providers',
+        labelKey: 'nav.payment_providers',
       },
       {
         href: '/{{locale}}/cordel/feature-flags',
