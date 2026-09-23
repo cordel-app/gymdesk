@@ -6,8 +6,9 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
-import { BLOCK_TYPES } from '../workout-templates/blockFieldConfig';
-import { isBlockFieldVisible } from '../workout-templates/blockFieldConfig';
+import {
+  BLOCK_TYPES, blockConfigInput, blockConfigPatch, getBlockConfig,
+} from '../workout-templates/blockFieldConfig';
 import { PlanBlockExercisesModal } from './PlanBlockExercisesModal';
 
 interface Block {
@@ -87,6 +88,21 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
     catch (err: any) { setDeleting(null); toast(err.message ?? t('workout_template_blocks.error_generic')); }
   }
 
+  /* #672: the block type decides the single configuration field on offer
+   * (Rounds / Minutes / Intervals). The form keeps holding the raw columns, so
+   * a value typed for one type is still there when the type is switched back,
+   * and a column the current type does not show is submitted unchanged. */
+  const config = getBlockConfig(form.type);
+  const toNum = (v: string) => (v === '' ? null : parseInt(v, 10));
+  const configValue = blockConfigInput({
+    type: form.type, rounds: toNum(form.rounds), duration_seconds: toNum(form.duration_seconds),
+  });
+  function setConfigValue(value: string) {
+    if (!config) return;
+    const [[column, stored]] = Object.entries(blockConfigPatch(config, value));
+    setForm({ ...form, [column]: stored == null ? '' : String(stored) });
+  }
+
   async function move(idx: number, dir: -1 | 1) {
     const next = idx + dir;
     if (next < 0 || next >= blocks.length) return;
@@ -146,24 +162,9 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
                 {BLOCK_TYPES.map((ty) => <option key={ty} value={ty}>{t(`workout_template_blocks.type_${ty.toLowerCase()}`)}</option>)}
               </select>
             </Field>
-            {isBlockFieldVisible(form.type, 'rounds') && (
-              <Field label={t('workout_template_blocks.col_rounds')}>
-                <input type="number" min="0" value={form.rounds} onChange={(e) => setForm({ ...form, rounds: e.target.value })} style={input} />
-              </Field>
-            )}
-            {isBlockFieldVisible(form.type, 'duration_seconds') && (
-              <Field label={t('workout_template_blocks.col_duration')}>
-                <input type="number" min="0" value={form.duration_seconds} onChange={(e) => setForm({ ...form, duration_seconds: e.target.value })} style={input} />
-              </Field>
-            )}
-            {isBlockFieldVisible(form.type, 'work_seconds') && (
-              <Field label={t('workout_template_blocks.col_work_seconds')}>
-                <input type="number" min="0" value={form.work_seconds} onChange={(e) => setForm({ ...form, work_seconds: e.target.value })} style={input} />
-              </Field>
-            )}
-            {isBlockFieldVisible(form.type, 'rest_seconds') && (
-              <Field label={t('workout_template_blocks.col_rest_seconds')}>
-                <input type="number" min="0" value={form.rest_seconds} onChange={(e) => setForm({ ...form, rest_seconds: e.target.value })} style={input} />
+            {config && (
+              <Field label={t(config.labelKey)}>
+                <input type="number" min="0" value={configValue} onChange={(e) => setConfigValue(e.target.value)} style={input} />
               </Field>
             )}
             <Field label={t('workout_template_blocks.col_optional')}>
