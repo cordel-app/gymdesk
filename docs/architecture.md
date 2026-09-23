@@ -401,6 +401,7 @@ app.use('/public', publicRouter);
 app.use('/gyms',                  requireAuth(), gymsRouter);
 app.use('/platform',              requireAuth(), platformRouter);            // superadmin only
 app.use('/platform/superadmins',  requireAuth(), superadminsRouter);         // superadmin only
+app.use('/platform/orphaned-accounts', requireAuth(), orphanedAccountsRouter); // superadmin only (#709)
 
 // Link routes must run BEFORE tenantContext (no membership row exists yet on first link)
 app.use('/me/link',        requireAuth(), meLinkRouter);
@@ -465,6 +466,13 @@ Unlike Team, a `members` row is the record of truth (name, contact, plan, billin
 4. Member signs in via Clerk in `apps/member`.
 5. On first sign-in the app calls `POST /me/link` (no `gym_memberships` row yet) — backend matches by email + gym_id (requiring `clerk_user_id IS NULL AND deleted_at IS NULL`), sets `members.clerk_user_id`, clears `invitation_id`, and inserts `gym_memberships(role='member')`.
 6. Subsequent requests use `/me/*` routes with `tenantContext` resolving the member role.
+
+**Orphaned Clerk accounts (#709).** A Clerk login is *linked* to Gymdesk when it is a superadmin (`publicMetadata.platform_role`), has a staff `gym_memberships` row (any role but `member`), or has an **active** `members` row (`clerk_user_id`, `deleted_at IS NULL`); a member-role `gym_memberships` row on its own does not count. That single definition lives in `infra/clerk-account-links.ts` (`loadAccountLinks`, pure `classifyAccount`, `unlinkClerkAccount`) and is used by all three places that could otherwise leave an account linked to nothing:
+- **`DELETE /members/:id`**: when the member's login has no other link, the Clerk user is deleted **first** (502 and no DB change if Clerk fails, mirroring staff `revokeAccess({ deleteClerkUser: true })`), then this gym's member-role `gym_memberships` row is removed and `members.clerk_user_id` nulled; the same unlink happens when Clerk no longer has the account. A login still linked elsewhere (staff in another gym, superadmin) is kept **and the member stays linked to it**, so a Recycle Bin restore (`POST /recycle-bin/member/:id/recover`) reconnects them as before; a member whose login was deleted is restored unlinked and invited again.
+- **Clerk `user.deleted` webhook** → `unlinkClerkAccount(userId)`: every `gym_memberships` row for the user is deleted and `members.clerk_user_id` nulled (rows kept). Idempotent, so the echo of our own deletes is a no-op. Audited with `gym_id` NULL, source `system`. The event must be enabled on the Clerk webhook endpoint.
+- **`/platform/orphaned-accounts`** (superadmin, *Cordel → Orphaned accounts* in the admin): `GET` pages through every Clerk user (`getUserList`, 500 per call) and returns the unlinked ones with a reason (`member_deleted`, `signup_incomplete`, `signup_in_progress`, `no_links`) and the gyms they used to belong to; `DELETE /:userId` re-classifies (409 if linked, or a sign-up younger than 24 h), deletes in Clerk first, then `unlinkClerkAccount`, audited as `clerk_account` via `recordPlatformAudit` (`infra/audit.ts`, the gym-less audit writer).
+
+Every FK to `gym_memberships.id` is `ON DELETE SET NULL` or `CASCADE` (checked for #709), so removing member-role rows never fails on a reference.
 
 **Removing a member with a pending, not-yet-accepted invitation revokes it.** `DELETE /members/:id` (soft-delete) checks `clerk_user_id IS NULL AND invitation_id IS NOT NULL` before setting `deleted_at`, and best-effort calls `clerkClient.invitations.revokeInvitation()` first (a revoke failure doesn't block the soft-delete) — same race this closes as the Team flow: `/me/link` already refuses to link into a soft-deleted (`deleted_at IS NOT NULL`) row, so without the revoke the only leftover risk was an orphaned, still-valid Clerk invitation email and a wasted invitation slot, not an actual access breach. Revoking it is cleanup, not a security fix, in this case — the DB-level `deleted_at` guard was already sufficient. This still depends on the Clerk instance being in **Restricted mode** (see "Auth (Clerk)" above) to stop a fresh, uninvited self-registration with the same email.
 

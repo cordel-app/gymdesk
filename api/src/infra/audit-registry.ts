@@ -197,6 +197,8 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   workout_exercise: { kind: 'none', label: 'Workout Exercises' },
   superadmin: { kind: 'none', label: 'Superadmins' },
   website_api_key: { kind: 'none', label: 'Website API Key' },
+  // #709: a Clerk login account (platform-level; entity_name is the email).
+  clerk_account: { kind: 'none', label: 'Login Accounts' },
 };
 
 export async function resolveEntityName(

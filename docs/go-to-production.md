@@ -87,7 +87,7 @@ Clerk Development and Production instances are separate: users, user ids and met
 
 - [ ] Create the Clerk Production instance and configure its domain / DNS records.
 - [ ] API: `CLERK_SECRET_KEY` (`sk_live_…`), `CLERK_PUBLISHABLE_KEY` (`pk_live_…`).
-- [ ] Re-create the Clerk webhook endpoint (`/webhooks/clerk`) on the production instance
+- [ ] Re-create the Clerk webhook endpoint (`/webhooks/clerk`) on the production instance, subscribed to **`user.created` and `user.deleted`** (#709)
       and set its `CLERK_WEBHOOK_SIGNING_SECRET`.
 - [ ] Recreate the customised *Invitation* email template (Spanish/Catalan/English via `lang`
       conditionals — see `docs/wordpress-integration.md`) on the production instance; templates

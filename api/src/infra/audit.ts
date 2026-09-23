@@ -76,3 +76,32 @@ export function recordAudit(req: Request, payload: AuditPayload): void {
     console.error('audit_logs insert failed', err.message ?? err);
   });
 }
+
+/**
+ * #709: audit row for a platform-level action that belongs to no gym
+ * (gym_id NULL), e.g. a superadmin deleting a Clerk account or a Clerk webhook.
+ * Same fire-and-forget contract as recordAudit. Pass `req: null` for a
+ * system actor (webhooks): actor fields come from `actor` instead.
+ */
+export function recordPlatformAudit(
+  req: Request | null,
+  payload: AuditPayload & { actor?: { userId: string | null; name: string | null }; source?: string },
+): void {
+  const actorUserId = payload.actor?.userId ?? (req as any)?.auth?.userId ?? null;
+  const actorName = payload.actor?.name ?? (req as any)?.superadminName ?? null;
+  const ip = req ? firstIp(req) : null;
+  const ua = req ? (req.headers['user-agent'] as string | undefined)?.slice(0, 500) ?? null : null;
+  db.query(
+    `INSERT INTO audit_logs
+     (gym_id, actor_user_id, actor_name, action, entity_type, entity_id, entity_name,
+      previous_values, new_values, source, ip, user_agent)
+     VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      actorUserId, actorName, payload.action, payload.entityType,
+      payload.entityId != null ? String(payload.entityId) : null, payload.entityName ?? null,
+      payload.previous != null ? JSON.stringify(payload.previous) : null,
+      payload.next != null ? JSON.stringify(payload.next) : null,
+      payload.source ?? 'admin', ip, ua,
+    ],
+  ).catch((err: any) => console.error('platform audit_logs insert failed', err.message ?? err));
+}
