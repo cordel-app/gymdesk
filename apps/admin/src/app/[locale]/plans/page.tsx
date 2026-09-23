@@ -73,14 +73,12 @@ interface GymCharge extends SellableItemOption {
   amount: string | null;
   availability: string;
 }
-interface ChargeBenefit { id: number; gym_charge_id: number; gym_charge_name: string; gym_charge_availability: string; action: string; value: string | null; }
 interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; is_system: boolean | number; }
 
 // #485: read-only, dynamically computed by the backend — never persisted.
 interface ForecastLine {
   label: string;
   amount: number;
-  benefit?: { action: 'waive' | 'percentage_discount' | 'fixed_discount'; value: number | null };
 }
 interface ForecastEvent { date: string; description: string; total: number; lines: ForecastLine[]; }
 interface BillingForecast { available: boolean; reason: string | null; currency: string; events: ForecastEvent[]; }
@@ -104,7 +102,6 @@ interface Plan {
   modified_at: string | null;
   modified_by_name: string | null;
   deleted_at: string | null;
-  charge_benefits: ChargeBenefit[];
   // #635 stage 1: the three Sellable-Item-keyed Benefit sections, served with
   // the plan so a card renders them without three extra round trips.
   session_benefits: SellableItemBenefitRow[];
@@ -129,7 +126,6 @@ const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 const MEMBER_LIMITS = ['1', '2', 'family'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
-const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount'] as const;
 
 // Applied automatically to every new plan; staff can adjust it afterwards via the Billing Policy section.
 const DEFAULT_BILLING_POLICY = {
@@ -281,9 +277,6 @@ export default function PlansPage() {
 
   // Charge benefits
   const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
-  const [cbEditForPlanId, setCbEditForPlanId] = useState<number | null>(null);
-  const [cbDraft, setCbDraft] = useState<Record<number, { action: string; value: string }>>({});
-  const [cbSaving, setCbSaving] = useState(false);
 
   // Billing & Duration (#635 §7) — its own section, edited independently.
   const [durationEditForPlanId, setDurationEditForPlanId] = useState<number | null>(null);
@@ -634,48 +627,6 @@ export default function PlansPage() {
       load();
     } catch (err: any) {
       toast(err.message ?? t('plans.error_generic'));
-    }
-  }
-
-  // ─── Charge Benefits ────────────────────────────────────────────────────────
-
-  function openCbEdit(plan: Plan) {
-    const draft: Record<number, { action: string; value: string }> = {};
-    for (const cb of plan.charge_benefits ?? []) {
-      draft[cb.gym_charge_id] = { action: cb.action, value: cb.value ?? '' };
-    }
-    setCbDraft(draft);
-    setCbEditForPlanId(plan.id);
-  }
-
-  function cancelCbEdit() {
-    setCbEditForPlanId(null);
-    setCbDraft({});
-  }
-
-  async function saveCbEdit(planId: number) {
-    setCbSaving(true);
-    try {
-      const items = gymCharges
-        .filter((gc) => cbDraft[gc.id]?.action && cbDraft[gc.id].action !== 'no_benefit')
-        .map((gc) => ({
-          gym_charge_id: gc.id,
-          action: cbDraft[gc.id].action,
-          value: ['percentage_discount', 'fixed_discount'].includes(cbDraft[gc.id].action)
-            ? parseFloat(cbDraft[gc.id].value) || 0
-            : null,
-        }));
-      await apiFetch(`/membership-plans/${planId}/charge-benefits`, {
-        method: 'PUT',
-        body: JSON.stringify(items),
-      });
-      setCbEditForPlanId(null);
-      setCbDraft({});
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('plans.error_generic'));
-    } finally {
-      setCbSaving(false);
     }
   }
 
@@ -1278,70 +1229,6 @@ export default function PlansPage() {
                       ))
                     )}
 
-                    {gymCharges.length > 0 && (
-                      <>
-                        <SectionHeader
-                          title={t('plans.section_charge_benefits')}
-                          action={
-                            cbEditForPlanId === plan.id ? null :
-                            <button onClick={() => openCbEdit(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>
-                          }
-                        />
-                        {cbEditForPlanId === plan.id ? (
-                          <>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '4px 12px', alignItems: 'center', marginBottom: 4 }}>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>{t('plans.cb_col_charge')}</span>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase' }}>{t('plans.cb_col_action')}</span>
-                              <span />
-                            </div>
-                            {gymCharges.map((gc) => (
-                              <div key={gc.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '3px 12px', alignItems: 'center', padding: '2px 0' }}>
-                                <span style={{ fontSize: 13 }}>{gc.name}</span>
-                                <select
-                                  value={cbDraft[gc.id]?.action ?? 'no_benefit'}
-                                  onChange={(e) => setCbDraft((prev) => ({ ...prev, [gc.id]: { ...prev[gc.id], action: e.target.value, value: '' } }))}
-                                  style={{ padding: '5px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12, background: '#fff' }}
-                                >
-                                  {CHARGE_ACTIONS.map((a) => (
-                                    <option key={a} value={a}>{t(`plans.cb_action_${a}`)}</option>
-                                  ))}
-                                </select>
-                                {['percentage_discount', 'fixed_discount'].includes(cbDraft[gc.id]?.action ?? '') ? (
-                                  <input
-                                    type="number" min="0" step="0.01"
-                                    value={cbDraft[gc.id]?.value ?? ''}
-                                    onChange={(e) => setCbDraft((prev) => ({ ...prev, [gc.id]: { ...prev[gc.id], value: e.target.value } }))}
-                                    placeholder="0"
-                                    style={{ width: 70, padding: '5px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 12 }}
-                                  />
-                                ) : <span />}
-                              </div>
-                            ))}
-                            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                              <button onClick={cancelCbEdit} style={linkBtn}>{t('plans.cancel')}</button>
-                              <button onClick={() => saveCbEdit(plan.id)} disabled={cbSaving} style={linkBtn}>
-                                {cbSaving ? t('plans.saving') : t('plans.save_charge_benefits')}
-                              </button>
-                            </div>
-                          </>
-                        ) : (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').length === 0 ? (
-                          <p style={hintSt}>{t('plans.no_charge_benefits')}</p>
-                        ) : (
-                          (plan.charge_benefits ?? []).filter((cb) => cb.action !== 'no_benefit').map((cb) => (
-                            <div key={cb.id} style={benefitRowStyle}>
-                              <span style={benefitNameStyle}>
-                                {cb.gym_charge_name}
-                                {cb.gym_charge_availability === 'unavailable' && (
-                                  <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#c0392b', background: '#fdecea', padding: '1px 5px', borderRadius: 3 }}>Unavailable</span>
-                                )}
-                              </span>
-                              <span style={benefitValueStyle}>{cb.action}{cb.value != null ? ` — ${cb.value}` : ''}</span>
-                            </div>
-                          ))
-                        )}
-                      </>
-                    )}
-
                     <SectionHeader
                       title={t('plans.section_pricing')}
                       action={pricingForPlanId === plan.id ? null : (
@@ -1484,7 +1371,6 @@ export default function PlansPage() {
                             {ev.lines.map((line, j) => (
                               <div key={j} style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
                                 • {line.label}: €{line.amount.toFixed(2)}
-                                {line.benefit && ` (${forecastBenefitLabel(line.benefit, t)})`}
                               </div>
                             ))}
                           </div>
@@ -1560,17 +1446,6 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
       {action}
     </div>
   );
-}
-
-// #485: renders e.g. "benefit — waive" / "benefit — 50% discount" / "benefit — €15 discount".
-function forecastBenefitLabel(
-  benefit: NonNullable<ForecastLine['benefit']>,
-  t: (key: string) => string,
-): string {
-  const prefix = t('plans.forecast_benefit_prefix');
-  if (benefit.action === 'waive') return `${prefix} — ${t('plans.cb_action_waive').toLowerCase()}`;
-  if (benefit.action === 'percentage_discount') return `${prefix} — ${benefit.value}% ${t('plans.forecast_discount')}`;
-  return `${prefix} — €${benefit.value} ${t('plans.forecast_discount')}`;
 }
 
 function DetailRow({ label, value, description }: { label: string; value: React.ReactNode; description?: string }) {

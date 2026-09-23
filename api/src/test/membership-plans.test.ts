@@ -72,8 +72,8 @@ async function addCoveredMember(
   );
 }
 
-// #376: creates a gym-scoped charge (borrowing an existing gym-charge charge_type,
-// seeded by migration 090) so a plan_charge_benefits row can reference it. Picks a
+// Creates a gym-scoped charge (borrowing an existing gym-charge charge_type,
+// seeded by migration 090) so a Benefit row can reference it. Picks a
 // charge_type not yet used by this gym, since gym_charges has a unique constraint
 // on (gym_id, charge_type_id) and this helper may be called more than once per gym.
 async function createGymCharge(gymId: string): Promise<number> {
@@ -105,19 +105,6 @@ async function createPromoTargetingPlan(gymId: string, planId: number): Promise<
     [gymId, insertId, planId],
   );
   return insertId;
-}
-
-async function addPlanChargeBenefit(
-  gymId: string,
-  planId: number,
-  gymChargeId: number,
-  action: string,
-  value: number | null,
-): Promise<void> {
-  await db.query(
-    'INSERT INTO plan_charge_benefits (gym_id, membership_plan_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
-    [gymId, planId, gymChargeId, action, value],
-  );
 }
 
 // #409: a custom (non-system) sellable item, created the same way POST
@@ -1120,47 +1107,6 @@ describe('Applicable tax on membership plans', () => {
   });
 });
 
-// #409: GET /:id/charge-benefits used to INNER JOIN charge_types, which
-// silently dropped any benefit whose gym_charge is a custom sellable item
-// (charge_type_id is NULL for those — only system items have one).
-describe('GET /membership-plans/:id/charge-benefits', () => {
-  let gymId: string;
-  let planId: number;
-
-  beforeAll(async () => {
-    gymId = await createTestGym('Plans Charge Benefits Gym');
-    await createTestMembership(gymId, 'admin');
-    planId = await createPlan(gymId, { name: 'Charge Benefits Plan' });
-  });
-
-  it('includes a benefit assigned to a custom sellable item (no charge_type_id)', async () => {
-    const customChargeId = await createCustomGymCharge(gymId, 'Custom Discount Item');
-    await addPlanChargeBenefit(gymId, planId, customChargeId, 'percentage_discount', 10);
-
-    const res = await request
-      .get(`/membership-plans/${planId}/charge-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    const benefit = res.body.find((b: any) => b.gym_charge_id === customChargeId);
-    expect(benefit).toBeDefined();
-    expect(benefit.gym_charge_name).toBe('Custom Discount Item');
-  });
-
-  it('includes a benefit assigned to a system sellable item (has charge_type_id)', async () => {
-    const systemChargeId = await createGymCharge(gymId);
-    await addPlanChargeBenefit(gymId, planId, systemChargeId, 'waive', null);
-
-    const res = await request
-      .get(`/membership-plans/${planId}/charge-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    const benefit = res.body.find((b: any) => b.gym_charge_id === systemChargeId);
-    expect(benefit).toBeDefined();
-  });
-});
-
 // ─── GET /membership-plans/:id/billing-forecast (#485) ────────────────────────
 
 async function setPlanPrice(gymId: string, planId: number, price: number): Promise<void> {
@@ -1220,12 +1166,12 @@ describe('GET /membership-plans/:id/billing-forecast', () => {
     expect(res.body.events).toEqual([]);
   });
 
-  it('returns the next 10 events reflecting the plan price and benefits, without creating any billing events', async () => {
+  // #635 stage 4: the forecast used to carry a benefit line per Plan Charge
+  // Benefit. Charge Benefits are gone, so it is the plan fee and its cadence —
+  // and nothing else can move its total.
+  it('returns the next 10 events reflecting the plan price, without creating any billing events', async () => {
     await setPlanPrice(gymId, planId, 60);
     await setBillingPolicy(gymId, planId, 1, 'month');
-    const gymChargeId = await createGymCharge(gymId);
-    await db.query('UPDATE gym_charges SET amount = 40 WHERE id = ?', [gymChargeId]);
-    await addPlanChargeBenefit(gymId, planId, gymChargeId, 'percentage_discount', 50);
 
     const { rows: beforeRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
 
@@ -1238,9 +1184,10 @@ describe('GET /membership-plans/:id/billing-forecast', () => {
     expect(res.body.currency).toBe('EUR');
     expect(res.body.events).toHaveLength(10);
     const [event] = res.body.events;
-    expect(event.total).toBe(80);
-    expect(event.lines.some((l: any) => l.label === 'Forecast Plan' && l.amount === 60)).toBe(true);
-    expect(event.lines.some((l: any) => l.amount === 20 && l.benefit?.action === 'percentage_discount')).toBe(true);
+    expect(event.total).toBe(60);
+    expect(event.lines).toHaveLength(1);
+    expect(event.lines[0]).toMatchObject({ label: 'Forecast Plan', amount: 60 });
+    expect(event.lines[0].benefit).toBeUndefined();
 
     const { rows: afterRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
     expect(Number(afterRows[0].n)).toBe(Number(beforeRows[0].n));
@@ -1531,53 +1478,6 @@ describe('POST /membership-plans/:id/assign', () => {
     expect(partnerRow).toBeDefined();
     expect(Number(ownerRow.is_owner)).toBe(1);
     expect(Number(partnerRow.is_owner)).toBe(0);
-  });
-
-  // ── Charge benefit snapshot (#376 item 6/9) ──
-
-  it("snapshots the plan's current charge benefits onto the new membership", async () => {
-    const planId = await createPlan(gymId, { name: 'Assign Benefit Snapshot Plan', member_limit: '1' });
-    const gymChargeId = await createGymCharge(gymId);
-    await addPlanChargeBenefit(gymId, planId, gymChargeId, 'percentage_discount', 25);
-    const memberId = await createMember(gymId);
-
-    const res = await request
-      .post(`/membership-plans/${planId}/assign`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
-    expect(res.status).toBe(201);
-    const userMembershipId = res.body.id;
-
-    const { rows: benefitRows } = await db.query(
-      'SELECT * FROM user_membership_charge_benefits WHERE user_membership_id = ?',
-      [userMembershipId],
-    );
-    expect(benefitRows).toHaveLength(1);
-    expect(benefitRows[0].gym_charge_id).toBe(gymChargeId);
-    expect(benefitRows[0].action).toBe('percentage_discount');
-    expect(Number(benefitRows[0].value)).toBe(25);
-  });
-
-  it('does not snapshot a "no_benefit" charge benefit row', async () => {
-    const planId = await createPlan(gymId, { name: 'Assign No Benefit Snapshot Plan', member_limit: '1' });
-    const gymChargeId = await createGymCharge(gymId);
-    await addPlanChargeBenefit(gymId, planId, gymChargeId, 'no_benefit', null);
-    const memberId = await createMember(gymId);
-
-    const res = await request
-      .post(`/membership-plans/${planId}/assign`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
-    expect(res.status).toBe(201);
-    const userMembershipId = res.body.id;
-
-    const { rows: benefitRows } = await db.query(
-      'SELECT * FROM user_membership_charge_benefits WHERE user_membership_id = ?',
-      [userMembershipId],
-    );
-    expect(benefitRows).toHaveLength(0);
   });
 
   // ── Duplicate active membership (409) ──

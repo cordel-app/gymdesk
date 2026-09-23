@@ -103,10 +103,11 @@ export async function fetchLiveBenefits(exec: Queryable, promotionId: number): P
 // #511 (stage 2): captures everything needed to reproduce what a promotion
 // granted at the moment it's applied to an Assigned Plan, so a later edit to
 // the promotion's own definition (rename, discount change, deactivation)
-// never rewrites the Assigned Plan's historical record. Mirrors the existing
-// `user_membership_charge_benefits` assignment-time snapshot pattern (#376),
-// just as a single JSON column instead of relational rows, since this data
-// is display/history-only and never joined against for business logic.
+// never rewrites the Assigned Plan's historical record. Modelled on the
+// assignment-time snapshot pattern #376 introduced for Plan Charge Benefits
+// (retired in #635 stage 4), just as a single JSON column instead of
+// relational rows, since this data is display/history-only and never joined
+// against for business logic.
 async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number): Promise<PromotionSnapshot | null> {
   const { rows: promoRows } = await tx.query(
     `SELECT name, description, stackable, starts_at, ends_at, free_months, paid_months, bonus_months

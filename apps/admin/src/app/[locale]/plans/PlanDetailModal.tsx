@@ -19,7 +19,11 @@ interface PlanSummary {
   enrollment_status: 'public' | 'staff_only';
   current_price: string | null;
   billing_policy: BillingPolicySummary | null;
-  charge_benefits: unknown[];
+  // #635 stage 4: the Benefits count is the three Sellable-Item-keyed
+  // sections, now that Charge Benefits are gone.
+  session_benefits: unknown[];
+  oneoff_benefits: unknown[];
+  periodical_benefits: unknown[];
   promotion_count: number;
   created_at: string;
   created_by_name: string | null;
@@ -58,6 +62,10 @@ export function PlanDetailModal({ plan, onClose }: {
     : null;
   const enrollmentLabel = tStatus(plan.enrollment_status);
 
+  const benefitCount = (plan.session_benefits ?? []).length
+    + (plan.oneoff_benefits ?? []).length
+    + (plan.periodical_benefits ?? []).length;
+
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={{ ...modalStyle, width: 520 }} onClick={(e) => e.stopPropagation()}>
@@ -68,7 +76,7 @@ export function PlanDetailModal({ plan, onClose }: {
         <div style={{ background: 'rgba(0,0,0,0.02)', borderRadius: 8, padding: '4px 12px', marginBottom: 16 }}>
           {field(t('details_summary_promotions'), String(plan.promotion_count))}
           {field(t('details_summary_pricing'), priceLabel)}
-          {field(t('details_summary_benefits'), String((plan.charge_benefits ?? []).length))}
+          {field(t('details_summary_benefits'), String(benefitCount))}
           {field(t('details_summary_duration'), durationLabel)}
           {field(t('details_summary_billing'), billingLabel)}
           {field(t('details_summary_enrollment'), enrollmentLabel)}
@@ -82,7 +90,7 @@ export function PlanDetailModal({ plan, onClose }: {
         {field(t('label_current_price'), priceLabel)}
         {field(t('details_duration'), durationLabel)}
         {field(t('details_billing_frequency'), billingLabel)}
-        {field(t('details_benefits'), String((plan.charge_benefits ?? []).length))}
+        {field(t('details_benefits'), String(benefitCount))}
         {field(t('details_promotions'), String(plan.promotion_count))}
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>

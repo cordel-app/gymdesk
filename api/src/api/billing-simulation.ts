@@ -80,7 +80,7 @@ interface AssignmentRow {
  * it alone (§16). Applications that predate the snapshot flow have nothing to
  * read, and still simulate from the Promotion as it stands today.
  * `gym_charges` is deliberately not filtered on `deleted_at`, so a granted
- * item still displays after it is retired (mirrors `loadChargeBenefitsSnapshot`).
+ * item still displays after it is retired.
  */
 async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promise<Map<number, SimulationGrant[]>> {
   const byPromotion = new Map<number, SimulationGrant[]>();

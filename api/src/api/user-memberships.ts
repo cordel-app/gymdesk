@@ -193,22 +193,9 @@ async function loadBillingPolicy(gymId: string, planId: number | null) {
   return rows[0] ?? null;
 }
 
-// Assignment-time snapshot of Plan Charge Benefits (migration 130) — unlike
-// plan_charge_benefits, gym_charge_id here has no ON DELETE CASCADE and the
-// live join deliberately doesn't filter deleted_at, so a benefit survives
-// display even after its underlying gym_charge is later retired.
-async function loadChargeBenefitsSnapshot(gymId: string, umId: number) {
-  const { rows } = await db.query(
-    `SELECT umcb.*, ct.code AS charge_type_code, COALESCE(gc.name, ct.name) AS gym_charge_name,
-            gc.amount AS gym_charge_amount
-     FROM user_membership_charge_benefits umcb
-     LEFT JOIN gym_charges gc ON gc.id = umcb.gym_charge_id
-     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-     WHERE umcb.user_membership_id = ? AND umcb.gym_id = ?`,
-    [umId, gymId],
-  );
-  return rows;
-}
+// #635 stage 4: the assignment-time snapshot of Plan Charge Benefits
+// (migration 130) is gone with the concept itself (migration 176). What an
+// assignment bills is its own #635 snapshot — `loadAssignedPlanSnapshot` below.
 
 // Benefits + usage (#511 stage 3): plan_allowances rows for this Membership's
 // plan, with allocated/used/remaining for 'session_count' allowances. Usage
@@ -374,11 +361,10 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   const um = rows[0];
 
-  const [audit, members, billingPolicy, chargeBenefits, promotions, additionalServices, snapshot] = await Promise.all([
+  const [audit, members, billingPolicy, promotions, additionalServices, snapshot] = await Promise.all([
     loadAuditMetadata(gymId, req.params.id),
     db.query(MEMBERS_SELECT, [req.params.id, gymId]).then((r) => r.rows),
     loadBillingPolicy(gymId, um.membership_plan_id),
-    loadChargeBenefitsSnapshot(gymId, um.id),
     fetchAppliedPromotions(gymId, um.id),
     // #631 — Additional Periodic Services, embedded like every other section
     // of the expanded card. GET /:id/services stays mounted for the lighter
@@ -396,7 +382,6 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     ...um, ...audit,
     members,
     billing_policy: billingPolicy,
-    charge_benefits: chargeBenefits,
     activity_allowances: activityAllowances,
     promotions,
     additional_services: additionalServices,

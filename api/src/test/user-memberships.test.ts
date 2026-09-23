@@ -2266,7 +2266,7 @@ describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
     await createTestMembership(gymId, 'admin');
   });
 
-  it('includes members, billing_policy, charge_benefits, activity_allowances and promotions', async () => {
+  it('includes members, billing_policy, activity_allowances and promotions', async () => {
     const owner = await createMember(gymId, 'UM Expanded Owner');
     const partner = await createMember(gymId, 'UM Expanded Partner');
     const planId = await createPlan(gymId, '2');
@@ -2295,7 +2295,8 @@ describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
 
     expect(res.body.billing_policy).toMatchObject({ recurring_billing_interval: 1, recurring_billing_unit: 'month' });
 
-    expect(Array.isArray(res.body.charge_benefits)).toBe(true);
+    // #635 stage 4: Charge Benefits are gone from the Assigned Plan entirely.
+    expect(res.body.charge_benefits).toBeUndefined();
 
     const allowance = res.body.activity_allowances.find((a: any) => a.activity_type_id === activityTypeId);
     expect(allowance).toBeDefined();
