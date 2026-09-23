@@ -147,6 +147,7 @@
     "label_emergency_contact": "Contacte d'emergència",
     "label_notes": "Notes",
     "label_document": "NIF/NIE/Passaport",
+    "col_email": "Correu electrònic",
     "col_document": "NIF/NIE/Passaport",
     "placeholder_address": "Carrer, ciutat, codi postal",
     "placeholder_emergency_contact": "Nom i telèfon",
