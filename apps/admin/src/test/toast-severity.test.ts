@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join, relative } from 'path';
 
 // Regression test for #667 — informational toasts must not be styled as errors.
@@ -18,17 +18,24 @@ import { join, relative } from 'path';
 const SRC_DIR = join(__dirname, '..');
 const TOAST_COMPONENT = join(SRC_DIR, 'components', 'Toast.tsx');
 
-/** Source files that call `toast(` — the component itself and the tests aside. */
+/**
+ * Source files that call `toast(` — the component itself and the tests aside.
+ *
+ * `withFileTypes` rather than a `statSync` on the joined path: the directory
+ * entry already carries its type, so there is no check-then-read of the same
+ * path to go stale in between (CodeQL js/file-system-race).
+ */
 function appSources(): { file: string; src: string }[] {
   const out: { file: string; src: string }[] = [];
   (function walk(dir: string) {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        if (entry !== 'test' && entry !== 'node_modules') walk(full);
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== 'test' && entry.name !== 'node_modules') walk(full);
         continue;
       }
-      if (!/\.tsx?$/.test(entry)) continue;
+      if (!entry.isFile()) continue;
+      if (!/\.tsx?$/.test(entry.name)) continue;
       if (full === TOAST_COMPONENT) continue;
       out.push({ file: relative(SRC_DIR, full), src: readFileSync(full, 'utf-8') });
     }
