@@ -16,8 +16,12 @@ const _createdGymIds: string[] = [];
 /** Creates a gym and returns its UUID. */
 export async function createTestGym(name = 'Test Gym'): Promise<string> {
   const slug = `test-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  // #636: gyms.payment_provider_id is NOT NULL — take the platform default, the
+  // same row POST /platform/gyms resolves (seeded by migration 174).
   await db.query(
-    `INSERT INTO gyms (name, slug, plan) VALUES (?, ?, 'free')`,
+    `INSERT INTO gyms (name, slug, plan, payment_provider_id)
+     SELECT ?, ?, 'free', id FROM payment_providers
+     WHERE is_default = 1 AND deleted_at IS NULL LIMIT 1`,
     [name, slug],
   );
   const { rows } = await db.query<{ id: string }>('SELECT id FROM gyms WHERE slug = ?', [slug]);

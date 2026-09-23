@@ -169,3 +169,14 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       Retry Payment action only, because issue §6 forbids changing automatic payment
       processing. Decide before production whether an unattended failed charge should
       follow the same rule, and open a ticket if so.
+- [ ] **A gym's Payment Provider is metadata, not yet the adapter selector** (#636):
+      `gyms.payment_provider_id` is mandatory and administered from Cordel → Payment
+      Providers, but `getPaymentProvider()` still resolves the adapter (and its
+      credentials) from `PAYMENT_PROVIDER` / `MONEI_*`. With `monei` the only adapter
+      implemented the two can't disagree; before a second one ships, point the charge
+      path at the gym's `provider_key` and decide where that provider's credentials
+      come from (per-gym env vars, or a secret store — never MySQL, per CLAUDE.md).
+- [ ] **Time migration 174's backfill** (#636): it sets `gyms.payment_provider_id` for
+      every existing gym and then runs `ALTER TABLE gyms MODIFY COLUMN … NOT NULL`
+      (an ALGORITHM=COPY rebuild). Cheap on a handful of gyms, but it is the busiest
+      table in the schema — run it in the deploy's migration window, not live.

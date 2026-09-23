@@ -699,6 +699,51 @@ Reference implementation: `api/src/api/member-membership-configuration.ts` + `ap
 
 ---
 
+## Platform Catalogue with a Mandatory Per-Gym Pointer (#636)
+
+When a ticket moves a setting out of a gym's own screens and calls it "global configuration"
+(Payment Providers), the catalogue is platform-level and the *gym* keeps one field pointing at
+it. CLAUDE.md's `gym_id`-on-every-table rule covers domain tables; a Cordel-administered
+catalogue is the same exception `themes` and `charge_types` already are — the tenant-scoped end
+of the relation is the FK column on `gyms`.
+
+- **The catalogue table has no `gym_id`**, lives under `/platform/<thing>` with `requireSuperadmin`
+  per route (no `tenantContext` — a superadmin may have no gym selected), and carries the usual
+  soft-delete + `created_by_name`/`modified_by_name`/`deleted_by_name` columns that the other
+  platform catalogues use.
+- **`gyms.<thing>_id` is added nullable, backfilled, then made NOT NULL**, with a plain
+  (RESTRICT) FK so a referenced row can never be hard-deleted. The consequence is that *every*
+  INSERT into `gyms` must supply it — the two outside the router (`api/src/test/helpers.ts`,
+  `api/src/infra/seed.ts`) are easy to forget and fail loudly at runtime, not at compile time.
+- **Resolve "the default" server-side, once.** `POST /platform/gyms` fills the column from the
+  catalogue's default when the caller sends none and answers 400 when there is no default —
+  never a 500 from the NOT NULL column. The frontend pre-selects the same row so the form shows
+  what will be saved, but the browser is not the thing that decides it.
+- **"Only one default" and "unique among non-deleted" are generated-column unique indexes**, not
+  router-only rules: `IF(is_default = 1 AND deleted_at IS NULL, 1, NULL)` and
+  `IF(deleted_at IS NULL, name, NULL)`, both `VIRTUAL` (MySQL rejects `STORED` over FK columns).
+  Taking the default over then means clearing the old row *in the same transaction*, and
+  `ER_DUP_ENTRY` maps to a 409 the UI can show. Clearing the flag outright is a 400: something
+  has to be the default for the next gym.
+- **Deletion and deactivation both answer 409 while gyms point at the row**, with `usageCount`
+  and a capped list of gym names (`GET /:id/references`, the platform twin of *Dependency
+  Awareness* above — that registry is gym-scoped, so a platform catalogue reports usage itself).
+  The FK makes the 409 the readable version of a constraint that would fail anyway.
+- **Editing a shared row warns instead of blocking** (#636 §"Editing a provider may affect
+  several gyms"): the inline edit form fetches `/:id/references` when it opens on a row with
+  usage and renders the count and names above the fields. A failed warning fetch must not block
+  the edit — fall back to the count the list row already carries.
+- **Credentials never move into the catalogue.** A row names *which* integration a gym uses; the
+  keys stay in the environment, and a read-only endpoint (`GET .../deployment`) reports the
+  env-derived status from the **API** process — the one whose env actually decides whether a
+  charge can be made — rather than the admin container's.
+
+Reference implementation: `api/src/api/payment-providers.ts` + migration 174 +
+`apps/admin/src/app/[locale]/cordel/payment-providers/page.tsx`, with the gym-side field in
+`apps/admin/src/app/[locale]/system/gyms/page.tsx`.
+
+---
+
 ## Recurring-Slot Projection over Existing Rows (#647 stage 2)
 
 When a ticket asks for a *recurring weekly* view of something the database stores as individual dated rows (Personal Training slots over `calendar_events`), don't add a table for the pattern and don't recompute availability in the frontend. Project it:

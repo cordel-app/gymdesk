@@ -46,6 +46,8 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   promotion:                      { kind: 'simple',   label: 'Promotions',               table: 'promotions',              nameColumn: 'name' },
   center:                         { kind: 'simple',   label: 'Centers',                  table: 'centers',                 nameColumn: 'name' },
   space:                          { kind: 'simple',   label: 'Spaces',                   table: 'spaces',                  nameColumn: 'name' },
+  // #636: Cordel-level catalogue, administered outside any one gym.
+  payment_provider:               { kind: 'simple',   label: 'Payment Providers',        table: 'payment_providers',       nameColumn: 'name' },
 
   // #675: every entity with a Details view deep-links into the Audit Log filtered
   // by entity_type. These types were already written by recordAudit() but had no

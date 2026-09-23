@@ -22,6 +22,23 @@ interface GymTheme {
   name: string;
 }
 
+/** #636: the gym's Payment Provider, joined from the Cordel catalogue. */
+interface GymPaymentProvider {
+  id: number;
+  name: string;
+  provider_key: string;
+  status: 'active' | 'inactive';
+  is_default: boolean;
+}
+
+interface PaymentProviderOption {
+  id: number;
+  name: string;
+  provider_key: string;
+  is_default: boolean;
+  status: 'active' | 'inactive';
+}
+
 interface Gym {
   id: string;
   name: string;
@@ -30,6 +47,8 @@ interface Gym {
   description: string | null;
   status: 'active' | 'inactive' | 'deleted';
   theme: GymTheme | null;
+  payment_provider_id: number;
+  payment_provider: GymPaymentProvider | null;
   created_at: string;
   created_by_name: string | null;
   modified_at: string | null;
@@ -47,11 +66,15 @@ type EditForm = {
   name: string;
   description: string;
   status: 'active' | 'inactive';
+  /** #636: mandatory — the select has no empty option. */
+  payment_provider_id: number | null;
 };
 
 type InlineNew = {
   name: string;
   description: string;
+  /** #636: pre-populated with the default provider; cannot be left empty. */
+  payment_provider_id: number | null;
   saving: boolean;
   error: string | null;
 };
@@ -107,12 +130,13 @@ export default function SystemGymsPage() {
   const { toast } = useToast();
 
   const [gyms, setGyms] = useState<Gym[]>([]);
+  const [paymentProviders, setPaymentProviders] = useState<PaymentProviderOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ name: '', description: '', status: 'active' });
+  const [editForm, setEditForm] = useState<EditForm>({ name: '', description: '', status: 'active', payment_provider_id: null });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -136,12 +160,24 @@ export default function SystemGymsPage() {
   async function load() {
     setLoading(true);
     try {
-      setGyms(await apiFetch<Gym[]>(`/platform/gyms${statusFilter ? `?status=${statusFilter}` : ''}`));
+      // #636: only active providers are assignable, so the dropdown is loaded
+      // filtered rather than filtered again in the browser.
+      const [gymRows, providers] = await Promise.all([
+        apiFetch<Gym[]>(`/platform/gyms${statusFilter ? `?status=${statusFilter}` : ''}`),
+        apiFetch<PaymentProviderOption[]>('/platform/payment-providers?status=active'),
+      ]);
+      setGyms(gymRows);
+      setPaymentProviders(providers);
     } catch (err: any) {
       toast(err.message ?? t('error_load'));
     } finally {
       setLoading(false);
     }
+  }
+
+  /** The default provider a new gym is pre-populated with (#636 §1). */
+  function defaultProviderId(): number | null {
+    return paymentProviders.find((p) => p.is_default)?.id ?? paymentProviders[0]?.id ?? null;
   }
 
   // ─── Accordion ──────────────────────────────────────────────────────────────
@@ -157,10 +193,11 @@ export default function SystemGymsPage() {
 
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
-  function openInlineNew(prefill?: { name: string; description: string }) {
+  function openInlineNew(prefill?: { name: string; description: string; payment_provider_id?: number | null }) {
     setInlineNew({
       name: prefill?.name ?? '',
       description: prefill?.description ?? '',
+      payment_provider_id: prefill?.payment_provider_id ?? defaultProviderId(),
       saving: false,
       error: null,
     });
@@ -175,6 +212,10 @@ export default function SystemGymsPage() {
       setInlineNew({ ...inlineNew, error: t('error_required') });
       return;
     }
+    if (!inlineNew.payment_provider_id) {
+      setInlineNew({ ...inlineNew, error: t('error_payment_provider_required') });
+      return;
+    }
     setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
       await apiFetch<Gym>('/platform/gyms', {
@@ -182,6 +223,7 @@ export default function SystemGymsPage() {
         body: JSON.stringify({
           name: inlineNew.name.trim(),
           description: inlineNew.description.trim() || null,
+          payment_provider_id: inlineNew.payment_provider_id,
         }),
       });
       setInlineNew(null);
@@ -196,7 +238,12 @@ export default function SystemGymsPage() {
 
   function openEdit(gym: Gym) {
     setEditingId(gym.id);
-    setEditForm({ name: gym.name, description: gym.description ?? '', status: gym.status === 'deleted' ? 'active' : gym.status });
+    setEditForm({
+      name: gym.name,
+      description: gym.description ?? '',
+      status: gym.status === 'deleted' ? 'active' : gym.status,
+      payment_provider_id: gym.payment_provider?.id ?? gym.payment_provider_id ?? defaultProviderId(),
+    });
     setEditError(null);
     setExpanded((prev) => new Set([...prev, gym.id]));
   }
@@ -205,6 +252,7 @@ export default function SystemGymsPage() {
 
   async function handleSave(gym: Gym) {
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
+    if (!editForm.payment_provider_id) { setEditError(t('error_payment_provider_required')); return; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/platform/gyms/${gym.id}`, {
@@ -213,6 +261,7 @@ export default function SystemGymsPage() {
           name: editForm.name.trim(),
           description: editForm.description.trim() || null,
           status: editForm.status,
+          payment_provider_id: editForm.payment_provider_id,
         }),
       });
       setEditingId(null);
@@ -228,7 +277,11 @@ export default function SystemGymsPage() {
   // ─── Duplicate ───────────────────────────────────────────────────────────────
 
   function handleDuplicate(gym: Gym) {
-    openInlineNew({ name: `Copy of ${gym.name}`, description: gym.description ?? '' });
+    openInlineNew({
+      name: `Copy of ${gym.name}`,
+      description: gym.description ?? '',
+      payment_provider_id: gym.payment_provider?.id ?? gym.payment_provider_id ?? null,
+    });
   }
 
   // ─── Delete ──────────────────────────────────────────────────────────────────
@@ -340,6 +393,18 @@ export default function SystemGymsPage() {
                 style={inlineInputStyle}
               />
             </div>
+            <div>
+              <label style={inlineLabelStyle}>{t('label_payment_provider')} *</label>
+              <select
+                value={inlineNew.payment_provider_id ?? ''}
+                onChange={(e) => setInlineNew({ ...inlineNew, payment_provider_id: e.target.value ? Number(e.target.value) : null })}
+                style={inlineSelectStyle}
+              >
+                {paymentProviders.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -417,6 +482,26 @@ export default function SystemGymsPage() {
                   {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
                 </select>
               </div>
+              <div>
+                <label style={inlineLabelStyle}>{t('label_payment_provider')} *</label>
+                <select
+                  value={editForm.payment_provider_id ?? ''}
+                  onChange={(e) => setEditForm({ ...editForm, payment_provider_id: e.target.value ? Number(e.target.value) : null })}
+                  style={inlineSelectStyle}
+                >
+                  {/* #636: mandatory, so no empty option. A provider that has been
+                      deactivated since assignment is still listed for this gym —
+                      otherwise saving any other field would silently move it. */}
+                  {paymentProviders.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                  {gym.payment_provider && !paymentProviders.some((p) => p.id === gym.payment_provider!.id) && (
+                    <option value={gym.payment_provider.id}>
+                      {`${gym.payment_provider.name} (${tStatus(gym.payment_provider.status)})`}
+                    </option>
+                  )}
+                </select>
+              </div>
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={inlineLabelStyle}>{t('label_description')}</label>
                 <textarea
@@ -449,6 +534,7 @@ export default function SystemGymsPage() {
             <DetailRow label={t('label_slug')} value={gym.slug} />
             <DetailRow label={t('label_plan')} value={gym.plan} />
             <DetailRow label={t('label_theme')} value={gym.theme?.name ?? '—'} />
+            <DetailRow label={t('label_payment_provider')} value={gym.payment_provider?.name ?? '—'} />
 
             <SectionHeader title={t('section_storage')} />
             <DetailRow
@@ -584,6 +670,10 @@ export default function SystemGymsPage() {
               <div>
                 <span style={detailLabelStyle}>{t('details_theme')}</span>
                 <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.theme?.name ?? '—'}</p>
+              </div>
+              <div>
+                <span style={detailLabelStyle}>{t('label_payment_provider')}</span>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.payment_provider?.name ?? '—'}</p>
               </div>
             </div>
 
