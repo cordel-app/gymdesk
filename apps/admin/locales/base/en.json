@@ -3009,6 +3009,19 @@
     "error_generic": "Something went wrong.",
     "system_delete_blocked": "System tax rates cannot be deleted."
   },
+  "payments_dashboard": {
+    "title": "Payments Dashboard",
+    "subtitle": "Billing Event volume for the current and previous month.",
+    "billing_events": "Billing Events",
+    "billing_events_unit": "billing events",
+    "card_scheduled_this_month": "Total Scheduled Billing Events This Month",
+    "card_total_last_month": "Total Billing Events Last Month",
+    "card_failed_last_month": "Total Failed Billing Events Last Month",
+    "card_successful_last_month": "Total Successful Billing Events Last Month",
+    "loading": "Loading…",
+    "empty": "No billing data to show.",
+    "error_generic": "Something went wrong. Please try again."
+  },
   "financials_dashboard": {
     "title": "Finance Dashboard",
     "subtitle": "Overview and metrics for financial management.",

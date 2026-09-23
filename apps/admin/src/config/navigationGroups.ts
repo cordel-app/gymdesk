@@ -165,6 +165,11 @@ export const navigationGroups: NavGroup[] = [
     module: 'PAYMENTS',
     items: [
       {
+        href: '/{{locale}}/payments/dashboard',
+        labelKey: 'nav.dashboard',
+        featureKey: 'payments.dashboard',
+      },
+      {
         href: '/{{locale}}/payments/transactions',
         labelKey: 'nav.transactions',
         featureKey: 'payments.transactions',
