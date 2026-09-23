@@ -1215,6 +1215,8 @@
     "details": "Details",
     "edit": "Edit",
     "duplicate": "Duplicate",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
     "clone": "Clone to gym",
     "cloned": "Exercise cloned to gym catalog.",
     "delete": "Delete",

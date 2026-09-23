@@ -352,6 +352,30 @@ describe('PUT /exercises/:id', () => {
     expect(muscles.some((m: any) => m.key === 'biceps' && m.role === 'secondary')).toBe(true);
   });
 
+  // #673: the context-menu Activate/Deactivate toggle sends `status` on its own.
+  it('toggles status with a status-only body, leaving the other fields intact', async () => {
+    const deactivated = await request
+      .put(`/exercises/${exerciseId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ status: 'inactive' });
+    expect(deactivated.status).toBe(200);
+    expect(deactivated.body.status).toBe('inactive');
+    expect(deactivated.body.name).toBe('Updated Name');
+    expect(deactivated.body.description).toBe('Updated description');
+    expect(deactivated.body.notes_default).toBe('hold 30s');
+    expect((deactivated.body.muscles ?? []).length).toBe(2);
+
+    const reactivated = await request
+      .put(`/exercises/${exerciseId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ status: 'active' });
+    expect(reactivated.status).toBe(200);
+    expect(reactivated.body.status).toBe('active');
+    expect(reactivated.body.name).toBe('Updated Name');
+  });
+
   it('returns 404 for exercise in another gym (cross-gym isolation)', async () => {
     const res = await request
       .put(`/exercises/${exerciseId}`)
