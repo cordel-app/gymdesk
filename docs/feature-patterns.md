@@ -696,7 +696,7 @@ When a ticket says an instantiated record is *its own contract* — an Assigned 
 - **Split writing from reading across two PRs.** Stage 2 writes the snapshot and serves it additively; the cutover that makes billing *read* it — with the fallback above and a regression test per row of the ticket's "must NOT change" table — is its own change. Nothing an existing record bills moves on the day the tables land.
 - **Backfill rather than delete**, when the values are recoverable: the backfill writes down what those rows already resolved to live, so behaviour is unchanged, and history survives. Guard every backfill statement on `IS NULL` so a re-run is a no-op.
 
-Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 174 + `snapshotPromotionGrants()` in `api/src/api/membership-promotions.ts`.
+Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 175 + `snapshotPromotionGrants()` in `api/src/api/membership-promotions.ts`.
 
 ---
 
@@ -712,6 +712,62 @@ When a ticket splits one record's configuration into **independent sections** th
 - **Reuse the child's own inline editor** rather than writing a parent-level one: render it once per child under the child's name (`MemberAdditionalServices` wraps #631's `AdditionalPeriodicServices`). The section stays parent-level; the editing rules stay in one place.
 
 Reference implementation: `api/src/api/member-membership-configuration.ts` + `apps/admin/src/app/[locale]/members/` (`MemberExpandedRow.tsx` and the three section components).
+
+---
+
+## Platform Catalogue with a Mandatory Per-Gym Pointer (#636)
+
+When a ticket moves a setting out of a gym's own screens and calls it "global configuration"
+(Payment Providers), the catalogue is platform-level and the *gym* keeps one field pointing at
+it. CLAUDE.md's `gym_id`-on-every-table rule covers domain tables; a Cordel-administered
+catalogue is the same exception `themes` and `charge_types` already are — the tenant-scoped end
+of the relation is the FK column on `gyms`.
+
+- **The catalogue table has no `gym_id`**, lives under `/platform/<thing>` with `requireSuperadmin`
+  per route (no `tenantContext` — a superadmin may have no gym selected), and carries the usual
+  soft-delete + `created_by_name`/`modified_by_name`/`deleted_by_name` columns that the other
+  platform catalogues use.
+- **`gyms.<thing>_id` is added nullable, backfilled, then made NOT NULL**, with a plain
+  (RESTRICT) FK so a referenced row can never be hard-deleted. The consequence is that *every*
+  INSERT into `gyms` must supply it — the two outside the router (`api/src/test/helpers.ts`,
+  `api/src/infra/seed.ts`) are easy to forget and fail loudly at runtime, not at compile time.
+- **Resolve "the default" server-side, once.** `POST /platform/gyms` fills the column from the
+  catalogue's default when the caller sends none and answers 400 when there is no default —
+  never a 500 from the NOT NULL column. The frontend pre-selects the same row so the form shows
+  what will be saved, but the browser is not the thing that decides it.
+- **"Only one default" and "unique among non-deleted" are generated-column unique indexes**, not
+  router-only rules: `IF(is_default = 1 AND deleted_at IS NULL, 1, NULL)` and
+  `IF(deleted_at IS NULL, name, NULL)`, both `VIRTUAL` (MySQL rejects `STORED` over FK columns).
+  Taking the default over then means clearing the old row *in the same transaction*, and
+  `ER_DUP_ENTRY` maps to a 409 the UI can show. Clearing the flag outright is a 400: something
+  has to be the default for the next gym.
+- **Deletion and deactivation both answer 409 while gyms point at the row**, with `usageCount`
+  and a capped list of gym names (`GET /:id/references`, the platform twin of *Dependency
+  Awareness* above — that registry is gym-scoped, so a platform catalogue reports usage itself).
+  The FK makes the 409 the readable version of a constraint that would fail anyway.
+- **Editing a shared row warns instead of blocking** (#636 §"Editing a provider may affect
+  several gyms"): the inline edit form fetches `/:id/references` when it opens on a row with
+  usage and renders the count and names above the fields. A failed warning fetch must not block
+  the edit — fall back to the count the list row already carries.
+- **Credentials never move into the catalogue.** A row names *which* integration a gym uses; the
+  keys stay in the environment, and a read-only endpoint (`GET .../deployment`) reports the
+  env-derived status from the **API** process — the one whose env actually decides whether a
+  charge can be made — rather than the admin container's.
+- **Don't widen a shared SELECT fragment to carry it.** The gym's joined provider goes into a
+  platform-only fragment (`PLATFORM_GYM_SELECT`/`_JOIN`), because the theme fragment it would
+  otherwise have joined is shared with the member-readable `GET /gyms` — and a catalogue row's
+  status and default flag are platform state a gym member has no business reading. The shaping
+  helper keys the field on whether the column was selected, so the response omits it rather than
+  serialising `null`.
+- **The NOT NULL conversion races the running old build.** `db:migrate` runs *before* the new
+  code is live, so add the column `NULL DEFAULT <the default row>`, backfill, flip to NOT NULL,
+  then `DROP DEFAULT`: an insert from the old build during the window lands on the default
+  instead of writing the NULL that would abort the `MODIFY` half-way. Guard the `MODIFY` on
+  `information_schema` too — it rebuilds the table, and a re-run must not pay for it twice.
+
+Reference implementation: `api/src/api/payment-providers.ts` + migration 175 +
+`apps/admin/src/app/[locale]/cordel/payment-providers/page.tsx`, with the gym-side field in
+`apps/admin/src/app/[locale]/system/gyms/page.tsx`.
 
 ---
 

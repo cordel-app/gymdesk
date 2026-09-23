@@ -52,6 +52,7 @@ const DETAILS_VIEWS: { file: string; entityType: string; platform?: true }[] = [
   { file: 'nutrition/nutrition-plan-templates/page.tsx',                  entityType: 'nutrition_plan_template' },
   { file: 'nutrition/nutrition-library/page.tsx',                         entityType: 'nutrition_library_item' },
   { file: 'system/gyms/page.tsx',                                         entityType: 'gym',                    platform: true },
+  { file: 'cordel/payment-providers/page.tsx',                            entityType: 'payment_provider',       platform: true },
   { file: 'system/themes/page.tsx',                                       entityType: 'theme',                  platform: true },
   { file: 'cordel/nutrition-library/page.tsx',                            entityType: 'nutrition_library_item', platform: true },
 ];

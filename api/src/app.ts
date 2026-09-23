@@ -79,6 +79,7 @@ import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
 import { recycleBinRouter } from './api/recycle-bin';
 import { platformFeatureFlagsRouter, featureFlagsPublicRouter } from './api/platform-feature-flags';
+import { paymentProvidersRouter } from './api/payment-providers';
 import { requireFeatureEnabled } from './infra/featureFlags';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
 import { paymentRequestsRouter } from './api/payment-requests';
@@ -175,6 +176,9 @@ app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 app.use('/platform/orphaned-accounts', requireAuth(), orphanedAccountsRouter);
 app.use('/platform/impersonation', requireAuth(), impersonationRouter);
 app.use('/platform/feature-flags', requireAuth(), platformFeatureFlagsRouter);
+// #636: Payment Providers are Cordel-level configuration — no tenantContext,
+// guarded per-route by requireSuperadmin, like the other platform catalogues.
+app.use('/platform/payment-providers', requireAuth(), paymentProvidersRouter);
 
 // Feature flags public read — any authenticated user (used by frontend sidebar)
 app.use('/feature-flags', requireAuth(), featureFlagsPublicRouter);

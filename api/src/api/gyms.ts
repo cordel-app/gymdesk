@@ -30,6 +30,23 @@ const THEME_SELECT = `
     t.tokens AS theme_tokens
 `;
 
+// #636: the gym's Payment Provider, joined only into the superadmin reads below.
+// It is deliberately absent from the user-facing `GET /gyms` (any member of the
+// gym can call that): the row carries platform state — the provider's status and
+// whether it is the platform default — that belongs to Cordel, not to a member.
+// The join stays LEFT although the column is NOT NULL: a read is the wrong place
+// to discover that a FK the database enforces has somehow been broken.
+const PLATFORM_GYM_JOIN = `
+  ${THEME_JOIN}
+  LEFT JOIN payment_providers pp ON pp.id = g.payment_provider_id
+`;
+const PLATFORM_GYM_SELECT = `
+  ${THEME_SELECT}
+  , pp.id AS payment_provider_id_val, pp.name AS payment_provider_name,
+    pp.provider_key AS payment_provider_key, pp.status AS payment_provider_status,
+    pp.is_default AS payment_provider_is_default
+`;
+
 // #371: system Sellable Item seeded for every gym (existing gyms backfilled
 // by migration 124; this keeps gyms created afterwards in sync).
 const SYSTEM_PT_PACKAGE_NAME = 'Personal Training Class Package (10 Sessions)';
@@ -60,7 +77,25 @@ function stripGymSecrets<T extends Record<string, any>>(row: T): Omit<T, 'websit
 }
 
 function attachTheme(row: any) {
-  const { theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at, theme_logo_contains_gym_name, theme_tokens, ...rest } = stripGymSecrets(row);
+  const {
+    theme_id_val, theme_name, theme_status, theme_logo_mime, theme_logo_updated_at,
+    theme_logo_contains_gym_name, theme_tokens,
+    payment_provider_id_val, payment_provider_name, payment_provider_key,
+    payment_provider_status, payment_provider_is_default,
+    ...rest
+  } = stripGymSecrets(row);
+  // #636: the joined provider, alongside the raw `payment_provider_id` the edit
+  // form submits back — same split as `theme_id` / `theme`. Only the superadmin
+  // reads select these columns (PLATFORM_GYM_SELECT); the key is left off the
+  // response entirely for the ones that don't, rather than serialised as null.
+  const selectedProvider = 'payment_provider_id_val' in row;
+  const payment_provider = payment_provider_id_val ? {
+    id: payment_provider_id_val,
+    name: payment_provider_name,
+    provider_key: payment_provider_key,
+    status: payment_provider_status,
+    is_default: !!payment_provider_is_default,
+  } : null;
   const theme = theme_id_val ? {
     id: theme_id_val,
     name: theme_name,
@@ -72,8 +107,44 @@ function attachTheme(row: any) {
   } : null;
   // #417: platform-wide flag (same for every gym on this deployment), not a
   // per-row DB column — lets the admin UI disable the init action.
-  return { ...rest, theme, storage_configured: isStorageConfigured() };
+  return {
+    ...rest,
+    theme,
+    ...(selectedProvider ? { payment_provider } : {}),
+    storage_configured: isStorageConfigured(),
+  };
 }
+
+/**
+ * #636: a gym's Payment Provider is mandatory, so creation resolves the
+ * platform default when the caller names none. Returns null when the catalogue
+ * has no default at all — the caller turns that into a 400 rather than letting
+ * the NOT NULL column fail as a 500.
+ */
+async function resolveDefaultPaymentProviderId(): Promise<number | null> {
+  const { rows } = await db.query<{ id: number }>(
+    "SELECT id FROM payment_providers WHERE is_default = 1 AND status = 'active' AND deleted_at IS NULL LIMIT 1",
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Validates an explicitly supplied provider: it must exist and be active. */
+async function assertAssignablePaymentProvider(id: unknown): Promise<number | null> {
+  // Numeric strings are accepted (a form field submits one), but nothing else
+  // is coerced: `Number(true)` is 1, which would silently re-point the gym at
+  // whichever provider happens to be id 1.
+  if (typeof id !== 'number' && typeof id !== 'string') return null;
+  const numeric = Number(id);
+  if (!Number.isInteger(numeric) || numeric <= 0) return null;
+  const { rows } = await db.query<{ id: number }>(
+    "SELECT id FROM payment_providers WHERE id = ? AND status = 'active' AND deleted_at IS NULL",
+    [numeric],
+  );
+  return rows[0]?.id ?? null;
+}
+
+const PAYMENT_PROVIDER_REQUIRED_ERROR =
+  'payment_provider_id must reference an active payment provider';
 
 /** Slugify a name: lowercase, spaces→hyphens, strip non-alphanumeric. */
 function slugify(name: string): string {
@@ -162,7 +233,7 @@ platformRouter.get('/gyms', requireSuperadmin, async (req, res) => {
     params.push(status);
   }
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN}
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN}
      WHERE ${conditions.join(' AND ')}
      ORDER BY g.created_at ASC`,
     params,
@@ -172,7 +243,7 @@ platformRouter.get('/gyms', requireSuperadmin, async (req, res) => {
 
 platformRouter.get('/gyms/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Gym not found' });
@@ -180,8 +251,21 @@ platformRouter.get('/gyms/:id', requireSuperadmin, async (req, res) => {
 });
 
 platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
-  const { name, slug: rawSlug, plan, theme_id, description } = req.body;
+  const { name, slug: rawSlug, plan, theme_id, description, payment_provider_id } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
+
+  // #636: pre-populated with the default provider when the caller sends none,
+  // so the Cordel "Add gym" form does not have to.
+  const providerId = payment_provider_id === undefined || payment_provider_id === null
+    ? await resolveDefaultPaymentProviderId()
+    : await assertAssignablePaymentProvider(payment_provider_id);
+  if (providerId === null) {
+    return res.status(400).json({
+      error: payment_provider_id === undefined || payment_provider_id === null
+        ? 'No default payment provider is configured. Create one under Cordel → Payment Providers first.'
+        : PAYMENT_PROVIDER_REQUIRED_ERROR,
+    });
+  }
 
   if (theme_id) {
     const { rows: themeRows } = await db.query(
@@ -197,8 +281,9 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
 
   try {
     await db.query(
-      'INSERT INTO gyms (id, name, slug, plan, theme_id, description, status, created_by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, name, slug, plan ?? 'free', theme_id ?? null, description?.trim() || null, 'active', actorName],
+      `INSERT INTO gyms (id, name, slug, plan, theme_id, payment_provider_id, description, status, created_by_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, slug, plan ?? 'free', theme_id ?? null, providerId, description?.trim() || null, 'active', actorName],
     );
     // #59: every gym needs at least one Center — mirrors migration 046's
     // backfill for pre-existing gyms, so resolveCenterId()'s "sole active
@@ -227,7 +312,7 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     );
     await seedSystemPtPackage(id);
     const { rows } = await db.query(
-      `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+      `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
       [id],
     );
     recordAudit(req, { action: 'create', entityType: 'gym', entityId: id, next: attachTheme(rows[0]) });
@@ -239,9 +324,19 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
 });
 
 platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
-  const { name, theme_id, description, status } = req.body;
-  if (name === undefined && theme_id === undefined && description === undefined && status === undefined) {
+  const { name, theme_id, description, status, payment_provider_id } = req.body;
+  if (
+    name === undefined && theme_id === undefined && description === undefined
+    && status === undefined && payment_provider_id === undefined
+  ) {
     return res.status(400).json({ error: 'At least one field must be provided' });
+  }
+  // #636: mandatory and never nullable — an explicit null is a 400, not a clear.
+  let providerId: number | undefined;
+  if (payment_provider_id !== undefined) {
+    const resolved = payment_provider_id === null ? null : await assertAssignablePaymentProvider(payment_provider_id);
+    if (resolved === null) return res.status(400).json({ error: PAYMENT_PROVIDER_REQUIRED_ERROR });
+    providerId = resolved;
   }
   if (status !== undefined && !['active', 'inactive'].includes(status)) {
     return res.status(400).json({ error: "status must be 'active' or 'inactive'" });
@@ -265,12 +360,13 @@ platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
 
   await db.query(
     `UPDATE gyms SET
-       name             = COALESCE(?, name),
-       description      = IF(? IS NOT NULL, ?, description),
-       status           = COALESCE(?, status),
-       theme_id         = IF(?, ?, theme_id),
-       modified_at      = UTC_TIMESTAMP(),
-       modified_by_name = ?
+       name                = COALESCE(?, name),
+       description         = IF(? IS NOT NULL, ?, description),
+       status              = COALESCE(?, status),
+       theme_id            = IF(?, ?, theme_id),
+       payment_provider_id = COALESCE(?, payment_provider_id),
+       modified_at         = UTC_TIMESTAMP(),
+       modified_by_name    = ?
      WHERE id = ? AND deleted_at IS NULL`,
     [
       name ?? null,
@@ -279,13 +375,14 @@ platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
       status ?? null,
       themeIdValue !== undefined ? 1 : 0,
       themeIdValue ?? null,
+      providerId ?? null,
       actorName,
       req.params.id,
     ],
   );
 
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]), next: attachTheme(rows[0]) });
@@ -319,7 +416,7 @@ platformRouter.patch('/gyms/:id', requireSuperadmin, async (req, res) => {
     [name ?? null, themeIdValue !== undefined ? 1 : 0, themeIdValue ?? null, actorName, req.params.id],
   );
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(existing[0]), next: attachTheme(rows[0]) });
@@ -353,9 +450,12 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   const newSlug = await uniqueSlug(newName);
   const newId = randomUUID();
   const actorName = req.superadminName ?? null;
+  // #636: the copy keeps the source gym's Payment Provider — the column is NOT
+  // NULL, and a duplicate that silently switched providers would be a surprise.
   await db.query(
-    'INSERT INTO gyms (id, name, slug, plan, theme_id, description, status, created_by_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [newId, newName, newSlug, src.plan, src.theme_id ?? null, src.description ?? null, 'active', actorName],
+    `INSERT INTO gyms (id, name, slug, plan, theme_id, payment_provider_id, description, status, created_by_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [newId, newName, newSlug, src.plan, src.theme_id ?? null, src.payment_provider_id, src.description ?? null, 'active', actorName],
   );
   await db.query(
     "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
@@ -380,7 +480,7 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   );
   await seedSystemPtPackage(newId);
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [newId],
   );
   recordAudit(req, { action: 'create', entityType: 'gym', entityId: newId, next: attachTheme(rows[0]) });
@@ -441,7 +541,7 @@ platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (re
   );
 
   const { rows } = await db.query(
-    `SELECT g.* ${THEME_SELECT} FROM gyms g ${THEME_JOIN} WHERE g.id = ?`,
+    `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'gym', entityId: req.params.id, previous: stripGymSecrets(gym), next: attachTheme(rows[0]) });

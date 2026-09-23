@@ -32,6 +32,8 @@ const DETAILS_VIEW_ENTITIES: Record<string, string | null> = {
   nutrition_library_item: 'nutrition_library_items',
   nutrition_plan_template: 'nutrition_plan_templates',
   member_nutrition_plan: 'member_nutrition_plans',
+  // #636: Cordel → Payment Providers.
+  payment_provider: 'payment_providers',
   // Composed entries resolve their display name with a join, not one column.
   user_membership: null,
   billing_event: null,
