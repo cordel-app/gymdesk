@@ -82,6 +82,13 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM nutrition_library_items WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_events WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM sellable_item_professional_services WHERE gym_id IN (${marks})`, ids);
+  // #635 stage 1: every FK on these is ON DELETE CASCADE, so the gym_charges
+  // delete below would clear them anyway — listed explicitly for the same
+  // reason `promotion_session`/`_oneoff`/`_periodical` are, so the order stays
+  // readable when a later stage adds a non-cascading FK.
+  await db.query(`DELETE FROM membership_plan_session WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM membership_plan_oneoff WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM membership_plan_periodical WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_charges WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM tax_rates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_professional_services WHERE gym_id IN (${marks})`, ids);
