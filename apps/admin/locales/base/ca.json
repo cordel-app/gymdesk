@@ -3021,6 +3021,19 @@
     "error_generic": "Alguna cosa ha anat malament.",
     "system_delete_blocked": "Els tipus impositius del sistema no es poden eliminar."
   },
+  "payments_dashboard": {
+    "title": "Tauler de pagaments",
+    "subtitle": "Volum d'esdeveniments de facturació del mes actual i de l'anterior.",
+    "billing_events": "Esdeveniments de facturació",
+    "billing_events_unit": "esdeveniments de facturació",
+    "card_scheduled_this_month": "Total d'esdeveniments de facturació programats aquest mes",
+    "card_total_last_month": "Total d'esdeveniments de facturació el mes passat",
+    "card_failed_last_month": "Total d'esdeveniments de facturació fallits el mes passat",
+    "card_successful_last_month": "Total d'esdeveniments de facturació correctes el mes passat",
+    "loading": "Carregant…",
+    "empty": "No hi ha dades de facturació per mostrar.",
+    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
+  },
   "financials_dashboard": {
     "title": "Tauler de finances",
     "subtitle": "Resum i mètriques de la gestió financera.",

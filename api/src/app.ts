@@ -64,6 +64,7 @@ import { gymThemesRouter } from './api/gym-themes';
 import { staffRouter, staffLinkRouter } from './api/staff';
 import { staffCentersRouter } from './api/staff-centers';
 import { paymentsRouter } from './api/payments';
+import { paymentsDashboardRouter } from './api/payments-dashboard';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
 import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
@@ -259,6 +260,10 @@ app.use('/user-memberships/:id/services', requireAuth(), tenantContext, requireM
 // matches it and the request falls through to here.
 app.use('/user-memberships/member/:memberId/billing-simulation', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), memberBillingSimulationRouter);
 app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('organization.class_packages'), userClassPackagesRouter);
+// #674: mounted before `/payments` so the Dashboard is gated by its own flag —
+// `/payments` would otherwise match `/payments/dashboard/*` first and 403 it
+// whenever Transactions is switched off.
+app.use('/payments/dashboard', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.dashboard'), paymentsDashboardRouter);
 app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentsRouter);
 app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentRequestsRouter);
 

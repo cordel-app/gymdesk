@@ -2994,6 +2994,19 @@
     "error_generic": "Algo salió mal.",
     "system_delete_blocked": "Los tipos impositivos del sistema no se pueden eliminar."
   },
+  "payments_dashboard": {
+    "title": "Panel de pagos",
+    "subtitle": "Volumen de eventos de facturación del mes actual y del anterior.",
+    "billing_events": "Eventos de facturación",
+    "billing_events_unit": "eventos de facturación",
+    "card_scheduled_this_month": "Total de eventos de facturación programados este mes",
+    "card_total_last_month": "Total de eventos de facturación el mes pasado",
+    "card_failed_last_month": "Total de eventos de facturación fallidos el mes pasado",
+    "card_successful_last_month": "Total de eventos de facturación correctos el mes pasado",
+    "loading": "Cargando…",
+    "empty": "No hay datos de facturación que mostrar.",
+    "error_generic": "Algo ha salido mal. Inténtalo de nuevo."
+  },
   "financials_dashboard": {
     "title": "Panel de finanzas",
     "subtitle": "Resumen y métricas de la gestión financiera.",
