@@ -2250,6 +2250,8 @@
     "col_actions": "Acciones",
     "col_default_center": "Centro por defecto",
     "col_default_trainer": "Entrenador",
+    "col_description": "Descripción",
+    "col_color": "Color",
     "col_created_at": "Creado",
     "col_created_by": "Creado por",
     "details": "Detalles",
