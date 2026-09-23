@@ -136,9 +136,13 @@ export default function LinkPage() {
 
     setSubmitting(true);
     try {
-      const { error: passwordSetError } = await signUp.password({
+      // Redeem the ticket again together with the password. Never send
+      // emailAddress here: re-sending it replaces the address the ticket
+      // verified, leaving the sign-up stuck on an unverified email.
+      const { error: passwordSetError } = await signUp.create({
+        strategy: 'ticket',
+        ticket: searchParams.get('__clerk_ticket') ?? undefined,
         password,
-        emailAddress: signUp.emailAddress ?? undefined,
       });
       if (passwordSetError) {
         setPasswordError(passwordSetError.message ?? t('error_generic'));
