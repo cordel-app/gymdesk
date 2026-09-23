@@ -233,6 +233,45 @@ describe('POST /public/gyms/:gymRef/registrations — validation', () => {
     expect(res.status).toBe(400);
   });
 
+  describe('gym with one active and one inactive center', () => {
+    let gym: Awaited<ReturnType<typeof createRegistrationGym>>;
+    let inactiveCenter: number;
+
+    beforeAll(async () => {
+      gym = await createRegistrationGym('Public Reg Inactive Center');
+      inactiveCenter = await insertCenter(gym.id, 'Closed Center');
+      await db.query("UPDATE centers SET status = 'inactive' WHERE id = ? AND gym_id = ?", [inactiveCenter, gym.id]);
+    });
+
+    it('returns 202 without center_id and assigns the active center — the inactive one does not make it multi-center', async () => {
+      const res = await register(gym.ref, gym.key, { name: 'Ana', email: uniqueEmail('inactive-default') });
+      expect(res.status).toBe(202);
+      expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.center_id).toBe(gym.centerId);
+    });
+
+    it('returns 400 for an explicit inactive center_id — the same response as a non-existent one', async () => {
+      const res = await register(gym.ref, gym.key, {
+        name: 'Ana', email: uniqueEmail('inactive-explicit'), center_id: inactiveCenter,
+      });
+      const missing = await register(gym.ref, gym.key, {
+        name: 'Ana', email: uniqueEmail('missing-explicit'), center_id: 999999999,
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual(missing.body);
+      expect(clerk.createInvitation).not.toHaveBeenCalled();
+    });
+  });
+
+  it('returns 400 without center_id when the only center is inactive', async () => {
+    const gym = await createRegistrationGym('Public Reg Only Inactive');
+    await db.query("UPDATE centers SET status = 'inactive' WHERE id = ? AND gym_id = ?", [gym.centerId, gym.id]);
+
+    const res = await register(gym.ref, gym.key, { name: 'Ana', email: uniqueEmail('only-inactive') });
+
+    expect(res.status).toBe(400);
+    expect(clerk.createInvitation).not.toHaveBeenCalled();
+  });
+
   describe('gym with two centers', () => {
     let multi: Awaited<ReturnType<typeof createRegistrationGym>>;
     let secondCenter: number;
@@ -245,7 +284,7 @@ describe('POST /public/gyms/:gymRef/registrations — validation', () => {
     it('returns 400 when center_id is missing', async () => {
       const res = await register(multi.ref, multi.key, { name: 'Ana', email: uniqueEmail('multi-missing') });
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/center_id is required/);
+      expect(res.body.error).toBe('center_id is required as the gym has more than one center');
       expect(clerk.createInvitation).not.toHaveBeenCalled();
     });
 

@@ -9,6 +9,20 @@ export interface CenterContext {
   allowedCenterIds: number[] | null;
 }
 
+/**
+ * The center a write defaults to when the caller names none: the gym's only
+ * active center, or null when it has none or several. Inactive centers don't
+ * count — a gym with one active and one inactive center is a single-center gym
+ * for defaulting purposes, and nobody should be defaulted into a closed center.
+ */
+export async function soleActiveCenterId(gymId: string): Promise<number | null> {
+  const { rows } = await db.query<{ id: number }>(
+    "SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL AND status = 'active' LIMIT 2",
+    [gymId],
+  );
+  return rows.length === 1 ? rows[0].id : null;
+}
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
@@ -56,11 +70,8 @@ export async function centerContext(req: Request, res: Response, next: NextFunct
     // single-center fallback for writes, so such members keep seeing their gym's
     // schedule instead of nothing.
     if (allowedCenterIds.length === 0) {
-      const { rows: gymCenters } = await db.query<{ id: number }>(
-        'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
-        [gymId],
-      );
-      if (gymCenters.length === 1) allowedCenterIds = [gymCenters[0].id];
+      const soleId = await soleActiveCenterId(gymId);
+      if (soleId != null) allowedCenterIds = [soleId];
     }
 
     if (headerCenterId != null && !allowedCenterIds.includes(headerCenterId)) {
@@ -104,10 +115,7 @@ export async function resolveCenterId(gymId: string, req: Request, bodyCenterId?
     return candidate;
   }
 
-  const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
-    [gymId],
-  );
-  if (rows.length === 1) return rows[0].id;
-  throw Object.assign(new Error('center_id is required — this gym has multiple centers'), { status: 400 });
+  const soleId = await soleActiveCenterId(gymId);
+  if (soleId != null) return soleId;
+  throw Object.assign(new Error('center_id is required as the gym has more than one center'), { status: 400 });
 }

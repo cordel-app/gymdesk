@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
+import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { AppRole, STAFF_PROFILES, roleForProfile } from '../infra/permissions';
@@ -118,11 +119,8 @@ async function resolveStaffCenters(
     if (rows.length !== new Set(ids).size) return { error: 'One or more center_ids are invalid for this gym' };
     return { ids, defaultId };
   }
-  const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
-    [gymId],
-  );
-  if (rows.length === 1) return { ids: [rows[0].id], defaultId: rows[0].id };
+  const soleId = await soleActiveCenterId(gymId);
+  if (soleId != null) return { ids: [soleId], defaultId: soleId };
   return { ids: [], defaultId: null };
 }
 

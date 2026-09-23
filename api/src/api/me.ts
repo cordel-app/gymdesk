@@ -285,7 +285,7 @@ meGymsRouter.get('/', async (req: Request, res: Response, next: NextFunction) =>
 });
 
 // #599: first sign-in of a website self-registration. The center was resolved
-// when the invitation was issued; if it has since been removed, fall back to
+// when the invitation was issued; if it has since been removed or deactivated, fall back to
 // the gym's first active center rather than stranding a person who already
 // signed up — staff can reassign from the Members page. Returns null when the
 // email or Clerk account is already on a member record (both are unique).
@@ -299,7 +299,7 @@ async function createSelfRegisteredMember(
   const clerkName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ');
   const name = (signup.name?.trim() || clerkName || email).slice(0, 255);
   const { rows: centers } = await db.query<{ id: number }>(
-    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL ORDER BY id',
+    "SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL AND status = 'active' ORDER BY id",
     [gymId],
   );
   const centerId = centers.find((c) => c.id === Number(signup.center_id))?.id ?? centers[0]?.id;

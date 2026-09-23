@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
+import { soleActiveCenterId } from '../infra/centerContext';
 import { parseBody, z } from '../infra/validate';
 import { isStaffLoginEmail } from '../infra/staff-access';
 import { verifyWebsiteApiKey } from '../infra/website-api-key';
@@ -129,18 +130,21 @@ const registrationSchema = z.object({
   locale: z.enum(MEMBER_APP_LOCALES).optional(),
 });
 
-// A multi-center gym must say where the member belongs; a single-center gym
-// never has to. Resolved now so the invitation carries a concrete center.
+// A gym with several centers must say where the member belongs; a gym with one
+// never has to. An inactive center counts as non-existent here — it takes no
+// sign-ups and doesn't make a gym multi-center. Resolved now so the invitation
+// carries a concrete center.
 async function resolveCenter(gymId: string, centerId: number | undefined): Promise<number | { error: string }> {
-  const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
-    [gymId],
-  );
   if (centerId !== undefined) {
-    return rows.some((r) => r.id === centerId) ? centerId : { error: 'center_id is invalid for this gym' };
+    const { rows } = await db.query(
+      "SELECT 1 FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL AND status = 'active'",
+      [centerId, gymId],
+    );
+    return rows.length > 0 ? centerId : { error: 'center_id is invalid for this gym' };
   }
-  if (rows.length === 1) return rows[0].id;
-  return { error: 'center_id is required — this gym has multiple centers' };
+  const soleId = await soleActiveCenterId(gymId);
+  if (soleId != null) return soleId;
+  return { error: 'center_id is required as the gym has more than one center' };
 }
 
 publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, registrationGymLimiter, async (req, res, next) => {
