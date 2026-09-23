@@ -6,37 +6,18 @@ import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
-import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { MemberBillingSimulation } from './MemberBillingSimulation';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
-import { AdditionalPeriodicServices } from '../financials/assigned-plans/AdditionalPeriodicServices';
-import type { AssignedPlanService } from '../financials/assigned-plans/types';
-
-interface UserMembership {
-  id: number;
-  status: string;
-  membership_plan_id: number | null;
-  plan_name: string | null;
-  final_price: string | null;
-  starts_at: string | null;
-  ends_at: string | null;
-  next_billing_date: string | null;
-}
+import { MemberMembershipPlans } from './MemberMembershipPlans';
+import { MemberPromotions } from './MemberPromotions';
+import { MemberAdditionalServices } from './MemberAdditionalServices';
+import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 
 interface Plan {
   id: number;
   name: string;
-}
-
-interface Allowance {
-  id: number;
-  activity_type_name: string;
-  allowance_type: 'unlimited' | 'session_count';
-  session_count: number | null;
-  recurrence_interval: number | null;
-  recurrence_unit: string | null;
 }
 
 interface TrainingPlanAssignment {
@@ -100,15 +81,13 @@ export function MemberExpandedRow({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [memberships, setMemberships] = useState<UserMembership[]>([]);
-  const [membershipNotFound, setMembershipNotFound] = useState(false);
-  const [allowances, setAllowances] = useState<Allowance[]>([]);
-  // #631 — Additional Periodic Services on the Member's current Assigned Plan.
-  const [additionalServices, setAdditionalServices] = useState<AssignedPlanService[]>([]);
-  const [cancelling, setCancelling] = useState<UserMembership | null>(null);
-  const [assigningFor, setAssigningFor] = useState<UserMembership | null>(null);
+  // #634 — the Member's Membership configuration: plans, promotions and
+  // additional services in one read, feeding three of the four sections.
+  const [configuration, setConfiguration] = useState<MemberConfiguration>(EMPTY_CONFIGURATION);
+  const [cancelling, setCancelling] = useState<MemberPlanRow | null>(null);
+  const [assigningFor, setAssigningFor] = useState<MemberPlanRow | null>(null);
   // #629/#634 §12: the simulation must always reflect the current configuration,
-  // so remounting it is how a plan change here re-runs it.
+  // so remounting it is how a change in any of the three sections above re-runs it.
   const [simulationKey, setSimulationKey] = useState(0);
 
   const [clerkStatus, setClerkStatus] = useState<{ status: string } | null>(null);
@@ -132,8 +111,9 @@ export function MemberExpandedRow({
     setLoading(true);
     setError(null);
     try {
-      const [membershipList, memberTrainingPlans, nutrition, events, clerk, packages] = await Promise.all([
-        apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}`).catch(() => []),
+      const [config, memberTrainingPlans, nutrition, events, clerk, packages] = await Promise.all([
+        apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`)
+          .catch(() => EMPTY_CONFIGURATION),
         canManageTraining
           ? apiFetch<TrainingPlanAssignment[]>(`/members/${memberId}/member-training-plans`).catch(() => [])
           : Promise.resolve([]),
@@ -143,23 +123,12 @@ export function MemberExpandedRow({
         apiFetch<SessionPackage[]>(`/members/${memberId}/class-packages`).catch(() => []),
       ]);
 
-      const current = membershipList[0] ?? null;
-      setMemberships(membershipList);
-      setMembershipNotFound(membershipList.length === 0);
+      setConfiguration(config);
       setClerkStatus(clerk);
       setTrainingPlans(memberTrainingPlans);
       setNutritionPlans(nutrition);
       setBillingEvents(events.items ?? []);
       setSessionPackages(packages);
-
-      if (current?.membership_plan_id) {
-        apiFetch<Allowance[]>(`/membership-plans/${current.membership_plan_id}/allowances`)
-          .then(setAllowances)
-          .catch(() => setAllowances([]));
-      } else {
-        setAllowances([]);
-      }
-      loadAdditionalServices(current);
     } catch {
       setError(t('members.expanded_error'));
     } finally {
@@ -167,37 +136,15 @@ export function MemberExpandedRow({
     }
   }
 
-  // #631: the services attached to the Member's current Assigned Plan. Fetched
-  // on its own (the Member page never loads the full Assigned Plan card), and
-  // re-fetched after an add/remove together with the Billing Simulation, which
-  // must reflect the change immediately (#631 §6).
-  function loadAdditionalServices(current: UserMembership | null) {
-    if (!current) {
-      setAdditionalServices([]);
-      return;
-    }
-    apiFetch<AssignedPlanService[]>(`/user-memberships/${current.id}/services`)
-      .then(setAdditionalServices)
-      .catch(() => setAdditionalServices([]));
-  }
-
-  // Re-fetches just the plan history + benefits after a cancel/assign-new-plan
-  // action, without re-running the other expanded-row sections' fetches.
-  async function reloadMemberships() {
+  // #634 §12: every change in the MEMBERSHIP PLANS, PROMOTIONS or ADDITIONAL
+  // SERVICES sections lands here — it re-reads the configuration all three are
+  // rendered from and remounts the Billing Simulation, so the simulation always
+  // shows the Member's current complete configuration. The other expanded-row
+  // sections (training plans, packages, billing events) are left alone.
+  async function reloadConfiguration() {
     try {
-      const list = await apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}`);
-      setMemberships(list);
-      setMembershipNotFound(list.length === 0);
+      setConfiguration(await apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`));
       setSimulationKey((k) => k + 1);
-      const current = list[0] ?? null;
-      if (current?.membership_plan_id) {
-        apiFetch<Allowance[]>(`/membership-plans/${current.membership_plan_id}/allowances`)
-          .then(setAllowances)
-          .catch(() => setAllowances([]));
-      } else {
-        setAllowances([]);
-      }
-      loadAdditionalServices(current);
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'));
     }
@@ -208,7 +155,7 @@ export function MemberExpandedRow({
     try {
       await apiFetch(`/user-memberships/${cancelling.id}`, { method: 'DELETE' });
       setCancelling(null);
-      reloadMemberships();
+      reloadConfiguration();
     } catch (err: any) {
       setCancelling(null);
       toast(err.message ?? t('members.error_generic'));
@@ -290,117 +237,57 @@ export function MemberExpandedRow({
         </Section>
       )}
 
-      {/* Membership — full plan history, newest to oldest (#412) */}
-      <Section label={t('members.section_membership')}>
-        {membershipNotFound ? (
-          <p style={dim}>{t('members.no_membership')}</p>
-        ) : memberships.length === 0 ? (
-          <p style={dim}>{t('members.expanded_loading')}</p>
-        ) : (
-          <div>
-            {memberships.map((m, idx) => (
-              <div key={m.id} style={card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <Field label={t('members.membership_plan')}>{m.plan_name ?? '—'}</Field>
-                    <Field label={t('members.membership_status')}>
-                      <StatusBadge status={m.status} label={t(`status.${m.status}`)} />
-                    </Field>
-                    <Field label={t('members.membership_rate')}>
-                      {m.final_price ? `€${parseFloat(m.final_price).toFixed(2)}` : '—'}
-                    </Field>
-                    {m.starts_at && (
-                      <Field label={t('members.membership_start')}>
-                        {fmtDate(m.starts_at)}
-                      </Field>
-                    )}
-                    {m.ends_at && (
-                      <Field label={t('members.membership_end')}>
-                        {fmtDate(m.ends_at)}
-                      </Field>
-                    )}
-                    {idx === 0 && m.next_billing_date && (
-                      <Field label={t('members.membership_next_billing')}>
-                        {fmtDate(m.next_billing_date)}
-                      </Field>
-                    )}
+      {/* #634 §13 — the Member's Membership configuration as four independent
+          sections. Promotions, Additional Services and the Billing Simulation
+          are siblings of MEMBERSHIP PLANS, never nested inside a plan card, and
+          each one has its own editing controls. */}
 
-                    {/* Benefits — only shown for the most recent plan */}
-                    {idx === 0 && m.membership_plan_id != null && (
-                      <div style={{ marginTop: 10 }}>
-                        <div style={fieldLabelStyle}>{t('members.section_benefits')}</div>
-                        {allowances.length === 0 ? (
-                          <p style={{ ...dim, margin: '2px 0 0' }}>{t('members.no_benefits')}</p>
-                        ) : (
-                          <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: '#444' }}>
-                            {allowances.map((a) => (
-                              <li key={a.id}>
-                                {a.activity_type_name}
-                                {a.allowance_type === 'session_count' && a.session_count != null
-                                  ? ` — ${a.session_count}${a.recurrence_interval ? ` / ${a.recurrence_interval} ${a.recurrence_unit}` : ''}`
-                                  : ' — Unlimited'}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
+      {/* 1. MEMBERSHIP PLANS — the Member's plans, several of which may be
+          active at once (§6). Adding one never replaces another (§14). */}
+      <Section label={t('members.section_membership_plans')}>
+        <MemberMembershipPlans
+          memberId={memberId}
+          plans={configuration.plans}
+          canWrite={isAdmin}
+          onChanged={reloadConfiguration}
+          onAssignNewPlan={setAssigningFor}
+          onCancelPlan={setCancelling}
+          assignBusy={assigningFor !== null}
+          renderAssignEditor={(m) => (
+            // #628: Assign New Plan stays an explicit supersede action, edited
+            // inline inside the plan card it replaces — distinct from "+ Add
+            // Membership Plan", which is purely additive.
+            assigningFor?.id === m.id ? (
+              <AssignPlanInlineEditor
+                membership={{ id: m.id, plan_name: m.plan_name }}
+                plans={plans}
+                onCancel={() => setAssigningFor(null)}
+                onAssigned={() => { setAssigningFor(null); reloadConfiguration(); }}
+              />
+            ) : null
+          )}
+        />
+      </Section>
 
-                    {/* Additional Periodic Services (#631) — only on the current
-                        plan: recurring Sellable Items attached to the Assigned
-                        Plan itself, added/removed inline. Changing them re-runs
-                        the Billing Simulation below (#631 §6). */}
-                    {idx === 0 && m.starts_at && (
-                      <div style={{ marginTop: 10 }}>
-                        <div style={fieldLabelStyle}>{t('members.section_additional_services')}</div>
-                        <AdditionalPeriodicServices
-                          assignedPlanId={m.id}
-                          planStartsAt={m.starts_at}
-                          planStatus={m.status}
-                          services={additionalServices}
-                          canWrite={isAdmin}
-                          onChanged={() => {
-                            loadAdditionalServices(m);
-                            setSimulationKey((k) => k + 1);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                  {isAdmin && (
-                    <ContextMenu
-                      ariaLabel={`Actions for ${m.plan_name ?? 'plan'}`}
-                      items={[
-                        {
-                          label: t('members.action_assign_new_plan'),
-                          onClick: () => setAssigningFor(m),
-                          // #628: only one inline assignment editor at a time —
-                          // they share a single draft state.
-                          disabled: assigningFor !== null,
-                          title: assigningFor !== null ? t('members.assign_new_plan_busy_hint') : undefined,
-                        },
-                        ...(m.status !== 'cancelled'
-                          ? [{ label: t('members.action_cancel_plan'), onClick: () => setCancelling(m), danger: true }]
-                          : []),
-                      ]}
-                    />
-                  )}
-                </div>
+      {/* 2. PROMOTIONS — managed independently of the plans they apply to (§3). */}
+      <Section label={t('members.section_promotions')}>
+        <MemberPromotions
+          plans={configuration.plans}
+          promotions={configuration.promotions}
+          canWrite={isAdmin}
+          onChanged={reloadConfiguration}
+        />
+      </Section>
 
-                {/* #628: Assign New Plan is edited inline, in place, inside the
-                    plan card it supersedes — no modal. */}
-                {assigningFor?.id === m.id && (
-                  <AssignPlanInlineEditor
-                    membership={assigningFor}
-                    plans={plans}
-                    onCancel={() => setAssigningFor(null)}
-                    onAssigned={() => { setAssigningFor(null); reloadMemberships(); }}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+      {/* 3. ADDITIONAL SERVICES — recurring Sellable Items, added and removed at
+          any time, independent from plans and promotions (§4). */}
+      <Section label={t('members.section_additional_services')}>
+        <MemberAdditionalServices
+          plans={configuration.plans}
+          services={configuration.services}
+          canWrite={isAdmin}
+          onChanged={reloadConfiguration}
+        />
       </Section>
 
       {/* Billing Simulation (#629) — a section of its own, never nested inside

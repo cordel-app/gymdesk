@@ -1442,15 +1442,35 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
   try {
     const memberId = await resolveMemberId(gymId, ctx);
 
-    const { rows: umRows } = await db.query<{ id: number; final_price: string; member_email: string }>(
-      `SELECT um.id, um.final_price, m.email AS member_email
+    // #634 (migration 172): a Member may now hold several active Membership
+    // Plans at once, so "their active membership" is no longer a single row.
+    // `user_membership_id` says which one is being paid for; without it the
+    // request is only accepted while there is exactly one candidate, rather
+    // than silently charging whichever row MySQL happened to return first.
+    const rawRequestedId = req.body?.user_membership_id;
+    let requestedId: number | null = null;
+    if (rawRequestedId !== undefined && rawRequestedId !== null) {
+      requestedId = Number(rawRequestedId);
+      if (!Number.isInteger(requestedId) || requestedId <= 0) {
+        return res.status(400).json({ error: 'user_membership_id must be a positive integer' });
+      }
+    }
+    const params: any[] = [gymId, memberId];
+    let sql = `SELECT um.id, um.final_price, m.email AS member_email
        FROM user_memberships um
        JOIN members m ON m.id = um.member_id
-       WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'
-       LIMIT 1`,
-      [gymId, memberId],
-    );
+       WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'`;
+    if (requestedId !== null) { sql += ' AND um.id = ?'; params.push(requestedId); }
+    sql += ' ORDER BY um.starts_at DESC, um.id DESC';
+    const { rows: umRows } = await db.query<{ id: number; final_price: string; member_email: string }>(sql, params);
     if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
+    if (umRows.length > 1) {
+      return res.status(409).json({
+        error: 'multiple_active_memberships',
+        message: 'This member has more than one active membership; specify user_membership_id.',
+        user_membership_ids: umRows.map((r) => r.id),
+      });
+    }
     const um = umRows[0];
 
     const { rows: ctRows } = await db.query<{ id: number }>(

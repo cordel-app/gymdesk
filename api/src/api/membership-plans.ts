@@ -261,6 +261,12 @@ async function planExists(planId: string | string[], gymId: string): Promise<boo
 membershipPlansRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const status = req.query.lifecycle_status as string | undefined;
+  // #634 §2: the Member page's plan picker offers only Active + Public plans,
+  // so it asks for `lifecycle_status=active&enrollment_status=public`. The rule
+  // itself is enforced on assignment (planAssignabilityError in
+  // user-memberships.ts) — this filter only keeps the picker from offering what
+  // the API would refuse.
+  const enrollment = req.query.enrollment_status as string | undefined;
   let sql = `SELECT mp.*,
                     gm_c.name AS created_by_name,
                     gm_m.name AS modified_by_name
@@ -270,6 +276,7 @@ membershipPlansRouter.get('/', async (req, res) => {
              WHERE mp.gym_id = ? AND mp.deleted_at IS NULL`;
   const params: (string | number)[] = [gymId];
   if (status) { sql += ' AND mp.lifecycle_status = ?'; params.push(status); }
+  if (enrollment) { sql += ' AND mp.enrollment_status = ?'; params.push(enrollment); }
   sql += ' ORDER BY mp.name ASC';
   const { rows } = await db.query<PlanRow>(sql, params);
   const enriched = await Promise.all(rows.map(p => enrichPlan(p, gymId)));
@@ -530,7 +537,10 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     recordAudit(req, { action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0] });
     res.status(201).json({ ...rows[0], members: coveredMembers });
   } catch (err: any) {
-    handleDupEntry(err, res, next, 'One of the selected members already has an active membership.');
+    // #634 (migration 172): several Membership Plans may be active for the same
+    // Member at once, so a duplicate key here means one of the selected Members
+    // is already assigned *this* Plan — never "already has a membership".
+    handleDupEntry(err, res, next, 'One of the selected members is already assigned this Membership Plan.');
   }
 });
 

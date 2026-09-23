@@ -18,15 +18,24 @@ afterAll(async () => {
 
 // ─── Shared setup helpers ─────────────────────────────────────────────────────
 
+// #634 §2: only an Active + Public Membership Plan is assignable, so that is
+// what this fixture creates by default. The two overrides exist for the tests
+// that check the gate itself.
 async function createPlan(
   gymId: string,
   memberLimit: '1' | '2' | 'family' = '1',
+  overrides: { lifecycle_status?: string; enrollment_status?: string } = {},
 ): Promise<number> {
   const name = `UM-Plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit)
-     VALUES (?, ?, 'active', 'staff_only', ?)`,
-    [gymId, name, memberLimit],
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      gymId, name,
+      overrides.lifecycle_status ?? 'active',
+      overrides.enrollment_status ?? 'public',
+      memberLimit,
+    ],
   );
   return insertId;
 }
@@ -424,7 +433,7 @@ describe('POST /user-memberships', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 409 when the member already has an active membership', async () => {
+  it('returns 409 when the member already has an active membership on the same plan', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await request
@@ -438,6 +447,66 @@ describe('POST /user-memberships', () => {
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-02' });
     expect(res.status).toBe(409);
+  });
+
+  // ── #634 §6/§14 — several Membership Plans active in parallel ──
+  // "A member might have several plans in parallel but only one of each type."
+  // Migration 172 is what allows the second row; the first must survive it
+  // untouched — adding a plan never closes, cancels, expires or replaces one.
+
+  it('assigns a second, different plan while the first stays active', async () => {
+    const memberId = await createMember(gymId);
+    const standardId = await createPlan(gymId);
+    const premiumId = await createPlan(gymId);
+
+    const first = await request
+      .post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: standardId, starts_at: '2026-01-01' });
+    expect(first.status).toBe(201);
+
+    const second = await request
+      .post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: premiumId, starts_at: '2026-01-15' });
+    expect(second.status).toBe(201);
+
+    const { rows } = await db.query(
+      `SELECT membership_plan_id, status FROM user_memberships
+       WHERE gym_id = ? AND member_id = ? ORDER BY id ASC`,
+      [gymId, memberId],
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r: any) => r.status === 'active')).toBe(true);
+    expect(rows.map((r: any) => r.membership_plan_id)).toEqual([standardId, premiumId]);
+  });
+
+  // ── #634 §2 — only Active + Public plans are assignable ──
+
+  it('returns 400 when the plan is not active', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId, '1', { lifecycle_status: 'draft' });
+    const res = await request
+      .post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/active/i);
+  });
+
+  it('returns 400 when the plan is not public', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId, '1', { enrollment_status: 'staff_only' });
+    const res = await request
+      .post('/user-memberships')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/public/i);
   });
 });
 

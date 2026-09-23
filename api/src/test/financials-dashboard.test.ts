@@ -219,9 +219,9 @@ describe('GET /financials/dashboard/membership-plans — which plans are shown',
 });
 
 describe('GET /financials/dashboard/membership-plans — assignment counting', () => {
-  // The DB allows at most one *active* membership per member
-  // (`user_memberships_one_active`), so the same member holds one active and
-  // one paused assignment here — both still count.
+  // The dashboard counts assignments, not members, so the same member holding
+  // two of them counts twice. They are one active and one paused here to show
+  // that the count is not filtered by status.
   it('counts each assignment independently, including two for the same member', async () => {
     const gym = await createTestGym('Counting Gym 1');
     await createTestMembership(gym, 'admin');

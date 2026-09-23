@@ -1581,15 +1581,39 @@ describe('POST /membership-plans/:id/assign', () => {
   });
 
   // ── Duplicate active membership (409) ──
+  // #634 §6/§14 (migration 172): a Member may hold several active Membership
+  // Plans in parallel, but only one assignment per Plan. The 409 therefore
+  // fires on the *same* Plan twice, not on a second, different Plan.
 
-  it('returns 409 when the member already has an active membership on any plan', async () => {
+  it('allows a second active membership on a different plan', async () => {
     const existingPlanId = await createPlan(gymId, { name: 'Assign Existing Active Plan', member_limit: '1' });
-    const newPlanId = await createPlan(gymId, { name: 'Assign Duplicate Target Plan', member_limit: '1' });
+    const newPlanId = await createPlan(gymId, { name: 'Assign Parallel Target Plan', member_limit: '1' });
     const memberId = await createMember(gymId);
     await createActiveUserMembership(gymId, memberId, existingPlanId);
 
     const res = await request
       .post(`/membership-plans/${newPlanId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
+    expect(res.status).toBe(201);
+
+    // §14: the plan that was already active is untouched — not closed,
+    // cancelled, expired or replaced.
+    const { rows } = await db.query(
+      'SELECT status FROM user_memberships WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?',
+      [gymId, memberId, existingPlanId],
+    );
+    expect(rows.map((r: any) => r.status)).toEqual(['active']);
+  });
+
+  it('returns 409 when the member already has an active membership on the same plan', async () => {
+    const planId = await createPlan(gymId, { name: 'Assign Duplicate Target Plan', member_limit: '1' });
+    const memberId = await createMember(gymId);
+    await createActiveUserMembership(gymId, memberId, planId);
+
+    const res = await request
+      .post(`/membership-plans/${planId}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });

@@ -406,6 +406,38 @@ userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
   res.json(await computeBillingEventsView(gymId, rows[0]));
 });
 
+// #634 §2 — only a Membership Plan that is both Active and Public may be
+// assigned. The rule is enforced here, not only in the picker, because the
+// ticket requires that an inactive or non-public Plan "must not be assignable
+// through the API" either. `enrollment_status` is the Plan's Public/Staff-only
+// column (see membership-plans.ts); `lifecycle_status` is draft/active/inactive.
+//
+// Returns an error payload when the Plan cannot be assigned, or null when it
+// can. A Plan that does not exist (or belongs to another gym) reports 404,
+// preserving the response every caller already produced for that case.
+async function planAssignabilityError(gymId: string, planId: number):
+  Promise<{ status: number; error: string } | null>
+{
+  const { rows } = await db.query(
+    `SELECT lifecycle_status, enrollment_status FROM membership_plans
+     WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+    [planId, gymId],
+  );
+  if (rows.length === 0) return { status: 404, error: 'Plan not found' };
+  if (rows[0].lifecycle_status !== 'active') {
+    return { status: 400, error: 'Only an active Membership Plan can be assigned' };
+  }
+  if (rows[0].enrollment_status !== 'public') {
+    return { status: 400, error: 'Only a public Membership Plan can be assigned' };
+  }
+  return null;
+}
+
+// #634 §6/§14: several Membership Plans may be active for the same Member at
+// once, so a duplicate key here means the *same* Plan is already assigned and
+// active — never "this member already has a membership" (migration 172).
+const DUPLICATE_ASSIGNMENT_ERROR = 'This member already has an active assignment of this Membership Plan.';
+
 // Returns the price + plan_price_id that applies to `date` for a plan; falls
 // back to the plan's base_price (with plan_price_id NULL) if no window matches.
 export async function effectivePrice(planId: number, gymId: string, date: string):
@@ -445,6 +477,9 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
 
   const { rows: memberRows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [member_id, gymId]);
   if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+  const planError = await planAssignabilityError(gymId, Number(membership_plan_id));
+  if (planError) return res.status(planError.status).json({ error: planError.error });
 
   const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
@@ -494,7 +529,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     recordAudit(req, { action: 'create', entityType: 'user_membership', entityId: insertId, next: rows[0] });
     res.status(201).json(rows[0]);
   } catch (err: any) {
-    handleDupEntry(err, res, next, 'This member already has an active membership.');
+    handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
   }
 });
 
@@ -567,7 +602,7 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
     recordAudit(req, { action: 'update', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
     res.json(rows[0]);
   } catch (err: any) {
-    handleDupEntry(err, res, next, 'This member already has an active membership.');
+    handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
   }
 });
 
@@ -633,6 +668,9 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   if (promotionIds === null) {
     return res.status(400).json({ error: 'promotion_ids must be an array of promotion ids' });
   }
+
+  const planError = await planAssignabilityError(gymId, Number(membership_plan_id));
+  if (planError) return res.status(planError.status).json({ error: planError.error });
 
   const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
@@ -712,7 +750,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
     res.status(201).json({ ...rows[0], applied_promotion_ids: promotionIds });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
-    handleDupEntry(err, res, next, 'This member already has an active membership.');
+    handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
   }
 });
 
