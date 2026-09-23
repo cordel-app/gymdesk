@@ -419,7 +419,12 @@ export default function MembersPage() {
     },
     {
       header: t('members.col_email'),
-      render: (m) => <span style={{ wordBreak: 'break-all' }}>{m.email}</span>,
+      // Natural width like System → Users; on narrow screens it may only break
+      // after the @ (break-all squeezed the column to one character wide).
+      render: (m) => {
+        const at = m.email.indexOf('@');
+        return at < 0 ? m.email : <>{m.email.slice(0, at + 1)}<wbr />{m.email.slice(at + 1)}</>;
+      },
     },
     {
       header: t('members.col_document'),
