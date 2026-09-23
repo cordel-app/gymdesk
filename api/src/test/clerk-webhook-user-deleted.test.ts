@@ -3,7 +3,7 @@
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, eventually, request } from './helpers';
 
 vi.mock('@clerk/backend/webhooks', () => ({
   verifyWebhook: vi.fn(async (req: Request) => JSON.parse(await req.text())),
@@ -30,6 +30,10 @@ afterAll(async () => {
   await db.end();
 });
 
+const auditRows = (id: string) => async () => (await db.query<any>(
+  "SELECT gym_id, source, actor_name FROM audit_logs WHERE entity_type = 'clerk_account' AND entity_id = ?", [id],
+)).rows;
+
 const deliver = (type: string, id: string) =>
   request.post('/webhooks/clerk')
     .set('Content-Type', 'application/json')
@@ -52,10 +56,7 @@ describe('POST /webhooks/clerk — user.deleted (#709)', () => {
     expect(gm).toHaveLength(0);
     const { rows: m } = await db.query<any>('SELECT clerk_user_id, deleted_at FROM members WHERE id = ?', [insertId]);
     expect(m[0]).toEqual({ clerk_user_id: null, deleted_at: null }); // kept, just unlinked
-    await new Promise((r) => setTimeout(r, 50));
-    const { rows: audit } = await db.query<any>(
-      "SELECT gym_id, source, actor_name FROM audit_logs WHERE entity_type = 'clerk_account' AND entity_id = ?", [id],
-    );
+    const audit = await eventually(auditRows(id), (r) => r.length > 0);
     expect(audit).toEqual([{ gym_id: null, source: 'system', actor_name: 'Clerk (user.deleted)' }]);
   });
 
@@ -64,18 +65,18 @@ describe('POST /webhooks/clerk — user.deleted (#709)', () => {
     await createTestMembership(gymA, 'member', id);
 
     expect((await deliver('user.deleted', id)).status).toBe(200);
+    expect(await eventually(auditRows(id), (r) => r.length > 0)).toHaveLength(1);
     expect((await deliver('user.deleted', id)).status).toBe(200);
-    await new Promise((r) => setTimeout(r, 50));
-    const { rows: audit } = await db.query("SELECT id FROM audit_logs WHERE entity_type = 'clerk_account' AND entity_id = ?", [id]);
-    expect(audit).toHaveLength(1);
+    // Nothing left to unlink, so no second row may appear: give a stray write time to land.
+    await new Promise((r) => setTimeout(r, 500));
+    expect(await auditRows(id)()).toHaveLength(1);
   });
 
   it('an account Gymdesk never knew → 200, nothing written', async () => {
     const id = uid('unknown');
     expect((await deliver('user.deleted', id)).status).toBe(200);
-    await new Promise((r) => setTimeout(r, 50));
-    const { rows: audit } = await db.query("SELECT id FROM audit_logs WHERE entity_type = 'clerk_account' AND entity_id = ?", [id]);
-    expect(audit).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(await auditRows(id)()).toHaveLength(0);
   });
 
   it('other event types leave the account\'s rows alone', async () => {

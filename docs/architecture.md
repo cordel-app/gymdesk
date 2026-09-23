@@ -786,7 +786,7 @@ All traffic enters through **Traefik on corfront** (`10.0.2.100`), which termina
 
 **Ownership split (important):**
 - **Oscar owns the runtime**: rootless Podman under VPS user `podman`, one **Quadlet unit** per container at `/home/podman/.config/containers/systemd/<name>.container` defining ports, env vars, and restart policy. Containers are managed with `systemctl --user {start|stop|restart} <name>`.
-- **Our workflows own build + release only**: build arm64 image → push to GHCR → SSH as `podman` → `podman pull` → (API only: run Knex migrations from the image — the DB is VCN-private, CI can't reach it) → `systemctl --user restart <unit>` → health check.
+- **Our workflows own build + release only**: build arm64 image → push to GHCR → SSH as `podman` → (API: `podman image prune -f` of dangling images, then abort if < 1 GB free — see #729) → `podman pull` → (API only: run Knex migrations from the image — the DB is VCN-private, CI can't reach it) → `systemctl --user restart <unit>` → health check.
 - Workflows must **never** `podman run` the app containers or `podman generate systemd` — that fights the running unit for the port (exit 126) or overwrites Oscar's env config. To change a runtime env var or port, ask Oscar to edit the unit.
 
 Notes:
@@ -812,6 +812,7 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | `DATABASE_URL_MIGRATIONS` | secret | `deploy.yml` — Knex migrations on the VPS (DDL user `fitness_deploy`) |
 | `DATABASE_URL_MYSQL` | secret | `debug-vps.yml` — connectivity probe (DML user `fitness`) |
 | `CLERK_SECRET_KEY`, `CLERK_PUBLISHABLE_KEY` | secrets | CI + deploys (Clerk test instance in dev) |
+| `CLERK_WEBHOOK_SIGNING_SECRET` | secret | `deploy.yml` → API `/webhooks/clerk`. **Must equal the Signing Secret of the Clerk webhook endpoint** (`https://api.vdicube.com/webhooks/clerk`), which must be **enabled** and subscribed to `user.created` and `user.deleted` (#709). A mismatch makes every event fail with `400 Invalid signature` — the dev endpoint sat disabled that way from 2026-09-08 to 2026-09-23. Changing the secret needs a redeploy (`gh workflow run deploy.yml --ref main`); missed events can be resent from the endpoint's *Replay → Replay missing messages*. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Frontend builds (baked as build arg) |
 | `CORDEL_FITNESS_MEMBERS_URL`, `CORDEL_FITNESS_ADMIN_URL` | variables | App URLs for invite emails |
 | `TRUST_PROXY_HOPS`, `PUBLIC_REGISTRATION_IP_LIMIT_PER_HOUR`, `PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY`, `API_PUBLIC_URL` | optional, not set today | #599 — all have code defaults (`1`, `60`, `200`, and the origin of `PAYMENT_NOTIFICATION_URL`), so `deploy.yml` does not pass them. Add them there only to override. |
