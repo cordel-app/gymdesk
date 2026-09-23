@@ -89,6 +89,13 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM membership_plan_session WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM membership_plan_oneoff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM membership_plan_periodical WHERE gym_id IN (${marks})`, ids);
+  // #635 stage 2: the Assigned Plan snapshot tables key to `gym_charges`
+  // *without* ON DELETE CASCADE (the snapshot must outlive a retired item), so
+  // unlike the Plan-side tables above these genuinely have to go before
+  // gym_charges — same reason as `user_membership_services` further up.
+  await db.query(`DELETE FROM user_membership_session WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM user_membership_oneoff WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM user_membership_periodical WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_charges WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM tax_rates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_professional_services WHERE gym_id IN (${marks})`, ids);

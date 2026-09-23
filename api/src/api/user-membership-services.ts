@@ -43,6 +43,10 @@ const DUPLICATE_ERROR = 'This service is already attached to the Assigned Plan f
 const SELECT = `
   SELECT ums.id, ums.gym_id, ums.user_membership_id, ums.gym_charge_id,
          ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
+         ums.item_name AS snapshot_item_name,
+         ums.item_billing_frequency AS snapshot_billing_frequency,
+         ums.unit_price AS snapshot_unit_price,
+         ums.currency AS snapshot_currency,
          gc.name AS sellable_item_name,
          gc.type AS sellable_item_type,
          gc.status AS sellable_item_status,
@@ -85,6 +89,18 @@ export interface AssignedPlanServiceRow {
    * flags it rather than presenting it as an ordinary item.
    */
   sellable_item_retired: boolean;
+  /**
+   * #635 stage 2 — what the Sellable Item cost when the service was attached
+   * (migration 174). `null` for an attachment made before that migration, which
+   * is the caller's signal to keep using the live values above. Billing and the
+   * Billing Simulation still read the live ones; the cutover is stage 3.
+   */
+  snapshot: {
+    item_name: string;
+    billing_frequency: SellableItemFrequency | null;
+    unit_price: number;
+    currency: string | null;
+  } | null;
 }
 
 function shape(row: any): AssignedPlanServiceRow {
@@ -102,6 +118,12 @@ function shape(row: any): AssignedPlanServiceRow {
     currency: row.currency ?? null,
     active: endsAt == null || endsAt >= todayISO(),
     sellable_item_retired: row.sellable_item_deleted_at != null || row.sellable_item_status !== 'active',
+    snapshot: row.snapshot_unit_price != null ? {
+      item_name: row.snapshot_item_name,
+      billing_frequency: (row.snapshot_billing_frequency ?? null) as SellableItemFrequency | null,
+      unit_price: Number(row.snapshot_unit_price),
+      currency: row.snapshot_currency ?? null,
+    } : null,
   };
 }
 
@@ -231,9 +253,15 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
     return res.status(400).json({ error: 'starts_at cannot be later than the Assigned Plan end date' });
   }
 
+  // `gc.name` is nullable — a system charge displays under its `charge_types`
+  // name — so it is resolved here the way every other reader resolves it,
+  // rather than snapshotting a NULL below.
   const { rows: itemRows } = await db.query(
-    `SELECT id, name, type, status, billing_frequency FROM gym_charges
-     WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+    `SELECT gc.id, COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)) AS name,
+            gc.type, gc.status, gc.billing_frequency, gc.amount, gc.currency
+     FROM gym_charges gc
+     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+     WHERE gc.id = ? AND gc.gym_id = ? AND gc.deleted_at IS NULL`,
     [chargeId, gymId],
   );
   if (itemRows.length === 0) return res.status(404).json({ error: 'Sellable Item not found' });
@@ -265,10 +293,20 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   let insertId: number;
   try {
     ({ insertId } = await db.query(
+      // #635 stage 2 (migration 174): the item's commercial facts are frozen
+      // onto the attachment as well as read live. §17 — repricing the Sellable
+      // Item must not move what an already-attached service costs. The live
+      // join below still drives display and billing; the cutover to these
+      // columns is stage 3.
       `INSERT INTO user_membership_services
-       (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, created_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [gymId, plan.id, chargeId, parsedQuantity, startsAt, gymMembershipId ?? null],
+       (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, created_by_membership_id,
+        item_name, item_type, item_billing_frequency, unit_price, currency)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        gymId, plan.id, chargeId, parsedQuantity, startsAt, gymMembershipId ?? null,
+        item.name, item.type ?? 'other', item.billing_frequency ?? null,
+        item.amount != null ? item.amount : 0, item.currency ?? null,
+      ],
     ));
   } catch (err: any) {
     if (err?.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: DUPLICATE_ERROR });

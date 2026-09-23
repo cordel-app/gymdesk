@@ -12,6 +12,7 @@ import {
   validatePromotionSelection,
 } from './membership-promotions';
 import { loadAssignedPlanServices } from './user-membership-services';
+import { loadAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
 import {
   AppliedPromotionForBilling,
   BillingUnit,
@@ -366,7 +367,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   const um = rows[0];
 
-  const [audit, members, billingPolicy, chargeBenefits, promotions, additionalServices] = await Promise.all([
+  const [audit, members, billingPolicy, chargeBenefits, promotions, additionalServices, snapshot] = await Promise.all([
     loadAuditMetadata(gymId, req.params.id),
     db.query(MEMBERS_SELECT, [req.params.id, gymId]).then((r) => r.rows),
     loadBillingPolicy(gymId, um.membership_plan_id),
@@ -376,6 +377,10 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // of the expanded card. GET /:id/services stays mounted for the lighter
     // refetch the inline editor does after an add/remove.
     loadAssignedPlanServices(gymId, um.id),
+    // #635 stage 2 — the assignment's own frozen commercial configuration.
+    // Embedded like every other section of the expanded card; billing still
+    // reads the live catalogue until the stage 3 cutover.
+    loadAssignedPlanSnapshot(gymId, um.id),
   ]);
   const activityAllowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, members.map((m: any) => m.member_id));
   const billingEvents = await computeBillingEventsView(gymId, um);
@@ -389,6 +394,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     promotions,
     additional_services: additionalServices,
     billing_events: billingEvents,
+    snapshot,
   });
 });
 
@@ -523,6 +529,13 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
         [gymId, insertId, member_id],
       );
+      // #635 stage 2 — freeze the Plan's commercial configuration onto the
+      // assignment, in the same transaction so it can never commit without one.
+      await snapshotAssignedPlan(tx, {
+        gymId, userMembershipId: insertId,
+        membershipPlanId: Number(membership_plan_id),
+        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+      });
       return insertId;
     });
     const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ?`, [insertId]);
@@ -728,6 +741,13 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
         [gymId, insertId, prev.member_id],
       );
+      // #635 stage 2 — the superseding assignment gets its own snapshot; the
+      // superseded row keeps the one it was created with, untouched.
+      await snapshotAssignedPlan(tx, {
+        gymId, userMembershipId: insertId,
+        membershipPlanId: Number(membership_plan_id),
+        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+      });
       return insertId;
     });
     if (newId === null) return res.status(404).json({ error: 'Membership not found' });

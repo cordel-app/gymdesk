@@ -6,6 +6,7 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { effectivePrice, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
+import { snapshotAssignedPlan } from './assigned-plan-snapshot';
 import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { computeBillingForecast } from '../domain/billingForecast';
 import {
@@ -583,6 +584,15 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
           [gymId, insertId, b.gym_charge_id, b.action, b.value],
         );
       }
+      // #635 stage 2 — the rest of the commercial configuration (Billing &
+      // Duration, cadence, regular fee, and the three benefit sections) is
+      // frozen onto the assignment here, alongside the #376 charge-benefit
+      // snapshot above, so every assignment entry point captures the same set.
+      await snapshotAssignedPlan(tx, {
+        gymId, userMembershipId: insertId,
+        membershipPlanId: Number(req.params.id),
+        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+      });
       return insertId;
     });
 
