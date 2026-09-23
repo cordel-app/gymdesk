@@ -49,6 +49,11 @@ const WINDOW_MONTHS = 2;
  * Cancelled and completed occurrences are loaded on purpose: the projection
  * reports them as unavailable dates of an otherwise real slot, which is what
  * makes "7 of 9 dates" possible instead of a silently shorter list.
+ *
+ * Centers are read but not filtered on: the same activity at the same local
+ * time in two centers is two slots the Member picks between (the center is
+ * part of the projection's slot key), and which centers a Member may attend is
+ * a booking-path question this read does not pre-empt.
  */
 async function loadCandidateOccurrences(
   gymId: string,
@@ -68,6 +73,8 @@ async function loadCandidateOccurrences(
             at.name                      AS activity_type_name,
             ce.professional_service_id,
             ps.name                      AS professional_service_name,
+            ce.center_id,
+            c.name                       AS center_name,
             COALESCE(ce.capacity, at.max_capacity) AS effective_capacity,
             (SELECT COUNT(*) FROM calendar_event_bookings ceb
               WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked') AS booked_count,
@@ -77,6 +84,7 @@ async function loadCandidateOccurrences(
      FROM calendar_events ce
      JOIN activity_types at ON at.id = ce.activity_type_id
      JOIN professional_services ps ON ps.id = ce.professional_service_id
+     LEFT JOIN centers c ON c.id = ce.center_id
      WHERE ce.gym_id = ?
        AND ce.deleted_at IS NULL
        AND ce.professional_service_id IN (${marks})

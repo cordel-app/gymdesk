@@ -32,6 +32,8 @@ function occurrence(overrides: Partial<SlotOccurrenceRow> = {}): SlotOccurrenceR
     activity_type_name: 'Personal Training',
     professional_service_id: 3,
     professional_service_name: 'Personal Training',
+    center_id: null,
+    center_name: null,
     effective_capacity: 1,
     booked_count: 0,
     member_booked: 0,
@@ -193,6 +195,19 @@ describe('projectWeeklySlots', () => {
     const slots = project([...pt, ...physio], { eligible: new Set([7, 8]) }).flatMap((d) => d.slots);
     expect(slots).toHaveLength(2);
     expect(slots.map((s) => s.professional_service_name)).toEqual(['Personal Training', 'Physiotherapy']);
+  });
+
+  it('keeps the same activity at the same time in two centers as separate slots', () => {
+    // Collapsing them would discard one center's occurrences entirely: only
+    // the first row per date survives the byDate map.
+    const centerA = mondaySeries(2).map((o) => ({ ...o, center_id: 1, center_name: 'Downtown' }));
+    const centerB = mondaySeries(2).map((o, i) => ({
+      ...o, calendar_event_id: 500 + i, center_id: 2, center_name: 'Uptown',
+    }));
+    const slots = project([...centerA, ...centerB]).flatMap((d) => d.slots);
+    expect(slots).toHaveLength(2);
+    expect(slots.map((s) => s.center_name)).toEqual(['Downtown', 'Uptown']);
+    expect(slots.every((s) => s.available_count === 2)).toBe(true);
   });
 
   it('ignores occurrences outside the window', () => {

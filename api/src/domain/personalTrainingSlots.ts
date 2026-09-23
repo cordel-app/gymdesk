@@ -71,6 +71,9 @@ export interface SlotOccurrenceRow {
   activity_type_name: string;
   professional_service_id: number;
   professional_service_name: string;
+  /** `calendar_events.center_id` — null in a single-center gym. */
+  center_id: number | null;
+  center_name: string | null;
   /** `COALESCE(ce.capacity, at.max_capacity)`. */
   effective_capacity: number | string | null;
   booked_count: number | string;
@@ -95,6 +98,8 @@ export interface WeeklySlot {
   professional_service_name: string;
   activity_type_id: number;
   activity_type_name: string;
+  center_id: number | null;
+  center_name: string | null;
   /** Dates in the window on which this weekday/time is expected, in order. */
   dates: SlotDate[];
   /** `dates.length` — how many times the slot comes round in the window. */
@@ -136,12 +141,20 @@ function toLocal(value: Date | string, timezone: string): DateTime {
   return dt.setZone(timezone);
 }
 
-/** Key identifying one recurring slot: same local weekday + time, same activity, same service. */
+/**
+ * Key identifying one recurring slot: same local weekday + time, same activity,
+ * same service, same center.
+ *
+ * The center belongs in the key even though nothing filters on it: in a
+ * multi-center gym the same activity runs at the same local time in two places,
+ * and those are two slots a Member picks between — collapsing them would drop
+ * one center's occurrences on the floor (only the first row per date survives).
+ */
 function slotKey(s: {
   weekday: number; start_time: string; end_time: string;
-  activity_type_id: number; professional_service_id: number;
+  activity_type_id: number; professional_service_id: number; center_id: number | null;
 }): string {
-  return `${s.weekday}|${s.start_time}|${s.end_time}|${s.activity_type_id}|${s.professional_service_id}`;
+  return `${s.weekday}|${s.start_time}|${s.end_time}|${s.activity_type_id}|${s.professional_service_id}|${s.center_id ?? ''}`;
 }
 
 /**
@@ -219,6 +232,7 @@ export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlot
       end_time: localEnd.toFormat('HH:mm'),
       activity_type_id: row.activity_type_id,
       professional_service_id: row.professional_service_id,
+      center_id: row.center_id ?? null,
     };
     const key = slotKey(identity);
     let group = groups.get(key);
@@ -228,6 +242,7 @@ export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlot
           ...identity,
           professional_service_name: row.professional_service_name,
           activity_type_name: row.activity_type_name,
+          center_name: row.center_name ?? null,
         },
         byDate: new Map(),
       };
@@ -268,7 +283,8 @@ export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlot
         a.start_time.localeCompare(b.start_time) ||
         a.end_time.localeCompare(b.end_time) ||
         a.professional_service_name.localeCompare(b.professional_service_name) ||
-        a.activity_type_name.localeCompare(b.activity_type_name),
+        a.activity_type_name.localeCompare(b.activity_type_name) ||
+        (a.center_name ?? '').localeCompare(b.center_name ?? ''),
     ),
   }));
 }

@@ -38,6 +38,8 @@ interface WeeklySlot {
   professional_service_name: string;
   activity_type_id: number;
   activity_type_name: string;
+  center_id: number | null;
+  center_name: string | null;
   dates: SlotDate[];
   occurrence_count: number;
   available_count: number;
@@ -133,7 +135,7 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
                 <div style={emptyCell}>—</div>
               ) : (
                 day.slots.map((slot) => {
-                  const key = `${slot.weekday}-${slot.start_time}-${slot.activity_type_id}-${slot.professional_service_id}`;
+                  const key = `${slot.weekday}-${slot.start_time}-${slot.activity_type_id}-${slot.professional_service_id}-${slot.center_id ?? ''}`;
                   const isOpen = expanded === key;
                   return (
                     <div key={key} style={slot.available_count > 0 ? slotCard : slotCardBlocked}>
@@ -146,6 +148,7 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
                         <div style={slotTime}>{slot.start_time}–{slot.end_time}</div>
                         <div style={slotMeta}>{slot.professional_service_name}</div>
                         <div style={slotMeta}>{slot.activity_type_name}</div>
+                        {slot.center_name && <div style={slotMeta}>{slot.center_name}</div>}
                         <div style={slot.fully_available ? countFull : countPartial}>
                           {t('pt_slots_available_count', {
                             available: slot.available_count,
