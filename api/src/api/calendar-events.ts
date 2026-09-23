@@ -27,6 +27,7 @@ import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { sendBulkNotification } from '../infra/notifications';
 import { bookMemberOnSession } from './bookings';
+import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -101,6 +102,7 @@ const SESSION_SELECT = `
            ELSE 1
          END AS concurrent_groups_count,
          etm.name AS effective_trainer_name,
+         ps.name AS professional_service_name,
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked') AS booked_count,
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked' AND ceb.attendance_status = 'present')  AS attendance_present,
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked' AND ceb.attendance_status = 'absent')   AS attendance_absent,
@@ -110,6 +112,7 @@ const SESSION_SELECT = `
   LEFT JOIN spaces sp ON sp.id = ce.space_id
   LEFT JOIN gym_memberships gm  ON gm.id  = ce.trainer_membership_id
   LEFT JOIN gym_memberships etm ON etm.id = ce.effective_trainer_membership_id
+  LEFT JOIN professional_services ps ON ps.id = ce.professional_service_id
 `;
 
 export const classSessionsRouter = Router();
@@ -197,7 +200,8 @@ async function validateMemberIds(gymId: string, memberIds: number[]): Promise<st
 
 classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, center_id } = req.body;
+  const { activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, center_id,
+          professional_service_id } = req.body;
   if (!activity_type_id || !starts_at || !ends_at) {
     return res.status(400).json({ error: 'activity_type_id, starts_at and ends_at are required' });
   }
@@ -223,11 +227,24 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
 
     // Fetch activity type name for the title field (required on calendar_events).
     const { rows: atRows2 } = await db.query(
-      'SELECT name, is_shareable FROM activity_types WHERE id = ? AND gym_id = ?',
+      'SELECT name, is_shareable, professional_service_id FROM activity_types WHERE id = ? AND gym_id = ?',
       [activity_type_id, gymId],
     );
     const activityTitle = atRows2[0]?.name ?? '';
     const newShareable = !!atRows2[0]?.is_shareable;
+
+    // #647: an occurrence inherits the Activity Type's Professional Service,
+    // and staff may override it on this one occurrence by sending the field.
+    let serviceId: number | null;
+    if ('professional_service_id' in req.body) {
+      const parsedService = parseProfessionalServiceId(professional_service_id);
+      if ('error' in parsedService) return res.status(400).json({ error: parsedService.error });
+      const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
+      if (serviceErr) return res.status(400).json({ error: serviceErr });
+      serviceId = parsedService.id;
+    } else {
+      serviceId = atRows2[0]?.professional_service_id ?? null;
+    }
 
     const trainerId  = trainer_membership_id ?? null;
     const spaceIdVal = space_id ?? null;
@@ -274,10 +291,11 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
         const { insertId } = await tx.query(
           `INSERT INTO calendar_events
            (gym_id, center_id, title, activity_type_id, trainer_membership_id, space_id,
-            starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            starts_at, ends_at, capacity, professional_service_id,
+            created_by_membership_id, modified_by_membership_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
-           startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
+           startsAtDate, endsAtDate, cap, serviceId, gymMembershipId, gymMembershipId],
         );
         for (const memberId of memberIds) {
           await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
@@ -297,10 +315,11 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
       const { insertId } = await tx.query(
         `INSERT INTO calendar_events
          (gym_id, center_id, title, activity_type_id, trainer_membership_id, space_id,
-          starts_at, ends_at, capacity, created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          starts_at, ends_at, capacity, professional_service_id,
+          created_by_membership_id, modified_by_membership_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
-         startsAtDate, endsAtDate, cap, gymMembershipId, gymMembershipId],
+         startsAtDate, endsAtDate, cap, serviceId, gymMembershipId, gymMembershipId],
       );
       for (const memberId of memberIds) {
         await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
@@ -318,9 +337,23 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
 
 classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
-  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking } = req.body;
+  const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking,
+          professional_service_id } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
+  }
+
+  // #647: only an explicitly sent field changes the occurrence's Professional
+  // Service. It is deliberately not re-inherited when `activity_type_id`
+  // changes — an occurrence may legitimately have been retargeted by hand, and
+  // silently overwriting that on an unrelated edit would lose the override.
+  let serviceId: number | null | undefined;
+  if ('professional_service_id' in req.body) {
+    const parsedService = parseProfessionalServiceId(professional_service_id);
+    if ('error' in parsedService) return res.status(400).json({ error: parsedService.error });
+    const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
+    if (serviceErr) return res.status(400).json({ error: serviceErr });
+    serviceId = parsedService.id;
   }
 
   try {
@@ -398,6 +431,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             starts_at             = COALESCE(?, starts_at),
             ends_at               = COALESCE(?, ends_at),
             capacity              = IF(?, ?, capacity),
+            professional_service_id = IF(?, ?, professional_service_id),
             modified_by_membership_id = ?
            WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
           [
@@ -408,6 +442,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             ends_at   ? new Date(ends_at)   : null,
             'max_capacity_override' in req.body ? 1 : 0,
             max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
+            serviceId !== undefined ? 1 : 0, serviceId ?? null,
             gymMembershipId,
             req.params.id, gymId,
           ],
@@ -430,6 +465,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
         ends_at                = COALESCE(?, ends_at),
         capacity               = IF(?, ?, capacity),
         allows_shared_booking  = IF(?, ?, allows_shared_booking),
+        professional_service_id = IF(?, ?, professional_service_id),
         modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
       [
@@ -441,6 +477,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
         'max_capacity_override' in req.body ? 1 : 0,
         max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
         'allows_shared_booking' in req.body ? 1 : 0, allows_shared_booking ? 1 : 0,
+        serviceId !== undefined ? 1 : 0, serviceId ?? null,
         gymMembershipId,
         req.params.id, gymId,
       ],
@@ -703,6 +740,7 @@ const EVENT_SELECT = `
     ce.*,
     at.name   AS activity_type_name,
     at.color  AS activity_type_color,
+    ps.name   AS professional_service_name,
     sp.name   AS space_name,
     c.name    AS center_name,
     gm.name   AS trainer_name,
@@ -711,6 +749,7 @@ const EVENT_SELECT = `
     gm4.name  AS deleted_by_name
   FROM calendar_events ce
   LEFT JOIN activity_types  at   ON at.id   = ce.activity_type_id
+  LEFT JOIN professional_services ps ON ps.id = ce.professional_service_id
   LEFT JOIN spaces           sp  ON sp.id   = ce.space_id
   LEFT JOIN centers          c   ON c.id    = ce.center_id
   LEFT JOIN gym_memberships gm   ON gm.id   = ce.trainer_membership_id
@@ -762,7 +801,7 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
     title, activity_type_id, space_id, center_id, trainer_membership_id, color,
-    starts_at, ends_at, all_day, description, status,
+    starts_at, ends_at, all_day, description, status, professional_service_id,
   } = req.body;
 
   if (!title?.trim())  return res.status(400).json({ error: 'title is required' });
@@ -778,6 +817,13 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
     return res.status(400).json({ error: 'center_id not found for this gym' });
   }
 
+  // #647: a manually created calendar entry sets its Professional Service
+  // directly — there is no Activity Type here to inherit one from.
+  const parsedService = parseProfessionalServiceId(professional_service_id);
+  if ('error' in parsedService) return res.status(400).json({ error: parsedService.error });
+  const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
+  if (serviceErr) return res.status(400).json({ error: serviceErr });
+
   if (space_id) {
     const conflict = await checkConflict(gymId, 'space_id', space_id, starts_at, ends_at);
     if (conflict) return res.status(409).json({ error: 'Space is already booked during this time.' });
@@ -791,12 +837,13 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
     const { insertId } = await db.query(
       `INSERT INTO calendar_events
        (gym_id, title, activity_type_id, space_id, center_id, trainer_membership_id, color,
-        starts_at, ends_at, all_day, description, status, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        starts_at, ends_at, all_day, description, status, professional_service_id,
+        created_by_membership_id, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, title.trim(), activity_type_id ?? null, space_id ?? null, center_id ?? null,
        trainer_membership_id ?? null, color ?? null,
        starts_at, ends_at, all_day ? 1 : 0,
-       description ?? null, status ?? 'scheduled',
+       description ?? null, status ?? 'scheduled', parsedService.id,
        gymMembershipId ?? null, gymMembershipId ?? null],
     );
     const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ?`, [insertId]);
@@ -817,7 +864,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
 
   const {
     title, activity_type_id, space_id, center_id, trainer_membership_id, color,
-    starts_at, ends_at, all_day, description, status,
+    starts_at, ends_at, all_day, description, status, professional_service_id,
   } = req.body;
 
   const newStartsAt = starts_at ?? existing[0].starts_at;
@@ -831,6 +878,15 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
   }
   if ('center_id' in req.body && center_id && !(await isValidCenterId(gymId, center_id))) {
     return res.status(400).json({ error: 'center_id not found for this gym' });
+  }
+
+  let serviceId: number | null | undefined;
+  if ('professional_service_id' in req.body) {
+    const parsedService = parseProfessionalServiceId(professional_service_id);
+    if ('error' in parsedService) return res.status(400).json({ error: parsedService.error });
+    const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
+    if (serviceErr) return res.status(400).json({ error: serviceErr });
+    serviceId = parsedService.id;
   }
 
   const resolvedSpaceId   = 'space_id'              in req.body ? (space_id ?? null)              : existing[0].space_id;
@@ -860,6 +916,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
         all_day                = COALESCE(?, all_day),
         description            = IF(?, ?, description),
         status                 = COALESCE(?, status),
+        professional_service_id = IF(?, ?, professional_service_id),
         modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL`,
       [
@@ -874,6 +931,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
         all_day != null ? (all_day ? 1 : 0) : null,
         'description' in req.body ? 1 : 0, description ?? null,
         status ?? null,
+        serviceId !== undefined ? 1 : 0, serviceId ?? null,
         gymMembershipId ?? null,
         req.params.id, gymId,
       ],

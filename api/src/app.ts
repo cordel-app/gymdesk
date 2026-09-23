@@ -21,6 +21,7 @@ import { trainersRouter } from './api/trainers';
 import { activityTypesRouter } from './api/activity-types';
 import { activityTypeScheduleRulesRouter } from './api/activity-type-schedule-rules';
 import { professionalServicesRouter } from './api/professional-services';
+import { memberProfessionalServicesRouter } from './api/member-professional-services';
 import { classSessionsRouter } from './api/calendar-events';
 // Side-effect import: registers the booking access hook for activity-type eligibility
 // (public_event / activity_type_eligible_plans). Must be imported BEFORE plan-allowances
@@ -193,6 +194,10 @@ app.use('/operating-hours', requireAuth(), tenantContext, requireModuleAccess('O
 // MEMBERS module — admin/front_desk=RW, trainer*/nutritionist=R_ASSIGNED, accountant/member=NONE
 app.use('/members',       requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), membersRouter);
 app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), memberCentersRouter);
+// #647 stage 1: the Member side of the Professional Service link. Gated on the
+// MEMBERS module (it reads one Member's entitlements) but on the Professional
+// Services feature flag, since it has nothing to return when that is off.
+app.use('/members/:memberId/professional-services', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('organization.professional_services'), memberProfessionalServicesRouter);
 app.use('/bookings',       requireAuth(), tenantContext, centerContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('calendar.calendar'), bookingsRouter);
 
 // TRAINING module — admin/trainer_performance/trainer_perf_nutrition=RW, front_desk/nutritionist(ASSIGNED)=R, accountant/member=NONE
