@@ -232,7 +232,7 @@ exports.up = async (knex) => {
       .map((r) => `${r.promotion_id} (${r.action}${r.value != null ? ` ${r.value}` : ''})`)
       .join(', ');
     console.warn(
-      '[178] These Promotions had both a Membership Fee Benefit and a legacy membership-fee ' +
+      '[179] These Promotions had both a Membership Fee Benefit and a legacy membership-fee ' +
       'Charge Benefit, which used to be applied in turn; only the former survives, so their ' +
       `assignments re-price on the next recompute: ${listed}`,
     );

@@ -94,7 +94,7 @@ promotionDetailsRouter.put('/plans', requireRole('admin'), async (req, res, next
 
 /* ---------- membership fee benefit (singleton; #551) ---------- */
 // #635 stage 5: the Membership Fee Benefit has its own table —
-// `promotion_membership_fee_benefits` (migration 178), one row per Promotion.
+// `promotion_membership_fee_benefits` (migration 179), one row per Promotion.
 // It replaces both of the places the benefit used to live: the
 // `promotion_period_benefits` row whose charge type was `membership_fee`
 // (#551) and, for Promotions configured before #626 removed the Promotion
@@ -215,7 +215,7 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
 // Session / One-off / Periodical. The legacy `/period-benefits` (excluding
 // Membership Fee, #551) and `/included-benefits` endpoints were retired in
 // #550 stage 3 once the admin frontend read/wrote these three instead, and
-// #635 stage 5 (migration 178) dropped the tables behind them —
+// #635 stage 5 (migration 179) dropped the tables behind them —
 // `promotion_period_benefits` and `promotion_included_benefits` — along with
 // `promotion_charge_benefits`. Their data was not carried over, per the issue
 // owner's explicit "start from scratch" instruction on #550 and the "clean up

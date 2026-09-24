@@ -3,7 +3,7 @@
 // a Promotion's Membership Fee Benefit, including the `fixed_price` action
 // added in #487 stage 2 (previously unimplemented) and the `duration_months`
 // gate from #487 stage 3. Since #635 stage 5 that benefit is one row in
-// `promotion_membership_fee_benefits` (migration 178); the two tables it used
+// `promotion_membership_fee_benefits` (migration 179); the two tables it used
 // to be spread over — `promotion_charge_benefits` and
 // `promotion_period_benefits` — are gone.
 

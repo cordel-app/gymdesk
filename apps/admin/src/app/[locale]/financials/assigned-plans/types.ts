@@ -57,7 +57,7 @@ export interface AppliedPromotion {
   // one entry, or a second one for an application snapshotted before that
   // stage, when the same benefit could also be configured as a Charge
   // Benefit. The `charge_benefits` / `period_benefits` arrays it replaces are
-  // gone, along with the tables behind them (migration 178).
+  // gone, along with the tables behind them (migration 179).
   membership_fee_benefits: Array<{
     quantity: number; frequency_interval: number; frequency_unit: string;
     enabled: boolean; action: string | null; value: number | null; duration_months: number | null;

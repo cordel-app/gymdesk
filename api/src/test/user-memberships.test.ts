@@ -149,7 +149,7 @@ async function createPromotion(
 }
 
 // #635 stage 5: the Promotion's Membership Fee Benefit, one row of its own
-// (migration 178) instead of a `promotion_period_benefits` row keyed to the
+// (migration 179) instead of a `promotion_period_benefits` row keyed to the
 // `membership_fee` charge type.
 async function setPromotionMembershipFeeBenefit(
   gymId: string,

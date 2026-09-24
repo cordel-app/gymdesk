@@ -349,7 +349,7 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       newId = insertId;
 
       // #635 stage 5: the Membership Fee Benefit is a singleton row of its own
-      // (migration 178) — the copy that used to walk `promotion_charge_benefits`
+      // (migration 179) — the copy that used to walk `promotion_charge_benefits`
       // and `promotion_period_benefits`, both dropped by that migration, is
       // this one insert.
       const { rows: mfs } = await tx.query(

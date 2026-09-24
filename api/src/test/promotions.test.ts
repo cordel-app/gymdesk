@@ -502,7 +502,7 @@ describe('GET /promotions/timeline', () => {
 
 // ─── Membership Fee Benefits (#551) ────────────────────────────────────────────
 // A singleton row per Promotion in `promotion_membership_fee_benefits`
-// (#635 stage 5, migration 178), which replaced the row this benefit used to
+// (#635 stage 5, migration 179), which replaced the row this benefit used to
 // squat in `promotion_period_benefits` — a table keyed to the `charge_types`
 // pseudo-catalog, dropped by the same migration along with
 // `promotion_charge_benefits` and `promotion_included_benefits`. There is no
@@ -820,7 +820,7 @@ describe('Membership Fee Benefit', () => {
 
 // ─── Charge Benefits are gone from Promotions (#635 stage 5) ─────────────────
 // #626 removed the Promotion's Charge Benefits editor; stage 5 removed the
-// endpoints and the table behind them (migration 178). The Membership Fee
+// endpoints and the table behind them (migration 179). The Membership Fee
 // Benefit — the only one that ever reached billing — lives in
 // `promotion_membership_fee_benefits` and is covered above.
 

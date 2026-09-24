@@ -316,7 +316,7 @@ describe('computeBillingSimulation — horizon across mixed frequencies (#629 §
   // longer than the horizon" is a Promotion whose paid duration outruns
   // `maxMonths`. Before stage 5 the same case could also be written as a
   // Charge Benefit, which applied with no promotional period at all; that
-  // table is gone (migration 178).
+  // table is gone (migration 179).
   it('caps an item benefited past the horizon and reports it as truncated', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({

@@ -1,5 +1,5 @@
 // Tests for gym-themes.ts router (/system/themes — gym-admin customer theme CRUD)
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { defaultTokens as defaultTokensFixture } from '../domain/themeTokens';
 import {
@@ -287,5 +287,97 @@ describe('POST /system/themes/clone/:sourceId', () => {
       .send({ name: 'Custom Theme Clone' });
     expect(res.status).toBe(201);
     expect(res.body.logo_contains_gym_name).toBe(true);
+  });
+});
+
+// ─── Header metadata: creator, creation date, gym theme (#712) ────────────────
+
+describe('Theme header metadata (#712)', () => {
+  afterEach(async () => {
+    // gyms.theme_id is what is_gym_theme is derived from — leave it as found so
+    // the other blocks (and cleanup) aren't affected by what a case assigned.
+    await db.query('UPDATE gyms SET theme_id = NULL WHERE id IN (?, ?)', [gymId, otherGymId]);
+  });
+
+  it('snapshots the creating actor on clone and returns it on the theme', async () => {
+    const res = await request
+      .post(`/system/themes/clone/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Creator Snapshot Clone' });
+    expect(res.status).toBe(201);
+    expect(res.body.created_by_name).toBe('Test User');
+    expect(res.body.created_by_type).toBe('staff');
+    expect(typeof res.body.created_at).toBe('string');
+
+    const { rows } = await db.query<{ created_by_name: string | null; created_by_type: string | null }>(
+      'SELECT created_by_name, created_by_type FROM themes WHERE id = ?',
+      [res.body.id],
+    );
+    expect(rows[0].created_by_name).toBe('Test User');
+    expect(rows[0].created_by_type).toBe('staff');
+  });
+
+  it('exposes created_by_name and created_at on every theme in the list', async () => {
+    const res = await request
+      .get('/system/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    for (const theme of res.body) {
+      expect(theme).toHaveProperty('created_by_name');
+      expect(theme.created_at).toBeTruthy();
+    }
+    // Seeded directly in beforeAll, i.e. by no one — an unattributed theme
+    // reports a null creator rather than being dropped from the list.
+    const seeded = res.body.find((th: any) => th.id === customThemeId);
+    expect(seeded.created_by_name).toBeNull();
+  });
+
+  it('flags exactly the theme gyms.theme_id points at as is_gym_theme', async () => {
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [customThemeId, gymId]);
+    const res = await request
+      .get('/system/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const flagged = res.body.filter((th: any) => th.is_gym_theme);
+    expect(flagged).toHaveLength(1);
+    expect(flagged[0].id).toBe(customThemeId);
+  });
+
+  it('reports is_gym_theme false for every theme when the gym has no theme assigned', async () => {
+    await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+    const res = await request
+      .get('/system/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.every((th: any) => th.is_gym_theme === false)).toBe(true);
+  });
+
+  it("derives is_gym_theme from the caller's gym, not another gym's selection (tenant isolation)", async () => {
+    // A Base Theme is visible to both gyms; gym A selects it, gym B did not.
+    const { rows: baseRows } = await db.query<{ id: string }>(
+      'SELECT id FROM themes WHERE gym_id IS NULL AND deleted_at IS NULL LIMIT 1',
+    );
+    const baseThemeId = baseRows[0].id;
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [baseThemeId, gymId]);
+
+    const asOtherGym = await request
+      .get('/system/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', otherGymId);
+    expect(asOtherGym.status).toBe(200);
+    expect(asOtherGym.body.find((th: any) => th.id === baseThemeId).is_gym_theme).toBe(false);
+    // ...and gym A's custom theme (with its creator metadata) is not listed at all.
+    expect(asOtherGym.body.some((th: any) => th.id === customThemeId)).toBe(false);
+
+    const asOwnGym = await request
+      .get('/system/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(asOwnGym.body.find((th: any) => th.id === baseThemeId).is_gym_theme).toBe(true);
   });
 });

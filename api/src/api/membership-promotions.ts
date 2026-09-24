@@ -32,7 +32,7 @@ const SELECT = `
 export const membershipPromotionsRouter = Router({ mergeParams: true });
 
 // #635 stage 5: a Promotion's Membership Fee Benefit — one row per Promotion
-// in `promotion_membership_fee_benefits` (migration 178). The snapshot used to
+// in `promotion_membership_fee_benefits` (migration 179). The snapshot used to
 // carry three arrays (`charge_benefits`, `period_benefits`,
 // `included_benefits`) keyed to the `charge_types` pseudo-catalog; only their
 // `membership_fee` entries ever meant anything to billing, and all three
@@ -109,7 +109,7 @@ export async function fetchLiveBenefits(exec: Queryable, promotionId: number): P
  * first entry through the Promotion's timeline (#625: a benefit belongs to a
  * promotional period). A snapshot carrying only a Charge Benefit therefore
  * projects like any other Membership Fee Benefit from #635 stage 5 on, rather
- * than applying in free/bonus/regular periods too — see migration 178's
+ * than applying in free/bonus/regular periods too — see migration 179's
  * header for why that is the intended end state.
  */
 export function membershipFeeBenefitsFromSnapshot(snap: any): SnapshotMembershipFeeBenefit[] {
@@ -263,7 +263,7 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   // benefit was configurable as a `promotion_charge_benefits` row (applying
   // for as long as the promotion was applied) *and* as a
   // `promotion_period_benefits` row, and both were applied in turn. Both
-  // tables are gone (migration 178) and their membership-fee rows migrated
+  // tables are gone (migration 179) and their membership-fee rows migrated
   // into `promotion_membership_fee_benefits`.
   const { rows: mfRows } = await tx.query(
     `SELECT mf.value, mf.action AS action_code
