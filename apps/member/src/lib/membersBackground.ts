@@ -62,6 +62,14 @@ export function hexToRgba(hex: string | null | undefined, alpha: number): string
 export const BACKGROUND_SCRIM_ALPHA = 0.72;
 
 /**
+ * How much of the scrim sits over a card's artwork (#728 §Content
+ * Readability). Heavier than the page's, because a card carries the text and
+ * the controls right on top of the picture, and one value for every card keeps
+ * the treatment consistent across the Members sections.
+ */
+export const CARD_SCRIM_ALPHA = 0.82;
+
+/**
  * The CSS `background` shorthand for a page: the scrim over the artwork, sized
  * `cover` and centred so the image keeps its aspect ratio and is never
  * stretched, and `fixed` so scrolling a long page does not drag it.
@@ -71,7 +79,24 @@ export const BACKGROUND_SCRIM_ALPHA = 0.72;
  * of #725's resolution rule.
  */
 export function backgroundStyleValue(url: string | null, scrim: string | null): string | null {
+  return composeBackground(url, scrim, 'fixed');
+}
+
+/**
+ * The same shorthand for a card or section surface (#728): `scroll` rather than
+ * `fixed`, so the artwork belongs to the card and travels with it instead of
+ * being anchored to the viewport — a `fixed` image would show a different crop
+ * in every card and slide under them as the page scrolls.
+ *
+ * Null for an unconfigured slot, exactly as above: the card keeps the plain
+ * background it has today.
+ */
+export function cardBackgroundStyleValue(url: string | null, scrim: string | null): string | null {
+  return composeBackground(url, scrim, 'scroll');
+}
+
+function composeBackground(url: string | null, scrim: string | null, attachment: 'fixed' | 'scroll'): string | null {
   if (!url) return null;
-  const image = `url(${JSON.stringify(url)}) center center / cover no-repeat fixed`;
+  const image = `url(${JSON.stringify(url)}) center center / cover no-repeat ${attachment}`;
   return scrim ? `linear-gradient(${scrim}, ${scrim}), ${image}` : image;
 }

@@ -650,6 +650,15 @@ A *set* of singleton assets — the six Members App backgrounds a Custom Theme c
 
 Derive the key from the tenant's own folder prefix, the owner row and the slot — never from a request parameter — and write the missing folder markers of that branch first (idempotent, since every marker key ends in `/` and can only overwrite another marker). Return all the slots on the owner's existing payload, one query for a list of owners, so a screen never fetches them one at a time. In the editor, stage a pick and a removal in the draft and perform them on Save: an immediate upload cannot be undone by Cancel.
 
+### Painting one of those slots on a surface that already exists (#728)
+
+When the consuming app puts that artwork *behind* a screen it already has, the change is a background and nothing else:
+
+1. **Wrap, don't re-render.** `MembersSectionCard` (`apps/member/src/components/`) renders the element the page already rendered — `as="button"` for a tile, a `<div role="button">` for a card — with the caller's own style object, and replaces only `background` when the slot resolves. A new wrapper element, or a card restyled "while we're in here", is how a background ticket turns into a redesign nobody asked for.
+2. **A card's artwork scrolls; a page's is fixed.** `background-attachment: fixed` on a card anchors the image to the viewport, so every card shows a different crop of it and the picture slides under them as the page scrolls. Cards take `scroll`, the page takes `fixed`, and both take `center center / cover no-repeat` so nothing is stretched.
+3. **The scrim is the theme's own colour, and heavier on a card than on a page** (`cardBackground` at 82 % vs `pageBackground` at 72 %): a card carries its text and controls directly on the image. One alpha for every card — not a per-section treatment — is what keeps the sections looking like one screen.
+4. **A `null` slot is not a fallback question.** The helper returns `null`, the caller leaves the surface exactly as it was, and the consuming app resolves nothing further — no second theme, no bundled asset, no storage path.
+
 ---
 
 ## Theming a Third-Party Widget (#559)

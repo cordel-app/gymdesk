@@ -8,6 +8,8 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { MembersSectionCard } from '@/components/MembersSectionCard';
+import type { MemberBackgroundSlot } from '@/lib/membersBackground';
 
 interface UpcomingBooking {
   id: number;
@@ -269,24 +271,24 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Main navigation */}
+      {/* Main navigation — each tile carries its own theme background image (#728) */}
       <section style={styles.tileGrid}>
-        <NavTile icon="📅" label={t('nav.calendar')} onClick={() => router.push(`/${locale}/calendar`)} />
+        <NavTile slot="calendar" icon="📅" label={t('nav.calendar')} onClick={() => router.push(`/${locale}/calendar`)} />
         {featureEnabled('member_web.my_training_plan') && (
-          <NavTile icon="🏋️" label={t('nav.training')} onClick={() => router.push(`/${locale}/training`)} />
+          <NavTile slot="training" icon="🏋️" label={t('nav.training')} onClick={() => router.push(`/${locale}/training`)} />
         )}
         {featureEnabled('member_web.my_bookings') && (
-          <NavTile icon="🎟️" label={t('nav.bookings')} onClick={() => router.push(`/${locale}/schedule`)} />
+          <NavTile slot="bookings" icon="🎟️" label={t('nav.bookings')} onClick={() => router.push(`/${locale}/schedule`)} />
         )}
         {featureEnabled('member_web.my_nutrition') && (
-          <NavTile icon="🥗" label={t('nav.nutrition')} onClick={() => router.push(`/${locale}/nutrition`)} />
+          <NavTile slot="nutrition" icon="🥗" label={t('nav.nutrition')} onClick={() => router.push(`/${locale}/nutrition`)} />
         )}
       </section>
 
       {/* My Membership */}
       {featureEnabled('member_web.my_membership') && (
         <section style={styles.section}>
-          <div style={styles.card} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
+          <MembersSectionCard slot="membership" style={styles.card} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
             <div style={styles.membershipRow}>
               <p style={styles.planName}>{t('membership.title')}</p>
               {!loading && membership && (
@@ -300,7 +302,7 @@ export default function HomePage() {
                   ? (membership.plan_name ?? '—') + (membership.ends_at ? ` · ${t('home.expires_on', { date: dateOnly(membership.ends_at) })}` : ` · ${t('membership.ongoing')}`)
                   : t('home.no_membership')}
             </p>
-          </div>
+          </MembersSectionCard>
         </section>
       )}
     </main>
@@ -311,12 +313,12 @@ function alertTypeLabel(t: ReturnType<typeof useTranslations>, type: string): st
   try { return t(`notifications.type_${type}` as any); } catch { return type; }
 }
 
-function NavTile({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
+function NavTile({ slot, icon, label, onClick }: { slot: MemberBackgroundSlot; icon: string; label: string; onClick: () => void }) {
   return (
-    <button style={styles.tile} onClick={onClick}>
+    <MembersSectionCard slot={slot} as="button" style={styles.tile} onClick={onClick}>
       <span style={styles.tileIcon}>{icon}</span>
       <span style={styles.tileLabel}>{label}</span>
-    </button>
+    </MembersSectionCard>
   );
 }
 
