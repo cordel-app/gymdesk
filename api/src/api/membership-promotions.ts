@@ -4,6 +4,9 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
 import { validatePromotionStacking } from '../domain/promotionStacking';
+import { promotionApplicationStatus } from '../domain/promotionApplicationStatus';
+import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
+import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -22,9 +25,16 @@ import {
  * window lapses without a new mutation; that's a possible future stage 4/5.
  */
 
+// #635 stage 7: `applied_by` stores the acting user's id (the same value
+// `gym_memberships.user_id` carries), so the card can name who applied the
+// Promotion — the "created by" of the expandable card the issue thread asks
+// for. Resolved as a subquery rather than a JOIN because a staff member whose
+// gym membership was since removed must still leave the application readable.
 const SELECT = `
   SELECT ump.*, p.name AS promotion_name, p.description AS promotion_description,
-         p.stackable, p.starts_at, p.ends_at
+         p.stackable, p.starts_at, p.ends_at,
+         (SELECT gm.name FROM gym_memberships gm
+           WHERE gm.user_id = ump.applied_by AND gm.gym_id = ump.gym_id LIMIT 1) AS applied_by_name
   FROM user_membership_promotions ump
   JOIN promotions p ON p.id = ump.promotion_id
 `;
@@ -184,10 +194,12 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
 // displays under its `charge_types` name), so both resolve the same fallback
 // `assigned-plan-snapshot.ts` and migration 174 use — otherwise applying a
 // Promotion that grants a system item would fail on the insert.
-const PROMOTION_GRANT_SNAPSHOTS: { source: string; target: string }[] = [
-  { source: 'promotion_session', target: 'user_membership_promotion_session_snapshot' },
-  { source: 'promotion_oneoff', target: 'user_membership_promotion_oneoff_snapshot' },
-  { source: 'promotion_periodical', target: 'user_membership_promotion_periodical_snapshot' },
+const PROMOTION_GRANT_SNAPSHOTS: {
+  category: SellableItemBenefitCategory; source: string; target: string;
+}[] = [
+  { category: 'session', source: 'promotion_session', target: 'user_membership_promotion_session_snapshot' },
+  { category: 'oneoff', source: 'promotion_oneoff', target: 'user_membership_promotion_oneoff_snapshot' },
+  { category: 'periodical', source: 'promotion_periodical', target: 'user_membership_promotion_periodical_snapshot' },
 ];
 
 async function snapshotPromotionGrants(
@@ -237,6 +249,34 @@ async function withSnapshot(row: any) {
   return { ...row, ...live };
 }
 
+/**
+ * Which `(application, duration_months)` pairs are still inside their window,
+ * as MySQL itself decides it: `applied_at + INTERVAL n MONTH > NOW()`.
+ *
+ * The durations come out of each application's snapshot JSON, so the check
+ * cannot be a plain join any more (#635 stage 7) — but it stays in SQL rather
+ * than being re-derived in JS, because `applied_at` is a database timestamp
+ * and month arithmetic clamps at end of month. One round trip for the whole
+ * set; a benefit with no duration never reaches here (it never expires).
+ */
+async function effectiveDurations(
+  tx: Tx, pairs: { applicationId: number; months: number }[],
+): Promise<Set<string>> {
+  if (pairs.length === 0) return new Set();
+  const { rows } = await tx.query(
+    pairs.map(() => `
+      SELECT ? AS application_id, ? AS months,
+             (applied_at + INTERVAL ? MONTH > NOW()) AS in_effect
+      FROM user_membership_promotions WHERE id = ?`).join(' UNION ALL '),
+    pairs.flatMap((p) => [p.applicationId, p.months, p.months, p.applicationId]),
+  );
+  return new Set(
+    (rows as any[])
+      .filter((r) => Number(r.in_effect) === 1)
+      .map((r) => `${r.application_id}:${r.months}`),
+  );
+}
+
 async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number) {
   const { rows: umRows } = await tx.query(
     `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price, um.final_price
@@ -259,23 +299,45 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   // they describe how a count-based benefit recurs, not whether the
   // Membership Fee action is currently in effect.
   //
-  // #635 stage 5: one query, one table. This used to be two — the same
+  // #635 stage 5: one benefit, one table. This used to be two — the same
   // benefit was configurable as a `promotion_charge_benefits` row (applying
   // for as long as the promotion was applied) *and* as a
   // `promotion_period_benefits` row, and both were applied in turn. Both
   // tables are gone (migration 179) and their membership-fee rows migrated
   // into `promotion_membership_fee_benefits`.
-  const { rows: mfRows } = await tx.query(
-    `SELECT mf.value, mf.action AS action_code
-     FROM user_membership_promotions ump
-     JOIN promotion_membership_fee_benefits mf ON mf.promotion_id = ump.promotion_id
-     WHERE ump.user_membership_id = ? AND ump.status = 'applied'
-       AND mf.enabled = 1 AND mf.action IS NOT NULL
-       AND (mf.duration_months IS NULL OR ump.applied_at + INTERVAL mf.duration_months MONTH > NOW())`,
-    [userMembershipId],
+  //
+  // #635 stage 7: it is read from the *application's* snapshot rather than
+  // joined live off the Promotion. This was the last path by which editing a
+  // Promotion could still move an existing assignment's price (§13/§16):
+  // final_price is recomputed at every apply/revoke, so a Promotion repriced
+  // between two of them used to reprice everything already applied. Only an
+  // application with no snapshot (applied before migration 149) still reads
+  // the Promotion's current definition — it has nothing else to read.
+  const { rows: applications } = await tx.query(
+    `SELECT id, promotion_id, snapshot
+     FROM user_membership_promotions
+     WHERE user_membership_id = ? AND gym_id = ? AND status = 'applied'
+     ORDER BY applied_at ASC, id ASC`,
+    [userMembershipId, gymId],
   );
-  for (const mf of mfRows) {
-    price = applyPeriodBenefit(price, mf.action_code as PromotionBenefitAction, mf.value != null ? parseFloat(mf.value) : null);
+  const perApplication = await Promise.all(applications.map(async (app: any) => ({
+    id: app.id as number,
+    benefits: app.snapshot
+      ? membershipFeeBenefitsFromSnapshot(app.snapshot)
+      : (await fetchLiveBenefits(tx, app.promotion_id)).membership_fee_benefits,
+  })));
+  const effective = await effectiveDurations(
+    tx,
+    perApplication.flatMap(({ id, benefits }) => benefits
+      .filter((b) => b.enabled && b.action != null && b.duration_months != null)
+      .map((b) => ({ applicationId: id, months: b.duration_months as number }))),
+  );
+  for (const { id, benefits } of perApplication) {
+    for (const b of benefits) {
+      if (!b.enabled || b.action == null) continue;
+      if (b.duration_months != null && !effective.has(`${id}:${b.duration_months}`)) continue;
+      price = applyPeriodBenefit(price, b.action as PromotionBenefitAction, b.value ?? null);
+    }
   }
 
   return { price, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };
@@ -437,15 +499,124 @@ export async function applyPromotionToMembership(
   });
 }
 
+/* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
+
+/** One Sellable Item an applied Promotion granted, at the price it was agreed at. */
+export interface AppliedPromotionGrant {
+  gym_charge_id: number | null;
+  item_name: string;
+  quantity: number;
+  item_billing_frequency: string | null;
+  unit_price: number;
+}
+
+export type AppliedPromotionGrants = Record<'session_grants' | 'oneoff_grants' | 'periodical_grants', AppliedPromotionGrant[]>;
+
+const GRANT_FIELD: Record<SellableItemBenefitCategory, keyof AppliedPromotionGrants> = {
+  session: 'session_grants',
+  oneoff: 'oneoff_grants',
+  periodical: 'periodical_grants',
+};
+
+function emptyGrants(): AppliedPromotionGrants {
+  return { session_grants: [], oneoff_grants: [], periodical_grants: [] };
+}
+
+/**
+ * #635 stage 7 — the Sellable Items each application granted, keyed by
+ * `user_membership_promotions.id`.
+ *
+ * The rows come from the application's own snapshot
+ * (`snapshotPromotionGrants()` above), which is why a later rename, reprice or
+ * deletion of the Sellable Item — or an edit to the Promotion's own benefits —
+ * leaves them where they were (§16/§17). Reusing
+ * `loadPromotionGrantSnapshots()` keeps the card and the Billing Simulation
+ * reading one loader, so they can never disagree about what was granted.
+ *
+ * An application with no snapshot rows at all predates the snapshot flow; it
+ * falls back to the Promotion's live benefits, exactly as the simulation's
+ * caller does, so history still shows something rather than nothing.
+ */
+async function loadAppliedPromotionGrants(
+  gymId: string, applications: { id: number; promotion_id: number }[],
+): Promise<Map<number, AppliedPromotionGrants>> {
+  const byApplication = new Map<number, AppliedPromotionGrants>();
+  if (applications.length === 0) return byApplication;
+
+  const snapshots = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
+  for (const [applicationId, grants] of snapshots) {
+    const shaped = emptyGrants();
+    for (const g of grants) {
+      shaped[GRANT_FIELD[g.category]].push({
+        gym_charge_id: g.gymChargeId || null,
+        item_name: g.name,
+        quantity: g.quantity,
+        item_billing_frequency: g.billingFrequency,
+        unit_price: g.unitPrice,
+      });
+    }
+    byApplication.set(applicationId, shaped);
+  }
+
+  const legacy = applications.filter((a) => !byApplication.has(a.id));
+  if (legacy.length === 0) return byApplication;
+
+  const promotionIds = [...new Set(legacy.map((a) => a.promotion_id))];
+  const marks = promotionIds.map(() => '?').join(',');
+  const { rows } = await db.query(
+    PROMOTION_GRANT_SNAPSHOTS.map(({ category, source }) => `
+      SELECT '${category}' AS category, b.promotion_id, b.gym_charge_id, b.quantity,
+             COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)) AS item_name,
+             gc.billing_frequency AS item_billing_frequency, COALESCE(gc.amount, 0) AS unit_price
+      FROM ${source} b
+      JOIN gym_charges gc ON gc.id = b.gym_charge_id
+      LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+      WHERE b.gym_id = ? AND b.promotion_id IN (${marks})`).join(' UNION ALL '),
+    PROMOTION_GRANT_SNAPSHOTS.flatMap(() => [gymId, ...promotionIds]),
+  );
+  const livePerPromotion = new Map<number, AppliedPromotionGrants>();
+  for (const row of rows as any[]) {
+    const shaped = livePerPromotion.get(row.promotion_id) ?? emptyGrants();
+    shaped[GRANT_FIELD[row.category as SellableItemBenefitCategory]].push({
+      gym_charge_id: row.gym_charge_id ?? null,
+      item_name: row.item_name,
+      quantity: Number(row.quantity),
+      item_billing_frequency: row.item_billing_frequency ?? null,
+      unit_price: row.unit_price != null ? Number(row.unit_price) : 0,
+    });
+    livePerPromotion.set(row.promotion_id, shaped);
+  }
+  for (const application of legacy) {
+    byApplication.set(application.id, livePerPromotion.get(application.promotion_id) ?? emptyGrants());
+  }
+  return byApplication;
+}
+
 // #511 (stage 3): shared by GET / here and GET /user-memberships/:id's
 // expanded-detail response (see user-memberships.ts), so both surfaces list
 // exactly the same applied-promotions data instead of duplicating the query.
+//
+// #635 stage 7 adds what the Assigned Plan's expandable Promotion card shows:
+// who applied it, how it reads today (`display_status`), and the Sellable
+// Items it granted at their agreed prices — all of it from the application's
+// own snapshot, so the Promotion may be edited or deleted without moving it.
 export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
   const { rows } = await db.query(
     `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC`,
     [umId, gymId],
   );
-  return Promise.all(rows.map(withSnapshot));
+  const merged = await Promise.all(rows.map(withSnapshot));
+  const grants = await loadAppliedPromotionGrants(
+    gymId, merged.map((r: any) => ({ id: r.id, promotion_id: r.promotion_id })),
+  );
+  // One instant for the whole list, so two applications with the same agreed
+  // window can never read differently.
+  const now = new Date();
+  return merged.map((row: any) => ({
+    ...row,
+    display_status: promotionApplicationStatus(row, now),
+    ...(grants.get(row.id) ?? emptyGrants()),
+  }));
 }
 
 membershipPromotionsRouter.get('/', async (req, res) => {
