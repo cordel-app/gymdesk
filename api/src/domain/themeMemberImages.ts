@@ -5,7 +5,7 @@
 // checks — this file owns *where an image goes* and *what a client is told*, so
 // both are decided in one place and can be unit-tested without a database.
 
-import { buildStorageObjectUrl, sanitizeStorageFolderName } from '../infra/storage';
+import { buildStorageObjectUrl, sanitizeStorageFolderName, THEMES_FOLDER } from '../infra/storage';
 
 /**
  * #725: six fixed slots, each mapped to one Members section, and nothing else —
@@ -23,8 +23,13 @@ export function isMemberImageSlot(value: unknown): value is MemberImageSlot {
 /** `Members` — the leaf folder of a theme's own folder that holds these six. */
 export const THEME_MEMBERS_FOLDER = 'Members';
 
-/** `Themes` — the gym-folder branch every Custom Theme's folder hangs off. */
-export const THEME_STORAGE_FOLDER = 'Themes';
+/**
+ * `Themes` — the gym-folder branch every Custom Theme's folder hangs off. The
+ * same folder Gym Bucket Initialization now creates as a top-level gym folder
+ * (#735), so it is defined once in `infra/storage` and re-exported here rather
+ * than spelled a second time.
+ */
+export const THEME_STORAGE_FOLDER = THEMES_FOLDER;
 
 /**
  * `<folderPrefix>/Themes/<theme_id>-<sanitized theme name>` — the folder that

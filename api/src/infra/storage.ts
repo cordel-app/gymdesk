@@ -29,6 +29,15 @@ const GYM_STORAGE_ROOT = 'gyms';
  */
 export const PLATFORM_STORAGE_ROOT = 'cordel';
 
+/**
+ * `Themes` — the branch every theme's own folder hangs off, under the gym root
+ * for a Custom Theme and under {@link PLATFORM_STORAGE_ROOT} for a Base Theme
+ * (#725, #732). Declared here because it is also one of the gym's top-level
+ * folders (#735) and `domain/themeMemberImages.ts` re-exports it as
+ * `THEME_STORAGE_FOLDER`, so the string has exactly one spelling.
+ */
+export const THEMES_FOLDER = 'Themes';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 const GYM_FOLDERS = [
@@ -41,6 +50,12 @@ const GYM_FOLDERS = [
   'Branding/Logo/',
   'Branding/Images/',
   'Members/',
+  // #735: the gym-level `Themes/` root only. A Custom Theme's own
+  // `Themes/<theme_id>-<name>/Members/` branch is deliberately *not* created
+  // here — it cannot exist before the theme does, and `ensureStorageFolders()`
+  // writes it at upload time (#725). Appended rather than slotted in, so every
+  // folder that existed before keeps the position it was written in.
+  `${THEMES_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

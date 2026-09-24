@@ -331,4 +331,24 @@ describe('idempotency', () => {
     const { rows } = await db.query('SELECT storage_folder_prefix FROM gyms WHERE id = ?', [id]);
     expect(rows[0].storage_folder_prefix).toBe(originalPrefix);
   });
+
+  // #735 §"Existing Gym Support": a gym initialized before the gym-level
+  // `Themes/` folder existed receives it by re-running the same action — the
+  // endpoint re-writes the whole marker set under the prefix already captured,
+  // so nothing about the row has to be migrated. Which markers that set holds
+  // (Themes/ among them) is pinned by the unit tests in storage.test.ts, since
+  // initializeGymBucket is mocked here.
+  it('re-initializes a gym whose storage was provisioned before Themes/ existed, using its stored prefix', async () => {
+    const id = await createTestGym('Gym Initialized Before Themes');
+    const legacyPrefix = buildGymFolderPrefix(id, 'Gym Initialized Before Themes');
+    await db.query(
+      `UPDATE gyms SET storage_folder_prefix = ?, storage_initialized_at = UTC_TIMESTAMP() WHERE id = ?`,
+      [legacyPrefix, id],
+    );
+
+    const res = await initStorage(id);
+    expect(res.status).toBe(200);
+    expect(mockInitializeGymBucket).toHaveBeenCalledWith(legacyPrefix);
+    expect(res.body.storage_folder_prefix).toBe(legacyPrefix);
+  });
 });
