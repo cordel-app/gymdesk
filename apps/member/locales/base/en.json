@@ -333,6 +333,27 @@
     "empty": "No nutrition plan assigned yet.",
     "all_days": "Every day",
     "goals": "Goals",
+    "food_image_alt": "Photo of {name}",
+    "no_image": "No image available",
+    "carousel_label": "Foods for {meal}",
+    "carousel_position": "{current} of {total}",
+    "previous_food": "Previous food",
+    "next_food": "Next food",
+    "component_type": {
+      "main_dish": "Main dish",
+      "side": "Side",
+      "sauce": "Sauce",
+      "additional": "Additional",
+      "drink": "Drink",
+      "dessert": "Dessert",
+      "other": "Other"
+    },
+    "quality": {
+      "protein": "Protein",
+      "carbohydrate": "Carbohydrate",
+      "fat": "Fat",
+      "fiber": "Fiber"
+    },
     "meal_type": {
       "recien_levantado": "Upon waking",
       "breakfast": "Breakfast",

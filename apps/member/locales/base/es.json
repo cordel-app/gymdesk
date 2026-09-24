@@ -333,6 +333,27 @@
     "empty": "Aún no tienes un plan de nutrición asignado.",
     "all_days": "Todos los días",
     "goals": "Objetivos",
+    "food_image_alt": "Foto de {name}",
+    "no_image": "Imagen no disponible",
+    "carousel_label": "Alimentos de {meal}",
+    "carousel_position": "{current} de {total}",
+    "previous_food": "Alimento anterior",
+    "next_food": "Alimento siguiente",
+    "component_type": {
+      "main_dish": "Plato principal",
+      "side": "Acompañamiento",
+      "sauce": "Salsa",
+      "additional": "Adicional",
+      "drink": "Bebida",
+      "dessert": "Postre",
+      "other": "Otro"
+    },
+    "quality": {
+      "protein": "Proteína",
+      "carbohydrate": "Carbohidrato",
+      "fat": "Grasa",
+      "fiber": "Fibra"
+    },
     "meal_type": {
       "recien_levantado": "Recién levantado",
       "breakfast": "Desayuno",

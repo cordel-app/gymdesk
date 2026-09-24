@@ -333,6 +333,27 @@
     "empty": "Encara no tens cap pla de nutrició assignat.",
     "all_days": "Tots els dies",
     "goals": "Objectius",
+    "food_image_alt": "Foto de {name}",
+    "no_image": "Imatge no disponible",
+    "carousel_label": "Aliments de {meal}",
+    "carousel_position": "{current} de {total}",
+    "previous_food": "Aliment anterior",
+    "next_food": "Aliment següent",
+    "component_type": {
+      "main_dish": "Plat principal",
+      "side": "Guarnició",
+      "sauce": "Salsa",
+      "additional": "Addicional",
+      "drink": "Beguda",
+      "dessert": "Postres",
+      "other": "Altres"
+    },
+    "quality": {
+      "protein": "Proteïna",
+      "carbohydrate": "Carbohidrat",
+      "fat": "Greix",
+      "fiber": "Fibra"
+    },
     "meal_type": {
       "recien_levantado": "Just llevat-se",
       "breakfast": "Esmorzar",

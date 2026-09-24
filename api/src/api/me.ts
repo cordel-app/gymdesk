@@ -14,7 +14,7 @@ import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
-import { localizedNameExpr } from '../domain/nutritionLibrary';
+import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
 import { getRequestLocale } from '../infra/locale';
 import { themeLogoUrl } from '../domain/themeLogo';
 
@@ -995,9 +995,12 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
         [day.id, gymId],
       );
       const meals = await Promise.all(mealRows.map(async (meal: any) => {
+        // `image_url` is the library item's own image (#417 stage 3); the member
+        // app renders it on the food card (#722) and falls back to a placeholder
+        // when it is null.
         const { rows: items } = await db.query(
           `SELECT i.id, i.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
-                  i.component_type, i.quantity, i.unit, i.position
+                  i.component_type, i.quantity, i.unit, i.position, nli.image_url
            FROM member_nutrition_plan_meal_items i
            JOIN nutrition_library_items nli ON nli.id = i.nutrition_library_item_id
            WHERE i.meal_id = ?
@@ -1008,6 +1011,17 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
       }));
       return { ...day, meals };
     }));
+
+    // Nutritional qualities (#722 §5) are read once for the whole plan, not per
+    // item: a plan is days x meals x items and the member app shows the chips on
+    // every food card, so a per-item query would be a third level of N+1.
+    const allItems: any[] = days.flatMap((day: any) => day.meals.flatMap((meal: any) => meal.items));
+    const qualitiesMap = await loadQualitiesMap(
+      [...new Set(allItems.map((item) => item.nutrition_library_item_id))],
+    );
+    for (const item of allItems) {
+      item.qualities = qualitiesMap[item.nutrition_library_item_id] ?? [];
+    }
 
     const { rows: goalRows } = await db.query(
       'SELECT id, item_name, quantity, unit, frequency, applies_all_days FROM member_nutrition_plan_goals WHERE member_nutrition_plan_id = ? AND gym_id = ? ORDER BY position ASC',
