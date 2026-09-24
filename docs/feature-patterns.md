@@ -795,7 +795,7 @@ Reference implementation: `api/src/api/user-membership-services.ts` + migration 
 
 ---
 
-## Assignment-Time Snapshot (#635 stages 2 + 6–7)
+## Assignment-Time Snapshot (#635 stages 2 + 6–8)
 
 When a ticket says an instantiated record is *its own contract* — an Assigned Plan whose billing must not move when the Membership Plan, a Promotion or a Sellable Item is later edited (#635 §11–§17) — the record needs parallel structures it owns, not a chain of live joins back to the catalogue.
 
@@ -812,6 +812,8 @@ When a ticket says an instantiated record is *its own contract* — an Assigned 
 - **Finish the read cutover at every recompute, not just the scheduled ones** (stage 7). A record that recalculates a stored amount on mutation (`final_price` at every promotion apply/revoke) is as much a billing read as the nightly run: one live join left in it re-prices the record with today's catalogue the next time anything unrelated changes. Grep for the catalogue tables from the *pricing* path and point each one at the snapshot; keep only the "this row captured nothing" fallback.
 - **Keep the database's own arithmetic in the database.** When the values move into snapshot JSON, a gate such as `applied_at + INTERVAL n MONTH > NOW()` does not follow them into JS — timestamps and end-of-month clamping are the database's. Ask it for the whole set of flags in one round trip instead (`UNION ALL` of one row per pair), and the rule stays the one it always was.
 - **Compute the display status server-side too.** "Active / inactive / expired" is derived from the *agreed* window, so it belongs next to the data it is derived from (`domain/promotionApplicationStatus.ts`, pure and unit-tested), not in the component. The frontend renders `display_status`; it never re-derives one from dates, which is how two surfaces start disagreeing.
+- **A configuration nobody reads is not shipped** (stage 8). Fields can sit in the schema, in the payload and in an editor for several stages without anything billing off them — a Plan's Free Period was stored, frozen onto every assignment and editable per assignment before it waived a single charge. Close that loop in the stage that finishes the feature, and read the value the same way the rest of the snapshot is read: the record's own column, with the catalogue as the fallback **only** for a record that captured nothing at all. A per-column `COALESCE` is the trap — nullable columns make it indistinguishable from "not configured", so a value added to the catalogue later reaches records that already exist.
+- **Two overlapping configurations need a stated winner, once, on the server.** When a Promotion's window and the record's own durations both cover a date, the thread's answer ("prioritize the promotion") becomes one branch in the resolver, not a rule each surface re-applies. Resolve the higher-precedence source first, and fall through only when it says nothing about that date — and keep the waiver's *source* on the line it produced (`source: 'membership_plan'` vs `'promotion'`), so the UI can name who granted it without deriving anything.
 
 Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 175 + `snapshotPromotionGrants()` / `fetchAppliedPromotions()` in `api/src/api/membership-promotions.ts`.
 

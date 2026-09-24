@@ -11,6 +11,7 @@ import {
   SimulationPromotion,
   computeBillingSimulation,
 } from '../domain/billingSimulation';
+import { PlanDuration, toPlanDuration } from '../domain/planDuration';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 import { loadServicesForSimulation } from './user-membership-services';
 import {
@@ -39,6 +40,10 @@ import {
  * consulted only for an assignment that captured no snapshot, so repricing a
  * Plan, editing a Promotion or repricing a Sellable Item changes nothing here
  * for anyone already holding it.
+ *
+ * #635 stage 8: the assignment's frozen Billing & Duration joins those inputs
+ * (`assignmentPlanDuration` below), so a Free Period or Bonus Duration actually
+ * waives the Membership Fee instead of only being stored.
  */
 
 // Statuses whose charges are still ahead of the Member. `cancelled`/`expired`
@@ -67,6 +72,30 @@ interface AssignmentRow {
   membership_fee_price: string | number | null;
   /** 1 when any of the six snapshot columns is set; decides the benefit fallback. */
   has_billing_snapshot: number;
+  /** #635 stage 8 — the assignment's own Billing & Duration, and its Plan's live one. */
+  free_months: number | null;
+  paid_months: number | null;
+  bonus_months: number | null;
+  plan_free_months: number | null;
+  plan_paid_months: number | null;
+  plan_bonus_months: number | null;
+}
+
+/**
+ * The Billing & Duration this assignment bills on: the months frozen onto it,
+ * or — only when it captured no snapshot at all — its Plan's live ones.
+ *
+ * The same all-or-nothing rule `loadPlanBenefitsForSimulation` applies, and for
+ * the same reason: the columns are nullable, so a Plan that had no durations at
+ * assignment time froze three NULLs. Falling back column by column would let a
+ * Free Period *added to the Plan later* start waiving an existing assignment's
+ * fee, which is exactly what §13 forbids. An assignment that captured anything
+ * therefore reads its own columns, NULLs included (= no such period).
+ */
+function assignmentPlanDuration(row: AssignmentRow): PlanDuration {
+  return Number(row.has_billing_snapshot) === 1
+    ? toPlanDuration(row.free_months, row.paid_months, row.bonus_months)
+    : toPlanDuration(row.plan_free_months, row.plan_paid_months, row.plan_bonus_months);
 }
 
 /**
@@ -146,7 +175,11 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
   const { rows } = await db.query<AssignmentRow>(
     `SELECT um.id, um.membership_plan_id, um.status, um.final_price, um.starts_at, um.ends_at,
             um.membership_fee_price,
+            um.free_months, um.paid_months, um.bonus_months,
             p.name AS plan_name,
+            p.free_months AS plan_free_months,
+            p.paid_months AS plan_paid_months,
+            p.bonus_months AS plan_bonus_months,
             ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
             (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
@@ -210,6 +243,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       promotions,
       services: servicesByAssignment.get(row.id) ?? [],
       planBenefits: planBenefitsByAssignment.get(row.id) ?? [],
+      planDuration: assignmentPlanDuration(row),
     };
   }));
 

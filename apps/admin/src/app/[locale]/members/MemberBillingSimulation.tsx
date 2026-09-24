@@ -19,13 +19,18 @@ import { useApiClient } from '@/lib/apiClient';
 
 type BenefitAction = 'no_benefit' | 'waive' | 'percentage_discount' | 'fixed_discount' | 'fixed_price' | 'included';
 type PeriodStatus = 'free_promotion' | 'pay_promotion' | 'prepaid_promotion' | 'bonus_promotion' | 'pay_regular';
+// #635 stage 8 — the Plan's own Billing & Duration. Only the two periods that
+// waive the Membership Fee ever reach a benefit line; the others are the
+// regular price and carry no explanation.
+type PlanPeriodStatus = 'free_plan' | 'pay_plan' | 'bonus_plan' | 'pay_regular';
 
 interface SimulationBenefit {
-  source: 'promotion';
+  /** `membership_plan` = the assignment's own Free Period / Bonus Duration. */
+  source: 'promotion' | 'membership_plan';
   name: string | null;
   action: BenefitAction;
   value: number | null;
-  period_status: PeriodStatus | null;
+  period_status: PeriodStatus | PlanPeriodStatus | null;
 }
 
 interface SimulationLine {
@@ -85,6 +90,16 @@ const PERIOD_STATUS_KEY: Record<PeriodStatus, string> = {
   pay_regular: 'timeline_pay_regular',
 };
 
+// The Plan's own periods read in the `members` namespace, not the Promotions
+// one: "Plan free period" and a Promotion's "Free (promotion)" are different
+// statements and can appear on the same charge's neighbours.
+const PLAN_PERIOD_STATUS_KEY: Record<PlanPeriodStatus, string> = {
+  free_plan: 'billing_simulation_plan_free',
+  bonus_plan: 'billing_simulation_plan_bonus',
+  pay_plan: 'billing_simulation_plan_paid',
+  pay_regular: 'billing_simulation_plan_regular',
+};
+
 /** DD/MM/YYYY from a plain YYYY-MM-DD, without going through Date (no timezone shift). */
 function fmtDay(date: string): string {
   const [y, m, d] = date.split('-');
@@ -123,7 +138,9 @@ export function MemberBillingSimulation({ memberId }: { memberId: number }) {
   function benefitLabel(benefit: SimulationBenefit): string {
     const parts: string[] = [];
     if (benefit.period_status && benefit.period_status !== 'pay_regular') {
-      parts.push(tPromo(PERIOD_STATUS_KEY[benefit.period_status]));
+      parts.push(benefit.source === 'membership_plan'
+        ? t(PLAN_PERIOD_STATUS_KEY[benefit.period_status as PlanPeriodStatus])
+        : tPromo(PERIOD_STATUS_KEY[benefit.period_status as PeriodStatus]));
     }
     switch (benefit.action) {
       case 'included': parts.push(t('billing_simulation_benefit_included')); break;

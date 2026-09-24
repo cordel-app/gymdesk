@@ -34,8 +34,19 @@
 // the same Sellable Item is what makes a period free. A Plan item and the
 // Promotion grants covering it are therefore merged into one stream per
 // Sellable Item — two independent streams would bill the locker twice.
+//
+// #635 stage 8 adds the assignment's own **Billing & Duration**: its Free
+// Period and Bonus Duration waive the Membership Fee (§7), and where an applied
+// Promotion governs the same date the Promotion decides it alone — the thread's
+// Q2 answer, "in case of conflict, prioritize the promotion".
 
 import { advanceBillingDate } from '../api/billing';
+import {
+  PlanDuration,
+  PlanDurationStatus,
+  classifyPlanDurationPeriod,
+  planDurationWaivesFee,
+} from './planDuration';
 import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
 import {
   AppliedPromotionForBilling,
@@ -152,6 +163,12 @@ export interface SimulationAssignment {
   services: SimulationService[];
   /** #635 — the Plan's own benefit sections, as frozen onto this assignment. */
   planBenefits: SimulationPlanBenefit[];
+  /**
+   * #635 stage 8 — the assignment's own Billing & Duration (Free Period / Paid
+   * Duration / Bonus Duration), frozen at assignment time. Counted from
+   * `startsAt`, not from any Promotion's application date.
+   */
+  planDuration: PlanDuration;
 }
 
 export interface BillingSimulationInput {
@@ -162,14 +179,23 @@ export interface BillingSimulationInput {
 
 /** Why an actual charge differs from the regular price. */
 export interface SimulationBenefit {
-  /** Stage 1 only produces `promotion`; Membership Plan benefits arrive with #635. */
-  source: 'promotion';
+  /**
+   * `promotion` — an applied Promotion. `membership_plan` (#635 stage 8) — the
+   * assignment's own Billing & Duration, whose Free Period and Bonus Duration
+   * waive the Membership Fee. A plan-sourced benefit carries no `name`: the
+   * line it sits on already names the Plan (`plan_name`).
+   */
+  source: 'promotion' | 'membership_plan';
   name: string | null;
   /** `included` = the item itself is granted by the Promotion (session/one-off/periodical benefit). */
   action: PromotionBenefitAction | 'included';
   value: number | null;
-  /** Which Promotion period the charge fell in — only set for Membership Fee lines. */
-  period_status: PromotionTimelineStatus | null;
+  /**
+   * Which period the charge fell in — only set for Membership Fee lines. A
+   * Promotion's own timeline (`free_promotion`, …) for a promotion-sourced
+   * benefit, the Plan's (`free_plan`, …) for a plan-sourced one.
+   */
+  period_status: PromotionTimelineStatus | PlanDurationStatus | null;
 }
 
 export interface SimulationLine {
@@ -317,7 +343,49 @@ function cachePromotionTimeline(promo: SimulationPromotion) {
 }
 
 /**
- * Resolves the Membership Fee actually charged on `date`.
+ * Resolves the Membership Fee actually charged on `date`, from the two things
+ * that can change it: the applied Promotions and — since #635 stage 8 — the
+ * assignment's own Billing & Duration.
+ *
+ * **The Promotion wins.** Where a Promotion governs the date (it is inside its
+ * own Free/Paid/Bonus timeline, or it applies a Membership Fee Benefit there),
+ * it decides the fee alone and the Plan's own Free/Bonus period does not also
+ * apply — the #635 thread's Q2 answer, "in case of conflict, prioritize the
+ * promotion". Stacking them would waive a fee twice (harmless) but would also
+ * let a Promotion's *paid* month be overridden by the Plan's free one, which
+ * inverts the answer.
+ *
+ * Where no Promotion governs the date, the Plan's own Free Period and Bonus
+ * Duration waive the fee, exactly as a Promotion's do (§7: "the same semantics
+ * as the Promotion configuration"). Its Paid Duration bills the regular price
+ * and produces no benefit line at all — it *is* the regular charge, so the
+ * horizon (#629 §6: project until each item has been charged once at its
+ * regular price) stops there, unless a Bonus Duration is still ahead of it: a
+ * plan that gives two free months after twelve paid ones would otherwise never
+ * show them, and a member is entitled to see the free months they were sold.
+ */
+function resolveMembershipFee(regular: number, date: string, a: SimulationAssignment): ResolvedCharge {
+  const fromPromotions = resolvePromotionMembershipFee(regular, date, a.promotions);
+  if (fromPromotions.promotional || fromPromotions.benefits.length > 0) return fromPromotions;
+
+  const status = classifyPlanDurationPeriod(a.planDuration, a.startsAt, date);
+  if (status === 'pay_regular') return fromPromotions;
+  if (!planDurationWaivesFee(status)) {
+    // Inside the Paid Duration: the regular amount either way, so this only
+    // decides whether the projection may stop here — it may not while a Bonus
+    // Duration behind it still has to be shown.
+    return a.planDuration.bonusMonths > 0 ? { ...fromPromotions, promotional: true } : fromPromotions;
+  }
+  return {
+    amount: 0,
+    benefits: [{ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: status }],
+    promotional: true,
+    pending: fromPromotions.pending,
+  };
+}
+
+/**
+ * The Promotion half of `resolveMembershipFee`.
  *
  * Free and Bonus promotional periods waive the fee outright; Pay/Prepaid
  * periods apply the Promotion's Membership Fee (Period) Benefit; a Charge
@@ -326,7 +394,7 @@ function cachePromotionTimeline(promo: SimulationPromotion) {
  * (real billing) uses, restated here because the simulation additionally has
  * to report *which* benefit produced the number.
  */
-function resolveMembershipFee(regular: number, date: string, promotions: SimulationPromotion[]): ResolvedCharge {
+function resolvePromotionMembershipFee(regular: number, date: string, promotions: SimulationPromotion[]): ResolvedCharge {
   let amount = regular;
   const benefits: SimulationBenefit[] = [];
   // A paid promotional period with no Membership Fee Benefit charges the
@@ -381,6 +449,12 @@ function hasPromotionalEffect(promo: SimulationPromotion): boolean {
 interface ResolvedCharge {
   amount: number;
   benefits: SimulationBenefit[];
+  /**
+   * The charge is still inside a configured window — an applied Promotion's
+   * timeline, or (since #635 stage 8) the assignment's own Billing & Duration —
+   * so it is not the "first regular billing milestone" the horizon stops at,
+   * whatever amount it carries.
+   */
   promotional: boolean;
   /**
    * A Promotion has yet to start affecting this item — it was applied after
@@ -438,7 +512,7 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
     section: cadence.section,
     start: a.startsAt,
     end: a.endsAt,
-    resolve: (date) => resolveMembershipFee(regular, date, a.promotions),
+    resolve: (date) => resolveMembershipFee(regular, date, a),
     line: (date, resolved) => ({
       kind: 'membership_fee',
       label: a.planName ?? 'Membership Fee',

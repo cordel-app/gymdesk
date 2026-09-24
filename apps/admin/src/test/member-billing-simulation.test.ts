@@ -51,6 +51,11 @@ const SIMULATION_KEYS = [
   'billing_simulation_benefit_fixed_discount',
   'billing_simulation_price_note',
   'billing_simulation_truncated',
+  // #635 stage 8 — the Plan's own Billing & Duration periods.
+  'billing_simulation_plan_free',
+  'billing_simulation_plan_paid',
+  'billing_simulation_plan_bonus',
+  'billing_simulation_plan_regular',
 ];
 
 describe('Member Billing Simulation (#629)', () => {
@@ -97,6 +102,22 @@ describe('Member Billing Simulation (#629)', () => {
 
   it('formats plain dates without a timezone-shifting Date parse', () => {
     expect(simulationSrc).not.toContain('new Date(');
+  });
+
+  // #635 stage 8 — a waived Membership Fee can come from the assignment's own
+  // Billing & Duration as well as from a Promotion, and the line has to say
+  // which. The classification itself stays server-side.
+  it('labels a plan-sourced benefit from its own namespace, not the Promotions one', () => {
+    expect(simulationSrc).toContain("benefit.source === 'membership_plan'");
+    expect(simulationSrc).toContain('PLAN_PERIOD_STATUS_KEY');
+    expect(simulationSrc).toMatch(/free_plan:\s*'billing_simulation_plan_free'/);
+    expect(simulationSrc).toMatch(/bonus_plan:\s*'billing_simulation_plan_bonus'/);
+  });
+
+  it('derives no Billing & Duration period of its own', () => {
+    for (const forbidden of ['free_months', 'paid_months', 'bonus_months', 'planDuration']) {
+      expect(simulationSrc).not.toContain(forbidden);
+    }
   });
 
   it('defines every simulation key in all locales', () => {
