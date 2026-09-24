@@ -247,16 +247,18 @@
       "insurance_fee": "Assegurança",
       "class_package": "Bo de classes"
     },
-    "benefit": {
-      "priority_booking": "Reserva prioritària",
-      "free_locker": "Taquilla gratuïta",
-      "free_parking": "Pàrquing gratuït",
-      "waived_charge": "Quota exempta",
-      "class_package_credit": "Crèdit de bo"
+    "benefit_group": {
+      "oneoff": "Beneficis únics",
+      "session": "Beneficis de sessions",
+      "periodical": "Beneficis periòdics"
     },
-    "recurrence": {
-      "monthly": "Mensual",
-      "yearly": "Anual"
+    "frequency": {
+      "once": "Pagament únic",
+      "per_session": "Per sessió",
+      "week": "Setmanal",
+      "four_weeks": "Cada 4 setmanes",
+      "month": "Mensual",
+      "year": "Anual"
     }
   },
   "payment_banner": {

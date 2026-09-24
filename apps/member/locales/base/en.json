@@ -247,16 +247,18 @@
       "insurance_fee": "Insurance",
       "class_package": "Class package"
     },
-    "benefit": {
-      "priority_booking": "Priority booking",
-      "free_locker": "Free locker",
-      "free_parking": "Free parking",
-      "waived_charge": "Waived fee",
-      "class_package_credit": "Class package credit"
+    "benefit_group": {
+      "oneoff": "One-off benefits",
+      "session": "Session benefits",
+      "periodical": "Period benefits"
     },
-    "recurrence": {
-      "monthly": "Monthly",
-      "yearly": "Yearly"
+    "frequency": {
+      "once": "One-off",
+      "per_session": "Per session",
+      "week": "Weekly",
+      "four_weeks": "Every 4 weeks",
+      "month": "Monthly",
+      "year": "Yearly"
     }
   },
   "payment_banner": {

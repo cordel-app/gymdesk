@@ -19,6 +19,8 @@ import { getRequestLocale } from '../infra/locale';
 import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
+import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
+import type { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -1299,9 +1301,60 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
   } catch (err) { next(err); }
 });
 
+/**
+ * The Member's own view of their Assigned Plan's benefits (#635 stage 10).
+ *
+ * One line per Sellable Item the assignment carries, at the quantity, frequency
+ * and **price it was agreed at** — `loadPlanBenefitsForSimulation` resolves the
+ * assignment's own `user_membership_{oneoff,session,periodical}` rows and only
+ * falls back to the Plan's live sections for an assignment that captured no
+ * snapshot at all (§13/§14), which is the same rule the Billing Simulation and
+ * the nightly run follow. Ordered one-off → session → period, then by name, so
+ * the Member reads the sections in the order every staff surface lists them.
+ */
+const MEMBER_BENEFIT_ORDER: Record<SellableItemBenefitCategory, number> = {
+  oneoff: 0, session: 1, periodical: 2,
+};
+
+export interface MemberMembershipBenefit {
+  category: SellableItemBenefitCategory;
+  gym_charge_id: number;
+  name: string;
+  quantity: number;
+  billing_frequency: string | null;
+  unit_price: number;
+}
+
+async function loadMembershipBenefits(
+  gymId: string,
+  assignment: { id: number; membership_plan_id: number | null; has_billing_snapshot: number },
+): Promise<MemberMembershipBenefit[]> {
+  const byAssignment = await loadPlanBenefitsForSimulation(gymId, [{
+    id: assignment.id,
+    membershipPlanId: assignment.membership_plan_id,
+    hasBillingSnapshot: Number(assignment.has_billing_snapshot) === 1,
+  }]);
+  return (byAssignment.get(assignment.id) ?? [])
+    .map((b) => ({
+      category: b.category,
+      gym_charge_id: b.gymChargeId,
+      name: b.name,
+      quantity: b.quantity,
+      billing_frequency: b.billingFrequency,
+      unit_price: b.unitPrice,
+    }))
+    .sort((a, b) => (MEMBER_BENEFIT_ORDER[a.category] - MEMBER_BENEFIT_ORDER[b.category])
+      || a.name.localeCompare(b.name));
+}
+
 // P1.8: current membership (single record) with plan + benefits inline. Returns
 // { membership: {...} | null } — null when the member has none, so the client
 // can render an empty state without treating 404 as an error.
+//
+// #635 stage 10: everything commercial here is the assignment's own snapshot —
+// its frozen billing cadence (ASSIGNMENT_CADENCE) and its frozen benefit rows —
+// so a Plan repriced, re-cadenced or given new benefits after the Member signed
+// up cannot move what this page shows them (§13/§14).
 meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
@@ -1313,8 +1366,12 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               um.starts_at, um.ends_at, um.status, um.created_at,
               um.next_billing_date,
               p.name AS plan_name, p.description AS plan_description,
-              bp.recurring_billing_interval AS billing_interval,
-              bp.recurring_billing_unit AS billing_unit
+              ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
+              ${ASSIGNMENT_CADENCE.unit()} AS billing_unit,
+              (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+               OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+               OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
+              ) AS has_billing_snapshot
        FROM user_memberships um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
@@ -1328,19 +1385,12 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     if (!mships[0]) return res.json({ membership: null });
 
     const um = mships[0];
-    let benefits: any[] = [];
-    if (um.membership_plan_id) {
-      const { rows } = await db.query(
-        `SELECT mpb.quantity, mpb.duration_days, mpb.recurrence,
-                mpb.valid_from, mpb.valid_to, bt.code AS benefit_code
-         FROM membership_plan_benefits mpb
-         JOIN benefit_types bt ON bt.id = mpb.benefit_type_id
-         WHERE mpb.membership_plan_id = ? AND mpb.gym_id = ?
-         ORDER BY mpb.id ASC`,
-        [um.membership_plan_id, gymId],
-      );
-      benefits = rows;
-    }
+    // The assignment's own benefit rows, never the Plan's live sections — the
+    // loader falls back to those only for an assignment that captured nothing.
+    // (Until stage 10 this read `membership_plan_benefits`, P1.4's plan-keyed
+    // benefit vocabulary, which no code has written since and migration 184
+    // drops.)
+    const benefits = await loadMembershipBenefits(gymId, um);
 
     const upcoming_payments = computeUpcomingPayments(
       um.next_billing_date,
@@ -1349,7 +1399,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       um.final_price,
     );
 
-    res.json({ membership: { ...um, benefits, upcoming_payments } });
+    // `has_billing_snapshot` only decides the fallback above — it is not part
+    // of the contract the Member app reads.
+    const { has_billing_snapshot, ...membership } = um as any;
+    res.json({ membership: { ...membership, benefits, upcoming_payments } });
   } catch (err) {
     next(err);
   }
