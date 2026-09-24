@@ -74,11 +74,16 @@ describe('Charge Benefits are retired (#635 stage 4)', () => {
     expect(await tableExists('user_membership_charge_benefits')).toBe(false);
   });
 
-  it('keeps promotion_charge_benefits, which is a different concept', async () => {
-    // Promotions' own charge benefits (#626 removed their *editor*, not the
-    // table, which `membership-promotions.ts` still reads for the Membership
-    // Fee benefits the Billing Events range needs). Stage 4 must not take it.
-    expect(await tableExists('promotion_charge_benefits')).toBe(true);
+  it('drops promotion_charge_benefits too, in stage 5 (migration 179)', async () => {
+    // Stage 4 deliberately left the Promotion side alone: #626 removed its
+    // *editor*, and `membership-promotions.ts` still read the table for the
+    // Membership Fee benefits the Billing Events range needs. Stage 5 moved
+    // that benefit to `promotion_membership_fee_benefits` and took the last
+    // two `charge_types`-keyed benefit tables with it.
+    expect(await tableExists('promotion_charge_benefits')).toBe(false);
+    expect(await tableExists('promotion_period_benefits')).toBe(false);
+    expect(await tableExists('promotion_included_benefits')).toBe(false);
+    expect(await tableExists('promotion_membership_fee_benefits')).toBe(true);
   });
 
   // ── The endpoints ──

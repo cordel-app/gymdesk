@@ -158,7 +158,7 @@ describe('computeBillingSimulation — promotion periods (#629 §5)', () => {
         membershipFeePrice: 120,
         promotions: [promotion({
           paidMonths: 2,
-          membershipFeeBenefits: [{ kind: 'period', action: 'fixed_price', value: 100, enabled: true, durationMonths: null }],
+          membershipFeeBenefits: [{ action: 'fixed_price', value: 100, enabled: true, durationMonths: null }],
         })],
       })],
     });
@@ -175,7 +175,7 @@ describe('computeBillingSimulation — promotion periods (#629 §5)', () => {
       assignments: [assignment({
         promotions: [promotion({
           paidMonths: 2, payBeforehandMonths: 1,
-          membershipFeeBenefits: [{ kind: 'period', action: 'percentage_discount', value: 50, enabled: true, durationMonths: null }],
+          membershipFeeBenefits: [{ action: 'percentage_discount', value: 50, enabled: true, durationMonths: null }],
         })],
       })],
     });
@@ -311,11 +311,18 @@ describe('computeBillingSimulation — horizon across mixed frequencies (#629 §
     expect(monthly[12].lines[0].price_may_change).toBe(true); // 2027-09-01
   });
 
-  it('caps an indefinitely benefited item and reports it as truncated', () => {
+  // #635 stage 5: a Membership Fee Benefit always belongs to a promotional
+  // period (#625 — it can never outlast the Promotion), so "benefited for
+  // longer than the horizon" is a Promotion whose paid duration outruns
+  // `maxMonths`. Before stage 5 the same case could also be written as a
+  // Charge Benefit, which applied with no promotional period at all; that
+  // table is gone (migration 179).
+  it('caps an item benefited past the horizon and reports it as truncated', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
         promotions: [promotion({
-          membershipFeeBenefits: [{ kind: 'charge', action: 'percentage_discount', value: 10 }],
+          paidMonths: 24,
+          membershipFeeBenefits: [{ action: 'percentage_discount', value: 10, enabled: true, durationMonths: null }],
         })],
       })],
       maxMonths: 6,

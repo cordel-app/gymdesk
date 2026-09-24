@@ -298,18 +298,19 @@ function classifyPromotionPeriod(promo: SimulationPromotion, date: string): {
 }
 
 function cachePromotionTimeline(promo: SimulationPromotion) {
-  const periodBenefit = promo.membershipFeeBenefits.find(
-    (b): b is Extract<MembershipFeeBenefit, { kind: 'period' }> => b.kind === 'period',
-  );
+  // #635 stage 5: a Promotion has at most one Membership Fee Benefit, so the
+  // timeline reads the first (and normally only) entry — the array shape is
+  // kept for legacy snapshots, which could carry a second one.
+  const membershipFeeBenefit: MembershipFeeBenefit | undefined = promo.membershipFeeBenefits[0];
   const timeline = computePromotionTimeline({
     freeMonths: promo.freeMonths,
     paidMonths: promo.paidMonths,
     payBeforehandMonths: promo.payBeforehandMonths,
     bonusMonths: promo.bonusMonths,
-    membershipFeeAction: periodBenefit?.action ?? undefined,
-    membershipFeeValue: periodBenefit?.value ?? null,
-    membershipFeeEnabled: periodBenefit?.enabled ?? false,
-    membershipFeeDurationMonths: periodBenefit?.durationMonths ?? null,
+    membershipFeeAction: membershipFeeBenefit?.action ?? undefined,
+    membershipFeeValue: membershipFeeBenefit?.value ?? null,
+    membershipFeeEnabled: membershipFeeBenefit?.enabled ?? false,
+    membershipFeeDurationMonths: membershipFeeBenefit?.durationMonths ?? null,
   }, promo.appliedAt);
   timelineCache.set(promo, timeline);
   return timeline;
@@ -346,8 +347,14 @@ function resolveMembershipFee(regular: number, date: string, promotions: Simulat
       benefits.push({ source: 'promotion', name: promo.name, action: billingAction, value: billingValue, period_status: status });
     }
 
-    for (const b of promo.membershipFeeBenefits) {
-      if (b.kind !== 'charge' || b.action === 'no_benefit') continue;
+    // The Promotion's own Membership Fee Benefit is already part of its
+    // timeline (see cachePromotionTimeline), so only the *extra* entries a
+    // pre-#635-stage-5 snapshot can carry are applied on top — a legacy
+    // Charge Benefit on the membership fee, which applied for as long as the
+    // promotion did and stacked with the Period Benefit. Nothing written
+    // since stage 5 has more than one entry, so this loop is empty there.
+    for (const b of promo.membershipFeeBenefits.slice(1)) {
+      if (!b.enabled || b.action == null || b.action === 'no_benefit') continue;
       amount = applyPeriodBenefit(amount, b.action, b.value);
       benefits.push({ source: 'promotion', name: promo.name, action: b.action, value: b.value, period_status: status });
       promotional = true;
