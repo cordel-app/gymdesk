@@ -15,7 +15,9 @@ interface Membership {
 
 interface BillingEvent {
   id: number;
-  event_type: 'charge_created' | 'payment_recorded' | 'status_changed' | 'adjustment';
+  // `waived_billing` (#635 stage 11) is written by the nightly run for a cycle
+  // nothing was owed on; it is listed like any other event and never created here.
+  event_type: 'charge_created' | 'payment_recorded' | 'status_changed' | 'adjustment' | 'waived_billing';
   charge_type_id: number | null;
   charge_type_code: string | null;
   previous_status: string | null;

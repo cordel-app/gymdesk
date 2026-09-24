@@ -236,7 +236,8 @@
       "recurring_payment": "Pagament recurrent",
       "failed_billing": "Pagament fallit",
       "status_changed": "Canvi d'estat",
-      "adjustment": "Ajust"
+      "adjustment": "Ajust",
+      "waived_billing": "Quota exempta"
     },
     "upcoming_status": {
       "scheduled": "Programat"

@@ -57,8 +57,17 @@ exports.up = async (knex) => {
 };
 
 exports.down = async (knex) => {
-  // Restore billing_events.event_type CHECK to original set
-  await knex.raw('ALTER TABLE billing_events DROP CHECK billing_events_event_type_check').catch(() => {});
+  // Restore billing_events.event_type CHECK to original set.
+  //
+  // #635 stage 11: the DROP swallows only ER_CHECK_CONSTRAINT_NOT_FOUND (3940),
+  // and the ADD is not swallowed at all. A blanket catch here was a trap once
+  // rows of a later-added type exist (`recurring_payment`, `failed_billing`,
+  // `waived_billing`): the narrow constraint would fail to validate, the error
+  // would be discarded, and the column would be left with **no** CHECK at all.
+  // Failing loudly leaves the widened constraint in place, which is the safe
+  // half of the rollback — see migration 185's own `down()`.
+  await knex.raw('ALTER TABLE billing_events DROP CHECK billing_events_event_type_check')
+    .catch((err) => { if (err.errno !== 3940) throw err; });
   await knex.raw(
     "ALTER TABLE billing_events ADD CONSTRAINT billing_events_event_type_check " +
     "CHECK (event_type IN ('charge_created','payment_recorded','status_changed','adjustment'))",

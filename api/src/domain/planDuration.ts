@@ -28,7 +28,7 @@
 // The month arithmetic itself is not duplicated: it is `advanceBillingDate`,
 // the same helper every billing projection advances with.
 
-import { advanceBillingDate } from '../api/billing';
+import { advanceBillingDate } from './billingDate';
 
 /**
  * Which period of the Plan's own Billing & Duration a date falls in. The names

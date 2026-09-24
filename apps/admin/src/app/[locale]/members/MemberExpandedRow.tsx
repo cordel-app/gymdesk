@@ -566,6 +566,9 @@ function eventTypeLabel(type: string, t: ReturnType<typeof useTranslations>): st
     case 'payment_recorded': return t('members.event_payment_recorded');
     case 'adjustment': return t('members.event_adjustment');
     case 'status_changed': return t('members.event_status_changed_label');
+    // #635 stage 11 — a cycle the assignment's Free Period, Bonus Duration or
+    // an applied Promotion covered: recorded at €0, never charged.
+    case 'waived_billing': return t('members.event_waived_billing');
     default: return type;
   }
 }

@@ -40,7 +40,7 @@
 // Promotion governs the same date the Promotion decides it alone — the thread's
 // Q2 answer, "in case of conflict, prioritize the promotion".
 
-import { advanceBillingDate } from '../api/billing';
+import { advanceBillingDate } from './billingDate';
 import {
   PlanDuration,
   PlanDurationStatus,
@@ -169,6 +169,19 @@ export interface SimulationAssignment {
    * `startsAt`, not from any Promotion's application date.
    */
   planDuration: PlanDuration;
+}
+
+/**
+ * Everything the Membership Fee of one assignment depends on, on a given date:
+ * the contract's own anchor and Billing & Duration, plus the Promotions applied
+ * to it. `SimulationAssignment` satisfies it, and so does the far smaller row
+ * the nightly run reads (#635 stage 11) — which is the point: both price a
+ * cycle through `resolveMembershipFee`, so neither can drift from the other.
+ */
+export interface MembershipFeeContext {
+  startsAt: string;
+  planDuration: PlanDuration;
+  promotions: SimulationPromotion[];
 }
 
 export interface BillingSimulationInput {
@@ -363,8 +376,12 @@ function cachePromotionTimeline(promo: SimulationPromotion) {
  * regular price) stops there, unless a Bonus Duration is still ahead of it: a
  * plan that gives two free months after twelve paid ones would otherwise never
  * show them, and a member is entitled to see the free months they were sold.
+ *
+ * Exported since #635 stage 11: the nightly billing run prices the cycle it is
+ * about to charge through this same function, so what is charged cannot drift
+ * from what the simulation — and the Member's own My Membership page — shows.
  */
-function resolveMembershipFee(regular: number, date: string, a: SimulationAssignment): ResolvedCharge {
+export function resolveMembershipFee(regular: number, date: string, a: MembershipFeeContext): ResolvedCharge {
   const fromPromotions = resolvePromotionMembershipFee(regular, date, a.promotions);
   if (fromPromotions.promotional || fromPromotions.benefits.length > 0) return fromPromotions;
 
@@ -446,7 +463,7 @@ function hasPromotionalEffect(promo: SimulationPromotion): boolean {
  * and whether a Promotion still governs it (which is not the same thing — a
  * paid promotional period can charge the regular price).
  */
-interface ResolvedCharge {
+export interface ResolvedCharge {
   amount: number;
   benefits: SimulationBenefit[];
   /**

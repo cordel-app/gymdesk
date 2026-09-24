@@ -321,3 +321,22 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       activity. Run
       `SELECT gym_id, COUNT(*) FROM plan_allowances WHERE allowance_type = 'session_count' GROUP BY gym_id`
       before the deploy; if any gym has rows, tell them the cap is going before it does.
+- [ ] **Migration 185 must run *before* the API build that writes `waived_billing`**
+      (#635 stage 11): it widens the `billing_events.event_type` CHECK. It only accepts
+      a type nothing writes yet, so it is safe to run against the current build — but the
+      reverse order makes the first waived cycle of the night fail its INSERT with
+      `ER_CHECK_CONSTRAINT_VIOLATED` and take the run's transaction with it. Migrate
+      first, then deploy the API (the opposite order from 176/177/179/184, which drop
+      tables the old build still reads).
+- [ ] **Announce that a free month now bills nothing** (#635 stage 11): until this ships
+      the nightly run charges `final_price` for every cycle, including one covered by a
+      Plan's Free Period, its Bonus Duration or an applied Promotion's free month — the
+      Billing Simulation and the member's My Membership page have shown €0 for those
+      cycles since stages 8 and 10. Revenue for a gym selling free months will drop to
+      what it was always quoting. Check who is affected before the deploy:
+      `SELECT gym_id, COUNT(*) FROM user_memberships WHERE status = 'active' AND (free_months > 0 OR bonus_months > 0)`.
+- [ ] **`waived_billing` rows block migration 185's `down()`** (#635 stage 11): the
+      ledger is append-only, so `down()` keeps the widened CHECK (and says so in the
+      deploy output) rather than deleting rows to make the narrow one fit. Roll the API
+      back first if the constraint has to narrow; the rows themselves are history and
+      should stay.
