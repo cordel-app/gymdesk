@@ -206,97 +206,38 @@ describe('POST /public/gyms/:gymRef/registrations — validation', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 for a center_id that does not exist', async () => {
-    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('badcenter'), center_id: 999999999 });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/center_id/);
-    expect(clerk.createInvitation).not.toHaveBeenCalled();
+});
+
+describe('POST /public/gyms/:gymRef/registrations — no center (#757)', () => {
+  it('a gym with several active centers registers without center_id', async () => {
+    const multi = await createRegistrationGym('Public Reg Multi Center');
+    await insertCenter(multi.id, 'Second Center');
+
+    const res = await register(multi.ref, multi.key, { name: 'Ana', email: uniqueEmail('multi') });
+
+    expect(res.status).toBe(202);
+    expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup).toEqual({ gym_id: multi.id, name: 'Ana' });
   });
 
-  it("returns 400 for another gym's center_id (tenant isolation)", async () => {
-    const otherId = await createTestGym('Public Reg Other Centers');
-    const otherCenter = await insertCenter(otherId);
-
-    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('othercenter'), center_id: otherCenter });
-
-    expect(res.status).toBe(400);
-    expect(clerk.createInvitation).not.toHaveBeenCalled();
-  });
-
-  it('returns 400 for a soft-deleted center_id', async () => {
-    const gym = await createRegistrationGym('Public Reg Deleted Center');
-    const gone = await insertCenter(gym.id, 'Closed Center');
-    await db.query('UPDATE centers SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?', [gone, gym.id]);
-
-    const res = await register(gym.ref, gym.key, { name: 'Ana', email: uniqueEmail('delcenter'), center_id: gone });
-
-    expect(res.status).toBe(400);
-  });
-
-  describe('gym with one active and one inactive center', () => {
-    let gym: Awaited<ReturnType<typeof createRegistrationGym>>;
-    let inactiveCenter: number;
-
-    beforeAll(async () => {
-      gym = await createRegistrationGym('Public Reg Inactive Center');
-      inactiveCenter = await insertCenter(gym.id, 'Closed Center');
-      await db.query("UPDATE centers SET status = 'inactive' WHERE id = ? AND gym_id = ?", [inactiveCenter, gym.id]);
-    });
-
-    it('returns 202 without center_id and assigns the active center — the inactive one does not make it multi-center', async () => {
-      const res = await register(gym.ref, gym.key, { name: 'Ana', email: uniqueEmail('inactive-default') });
-      expect(res.status).toBe(202);
-      expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.center_id).toBe(gym.centerId);
-    });
-
-    it('returns 400 for an explicit inactive center_id — the same response as a non-existent one', async () => {
-      const res = await register(gym.ref, gym.key, {
-        name: 'Ana', email: uniqueEmail('inactive-explicit'), center_id: inactiveCenter,
-      });
-      const missing = await register(gym.ref, gym.key, {
-        name: 'Ana', email: uniqueEmail('missing-explicit'), center_id: 999999999,
-      });
-      expect(res.status).toBe(400);
-      expect(res.body).toEqual(missing.body);
-      expect(clerk.createInvitation).not.toHaveBeenCalled();
-    });
-  });
-
-  it('returns 400 without center_id when the only center is inactive', async () => {
+  it('a gym whose only center is inactive still registers', async () => {
     const gym = await createRegistrationGym('Public Reg Only Inactive');
     await db.query("UPDATE centers SET status = 'inactive' WHERE id = ? AND gym_id = ?", [gym.centerId, gym.id]);
 
     const res = await register(gym.ref, gym.key, { name: 'Ana', email: uniqueEmail('only-inactive') });
 
-    expect(res.status).toBe(400);
-    expect(clerk.createInvitation).not.toHaveBeenCalled();
+    expect(res.status).toBe(202);
+    expect(clerk.createInvitation).toHaveBeenCalledTimes(1);
   });
 
-  describe('gym with two centers', () => {
-    let multi: Awaited<ReturnType<typeof createRegistrationGym>>;
-    let secondCenter: number;
+  it.each([
+    ['this gym\'s center', () => centerId],
+    ['a non-existent center', () => 999999999],
+    ['garbage', () => 'not-a-number'],
+  ])('a center_id sent by an older site (%s) is ignored, not rejected', async (_label, value) => {
+    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('legacy-center'), center_id: value() });
 
-    beforeAll(async () => {
-      multi = await createRegistrationGym('Public Reg Multi Center');
-      secondCenter = await insertCenter(multi.id, 'Second Center');
-    });
-
-    it('returns 400 when center_id is missing', async () => {
-      const res = await register(multi.ref, multi.key, { name: 'Ana', email: uniqueEmail('multi-missing') });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('center_id is required as the gym has more than one center');
-      expect(clerk.createInvitation).not.toHaveBeenCalled();
-    });
-
-    it('returns 202 and carries the chosen center when center_id is given', async () => {
-      const res = await register(multi.ref, multi.key, {
-        name: 'Ana', email: uniqueEmail('multi-ok'), center_id: secondCenter,
-      });
-      expect(res.status).toBe(202);
-      expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup).toEqual({
-        gym_id: multi.id, name: 'Ana', center_id: secondCenter,
-      });
-    });
+    expect(res.status).toBe(202);
+    expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup).toEqual({ gym_id: gymId, name: 'Ana' });
   });
 });
 
@@ -311,7 +252,7 @@ describe('POST /public/gyms/:gymRef/registrations — happy path', () => {
     expect(clerk.createInvitation).toHaveBeenCalledTimes(1);
     const arg = clerk.createInvitation.mock.calls[0][0];
     expect(arg.emailAddress).toBe(email); // lowercased
-    expect(arg.publicMetadata).toEqual({ gym_signup: { gym_id: gymId, name: 'Web Person', center_id: centerId } });
+    expect(arg.publicMetadata).toEqual({ gym_signup: { gym_id: gymId, name: 'Web Person' } });
     // #701: no locale → Spanish, the Clerk template's fallback, so no lang flag.
     expect(arg.redirectUrl.endsWith(`/es/link?gym_id=${gymId}`)).toBe(true);
     expect(arg.redirectUrl.startsWith(process.env.CORDEL_FITNESS_MEMBERS_URL ?? '')).toBe(true);
@@ -338,11 +279,6 @@ describe('POST /public/gyms/:gymRef/registrations — happy path', () => {
     expect(arg.publicMetadata.gym_signup).toMatchObject({ gym_id: gymId, name: 'Ana' });
   });
 
-  it('accepts an explicit center_id on a single-center gym', async () => {
-    const res = await register(ref, apiKey, { name: 'Ana', email: uniqueEmail('center'), center_id: centerId });
-    expect(res.status).toBe(202);
-    expect(clerk.createInvitation.mock.calls[0][0].publicMetadata.gym_signup.center_id).toBe(centerId);
-  });
 });
 
 describe('POST /public/gyms/:gymRef/registrations — never an oracle (always 202)', () => {
