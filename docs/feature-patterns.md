@@ -685,6 +685,19 @@ Reference implementation: `apps/member/src/components/NutritionFoodCarousel.tsx`
 
 ---
 
+## Media Inside a List Row, Viewer Over the Page (member app, #723)
+
+Showing an image or a video on a row of a long list (an exercise of a training plan, a food of a meal) is two components, and the split is what keeps the list cheap:
+
+- **The row renders a thumbnail, never the media.** The image is the stored thumbnail when one exists and the master otherwise, `loading="lazy" decoding="async"`; a video is its poster (derived from the URL — `img.youtube.com` for a YouTube link — or a plain play tile) plus a play indicator. A `<video>` element on a row downloads the file to draw it, so a row never mounts one. A thumbnail whose `onError` fires hides itself and leaves the other one alone, and a row with no media renders no container at all — not an empty box.
+- **The larger view is an overlay, never a route.** `position: fixed` over the page, `role="dialog" aria-modal="true"`, closed by Escape, by a click on the backdrop and by a labelled close button that takes focus on open and hands it back to the tile that opened it. The member keeps their scroll position, their selected day and their place in the hierarchy, which a navigation would throw away. `document.body.style.overflow` is restored on unmount, not assumed.
+- **The URL decides the player, and a pure helper decides the URL.** A free-text media column can hold a YouTube link, an object in R2 or a page this app cannot embed: classify it once (`exerciseVideoKind()`), then embed (`youtube-nocookie`), play in `<video controls preload="metadata">`, or open in a new tab. Never autoplay — the member selecting the tile is what mounts the player, not what starts it.
+- **The component resolves nothing.** It renders the URLs the API returned; ownership, import, inheritance and fallback belong to the owning domain, and the endpoint carries the media down its existing tree so no row costs a request (see "Exercise media in workout rows", #720).
+
+Reference implementation: `apps/member/src/components/ExerciseMedia.tsx` + `ExerciseMediaViewer.tsx` + `lib/exerciseMedia.ts`, pinned by `apps/member/src/test/exercise-media-in-training-plan.test.ts` (pure helpers unit-tested, rendering source-scanned).
+
+---
+
 ## Dependency Awareness (shared catalog entities)
 
 Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:
