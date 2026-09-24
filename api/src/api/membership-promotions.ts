@@ -4,7 +4,7 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
 import { validatePromotionStacking } from '../domain/promotionStacking';
-import { promotionApplicationStatus } from '../domain/promotionApplicationStatus';
+import { canReapplyPromotion, promotionApplicationStatus } from '../domain/promotionApplicationStatus';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import {
@@ -30,9 +30,19 @@ import {
 // Promotion — the "created by" of the expandable card the issue thread asks
 // for. Resolved as a subquery rather than a JOIN because a staff member whose
 // gym membership was since removed must still leave the application readable.
+//
+// #635 stage 9: the Promotion's *live* lifecycle and window come along under
+// their own aliases. `starts_at`/`ends_at` are overwritten by the snapshot's
+// agreed window in `withSnapshot()` — which is the point (§16) — so deciding
+// whether the Promotion could be agreed *again today* needs the current ones
+// kept separately. `ump.*` also carries migration 183's generated column, which
+// `fetchAppliedPromotions()` (the only consumer) strips before responding — a
+// second consumer would have to do the same.
 const SELECT = `
   SELECT ump.*, p.name AS promotion_name, p.description AS promotion_description,
          p.stackable, p.starts_at, p.ends_at,
+         p.lifecycle_status AS promotion_lifecycle_status,
+         p.starts_at AS promotion_live_starts_at, p.ends_at AS promotion_live_ends_at,
          (SELECT gm.name FROM gym_memberships gm
            WHERE gm.user_id = ump.applied_by AND gm.gym_id = ump.gym_id LIMIT 1) AS applied_by_name
   FROM user_membership_promotions ump
@@ -466,6 +476,17 @@ export async function applyPromotionToMembership(
       if (existing.length > 0) throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
     }
 
+    // #635 stage 9, as in the POST handler above: only a *standing* application
+    // blocks the pair (`ump_one_standing_per_promotion`, migration 183), and a
+    // re-apply is a new application carrying its own snapshot.
+    const { rows: standing } = await tx.query(
+      "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ? AND gym_id = ? AND status = 'applied'",
+      [umId, promotionId, gymId],
+    );
+    if (standing.length > 0) {
+      throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
+    }
+
     const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
     let applicationId: number;
     try {
@@ -600,9 +621,13 @@ async function loadAppliedPromotionGrants(
 // who applied it, how it reads today (`display_status`), and the Sellable
 // Items it granted at their agreed prices — all of it from the application's
 // own snapshot, so the Promotion may be edited or deleted without moving it.
+//
+// #635 stage 9 adds `can_reapply`: whether a spent application's checkbox may be
+// ticked again (the thread's Q2 answer, "selectable and deselectable"). Decided
+// by `canReapplyPromotion()` so the card states it rather than deriving it.
 export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
   const { rows } = await db.query(
-    `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC`,
+    `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
     [umId, gymId],
   );
   const merged = await Promise.all(rows.map(withSnapshot));
@@ -612,11 +637,35 @@ export async function fetchAppliedPromotions(gymId: string, umId: string | numbe
   // One instant for the whole list, so two applications with the same agreed
   // window can never read differently.
   const now = new Date();
-  return merged.map((row: any) => ({
-    ...row,
-    display_status: promotionApplicationStatus(row, now),
-    ...(grants.get(row.id) ?? emptyGrants()),
-  }));
+  // Since stage 9 the same Promotion can appear twice on one assignment (one
+  // spent application plus the one that replaced it). The standing one holds
+  // the pair — `ump_one_standing_per_promotion`, migration 183 — so only a
+  // Promotion with none of its own may be selected again.
+  const standing = new Set(
+    merged
+      .filter((row: any) => promotionApplicationStatus(row, now) !== 'inactive')
+      .map((row: any) => Number(row.promotion_id)),
+  );
+  return merged.map((row: any) => {
+    const display_status = promotionApplicationStatus(row, now);
+    // `standing_promotion_key` is migration 183's generated column — the
+    // database's own copy of (assignment, promotion) while the row stands. It
+    // rides along on `ump.*` and means nothing to a client, so it is dropped
+    // rather than published as part of the card's shape.
+    const { standing_promotion_key: _standingKey, ...application } = row;
+    return {
+      ...application,
+      display_status,
+      can_reapply: canReapplyPromotion({
+        displayStatus: display_status,
+        hasStandingApplication: standing.has(Number(row.promotion_id)),
+        promotionLifecycleStatus: row.promotion_lifecycle_status ?? null,
+        promotionStartsAt: row.promotion_live_starts_at ?? null,
+        promotionEndsAt: row.promotion_live_ends_at ?? null,
+      }, now),
+      ...(grants.get(row.id) ?? emptyGrants()),
+    };
+  });
 }
 
 membershipPromotionsRouter.get('/', async (req, res) => {
@@ -680,7 +729,27 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
         if (existing.length > 0) throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
       }
 
-      // Insert row (unique constraint catches double-apply)
+      // #635 stage 9: a Promotion that is *standing* on this assignment cannot
+      // be applied a second time; one that was revoked can (the thread's Q2
+      // answer — "selectable and deselectable"). Since migration 183 the
+      // database enforces exactly that, through
+      // `ump_one_standing_per_promotion`; this check is what turns it into the
+      // message below instead of a raw duplicate-key error.
+      const { rows: standing } = await tx.query(
+        "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ? AND gym_id = ? AND status = 'applied'",
+        [umId, promotion_id, gymId],
+      );
+      if (standing.length > 0) {
+        throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
+      }
+
+      // Insert row. Re-applying writes a *new* application rather than
+      // resurrecting the revoked one: the row owns the snapshot of the
+      // Promotion it was agreed with (§16) and its `[applied_at, revoked_at]`
+      // window is what the Billing Events range reads, so reusing it would
+      // rewrite what the member was already billed under. The snapshot is
+      // therefore the Promotion as it is *now* — this is a new agreement, made
+      // now, the same rule stage 6 applies to a newly added benefit line.
       const snapshot = await buildPromotionSnapshot(tx, gymId, promotion_id);
       let applicationId: number;
       try {

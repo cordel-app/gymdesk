@@ -12,9 +12,16 @@
 //
 // A revoked application reads as `inactive`: its checkbox is cleared and its
 // card does not expand, because it is no longer part of what this member is
-// billed. Clearing the checkbox of a standing one revokes it, which is the one
-// mutation this section has — the server recomputes the assignment's price, so
-// the Billing Events section below moves with it.
+// billed. Clearing the checkbox of a standing one revokes it; ticking a spent
+// one back agrees the Promotion again (#635 stage 9 — the thread's Q2 answer,
+// "Promotions can be selectable and deselectable"). Either way the server
+// recomputes the assignment's price, so the Billing Simulation and the Billing
+// Events section below move with it.
+//
+// Re-applying does not revive the old card: the server writes a *new*
+// application with its own snapshot, so the spent one stays on the list as the
+// history of what was agreed before. Whether a spent card may be ticked at all
+// is the server's `can_reapply` — never re-derived here.
 //
 // Nothing is computed here (CLAUDE.md: no business logic in the frontend);
 // `display_status` is decided server-side by `promotionApplicationStatus()`.
@@ -68,6 +75,7 @@ export function AssignedPlanPromotions({
 
   const [expanded, setExpanded] = useState<number | null>(null);
   const [revoking, setRevoking] = useState<AppliedPromotion | null>(null);
+  const [reapplying, setReapplying] = useState<AppliedPromotion | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function revoke(promotion: AppliedPromotion) {
@@ -87,6 +95,26 @@ export function AssignedPlanPromotions({
     }
   }
 
+  // The apply endpoint, not a resurrection of this application: the server
+  // creates a new one, snapshotting the Promotion as it stands today, and
+  // refuses it with its own message when the Promotion no longer qualifies.
+  async function reapply(promotion: AppliedPromotion) {
+    setBusy(true);
+    try {
+      await apiFetch(`/user-memberships/${assignedPlanId}/promotions`, {
+        method: 'POST',
+        body: JSON.stringify({ promotion_id: promotion.promotion_id }),
+      });
+      setReapplying(null);
+      onChanged();
+    } catch (err: any) {
+      setReapplying(null);
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (promotions.length === 0) return <p style={dimSt}>{t('no_promotions')}</p>;
 
   return (
@@ -100,10 +128,14 @@ export function AssignedPlanPromotions({
               <input
                 type="checkbox"
                 checked={standing}
-                disabled={!standing || !canWrite}
-                title={!canWrite ? readOnlyTitle : (standing ? t('promo_revoke_hint') : t('promo_revoked_permanent'))}
+                disabled={!canWrite || (!standing && !p.can_reapply)}
+                title={!canWrite
+                  ? readOnlyTitle
+                  : standing
+                    ? t('promo_revoke_hint')
+                    : p.can_reapply ? t('promo_reapply_hint') : t('promo_reapply_unavailable')}
                 aria-label={t('promo_toggle_label', { promotion: p.promotion_name })}
-                onChange={() => setRevoking(p)}
+                onChange={() => (standing ? setRevoking(p) : setReapplying(p))}
               />
               <button
                 onClick={() => setExpanded(isOpen ? null : p.id)}
@@ -187,6 +219,19 @@ export function AssignedPlanPromotions({
         cancelLabel={t('promo_revoke_dismiss')}
         onConfirm={() => revoking && revoke(revoking)}
         onCancel={() => setRevoking(null)}
+        busy={busy}
+      />
+
+      {/* Its own confirmation, because the consequence is the opposite one and
+          worth stating: the Promotion is agreed again as it stands today, not
+          as it was when the spent application froze it. */}
+      <ConfirmDialog
+        open={reapplying !== null}
+        message={t('promo_confirm_reapply', { promotion: reapplying?.promotion_name ?? '' })}
+        confirmLabel={t('promo_reapply_confirm')}
+        cancelLabel={t('cancel')}
+        onConfirm={() => reapplying && reapply(reapplying)}
+        onCancel={() => setReapplying(null)}
         busy={busy}
       />
     </div>
