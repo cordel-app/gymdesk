@@ -1,6 +1,10 @@
 'use client';
 
 import React from 'react';
+import {
+  listCellStyle, listExpandedStyle, listHeaderCellStyle, listHeaderRowStyle,
+  listRowDividerStyle, listSurfaceStyle,
+} from './listChrome';
 
 export interface Column<T> {
   header: React.ReactNode;
@@ -37,7 +41,7 @@ export function DataTable<T>({
   return (
     <table style={tableStyle}>
       <thead>
-        <tr style={{ background: 'var(--gd-app-bg, #f0f0f0)', textAlign: 'left' }}>
+        <tr style={listHeaderRowStyle}>
           {expandable && <th style={{ ...th, width: 44 }} aria-hidden />}
           {columns.map((col, i) => (
             <th key={i} style={col.width !== undefined ? { ...th, width: col.width } : th}>{col.header}</th>
@@ -50,7 +54,7 @@ export function DataTable<T>({
           const isExpanded = expandable && !!expandedRowKeys?.has(key);
           return (
             <React.Fragment key={key}>
-              <tr style={{ borderTop: '1px solid var(--gd-border, #e5e7eb)' }}>
+              <tr style={listRowDividerStyle}>
                 {expandable && (
                   <td style={{ ...td, textAlign: 'center' }}>
                     <button
@@ -80,8 +84,10 @@ export function DataTable<T>({
   );
 }
 
-const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', background: 'var(--gd-card-bg, #ffffff)', borderRadius: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' };
-const th: React.CSSProperties = { padding: '12px 16px', fontWeight: 600, fontSize: 15 };
-const td: React.CSSProperties = { padding: '12px 16px', fontSize: 15 };
+// The surface, the header band, the cell insets and the dividers all come from
+// listChrome (#724), so a card list can wear the same chrome without copying it.
+const tableStyle: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', ...listSurfaceStyle };
+const th: React.CSSProperties = listHeaderCellStyle;
+const td: React.CSSProperties = listCellStyle;
 const chevronStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gd-text-muted, #6b7280)', fontSize: 12, padding: 4, lineHeight: 1 };
-const expandedCell: React.CSSProperties = { padding: 0, background: 'var(--gd-app-bg, #f5f5f5)', borderTop: '1px solid var(--gd-border, #e5e7eb)' };
+const expandedCell: React.CSSProperties = { padding: 0, ...listExpandedStyle };
