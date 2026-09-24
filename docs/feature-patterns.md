@@ -790,6 +790,43 @@ Reference implementation: `api/src/api/payment-providers.ts` + migration 175 +
 
 ---
 
+## Selective Import from a Platform Library (#718)
+
+When a gym starts its catalog from a platform-level library (Base Exercises → gym Exercises),
+the import is a *selection*, not a seed. The shape that worked:
+
+- **Read the library from the gym's own router, not `/platform/*`.** `GET /exercises/base` sits
+  on `exercisesRouter` behind `tenantContext` + `requireModuleAccess('TRAINING')`, because a gym
+  admin importing a base exercise is not a superadmin and `/platform/exercises` is
+  `requireSuperadmin`. It returns only what the picker needs, and only active library rows — an
+  inactive one has been withdrawn and must not be importable.
+- **Filter server-side, and let the filtered set define "select all matching".** Both filters
+  (`q`, `muscle`) are applied in SQL, so the browser never holds the library to filter it, and
+  "Select all matching" is exactly the rows the server returned for the current filters.
+- **Say which rows the gym already has, in the same response.** `imported_exercise_id` is a
+  correlated subquery over the gym's own rows, matched on provenance (`cloned_from_id`) **or**
+  name. The name arm is what keeps rows that predate the feature (an older seed, a copy typed by
+  hand) from being offered again only to collide on the name-uniqueness check.
+- **Import in one request and one transaction**, capped (`MAX_IMPORT_IDS`) so a hand-rolled
+  request can't hold the transaction open over the whole catalog. Unknown ids — another gym's
+  exercise, an inactive row, a nonexistent id — are one 400 with `invalid_ids`; ids the gym
+  already has are *not* an error, they come back as `skipped`, so a concurrent import degrades
+  to a no-op instead of failing the batch.
+- **Copy, don't reference, and keep the name.** The copy carries `cloned_from_id` as provenance
+  (the same column the single-row Clone action writes) but keeps the library's name — a bulk
+  import of "… (Copy)" rows is not what the gym asked for, and the name is free because an
+  existing one is skipped rather than copied.
+- **Source labels read provenance; they do not change ownership.** The list badge is derived
+  (`gym_id IS NULL || cloned_from_id != null` → "System sourced", else "Custom"). No column, no
+  enum, nothing to keep in sync.
+- **Selection lives outside the fetched list.** A `Set` of library ids in the modal, cleared only
+  when the modal opens, so changing a filter never drops what is already ticked.
+
+Reference implementation: `api/src/api/exercises.ts` (`GET /base`, `POST /import`) +
+`apps/admin/src/app/[locale]/exercises/ImportExercisesModal.tsx`.
+
+---
+
 ## Recurring-Slot Projection over Existing Rows (#647 stage 2)
 
 When a ticket asks for a *recurring weekly* view of something the database stores as individual dated rows (Personal Training slots over `calendar_events`), don't add a table for the pattern and don't recompute availability in the frontend. Project it:

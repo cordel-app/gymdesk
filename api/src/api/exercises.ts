@@ -16,20 +16,14 @@ import { handleDupEntry } from '../infra/db-helpers';
 
 const SETTABLE_STATUSES = ['active', 'inactive'];
 
-const DEFAULT_EXERCISES: Array<{
-  name: string; principal: string[]; secondary?: string[];
-  min_reps_default: number | null; max_reps_default: number | null;
-  sets_default: number; rest_default_seconds: number; notes_default?: string;
-}> = [
-  { name: 'Bench Press', principal: ['chest'], secondary: ['triceps', 'shoulders'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
-  { name: 'Squat', principal: ['quads', 'glutes'], secondary: ['hamstrings', 'core'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 120 },
-  { name: 'Deadlift', principal: ['back', 'hamstrings'], secondary: ['glutes', 'core'], min_reps_default: 5, max_reps_default: 5, sets_default: 3, rest_default_seconds: 150 },
-  { name: 'Overhead Press', principal: ['shoulders'], secondary: ['triceps', 'core'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
-  { name: 'Pull-up', principal: ['back'], secondary: ['biceps'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
-  { name: 'Barbell Row', principal: ['back'], secondary: ['biceps', 'core'], min_reps_default: 8, max_reps_default: 8, sets_default: 4, rest_default_seconds: 90 },
-  { name: 'Lunges', principal: ['quads', 'glutes'], secondary: ['hamstrings'], min_reps_default: 12, max_reps_default: 12, sets_default: 3, rest_default_seconds: 60 },
-  { name: 'Plank', principal: ['core'], min_reps_default: null, max_reps_default: null, sets_default: 3, rest_default_seconds: 60, notes_default: '60s hold' },
-];
+/**
+ * #718: a single Import request may not name an unbounded list of base
+ * exercises — the whole thing runs in one transaction, and the bound is what
+ * stops a hand-rolled request from holding it open over the entire catalog.
+ * "Select all matching" with no filters is the realistic worst case, so the
+ * cap sits well above the size of the Base Exercises library.
+ */
+const MAX_IMPORT_IDS = 500;
 
 export const musclesRouter = Router();
 export const exercisesRouter = Router();
@@ -125,6 +119,55 @@ exercisesRouter.get('/', async (req, res) => {
   sql += ' ORDER BY e.name ASC';
   const { rows } = await db.query(sql, params);
   res.json(rows);
+});
+
+/**
+ * #718: the Base Exercises library as the Import Exercises modal needs it.
+ * Gym-facing on purpose — `/platform/exercises` is superadmin-only, and a gym
+ * admin importing a base exercise is not a platform administrator. Read-only,
+ * and both filters are applied here so the modal never pulls the whole library
+ * into the browser to filter it there.
+ *
+ * `imported_exercise_id` is what marks a row as already imported: the gym's own
+ * copy, matched either by provenance (`cloned_from_id`) or by name. The name
+ * arm matters — an exercise that reached the gym before this endpoint existed
+ * (the retired Import Defaults seed, or one typed by hand) carries no
+ * provenance, and offering it again would only produce a duplicate name.
+ */
+const IMPORTED_COPY_ID = `
+  (SELECT MIN(g.id) FROM exercises g
+    WHERE g.gym_id = ? AND g.status != 'deleted'
+      AND (g.cloned_from_id = e.id OR g.name = e.name))`;
+
+exercisesRouter.get('/base', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const q = req.query.q as string | undefined;
+  const muscleParam = req.query.muscle as string | undefined;
+  let muscle: string | null = null;
+  if (muscleParam) {
+    muscle = normalizeMuscleKey(muscleParam);
+    if (!muscle) return res.status(400).json({ error: `invalid muscle key: ${JSON.stringify(muscleParam)}` });
+  }
+  // The `?` inside IMPORTED_COPY_ID sits in the SELECT list, so its gymId binds
+  // before the WHERE-clause filters below.
+  const params: any[] = [gymId];
+  let sql = `
+    SELECT e.id, e.name, e.description, e.image_url,
+      (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
+       FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
+      ${IMPORTED_COPY_ID} AS imported_exercise_id
+    FROM exercises e
+    WHERE e.gym_id IS NULL AND e.status = 'active'`;
+  if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
+  if (muscle) {
+    sql += ' AND EXISTS (SELECT 1 FROM exercise_muscles em2 WHERE em2.exercise_id = e.id AND em2.muscle = ?)';
+    params.push(muscle);
+  }
+  sql += ' ORDER BY e.name ASC';
+  try {
+    const { rows } = await db.query(sql, params);
+    res.json(rows);
+  } catch (err) { next(err); }
 });
 
 exercisesRouter.get('/:id', async (req, res) => {
@@ -368,35 +411,104 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
   } catch (err) { next(err); }
 });
 
-/** Idempotent seed of the default exercise catalog. */
-exercisesRouter.post('/import-defaults', requireModuleWrite('TRAINING'), async (req, res, next) => {
+/**
+ * #718: import selected Base Exercises into the gym's own catalog, in one
+ * request. Replaces `POST /import-defaults`, which seeded eight hardcoded
+ * names that had nothing to do with the platform's Base Exercises library —
+ * the library is the source of truth for what a gym can start from.
+ *
+ * Each import is the copy `POST /:id/clone` makes — same columns, same
+ * `cloned_from_id` provenance — except that it keeps the base exercise's name
+ * instead of appending "(Copy)": importing fifty exercises named "… (Copy)" is
+ * not what the gym asked for, and the name is free because an exercise the gym
+ * already has is skipped instead of copied.
+ *
+ * Unknown ids are rejected outright (400) rather than silently dropped — a gym
+ * exercise's id, another gym's exercise, an inactive or deleted base row and a
+ * nonexistent id all fail the same lookup, so none of them can be smuggled into
+ * a gym's catalog through this route. Ids the gym already has are *not* an
+ * error: the modal hides them, but a concurrent import would otherwise turn a
+ * harmless race into a failed batch, so they come back under `skipped`.
+ */
+exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  const raw = req.body?.baseExerciseIds;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return res.status(400).json({ error: 'baseExerciseIds must be a non-empty array of base exercise ids' });
+  }
+  if (raw.length > MAX_IMPORT_IDS) {
+    return res.status(400).json({ error: `baseExerciseIds may not contain more than ${MAX_IMPORT_IDS} ids` });
+  }
+  const ids: number[] = [];
+  for (const value of raw) {
+    const id = Number(value);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: `invalid base exercise id: ${JSON.stringify(value)}` });
+    }
+    if (!ids.includes(id)) ids.push(id);
+  }
   try {
-    const inserted = await db.transaction(async (tx) => {
-      let count = 0;
-      for (const ex of DEFAULT_EXERCISES) {
-        // Skip if the gym already has a non-deleted exercise with this name.
+    const marks = ids.map(() => '?').join(',');
+    const { rows: baseRows } = await db.query(
+      `${SELECT} WHERE e.id IN (${marks}) AND e.gym_id IS NULL AND e.status = 'active'`,
+      ids,
+    );
+    const base = new Map<number, any>(baseRows.map((row: any) => [Number(row.id), row]));
+    const invalidIds = ids.filter((id) => !base.has(id));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({
+        error: 'Some ids are not importable base exercises.',
+        invalid_ids: invalidIds,
+      });
+    }
+
+    const callerMemberId = await getCallerMembershipId(req);
+    const { insertedIds, skipped } = await db.transaction(async (tx) => {
+      const insertedIds: number[] = [];
+      const skipped: { id: number; name: string; reason: string; exercise_id: number }[] = [];
+      for (const id of ids) {
+        const src = base.get(id);
         const { rows: existing } = await tx.query(
-          "SELECT id FROM exercises WHERE gym_id = ? AND name = ? AND status != 'deleted'",
-          [gymId, ex.name],
+          `SELECT id FROM exercises
+            WHERE gym_id = ? AND status != 'deleted' AND (cloned_from_id = ? OR name = ?)
+            LIMIT 1`,
+          [gymId, id, src.name],
         );
-        if (existing.length > 0) continue;
+        if (existing.length > 0) {
+          skipped.push({ id, name: src.name, reason: 'already_imported', exercise_id: existing[0].id });
+          continue;
+        }
         const { insertId } = await tx.query(
           `INSERT INTO exercises
-            (gym_id, name, min_reps_default, max_reps_default, sets_default, rest_default_seconds, notes_default, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
-          [gymId, ex.name, ex.min_reps_default, ex.max_reps_default, ex.sets_default, ex.rest_default_seconds, ex.notes_default ?? null],
+            (gym_id, name, description, video_url, image_url,
+             min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+             status, created_by, cloned_from_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+          [gymId, src.name, src.description, src.video_url, src.image_url,
+           src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
+           callerMemberId ?? null, id],
         );
-        for (const key of ex.principal) {
-          await tx.query('INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, \'principal\')', [gymId, insertId, key]);
-        }
-        for (const key of (ex.secondary ?? [])) {
-          await tx.query('INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, \'secondary\')', [gymId, insertId, key]);
-        }
-        count++;
+        const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
+        await replaceMuscles(tx, gymId, insertId, muscles);
+        const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
+        await replaceAllowedResultTypes(tx, insertId, rts.map((rt) => rt.id));
+        insertedIds.push(insertId);
       }
-      return count;
+      return { insertedIds, skipped };
     });
-    res.json({ inserted });
+
+    let imported: any[] = [];
+    if (insertedIds.length > 0) {
+      const importedMarks = insertedIds.map(() => '?').join(',');
+      const { rows } = await db.query(
+        `${SELECT} WHERE e.id IN (${importedMarks}) AND e.gym_id = ? ORDER BY e.name ASC`,
+        [...insertedIds, gymId],
+      );
+      imported = rows;
+      for (const row of rows) {
+        recordAudit(req, { action: 'create', entityType: 'exercise', entityId: row.id, next: row });
+      }
+    }
+    res.status(201).json({ imported, skipped });
   } catch (err) { next(err); }
 });
