@@ -148,19 +148,21 @@ async function createPromotion(
   return insertId;
 }
 
-async function setPromotionPeriodBenefit(
+// #635 stage 5: the Promotion's Membership Fee Benefit, one row of its own
+// (migration 179) instead of a `promotion_period_benefits` row keyed to the
+// `membership_fee` charge type.
+async function setPromotionMembershipFeeBenefit(
   gymId: string,
   promoId: number,
-  chargeTypeId: number,
   action: string,
   value: number | null,
   durationMonths: number | null,
 ): Promise<void> {
   await db.query(
-    `INSERT INTO promotion_period_benefits
-       (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
-     VALUES (?, ?, ?, 1, 1, 'month', ?, 1, ?, ?)`,
-    [gymId, promoId, chargeTypeId, durationMonths, action, value],
+    `INSERT INTO promotion_membership_fee_benefits
+       (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
+     VALUES (?, ?, 1, 1, 'month', ?, 1, ?, ?)`,
+    [gymId, promoId, durationMonths, action, value],
   );
 }
 
@@ -2396,9 +2398,8 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
-    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
     const promoId = await createPromotion(gymId, planId, `Draft-Promo-${Date.now()}`);
-    await setPromotionPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 10, 2);
+    await setPromotionMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10, 2);
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
     const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
     expect(applyRes.status).toBe(201);
@@ -2452,9 +2453,8 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
-    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
     const promoId = await createPromotion(gymId, planId, `Submitted-Promo-${Date.now()}`);
-    await setPromotionPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 10, null);
+    await setPromotionMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10, null);
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01');
     const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
     expect(applyRes.status).toBe(201);
@@ -2491,9 +2491,8 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
-    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
     const promoId = await createPromotion(gymId, planId, `Revoked-Promo-${Date.now()}`);
-    await setPromotionPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 10, null);
+    await setPromotionMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10, null);
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 40, '2026-01-01');
     const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
     expect(applyRes.status).toBe(201);

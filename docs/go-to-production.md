@@ -225,6 +225,28 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       Charge Benefits configured. If any gym still has rows when this ships, capture
       `SELECT * FROM plan_charge_benefits` and `… FROM user_membership_charge_benefits`
       first — the drop is not recoverable from the migration alone.
+- [ ] **Migration 179 must run *after* the API build that stops reading the Promotion
+      benefit tables** (#635 stage 5): it `DROP`s `promotion_charge_benefits`,
+      `promotion_period_benefits` and `promotion_included_benefits`. Run it first and the
+      previous build 500s with `ER_NO_SUCH_TABLE` on the Promotions page's Membership Fee
+      Benefit (`GET`/`PUT /promotions/:id/membership-fee-benefit`), on applying a Promotion
+      (`computeFinalPrice`) and on the Assigned Plan's promotion list. Deploy the API
+      first — it reads only the new `promotion_membership_fee_benefits`, which the same
+      migration creates — then migrate, in that order.
+- [ ] **Migration 179 keeps only the membership-fee rows** (#635 stage 5): a Promotion's
+      Membership Fee Benefit is migrated (from `promotion_period_benefits`, or from a
+      pre-#626 `promotion_charge_benefits` row on a membership-fee item when there is no
+      other); a Charge Benefit on any *other* Sellable Item is dropped with no archive,
+      exactly as migration 176 did on the Plan side and for the same reason (no
+      one-to-one mapping into the new structure, §18). `down()` restores the Membership
+      Fee Benefits into a recreated `promotion_period_benefits` but cannot bring the rest
+      back. Harmless while no environment has Promotion Charge Benefits configured (they
+      have had no editor since #626). If any gym still has rows when this ships, capture
+      `SELECT * FROM promotion_charge_benefits` first. A Promotion that had *both* a
+      Membership Fee Benefit and a membership-fee Charge Benefit used to have both
+      applied in turn and now keeps only the former, so its assignments re-price on the
+      next recompute; the migration logs those promotion ids (`[179] These Promotions
+      had both …`) — check the deploy output and re-quote them if any are listed.
 - [ ] **Migration 177 must run *after* the API build that stops reading `plan_allowances`**
       (#635 stage 4, part 2): it `DROP`s the table, so the previous build's
       `plan-allowances.ts` booking hook, `GET /membership-plans/:id/allowances`, the

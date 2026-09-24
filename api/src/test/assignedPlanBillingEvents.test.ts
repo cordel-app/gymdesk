@@ -60,29 +60,31 @@ describe('computeRangeEnd (#511 Q2)', () => {
 });
 
 describe('computeMembershipFeePriceAt', () => {
-  const chargeBenefitPromo: AppliedPromotionForBilling = {
+  // #635 stage 5: one benefit shape — enabled, with an optional duration. An
+  // unbounded one is what a legacy Charge Benefit reads back as.
+  const unboundedPromo: AppliedPromotionForBilling = {
     appliedAt: '2026-01-01',
     revokedAt: null,
-    membershipFeeBenefits: [{ kind: 'charge', action: 'percentage_discount', value: 50 }],
+    membershipFeeBenefits: [{ action: 'percentage_discount', value: 50, enabled: true, durationMonths: null }],
   };
 
   it('returns the base price unaffected when no promotion covers the date', () => {
-    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2025-12-01', [chargeBenefitPromo]);
+    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2025-12-01', [unboundedPromo]);
     expect(price).toBe(40);
     expect(promotionAffected).toBe(false);
   });
 
-  it('applies a charge benefit for as long as the promotion is applied', () => {
-    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-06-01', [chargeBenefitPromo]);
+  it('applies an unbounded benefit for as long as the promotion is applied', () => {
+    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-06-01', [unboundedPromo]);
     expect(price).toBe(20);
     expect(promotionAffected).toBe(true);
   });
 
-  it('expires a period benefit after its duration_months window from appliedAt', () => {
+  it('expires a benefit after its duration_months window from appliedAt', () => {
     const promo: AppliedPromotionForBilling = {
       appliedAt: '2026-01-01',
       revokedAt: null,
-      membershipFeeBenefits: [{ kind: 'period', action: 'fixed_discount', value: 10, enabled: true, durationMonths: 3 }],
+      membershipFeeBenefits: [{ action: 'fixed_discount', value: 10, enabled: true, durationMonths: 3 }],
     };
     const inside = computeMembershipFeePriceAt(40, '2026-03-01', [promo]);
     expect(inside.price).toBe(30);
@@ -93,11 +95,11 @@ describe('computeMembershipFeePriceAt', () => {
     expect(after.promotionAffected).toBe(false);
   });
 
-  it('ignores a disabled period benefit', () => {
+  it('ignores a disabled benefit', () => {
     const promo: AppliedPromotionForBilling = {
       appliedAt: '2026-01-01',
       revokedAt: null,
-      membershipFeeBenefits: [{ kind: 'period', action: 'waive', value: null, enabled: false, durationMonths: null }],
+      membershipFeeBenefits: [{ action: 'waive', value: null, enabled: false, durationMonths: null }],
     };
     const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-02-01', [promo]);
     expect(price).toBe(40);
@@ -107,11 +109,11 @@ describe('computeMembershipFeePriceAt', () => {
   it('stacks multiple applied promotions', () => {
     const promoA: AppliedPromotionForBilling = {
       appliedAt: '2026-01-01', revokedAt: null,
-      membershipFeeBenefits: [{ kind: 'charge', action: 'fixed_discount', value: 5 }],
+      membershipFeeBenefits: [{ action: 'fixed_discount', value: 5, enabled: true, durationMonths: null }],
     };
     const promoB: AppliedPromotionForBilling = {
       appliedAt: '2026-01-01', revokedAt: null,
-      membershipFeeBenefits: [{ kind: 'charge', action: 'fixed_discount', value: 3 }],
+      membershipFeeBenefits: [{ action: 'fixed_discount', value: 3, enabled: true, durationMonths: null }],
     };
     const { price } = computeMembershipFeePriceAt(40, '2026-02-01', [promoA, promoB]);
     expect(price).toBe(32);
@@ -144,7 +146,7 @@ describe('projectDraftBillingEvents (#511 Q2 — draft preview)', () => {
   it('extends the range 2 months past the last event affected by a finite-duration promotion', () => {
     const promo: AppliedPromotionForBilling = {
       appliedAt: '2026-01-01', revokedAt: null,
-      membershipFeeBenefits: [{ kind: 'period', action: 'fixed_discount', value: 10, enabled: true, durationMonths: 2 }],
+      membershipFeeBenefits: [{ action: 'fixed_discount', value: 10, enabled: true, durationMonths: 2 }],
     };
     const result = projectDraftBillingEvents({
       billingStart: '2026-01-01', endsAt: null, basePrice: 40,
@@ -161,7 +163,7 @@ describe('projectDraftBillingEvents (#511 Q2 — draft preview)', () => {
   it('caps an indefinite (no duration_months, never revoked) promotion at the projection safety horizon', () => {
     const promo: AppliedPromotionForBilling = {
       appliedAt: '2026-01-01', revokedAt: null,
-      membershipFeeBenefits: [{ kind: 'charge', action: 'waive', value: null }],
+      membershipFeeBenefits: [{ action: 'waive', value: null, enabled: true, durationMonths: null }],
     };
     const result = projectDraftBillingEvents({
       billingStart: '2026-01-01', endsAt: null, basePrice: 40,

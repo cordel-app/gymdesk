@@ -455,6 +455,15 @@ presentation; do not re-decide anything.
    already had the same relation (`activity_type_eligible_plans`), so retiring the
    Plan-side copy removed a duplicate rather than a feature. Ask that question
    before inventing a side table to keep a legacy concept alive.
+8. **A concept that squats in another concept's table gets its own.** The
+   Membership Fee Benefit was one `promotion_period_benefits` row picked out by
+   `charge_types.code = 'membership_fee'`, *and* a `promotion_charge_benefits`
+   row on the same charge type — two tables, two expiry rules, one concept, and
+   `computeFinalPrice()` applying both in turn. Stage 5 gave it
+   `promotion_membership_fee_benefits` (one row per Promotion, no item column,
+   because the item was never a choice) and dropped the tables it borrowed. When
+   a table's key has to be filtered down to a single magic value to find the
+   thing you mean, the thing you mean is a table.
 
 Reference implementation: `api/src/api/membership-plans.ts` (the
 `PLAN_BENEFIT_ROUTES` loop) + `[locale]/plans/page.tsx`. Tests:
