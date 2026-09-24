@@ -10,6 +10,7 @@ import {
   ExerciseImageProblem,
   PreparedExerciseImage,
   isPreparedExerciseImage,
+  isSafeImageSrc,
   prepareExerciseImage,
 } from '@/lib/exerciseImageUpload';
 
@@ -68,6 +69,9 @@ export function ExerciseImageField({
   // 2048×2048 and has no business being downloaded for a 120px frame (§17).
   const preview = stagedPreview ?? thumbnailUrl ?? imageUrl ?? null;
   const hasImage = preview != null;
+  // `Replace`/`Remove` follow the *reference*, but only a reference with a
+  // drawable scheme is handed to the DOM — see `isSafeImageSrc`.
+  const drawable = isSafeImageSrc(preview);
 
   function problemMessage(problem: ExerciseImageProblem): string {
     return t(`image_error_${problem}` as any);
@@ -131,7 +135,7 @@ export function ExerciseImageField({
   return (
     <div>
       <div style={frameStyle}>
-        {hasImage ? (
+        {drawable ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={preview!} alt="" loading="lazy" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
         ) : (

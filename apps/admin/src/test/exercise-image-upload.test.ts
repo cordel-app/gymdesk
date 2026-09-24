@@ -6,6 +6,7 @@ import {
   EXERCISE_IMAGE_THUMBNAIL_SIZE,
   blobToBase64,
   isPreparedExerciseImage,
+  isSafeImageSrc,
 } from '../lib/exerciseImageUpload';
 
 // #719 part 1 — the Image control on a Gym Exercise: a 2048×2048 PNG master
@@ -69,6 +70,35 @@ describe('isPreparedExerciseImage', () => {
   });
 });
 
+describe('isSafeImageSrc', () => {
+  it('draws the browser’s own staged preview and a stored image URL', () => {
+    expect(isSafeImageSrc('blob:http://localhost:8081/2f0b-4e1a')).toBe(true);
+    expect(isSafeImageSrc('https://cdn.example.com/gyms/1-Fit/Exercises/Images/7-Squat-thumbnail.png')).toBe(true);
+    expect(isSafeImageSrc('http://cdn.example.com/7-Squat.png')).toBe(true);
+    expect(isSafeImageSrc('data:image/png;base64,iVBORw0KGgo=')).toBe(true);
+    expect(isSafeImageSrc('HTTPS://CDN.EXAMPLE.COM/a.png')).toBe(true);
+  });
+
+  it('refuses a reference that is not an image URL, whatever a PUT stored', () => {
+    for (const url of [
+      'javascript:alert(1)',
+      ' javascript:alert(1)',
+      'data:text/html;base64,PHNjcmlwdD4=',
+      'vbscript:msgbox(1)',
+      '//evil.example.com/a.png',
+      'not a url at all',
+    ]) {
+      expect(isSafeImageSrc(url)).toBe(false);
+    }
+  });
+
+  it('treats a missing reference as nothing to draw', () => {
+    expect(isSafeImageSrc(null)).toBe(false);
+    expect(isSafeImageSrc(undefined)).toBe(false);
+    expect(isSafeImageSrc('')).toBe(false);
+  });
+});
+
 describe('prepareExerciseImage (source)', () => {
   it('checks the format and the 2048×2048 master before doing any work', () => {
     expect(libSrc).toMatch(/return 'not_a_png'/);
@@ -113,6 +143,14 @@ describe('ExerciseImageField', () => {
     expect(componentSrc).toContain('thumbnailUrl ?? imageUrl');
     expect(componentSrc).toContain("loading=\"lazy\"");
     expect(componentSrc).toContain("objectFit: 'contain'");
+  });
+
+  it('hands the frame only a reference the scheme guard passed', () => {
+    expect(componentSrc).toContain('const drawable = isSafeImageSrc(preview)');
+    expect(componentSrc).toMatch(/\{drawable \? \([\s\S]*?<img src=\{preview!\}/);
+    // The reference still drives Replace/Remove: an undrawable one is not an
+    // absent one.
+    expect(componentSrc).toContain('const hasImage = preview != null');
   });
 
   it('resolves no media of its own — no Base Exercise fallback (§13)', () => {

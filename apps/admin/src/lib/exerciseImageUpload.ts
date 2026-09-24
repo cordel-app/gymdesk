@@ -31,6 +31,23 @@ export interface PreparedExerciseImage {
   thumbnail: string;
 }
 
+/** The only schemes an exercise image frame will draw. */
+const SAFE_IMAGE_SRC = /^(?:https?:\/\/|blob:|data:image\/)/i;
+
+/**
+ * Whether a reference may be handed to an `<img src>`.
+ *
+ * Two kinds of string reach the frame: the `blob:` URL the browser minted for a
+ * staged file, and whatever `exercises.image_{url,thumbnail_url}` holds — which
+ * a `PUT` can set to any string, so it is not this component's to trust. Only
+ * `http(s):`, `blob:` and `data:image/` are drawn; anything else renders as
+ * "no image" rather than reaching the DOM.
+ */
+export function isSafeImageSrc(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return SAFE_IMAGE_SRC.test(url);
+}
+
 /**
  * Natural size of an image file, or null when the browser cannot decode it.
  * Same helper shape as the Base Nutrition Library picker (#715).
