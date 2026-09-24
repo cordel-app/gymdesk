@@ -2,7 +2,7 @@
 // Membership Plan's upcoming billing events, derived from its current price,
 // billing frequency, and Plan Charge Benefits. Intentionally excludes
 // promotions (see ticket #485, sections 12-13, 20).
-import { advanceBillingDate } from '../api/billing';
+import { advanceBillingDate } from './billingDate';
 
 export type BillingUnit = 'day' | 'week' | 'month' | 'year';
 export type ChargeBenefitAction = 'no_benefit' | 'waive' | 'percentage_discount' | 'fixed_discount';

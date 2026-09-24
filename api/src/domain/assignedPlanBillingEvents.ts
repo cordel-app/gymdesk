@@ -22,7 +22,7 @@
 // integration test guidance). `api/src/api/user-memberships.ts` does the
 // DB reads/writes and date normalization around it.
 
-import { advanceBillingDate } from '../api/billing';
+import { advanceBillingDate } from './billingDate';
 import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
 
 export type BillingUnit = 'day' | 'week' | 'month' | 'year';

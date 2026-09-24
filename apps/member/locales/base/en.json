@@ -236,7 +236,8 @@
       "recurring_payment": "Recurring payment",
       "failed_billing": "Payment failed",
       "status_changed": "Status change",
-      "adjustment": "Adjustment"
+      "adjustment": "Adjustment",
+      "waived_billing": "Fee waived"
     },
     "upcoming_status": {
       "scheduled": "Scheduled"

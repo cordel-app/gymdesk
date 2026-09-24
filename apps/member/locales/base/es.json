@@ -236,7 +236,8 @@
       "recurring_payment": "Pago recurrente",
       "failed_billing": "Pago fallido",
       "status_changed": "Cambio de estado",
-      "adjustment": "Ajuste"
+      "adjustment": "Ajuste",
+      "waived_billing": "Cuota exenta"
     },
     "upcoming_status": {
       "scheduled": "Programado"

@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { db } from '../infra/db';
-import { advanceBillingDate } from '../api/billing';
+import { advanceBillingDate } from './billingDate';
 import { recordStatusChange } from '../api/billing-events';
 import { ASSIGNMENT_CADENCE } from '../api/assigned-plan-snapshot';
 import { getPaymentProvider } from '../payments';

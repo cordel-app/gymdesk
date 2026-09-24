@@ -297,7 +297,8 @@
     "promotions_error_no_plan": "Selecciona el plan de membresía al que se aplica la promoción.",
     "promotions_error_no_promotion": "Selecciona una promoción.",
     "promotions_needs_plan": "Añade un plan de membresía antes de aplicar una promoción.",
-    "additional_services_needs_plan": "Añade un plan de membresía antes de añadir un servicio."
+    "additional_services_needs_plan": "Añade un plan de membresía antes de añadir un servicio.",
+    "event_waived_billing": "Cuota exenta"
   },
   "member_payments": {
     "title": "Pagos del socio",
@@ -1992,7 +1993,8 @@
       "charge_created": "Cargo generado",
       "payment_recorded": "Pago registrado",
       "status_changed": "Cambio de estado",
-      "adjustment": "Ajuste"
+      "adjustment": "Ajuste",
+      "waived_billing": "Cuota exenta"
     },
     "status_transition": "{from} → {to}",
     "members": "Miembros",

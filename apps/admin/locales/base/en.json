@@ -297,7 +297,8 @@
     "promotions_error_no_plan": "Select the membership plan the promotion applies to.",
     "promotions_error_no_promotion": "Select a promotion.",
     "promotions_needs_plan": "Add a membership plan before applying a promotion.",
-    "additional_services_needs_plan": "Add a membership plan before adding a service."
+    "additional_services_needs_plan": "Add a membership plan before adding a service.",
+    "event_waived_billing": "Fee waived"
   },
   "member_payments": {
     "title": "Member Payments",
@@ -2006,7 +2007,8 @@
       "charge_created": "Charge created",
       "payment_recorded": "Payment recorded",
       "status_changed": "Status changed",
-      "adjustment": "Adjustment"
+      "adjustment": "Adjustment",
+      "waived_billing": "Fee waived"
     },
     "status_transition": "{from} → {to}",
     "members": "Members",

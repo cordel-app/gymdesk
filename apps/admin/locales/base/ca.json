@@ -298,7 +298,8 @@
     "promotions_error_no_plan": "Selecciona el pla de membresia al qual s’aplica la promoció.",
     "promotions_error_no_promotion": "Selecciona una promoció.",
     "promotions_needs_plan": "Afegeix un pla de membresia abans d’aplicar una promoció.",
-    "additional_services_needs_plan": "Afegeix un pla de membresia abans d’afegir un servei."
+    "additional_services_needs_plan": "Afegeix un pla de membresia abans d’afegir un servei.",
+    "event_waived_billing": "Quota exempta"
   },
   "member_payments": {
     "title": "Pagaments del soci",
@@ -2019,7 +2020,8 @@
       "charge_created": "Càrrec generat",
       "payment_recorded": "Pagament registrat",
       "status_changed": "Canvi d'estat",
-      "adjustment": "Ajust"
+      "adjustment": "Ajust",
+      "waived_billing": "Quota exempta"
     },
     "status_transition": "{from} → {to}",
     "members": "Membres",
