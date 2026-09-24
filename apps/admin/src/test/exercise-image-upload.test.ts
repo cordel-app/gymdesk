@@ -146,7 +146,7 @@ describe('ExerciseImageField', () => {
   });
 
   it('hands the frame only a reference the scheme guard passed', () => {
-    expect(componentSrc).toContain('const drawable = isSafeImageSrc(preview)');
+    expect(componentSrc).toContain('const drawable = preview != null && SAFE_IMAGE_SRC.test(preview)');
     expect(componentSrc).toMatch(/\{drawable \? \([\s\S]*?<img src=\{preview!\}/);
     // The reference still drives Replace/Remove: an undrawable one is not an
     // absent one.

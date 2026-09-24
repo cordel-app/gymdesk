@@ -31,8 +31,14 @@ export interface PreparedExerciseImage {
   thumbnail: string;
 }
 
-/** The only schemes an exercise image frame will draw. */
-const SAFE_IMAGE_SRC = /^(?:https?:\/\/|blob:|data:image\/)/i;
+/**
+ * The only schemes an exercise image frame will draw.
+ *
+ * Exported because the check has to be *inline* at the `<img src>` it guards —
+ * a call to {@link isSafeImageSrc} reads to CodeQL as an opaque call rather
+ * than as the sanitiser it is, and the alert stands. One regexp, two callers.
+ */
+export const SAFE_IMAGE_SRC = /^(?:https?:\/\/|blob:|data:image\/)/i;
 
 /**
  * Whether a reference may be handed to an `<img src>`.

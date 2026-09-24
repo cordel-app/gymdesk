@@ -9,8 +9,8 @@ import {
   EXERCISE_IMAGE_MASTER_SIZE,
   ExerciseImageProblem,
   PreparedExerciseImage,
+  SAFE_IMAGE_SRC,
   isPreparedExerciseImage,
-  isSafeImageSrc,
   prepareExerciseImage,
 } from '@/lib/exerciseImageUpload';
 
@@ -70,8 +70,9 @@ export function ExerciseImageField({
   const preview = stagedPreview ?? thumbnailUrl ?? imageUrl ?? null;
   const hasImage = preview != null;
   // `Replace`/`Remove` follow the *reference*, but only a reference with a
-  // drawable scheme is handed to the DOM — see `isSafeImageSrc`.
-  const drawable = isSafeImageSrc(preview);
+  // drawable scheme is handed to the DOM — see `SAFE_IMAGE_SRC`. Tested here
+  // rather than through `isSafeImageSrc()` so the guard sits inline at the sink.
+  const drawable = preview != null && SAFE_IMAGE_SRC.test(preview);
 
   function problemMessage(problem: ExerciseImageProblem): string {
     return t(`image_error_${problem}` as any);
