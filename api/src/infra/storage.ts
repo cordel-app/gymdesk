@@ -356,6 +356,25 @@ export function buildStorageObjectUrl(key: string | null | undefined): string | 
 }
 
 /**
+ * The inverse of {@link buildStorageObjectUrl}: the object key inside a URL this
+ * deployment built, or null for anything else — a URL from a different
+ * endpoint/bucket, a hand-written one, or a key-less prefix.
+ *
+ * Null means "not ours", which is the only safe answer for a caller that is
+ * about to *delete* the object it names (#715: cleaning up the object a renamed
+ * base food left behind). Never guess a key from a URL this deployment did not
+ * produce.
+ */
+export function storageKeyFromObjectUrl(url: string | null | undefined): string | null {
+  const { bucket, endpoint } = getConfig();
+  if (!url || !endpoint || !bucket) return null;
+  const prefix = `${endpoint}/${bucket}/`;
+  if (!url.startsWith(prefix)) return null;
+  const key = url.slice(prefix.length);
+  return key.length > 0 ? key : null;
+}
+
+/**
  * Writes `body` at an exact key and returns its public URL. Used where the key
  * is part of the contract rather than generated — the Custom Theme logo (#713).
  */

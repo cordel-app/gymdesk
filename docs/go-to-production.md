@@ -108,6 +108,17 @@ Tick items off in the PR that completes them.
       sweeps the rest. Neither is reachable from the app, so this is bucket housekeeping, not correctness.
       If a CSP is ever put in front of the member app, its `img-src` needs the R2 endpoint for the same
       reason.
+- [ ] **Populate the Base Nutrition Library images** (#715): `cd api && npm run nutrition:base-images`
+      against the real database, with the `CLOUDFLARE_R2_*` variables set. The PR that landed
+      the feature could not do it — a PR session has neither the platform's base library nor R2
+      credentials — so every base food created before that run has `image_url = NULL` and its card
+      shows "No image yet" until this is run. It is idempotent (a food that already has an image is
+      skipped), never aborts on one failure, and prints discovered / already present / generated /
+      uploaded / failed with each failure's food id and name; re-run it after adding base foods, or
+      pass `--only <ids>`. **Review the artwork before accepting it**: with no `--from <dir>` the
+      script renders a consistent stylized form per food, not a photograph of it — supply real
+      artwork with `--from`, or replace individual foods later with **Upload Image** on the expanded
+      card (512×512 transparent PNG).
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be
