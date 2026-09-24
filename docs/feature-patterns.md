@@ -740,7 +740,7 @@ Reference implementation: `api/src/api/user-membership-services.ts` + migration 
 
 ---
 
-## Assignment-Time Snapshot (#635 stages 2 + 6)
+## Assignment-Time Snapshot (#635 stages 2 + 6–7)
 
 When a ticket says an instantiated record is *its own contract* — an Assigned Plan whose billing must not move when the Membership Plan, a Promotion or a Sellable Item is later edited (#635 §11–§17) — the record needs parallel structures it owns, not a chain of live joins back to the catalogue.
 
@@ -754,7 +754,11 @@ When a ticket says an instantiated record is *its own contract* — an Assigned 
 - **Materialise before the first edit** (stage 6). Once the record is editable, an uncaptured row cannot be edited one section at a time: writing any section makes it "captured", and every section the edit never mentioned then reads back as empty instead of falling through to the catalogue. So capture the whole thing from the live values first, in the same transaction, and apply the edit on top (`materialiseAssignedPlanSnapshot()`).
 - **An edit re-freezes only what it adds.** A line the user kept keeps the price, name and frequency it was agreed at; only a newly added line takes today's catalogue values. Otherwise changing a quantity silently reprices the whole section — and re-pricing a line should be a deliberate remove-then-add. For the same reason, validate a *new* line against the catalogue (exists, active, right category) but let an existing one stay saveable after its item is retired, and refuse the edit outright on a terminal record, whose configuration is history.
 
-Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 175 + `snapshotPromotionGrants()` in `api/src/api/membership-promotions.ts`.
+- **Finish the read cutover at every recompute, not just the scheduled ones** (stage 7). A record that recalculates a stored amount on mutation (`final_price` at every promotion apply/revoke) is as much a billing read as the nightly run: one live join left in it re-prices the record with today's catalogue the next time anything unrelated changes. Grep for the catalogue tables from the *pricing* path and point each one at the snapshot; keep only the "this row captured nothing" fallback.
+- **Keep the database's own arithmetic in the database.** When the values move into snapshot JSON, a gate such as `applied_at + INTERVAL n MONTH > NOW()` does not follow them into JS — timestamps and end-of-month clamping are the database's. Ask it for the whole set of flags in one round trip instead (`UNION ALL` of one row per pair), and the rule stays the one it always was.
+- **Compute the display status server-side too.** "Active / inactive / expired" is derived from the *agreed* window, so it belongs next to the data it is derived from (`domain/promotionApplicationStatus.ts`, pure and unit-tested), not in the component. The frontend renders `display_status`; it never re-derives one from dates, which is how two surfaces start disagreeing.
+
+Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 175 + `snapshotPromotionGrants()` / `fetchAppliedPromotions()` in `api/src/api/membership-promotions.ts`.
 
 ---
 

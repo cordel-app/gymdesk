@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
+import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import type { AssignedPlanDetail } from './types';
 
 const EDITABLE_STATUSES = ['draft', 'awaiting_payment'];
@@ -287,25 +288,18 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         />
       </Section>
 
+      {/* #635 stage 7 (§16): one expandable card per applied Promotion, each
+          showing the configuration *that application* froze — never the
+          Promotion's current definition, which may have been edited or
+          deleted since. */}
       <Section label={t('section_promotions')}>
-        {detail.promotions.length === 0 ? (
-          <p style={dim}>{t('no_promotions')}</p>
-        ) : (
-          <div>
-            {detail.promotions.map((p) => (
-              <div key={p.id} style={card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontWeight: 500, fontSize: 14 }}>{p.promotion_name}</span>
-                  <span style={{ fontSize: 12, color: p.status === 'revoked' ? '#c0392b' : '#1e7e40' }}>
-                    {p.status === 'revoked' ? t('promo_revoked') : t('promo_applied')}
-                  </span>
-                </div>
-                <Field label={t('label_start_date')}>{fmtDate(p.applied_at)}</Field>
-                {p.revoked_at && <Field label={t('label_end_date')}>{fmtDate(p.revoked_at)}</Field>}
-              </div>
-            ))}
-          </div>
-        )}
+        <AssignedPlanPromotions
+          assignedPlanId={assignedPlanId}
+          promotions={detail.promotions}
+          canWrite={canWritePayments}
+          readOnlyTitle={readOnlyTitle}
+          onChanged={() => { loadDetail(); onChanged(); }}
+        />
       </Section>
 
       {/* #631: Additional Periodic Services belong to the Assigned Plan itself —
@@ -401,10 +395,6 @@ function LabeledInput({ label, children }: { label: string; children: React.Reac
 
 const panel: React.CSSProperties = { padding: '16px 24px' };
 const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
-const card: React.CSSProperties = {
-  background: '#fff', border: '1px solid #e8e8ed', borderRadius: 6,
-  padding: '10px 14px', marginBottom: 8,
-};
 const sectionLabelStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
   letterSpacing: '0.07em', marginBottom: 8,

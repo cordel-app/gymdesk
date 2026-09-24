@@ -42,14 +42,37 @@ export interface AssignedPlanSnapshot {
   snapshot_captured: boolean;
 }
 
+/**
+ * One Sellable Item an applied Promotion granted, frozen at the price and
+ * frequency it was agreed at (#635 §16/§17) — never the catalogue's current
+ * ones, which is why the card shows `unit_price` from the line itself.
+ */
+export interface AppliedPromotionGrant {
+  gym_charge_id: number | null;
+  item_name: string;
+  quantity: number;
+  item_billing_frequency: string | null;
+  unit_price: number;
+}
+
 export interface AppliedPromotion {
   id: number;
   promotion_id: number;
   status: 'applied' | 'revoked';
+  /**
+   * #635 stage 7 — how the application reads on the card, computed server-side
+   * from its own agreed window: `active`, `inactive` (revoked) or `expired`.
+   */
+  display_status: 'active' | 'inactive' | 'expired';
   applied_at: string;
   revoked_at: string | null;
+  /** The staff member who applied it — the card's "created by". */
+  applied_by_name: string | null;
   promotion_name: string;
   promotion_description: string | null;
+  /** The agreed promotional window — the snapshot's dates, not the Promotion's current ones. */
+  starts_at: string | null;
+  ends_at: string | null;
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
@@ -62,6 +85,11 @@ export interface AppliedPromotion {
     quantity: number; frequency_interval: number; frequency_unit: string;
     enabled: boolean; action: string | null; value: number | null; duration_months: number | null;
   }>;
+  // #635 stage 7 — the Sellable Items the application granted, read from its
+  // own snapshot (§16), so editing or deleting the Promotion never moves them.
+  session_grants: AppliedPromotionGrant[];
+  oneoff_grants: AppliedPromotionGrant[];
+  periodical_grants: AppliedPromotionGrant[];
 }
 
 /**
