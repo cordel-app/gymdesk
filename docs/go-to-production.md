@@ -172,6 +172,12 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       current URL is on **System → Website Integration**, and the health check
       (`{"name":"test","email":""}` → `200`) confirms a site after it is updated.
 
+- [ ] If a Content-Security-Policy is ever added in front of the **admin** app (only
+      `apps/payment/nginx.conf` sets one today), its `img-src` must allow
+      `https://img.youtube.com` — workout exercise rows load a YouTube poster from there
+      for an exercise whose video is a YouTube link (#720) — plus the R2 endpoint that
+      serves uploaded exercise images.
+
 ## 5. Payments (Monei / PCI)
 
 Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they are not missed:

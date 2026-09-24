@@ -160,7 +160,9 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
                     'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                       SELECT JSON_OBJECT(
                           'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
-                          'exercise_name', e.name, 'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
+                          'exercise_name', e.name,
+                          'exercise_image_url', e.image_url, 'exercise_video_url', e.video_url,
+                          'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
                           'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo) AS item
                       FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id
                       WHERE wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL

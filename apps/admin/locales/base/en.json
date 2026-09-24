@@ -1740,6 +1740,12 @@
     "save_changes": "Save Changes",
     "close": "Close"
   },
+  "exercise_media": {
+    "image": "Exercise image",
+    "image_alt": "Image of {name}",
+    "play_video": "Play the exercise video",
+    "play_video_of": "Play the video of {name}"
+  },
   "member_training_plans": {
     "title": "Training Plans",
     "loading": "Loading…",
