@@ -340,3 +340,19 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       deploy output) rather than deleting rows to make the narrow one fit. Roll the API
       back first if the constraint has to narrow; the rows themselves are history and
       should stay.
+- [ ] **Review the Membership Fee drift report, then switch
+      `billing.date_aware_membership_fee` on** (#635 stage 12): the flag ships
+      **disabled** (migration 186), so the nightly run keeps charging
+      `user_memberships.final_price` — a Promotion whose Free/Paid/Bonus months have
+      elapsed keeps discounting every later cycle. Turning it on prices each cycle
+      through `resolveMembershipFee()`, which *raises* the charge of every member in
+      that state. Before flipping it, per gym: read
+      `GET /user-memberships/reports/membership-fee-drift` (or the `drift` counter and
+      the per-assignment log lines of the nightly run), confirm the assignments it lists
+      and tell the gyms whose members will start paying more. The epic's remaining
+      acceptance criteria are not met until the flag is on.
+- [ ] **Migration 186's `down()` deliberately keeps its row** (#635 stage 12): a missing
+      feature-flag key counts as *enabled*, so deleting
+      `billing.date_aware_membership_fee` would switch the corrected pricing **on**
+      during a rollback and move real money on the next run. Roll the API back and leave
+      the row at 0; remove it only together with the stage-12 code.

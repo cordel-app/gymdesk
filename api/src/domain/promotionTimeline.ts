@@ -132,3 +132,21 @@ export function computePromotionTimeline(config: PromotionTimelineConfig, anchor
 
   return { periods };
 }
+
+/**
+ * #635 stage 12 — the last date this Promotion's own timeline covers, counted
+ * from `anchorDate` (an application's `applied_at` for a real assignment).
+ *
+ * This is the date its Membership Fee Benefit stops applying: the benefit belongs
+ * to the Promotion and can never outlast it (#625), which is the thread's stage 12
+ * answer (a). `null` for a Promotion configured with no Free/Paid/Bonus months at
+ * all — its timeline is one open-ended Pay (regular) period, so it has no
+ * promotional window to end and its fee benefit never applies. Derived from
+ * `computePromotionTimeline` rather than re-adding the months, so the reported
+ * end date is exactly the boundary every pricing path resolves against.
+ */
+export function promotionTimelineEndsOn(config: PromotionTimelineConfig, anchorDate?: string): string | null {
+  const promotional = computePromotionTimeline(config, anchorDate).periods
+    .filter((p) => p.status !== 'pay_regular');
+  return promotional.length > 0 ? promotional[promotional.length - 1].endsOn : null;
+}

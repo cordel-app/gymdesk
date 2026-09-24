@@ -5,6 +5,9 @@ import {
   resolveMembershipFee,
 } from '../domain/billingSimulation';
 import { toPlanDuration } from '../domain/planDuration';
+import { computeMembershipFeePriceAt } from '../domain/assignedPlanBillingEvents';
+import { promotionTimelineEndsOn } from '../domain/promotionTimeline';
+import { computeUpcomingPayments } from '../api/me';
 
 /**
  * #635 stage 11 — the Membership Fee owed on one date.
@@ -152,5 +155,121 @@ describe('resolveMembershipFee — an applied Promotion outranks the Plan', () =
       })],
     }));
     expect(charge.amount).toBe(REGULAR);
+  });
+});
+
+/**
+ * #635 stage 12 — one rule, every path.
+ *
+ * The stage's premise was that three code paths answered different prices for
+ * the same cycle: `final_price` (what the nightly run charged) and the Billing
+ * Events projection both discounted for ever, while the Billing Simulation and My
+ * Membership stopped the benefit at the end of the Promotion's own timeline. The
+ * thread chose the timeline — answer (a) — so these cases pin the chosen rule and
+ * then assert that the paths which can be exercised purely agree on it, cycle by
+ * cycle. The DB-backed ones (`computeFinalPrice`, `POST /billing/run`) are pinned
+ * against the same numbers in `billing-run-date-aware-fee.test.ts`.
+ */
+describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its timeline', () => {
+  // The thread's table, row 1: applied 2026-01-01, Paid Duration 3, "20% off",
+  // the benefit itself carrying no duration.
+  const boundedTo3Months = promotion({
+    paidMonths: 3,
+    membershipFeeBenefits: [{ action: 'percentage_discount', value: 20, enabled: true, durationMonths: null }],
+  });
+
+  it('discounts the promotional months and charges the regular fee afterwards', () => {
+    const at = (date: string) => resolveMembershipFee(REGULAR, date, context({ promotions: [boundedTo3Months] }));
+    expect(at('2026-01-01').amount).toBe(32);
+    expect(at('2026-02-01').amount).toBe(32);
+    expect(at('2026-03-01').amount).toBe(32);
+    // The fourth cycle is the first regular one — the Promotion is over.
+    expect(at('2026-04-01').amount).toBe(REGULAR);
+    expect(at('2026-04-01').benefits).toEqual([]);
+  });
+
+  // The thread's table, row 2. Left to itself an application that stands for ever
+  // would discount for ever, which is exactly what a stored `final_price` did.
+  it('never applies the benefit of a Promotion configured with no Free/Paid/Bonus months', () => {
+    const unbounded = promotion({
+      membershipFeeBenefits: [{ action: 'percentage_discount', value: 20, enabled: true, durationMonths: null }],
+    });
+    const charge = resolveMembershipFee(REGULAR, '2026-06-01', context({ promotions: [unbounded] }));
+    expect(charge.amount).toBe(REGULAR);
+    expect(charge.benefits).toEqual([]);
+  });
+
+  it('caps a benefit whose own Duration outlasts the Promotion at the Promotion', () => {
+    const overlong = promotion({
+      paidMonths: 2,
+      membershipFeeBenefits: [{ action: 'waive', value: null, enabled: true, durationMonths: 24 }],
+    });
+    expect(resolveMembershipFee(REGULAR, '2026-02-01', context({ promotions: [overlong] })).amount).toBe(0);
+    expect(resolveMembershipFee(REGULAR, '2026-03-01', context({ promotions: [overlong] })).amount).toBe(REGULAR);
+  });
+
+  it('reports the same end date as the timeline the report shows staff', () => {
+    expect(promotionTimelineEndsOn({
+      freeMonths: 0, paidMonths: 3, payBeforehandMonths: 0, bonusMonths: 0,
+    }, '2026-01-01')).toBe('2026-03-31');
+    // No months — no promotional window, so there is nothing to end and the
+    // benefit never applies.
+    expect(promotionTimelineEndsOn({
+      freeMonths: 0, paidMonths: 0, payBeforehandMonths: 0, bonusMonths: 0,
+    }, '2026-01-01')).toBe(null);
+  });
+
+  it('prices every cycle identically in the simulation, the Billing Events projection and My Membership', () => {
+    const ctx = context({
+      planDuration: toPlanDuration(1, 12, 1),
+      promotions: [boundedTo3Months],
+    });
+    const dates = ['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-12-01', '2027-02-01'];
+
+    const simulated = dates.map((d) => resolveMembershipFee(REGULAR, d, ctx).amount);
+    const projected = dates.map((d) => computeMembershipFeePriceAt(REGULAR, d, ctx.promotions, {
+      startsAt: ctx.startsAt, planDuration: ctx.planDuration,
+    }).price);
+    expect(projected).toEqual(simulated);
+
+    // My Membership's next two charges, resolved on their own dates: the last
+    // promotional cycle and then the first regular one. `computeUpcomingPayments`
+    // only ever reports dates in the future, so this leg anchors far enough ahead
+    // to stay one regardless of when the suite runs.
+    const future = context({
+      startsAt: '2099-01-01',
+      promotions: [promotion({
+        appliedAt: '2099-01-01',
+        paidMonths: 2,
+        membershipFeeBenefits: [{ action: 'percentage_discount', value: 20, enabled: true, durationMonths: null }],
+      })],
+    });
+    const upcoming = computeUpcomingPayments(
+      '2099-02-01', 1, 'month', String(REGULAR),
+      (date) => resolveMembershipFee(REGULAR, date, future).amount,
+    );
+    expect(upcoming.map((p) => `${p.date}:${p.amount}`)).toEqual(['2099-02-01:32.00', '2099-03-01:40.00']);
+    // …and the same numbers the other two paths give for those dates.
+    expect(upcoming.map((p) => Number(p.amount))).toEqual(
+      ['2099-02-01', '2099-03-01'].map((d) => computeMembershipFeePriceAt(REGULAR, d, future.promotions, {
+        startsAt: future.startsAt, planDuration: future.planDuration,
+      }).price),
+    );
+  });
+
+  it('still lets the assignment\'s own Free Period waive a cycle no Promotion governs', () => {
+    const ctx = context({
+      startsAt: '2026-01-01',
+      planDuration: toPlanDuration(1, 12, 0),
+      // Revoked before the Plan's free month would be billed, so the Promotion
+      // no longer governs the date and the contract's own period decides it.
+      promotions: [promotion({ paidMonths: 3, appliedAt: '2026-01-01', revokedAt: '2026-01-05' })],
+    });
+    const charge = resolveMembershipFee(REGULAR, '2026-01-20', ctx);
+    expect(charge.amount).toBe(0);
+    expect(charge.benefits[0]).toMatchObject({ source: 'membership_plan', period_status: 'free_plan' });
+    expect(computeMembershipFeePriceAt(REGULAR, '2026-01-20', ctx.promotions, {
+      startsAt: ctx.startsAt, planDuration: ctx.planDuration,
+    })).toEqual({ price: 0, promotionAffected: false });
   });
 });

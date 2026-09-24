@@ -20,24 +20,47 @@ import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
+import { loadPromotionApplications } from './user-memberships';
+import { resolveMembershipFee } from '../domain/billingSimulation';
+import { toPlanDuration } from '../domain/planDuration';
 import type { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
 export type UpcomingPayment = { date: string; amount: string; status: 'scheduled' };
 
+// mysql2 may return DATE columns as Date objects rather than strings depending
+// on the connection's timezone config (same note as user-memberships.ts) — the
+// Membership Fee resolver compares dates as strings.
+function toDateOnly(v: unknown): string {
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+}
+
+/**
+ * The Member's next two scheduled charges.
+ *
+ * #635 stage 12 — `priceOn` prices each date instead of repeating one stored
+ * number: an applied Promotion's Membership Fee Benefit ends with the Promotion's
+ * own Free/Paid/Bonus timeline, so the second of two upcoming payments can
+ * legitimately cost more than the first, and a cycle the contract waives costs
+ * nothing. Without it the page repeated `final_price` for every future date,
+ * which is exactly the disagreement between what a Member is shown and what the
+ * nightly run resolves that this stage closes. `amount` stays the fallback for a
+ * caller with no fee context to resolve from.
+ */
 export function computeUpcomingPayments(
   nextBillingDate: Date | string | null,
   billingInterval: number | null,
   billingUnit: 'day' | 'week' | 'month' | 'year' | null,
   amount: string | null,
+  priceOn?: (date: string) => number,
 ): UpcomingPayment[] {
-  if (!nextBillingDate || !billingInterval || !billingUnit || !amount) return [];
+  if (!nextBillingDate || !billingInterval || !billingUnit || (!amount && !priceOn)) return [];
   const dateStr = nextBillingDate instanceof Date
     ? nextBillingDate.toISOString().slice(0, 10)
     : String(nextBillingDate).slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
-  const amountStr = parseFloat(amount).toFixed(2);
+  const fallback = amount != null ? parseFloat(amount).toFixed(2) : '0.00';
   const payments: UpcomingPayment[] = [];
   // Advance from next_billing_date until we reach a future date (safety cap: 5000 iterations)
   let cursor = dateStr;
@@ -47,7 +70,11 @@ export function computeUpcomingPayments(
   }
   // Collect the next 2 upcoming payments
   while (payments.length < 2) {
-    payments.push({ date: cursor, amount: amountStr, status: 'scheduled' });
+    payments.push({
+      date: cursor,
+      amount: priceOn ? priceOn(cursor).toFixed(2) : fallback,
+      status: 'scheduled',
+    });
     cursor = advanceDate(cursor, billingInterval, billingUnit);
   }
   return payments;
@@ -1364,7 +1391,11 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       `SELECT um.id, um.member_id, um.membership_plan_id,
               um.base_price, um.final_price, um.discount_reason, um.discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
-              um.next_billing_date,
+              um.next_billing_date, um.membership_fee_price,
+              um.free_months, um.paid_months, um.bonus_months,
+              p.free_months AS plan_free_months,
+              p.paid_months AS plan_paid_months,
+              p.bonus_months AS plan_bonus_months,
               p.name AS plan_name, p.description AS plan_description,
               ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS billing_unit,
@@ -1392,16 +1423,39 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // drops.)
     const benefits = await loadMembershipBenefits(gymId, um);
 
+    // #635 stage 12 — each upcoming charge is priced on its own date by the same
+    // resolver the nightly run uses, so what this page promises the Member is
+    // what the run will take: a cycle inside the contract's Free Period or Bonus
+    // Duration shows €0, and an applied Promotion's Membership Fee Benefit stops
+    // discounting once the Promotion's own Free/Paid/Bonus timeline ends.
+    const feeContext = {
+      startsAt: toDateOnly(um.starts_at),
+      planDuration: Number(um.has_billing_snapshot) === 1
+        ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months)
+        : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months),
+      promotions: (await loadPromotionApplications(gymId, um.id)).filter((a) => a.status === 'applied'),
+    };
+    const regularFee = um.membership_fee_price != null
+      ? Number(um.membership_fee_price)
+      : (um.final_price != null ? Number(um.final_price) : null);
     const upcoming_payments = computeUpcomingPayments(
       um.next_billing_date,
       um.billing_interval,
       um.billing_unit,
       um.final_price,
+      regularFee != null
+        ? (date) => resolveMembershipFee(regularFee, date, feeContext).amount
+        : undefined,
     );
 
-    // `has_billing_snapshot` only decides the fallback above — it is not part
-    // of the contract the Member app reads.
-    const { has_billing_snapshot, ...membership } = um as any;
+    // The months and `has_billing_snapshot` only decide the resolution above —
+    // they are not part of the contract the Member app reads.
+    const {
+      has_billing_snapshot, membership_fee_price,
+      free_months, paid_months, bonus_months,
+      plan_free_months, plan_paid_months, plan_bonus_months,
+      ...membership
+    } = um as any;
     res.json({ membership: { ...membership, benefits, upcoming_payments } });
   } catch (err) {
     next(err);
