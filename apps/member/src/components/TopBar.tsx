@@ -29,9 +29,12 @@ export function TopBar() {
   const isProfile = pathname.startsWith(`${homePath}/profile`);
   const isNotifications = pathname.startsWith(`${homePath}/notifications`);
 
-  const logoSrc = theme?.has_logo
-    ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
-    : null;
+  // #713: same resolution as the Admin header — the gym's Cloudflare copy when
+  // the theme has one, the API route for a logo that is still a blob.
+  const logoSrc = theme?.logo_url
+    ?? (theme?.has_logo
+      ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
+      : null);
 
   return (
     <div style={{

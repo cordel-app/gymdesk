@@ -614,6 +614,20 @@ storageRouter.post(
 
 ---
 
+## Singleton Asset at a Fixed Object Key (#713)
+
+The Image Upload Field above stores every file under a generated UUID key, so uploads never collide. A *singleton* asset — a gym's branding logo — is the opposite: the key is part of the contract (`<gyms.storage_folder_prefix>/Branding/Logo/logo.<ext>`), which buys a predictable location and costs three things a UUID key gives for free.
+
+1. **The extension is derived server-side from the validated MIME type** (`extensionForMime()`), never from the uploaded file name — which must not reach the key at all. `buildGymLogoKey()` is the only place the key is composed.
+
+2. **A type change is not an overwrite.** `logo.png` and `logo.svg` are different objects, so the upload deletes the key(s) it replaces *after* the new object is safely stored — best-effort, logged as a warning: the upload already succeeded and is what the user asked for, so a failed cleanup is an orphan to sweep, not a failed save. Removal is the mirror image: delete the object first and report a failure (502) instead of clearing the reference, because a dropped reference strands the file forever.
+
+3. **A fixed key is shared state, so the row that references it needs a rule the DB can hold.** The key names the gym; the reference lives on `themes`, of which a gym may have several. The upload therefore hands the slot over in one transaction — the uploading row takes the key, every sibling of the same gym stops claiming the asset — so exactly one row ever points at the object. Where two storage modes coexist during a migration (R2 key vs. legacy blob), a named `CHECK` keeps them mutually exclusive rather than trusting the two routers that write them.
+
+Derive the public URL from the key at read time (`buildStorageObjectUrl()` + a `?v=<updated_at>` stamp, since the key itself never changes) instead of storing a URL: the endpoint and bucket are env vars, and a stored URL goes stale the day either moves. Keep the existing same-origin API route as the fallback reader for both modes — and serve the bytes there rather than redirecting when a consumer loads it under a `img-src 'self'` CSP, which matches a redirect's host too.
+
+---
+
 ## Theming a Third-Party Widget (#559)
 
 A widget the app doesn't own (FullCalendar today) is themed through the same `themes.tokens` blob as everything else — never a parallel styling system, and never hardcoded colors in the page.

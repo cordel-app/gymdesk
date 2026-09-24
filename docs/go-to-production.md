@@ -75,6 +75,21 @@ Tick items off in the PR that completes them.
       the stored prefix plus the affected `image_url` columns, or accept the split and
       document it. Re-running **Initialize Cloudflare Bucket** does *not* fix it: it
       deliberately reuses the captured prefix rather than recomputing it.
+- [ ] **Re-upload the Custom Theme logos that are still MEDIUMBLOBs** (#713). Migration 180 backfills
+      nothing: a Customer Theme logo uploaded before #713 keeps being served from `themes.logo_bytes`
+      until an admin uploads a replacement, which writes the R2 key and clears the blob. Before launch,
+      either re-upload each affected gym's logo through **System → Themes** (list them with
+      `SELECT id, gym_id, name FROM themes WHERE gym_id IS NOT NULL AND logo_bytes IS NOT NULL`) or accept
+      that the two storage modes coexist. Base Theme logos stay blobs by design — the platform has no gym
+      storage folder — so they are not part of this. Note the rollback is one-way for an R2-backed logo:
+      `down()` drops the key and returns those rows to "no logo" (the object survives in the bucket, but
+      nothing can reach it), so the header falls back to the gym name rather than rendering a broken image.
+- [ ] **Confirm the R2 objects under `Branding/Logo/` are publicly readable** (#713). The logo URL the API
+      hands to the apps is `${CLOUDFLARE_R2_ENDPOINT}/${CLOUDFLARE_R2_BUCKET}/<key>` — the same composition
+      #417 has used for exercise/nutrition images — so the browser fetches it unauthenticated. If the
+      production bucket is not public, expose it through a custom domain / `r2.dev` and point
+      `CLOUDFLARE_R2_ENDPOINT` at it; `GET /themes/:id/logo` keeps working either way (it reads the object
+      with the deployment's credentials), so a misconfiguration shows up as a broken direct URL only.
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be
