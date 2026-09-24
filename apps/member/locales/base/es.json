@@ -247,16 +247,18 @@
       "insurance_fee": "Seguro",
       "class_package": "Bono de clases"
     },
-    "benefit": {
-      "priority_booking": "Reserva prioritaria",
-      "free_locker": "Taquilla gratis",
-      "free_parking": "Parking gratis",
-      "waived_charge": "Cuota exenta",
-      "class_package_credit": "Crédito de bono"
+    "benefit_group": {
+      "oneoff": "Beneficios únicos",
+      "session": "Beneficios de sesiones",
+      "periodical": "Beneficios periódicos"
     },
-    "recurrence": {
-      "monthly": "Mensual",
-      "yearly": "Anual"
+    "frequency": {
+      "once": "Pago único",
+      "per_session": "Por sesión",
+      "week": "Semanal",
+      "four_weeks": "Cada 4 semanas",
+      "month": "Mensual",
+      "year": "Anual"
     }
   },
   "payment_banner": {

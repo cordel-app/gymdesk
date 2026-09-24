@@ -9,14 +9,25 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 
+type BenefitCategory = 'oneoff' | 'session' | 'periodical';
+
+/**
+ * #635 stage 10 — one Sellable Item the member's Assigned Plan carries, at the
+ * quantity, frequency and price it was agreed at. The server resolves it from
+ * the assignment's own snapshot, so editing the Membership Plan or repricing
+ * the item afterwards never moves what is shown here (§13/§14/§17).
+ */
 interface Benefit {
-  benefit_code: string;
-  quantity: number | null;
-  duration_days: number | null;
-  recurrence: string | null;
-  valid_from: string | null;
-  valid_to: string | null;
+  category: BenefitCategory;
+  gym_charge_id: number;
+  name: string;
+  quantity: number;
+  billing_frequency: string | null;
+  unit_price: number;
 }
+
+// The order the Plans, Promotions and Assigned Plans pages list the sections in.
+const BENEFIT_GROUPS: BenefitCategory[] = ['oneoff', 'session', 'periodical'];
 
 interface UpcomingPayment {
   date: string;
@@ -289,19 +300,31 @@ export default function MembershipPage() {
       {membership.benefits.length > 0 && (
         <section style={styles.section}>
           <h2 style={styles.h2}>{t('membership.benefits_heading')}</h2>
-          <ul style={styles.benefitList}>
-            {membership.benefits.map((b, i) => (
-              <li key={i} style={styles.benefitItem}>
-                <span>{t(`membership.benefit.${b.benefit_code}`)}</span>
-                {b.quantity != null && (
-                  <span style={styles.benefitMeta}>× {b.quantity}</span>
-                )}
-                {b.recurrence && (
-                  <span style={styles.benefitMeta}>· {t(`membership.recurrence.${b.recurrence}`)}</span>
-                )}
-              </li>
-            ))}
-          </ul>
+          {BENEFIT_GROUPS.map((group) => {
+            const rows = membership.benefits.filter((b) => b.category === group);
+            if (rows.length === 0) return null;
+            return (
+              <div key={group} style={styles.benefitGroup}>
+                <h3 style={styles.h3}>{t(`membership.benefit_group.${group}`)}</h3>
+                <ul style={styles.benefitList}>
+                  {rows.map((b) => (
+                    <li key={`${b.category}-${b.gym_charge_id}`} style={styles.benefitItem}>
+                      <span>{b.name}</span>
+                      <span style={styles.benefitMeta}>× {b.quantity}</span>
+                      {/* The frozen price, not the catalogue's: what this
+                          membership was agreed at (§17). */}
+                      <span style={styles.benefitMeta}>· {b.unit_price.toFixed(2)}</span>
+                      {b.billing_frequency && (
+                        <span style={styles.benefitMeta}>
+                          · {t(`membership.frequency.${b.billing_frequency}`)}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </section>
       )}
 
@@ -489,6 +512,8 @@ const styles: Record<string, React.CSSProperties> = {
   promoLine: { fontSize: 12, color: '#7d3cbd', fontWeight: 400, marginTop: 2 },
   section: { marginTop: 24 },
   h2: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: '#18181b' },
+  h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#71717a' },
+  benefitGroup: { marginBottom: 12 },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { background: '#fff', borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
   benefitMeta: { fontSize: 13, color: '#71717a' },

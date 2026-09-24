@@ -304,6 +304,17 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       bookings on it would read "no plan includes any activity type" and refuse every
       plan-based booking. Roll forward instead; if a real rollback is ever needed,
       capture `SELECT * FROM plan_allowances` before the deploy and reload it.
+- [ ] **Migration 184 must run *after* the API build that stops reading
+      `membership_plan_benefits`** (#635 stage 10): it `DROP`s the table, whose only
+      reader was `GET /me/membership`. Run it first and the previous build 500s with
+      `ER_NO_SUCH_TABLE` on the Member app's My Membership page. Deploy the API first
+      (it reads the assignment's own snapshot rows instead, which migration 174 already
+      created), then migrate — the same ordering as 176, 177 and 179.
+- [ ] **Migration 184 drops rows with no archive** (#635 stage 10): `down()` recreates
+      `membership_plan_benefits` empty. Nothing in the repo has ever written a row (the
+      table has had no editor since migration 006 created it), so this should be a no-op
+      everywhere; confirm with `SELECT COUNT(*) FROM membership_plan_benefits` before the
+      deploy and capture the rows if any environment turns out to have some.
 - [ ] **Check who loses a session cap before migrating 177** (#635 stage 4, part 2):
       `activity_type_eligible_plans` grants access without a per-window limit, so a plan
       with `allowance_type = 'session_count'` silently becomes unlimited for that
