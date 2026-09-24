@@ -46,9 +46,16 @@ beforeAll(async () => {
   );
 });
 
+/** Library items created by a single describe block — dropped after the gyms. */
+const extraLibraryItemIds: number[] = [];
+
 afterAll(async () => {
   await cleanupTestGyms();
-  await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [libraryItemId]);
+  // The meal items referencing these are gone with the gyms above; the FK to
+  // nutrition_library_items is ON DELETE RESTRICT, so the order matters.
+  for (const id of [libraryItemId, ...extraLibraryItemIds]) {
+    await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [id]);
+  }
   await db.end();
 });
 
@@ -220,5 +227,97 @@ describe('GET /me/nutrition-plan — translated item names', () => {
     expect(res.status).toBe(200);
     const names = res.body.plan.days.flatMap((d: any) => d.meals.flatMap((m: any) => m.items.map((i: any) => i.item_name)));
     expect(names).toContain('Grilled Chicken');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Food card data for the member app's nutrition carousel (#722)
+// ---------------------------------------------------------------------------
+
+describe('GET /me/nutrition-plan — food image and nutritional qualities', () => {
+  // Its own gym and member: this block asserts on *the* returned plan, and the
+  // shared member above already owns several.
+  const clerkId = `carousel-clerk-${Date.now()}`;
+  let carouselGymId: string;
+  let imagedItemId: number;
+
+  beforeAll(async () => {
+    carouselGymId = await createTestGym('Nutrition Carousel Gym');
+    await createTestMembership(carouselGymId, 'member', clerkId);
+    const { insertId: carouselMemberId } = await db.query(
+      `INSERT INTO members (gym_id, name, email, clerk_user_id) VALUES (?, 'Carousel Member', ?, ?)`,
+      [carouselGymId, `carousel-${Date.now()}@test.com`, clerkId],
+    );
+
+    const { insertId } = await db.query(
+      `INSERT INTO nutrition_library_items (gym_id, name, status, image_url)
+       VALUES (NULL, ?, 'active', 'https://cdn.example.test/nutrition/salmon.png')`,
+      [`Carousel Salmon ${Date.now()}`],
+    );
+    imagedItemId = insertId;
+    extraLibraryItemIds.push(imagedItemId);
+
+    const { rows: qualityRows } = await db.query<{ id: number }>(
+      "SELECT id FROM nutritional_qualities WHERE slug IN ('protein', 'fat') ORDER BY id",
+    );
+    for (const quality of qualityRows) {
+      await db.query(
+        'INSERT INTO nutrition_library_item_qualities (item_id, quality_id) VALUES (?, ?)',
+        [imagedItemId, quality.id],
+      );
+    }
+
+    // One meal holding both foods: the imaged, classified one and the plain
+    // 'Grilled Chicken' from the top of this file (no image, no qualities).
+    await insertActivePlan(carouselGymId, carouselMemberId, 1);
+    const { rows: mealRows } = await db.query<{ id: number }>(
+      `SELECT m.id FROM member_nutrition_plan_meals m
+       JOIN member_nutrition_plan_days d ON d.id = m.member_nutrition_plan_day_id
+       WHERE m.gym_id = ?`,
+      [carouselGymId],
+    );
+    await db.query(
+      `INSERT INTO member_nutrition_plan_meal_items (gym_id, meal_id, nutrition_library_item_id, component_type, quantity, unit, position)
+       VALUES (?, ?, ?, 'side', 200, 'g', 2)`,
+      [carouselGymId, mealRows[0].id, imagedItemId],
+    );
+  });
+
+  async function fetchItems() {
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerkId } as any);
+    const res = await request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', carouselGymId);
+    expect(res.status).toBe(200);
+    return res.body.plan.days.flatMap((d: any) => d.meals.flatMap((m: any) => m.items));
+  }
+
+  it('exposes the library item image so the card can render it', async () => {
+    const items = await fetchItems();
+    const imaged = items.find((i: any) => i.nutrition_library_item_id === imagedItemId);
+    expect(imaged.image_url).toBe('https://cdn.example.test/nutrition/salmon.png');
+  });
+
+  it('exposes the nutritional qualities of each food', async () => {
+    const items = await fetchItems();
+    const imaged = items.find((i: any) => i.nutrition_library_item_id === imagedItemId);
+    expect(imaged.qualities.map((q: any) => q.slug).sort()).toEqual(['fat', 'protein']);
+    expect(imaged.qualities.every((q: any) => typeof q.id === 'number')).toBe(true);
+  });
+
+  it('handles a food with neither image nor qualities gracefully', async () => {
+    const items = await fetchItems();
+    const plain = items.find((i: any) => i.nutrition_library_item_id === libraryItemId);
+    expect(plain.image_url).toBeNull();
+    expect(plain.qualities).toEqual([]);
+  });
+
+  it('still returns the quantity, unit and role each card renders', async () => {
+    const items = await fetchItems();
+    const imaged = items.find((i: any) => i.nutrition_library_item_id === imagedItemId);
+    expect(Number(imaged.quantity)).toBe(200);
+    expect(imaged.unit).toBe('g');
+    expect(imaged.component_type).toBe('side');
   });
 });

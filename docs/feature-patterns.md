@@ -662,6 +662,29 @@ It carries the three themed properties (`--gd-card-border`, `--gd-card-radius`, 
 
 ---
 
+## Swipeable Card Carousel (member app, #722)
+
+A horizontal, finger-swipeable row of cards in the Member app is CSS, not a gesture handler — neither app has a carousel component or a gesture library, and adding one is not the answer:
+
+```tsx
+// track
+{ display: 'flex', gap: 12, overflowX: 'auto', overflowY: 'hidden',
+  scrollSnapType: 'x mandatory', overscrollBehaviorX: 'contain', WebkitOverflowScrolling: 'touch' }
+// slide — one card at a time on a phone with the next peeking, side by side on a desktop
+{ flex: '0 0 min(320px, 82%)', scrollSnapAlign: 'center' }
+```
+
+Four rules keep it honest:
+
+- **Never listen for `touchstart`/`touchmove` and never `preventDefault()` a touch.** The browser's own overflow scrolling *is* the swipe; a hand-rolled gesture is how the page stops scrolling vertically mid-swipe. `preventDefault()` belongs only to the arrow-key handler.
+- **The scroll position is the state.** `onScroll` re-derives the current card (the one nearest the middle of the track) and the buttons/dots read that — so a swipe, an arrow key, a button and a trackpad can't disagree. Buttons `scrollTo` the slide's `offsetLeft`; they never keep a second index of their own.
+- **Announce the position, don't colour it.** `role="region"` + `aria-roledescription="carousel"` on the track, `aria-roledescription="slide"` + a "3 of 12" `aria-label` per card, and a visible `aria-live="polite"` counter next to the dots. Above ~8 cards the dots go away and the counter stays.
+- **Only the first card's image is `eager`**, the rest are `loading="lazy" decoding="async"`, and one that fails to load falls back to the same placeholder as a card with no image at all.
+
+Reference implementation: `apps/member/src/components/NutritionFoodCarousel.tsx` + `NutritionFoodCard.tsx`, pinned by `apps/member/src/test/nutrition-food-carousel.test.ts` (source-scanning — the Member app has no component-test infra).
+
+---
+
 ## Dependency Awareness (shared catalog entities)
 
 Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:

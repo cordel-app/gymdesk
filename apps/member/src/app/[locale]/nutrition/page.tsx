@@ -7,9 +7,10 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
+import { NutritionFoodItem } from '@/lib/nutritionFood';
 
-interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
-interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: MealItem[] }
+interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[] }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
 interface NutritionGoal { id: number; item_name: string; quantity: number; unit: string; frequency: string }
 interface NutritionPlan { id: number; name: string; description: string | null; days: NutritionDay[]; goals: NutritionGoal[] }
@@ -105,9 +106,10 @@ export default function NutritionPage() {
                           <span style={styles.mealType}> · {mealTypeLabel(meal.meal_type)}</span>
                         )}
                       </p>
-                      <p style={styles.mealItems}>
-                        {meal.items.map((i) => i.quantity ? `${i.item_name} (${i.quantity}${i.unit ?? ''})` : i.item_name).join(' + ')}
-                      </p>
+                      {/* #722: the meal's foods are swipeable image cards, one
+                          carousel per meal — the items of a meal are the
+                          alternatives the member chooses between. */}
+                      <NutritionFoodCarousel items={meal.items} label={meal.display_name} />
                       {meal.notes && <p style={styles.mealNotes}>{meal.notes}</p>}
                     </div>
                   ))}
@@ -130,7 +132,6 @@ const styles: Record<string, React.CSSProperties> = {
   mealRow:    { padding: '12px 0', borderBottom: '1px solid #f0f0f0' },
   mealName:   { margin: 0, fontSize: 15, fontWeight: 700, color: '#18181b' },
   mealType:   { fontSize: 12, fontWeight: 500, color: '#71717a', textTransform: 'none' },
-  mealItems:  { margin: '4px 0 0', fontSize: 13, color: '#71717a' },
   mealNotes:  { margin: '4px 0 0', fontSize: 12, color: '#a1a1aa', fontStyle: 'italic' },
   goalRow:    { display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f0f0f0' },
   goalName:   { fontSize: 14, fontWeight: 500, color: '#18181b' },
