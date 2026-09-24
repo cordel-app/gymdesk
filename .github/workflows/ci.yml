@@ -65,7 +65,6 @@ jobs:
     environment: dev
     env:
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-      NEXT_PUBLIC_BACKEND_URL: http://localhost:3000
       NEXT_PUBLIC_CLERK_SIGN_IN_URL: /en/sign-in
       NEXT_PUBLIC_CLERK_SIGN_UP_URL: /en/sign-up
       NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /en
