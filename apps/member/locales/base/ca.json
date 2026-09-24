@@ -366,5 +366,15 @@
       "immediately_before_training": "Immediatament abans de l'entrenament",
       "immediately_after_training": "Immediatament després de l'entrenament"
     }
+  },
+  "exercise_media": {
+    "image": "Imatge de l'exercici",
+    "image_alt": "Imatge de {name}",
+    "view_image": "Veure la imatge de l'exercici",
+    "view_image_of": "Veure la imatge de {name}",
+    "play_video": "Reproduir el vídeo de l'exercici",
+    "play_video_of": "Reproduir el vídeo de {name}",
+    "video_of": "Vídeo de {name}",
+    "close": "Tancar"
   }
 }

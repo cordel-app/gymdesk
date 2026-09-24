@@ -178,6 +178,12 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       for an exercise whose video is a YouTube link (#720) — plus the R2 endpoint that
       serves uploaded exercise images.
 
+- [ ] The same applies to the **member** app, with two more directives: My Training Plan
+      shows the same exercise media (#723), so `img-src` needs `https://img.youtube.com`
+      and the R2 endpoint, `frame-src` needs `https://www.youtube-nocookie.com` (the
+      video viewer's embed) and `media-src` needs the R2 endpoint (a video stored as an
+      object plays in a `<video>` element).
+
 ## 5. Payments (Monei / PCI)
 
 Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they are not missed:

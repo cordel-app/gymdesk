@@ -366,5 +366,15 @@
       "immediately_before_training": "Inmediatamente antes del entrenamiento",
       "immediately_after_training": "Inmediatamente después del entrenamiento"
     }
+  },
+  "exercise_media": {
+    "image": "Imagen del ejercicio",
+    "image_alt": "Imagen de {name}",
+    "view_image": "Ver la imagen del ejercicio",
+    "view_image_of": "Ver la imagen de {name}",
+    "play_video": "Reproducir el vídeo del ejercicio",
+    "play_video_of": "Reproducir el vídeo de {name}",
+    "video_of": "Vídeo de {name}",
+    "close": "Cerrar"
   }
 }

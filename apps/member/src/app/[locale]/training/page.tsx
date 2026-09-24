@@ -7,10 +7,17 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { ExerciseMedia } from '@/components/ExerciseMedia';
 
 interface BlockExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;
   min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null;
+  // #723: the exercise's own media, already carried by the plan tree (#720) —
+  // no request per exercise. The `*_thumbnail_url` pair arrives with #719.
+  exercise_image_url?: string | null;
+  exercise_image_thumbnail_url?: string | null;
+  exercise_video_url?: string | null;
+  exercise_video_thumbnail_url?: string | null;
 }
 
 interface Block {
@@ -182,6 +189,7 @@ export default function TrainingPage() {
                           {we.sets ? ` × ${we.sets} sets` : ''} · {we.rest_seconds ?? '—'}s
                         </div>
                       </div>
+                      <ExerciseMedia exercise={we} />
                       <button onClick={() => openExercise(we)} style={styles.expandBtn}>
                         {expandedExercise === we.id ? '−' : '+'}
                       </button>

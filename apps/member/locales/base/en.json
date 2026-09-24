@@ -366,5 +366,15 @@
       "immediately_before_training": "Immediately before training",
       "immediately_after_training": "Immediately after training"
     }
+  },
+  "exercise_media": {
+    "image": "Exercise image",
+    "image_alt": "Image of {name}",
+    "view_image": "View the exercise image",
+    "view_image_of": "View the image of {name}",
+    "play_video": "Play the exercise video",
+    "play_video_of": "Play the video of {name}",
+    "video_of": "Video of {name}",
+    "close": "Close"
   }
 }
