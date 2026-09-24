@@ -10,6 +10,7 @@ import { TopBar } from '@/components/TopBar';
 import { GymSwitcher } from '@/components/GymSwitcher';
 import { CenterSwitcher } from '@/components/CenterSwitcher';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { MembersBackground } from '@/components/MembersBackground';
 import { AdminBar } from '@/components/AdminBar';
 
 export const metadata: Metadata = {
@@ -47,6 +48,7 @@ export default async function LocaleLayout({
               <AppProvider>
                 <FeatureFlagsProvider>
                   <ThemeProvider>
+                    <MembersBackground />
                     <AdminBar />
                     <TopBar />
                     <GymSwitcher />

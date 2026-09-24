@@ -628,6 +628,20 @@ Derive the public URL from the key at read time (`buildStorageObjectUrl()` + a `
 
 ---
 
+## Fixed Slots of an Owning Entity (#725)
+
+A *set* of singleton assets — the six Members App backgrounds a Custom Theme carries — extends the pattern above, and changes three of its answers.
+
+1. **The slot list is closed, so make it schema.** Six fixed slots means a `(owner_id, slot)` unique key and a named `CHECK` on the slot value, not six columns and not a free-text key. One narrow row per *configured* slot also makes "configured" a row rather than a column full of nulls, which is what lets the next rule work.
+
+2. **The row is the source of truth; the object is not.** When the ticket says Remove must not delete the file, the remove path touches storage at all — it deletes the row, and the slot reads `null` immediately even though the object is still there. Re-uploading writes the same deterministic key again, so nothing accumulates and nothing is orphaned. (Contrast #713, where Remove *must* delete the object, because there the file has no other way to be reached.)
+
+3. **When the slot's filename is fixed, the extension stops being a type claim.** `training.png` is the slot's *name*; what a browser reads is the object's `Content-Type`, which is the MIME the server validated. That is what lets a JPEG upload land on `training.png` without the two contradicting each other — and it removes the type-change orphan #713 has to sweep. Validate the bytes by **signature**, never by the `Content-Type` header, which is the client's word: the header decides how the object is served, the signature decides whether it is stored.
+
+Derive the key from the tenant's own folder prefix, the owner row and the slot — never from a request parameter — and write the missing folder markers of that branch first (idempotent, since every marker key ends in `/` and can only overwrite another marker). Return all the slots on the owner's existing payload, one query for a list of owners, so a screen never fetches them one at a time. In the editor, stage a pick and a removal in the draft and perform them on Save: an immediate upload cannot be undone by Cancel.
+
+---
+
 ## Theming a Third-Party Widget (#559)
 
 A widget the app doesn't own (FullCalendar today) is themed through the same `themes.tokens` blob as everything else — never a parallel styling system, and never hardcoded colors in the page.
