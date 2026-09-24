@@ -717,7 +717,7 @@ Reference implementation: `api/src/api/user-membership-services.ts` + migration 
 
 ---
 
-## Assignment-Time Snapshot (#635 stage 2)
+## Assignment-Time Snapshot (#635 stages 2 + 6)
 
 When a ticket says an instantiated record is *its own contract* — an Assigned Plan whose billing must not move when the Membership Plan, a Promotion or a Sellable Item is later edited (#635 §11–§17) — the record needs parallel structures it owns, not a chain of live joins back to the catalogue.
 
@@ -728,6 +728,8 @@ When a ticket says an instantiated record is *its own contract* — an Assigned 
 - **Keep "not captured" expressible.** Rows created before the snapshot existed must read back as an explicit `snapshot_captured: false` (and `null`, not `0`, for unconfigured numbers), so the reader falls back to the live catalogue instead of billing nothing.
 - **Split writing from reading across two PRs.** Stage 2 writes the snapshot and serves it additively; the cutover that makes billing *read* it — with the fallback above and a regression test per row of the ticket's "must NOT change" table — is its own change. Nothing an existing record bills moves on the day the tables land.
 - **Backfill rather than delete**, when the values are recoverable: the backfill writes down what those rows already resolved to live, so behaviour is unchanged, and history survives. Guard every backfill statement on `IS NULL` so a re-run is a no-op.
+- **Materialise before the first edit** (stage 6). Once the record is editable, an uncaptured row cannot be edited one section at a time: writing any section makes it "captured", and every section the edit never mentioned then reads back as empty instead of falling through to the catalogue. So capture the whole thing from the live values first, in the same transaction, and apply the edit on top (`materialiseAssignedPlanSnapshot()`).
+- **An edit re-freezes only what it adds.** A line the user kept keeps the price, name and frequency it was agreed at; only a newly added line takes today's catalogue values. Otherwise changing a quantity silently reprices the whole section — and re-pricing a line should be a deliberate remove-then-add. For the same reason, validate a *new* line against the catalogue (exists, active, right category) but let an existing one stay saveable after its item is retired, and refuse the edit outright on a terminal record, whose configuration is history.
 
 Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 175 + `snapshotPromotionGrants()` in `api/src/api/membership-promotions.ts`.
 

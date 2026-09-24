@@ -10,18 +10,11 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
+import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import type { AssignedPlanDetail } from './types';
 
 const EDITABLE_STATUSES = ['draft', 'awaiting_payment'];
 const CLOSEABLE_STATUSES = ['awaiting_payment', 'active', 'paused'];
-
-// The three benefit kinds of the assignment's #635 snapshot, in the order the
-// Plans page lists them so both surfaces read the same way.
-const SNAPSHOT_BENEFIT_GROUPS = [
-  { key: 'oneoff_benefits', labelKey: 'benefits_oneoff' },
-  { key: 'session_benefits', labelKey: 'benefits_session' },
-  { key: 'periodical_benefits', labelKey: 'benefits_period' },
-] as const;
 
 function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
@@ -277,25 +270,21 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           now shows the assignment's own snapshot — the three benefit kinds as
           they were captured at assignment time, which since stage 3 is also what
           it bills. A later edit of the Plan or of a Sellable Item never moves
-          these lines (§13/§17). */}
-      <Section label={t('section_benefits')}>
-        {SNAPSHOT_BENEFIT_GROUPS.every(({ key }) => detail.snapshot[key].length === 0) ? (
-          <p style={dim}>{t('no_benefits')}</p>
-        ) : (
-          SNAPSHOT_BENEFIT_GROUPS.filter(({ key }) => detail.snapshot[key].length > 0).map(({ key, labelKey }) => (
-            <div key={key} style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t(labelKey)}</div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#444' }}>
-                {detail.snapshot[key].map((b) => (
-                  <li key={b.id}>
-                    {b.item_name} — {b.quantity} × {fmtMoney(b.unit_price)}
-                    {b.item_billing_frequency ? ` / ${b.item_billing_frequency}` : ''}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))
-        )}
+          these lines (§13/§17).
+
+          Stage 6 (§9/§10/§15) gives it the Membership Plan's own structure —
+          Billing & Duration above the three benefit kinds — and makes every
+          section independently editable: editing one edits *this member's*
+          snapshot, never the Plan it came from. */}
+      <Section label={t('section_configuration')}>
+        <AssignedPlanConfiguration
+          assignedPlanId={assignedPlanId}
+          planStatus={detail.status}
+          snapshot={detail.snapshot}
+          canWrite={canWritePayments}
+          readOnlyTitle={readOnlyTitle}
+          onChanged={() => { loadDetail(); onChanged(); }}
+        />
       </Section>
 
       <Section label={t('section_promotions')}>

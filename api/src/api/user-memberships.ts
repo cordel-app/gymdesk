@@ -13,7 +13,17 @@ import {
   validatePromotionSelection,
 } from './membership-promotions';
 import { loadAssignedPlanServices } from './user-membership-services';
-import { loadAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
+import {
+  loadAssignedPlanBenefitSection,
+  loadAssignedPlanSnapshot,
+  materialiseAssignedPlanSnapshot,
+  snapshotAssignedPlan,
+  writeAssignedPlanBenefitSection,
+} from './assigned-plan-snapshot';
+import {
+  SellableItemBenefitCategory,
+  classifySellableItem,
+} from '../domain/sellableItemClassification';
 import {
   AppliedPromotionForBilling,
   BillingUnit,
@@ -867,6 +877,291 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   recordAudit(req, { action: 'close', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
   res.json(rows[0]);
 });
+
+// ─── The Assigned Plan's own snapshot, edited section by section (#635 stage 6) ─
+//
+// §9/§10/§15: the Assigned Membership Plan exposes the same structure as the
+// Membership Plan it came from — Billing & Duration plus One-off / Session /
+// Period Benefits — and each section is edited on its own. Editing one edits
+// *this member's* snapshot: the source Plan, its other assignments and the
+// Sellable Items are untouched, which is exactly what makes the ticket's
+// "Assigned Plan A → €90, Assigned Plan B → €100, Membership Plan → €100"
+// example hold.
+//
+// Since stage 3 these rows are what the assignment bills, so an edit here moves
+// its Billing Simulation immediately — there is no second place to write.
+
+// A terminal assignment is history: it bills nothing further, so rewriting the
+// configuration it was agreed with would only falsify the record. Same reasoning
+// as ATTACHABLE_STATUSES in user-membership-services.ts.
+const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['draft', 'awaiting_payment', 'active', 'paused'];
+
+const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
+
+/**
+ * The assignment as the snapshot editors need it, or null when it isn't this
+ * gym's. Read before the transaction so the Plan's price window can be resolved
+ * (`effectivePrice` runs its own queries) for an assignment that still has to
+ * capture a snapshot; the row is re-read and locked inside the transaction.
+ */
+async function loadAssignmentForSnapshotEdit(gymId: string, id: string | string[]) {
+  const { rows } = await db.query(
+    `SELECT id, membership_plan_id, status, starts_at,
+            free_months, paid_months, bonus_months,
+            recurring_billing_interval, recurring_billing_unit, membership_fee_price
+     FROM user_memberships WHERE id = ? AND gym_id = ?`,
+    [id, gymId],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * The regular fee to freeze when an assignment that never captured a snapshot
+ * is about to be edited — the price window covering its start date, which is
+ * what `regularMembershipFee()` resolves live for it today. Null when the Plan
+ * has no price window (nothing to freeze) or the assignment has no Plan.
+ */
+async function snapshotFeeForAssignment(gymId: string, um: any): Promise<number | null> {
+  if (um.membership_plan_id == null) return null;
+  const eff = await effectivePrice(Number(um.membership_plan_id), gymId, toDateOnly(um.starts_at));
+  return eff && eff.plan_price_id != null ? eff.price : null;
+}
+
+/** `null` when the value is absent/blank, a number when parseable, NaN otherwise. */
+function optionalNumber(raw: unknown): number | null | typeof NaN {
+  if (raw === null || raw === undefined || raw === '') return null;
+  return Number(raw);
+}
+
+/** Rejects a half-set cadence from inside the transaction, so nothing commits. */
+class CadencePairError extends Error {}
+
+function nonNegativeInteger(raw: unknown): number | null | false {
+  const n = optionalNumber(raw);
+  if (n === null) return null;
+  if (!Number.isInteger(n) || n < 0) return false;
+  return n;
+}
+
+userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+  if (!um) return res.status(404).json({ error: 'Membership not found' });
+  if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
+    return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${um.status}'` });
+  }
+
+  // Only the fields the caller sent are written, so a section's editor can save
+  // Billing & Duration without having to resend the cadence it doesn't show.
+  const patch: Record<string, number | string | null> = {};
+  for (const field of ['free_months', 'paid_months', 'bonus_months', 'recurring_billing_interval'] as const) {
+    if (!(field in req.body)) continue;
+    const value = nonNegativeInteger(req.body[field]);
+    if (value === false) return res.status(400).json({ error: `${field} must be a non-negative integer` });
+    if (field === 'recurring_billing_interval' && value === 0) {
+      return res.status(400).json({ error: 'recurring_billing_interval must be a positive integer' });
+    }
+    patch[field] = value;
+  }
+  if ('recurring_billing_unit' in req.body) {
+    const raw = req.body.recurring_billing_unit;
+    const unit = raw === null || raw === undefined || raw === '' ? null : String(raw);
+    if (unit !== null && !BILLING_UNITS.includes(unit as any)) {
+      return res.status(400).json({ error: `recurring_billing_unit must be one of: ${BILLING_UNITS.join(', ')}` });
+    }
+    patch.recurring_billing_unit = unit;
+  }
+  if ('membership_fee_price' in req.body) {
+    const price = optionalNumber(req.body.membership_fee_price);
+    if (price !== null && (isNaN(price) || price < 0)) {
+      return res.status(400).json({ error: 'membership_fee_price must be a non-negative number' });
+    }
+    patch.membership_fee_price = price;
+  }
+  if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'No Billing & Duration fields to update' });
+
+  const feeToFreeze = await snapshotFeeForAssignment(gymId, um);
+  try {
+    const result = await db.transaction(async (tx) => {
+      const { rows: locked } = await tx.query(
+        'SELECT id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+        [req.params.id, gymId],
+      );
+      if (locked.length === 0) return { kind: 'not_found' } as const;
+      if (!SNAPSHOT_EDITABLE_STATUSES.includes(locked[0].status as Status)) {
+        return { kind: 'not_editable', status: locked[0].status as string } as const;
+      }
+      await materialiseAssignedPlanSnapshot(tx, {
+        gymId, userMembershipId: Number(um.id),
+        membershipPlanId: um.membership_plan_id != null ? Number(um.membership_plan_id) : null,
+        membershipFeePrice: feeToFreeze,
+      });
+
+      // The cadence is read as a pair (ASSIGNMENT_CADENCE COALESCEs each column
+      // on its own), so half of one would mix the assignment's interval with
+      // the Plan's unit and silently bill on a cadence nobody configured.
+      // Checked against the row as it now stands — an assignment that only just
+      // captured its snapshot above already has the Plan's cadence on it, so
+      // sending one half of the pair is valid for it.
+      const { rows: current } = await tx.query(
+        'SELECT recurring_billing_interval, recurring_billing_unit FROM user_memberships WHERE id = ? AND gym_id = ?',
+        [req.params.id, gymId],
+      );
+      const nextInterval = 'recurring_billing_interval' in patch
+        ? patch.recurring_billing_interval : current[0].recurring_billing_interval;
+      const nextUnit = 'recurring_billing_unit' in patch
+        ? patch.recurring_billing_unit : current[0].recurring_billing_unit;
+      // Thrown rather than returned: the materialise above must roll back with
+      // the rejected edit, so a 400 leaves the assignment exactly as it was.
+      if ((nextInterval == null) !== (nextUnit == null)) throw new CadencePairError();
+
+      const assignments = Object.keys(patch).map((c) => `${c} = ?`).join(', ');
+      await tx.query(
+        `UPDATE user_memberships SET ${assignments} WHERE id = ? AND gym_id = ?`,
+        [...Object.values(patch), req.params.id, gymId],
+      );
+      return { kind: 'ok' } as const;
+    });
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (result.kind === 'not_editable') {
+      return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${result.status}'` });
+    }
+
+    recordAudit(req, {
+      action: 'update', entityType: 'user_membership', entityId: req.params.id,
+      previous: {
+        free_months: um.free_months, paid_months: um.paid_months, bonus_months: um.bonus_months,
+        recurring_billing_interval: um.recurring_billing_interval,
+        recurring_billing_unit: um.recurring_billing_unit,
+        membership_fee_price: um.membership_fee_price,
+      },
+      next: { billing_duration: patch },
+    });
+    res.json(await loadAssignedPlanSnapshot(gymId, Number(um.id)));
+  } catch (err) {
+    if (err instanceof CadencePairError) {
+      return res.status(400).json({ error: 'recurring_billing_interval and recurring_billing_unit must be set together' });
+    }
+    next(err);
+  }
+});
+
+// One route per benefit kind, with the replace-all `{ items: [{ gym_charge_id,
+// quantity }] }` payload the Plan and Promotion sections already take — the
+// admin editors are shared, so the contract has to be the same one. What
+// differs is what a row means: on a Plan it points at the live Sellable Item,
+// here it *is* the agreed line, so the write freezes the item's commercial
+// facts (`writeAssignedPlanBenefitSection`).
+const ASSIGNED_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
+  { path: 'session-benefits', category: 'session' },
+  { path: 'oneoff-benefits', category: 'oneoff' },
+  { path: 'periodical-benefits', category: 'periodical' },
+];
+
+for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
+  userMembershipsRouter.get(`/:id/${path}`, async (req, res, next) => {
+    const { gymId } = getTenantContext(req);
+    try {
+      const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+      if (!um) return res.status(404).json({ error: 'Membership not found' });
+      res.json(await loadAssignedPlanBenefitSection(gymId, Number(um.id), category));
+    } catch (err) { next(err); }
+  });
+
+  userMembershipsRouter.put(`/:id/${path}`, requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+    const { gymId } = getTenantContext(req);
+    const { items } = req.body;
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
+
+    const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+    if (!um) return res.status(404).json({ error: 'Membership not found' });
+    if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
+      return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${um.status}'` });
+    }
+
+    const parsed: { gym_charge_id: number; quantity: number }[] = [];
+    const seen = new Set<number>();
+    for (const item of items) {
+      const gymChargeId = parseInt(item?.gym_charge_id, 10);
+      const quantity = parseInt(item?.quantity, 10);
+      if (!Number.isInteger(gymChargeId) || gymChargeId <= 0) {
+        return res.status(400).json({ error: 'gym_charge_id is required' });
+      }
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({ error: 'quantity must be a positive integer' });
+      }
+      if (seen.has(gymChargeId)) return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
+      seen.add(gymChargeId);
+      parsed.push({ gym_charge_id: gymChargeId, quantity });
+    }
+
+    // A line already in this section is part of what was agreed, so it stays
+    // saveable whatever has since happened to the Sellable Item — retired,
+    // deactivated or reclassified. Only a *newly* added item is held to the
+    // catalogue's current state, and to the section's own category.
+    const current = await loadAssignedPlanBenefitSection(gymId, Number(um.id), category);
+    const alreadyAttached = new Set(current.map((row) => row.gym_charge_id));
+    const added = parsed.filter((item) => !alreadyAttached.has(item.gym_charge_id)).map((i) => i.gym_charge_id);
+    if (added.length > 0) {
+      const marks = added.map(() => '?').join(',');
+      const { rows: sellableItems } = await db.query(
+        `SELECT id, type, billing_frequency, status FROM gym_charges
+         WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${marks})`,
+        [gymId, ...added],
+      );
+      if (sellableItems.length !== added.length) {
+        return res.status(400).json({ error: 'One or more Sellable Items not found in this gym' });
+      }
+      const inactive = sellableItems.find((si: any) => si.status !== 'active');
+      if (inactive) {
+        return res.status(400).json({ error: `Sellable Item ${inactive.id} is not active in this gym` });
+      }
+      const mismatched = sellableItems.find((si: any) => classifySellableItem(si) !== category);
+      if (mismatched) {
+        return res.status(400).json({ error: `Sellable Item ${mismatched.id} does not belong in the '${category}' category` });
+      }
+    }
+
+    const feeToFreeze = await snapshotFeeForAssignment(gymId, um);
+    try {
+      const applied = await db.transaction(async (tx) => {
+        // Re-checked under the lock: the status may have moved between the
+        // read above and this write.
+        const { rows: locked } = await tx.query(
+          'SELECT id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+          [req.params.id, gymId],
+        );
+        if (locked.length === 0) return { kind: 'not_found' } as const;
+        if (!SNAPSHOT_EDITABLE_STATUSES.includes(locked[0].status as Status)) {
+          return { kind: 'not_editable', status: locked[0].status as string } as const;
+        }
+        // Captures what this assignment resolves live today *before* the edit,
+        // so replacing one section can't blank the other two for an assignment
+        // that predates the snapshot (stage 3's fallback is all-or-nothing).
+        await materialiseAssignedPlanSnapshot(tx, {
+          gymId, userMembershipId: Number(um.id),
+          membershipPlanId: um.membership_plan_id != null ? Number(um.membership_plan_id) : null,
+          membershipFeePrice: feeToFreeze,
+        });
+        await writeAssignedPlanBenefitSection(tx, {
+          gymId, userMembershipId: Number(um.id), category, items: parsed,
+        });
+        return { kind: 'ok' } as const;
+      });
+      if (applied.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+      if (applied.kind === 'not_editable') {
+        return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${applied.status}'` });
+      }
+
+      recordAudit(req, {
+        action: 'update', entityType: 'user_membership', entityId: req.params.id,
+        previous: { [`${category}_benefits`]: current.map((r) => ({ gym_charge_id: r.gym_charge_id, quantity: r.quantity })) },
+        next: { [`${category}_benefits`]: parsed },
+      });
+      res.json(await loadAssignedPlanBenefitSection(gymId, Number(um.id), category));
+    } catch (err) { next(err); }
+  });
+}
 
 // ─── Covered Members (#374 — multi-member Membership Plans) ───────────────────
 // A Membership's covered Members receive the plan's benefits/entitlements
