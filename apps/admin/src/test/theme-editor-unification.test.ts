@@ -74,8 +74,10 @@ describe('Base Theme editor unified with the Custom Theme editor (#678)', () => 
 
   it('gives the Base Theme editor the Custom editor’s applicable sections', () => {
     // Assignments is gym-level (centers), so it has no platform counterpart.
-    expect(basePage).toContain("type SectionKey = 'branding' | 'colors' | 'typography'");
-    for (const section of ['branding', 'colors', 'typography']) {
+    // `members` joined them with #732 — the Base Theme's own Members App
+    // background images, the platform counterpart of #725's section.
+    expect(basePage).toContain("type SectionKey = 'branding' | 'members' | 'colors' | 'typography'");
+    for (const section of ['branding', 'members', 'colors', 'typography']) {
       expect(basePage, `the ${section} section is missing`).toContain(`renderSection('${section}'`);
     }
     expect(basePage, 'Colors is no longer the only thing the expanded card exposes')

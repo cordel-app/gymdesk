@@ -16,7 +16,7 @@ import {
   memberImageUrls,
   themeMemberFolderKeys,
 } from '../domain/themeMemberImages';
-import { buildGymFolderPrefix, sanitizeStorageFolderName } from '../infra/storage';
+import { PLATFORM_STORAGE_ROOT, buildGymFolderPrefix, sanitizeStorageFolderName } from '../infra/storage';
 
 const R2_ENDPOINT = 'https://example.r2.cloudflarestorage.com';
 const R2_BUCKET = 'test-bucket';
@@ -99,6 +99,44 @@ describe('object keys (#725 §Objective, §Customer Theme Ownership)', () => {
     for (const key of themeMemberFolderKeys(folderPrefix, THEME_ID, 'Dark Modern')) {
       expect(key.endsWith('/')).toBe(true);
     }
+  });
+});
+
+// ─── Base Themes (#732) ──────────────────────────────────────────────────────
+
+describe('platform object keys (#732)', () => {
+  it('puts a Base Theme under `cordel/Themes/`, with the same slot filenames', () => {
+    for (const slot of MEMBER_IMAGE_SLOTS) {
+      expect(buildThemeMemberImageKey(PLATFORM_STORAGE_ROOT, THEME_ID, 'Dark Modern', slot))
+        .toBe(`cordel/Themes/${THEME_ID}-DarkModern/Members/${slot}.png`);
+    }
+  });
+
+  it('never uses a gym storage prefix', () => {
+    const key = buildThemeMemberImageKey(PLATFORM_STORAGE_ROOT, THEME_ID, 'Dark Modern', 'training');
+    expect(key.startsWith('cordel/')).toBe(true);
+    expect(key).not.toContain('gyms/');
+    // `cordel/` and `gyms/` are siblings, so a platform key and a gym key for
+    // the same theme id can never collide.
+    expect(key).not.toBe(buildThemeMemberImageKey(buildGymFolderPrefix(GYM_ID, 'Acme Fitness'), THEME_ID, 'Dark Modern', 'training'));
+  });
+
+  it('sanitizes a Base Theme name the same way, so it cannot climb out of its folder', () => {
+    const key = buildThemeMemberImageKey(PLATFORM_STORAGE_ROOT, THEME_ID, '../../gyms/evil', 'training');
+    expect(key).toBe(`cordel/Themes/${THEME_ID}-gymsevil/Members/training.png`);
+    // cordel / Themes / <theme> / Members / training.png
+    expect(key.split('/')).toHaveLength(5);
+  });
+
+  it('lists the platform hierarchy outermost first, markers only', () => {
+    const keys = themeMemberFolderKeys(PLATFORM_STORAGE_ROOT, THEME_ID, 'Dark Modern');
+    expect(keys).toEqual([
+      'cordel/',
+      'cordel/Themes/',
+      `cordel/Themes/${THEME_ID}-DarkModern/`,
+      `cordel/Themes/${THEME_ID}-DarkModern/Members/`,
+    ]);
+    for (const key of keys) expect(key.endsWith('/')).toBe(true);
   });
 });
 

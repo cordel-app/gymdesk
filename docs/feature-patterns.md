@@ -650,6 +650,15 @@ A *set* of singleton assets — the six Members App backgrounds a Custom Theme c
 
 Derive the key from the tenant's own folder prefix, the owner row and the slot — never from a request parameter — and write the missing folder markers of that branch first (idempotent, since every marker key ends in `/` and can only overwrite another marker). Return all the slots on the owner's existing payload, one query for a list of owners, so a screen never fetches them one at a time. In the editor, stage a pick and a removal in the draft and perform them on Save: an immediate upload cannot be undone by Cancel.
 
+### Giving the platform the same slots a tenant already has (#732)
+
+When the same set of slots has to work for a platform-level owner (a Base Theme) as well as a tenant-owned one, do not build a second feature next to the first:
+
+1. **Widen the owner column, don't fork the table.** `theme_member_images.gym_id` went `NOT NULL` → `NULL` (migration 182), and a NULL means "the platform owns this row" — the same thing `themes.gym_id IS NULL` already means about the theme. One table keeps one `(owner_id, slot)` uniqueness rule, one CHECK and one read path; a parallel `base_*` table would have duplicated all three for one nullable column.
+2. **The platform root is a constant, and it has exactly one spelling.** `PLATFORM_STORAGE_ROOT` (`'cordel'`, `infra/storage.ts`) is the sibling of the `gyms/` root, and the key builder takes the prefix as an argument, so `buildThemeMemberImageKey(PLATFORM_STORAGE_ROOT, …)` and `buildThemeMemberImageKey(gymPrefix, …)` are the same function. Two roots that can never collide also mean no "is this a platform object?" check before a delete.
+3. **The write route decides ownership; the read route does not.** The platform routes live on the superadmin router and resolve the theme with `gym_id IS NULL`; the gym routes stay scoped to `gym_id = gymId`. Each answers 404 for the other's rows, which is what makes "a client cannot reach another owner's assets by changing an id" true by construction. Reads are the asymmetric part: a gym is *served* a Base Theme's slots (its members see them), so the tenant-scoped loader includes `gym_id IS NULL` rows **only for theme ids the caller already named** — never as a blanket relaxation of the tenant filter.
+4. **The consuming app changes nothing.** It already reads `members_images` off the payload; where the row came from is not its business.
+
 ### Painting one of those slots on a surface that already exists (#728)
 
 When the consuming app puts that artwork *behind* a screen it already has, the change is a background and nothing else:
