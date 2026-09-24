@@ -18,6 +18,13 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
+import {
+  MEMBER_IMAGE_MAX_BYTES,
+  MEMBER_IMAGE_SLOTS,
+  ThemeMembersImagesEditor,
+  type MemberImageSlot,
+  type MembersImages,
+} from '@/components/ThemeMembersImagesEditor';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
@@ -33,6 +40,8 @@ interface Theme {
   has_logo: boolean;
   logo_updated_at: string | null;
   logo_contains_gym_name: boolean;
+  /** #732: one nullable URL per Members App background slot; six, always. */
+  members_images: MembersImages;
   tokens: ThemeTokens;
   created_at: string;
   modified_at: string | null;
@@ -53,9 +62,19 @@ const EDITABLE_STATUSES = ['draft', 'active', 'inactive'] as const;
 // #678 — the same section model as the Custom Themes editor. `Assignments`
 // is the one section that has no platform-level counterpart: a theme is
 // assigned to a gym's centers, and this screen is above any gym.
-type SectionKey = 'branding' | 'colors' | 'typography';
+type SectionKey = 'branding' | 'members' | 'colors' | 'typography';
 
 const NEW_ID = 'new';
+
+/** Six nulls — the Members configuration of a theme that does not exist yet. */
+function emptyMembersImages(): MembersImages {
+  return Object.fromEntries(MEMBER_IMAGE_SLOTS.map((slot) => [`${slot}_url`, null])) as MembersImages;
+}
+
+/** One entry per Members image slot — the draft's shape for all three maps. */
+function bySlot<T>(value: T): Record<MemberImageSlot, T> {
+  return Object.fromEntries(MEMBER_IMAGE_SLOTS.map((slot) => [slot, value])) as Record<MemberImageSlot, T>;
+}
 
 function emptyEditForm(theme?: Theme) {
   return {
@@ -139,6 +158,12 @@ export default function ThemesPage() {
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const [logoRemovePending, setLogoRemovePending] = useState(false);
+  // #732 — the Members images draft. A picked file and a queued removal are
+  // staged here and only leave the browser on Save, so Cancel discards both:
+  // the same lifecycle the logo has had since #188, one slot at a time.
+  const [membersImageFiles, setMembersImageFiles] = useState<Record<MemberImageSlot, File | null>>(bySlot(null));
+  const [membersImagePreviews, setMembersImagePreviews] = useState<Record<MemberImageSlot, string | null>>(bySlot(null));
+  const [membersImageRemovals, setMembersImageRemovals] = useState<Record<MemberImageSlot, boolean>>(bySlot(false));
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when entering edit mode, cleared once Save succeeds.
   const origFormRef = useRef<EditForm | null>(null);
@@ -189,6 +214,25 @@ export default function ThemesPage() {
     }
   }
 
+  /**
+   * #732: raw image bytes to `POST /platform/themes/:id/members-images/:slot`.
+   * `fetch` rather than `apiFetch` for the same reason the logo upload uses it
+   * — the body is the file itself, not JSON, and the `Content-Type` is what the
+   * server validates the signature against.
+   */
+  async function uploadMembersImage(themeId: string, slot: MemberImageSlot, file: File) {
+    const token = await getToken();
+    const res = await fetch(`/api/proxy/platform/themes/${themeId}/members-images/${slot}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: file,
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.error ?? t('members_image_error_upload'));
+    }
+  }
+
   // Deferred — the actual DELETE only fires on Save (#492), so editing the
   // logo never mutates the persisted Theme until the user commits the draft.
   function queueLogoRemove() {
@@ -203,6 +247,32 @@ export default function ThemesPage() {
     const reader = new FileReader();
     reader.onload = (ev) => setEditLogoPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
+  }
+
+  // ─── Members App images (#732) ─────────────────────────────────────────────
+
+  function pickMembersImage(slot: MemberImageSlot, file: File) {
+    if (!file.type.startsWith('image/')) { setEditError(t('members_image_error_type')); return; }
+    if (file.size > MEMBER_IMAGE_MAX_BYTES) { setEditError(t('members_image_error_size')); return; }
+    setEditError(null);
+    setMembersImageFiles((prev) => ({ ...prev, [slot]: file }));
+    setMembersImageRemovals((prev) => ({ ...prev, [slot]: false }));
+    const reader = new FileReader();
+    reader.onload = (ev) => setMembersImagePreviews((prev) => ({ ...prev, [slot]: ev.target?.result as string }));
+    reader.readAsDataURL(file);
+  }
+
+  function queueMembersImageRemove(slot: MemberImageSlot) {
+    setMembersImageFiles((prev) => ({ ...prev, [slot]: null }));
+    setMembersImagePreviews((prev) => ({ ...prev, [slot]: null }));
+    setMembersImageRemovals((prev) => ({ ...prev, [slot]: true }));
+  }
+
+  /** The persisted URLs of a theme's six slots, as the draft starts out. */
+  function previewsFor(theme?: Theme): Record<MemberImageSlot, string | null> {
+    return Object.fromEntries(
+      MEMBER_IMAGE_SLOTS.map((slot) => [slot, theme?.members_images?.[`${slot}_url`] ?? null]),
+    ) as Record<MemberImageSlot, string | null>;
   }
 
   // ─── Draft / live preview (#492) ───────────────────────────────────────────
@@ -223,7 +293,8 @@ export default function ThemesPage() {
       editForm.logoContainsGymName !== orig.logoContainsGymName ||
       !tokensEqual(editForm.tokens, orig.tokens) ||
       editLogoFile !== null ||
-      logoRemovePending
+      logoRemovePending ||
+      MEMBER_IMAGE_SLOTS.some((slot) => membersImageFiles[slot] !== null || membersImageRemovals[slot])
     );
   }
 
@@ -245,7 +316,7 @@ export default function ThemesPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editForm, editLogoFile, logoRemovePending, editingId]);
+  }, [editForm, editLogoFile, logoRemovePending, membersImageFiles, membersImageRemovals, editingId]);
 
   // ─── Expand / Edit ─────────────────────────────────────────────────────────
 
@@ -269,6 +340,9 @@ export default function ThemesPage() {
     setEditLogoFile(null);
     setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
     setLogoRemovePending(false);
+    setMembersImageFiles(bySlot(null));
+    setMembersImageRemovals(bySlot(false));
+    setMembersImagePreviews(previewsFor(theme));
     setOpenSections(new Set(['branding']));
   }
 
@@ -287,6 +361,9 @@ export default function ThemesPage() {
     setEditLogoFile(null);
     setEditLogoPreview(null);
     setLogoRemovePending(false);
+    setMembersImageFiles(bySlot(null));
+    setMembersImagePreviews(bySlot(null));
+    setMembersImageRemovals(bySlot(false));
   }
 
   // ─── New Theme (temp row) ──────────────────────────────────────────────────
@@ -302,6 +379,9 @@ export default function ThemesPage() {
       origFormRef.current = form;
       setEditError(null);
       setLogoRemovePending(false);
+      setMembersImageFiles(bySlot(null));
+      setMembersImagePreviews(bySlot(null));
+      setMembersImageRemovals(bySlot(false));
       setOpenSections(new Set<SectionKey>(['branding']));
     });
   }
@@ -342,12 +422,25 @@ export default function ThemesPage() {
         } else if (logoRemovePending) {
           await apiFetch(`/platform/themes/${id}/logo`, { method: 'DELETE' });
         }
+        // #732 — one call per slot the admin actually touched. A picked file
+        // wins over a queued removal for the same slot (picking clears the
+        // removal), so the two branches are exclusive.
+        for (const slot of MEMBER_IMAGE_SLOTS) {
+          const file = membersImageFiles[slot];
+          if (file) {
+            await uploadMembersImage(id, slot, file);
+          } else if (membersImageRemovals[slot]) {
+            await apiFetch(`/platform/themes/${id}/members-images/${slot}`, { method: 'DELETE' });
+          }
+        }
         // Stay on the editor with a clean draft rather than collapsing back
         // to the read-only view — the user may keep iterating (#492).
         origFormRef.current = { ...editForm, name: editForm.name.trim(), description: editForm.description.trim() };
         setEditForm(origFormRef.current);
         setEditLogoFile(null);
         setLogoRemovePending(false);
+        setMembersImageFiles(bySlot(null));
+        setMembersImageRemovals(bySlot(false));
       }
       load();
     } catch (err: any) {
@@ -471,6 +564,18 @@ export default function ThemesPage() {
             </ThemeBrandingEditor>
           ))}
 
+          {/* #732 — the six Members App backgrounds of this Base Theme. Hidden
+              on a theme that does not exist yet, for the logo's reason: there
+              is no id to upload to until it has been created. */}
+          {!isNew && renderSection('members', t('section_members_images'), (
+            <ThemeMembersImagesEditor
+              previews={membersImagePreviews}
+              onPick={pickMembersImage}
+              onRemove={queueMembersImageRemove}
+              t={t}
+            />
+          ))}
+
           {!isNew && renderSection('colors', t('section_colors'), (
             <ThemeColorsEditor tokens={editForm.tokens} onChange={updateTokens} namespace="themes" t={t} />
           ))}
@@ -514,6 +619,7 @@ export default function ThemesPage() {
     has_logo: false,
     logo_updated_at: null,
     logo_contains_gym_name: false,
+    members_images: emptyMembersImages(),
     tokens: DEFAULT_TOKENS,
     created_at: '',
     modified_at: null,

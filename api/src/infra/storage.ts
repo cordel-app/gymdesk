@@ -17,6 +17,18 @@ import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } fro
  */
 const GYM_STORAGE_ROOT = 'gyms';
 
+/**
+ * #732: `cordel` — the platform's own root inside the same shared bucket, the
+ * sibling of `gyms/` (#668). Platform-level assets belong to no gym, so they
+ * cannot hang off `gyms.storage_folder_prefix`; this constant is the whole of
+ * their prefix, which is why a Base Theme's folder is
+ * `cordel/Themes/<theme_id>-<name>/` — `buildThemeMemberImageKey()` takes the
+ * prefix as its first argument and neither knows nor cares which root it came
+ * from. Exported so there is one spelling of the platform root in the codebase:
+ * a second literal `'cordel'` anywhere is a bug waiting to diverge from this.
+ */
+export const PLATFORM_STORAGE_ROOT = 'cordel';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 const GYM_FOLDERS = [

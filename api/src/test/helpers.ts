@@ -127,6 +127,11 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM promotions WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_holiday_hours WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_operating_hours WHERE gym_id IN (${marks})`, ids);
+  // #725/#732: `fk_theme_member_images_gym` cascades, so a gym's own rows go
+  // with it — but a row of a Base Theme carries `gym_id IS NULL` (migration
+  // 182) and nothing cascades to it, so a suite that writes one has to clear it
+  // itself (`base-theme-members-images.test.ts` does, by theme id).
+  await db.query(`DELETE FROM theme_member_images WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, ids);
   // #636: `payment_providers` is deliberately NOT cleaned here. It is
   // platform-level (no gym_id), so nothing cascades it and a blanket delete

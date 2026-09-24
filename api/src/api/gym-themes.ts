@@ -9,7 +9,6 @@ import { themeLogoUrl } from '../domain/themeLogo';
 import {
   bytesMatchImageMime,
   buildThemeMemberImageKey,
-  emptyMemberImageUrls,
   isMemberImageSlot,
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_MIME_TYPES,
@@ -54,10 +53,15 @@ function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: Me
   return {
     ...rest,
     // #725: always all six fields; `null` is "this slot is not configured", and
-    // the Members App answers it with the theme's background colour. A Base
-    // Theme has no gym folder to store an image in (out of scope), so it always
-    // reads as six nulls.
-    members_images: row.gym_id === null ? emptyMemberImageUrls() : memberImageUrls(memberImages),
+    // the Members App answers it with the theme's background colour.
+    //
+    // #732: a Base Theme now carries its own six as well — the platform's, in
+    // `cordel/Themes/…`, which is why this no longer forces a Base Theme to six
+    // nulls. The gym reads them (its members see them if it runs that theme)
+    // but cannot write them: the upload and remove routes below are scoped to
+    // `gym_id = gymId` and answer 404 for a Base Theme, which is what keeps a
+    // platform asset out of any one gym's hands.
+    members_images: memberImageUrls(memberImages),
     is_base: row.gym_id === null,
     has_logo: !!row.logo_mime,
     // #713: where the binary actually is, for a Custom Theme logo stored in the
@@ -120,7 +124,10 @@ gymThemesRouter.get('/', async (req, res, next) => {
         params,
       );
       const gymThemeId = await getGymThemeId(gymId);
-      const memberImages = await loadMemberImagesByTheme([gymId]);
+      // The theme ids are named so the read also picks up the platform's own
+      // rows for the Base Themes in this list (#732) — without them it stays
+      // strictly this gym's.
+      const memberImages = await loadMemberImagesByTheme([gymId], rows.map((row: any) => row.id));
       res.json(rows.map((row) => shapeTheme(row, gymThemeId, memberImages.get(row.id) ?? [])));
     });
   } catch (err) { next(err); }
@@ -564,10 +571,16 @@ gymThemesRouter.post(
         // serving the image this call just replaced. `UTC_TIMESTAMP()` because
         // every DATETIME in this schema is UTC (`timezone: 'Z'`,
         // docs/architecture.md).
+        //
+        // `gym_id` is assigned too (#732): since migration 182 it may also be
+        // NULL (the platform's), so whichever router wrote a slot last also
+        // owns its row — no cross-table CHECK can keep the column in step with
+        // `themes.gym_id`.
         await db.query(
           `INSERT INTO theme_member_images (gym_id, theme_id, slot, object_key, created_at, modified_at)
            VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
            ON DUPLICATE KEY UPDATE
+             gym_id      = VALUES(gym_id),
              object_key  = VALUES(object_key),
              modified_at = UTC_TIMESTAMP()`,
           [gymId, theme.id, slot, key],
