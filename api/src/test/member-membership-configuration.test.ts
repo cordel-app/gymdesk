@@ -103,36 +103,6 @@ async function createAssignment(
   return insertId;
 }
 
-async function createActivityType(gymId: string, name: string): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO activity_types (gym_id, name, duration_minutes, max_capacity, status)
-     VALUES (?, ?, 60, 10, 'active')`,
-    [gymId, name],
-  );
-  return insertId;
-}
-
-async function addAllowance(
-  gymId: string,
-  planId: number,
-  activityTypeId: number,
-  opts: { type?: 'unlimited' | 'session_count'; sessionCount?: number | null } = {},
-): Promise<number> {
-  const { type = 'unlimited', sessionCount = null } = opts;
-  const { insertId } = await db.query(
-    `INSERT INTO plan_allowances
-       (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count,
-        recurrence_interval, recurrence_unit)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      gymId, planId, activityTypeId, type, sessionCount,
-      type === 'session_count' ? 1 : null,
-      type === 'session_count' ? 'month' : null,
-    ],
-  );
-  return insertId;
-}
-
 /** A recurring Sellable Item — the shape #631 allows as a periodic service. */
 async function createSellableItem(
   gymId: string, name: string, amount = 20, billingFrequency = 'month',
@@ -303,7 +273,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     expect(res.body).toEqual({ plans: [], promotions: [], services: [] });
   });
 
-  it('returns the plan, its allowances, its promotions and its services', async () => {
+  it('returns the plan, its promotions and its services', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId, 'Shape Standard');
     const umId = await createAssignment(gymId, memberId, planId, {
@@ -312,9 +282,6 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
       finalPrice: 49.5,
       nextBillingDate: '2026-04-01',
     });
-
-    const yoga = await createActivityType(gymId, `MMC Yoga ${uniq()}`);
-    await addAllowance(gymId, planId, yoga, { type: 'session_count', sessionCount: 8 });
 
     const promoId = await createPromotion(gymId, planId, `Shape Spring ${uniq()}`);
     await applyPromotion(gymId, umId, promoId);
@@ -341,15 +308,9 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     expect(plan.ends_at).toBeNull();
     expect(dateOnly(plan.next_billing_date)).toBe('2026-04-01');
 
-    expect(plan.activity_allowances).toHaveLength(1);
-    expect(plan.activity_allowances[0]).toMatchObject({
-      membership_plan_id: planId,
-      allowance_type: 'session_count',
-      session_count: 8,
-      recurrence_interval: 1,
-      recurrence_unit: 'month',
-    });
-    expect(String(plan.activity_allowances[0].activity_type_name)).toContain('MMC Yoga');
+    // #635 stage 4: Included Services are retired (migration 177) — the card no
+    // longer reports the Plan's activity allowances.
+    expect(plan.activity_allowances).toBeUndefined();
 
     // ── PROMOTIONS (Member level, each row carrying its Assigned Plan) ──
     expect(res.body.promotions).toHaveLength(1);
@@ -375,16 +336,6 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
       sellable_item_retired: false,
     });
     expect(Number(res.body.services[0].unit_price)).toBe(12.5);
-  });
-
-  it('returns an empty allowance list for a live plan that grants none', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId, 'Shape No Benefits');
-    await createAssignment(gymId, memberId, planId);
-
-    const res = await getConfiguration(gymId, memberId);
-    expect(res.status).toBe(200);
-    expect(res.body.plans[0].activity_allowances).toEqual([]);
   });
 
   it("does not leak another member's plans, promotions or services", async () => {
@@ -433,11 +384,6 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
       status: 'active', startsAt: '2026-05-01', finalPrice: 100,
     });
 
-    const pilates = await createActivityType(gymId, `MMC Pilates ${uniq()}`);
-    const boxing = await createActivityType(gymId, `MMC Boxing ${uniq()}`);
-    await addAllowance(gymId, standardPlan, pilates);
-    await addAllowance(gymId, premiumPlan, boxing);
-
     standardPromo = await createPromotion(gymId, standardPlan, `Parallel Standard Promo ${uniq()}`);
     premiumPromo = await createPromotion(gymId, premiumPlan, `Parallel Premium Promo ${uniq()}`);
     await applyPromotion(gymId, standardUm, standardPromo, { appliedAt: '2026-03-01 09:00:00' });
@@ -473,21 +419,6 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
     ]);
     expect(res.body.plans.map((p: any) => p.is_live)).toEqual([true, true]);
     expect(res.body.plans.map((p: any) => Number(p.final_price))).toEqual([100, 75]);
-  });
-
-  it('resolves each plan\'s activity allowances against its own Membership Plan', async () => {
-    const res = await getConfiguration(gymId, memberId);
-    const byId = new Map(res.body.plans.map((p: any) => [p.id, p]));
-    const standard: any = byId.get(standardUm);
-    const premium: any = byId.get(premiumUm);
-
-    expect(standard.activity_allowances).toHaveLength(1);
-    expect(String(standard.activity_allowances[0].activity_type_name)).toContain('MMC Pilates');
-    expect(standard.activity_allowances[0].membership_plan_id).toBe(standardPlan);
-
-    expect(premium.activity_allowances).toHaveLength(1);
-    expect(String(premium.activity_allowances[0].activity_type_name)).toContain('MMC Boxing');
-    expect(premium.activity_allowances[0].membership_plan_id).toBe(premiumPlan);
   });
 
   it('lists the promotions of both plans, each carrying its Assigned Plan', async () => {
@@ -567,20 +498,6 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
     expect(res.body.plans.map((p: any) => p.id)).toEqual([liveUm, cancelledUm, expiredUm]);
     expect(res.body.plans.map((p: any) => p.is_live)).toEqual([true, false, false]);
     expect(dateOnly(res.body.plans[1].ends_at)).toBe('2026-05-31');
-  });
-
-  it('never populates activity_allowances for a non-live assignment', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId, `History Allowance ${uniq()}`);
-    const activityTypeId = await createActivityType(gymId, `MMC Spin ${uniq()}`);
-    await addAllowance(gymId, planId, activityTypeId);
-    await createAssignment(gymId, memberId, planId, { status: 'cancelled', startsAt: '2026-01-01' });
-
-    const res = await getConfiguration(gymId, memberId);
-    expect(res.status).toBe(200);
-    expect(res.body.plans).toHaveLength(1);
-    expect(res.body.plans[0].is_live).toBe(false);
-    expect(res.body.plans[0].activity_allowances).toEqual([]);
   });
 
   it('excludes the promotions and services of cancelled and expired assignments', async () => {

@@ -1,5 +1,3 @@
-import { registerBookingAccessHook } from './bookings';
-
 /**
  * P3.3: package-credit consumption/refund tied to booking lifecycle.
  * Now backed by calendar_event_bookings (stage 3 of #360).
@@ -19,23 +17,21 @@ export function getPackageIntent(tx: any) {
   return packageIntentByTx.get(tx) ?? null;
 }
 
-registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId) => {
-  const { rows: restrictedRows } = await tx.query(
-    'SELECT COUNT(*) AS n FROM plan_allowances WHERE activity_type_id = ? AND gym_id = ?',
-    [activityTypeId, gymId],
-  );
-  if (Number(restrictedRows[0].n) === 0) return;
-
-  const { rows: planMatch } = await tx.query(
-    `SELECT um.id FROM user_memberships um
-     JOIN plan_allowances pa
-       ON pa.membership_plan_id = um.membership_plan_id AND pa.gym_id = um.gym_id
-     WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'
-       AND pa.activity_type_id = ? LIMIT 1`,
-    [gymId, memberId, activityTypeId],
-  );
-  if (planMatch.length > 0) return;
-
+/**
+ * Claim the member's next-to-expire class package for this booking, so an
+ * activity their Membership Plan does not grant is paid for out of prepaid
+ * sessions instead of being refused. Returns whether a credit was claimed; the
+ * debit itself happens post-insert in `debitPackageIfClaimed`.
+ *
+ * Called by `activity-eligibility.ts` — the gate that knows the member's plan
+ * does not cover the activity — rather than from a booking access hook of its
+ * own. Until #635 stage 4 this module registered that hook itself and decided
+ * "is this activity plan-restricted?" from `plan_allowances`; with Included
+ * Services retired (migration 177) the one place that answers that question is
+ * `activity_type_eligible_plans`, so the claim moved to the gate that reads it
+ * and the two no longer have to be registered in a particular order.
+ */
+export async function tryClaimPackageCredit(tx: any, gymId: string, memberId: number): Promise<boolean> {
   const { rows: pkg } = await tx.query(
     `SELECT id, sessions_remaining, expires_at
      FROM user_class_packages
@@ -45,10 +41,11 @@ registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId) => {
      LIMIT 1 FOR UPDATE`,
     [gymId, memberId],
   );
-  if (pkg.length === 0) return;
+  if (pkg.length === 0) return false;
 
   packageIntentByTx.set(tx, { userClassPackageId: pkg[0].id });
-});
+  return true;
+}
 
 export async function debitPackageIfClaimed(tx: any, bookingId: number, gymId: string) {
   const intent = packageIntentByTx.get(tx);

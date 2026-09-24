@@ -197,53 +197,11 @@ async function loadBillingPolicy(gymId: string, planId: number | null) {
 // (migration 130) is gone with the concept itself (migration 176). What an
 // assignment bills is its own #635 snapshot — `loadAssignedPlanSnapshot` below.
 
-// Benefits + usage (#511 stage 3): plan_allowances rows for this Membership's
-// plan, with allocated/used/remaining for 'session_count' allowances. Usage
-// is aggregated across every covered Member (owner + additional Members,
-// #374) sharing this Membership, since the ticket asks for usage "per
-// benefit" on the expanded card rather than a further per-Member breakdown —
-// real booking-time enforcement (activity-eligibility.ts) still checks each
-// Member's own bookings independently; this is a display-only aggregate.
-async function loadActivityAllowancesUsage(gymId: string, planId: number | null, memberIds: number[]) {
-  if (!planId || memberIds.length === 0) return [];
-  const { rows: allowances } = await db.query(
-    `SELECT pa.*, at.name AS activity_type_name
-     FROM plan_allowances pa
-     JOIN activity_types at ON at.id = pa.activity_type_id
-     WHERE pa.membership_plan_id = ? AND pa.gym_id = ?`,
-    [planId, gymId],
-  );
-  return Promise.all(allowances.map(async (a: any) => {
-    if (a.allowance_type !== 'session_count') {
-      return {
-        activity_type_id: a.activity_type_id, activity_type_name: a.activity_type_name,
-        allowance_type: a.allowance_type, allocated: null, used: null, remaining: null,
-        recurrence_interval: a.recurrence_interval, recurrence_unit: a.recurrence_unit,
-      };
-    }
-    const interval = a.recurrence_interval ?? 1;
-    const unit = (a.recurrence_unit ?? 'month') as string;
-    const memberPlaceholders = memberIds.map(() => '?').join(',');
-    // Mirrors plan-allowances.ts's own recurrence-window query, aggregated
-    // across every covered Member instead of a single one.
-    const { rows: usageRows } = await db.query(
-      `SELECT COUNT(*) AS n FROM calendar_event_bookings ceb
-       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
-       WHERE ceb.gym_id = ? AND ceb.member_id IN (${memberPlaceholders})
-         AND ce.activity_type_id = ? AND ceb.status NOT IN ('cancelled')
-         AND ceb.created_at >= DATE_SUB(NOW(), INTERVAL ? ${unit.toUpperCase()})`,
-      [gymId, ...memberIds, a.activity_type_id, interval],
-    );
-    const used = Number(usageRows[0].n);
-    const allocated = a.session_count as number | null;
-    return {
-      activity_type_id: a.activity_type_id, activity_type_name: a.activity_type_name,
-      allowance_type: a.allowance_type, allocated, used,
-      remaining: allocated != null ? Math.max(allocated - used, 0) : null,
-      recurrence_interval: a.recurrence_interval, recurrence_unit: a.recurrence_unit,
-    };
-  }));
-}
+// #635 stage 4: Included Services (`plan_allowances`) is retired with the
+// concept itself (migration 177), so an assignment no longer reports activity
+// allowances or their per-window usage. Which activities its Members may book
+// is the Activity Type's own eligible-plan list (`activity-eligibility.ts`),
+// and what the assignment *bills* is its own snapshot — `loadAssignedPlanSnapshot`.
 
 // Every promotion ever applied to this plan (applied or revoked), with just
 // the Membership Fee charge/period benefits the Billing Events range
@@ -375,14 +333,12 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // what billing and the Billing Simulation read.
     loadAssignedPlanSnapshot(gymId, um.id),
   ]);
-  const activityAllowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, members.map((m: any) => m.member_id));
   const billingEvents = await computeBillingEventsView(gymId, um);
 
   res.json({
     ...um, ...audit,
     members,
     billing_policy: billingPolicy,
-    activity_allowances: activityAllowances,
     promotions,
     additional_services: additionalServices,
     billing_events: billingEvents,
@@ -843,25 +799,18 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // closed_at separately from the admin-settable `ends_at`.
 const CLOSEABLE_FROM: readonly Status[] = ['awaiting_payment', 'active', 'paused'];
 
-// #511 (stage 3): now reuses loadActivityAllowancesUsage (the same helper
-// GET /:id's expanded `activity_allowances` section calls) instead of only
-// the stage-1 pending-billing check, so a session_count allowance with
-// sessions still remaining in its current recurrence window also counts as
-// unused value about to be lost.
-async function computeUnusedValueWarnings(
-  gymId: string,
-  um: { id: number; membership_plan_id: number | null; next_billing_date: unknown; has_pending_billing: number | boolean },
-): Promise<string[]> {
+// #511 stage 3 also counted a `session_count` allowance with sessions left in
+// its current recurrence window as unused value about to be lost. #635 stage 4
+// retired Included Services (migration 177), so a pending billing event is once
+// again the only kind of unused value an assignment can have — a Plan's Session
+// Benefits are billed up front, not consumed per booking, so closing the
+// assignment does not forfeit them.
+function computeUnusedValueWarnings(
+  um: { next_billing_date: unknown; has_pending_billing: number | boolean },
+): string[] {
   const warnings: string[] = [];
   if (Number(um.has_pending_billing) === 1) {
     warnings.push(`1 pending billing event on ${um.next_billing_date}`);
-  }
-  const { rows: memberRows } = await db.query(MEMBERS_SELECT, [um.id, gymId]);
-  const allowances = await loadActivityAllowancesUsage(gymId, um.membership_plan_id, memberRows.map((m: any) => m.member_id));
-  for (const a of allowances) {
-    if (a.allowance_type === 'session_count' && a.remaining != null && a.remaining > 0) {
-      warnings.push(`${a.remaining} unused ${a.activity_type_name} session(s) remaining`);
-    }
   }
   return warnings;
 }
@@ -882,7 +831,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     return res.status(400).json({ error: `Cannot close a membership with status '${current.status}'` });
   }
 
-  const warnings = await computeUnusedValueWarnings(gymId, current);
+  const warnings = computeUnusedValueWarnings(current);
   if (warnings.length > 0 && !confirm) {
     return res.status(409).json({
       error: 'unused_value_impacted',

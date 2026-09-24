@@ -225,3 +225,21 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       Charge Benefits configured. If any gym still has rows when this ships, capture
       `SELECT * FROM plan_charge_benefits` and `… FROM user_membership_charge_benefits`
       first — the drop is not recoverable from the migration alone.
+- [ ] **Migration 177 must run *after* the API build that stops reading `plan_allowances`**
+      (#635 stage 4, part 2): it `DROP`s the table, so the previous build's
+      `plan-allowances.ts` booking hook, `GET /membership-plans/:id/allowances`, the
+      Assigned Plan detail and the Member membership configuration all 500 with
+      `ER_NO_SUCH_TABLE` if it runs first. Deploy the API first (it runs fine against
+      the old schema — nothing reads the table any more), then migrate.
+- [ ] **Migration 177 drops rows with no archive, and `down()` only restores the shape**
+      (#635 stage 4, Q3's "you can hard delete all assigned plans"): `down()` recreates
+      `plan_allowances` empty, so rolling the API back to a build that still gates
+      bookings on it would read "no plan includes any activity type" and refuse every
+      plan-based booking. Roll forward instead; if a real rollback is ever needed,
+      capture `SELECT * FROM plan_allowances` before the deploy and reload it.
+- [ ] **Check who loses a session cap before migrating 177** (#635 stage 4, part 2):
+      `activity_type_eligible_plans` grants access without a per-window limit, so a plan
+      with `allowance_type = 'session_count'` silently becomes unlimited for that
+      activity. Run
+      `SELECT gym_id, COUNT(*) FROM plan_allowances WHERE allowance_type = 'session_count' GROUP BY gym_id`
+      before the deploy; if any gym has rows, tell them the cap is going before it does.

@@ -26,11 +26,12 @@ import { memberProfessionalServicesRouter } from './api/member-professional-serv
 import { memberPersonalTrainingSlotsRouter } from './api/member-personal-training-slots';
 import { classSessionsRouter } from './api/calendar-events';
 // Side-effect import: registers the booking access hook for activity-type eligibility
-// (public_event / activity_type_eligible_plans). Must be imported BEFORE plan-allowances
-// so an ineligible member is rejected before entitlement is even evaluated (#481).
+// (public_event / activity_type_eligible_plans), which since #635 stage 4 is the only
+// plan-based gate and also claims a class-package credit when the plan does not cover
+// the activity (#481).
 import './api/activity-eligibility';
-// Side-effect import: registers the booking access hook for plan allowances + center validation.
-import './api/plan-allowances';
+// Side-effect import: registers the booking access hook for plan center coverage.
+import './api/plan-center-access';
 import { classPackagesRouter } from './api/class-packages';
 import { userClassPackagesRouter } from './api/user-class-packages';
 import { actionTypesRouter } from './api/action-types';
@@ -55,10 +56,6 @@ import { centersRouter } from './api/centers';
 import { memberCentersRouter } from './api/member-centers';
 import { trainerAvailabilityRouter } from './api/trainer-availability';
 import { operatingHoursRouter } from './api/operating-hours';
-// Side-effect import: registers the booking access hook for package credits.
-// Must be imported BEFORE plan-allowances so its hook is queued first
-// (plan-access checks getPackageIntent to know whether to bail on 403).
-import './api/package-credits';
 import { publicRouter } from './api/public';
 import { meRouter, meLinkRouter, meGymRouter, meGymsRouter } from './api/me';
 import { themesRouter, themesPublicRouter } from './api/themes';

@@ -180,19 +180,6 @@ async function createActivityType(gymId: string, name = 'UM Yoga'): Promise<numb
   return insertId;
 }
 
-async function addPlanAllowance(
-  gymId: string,
-  planId: number,
-  activityTypeId: number,
-  sessionCount: number,
-): Promise<void> {
-  await db.query(
-    `INSERT INTO plan_allowances (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
-     VALUES (?, ?, ?, 'session_count', ?, 1, 'month')`,
-    [gymId, planId, activityTypeId, sessionCount],
-  );
-}
-
 async function createCenter(gymId: string): Promise<number> {
   const { insertId } = await db.query(`INSERT INTO centers (gym_id, name) VALUES (?, ?)`, [gymId, `UM-Center-${Date.now()}`]);
   return insertId;
@@ -2134,40 +2121,6 @@ describe('POST /user-memberships/:id/close', () => {
     expect(rows[0].status).toBe('cancelled');
     expect(rows[0].closed_at).not.toBeNull();
   });
-
-  // #511 (stage 3): the unused-value check now also reuses the same
-  // loadActivityAllowancesUsage helper GET /:id's `activity_allowances`
-  // section calls, so a session_count allowance with sessions still
-  // remaining in its current recurrence window warns too, on top of the
-  // pre-existing pending-billing check above.
-  it('returns 409 with a warning when a session_count allowance still has sessions remaining', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    const activityTypeId = await createActivityType(gymId);
-    await addPlanAllowance(gymId, planId, activityTypeId, 4);
-    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
-    await setNextBillingDate(umId, null);
-
-    const centerId = await createCenter(gymId);
-    const eventId = await createCalendarEvent(gymId, centerId, activityTypeId);
-    await createUsageBooking(gymId, centerId, memberId, eventId);
-
-    const res = await request
-      .post(`/user-memberships/${umId}/close`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('unused_value_impacted');
-    expect(res.body.warnings.some((w: string) => w.includes('3 unused'))).toBe(true);
-
-    const confirmed = await request
-      .post(`/user-memberships/${umId}/close`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ confirm: true });
-    expect(confirmed.status).toBe(200);
-    expect(confirmed.body.status).toBe('cancelled');
-  });
 });
 
 // ─── GET /user-memberships/:id — audit metadata (#511 stage 2) ───────────────
@@ -2296,13 +2249,12 @@ describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
     await createTestMembership(gymId, 'admin');
   });
 
-  it('includes members, billing_policy, activity_allowances and promotions', async () => {
+  it('includes members, billing_policy, the #635 snapshot and promotions', async () => {
     const owner = await createMember(gymId, 'UM Expanded Owner');
     const partner = await createMember(gymId, 'UM Expanded Partner');
     const planId = await createPlan(gymId, '2');
     await setBillingPolicy(gymId, planId, 1, 'month');
     const activityTypeId = await createActivityType(gymId);
-    await addPlanAllowance(gymId, planId, activityTypeId, 4);
     const umId = await createUserMembershipDirect(gymId, owner, planId, 'active');
     await request
       .post(`/user-memberships/${umId}/members`)
@@ -2328,11 +2280,10 @@ describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
     // #635 stage 4: Charge Benefits are gone from the Assigned Plan entirely.
     expect(res.body.charge_benefits).toBeUndefined();
 
-    const allowance = res.body.activity_allowances.find((a: any) => a.activity_type_id === activityTypeId);
-    expect(allowance).toBeDefined();
-    expect(allowance.allocated).toBe(4);
-    expect(allowance.used).toBe(1);
-    expect(allowance.remaining).toBe(3);
+    // #635 stage 4: Included Services are gone too — the assignment reports its
+    // own snapshot instead of the Plan's live activity allowances.
+    expect(res.body.activity_allowances).toBeUndefined();
+    expect(res.body.snapshot).toBeDefined();
 
     expect(Array.isArray(res.body.promotions)).toBe(true);
 
