@@ -2,7 +2,6 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
-import { soleActiveCenterId } from '../infra/centerContext';
 import { parseBody, z } from '../infra/validate';
 import { isStaffLoginEmail } from '../infra/staff-access';
 import { verifyWebsiteApiKey } from '../infra/website-api-key';
@@ -126,26 +125,11 @@ const registrationGymLimiter = (req: Request, res: Response, next: NextFunction)
 const registrationSchema = z.object({
   name: z.string().trim().min(1, 'name is required').max(255),
   email: z.string().trim().toLowerCase().max(255).pipe(z.email('email is invalid')),
-  center_id: z.coerce.number().int().positive().optional(),
   locale: z.enum(MEMBER_APP_LOCALES).optional(),
+  // #757: no center_id — a registration joins the gym; the member's center is
+  // decided later, not here. One sent by an older site is dropped (z.object
+  // strips unknown keys), never rejected.
 });
-
-// A gym with several centers must say where the member belongs; a gym with one
-// never has to. An inactive center counts as non-existent here — it takes no
-// sign-ups and doesn't make a gym multi-center. Resolved now so the invitation
-// carries a concrete center.
-async function resolveCenter(gymId: string, centerId: number | undefined): Promise<number | { error: string }> {
-  if (centerId !== undefined) {
-    const { rows } = await db.query(
-      "SELECT 1 FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL AND status = 'active'",
-      [centerId, gymId],
-    );
-    return rows.length > 0 ? centerId : { error: 'center_id is invalid for this gym' };
-  }
-  const soleId = await soleActiveCenterId(gymId);
-  if (soleId != null) return soleId;
-  return { error: 'center_id is required as the gym has more than one center' };
-}
 
 publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, registrationGymLimiter, async (req, res, next) => {
   const gymId: string = (req as any).registrationGymId;
@@ -161,9 +145,6 @@ publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, regi
   if (!body) return;
 
   try {
-    const center = await resolveCenter(gymId, body.center_id);
-    if (typeof center !== 'number') return res.status(400).json({ error: center.error });
-
     const accepted = () => res.status(202).json({ ok: true });
     // #701: Spanish is the default, matching the Clerk Invitation template's
     // fallback language, so the email and the page the link opens always agree.
@@ -197,7 +178,7 @@ publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, regi
     // Staff already added this person: the row exists, /me/link just links it.
     const publicMetadata = {
       ...lang,
-      ...(member ? {} : { gym_signup: { gym_id: gymId, name: body.name, center_id: center } }),
+      ...(member ? {} : { gym_signup: { gym_id: gymId, name: body.name } }),
     };
 
     try {

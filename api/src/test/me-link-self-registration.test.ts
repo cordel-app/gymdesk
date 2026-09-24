@@ -127,9 +127,9 @@ describe('POST /me/link — guards', () => {
 });
 
 describe('POST /me/link — website self-registration (#599)', () => {
-  it('creates the member, its default center and a member gym_membership → 201, then clears the metadata', async () => {
+  it('creates the member (no center — #757) and a member gym_membership → 201, then clears the metadata', async () => {
     const email = uniqueEmail('happy');
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person' }));
 
     const res = await link(gymId);
 
@@ -143,8 +143,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
     expect(members[0].invitation_id).toBeNull();
 
     const { rows: mc } = await db.query<any>('SELECT * FROM member_centers WHERE member_id = ?', [res.body.id]);
-    expect(mc).toHaveLength(1);
-    expect(mc[0]).toMatchObject({ gym_id: gymId, center_id: centerId, is_default: 1 });
+    expect(mc).toHaveLength(0);
 
     const gm = await membershipOf(gymId);
     expect(gm).toMatchObject({ role: 'member', status: 'active' });
@@ -155,7 +154,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
 
   it("falls back to the Clerk name when the metadata carries no name", async () => {
     const email = uniqueEmail('noname');
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId }));
 
     const res = await link(gymId);
 
@@ -165,7 +164,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
 
   it('still returns 201 when clearing the metadata fails (best-effort)', async () => {
     const email = uniqueEmail('clearfail');
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person' }));
     clerk.updateUserMetadata.mockRejectedValueOnce(new Error('clerk down'));
 
     const res = await link(gymId);
@@ -203,7 +202,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
   it('caller already holds a non-member gym_memberships row in the gym → 409, nothing created', async () => {
     const email = uniqueEmail('staffcaller');
     await createTestMembership(gymId, 'front_desk');
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person' }));
 
     const res = await link(gymId);
 
@@ -219,7 +218,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
       `INSERT INTO gym_memberships (user_id, gym_id, role, status, email) VALUES (?, ?, 'front_desk', 'invited', ?)`,
       [`invited_${Date.now()}`, gymId, email],
     );
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person' }));
 
     const res = await link(gymId);
 
@@ -231,7 +230,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
   it('a second identical call after success → 200 with the same member, no duplicate rows', async () => {
     const email = uniqueEmail('retry');
     // Clearing the metadata is best-effort, so a retry may still carry it.
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person' }));
 
     const first = await link(gymId);
     expect(first.status).toBe(201);
@@ -242,7 +241,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
     expect(second.body).toMatchObject({ email, clerk_user_id: TEST_USER_ID, name: 'Web Person' });
     expect(await membersOf(gymId)).toHaveLength(1);
     const { rows: mc } = await db.query('SELECT center_id FROM member_centers WHERE member_id = ?', [first.body.id]);
-    expect(mc).toHaveLength(1);
+    expect(mc).toHaveLength(0);
     const { rows: gm } = await db.query('SELECT id FROM gym_memberships WHERE gym_id = ? AND user_id = ?', [gymId, TEST_USER_ID]);
     expect(gm).toHaveLength(1);
   });
@@ -251,7 +250,7 @@ describe('POST /me/link — website self-registration (#599)', () => {
     const otherGym = await newGym('Self Reg Email Elsewhere');
     const email = uniqueEmail('elsewhere');
     await db.query('INSERT INTO members (name, email, gym_id) VALUES (?, ?, ?)', ['Elsewhere', email, otherGym]);
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person' }));
 
     const res = await link(gymId);
 
@@ -262,51 +261,24 @@ describe('POST /me/link — website self-registration (#599)', () => {
     expect(clerk.updateUserMetadata).not.toHaveBeenCalled();
   });
 
-  it('a deleted center_id in the metadata falls back to the gym\'s remaining center', async () => {
-    const goneCenter = await insertCenter(gymId, 'Closed Center');
-    await db.query('UPDATE centers SET deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?', [goneCenter, gymId]);
-    const email = uniqueEmail('deletedcenter');
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: goneCenter }));
+  it.each([
+    ["this gym's center", () => centerId],
+    ["another gym's center", async () => insertCenter(await newGym('Self Reg Foreign Center'))],
+  ])('a center_id left in an older invitation\'s metadata (%s) is ignored — no center assigned (#757)', async (_label, center) => {
+    const email = uniqueEmail('legacycenter');
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: await center() }));
 
     const res = await link(gymId);
 
     expect(res.status).toBe(201);
-    const { rows: mc } = await db.query<any>('SELECT center_id, is_default FROM member_centers WHERE member_id = ?', [res.body.id]);
-    expect(mc).toHaveLength(1);
-    expect(mc[0]).toMatchObject({ center_id: centerId, is_default: 1 });
-  });
-
-  it('an inactive center_id in the metadata is treated like a deleted one — falls back to the active center', async () => {
-    const closedCenter = await insertCenter(gymId, 'Deactivated Center');
-    await db.query("UPDATE centers SET status = 'inactive' WHERE id = ? AND gym_id = ?", [closedCenter, gymId]);
-    const email = uniqueEmail('inactivecenter');
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: closedCenter }));
-
-    const res = await link(gymId);
-
-    expect(res.status).toBe(201);
-    const { rows: mc } = await db.query<any>('SELECT center_id, is_default FROM member_centers WHERE member_id = ?', [res.body.id]);
-    expect(mc).toHaveLength(1);
-    expect(mc[0]).toMatchObject({ center_id: centerId, is_default: 1 });
-  });
-
-  it("another gym's center_id in the metadata is never used", async () => {
-    const otherGym = await newGym('Self Reg Foreign Center');
-    const foreignCenter = await insertCenter(otherGym);
-    const email = uniqueEmail('foreigncenter');
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: foreignCenter }));
-
-    const res = await link(gymId);
-
-    expect(res.status).toBe(201);
-    const { rows: mc } = await db.query<any>('SELECT center_id FROM member_centers WHERE member_id = ?', [res.body.id]);
-    expect(mc.map((r: any) => r.center_id)).toEqual([centerId]);
+    const { rows: mc } = await db.query('SELECT center_id FROM member_centers WHERE member_id = ?', [res.body.id]);
+    expect(mc).toHaveLength(0);
   });
 
   it('an existing unlinked member row wins over the metadata: linked (200), not duplicated', async () => {
     const email = uniqueEmail('rowwins');
     const { insertId } = await db.query('INSERT INTO members (name, email, gym_id, invitation_id) VALUES (?, ?, ?, ?)', ['Added By Staff', email, gymId, 'inv-x']);
-    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person', center_id: centerId }));
+    clerk.getUser.mockResolvedValue(clerkUser(email, { gym_id: gymId, name: 'Web Person' }));
 
     const res = await link(gymId);
 
