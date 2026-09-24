@@ -32,6 +32,7 @@ import {
   projectDraftBillingEvents,
   selectPersistedBillingEventsInRange,
 } from '../domain/assignedPlanBillingEvents';
+import { NO_PLAN_DURATION, PlanDuration, toPlanDuration } from '../domain/planDuration';
 
 // #511 (stage 1 — Assigned Plans lifecycle): 'draft' and 'awaiting_payment' are
 // new, pre-activation statuses. The ticket's "Closed" action maps onto the
@@ -281,6 +282,51 @@ export async function loadPromotionApplications(
   }));
 }
 
+/**
+ * #635 stage 12 — the assignment's own regular fee and Billing & Duration, for
+ * the draft Billing Events projection.
+ *
+ * Read here rather than taken from the caller's row so both entry points (the
+ * expanded card and `GET /:id/billing-events`) resolve identically. The
+ * all-or-nothing snapshot rule is the same one `billing-simulation.ts` and the
+ * nightly run apply: an assignment that captured anything reads its own columns,
+ * NULLs included, so a Free Period added to the Plan later cannot reach it (§13).
+ *
+ * The price comes from `regularMembershipFee()` — the same chain the Billing
+ * Simulation and the nightly run resolve — never from `base_price`: that column is
+ * snapshotted from `effectivePrice()`, which has returned a constant 0 since
+ * migration 058 dropped `membership_plans.base_price`, so a projection built on it
+ * shows a column of zeros for every assignment created through the API.
+ */
+async function loadAssignmentFeeContext(gymId: string, umId: number): Promise<{
+  regularFee: number | null; planDuration: PlanDuration;
+}> {
+  const { rows } = await db.query(
+    `SELECT um.membership_plan_id, um.membership_fee_price, um.final_price,
+            um.base_price, um.starts_at,
+            um.free_months, um.paid_months, um.bonus_months,
+            p.free_months AS plan_free_months,
+            p.paid_months AS plan_paid_months,
+            p.bonus_months AS plan_bonus_months,
+            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+             OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+             OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
+            ) AS has_billing_snapshot
+     FROM user_memberships um
+     LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+     WHERE um.id = ? AND um.gym_id = ?`,
+    [umId, gymId],
+  );
+  const um = rows[0];
+  if (!um) return { regularFee: null, planDuration: NO_PLAN_DURATION };
+  return {
+    regularFee: await regularMembershipFee(gymId, um, toDateOnly(um.starts_at)),
+    planDuration: Number(um.has_billing_snapshot) === 1
+      ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months)
+      : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months),
+  };
+}
+
 // The Billing Events view (#511 Q2) for one Assigned Plan — see
 // domain/assignedPlanBillingEvents.ts for the range rules. `draft` plans
 // never write to billing_events, so their view is a pure projection from the
@@ -304,12 +350,17 @@ async function computeBillingEventsView(gymId: string, um: {
     const billingPolicy = um.recurring_billing_interval != null
       ? null
       : await loadBillingPolicy(gymId, um.membership_plan_id);
+    // #635 stage 12 — the assignment's own regular fee and Billing & Duration, so
+    // this projection prices each cycle exactly as the Billing Simulation, My
+    // Membership and the nightly run do.
+    const fee = await loadAssignmentFeeContext(gymId, um.id);
     return projectDraftBillingEvents({
       billingStart, endsAt,
-      basePrice: Number(um.base_price ?? 0),
+      basePrice: fee.regularFee ?? Number(um.base_price ?? 0),
       recurringInterval: um.recurring_billing_interval ?? billingPolicy?.recurring_billing_interval ?? null,
       recurringUnit: (um.recurring_billing_unit ?? billingPolicy?.recurring_billing_unit ?? null) as BillingUnit | null,
       promotions: applications.filter((p) => p.status === 'applied'),
+      assignment: { startsAt: billingStart, planDuration: fee.planDuration },
     });
   }
 
@@ -431,6 +482,45 @@ export async function effectivePrice(planId: number, gymId: string, date: string
     return { price: Number(priceRows[0].price), plan_price_id: priceRows[0].id, base_price };
   }
   return { price: base_price, plan_price_id: null, base_price };
+}
+
+/**
+ * The regular (pre-Promotion) Membership Fee an assignment bills: the price
+ * frozen onto it at assignment time (#635 stage 3), falling back to its Plan's
+ * price window covering its start date only when it has none.
+ *
+ * `user_memberships.base_price` is not usable as *the* regular price — it is
+ * snapshotted from `effectivePrice()`, which has returned a constant 0 for that
+ * field since `membership_plans.base_price` was dropped in migration 058 — but a
+ * row that does carry a non-zero one (written before that, or by a fixture) is
+ * still saying what the fee was before any Promotion, so it comes ahead of
+ * `final_price`. `final_price` is the last resort only: it already has the
+ * applied Promotions baked into it, so discounting from it double-counts them —
+ * for an assignment with no snapshot, no price window and no base price there is
+ * simply nothing better to read.
+ *
+ * One function since #635 stage 12, because it decides the number every path
+ * discounts *from*: the Billing Simulation, the Billing Events projection, the
+ * nightly run and the drift report. Two copies of this chain would reintroduce
+ * exactly the drift stage 12 exists to remove.
+ */
+export async function regularMembershipFee(
+  gymId: string,
+  row: {
+    membership_plan_id: number | null;
+    membership_fee_price: string | number | null;
+    final_price: string | number | null;
+    base_price?: string | number | null;
+  },
+  startsAt: string,
+): Promise<number | null> {
+  if (row.membership_fee_price != null) return Number(row.membership_fee_price);
+  if (row.membership_plan_id != null) {
+    const eff = await effectivePrice(row.membership_plan_id, gymId, startsAt);
+    if (eff && eff.plan_price_id != null) return eff.price;
+  }
+  if (row.base_price != null && Number(row.base_price) > 0) return Number(row.base_price);
+  return row.final_price != null ? Number(row.final_price) : null;
 }
 
 userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {

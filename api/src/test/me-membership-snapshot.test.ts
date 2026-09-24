@@ -319,3 +319,93 @@ describe('GET /me/membership — scoping', () => {
     expect(body.membership.benefits.map((b: any) => b.name)).toEqual(['My Locker']);
   });
 });
+
+// ─── #635 stage 12: each upcoming charge is priced on its own date ───────────
+
+describe('GET /me/membership — upcoming payments are priced per cycle (#635 stage 12)', () => {
+  let gymId: string;
+  let memberId: number;
+  let planId: number;
+  let umId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Me Membership Stage 12 Gym');
+    await createTestMembership(gymId, 'member');
+    memberId = await createCallingMember(gymId);
+    planId = await createPlan(gymId, { interval: 1, unit: 'month' });
+
+    // €60 regular, €48 stored — what a 20%-off Promotion left in `final_price`
+    // when it was applied. Its Paid Duration covers January to March 2099, so the
+    // March cycle is still discounted and the April one is not.
+    const { insertId } = await db.query(
+      `INSERT INTO user_memberships
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price,
+          next_billing_date, recurring_billing_interval, recurring_billing_unit, membership_fee_price)
+       VALUES (?, ?, ?, 'active', '2099-01-10', 0, 48, ?, 1, 'month', 60)`,
+      [gymId, memberId, planId, NEXT_BILLING],
+    );
+    umId = insertId;
+
+    const { insertId: promotionId } = await db.query(
+      `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status,
+                               free_months, paid_months, bonus_months)
+       VALUES (?, ?, '2099-01-01', '2100-01-01', 'active', 0, 3, 0)`,
+      [gymId, `MMS-Promo-${uniq()}`],
+    );
+    await db.query(
+      `INSERT INTO user_membership_promotions
+         (gym_id, user_membership_id, promotion_id, applied_by, status, applied_at, snapshot)
+       VALUES (?, ?, ?, 'test-actor', 'applied', '2099-01-10', ?)`,
+      [gymId, umId, promotionId, JSON.stringify({
+        name: 'Three Months 20% Off',
+        description: null,
+        stackable: false,
+        starts_at: '2099-01-01',
+        ends_at: '2100-01-01',
+        free_months: 0,
+        paid_months: 3,
+        bonus_months: 0,
+        membership_fee_benefits: [{
+          quantity: 1, frequency_interval: 1, frequency_unit: 'month', enabled: true,
+          action: 'percentage_discount', value: 20, duration_months: null,
+        }],
+      })],
+    );
+  });
+
+  it('shows the discounted cycle and the regular one that follows it', async () => {
+    const { body } = await getMembership(gymId);
+    // Until stage 12 this repeated `final_price` (48.00) for every future date —
+    // a promise the nightly run would not keep once the Promotion's own months
+    // were over.
+    expect(body.membership.upcoming_payments).toEqual([
+      { date: NEXT_BILLING, amount: '48.00', status: 'scheduled' },
+      { date: '2099-04-10', amount: '60.00', status: 'scheduled' },
+    ]);
+  });
+
+  it('resolves the same amounts the nightly run would charge for those dates', async () => {
+    const { priceDueMembershipFee } = await import('../api/billing-run-pricing');
+    const { rows } = await db.query(
+      `SELECT um.id, um.gym_id, um.membership_plan_id, um.starts_at, um.final_price,
+              um.membership_fee_price, um.base_price, um.discount_reason, um.discount_expires_at,
+              um.free_months, um.paid_months, um.bonus_months,
+              p.free_months AS plan_free_months, p.paid_months AS plan_paid_months,
+              p.bonus_months AS plan_bonus_months, 1 AS has_billing_snapshot
+       FROM user_memberships um
+       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+       WHERE um.id = ?`,
+      [umId],
+    );
+    const march = await priceDueMembershipFee(rows[0] as any, NEXT_BILLING, true);
+    const april = await priceDueMembershipFee(rows[0] as any, '2099-04-10', true);
+    expect([march.amount, april.amount]).toEqual([48, 60]);
+  });
+
+  it('does not leak the months it resolved from', async () => {
+    const { body } = await getMembership(gymId);
+    for (const field of ['free_months', 'paid_months', 'bonus_months', 'plan_free_months', 'membership_fee_price']) {
+      expect(body.membership).not.toHaveProperty(field);
+    }
+  });
+});

@@ -41,6 +41,7 @@ import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
 import { memberBillingSimulationRouter } from './api/billing-simulation';
+import { membershipFeeDriftRouter } from './api/membership-fee-drift';
 import { memberMembershipConfigurationRouter } from './api/member-membership-configuration';
 import { userMembershipServicesRouter } from './api/user-membership-services';
 import { musclesRouter, exercisesRouter } from './api/exercises';
@@ -260,6 +261,10 @@ app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requir
 // #631: Additional Periodic Services attached to one Assigned Plan. Three path
 // segments, so userMembershipsRouter's own '/:id' (one segment) never matches.
 app.use('/user-memberships/:id/services', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipServicesRouter);
+// #635 stage 12: the Membership Fee drift report — two path segments, neither of
+// which userMembershipsRouter has a route for ('/:id' is one segment), so the
+// request falls through to here.
+app.use('/user-memberships/reports/membership-fee-drift', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), membershipFeeDriftRouter);
 // #629: three path segments, so userMembershipsRouter (mounted above) never
 // matches it and the request falls through to here.
 app.use('/user-memberships/member/:memberId/billing-simulation', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), memberBillingSimulationRouter);

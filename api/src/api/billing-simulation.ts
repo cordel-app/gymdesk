@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
-import { effectivePrice, loadPromotionApplications } from './user-memberships';
+import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import {
   BillingSimulationResult,
   BillingUnit,
@@ -147,27 +147,6 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
     byPromotion.set(row.promotion_id, list);
   }
   return byPromotion;
-}
-
-/**
- * The regular (pre-Promotion) Membership Fee for an assignment: the price
- * frozen onto it at assignment time (#635 stage 3), falling back to the Plan's
- * price window covering its start date only when it has none.
- *
- * `user_memberships.base_price` is not usable as the regular price — it is
- * snapshotted from `effectivePrice()`, which has returned a constant 0 for
- * that field since `membership_plans.base_price` was dropped in migration
- * 058. When the Plan has no price window at all, the assignment's own
- * `final_price` is the last resort, so a legacy row still simulates something
- * rather than a column of zeros.
- */
-async function regularMembershipFee(gymId: string, row: AssignmentRow, startsAt: string): Promise<number | null> {
-  if (row.membership_fee_price != null) return Number(row.membership_fee_price);
-  if (row.membership_plan_id != null) {
-    const eff = await effectivePrice(row.membership_plan_id, gymId, startsAt);
-    if (eff && eff.plan_price_id != null) return eff.price;
-  }
-  return row.final_price != null ? Number(row.final_price) : null;
 }
 
 /** Builds the engine's input for one Member and runs it. Read-only end to end. */

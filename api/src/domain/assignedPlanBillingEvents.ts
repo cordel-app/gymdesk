@@ -23,7 +23,24 @@
 // DB reads/writes and date normalization around it.
 
 import { advanceBillingDate } from './billingDate';
-import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
+import { resolveMembershipFee } from './billingSimulation';
+import { NO_PLAN_DURATION, PlanDuration } from './planDuration';
+import {
+  AppliedPromotionForBilling,
+  MembershipFeeBenefit,
+  PromotionApplicationWindow,
+  promotionCoversDate,
+} from './promotionApplication';
+
+// Declared in `promotionApplication.ts` since #635 stage 12 (see that module
+// for why), and re-exported here so every caller that has always imported them
+// from this one keeps working.
+export {
+  AppliedPromotionForBilling,
+  MembershipFeeBenefit,
+  PromotionApplicationWindow,
+  promotionCoversDate,
+};
 
 export type BillingUnit = 'day' | 'week' | 'month' | 'year';
 
@@ -52,70 +69,53 @@ function clampToEndsAt(dateStr: string, endsAt: string | null): string {
 }
 
 /**
- * The [applied, revoked] window during which a promotion affected billing.
- * `revokedAt: null` means still applied (or never revoked) — the window is
- * open-ended. Dates are plain YYYY-MM-DD strings (time-of-day is irrelevant
- * to which billing cycle/event a promotion did or didn't cover).
- */
-export interface PromotionApplicationWindow {
-  appliedAt: string;
-  revokedAt: string | null;
-}
-
-/** Is `atDate` inside the window during which this promotion affected billing? */
-export function promotionCoversDate(w: PromotionApplicationWindow, atDate: string): boolean {
-  return w.appliedAt <= atDate && (w.revokedAt == null || w.revokedAt >= atDate);
-}
-
-/**
- * A single Membership Fee benefit contributed by an applied promotion.
- * Mirrors `computeFinalPrice()` in `membership-promotions.ts`: the benefit
- * applies while the promotion's own window covers the date, and expires
- * `durationMonths` after the promotion's `appliedAt` (or never, if
- * `durationMonths` is null).
+ * The assignment's own contract, for the paths that have one: its anchor and
+ * its Billing & Duration, whose Free Period and Bonus Duration waive the
+ * Membership Fee where no Promotion governs the date (#635 stage 8).
  *
- * #635 stage 5 collapsed this from a two-variant union. A Promotion used to
- * carry the same benefit as either a Charge Benefit (no expiry) or a Period
- * Benefit (duration-gated); both tables are gone and the one that remains is
- * duration-gated, with a legacy Charge Benefit reading back as an enabled
- * benefit whose duration is null — the same arithmetic it always had.
+ * Optional because a caller that only has a Promotion window (the persisted
+ * ledger's tagging) has no use for it — omitted, nothing is waived by the Plan.
  */
-export type MembershipFeeBenefit = {
-  action: PromotionBenefitAction | null;
-  value: number | null;
-  enabled: boolean;
-  durationMonths: number | null;
-};
-
-export interface AppliedPromotionForBilling extends PromotionApplicationWindow {
-  membershipFeeBenefits: MembershipFeeBenefit[];
+export interface AssignmentDurationContext {
+  startsAt: string;
+  planDuration: PlanDuration;
 }
 
 /**
- * Applies every currently-relevant promotion's Membership Fee benefit(s) to
- * `basePrice` at `atDate`, the same math `computeFinalPrice` uses for "now"
- * — evaluated instead at an arbitrary projected date. Returns whether any
- * benefit actually applied at that date (regardless of whether it net
- * changed the price), which is what "promotion affected" means throughout
- * this module.
+ * What the Membership Fee actually costs on `atDate` — `resolveMembershipFee`
+ * (`billingSimulation.ts`) and nothing else, so the Billing Events projection
+ * cannot disagree with the Billing Simulation, My Membership or the nightly run.
+ *
+ * Until #635 stage 12 this module had its own rule: a Promotion's Membership Fee
+ * Benefit applied for as long as the application stood, gated only by its own
+ * `duration_months`. A Promotion whose promotional months had elapsed therefore
+ * kept discounting every later cycle here, while the simulation had already
+ * stopped it at the end of the Promotion's Free/Paid/Bonus timeline — the
+ * thread's stage 12 answer (a). Free and Bonus promotional months were likewise
+ * not waived at all in this projection. Both now come from the shared resolver.
+ *
+ * `promotionAffected` keeps its meaning — did an *applied Promotion* change this
+ * charge (whatever the net effect)? — because the range rule (#511 Q2) extends
+ * from the last promotion-affected event. A cycle the *Plan's* own Free Period
+ * waives is not promotion-affected: it is the contract's regular shape.
  */
 export function computeMembershipFeePriceAt(
   basePrice: number,
   atDate: string,
   promotions: AppliedPromotionForBilling[],
+  assignment?: AssignmentDurationContext,
 ): { price: number; promotionAffected: boolean } {
-  let price = basePrice;
-  let affected = false;
-  for (const promo of promotions) {
-    if (!promotionCoversDate(promo, atDate)) continue;
-    for (const b of promo.membershipFeeBenefits) {
-      if (!b.enabled || !b.action) continue;
-      if (b.durationMonths != null && atDate >= addCalendarMonths(promo.appliedAt, b.durationMonths)) continue;
-      price = applyPeriodBenefit(price, b.action, b.value);
-      affected = true;
-    }
-  }
-  return { price, promotionAffected: affected };
+  const resolved = resolveMembershipFee(basePrice, atDate, {
+    // With no Billing & Duration to apply, the anchor is irrelevant —
+    // `NO_PLAN_DURATION` classifies every date as `pay_regular`.
+    startsAt: assignment?.startsAt ?? atDate,
+    planDuration: assignment?.planDuration ?? NO_PLAN_DURATION,
+    promotions,
+  });
+  return {
+    price: resolved.amount,
+    promotionAffected: resolved.benefits.some((b) => b.source === 'promotion'),
+  };
 }
 
 /**
@@ -150,6 +150,12 @@ export interface DraftProjectionInput {
   recurringUnit: BillingUnit | null;
   /** Only currently-applied promotions — a draft's revoked promotions have no future effect. */
   promotions: AppliedPromotionForBilling[];
+  /**
+   * #635 stage 12 — the assignment's own Billing & Duration, so a Free Period or
+   * Bonus Duration shows €0 here exactly as it does in the Billing Simulation
+   * and as the nightly run waives it. Omitted for an assignment that has none.
+   */
+  assignment?: AssignmentDurationContext;
 }
 
 export interface BillingEventsView<E> {
@@ -167,7 +173,7 @@ export interface BillingEventsView<E> {
  * currently-applied promotions, without persisting anything.
  */
 export function projectDraftBillingEvents(input: DraftProjectionInput): BillingEventsView<ProjectedBillingEvent> {
-  const { billingStart, endsAt, basePrice, recurringInterval, recurringUnit, promotions } = input;
+  const { billingStart, endsAt, basePrice, recurringInterval, recurringUnit, promotions, assignment } = input;
   if (recurringInterval == null || recurringUnit == null) {
     return {
       available: false,
@@ -188,7 +194,7 @@ export function projectDraftBillingEvents(input: DraftProjectionInput): BillingE
   while (true) {
     cursor = advanceBillingDate(cursor, recurringInterval, recurringUnit);
     if (endsAt && cursor > endsAt) break;
-    const { price, promotionAffected } = computeMembershipFeePriceAt(basePrice, cursor, promotions);
+    const { price, promotionAffected } = computeMembershipFeePriceAt(basePrice, cursor, promotions, assignment);
     if (promotionAffected) boundary = addCalendarMonths(cursor, MONTHS_AFTER_LAST_PROMOTION);
     cycles.push({ date: cursor, amount: price, promotion_affected: promotionAffected, projected: true });
     if (cursor >= boundary || cursor >= cap) break;

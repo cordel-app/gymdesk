@@ -39,6 +39,14 @@
 // Period and Bonus Duration waive the Membership Fee (§7), and where an applied
 // Promotion governs the same date the Promotion decides it alone — the thread's
 // Q2 answer, "in case of conflict, prioritize the promotion".
+//
+// #635 stage 12 makes `resolveMembershipFee` below the *only* implementation of
+// "what does the Membership Fee cost on this date": the Billing Events
+// projection, `computeFinalPrice`, the Member's My Membership page and the
+// nightly run all call it, so none of them can price a cycle differently from
+// what the Member was shown. A Promotion's Membership Fee Benefit therefore ends
+// with the Promotion's own Free/Paid/Bonus timeline everywhere (the thread's
+// stage 12 answer (a)), instead of surviving in a stored `final_price`.
 
 import { advanceBillingDate } from './billingDate';
 import {
@@ -52,7 +60,7 @@ import {
   AppliedPromotionForBilling,
   MembershipFeeBenefit,
   promotionCoversDate,
-} from './assignedPlanBillingEvents';
+} from './promotionApplication';
 import {
   PromotionTimelineStatus,
   computePromotionTimeline,
@@ -89,13 +97,13 @@ const MAX_SIMULATION_MONTHS = 36;
 // practice; it only stops a degenerate cadence from spinning.
 const MAX_OCCURRENCE_SCAN = 2000;
 
-/** A Promotion, as the simulation needs it: its window, its timeline shape and what it grants. */
+/**
+ * A Promotion, as the simulation needs it: its window, its timeline shape and
+ * what it grants. Everything but the grants is `AppliedPromotionForBilling` —
+ * the shape every other fee-pricing path already reads (#635 stage 12).
+ */
 export interface SimulationPromotion extends AppliedPromotionForBilling {
   name: string | null;
-  freeMonths: number;
-  paidMonths: number;
-  payBeforehandMonths: number;
-  bonusMonths: number;
   /** Sellable Items granted by this Promotion (`promotion_session` / `_oneoff` / `_periodical`). */
   grants: SimulationGrant[];
 }
@@ -181,7 +189,14 @@ export interface SimulationAssignment {
 export interface MembershipFeeContext {
   startsAt: string;
   planDuration: PlanDuration;
-  promotions: SimulationPromotion[];
+  /**
+   * The applications still standing on the assignment. Typed as the shared
+   * `AppliedPromotionForBilling` rather than `SimulationPromotion` since #635
+   * stage 12, so a caller that prices only the fee (the nightly run, the Billing
+   * Events projection, `computeFinalPrice`) needs no granted Sellable Items to
+   * ask the question.
+   */
+  promotions: AppliedPromotionForBilling[];
 }
 
 export interface BillingSimulationInput {
@@ -309,7 +324,7 @@ export function cadenceForSellableItem(frequency: SellableItemFrequency): Cadenc
 // projected charge — cached so a long projection doesn't rebuild it hundreds
 // of times. Keyed on the request-scoped promotion object, so nothing is
 // retained between requests.
-const timelineCache = new WeakMap<SimulationPromotion, ReturnType<typeof computePromotionTimeline>>();
+const timelineCache = new WeakMap<AppliedPromotionForBilling, ReturnType<typeof computePromotionTimeline>>();
 
 /**
  * Which Promotion period (#629 §5: Free / Prepaid / Pay / Bonus / Regular)
@@ -319,7 +334,7 @@ const timelineCache = new WeakMap<SimulationPromotion, ReturnType<typeof compute
  * screen renders — rather than re-deriving the period boundaries here, so the
  * simulation and the Promotion's own forecast can never disagree.
  */
-function classifyPromotionPeriod(promo: SimulationPromotion, date: string): {
+function classifyPromotionPeriod(promo: AppliedPromotionForBilling, date: string): {
   status: PromotionTimelineStatus;
   billingAction: PromotionBenefitAction | null;
   billingValue: number | null;
@@ -336,7 +351,7 @@ function classifyPromotionPeriod(promo: SimulationPromotion, date: string): {
   return { status: 'pay_regular', billingAction: null, billingValue: null };
 }
 
-function cachePromotionTimeline(promo: SimulationPromotion) {
+function cachePromotionTimeline(promo: AppliedPromotionForBilling) {
   // #635 stage 5: a Promotion has at most one Membership Fee Benefit, so the
   // timeline reads the first (and normally only) entry — the array shape is
   // kept for legacy snapshots, which could carry a second one.
@@ -405,13 +420,20 @@ export function resolveMembershipFee(regular: number, date: string, a: Membershi
  * The Promotion half of `resolveMembershipFee`.
  *
  * Free and Bonus promotional periods waive the fee outright; Pay/Prepaid
- * periods apply the Promotion's Membership Fee (Period) Benefit; a Charge
- * Benefit on the Membership Fee applies for as long as the Promotion is
- * applied, in every period — the same rule `computeMembershipFeePriceAt`
- * (real billing) uses, restated here because the simulation additionally has
- * to report *which* benefit produced the number.
+ * periods apply the Promotion's Membership Fee Benefit — and nothing applies
+ * outside the Promotion's own Free/Paid/Bonus timeline, which is what *ends*
+ * the benefit (#635 stage 12, the thread's answer (a)). A Promotion configured
+ * with no months at all therefore changes no cycle: its timeline is a single
+ * open-ended Pay (regular) period, and `effectiveBenefitDurationMonths` (#625)
+ * caps the benefit at free + paid + bonus = 0.
+ *
+ * Since stage 12 this is the *only* implementation of that rule: the Billing
+ * Events projection (`computeMembershipFeePriceAt`), `computeFinalPrice`, the
+ * nightly run and the Member's own My Membership page all resolve a date
+ * through here, so none of them can answer a different price for the same
+ * cycle.
  */
-function resolvePromotionMembershipFee(regular: number, date: string, promotions: SimulationPromotion[]): ResolvedCharge {
+function resolvePromotionMembershipFee(regular: number, date: string, promotions: AppliedPromotionForBilling[]): ResolvedCharge {
   let amount = regular;
   const benefits: SimulationBenefit[] = [];
   // A paid promotional period with no Membership Fee Benefit charges the
@@ -426,10 +448,10 @@ function resolvePromotionMembershipFee(regular: number, date: string, promotions
 
     if (status === 'free_promotion' || status === 'bonus_promotion') {
       amount = 0;
-      benefits.push({ source: 'promotion', name: promo.name, action: 'waive', value: null, period_status: status });
+      benefits.push({ source: 'promotion', name: promo.name ?? null, action: 'waive', value: null, period_status: status });
     } else if (billingAction != null && billingAction !== 'no_benefit') {
       amount = applyPeriodBenefit(amount, billingAction, billingValue);
-      benefits.push({ source: 'promotion', name: promo.name, action: billingAction, value: billingValue, period_status: status });
+      benefits.push({ source: 'promotion', name: promo.name ?? null, action: billingAction, value: billingValue, period_status: status });
     }
 
     // The Promotion's own Membership Fee Benefit is already part of its
@@ -441,7 +463,7 @@ function resolvePromotionMembershipFee(regular: number, date: string, promotions
     for (const b of promo.membershipFeeBenefits.slice(1)) {
       if (!b.enabled || b.action == null || b.action === 'no_benefit') continue;
       amount = applyPeriodBenefit(amount, b.action, b.value);
-      benefits.push({ source: 'promotion', name: promo.name, action: b.action, value: b.value, period_status: status });
+      benefits.push({ source: 'promotion', name: promo.name ?? null, action: b.action, value: b.value, period_status: status });
       promotional = true;
     }
   }
@@ -451,7 +473,7 @@ function resolvePromotionMembershipFee(regular: number, date: string, promotions
 }
 
 /** Does this Promotion change the Membership Fee at all, in any period? */
-function hasPromotionalEffect(promo: SimulationPromotion): boolean {
+function hasPromotionalEffect(promo: AppliedPromotionForBilling): boolean {
   return promo.freeMonths + promo.paidMonths + promo.bonusMonths > 0
     || promo.membershipFeeBenefits.length > 0;
 }

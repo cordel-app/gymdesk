@@ -2399,6 +2399,11 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
     const promoId = await createPromotion(gymId, planId, `Draft-Promo-${Date.now()}`);
+    // #635 stage 12: a Membership Fee Benefit applies only inside the Promotion's
+    // own Free/Paid/Bonus timeline, so the Promotion needs one for the benefit to
+    // reach any cycle at all. A year of Paid Duration puts every projected cycle
+    // below inside it, leaving the benefit's own 2-month duration as what bounds it.
+    await db.query('UPDATE promotions SET paid_months = 12 WHERE id = ?', [promoId]);
     await setPromotionMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10, 2);
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
     const applyRes = await applyPromotionViaApi(gymId, umId, promoId);

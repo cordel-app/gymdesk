@@ -3,6 +3,14 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
+import { resolveMembershipFee } from '../domain/billingSimulation';
+import { toPlanDuration } from '../domain/planDuration';
+import {
+  AppliedPromotionForBilling,
+  MembershipFeeBenefit,
+} from '../domain/promotionApplication';
+import { isDateAwareMembershipFeeEnabled } from '../infra/featureFlags';
+import { regularMembershipFee } from './user-memberships';
 import { validatePromotionStacking } from '../domain/promotionStacking';
 import { canReapplyPromotion, promotionApplicationStatus } from '../domain/promotionApplicationStatus';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
@@ -50,6 +58,13 @@ const SELECT = `
 `;
 
 export const membershipPromotionsRouter = Router({ mergeParams: true });
+
+// mysql2 may return DATE columns as Date objects rather than strings depending
+// on the connection's timezone config (same note as user-memberships.ts) — the
+// fee resolver compares dates as strings.
+function toDateOnly(v: unknown): string {
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+}
 
 // #635 stage 5: a Promotion's Membership Fee Benefit — one row per Promotion
 // in `promotion_membership_fee_benefits` (migration 179). The snapshot used to
@@ -287,15 +302,125 @@ async function effectiveDurations(
   );
 }
 
+/**
+ * Every application still standing on this assignment, as the shared fee rule
+ * needs it — read inside the caller's transaction, because `computeFinalPrice`
+ * runs immediately after the apply/revoke that changed the set (the `db`-scoped
+ * `loadPromotionApplications` would not see it yet).
+ *
+ * §16 precedence, the same as everywhere else: the application's own snapshot
+ * owns its benefits *and* its Free/Paid/Bonus months; only an application with
+ * no snapshot at all (applied before migration 149) reads the Promotion live.
+ * `pay_beforehand_months` was never snapshotted, so it is always live.
+ */
+async function loadStandingApplicationsForPricing(
+  tx: Tx, gymId: string, userMembershipId: number,
+): Promise<AppliedPromotionForBilling[]> {
+  const { rows } = await tx.query(
+    `SELECT ump.id, ump.promotion_id, ump.snapshot, ump.applied_at, ump.revoked_at,
+            p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months,
+            p.pay_beforehand_months
+     FROM user_membership_promotions ump
+     LEFT JOIN promotions p ON p.id = ump.promotion_id
+     WHERE ump.user_membership_id = ? AND ump.gym_id = ? AND ump.status = 'applied'
+     ORDER BY ump.applied_at ASC, ump.id ASC`,
+    [userMembershipId, gymId],
+  );
+  return Promise.all(rows.map(async (row: any) => {
+    const snap = row.snapshot as PromotionSnapshot | null;
+    const benefits = snap
+      ? membershipFeeBenefitsFromSnapshot(snap)
+      : (await fetchLiveBenefits(tx, row.promotion_id)).membership_fee_benefits;
+    const num = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
+    return {
+      name: (snap?.name as string | undefined) ?? row.promotion_name ?? null,
+      appliedAt: toDateOnly(row.applied_at),
+      revokedAt: row.revoked_at != null ? toDateOnly(row.revoked_at) : null,
+      freeMonths: num(snap?.free_months ?? row.free_months),
+      paidMonths: num(snap?.paid_months ?? row.paid_months),
+      bonusMonths: num(snap?.bonus_months ?? row.bonus_months),
+      payBeforehandMonths: num(row.pay_beforehand_months),
+      membershipFeeBenefits: benefits.map((b): MembershipFeeBenefit => ({
+        action: (b.action ?? null) as MembershipFeeBenefit['action'],
+        value: b.value ?? null,
+        enabled: !!b.enabled,
+        durationMonths: b.duration_months ?? null,
+      })),
+    };
+  }));
+}
+
+/**
+ * The cycle `final_price` speaks for: the next one this assignment will actually
+ * be charged. "The agreed price" is only meaningful on a date once a Promotion's
+ * benefit can end (#635 stage 12), and this is the date the member's next charge
+ * falls on.
+ *
+ * Never a date already past, even when `next_billing_date` is (an assignment
+ * whose run was missed, or a fixture): the column is read as "what this member
+ * pays now", so pricing it on a cycle from before the Promotion was even applied
+ * would report a discount the staff screen had just been asked to add. And never
+ * before `starts_at` — nothing is waived, or discounted, before the contract it
+ * belongs to begins.
+ */
+function pricingDateFor(um: any): string {
+  const startsAt = toDateOnly(um.starts_at);
+  const today = new Date().toISOString().slice(0, 10);
+  const next = um.next_billing_date != null ? toDateOnly(um.next_billing_date) : startsAt;
+  const date = next > today ? next : today;
+  return date > startsAt ? date : startsAt;
+}
+
 async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number) {
   const { rows: umRows } = await tx.query(
-    `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price, um.final_price
+    `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price, um.final_price,
+            um.membership_fee_price, um.starts_at, um.next_billing_date,
+            um.free_months, um.paid_months, um.bonus_months,
+            p.free_months AS plan_free_months,
+            p.paid_months AS plan_paid_months,
+            p.bonus_months AS plan_bonus_months,
+            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+             OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+             OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
+            ) AS has_billing_snapshot
      FROM user_memberships um
+     LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.id = ? AND um.gym_id = ?`,
     [userMembershipId, gymId],
   );
   if (umRows.length === 0) return null;
   const um = umRows[0];
+  const previousFinal = um.final_price != null ? parseFloat(um.final_price) : null;
+
+  // #635 stage 12 — the corrected rule: the fee this assignment owes on the
+  // cycle it is about to be charged, resolved by `resolveMembershipFee`, so a
+  // Promotion's Membership Fee Benefit stops with the Promotion's own
+  // Free/Paid/Bonus timeline instead of surviving forever in this column.
+  //
+  // The regular price it starts from is `regularMembershipFee()` — the assignment's
+  // own frozen fee (§13), else its Plan's price window — never `base_price`: that
+  // column is snapshotted from `effectivePrice()`, which has returned a constant 0
+  // since migration 058 dropped `membership_plans.base_price`, so the legacy path
+  // below discounts from zero for every assignment created through the API.
+  if (await isDateAwareMembershipFeeEnabled()) {
+    const regular = (await regularMembershipFee(gymId, um, toDateOnly(um.starts_at)))
+      ?? parseFloat(um.base_price);
+    const charge = resolveMembershipFee(regular, pricingDateFor(um), {
+      startsAt: toDateOnly(um.starts_at),
+      planDuration: Number(um.has_billing_snapshot) === 1
+        ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months)
+        : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months),
+      promotions: await loadStandingApplicationsForPricing(tx, gymId, userMembershipId),
+    });
+    return { price: charge.amount, member_id: um.member_id, previousFinal };
+  }
+  // ── The pre-stage-12 rule, kept until the flag above is switched on ──────
+  //
+  // A standing application's Membership Fee Benefit applies whatever the date,
+  // gated only by its own `duration_months`: a Promotion whose promotional
+  // months have elapsed keeps discounting. That is the overcharge/undercharge
+  // the drift report quantifies before the corrected rule moves any money.
+  //
   // base_price is snapshotted onto the membership at assignment time (see
   // effectivePrice() in user-memberships.ts) and is never null — membership_plans
   // itself has carried no price column since migration 058, so there is no plan
@@ -350,7 +475,7 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
     }
   }
 
-  return { price, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };
+  return { price, member_id: um.member_id, previousFinal };
 }
 
 /**

@@ -59,64 +59,114 @@ describe('computeRangeEnd (#511 Q2)', () => {
   });
 });
 
-describe('computeMembershipFeePriceAt', () => {
-  // #635 stage 5: one benefit shape — enabled, with an optional duration. An
-  // unbounded one is what a legacy Charge Benefit reads back as.
-  const unboundedPromo: AppliedPromotionForBilling = {
+// #635 stage 12 — a Promotion's Membership Fee Benefit lives inside the
+// Promotion's own Free/Paid/Bonus timeline and ends with it (the thread's answer
+// (a)), so every fixture here carries the months that bound it. A 12-month Paid
+// Duration is the ordinary "20% off for a year" shape.
+function promo(over: Partial<AppliedPromotionForBilling> = {}): AppliedPromotionForBilling {
+  return {
     appliedAt: '2026-01-01',
     revokedAt: null,
-    membershipFeeBenefits: [{ action: 'percentage_discount', value: 50, enabled: true, durationMonths: null }],
+    freeMonths: 0,
+    paidMonths: 12,
+    payBeforehandMonths: 0,
+    bonusMonths: 0,
+    membershipFeeBenefits: [],
+    ...over,
   };
+}
+
+describe('computeMembershipFeePriceAt', () => {
+  const discounted = promo({
+    membershipFeeBenefits: [{ action: 'percentage_discount', value: 50, enabled: true, durationMonths: null }],
+  });
 
   it('returns the base price unaffected when no promotion covers the date', () => {
-    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2025-12-01', [unboundedPromo]);
+    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2025-12-01', [discounted]);
     expect(price).toBe(40);
     expect(promotionAffected).toBe(false);
   });
 
-  it('applies an unbounded benefit for as long as the promotion is applied', () => {
-    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-06-01', [unboundedPromo]);
+  it('applies a benefit with no duration of its own for the whole Promotion timeline', () => {
+    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-06-01', [discounted]);
     expect(price).toBe(20);
     expect(promotionAffected).toBe(true);
   });
 
-  it('expires a benefit after its duration_months window from appliedAt', () => {
-    const promo: AppliedPromotionForBilling = {
-      appliedAt: '2026-01-01',
-      revokedAt: null,
-      membershipFeeBenefits: [{ action: 'fixed_discount', value: 10, enabled: true, durationMonths: 3 }],
-    };
-    const inside = computeMembershipFeePriceAt(40, '2026-03-01', [promo]);
-    expect(inside.price).toBe(30);
-    expect(inside.promotionAffected).toBe(true);
-
-    const after = computeMembershipFeePriceAt(40, '2026-04-01', [promo]);
+  it('stops applying it when the Promotion timeline ends (#635 stage 12 (a))', () => {
+    // 12 paid months from 2026-01-01 — the first regular cycle is 2027-01-01.
+    expect(computeMembershipFeePriceAt(40, '2026-12-01', [discounted]).price).toBe(20);
+    const after = computeMembershipFeePriceAt(40, '2027-01-01', [discounted]);
     expect(after.price).toBe(40);
     expect(after.promotionAffected).toBe(false);
   });
 
+  it('never applies a benefit of a Promotion configured with no Free/Paid/Bonus months', () => {
+    // Its timeline is one open-ended Pay (regular) period, so there is no
+    // promotional window for the benefit to sit in — it must not become an
+    // indefinite discount just because the application still stands.
+    const unbounded = promo({
+      paidMonths: 0,
+      membershipFeeBenefits: [{ action: 'percentage_discount', value: 50, enabled: true, durationMonths: null }],
+    });
+    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-06-01', [unbounded]);
+    expect(price).toBe(40);
+    expect(promotionAffected).toBe(false);
+  });
+
+  it('expires a benefit after its own duration_months window, inside the timeline', () => {
+    const p = promo({
+      membershipFeeBenefits: [{ action: 'fixed_discount', value: 10, enabled: true, durationMonths: 3 }],
+    });
+    const inside = computeMembershipFeePriceAt(40, '2026-03-01', [p]);
+    expect(inside.price).toBe(30);
+    expect(inside.promotionAffected).toBe(true);
+
+    const after = computeMembershipFeePriceAt(40, '2026-04-01', [p]);
+    expect(after.price).toBe(40);
+    expect(after.promotionAffected).toBe(false);
+  });
+
+  it('waives the fee inside a free or bonus promotional month', () => {
+    const p = promo({ freeMonths: 1, paidMonths: 2, bonusMonths: 1 });
+    expect(computeMembershipFeePriceAt(40, '2026-01-15', [p])).toEqual({ price: 0, promotionAffected: true });
+    expect(computeMembershipFeePriceAt(40, '2026-02-01', [p])).toEqual({ price: 40, promotionAffected: false });
+    expect(computeMembershipFeePriceAt(40, '2026-04-01', [p])).toEqual({ price: 0, promotionAffected: true });
+    expect(computeMembershipFeePriceAt(40, '2026-05-01', [p])).toEqual({ price: 40, promotionAffected: false });
+  });
+
   it('ignores a disabled benefit', () => {
-    const promo: AppliedPromotionForBilling = {
-      appliedAt: '2026-01-01',
-      revokedAt: null,
+    const p = promo({
       membershipFeeBenefits: [{ action: 'waive', value: null, enabled: false, durationMonths: null }],
-    };
-    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-02-01', [promo]);
+    });
+    const { price, promotionAffected } = computeMembershipFeePriceAt(40, '2026-02-01', [p]);
     expect(price).toBe(40);
     expect(promotionAffected).toBe(false);
   });
 
   it('stacks multiple applied promotions', () => {
-    const promoA: AppliedPromotionForBilling = {
-      appliedAt: '2026-01-01', revokedAt: null,
+    const promoA = promo({
       membershipFeeBenefits: [{ action: 'fixed_discount', value: 5, enabled: true, durationMonths: null }],
-    };
-    const promoB: AppliedPromotionForBilling = {
-      appliedAt: '2026-01-01', revokedAt: null,
+    });
+    const promoB = promo({
       membershipFeeBenefits: [{ action: 'fixed_discount', value: 3, enabled: true, durationMonths: null }],
-    };
+    });
     const { price } = computeMembershipFeePriceAt(40, '2026-02-01', [promoA, promoB]);
     expect(price).toBe(32);
+  });
+
+  it("waives a cycle the assignment's own Billing & Duration covers, without calling it promotion-affected", () => {
+    const assignment = {
+      startsAt: '2026-01-01',
+      planDuration: { freeMonths: 1, paidMonths: 12, bonusMonths: 2 },
+    };
+    // The Plan's free month, then its paid months, then its bonus months.
+    expect(computeMembershipFeePriceAt(40, '2026-01-10', [], assignment))
+      .toEqual({ price: 0, promotionAffected: false });
+    expect(computeMembershipFeePriceAt(40, '2026-02-01', [], assignment))
+      .toEqual({ price: 40, promotionAffected: false });
+    expect(computeMembershipFeePriceAt(40, '2027-02-01', [], assignment))
+      .toEqual({ price: 0, promotionAffected: false });
   });
 });
 
@@ -144,13 +194,12 @@ describe('projectDraftBillingEvents (#511 Q2 — draft preview)', () => {
   });
 
   it('extends the range 2 months past the last event affected by a finite-duration promotion', () => {
-    const promo: AppliedPromotionForBilling = {
-      appliedAt: '2026-01-01', revokedAt: null,
-      membershipFeeBenefits: [{ action: 'fixed_discount', value: 10, enabled: true, durationMonths: 2 }],
-    };
     const result = projectDraftBillingEvents({
       billingStart: '2026-01-01', endsAt: null, basePrice: 40,
-      recurringInterval: 1, recurringUnit: 'month', promotions: [promo],
+      recurringInterval: 1, recurringUnit: 'month',
+      promotions: [promo({
+        membershipFeeBenefits: [{ action: 'fixed_discount', value: 10, enabled: true, durationMonths: 2 }],
+      })],
     });
     // Promotion covers 2026-02-01 (< 2026-03-01 expiry) but not 2026-03-01 onward.
     expect(result.range_end).toBe('2026-04-01');
@@ -160,23 +209,35 @@ describe('projectDraftBillingEvents (#511 Q2 — draft preview)', () => {
     expect(result.events[2]).toMatchObject({ amount: 40, promotion_affected: false });
   });
 
-  it('caps an indefinite (no duration_months, never revoked) promotion at the projection safety horizon', () => {
-    const promo: AppliedPromotionForBilling = {
-      appliedAt: '2026-01-01', revokedAt: null,
-      membershipFeeBenefits: [{ action: 'waive', value: null, enabled: true, durationMonths: null }],
-    };
+  it('caps a promotion whose timeline outruns the projection at the safety horizon', () => {
     const result = projectDraftBillingEvents({
       billingStart: '2026-01-01', endsAt: null, basePrice: 40,
-      recurringInterval: 1, recurringUnit: 'month', promotions: [promo],
+      recurringInterval: 1, recurringUnit: 'month',
+      // A 600-month Paid Duration is longer than the projection can ever reach.
+      // (Before #635 stage 12 a benefit with no duration_months did this on its
+      // own; it is now bounded by the Promotion, so only the Promotion can.)
+      promotions: [promo({
+        paidMonths: 600,
+        membershipFeeBenefits: [{ action: 'waive', value: null, enabled: true, durationMonths: null }],
+      })],
     });
     // Every cycle is promotion-affected, so the "2 months after the last one"
-    // boundary keeps advancing forever — bounded by the 36-month safety cap:
-    // exactly 36 monthly cycles are generated (2026-02-01 .. 2029-01-01),
-    // with range_end 2 months past the last one.
+    // boundary keeps advancing — bounded by the 36-month safety cap: exactly 36
+    // monthly cycles (2026-02-01 .. 2029-01-01), range_end 2 months past the last.
     expect(result.events).toHaveLength(36);
     expect(result.events[result.events.length - 1].date).toBe('2029-01-01');
     expect(result.range_end).toBe('2029-03-01');
     expect(result.events.every((e) => e.promotion_affected && e.amount === 0)).toBe(true);
+  });
+
+  it("prices the assignment's own free months at 0 (#635 stage 12)", () => {
+    const result = projectDraftBillingEvents({
+      billingStart: '2026-01-01', endsAt: null, basePrice: 40,
+      recurringInterval: 1, recurringUnit: 'month', promotions: [],
+      assignment: { startsAt: '2026-01-01', planDuration: { freeMonths: 2, paidMonths: 12, bonusMonths: 0 } },
+    });
+    expect(result.events.map((e) => e.amount)).toEqual([0, 40]);
+    expect(result.events.every((e) => !e.promotion_affected)).toBe(true);
   });
 
   it('returns fewer events when the plan ends before the full range', () => {
