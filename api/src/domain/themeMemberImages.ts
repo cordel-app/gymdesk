@@ -147,8 +147,16 @@ export const MEMBER_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
  *
  * A renamed `.mp4`, a truncated upload and a file whose extension was changed
  * to dodge the picker all fail here, before anything reaches the bucket.
+ *
+ * The guard on the first line is the same one the route applies to `req.body`,
+ * repeated because this function is exported and its argument comes from a
+ * request: a string and an array both carry a `length` and numeric indices, so
+ * either would read as a half-valid signature here instead of being refused
+ * (CodeQL `js/type-confusion-through-parameter-tampering`). Only real bytes can
+ * match a signature, so anything else is simply `false`.
  */
 export function bytesMatchImageMime(mime: string, body: Buffer): boolean {
+  if (typeof body === 'string' || Array.isArray(body) || !Buffer.isBuffer(body)) return false;
   if (mime === 'image/png') {
     return body.length >= 8 && body.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'));
   }

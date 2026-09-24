@@ -478,8 +478,19 @@ gymThemesRouter.post(
         if (!mime || !(MEMBER_IMAGE_MIME_TYPES as readonly string[]).includes(mime)) {
           return res.status(415).json({ error: `Unsupported image type. Allowed: ${MEMBER_IMAGE_MIME_TYPES.join(', ')}` });
         }
-        const body = req.body as Buffer;
-        if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
+        // `req.body` is whatever a parser left there, and a request can make
+        // that a string or an array — both of which have a `length` and numeric
+        // indices, so they would flow into the size and signature checks below
+        // as if they were bytes (CodeQL
+        // `js/type-confusion-through-parameter-tampering`). Reject both
+        // explicitly, then take the value as a Buffer or not at all: this route
+        // is only ever reached through `express.raw`.
+        const raw: unknown = req.body;
+        if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
+          return res.status(400).json({ error: 'Request body must be raw image bytes' });
+        }
+        const body: Buffer = raw;
+        if (body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
         if (body.length > MEMBER_IMAGE_MAX_BYTES) {
           return res.status(413).json({ error: `Image exceeds ${MEMBER_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` });
         }

@@ -164,6 +164,18 @@ describe('server-side upload validation (#725 §Tests → Upload)', () => {
     expect(bytesMatchImageMime('image/png', Buffer.alloc(0))).toBe(false);
   });
 
+  it('rejects a body that is a string or an array rather than bytes', () => {
+    // A parser can leave either in `req.body`, and both carry a `length` and
+    // numeric indices — so without the guard they would read as a half-valid
+    // signature instead of being refused.
+    const asPng = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    expect(bytesMatchImageMime('image/png', asPng as unknown as Buffer)).toBe(false);
+    expect(bytesMatchImageMime('image/jpeg', [0xff, 0xd8, 0xff] as unknown as Buffer)).toBe(false);
+    expect(bytesMatchImageMime('image/webp', 'RIFF0000WEBP' as unknown as Buffer)).toBe(false);
+    expect(bytesMatchImageMime('image/png', {} as unknown as Buffer)).toBe(false);
+    expect(bytesMatchImageMime('image/png', null as unknown as Buffer)).toBe(false);
+  });
+
   it('rejects a MIME type outside the allow-list, whatever the bytes', () => {
     expect(bytesMatchImageMime('image/svg+xml', PNG)).toBe(false);
     expect(bytesMatchImageMime('application/octet-stream', PNG)).toBe(false);
