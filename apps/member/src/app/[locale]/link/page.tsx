@@ -15,7 +15,7 @@ export default function LinkPage() {
   const router = useRouter();
   const locale = useLocale();
   const searchParams = useSearchParams();
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, signOut } = useAuth();
   const { signUp } = useSignUp();
   const { apiFetch } = useApiClient();
   const [phase, setPhase] = useState<Phase>('linking');
@@ -81,7 +81,16 @@ export default function LinkPage() {
       }
 
       if (isSignedIn) {
-        await finishLink();
+        if (!ticket) {
+          await finishLink();
+          return;
+        }
+        // #759: an invitation ticket belongs to the invitee, never to whoever
+        // happens to be signed in (a shared device, a tester's browser) —
+        // linking that session instead left the invitation unused. Sign it out
+        // and reload the same URL, so the ticket is redeemed below with fresh
+        // Clerk state. The callback replaces Clerk's post-sign-out redirect.
+        await signOut(() => window.location.replace(window.location.href));
         return;
       }
 
