@@ -29,6 +29,8 @@ interface Theme {
   is_base: boolean;
   has_logo: boolean;
   logo_updated_at: string | null;
+  /** #713: R2 URL when the logo is stored in the gym's Cloudflare folder. */
+  logo_url: string | null;
   logo_contains_gym_name: boolean;
   tokens: ThemeTokens;
   created_at: string;
@@ -136,8 +138,11 @@ export default function GymThemesPage() {
     }
   }
 
+  // #713: the gym's Cloudflare copy when the theme has one (uploads land there),
+  // the API route for a logo that is still a blob.
   function logoUrl(theme: Theme) {
-    return `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`;
+    return theme.logo_url
+      ?? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`;
   }
 
   function openExpand(theme: Theme) {

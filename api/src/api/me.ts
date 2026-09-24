@@ -16,6 +16,7 @@ import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale } from '../infra/locale';
+import { themeLogoUrl } from '../domain/themeLogo';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -119,6 +120,7 @@ const GYM_THEME_SELECT = `
   g.id, g.name,
   t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
   t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+  t.logo_object_key AS theme_logo_object_key,
   t.logo_contains_gym_name AS theme_logo_contains_gym_name,
   t.tokens AS theme_tokens
 `;
@@ -130,6 +132,9 @@ function mapGymRow(row: any) {
     status: row.theme_status,
     has_logo: !!row.theme_logo_mime,
     logo_updated_at: row.theme_logo_updated_at,
+    // #713: set when the logo lives in the gym's R2 folder; null for a
+    // blob-backed one, which `GET /themes/:id/logo` still serves.
+    logo_url: themeLogoUrl({ logo_object_key: row.theme_logo_object_key, logo_updated_at: row.theme_logo_updated_at }),
     logo_contains_gym_name: !!row.theme_logo_contains_gym_name,
     tokens: typeof row.theme_tokens === 'string' ? JSON.parse(row.theme_tokens) : (row.theme_tokens ?? null),
   } : null;
@@ -163,6 +168,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
         `SELECT g.id, g.name,
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+                t.logo_object_key AS theme_logo_object_key,
                 t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM members m
@@ -180,6 +186,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
         `SELECT g.id, g.name,
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+                t.logo_object_key AS theme_logo_object_key,
                 t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM gym_memberships gm
@@ -196,6 +203,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
         `SELECT g.id, g.name,
                 t.id AS theme_id_val, t.name AS theme_name, t.status AS theme_status,
                 t.logo_mime AS theme_logo_mime, t.logo_updated_at AS theme_logo_updated_at,
+                t.logo_object_key AS theme_logo_object_key,
                 t.logo_contains_gym_name AS theme_logo_contains_gym_name,
                 t.tokens AS theme_tokens
          FROM members m

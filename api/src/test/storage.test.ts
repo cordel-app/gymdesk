@@ -7,6 +7,8 @@ const sendMock = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 vi.mock('@aws-sdk/client-s3', () => ({
   S3Client: vi.fn().mockImplementation(() => ({ send: sendMock })),
   PutObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
+  GetObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
+  DeleteObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
 }));
 
 const ENV_KEYS = [
@@ -206,5 +208,125 @@ describe('uploadGymImage()', () => {
     const urlA = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', Buffer.from('a'));
     const urlB = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', Buffer.from('b'));
     expect(urlA).not.toBe(urlB);
+  });
+});
+
+// ─── #713: Custom Theme logo helpers ──────────────────────────────────────────
+
+describe('extensionForMime()', () => {
+  it('maps every mime type a theme logo may use', async () => {
+    const { extensionForMime } = await import('../infra/storage');
+    expect(extensionForMime('image/png')).toBe('png');
+    expect(extensionForMime('image/jpeg')).toBe('jpg');
+    expect(extensionForMime('image/webp')).toBe('webp');
+    expect(extensionForMime('image/svg+xml')).toBe('svg');
+  });
+
+  it('falls back to bin so an unknown type can never be extensionless', async () => {
+    const { extensionForMime } = await import('../infra/storage');
+    expect(extensionForMime('application/x-nonsense')).toBe('bin');
+  });
+});
+
+describe('buildGymLogoKey()', () => {
+  it('always names the object logo.<ext> inside the gym\'s Branding/Logo folder', async () => {
+    const { buildGymLogoKey, buildGymFolderPrefix } = await import('../infra/storage');
+    const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
+    expect(buildGymLogoKey(prefix, 'image/png')).toBe('gyms/gym_123-GymName/Branding/Logo/logo.png');
+    expect(buildGymLogoKey(prefix, 'image/svg+xml')).toBe('gyms/gym_123-GymName/Branding/Logo/logo.svg');
+  });
+
+  it('only the extension varies between types — which is why a replacement must delete the old key', async () => {
+    const { buildGymLogoKey } = await import('../infra/storage');
+    const png = buildGymLogoKey('gyms/g-Name', 'image/png');
+    const jpg = buildGymLogoKey('gyms/g-Name', 'image/jpeg');
+    expect(png).not.toBe(jpg);
+    expect(png.replace(/\.png$/, '')).toBe(jpg.replace(/\.jpg$/, ''));
+  });
+});
+
+describe('buildStorageObjectUrl()', () => {
+  it('composes endpoint + bucket + key', async () => {
+    setConfigured();
+    const { buildStorageObjectUrl } = await import('../infra/storage');
+    expect(buildStorageObjectUrl('gyms/g-Name/Branding/Logo/logo.png'))
+      .toBe('https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/Logo/logo.png');
+  });
+
+  it('returns null for a missing key, and when the deployment has no R2 configured', async () => {
+    const { buildStorageObjectUrl } = await import('../infra/storage');
+    expect(buildStorageObjectUrl('gyms/g-Name/Branding/Logo/logo.png')).toBeNull();
+    setConfigured();
+    expect(buildStorageObjectUrl(null)).toBeNull();
+    expect(buildStorageObjectUrl(undefined)).toBeNull();
+  });
+});
+
+describe('deleteStorageObject()', () => {
+  it('sends a delete for exactly that key', async () => {
+    setConfigured();
+    const { deleteStorageObject } = await import('../infra/storage');
+    await deleteStorageObject('gyms/g-Name/Branding/Logo/logo.png');
+    expect(sendMock.mock.calls[0][0].input).toEqual({
+      Bucket: 'test-bucket',
+      Key: 'gyms/g-Name/Branding/Logo/logo.png',
+    });
+  });
+
+  it('wraps a failure in a StorageOperationError naming the operation and key', async () => {
+    setConfigured();
+    sendMock.mockRejectedValueOnce(new Error('R2 down'));
+    const { deleteStorageObject, StorageOperationError } = await import('../infra/storage');
+    await expect(deleteStorageObject('gyms/g-Name/x.png')).rejects.toBeInstanceOf(StorageOperationError);
+  });
+});
+
+describe('getStorageObject()', () => {
+  it('returns the bytes and the stored content type', async () => {
+    setConfigured();
+    sendMock.mockResolvedValueOnce({
+      ContentType: 'image/png',
+      Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) },
+    });
+    const { getStorageObject } = await import('../infra/storage');
+    const object = await getStorageObject('gyms/g-Name/Branding/Logo/logo.png');
+    expect(object.contentType).toBe('image/png');
+    expect(object.body.equals(Buffer.from([1, 2, 3]))).toBe(true);
+  });
+
+  it('wraps a bodyless response as a storage failure rather than returning empty bytes', async () => {
+    setConfigured();
+    sendMock.mockResolvedValueOnce({ ContentType: 'image/png', Body: undefined });
+    const { getStorageObject, StorageOperationError } = await import('../infra/storage');
+    await expect(getStorageObject('gyms/g-Name/x.png')).rejects.toBeInstanceOf(StorageOperationError);
+  });
+});
+
+describe('themeLogoUrl()', () => {
+  it('stamps the URL with logo_updated_at, since the object key never changes', async () => {
+    setConfigured();
+    const { themeLogoUrl } = await import('../domain/themeLogo');
+    const url = themeLogoUrl({
+      logo_object_key: 'gyms/g-Name/Branding/Logo/logo.png',
+      logo_updated_at: new Date('2026-09-24T10:00:00Z'),
+    });
+    expect(url).toBe(
+      'https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/Logo/logo.png'
+      + `?v=${new Date('2026-09-24T10:00:00Z').getTime()}`,
+    );
+  });
+
+  it('omits the stamp when there is no timestamp', async () => {
+    setConfigured();
+    const { themeLogoUrl } = await import('../domain/themeLogo');
+    expect(themeLogoUrl({ logo_object_key: 'gyms/g-Name/Branding/Logo/logo.png', logo_updated_at: null }))
+      .toBe('https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/Logo/logo.png');
+  });
+
+  it('is null for a blob-backed or logo-less theme', async () => {
+    setConfigured();
+    const { themeLogoUrl } = await import('../domain/themeLogo');
+    expect(themeLogoUrl({ logo_object_key: null, logo_updated_at: new Date() })).toBeNull();
+    expect(themeLogoUrl({})).toBeNull();
   });
 });

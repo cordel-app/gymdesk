@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 /**
  * #417 stage 1: platform-wide Cloudflare R2 integration (S3-compatible).
@@ -253,7 +253,110 @@ const MIME_EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  // #713: theme logos allow SVG (`themes.ts`/`gym-themes.ts`' ALLOWED_MIME_TYPES).
+  // The image-upload routes don't, so adding it here changes nothing for them.
+  'image/svg+xml': 'svg',
 };
+
+/**
+ * Extension for a validated MIME type — the server never takes the extension
+ * from the client (#713): the uploaded file's name plays no part in the key.
+ * `bin` for an unmapped type, so an unknown MIME can never produce an
+ * extensionless key.
+ */
+export function extensionForMime(mime: string): string {
+  return MIME_EXTENSIONS[mime] ?? 'bin';
+}
+
+/** `Branding/Logo` — the gym folder (#417) a Custom Theme logo belongs in (#713). */
+export const BRANDING_LOGO_FOLDER = 'Branding/Logo';
+
+/**
+ * #713: the one key a gym's Custom Theme logo is stored under —
+ * `<folderPrefix>/Branding/Logo/logo.<ext>`. The name is fixed, so a gym holds
+ * one branding logo at a time; only the extension varies, which is why
+ * replacing a logo has to delete the previous key when the type changed.
+ */
+export function buildGymLogoKey(folderPrefix: string, mime: string): string {
+  return `${folderPrefix}/${BRANDING_LOGO_FOLDER}/logo.${extensionForMime(mime)}`;
+}
+
+/**
+ * Public URL of a stored object: endpoint + bucket + key, the composition
+ * `uploadGymImage()` has returned since #417 stage 2 (no presigned/CDN URL).
+ * Null for a missing key, and null when the deployment has no R2
+ * endpoint/bucket configured — so a caller can't hand out a half-built URL.
+ */
+export function buildStorageObjectUrl(key: string | null | undefined): string | null {
+  const { bucket, endpoint } = getConfig();
+  if (!key || !endpoint || !bucket) return null;
+  return `${endpoint}/${bucket}/${key}`;
+}
+
+/**
+ * Writes `body` at an exact key and returns its public URL. Used where the key
+ * is part of the contract rather than generated — the Custom Theme logo (#713).
+ */
+export async function uploadStorageObject(key: string, mime: string, body: Buffer): Promise<string> {
+  const { bucket, endpoint } = getConfig();
+  const client = getClient();
+  try {
+    await client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: mime,
+    }));
+  } catch (err) {
+    throw new StorageOperationError(
+      describeStorageError(err, { operation: 'uploadStorageObject', key, bucket }),
+      err,
+    );
+  }
+  return `${endpoint}/${bucket}/${key}`;
+}
+
+/**
+ * Reads one object back. #713 uses it to serve an R2-backed theme logo through
+ * the public `GET /themes/:id/logo` endpoint: the Payment app loads that URL
+ * under `img-src 'self'` (its nginx proxies `/themes/` for exactly that
+ * reason), and CSP still matches a redirect's host — so the endpoint returns
+ * the bytes rather than pointing the browser at the bucket. Clients that can
+ * reach R2 directly use the `logo_url` on the theme-shaped responses instead.
+ */
+export async function getStorageObject(key: string): Promise<{ body: Buffer; contentType: string | null }> {
+  const { bucket } = getConfig();
+  const client = getClient();
+  try {
+    const result = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const bytes = await (result.Body as any)?.transformToByteArray();
+    if (!bytes) throw new Error('Object has no body');
+    return { body: Buffer.from(bytes), contentType: result.ContentType ?? null };
+  } catch (err) {
+    throw new StorageOperationError(
+      describeStorageError(err, { operation: 'getStorageObject', key, bucket }),
+      err,
+    );
+  }
+}
+
+/**
+ * Removes one object. #713 needs this so replacing a logo with a different file
+ * type doesn't leave the previous `logo.<old ext>` behind as an orphan, and so
+ * clearing a logo removes the file and not just the row's reference to it.
+ */
+export async function deleteStorageObject(key: string): Promise<void> {
+  const { bucket } = getConfig();
+  const client = getClient();
+  try {
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (err) {
+    throw new StorageOperationError(
+      describeStorageError(err, { operation: 'deleteStorageObject', key, bucket }),
+      err,
+    );
+  }
+}
 
 /**
  * #417 stage 2: uploads an image into a gym's folder and returns its public
@@ -267,22 +370,15 @@ export async function uploadGymImage(
   mime: string,
   body: Buffer,
 ): Promise<string> {
-  const { bucket, endpoint } = getConfig();
-  const client = getClient();
-  const ext = MIME_EXTENSIONS[mime] ?? 'bin';
-  const key = `${folderPrefix}/${folder}/${randomUUID()}.${ext}`;
+  const key = `${folderPrefix}/${folder}/${randomUUID()}.${extensionForMime(mime)}`;
   try {
-    await client.send(new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: body,
-      ContentType: mime,
-    }));
+    return await uploadStorageObject(key, mime, body);
   } catch (err) {
-    throw new StorageOperationError(
-      describeStorageError(err, { operation: 'uploadGymImage', key, bucket }),
-      err,
-    );
+    // Keep the operation name callers (and #542's diagnostics) have always seen
+    // for this route, even though the PutObject now goes through the helper.
+    if (err instanceof StorageOperationError) {
+      throw new StorageOperationError({ ...err.details, operation: 'uploadGymImage' }, err.cause);
+    }
+    throw err;
   }
-  return `${endpoint}/${bucket}/${key}`;
 }

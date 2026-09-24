@@ -23,9 +23,13 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const showSelector = !loading && (isSuperadmin || gyms.length > 1);
 
   const theme = activeGym?.theme;
-  const logoSrc = theme?.has_logo
-    ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
-    : null;
+  // #713: a Custom Theme logo is stored in the gym's Cloudflare folder, so load
+  // it straight from there; the API route stays the fallback for a logo that is
+  // still a blob (every Base Theme, and Custom ones uploaded before #713).
+  const logoSrc = theme?.logo_url
+    ?? (theme?.has_logo
+      ? `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`
+      : null);
 
   return (
     <header style={{

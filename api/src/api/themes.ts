@@ -5,6 +5,13 @@ import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { defaultTokens, validateTokens } from '../domain/themeTokens';
+import {
+  describeStorageError,
+  getStorageObject,
+  isStorageConfigured,
+  StorageOperationError,
+} from '../infra/storage';
+import { logger } from '../lib/logger';
 
 // ─── Superadmin CRUD ──────────────────────────────────────────────────────────
 
@@ -343,9 +350,36 @@ themesRouter.delete('/:id', requireSuperadmin, async (req, res) => {
 
 themesPublicRouter.get('/:id/logo', async (req, res) => {
   const { rows } = await db.query(
-    'SELECT logo_bytes, logo_mime FROM themes WHERE id = ? AND deleted_at IS NULL',
+    'SELECT logo_bytes, logo_mime, logo_object_key FROM themes WHERE id = ? AND deleted_at IS NULL',
     [req.params.id],
   );
+  // #713: a Custom Theme logo lives in the gym's R2 folder, and this endpoint
+  // stays the one logo URL every consumer can use whichever way the binary is
+  // stored — it reads the object and returns the bytes. Deliberately not a
+  // redirect to the bucket: the Payment app loads this URL under
+  // `img-src 'self'` (its nginx proxies `/themes/` for exactly that reason) and
+  // CSP still matches a redirect's host, so a 302 would be blocked there.
+  // Clients that hold the theme shape use its `logo_url` and skip this hop.
+  const objectKey: string | null = rows[0]?.logo_object_key ?? null;
+  if (objectKey) {
+    if (!isStorageConfigured()) return res.status(503).json({ error: 'Cloudflare storage is not configured for this deployment' });
+    try {
+      const object = await getStorageObject(objectKey);
+      res.set('Content-Type', object.contentType ?? rows[0].logo_mime ?? 'application/octet-stream');
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.send(object.body);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'getStorageObject', key: objectKey });
+      // A missing object is a 404 like a missing blob; anything else is the
+      // storage layer failing, which an unauthenticated caller gets as a 502
+      // without the platform detail (that goes to the log).
+      logger.error({ err, details, themeId: req.params.id }, 'Cloudflare R2 theme logo read failed');
+      const notFound = details.httpStatusCode === 404 || details.name === 'NoSuchKey';
+      return res.status(notFound ? 404 : 502).json({ error: notFound ? 'Logo not found' : 'Failed to read logo' });
+    }
+  }
   if (rows.length === 0 || !rows[0].logo_bytes || !rows[0].logo_mime) {
     return res.status(404).json({ error: 'Logo not found' });
   }
