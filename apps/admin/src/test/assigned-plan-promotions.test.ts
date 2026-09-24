@@ -115,7 +115,7 @@ describe('Assigned Plan promotions: revoking', () => {
   it('confirms first and disables the control for a read-only role', () => {
     expect(src).toContain('<ConfirmDialog');
     expect(src).toContain('promo_confirm_revoke');
-    expect(src).toMatch(/disabled=\{!standing \|\| !canWrite\}/);
+    expect(src).toMatch(/disabled=\{!canWrite \|\| \(!standing && !p\.can_reapply\)\}/);
   });
 
   it('re-reads the card after a revoke so the Billing Events move with it', () => {
@@ -124,10 +124,39 @@ describe('Assigned Plan promotions: revoking', () => {
   });
 });
 
+describe('Assigned Plan promotions: selecting a spent one again (#635 stage 9)', () => {
+  it('ticks a spent card back through the apply endpoint of this assignment', () => {
+    expect(src).toContain("await apiFetch(`/user-memberships/${assignedPlanId}/promotions`");
+    expect(src).toContain("promotion_id: promotion.promotion_id");
+    expect(src, 'a re-apply must not edit the Promotion itself')
+      .not.toContain("method: 'PUT'");
+  });
+
+  it('decides whether the control is offered from the server\'s can_reapply', () => {
+    // CLAUDE.md: no business logic in the frontend. Whether a spent
+    // application may be agreed again is canReapplyPromotion()'s answer.
+    expect(src).toContain('p.can_reapply');
+    expect(src).toMatch(/onChange=\{\(\) => \(standing \? setRevoking\(p\) : setReapplying\(p\)\)\}/);
+    expect(src, 'the component must not re-derive eligibility')
+      .not.toContain('lifecycle_status');
+  });
+
+  it('confirms the re-apply separately, saying what is being agreed', () => {
+    expect(src).toContain('promo_confirm_reapply');
+    expect(src).toContain('promo_reapply_confirm');
+    expect(src).toContain('promo_reapply_unavailable');
+  });
+
+  it('re-reads the card afterwards, so the price and the events move with it', () => {
+    expect(src).toMatch(/reapply[\s\S]{0,400}onChanged\(\)/);
+  });
+});
+
 describe('Assigned Plan promotions: locales', () => {
   const REQUIRED_KEYS = [
     'promo_created_at', 'promo_created_by', 'promo_toggle_label',
-    'promo_revoke_hint', 'promo_revoked_permanent',
+    'promo_revoke_hint', 'promo_reapply_hint', 'promo_reapply_unavailable',
+    'promo_confirm_reapply', 'promo_reapply_confirm',
     'promo_confirm_revoke', 'promo_revoke_confirm', 'promo_revoke_dismiss',
     'promo_revoked_at', 'promo_membership_fee_benefit', 'promo_no_membership_fee_benefit',
     'promo_action', 'promo_value', 'promo_duration', 'promo_duration_unbounded',
@@ -148,6 +177,12 @@ describe('Assigned Plan promotions: locales', () => {
       const keys = namespaceKeys(locales[code]);
       expect(keys.has('promo_applied'), `${code}.json still carries promo_applied`).toBe(false);
       expect(keys.has('promo_revoked'), `${code}.json still carries promo_revoked`).toBe(false);
+      // #635 stage 9: revoking is no longer permanent, so the copy that said
+      // so is gone rather than left to be shown by mistake.
+      expect(
+        keys.has('promo_revoked_permanent'),
+        `${code}.json still carries promo_revoked_permanent`,
+      ).toBe(false);
     }
   });
 

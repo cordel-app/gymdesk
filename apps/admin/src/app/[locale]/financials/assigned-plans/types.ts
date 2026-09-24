@@ -64,6 +64,14 @@ export interface AppliedPromotion {
    * from its own agreed window: `active`, `inactive` (revoked) or `expired`.
    */
   display_status: 'active' | 'inactive' | 'expired';
+  /**
+   * #635 stage 9 — whether this spent application may be agreed again (the
+   * thread's Q2 answer, "selectable and deselectable"). Decided server-side by
+   * `canReapplyPromotion()`: false while the application still stands, while
+   * another application of the same Promotion does, and for a Promotion that is
+   * no longer active or is outside its own window today.
+   */
+  can_reapply: boolean;
   applied_at: string;
   revoked_at: string | null;
   /** The staff member who applied it — the card's "created by". */

@@ -85,8 +85,10 @@ export function MemberPromotions({ plans, promotions, canWrite, onChanged }: Pro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetPlanId]);
 
-  // Already applied to the chosen plan — the same promotion can't be applied
-  // twice, and the stacking rules are evaluated against what is already there.
+  // Already applied to the chosen plan — a *standing* application holds the
+  // Promotion (#635 stage 9: a revoked one may be agreed again, which is why
+  // this reads `applied` rather than every row), and the stacking rules are
+  // evaluated against what is already there.
   const appliedOnTarget = applied.filter((p) => p.user_membership_id === targetPlanId);
   const appliedIdsOnTarget = new Set(appliedOnTarget.map((p) => p.promotion_id));
   const nonStackableApplied = appliedOnTarget.some((p) => !p.stackable);
@@ -148,7 +150,7 @@ export function MemberPromotions({ plans, promotions, canWrite, onChanged }: Pro
         <p style={dim}>{t('promotions_none')}</p>
       ) : (
         applied.map((row) => (
-          <div key={`${row.user_membership_id}-${row.promotion_id}`} style={card}>
+          <div key={row.id} style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontWeight: 500, fontSize: 14 }}>{row.promotion_name ?? '—'}</div>
@@ -240,7 +242,7 @@ export function MemberPromotions({ plans, promotions, canWrite, onChanged }: Pro
         <div style={{ marginTop: 12 }}>
           <div style={subLabel}>{t('promotions_history')}</div>
           {revoked.map((row) => (
-            <div key={`${row.user_membership_id}-${row.promotion_id}`} style={{ ...card, opacity: 0.75 }}>
+            <div key={row.id} style={{ ...card, opacity: 0.75 }}>
               <div style={{ fontSize: 14 }}>{row.promotion_name ?? '—'}</div>
               <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <StatusBadge status={row.status} label={row.status} />
