@@ -17,6 +17,8 @@ import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
 import { getRequestLocale } from '../infra/locale';
 import { themeLogoUrl } from '../domain/themeLogo';
+import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
+import { loadMemberImagesByTheme } from './theme-member-images';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -125,7 +127,7 @@ const GYM_THEME_SELECT = `
   t.tokens AS theme_tokens
 `;
 
-function mapGymRow(row: any) {
+function mapGymRow(row: any, memberImages: Map<string, MemberImageRow[]> = new Map()) {
   const theme = row.theme_id_val ? {
     id: row.theme_id_val,
     name: row.theme_name,
@@ -136,9 +138,21 @@ function mapGymRow(row: any) {
     // blob-backed one, which `GET /themes/:id/logo` still serves.
     logo_url: themeLogoUrl({ logo_object_key: row.theme_logo_object_key, logo_updated_at: row.theme_logo_updated_at }),
     logo_contains_gym_name: !!row.theme_logo_contains_gym_name,
+    // #725: the six Members App backgrounds, resolved to URLs here so the
+    // Members App consumes URLs only — it never sees a storage path, a theme
+    // id or an object key, and resolves no fallback of its own. A `null` slot
+    // means "use the theme background colour", and that is the whole rule.
+    members_images: memberImageUrls(memberImages.get(row.theme_id_val) ?? []),
     tokens: typeof row.theme_tokens === 'string' ? JSON.parse(row.theme_tokens) : (row.theme_tokens ?? null),
   } : null;
   return { id: row.id, name: row.name, theme };
+}
+
+/** The Members image rows for the themes these gym rows resolved to (#725). */
+async function memberImagesForGymRows(rows: any[]): Promise<Map<string, MemberImageRow[]>> {
+  const gymIds = [...new Set(rows.map((r) => r.id).filter(Boolean))];
+  const themeIds = [...new Set(rows.map((r) => r.theme_id_val).filter(Boolean))];
+  return loadMemberImagesByTheme(gymIds, themeIds);
 }
 
 meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => {
@@ -217,7 +231,7 @@ meGymRouter.get('/', async (req: Request, res: Response, next: NextFunction) => 
     }
 
     if (rows.length === 0) return res.status(404).json({ error: 'No gym found for this user' });
-    res.json(mapGymRow(rows[0]));
+    res.json(mapGymRow(rows[0], await memberImagesForGymRows(rows.slice(0, 1))));
   } catch (err) { next(err); }
 });
 
@@ -288,7 +302,8 @@ meGymsRouter.get('/', async (req: Request, res: Response, next: NextFunction) =>
       ));
     }
 
-    res.json(rows.map(mapGymRow));
+    const memberImages = await memberImagesForGymRows(rows);
+    res.json(rows.map((row) => mapGymRow(row, memberImages)));
   } catch (err) { next(err); }
 });
 

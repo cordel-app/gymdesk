@@ -7,9 +7,23 @@ import { recordAudit } from '../infra/audit';
 import { validateTokens } from '../domain/themeTokens';
 import { themeLogoUrl } from '../domain/themeLogo';
 import {
+  bytesMatchImageMime,
+  buildThemeMemberImageKey,
+  emptyMemberImageUrls,
+  isMemberImageSlot,
+  MEMBER_IMAGE_MAX_BYTES,
+  MEMBER_IMAGE_MIME_TYPES,
+  MEMBER_IMAGE_SLOTS,
+  memberImageUrls,
+  themeMemberFolderKeys,
+  type MemberImageRow,
+} from '../domain/themeMemberImages';
+import { loadMemberImagesByTheme } from './theme-member-images';
+import {
   buildGymLogoKey,
   deleteStorageObject,
   describeStorageError,
+  ensureStorageFolders,
   getMissingStorageConfigKeys,
   getStorageDiagnostics,
   isStorageConfigured,
@@ -29,11 +43,21 @@ const LOGO_MAX_BYTES = 512 * 1024;
  * `gymThemeId` is the requesting gym's currently selected theme (`gyms.theme_id`);
  * it drives `is_gym_theme` (#712), the only piece of the shape that depends on
  * the caller rather than on the row itself.
+ *
+ * `memberImages` are this theme's `theme_member_images` rows (#725), passed in
+ * rather than fetched here so a list of N themes costs one query, not N — #725
+ * asks for the Members configuration inside the existing Theme payload and
+ * explicitly not as six requests of its own.
  */
-function shapeTheme(row: any, gymThemeId: string | null = null) {
+function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: MemberImageRow[] = []) {
   const { logo_bytes: _lb, logo_object_key: _lk, ...rest } = row;
   return {
     ...rest,
+    // #725: always all six fields; `null` is "this slot is not configured", and
+    // the Members App answers it with the theme's background colour. A Base
+    // Theme has no gym folder to store an image in (out of scope), so it always
+    // reads as six nulls.
+    members_images: row.gym_id === null ? emptyMemberImageUrls() : memberImageUrls(memberImages),
     is_base: row.gym_id === null,
     has_logo: !!row.logo_mime,
     // #713: where the binary actually is, for a Custom Theme logo stored in the
@@ -49,6 +73,11 @@ function shapeTheme(row: any, gymThemeId: string | null = null) {
 }
 
 const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, created_by_name, created_by_type, modified_at, deleted_at';
+
+/** The Members image rows of one theme, for the single-theme responses (#725). */
+async function loadThemeMemberImages(gymId: string, themeId: string): Promise<MemberImageRow[]> {
+  return (await loadMemberImagesByTheme([gymId], [themeId])).get(themeId) ?? [];
+}
 
 /** The theme currently assigned to this gym, or null when it has none. */
 async function getGymThemeId(gymId: string): Promise<string | null> {
@@ -91,7 +120,8 @@ gymThemesRouter.get('/', async (req, res, next) => {
         params,
       );
       const gymThemeId = await getGymThemeId(gymId);
-      res.json(rows.map((row) => shapeTheme(row, gymThemeId)));
+      const memberImages = await loadMemberImagesByTheme([gymId]);
+      res.json(rows.map((row) => shapeTheme(row, gymThemeId, memberImages.get(row.id) ?? [])));
     });
   } catch (err) { next(err); }
 });
@@ -129,6 +159,13 @@ gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
         [id, gymId, baseName, src.logo_contains_gym_name, tokens, actorName, isSuperadmin ? 'superadmin' : 'staff'],
       );
 
+      // No Members images: the clone gets its own, independent (and initially
+      // empty) configuration. Cloning has never copied a theme's R2 assets —
+      // it does not copy the logo either — and #725 makes copying them
+      // conditional on it already doing so ("*if* the existing Theme cloning
+      // mechanism copies Theme-owned R2 assets"). What it requires
+      // unconditionally is independence, and a clone that starts unconfigured
+      // shares no object path with its source and cannot be changed by it.
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [id]);
       const gymThemeId = await getGymThemeId(gymId);
       recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0], gymThemeId) });
@@ -201,8 +238,9 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
       const gymThemeId = await getGymThemeId(gymId);
-      recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current, gymThemeId), next: shapeTheme(rows[0], gymThemeId) });
-      res.json(shapeTheme(rows[0], gymThemeId));
+      const memberImages = await loadThemeMemberImages(gymId, req.params.id);
+      recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current, gymThemeId, memberImages), next: shapeTheme(rows[0], gymThemeId, memberImages) });
+      res.json(shapeTheme(rows[0], gymThemeId, memberImages));
     });
   } catch (err) { next(err); }
 });
@@ -334,7 +372,7 @@ gymThemesRouter.post(
           );
         });
         const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
-        res.json(shapeTheme(rows[0], await getGymThemeId(gymId)));
+        res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, req.params.id)));
       });
     } catch (err) { next(err); }
   },
@@ -383,7 +421,189 @@ gymThemesRouter.delete('/:id/logo', async (req, res, next) => {
         [req.params.id, gymId, key],
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
-      res.json(shapeTheme(rows[0], await getGymThemeId(gymId)));
+      res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, req.params.id)));
+    });
+  } catch (err) { next(err); }
+});
+
+// ─── Members App background images (customer themes only) ────────────────────
+//
+// #725: six fixed slots per Custom Theme, each stored in the gym's own R2 folder
+// under `<storage_folder_prefix>/Themes/<theme_id>-<name>/Members/<slot>.png`.
+//
+// Three things the routes below never take from the request: the gym (the
+// folder prefix is read from the *tenant's* `gyms` row), the theme (the lookup
+// is scoped to `gym_id = gymId`, so another gym's theme is simply 404) and the
+// object key (it is derived from those two plus the slot). That is what makes
+// "a gym must not be able to manipulate another gym's Theme assets by changing
+// gym_id, theme_id, the Theme name, the storage path or request parameters"
+// true by construction rather than by a check that could be forgotten.
+//
+// The storage failure modes are #417's, as the logo routes use them: 503 when
+// the deployment has no R2, 409 when this gym's folder was never initialized,
+// 502 when an R2 call fails.
+
+/** The Custom Theme this gym may write Members images to, or null (404 sent). */
+async function resolveWritableTheme(
+  themeId: string,
+  gymId: string,
+  res: express.Response,
+): Promise<{ id: string; name: string } | null> {
+  const { rows } = await db.query<{ id: string; name: string }>(
+    'SELECT id, name FROM themes WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [themeId, gymId],
+  );
+  if (rows.length === 0) {
+    // Also the answer for a Base Theme (`gym_id IS NULL`): Base Theme Members
+    // images are out of scope, and the platform has no gym folder to store one
+    // in — see the migration.
+    res.status(404).json({ error: 'Theme not found' });
+    return null;
+  }
+  return rows[0];
+}
+
+gymThemesRouter.post(
+  '/:id/members-images/:slot',
+  express.raw({ type: (req: any) => (req.headers['content-type'] ?? '').startsWith('image/'), limit: MEMBER_IMAGE_MAX_BYTES + 64 * 1024 }),
+  async (req, res, next) => {
+    try {
+      const { gymId } = getTenantContext(req);
+      await requireRole('admin')(req, res, async () => {
+        const slot = req.params.slot;
+        if (!isMemberImageSlot(slot)) {
+          return res.status(400).json({ error: `Unknown Members image slot. Allowed: ${MEMBER_IMAGE_SLOTS.join(', ')}` });
+        }
+        const mime = req.headers['content-type']?.split(';')[0]?.trim();
+        if (!mime || !(MEMBER_IMAGE_MIME_TYPES as readonly string[]).includes(mime)) {
+          return res.status(415).json({ error: `Unsupported image type. Allowed: ${MEMBER_IMAGE_MIME_TYPES.join(', ')}` });
+        }
+        // `req.body` is whatever a parser left there, and a request can make
+        // that a string or an array — both of which have a `length` and numeric
+        // indices, so they would flow into the size and signature checks below
+        // as if they were bytes (CodeQL
+        // `js/type-confusion-through-parameter-tampering`). Reject both
+        // explicitly, then take the value as a Buffer or not at all: this route
+        // is only ever reached through `express.raw`.
+        const raw: unknown = req.body;
+        if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
+          return res.status(400).json({ error: 'Request body must be raw image bytes' });
+        }
+        const body: Buffer = raw;
+        if (body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
+        if (body.length > MEMBER_IMAGE_MAX_BYTES) {
+          return res.status(413).json({ error: `Image exceeds ${MEMBER_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` });
+        }
+        // The header is the client's word; the signature is the file's. #725
+        // requires the server to validate independently of the browser.
+        if (!bytesMatchImageMime(mime, body)) {
+          return res.status(400).json({ error: 'File contents do not match the declared image type' });
+        }
+
+        const theme = await resolveWritableTheme(req.params.id, gymId, res);
+        if (!theme) return;
+
+        const folderPrefix = await resolveGymFolderPrefix(gymId, res);
+        if (!folderPrefix) return;
+
+        const key = buildThemeMemberImageKey(folderPrefix, theme.id, theme.name, slot);
+        // The row before this upload: it is what stays in place if anything
+        // below fails, which is how "the existing image remains available if
+        // replacement fails" holds — nothing is written until the new object is
+        // in the bucket.
+        const { rows: previous } = await db.query<{ object_key: string }>(
+          'SELECT object_key FROM theme_member_images WHERE gym_id = ? AND theme_id = ? AND slot = ?',
+          [gymId, theme.id, slot],
+        );
+
+        try {
+          await ensureStorageFolders(themeMemberFolderKeys(folderPrefix, theme.id, theme.name));
+          await uploadStorageObject(key, mime, body);
+        } catch (err: any) {
+          const details = err instanceof StorageOperationError
+            ? err.details
+            : describeStorageError(err, { operation: 'uploadStorageObject', key });
+          logger.error(
+            { err, details, diagnostics: getStorageDiagnostics(), gymId, themeId: theme.id, slot },
+            'Cloudflare R2 theme Members image upload failed',
+          );
+          return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
+        }
+
+        // The key is deterministic, so a replacement normally overwrites the
+        // object it replaces and there is nothing to clean up. The exception is
+        // a theme renamed since the last upload: its folder moved, so the row's
+        // old key is now unreachable. Removing it is best-effort *after* the new
+        // object is safely stored — a failure here is an orphan to sweep, not a
+        // failed save.
+        const staleKey = previous[0]?.object_key;
+        if (staleKey && staleKey !== key) {
+          try {
+            await deleteStorageObject(staleKey);
+          } catch (err: any) {
+            const details = err instanceof StorageOperationError
+              ? err.details
+              : describeStorageError(err, { operation: 'deleteStorageObject', key: staleKey });
+            logger.warn(
+              { err, details, gymId, themeId: theme.id, slot },
+              'Replaced Members image left an orphaned object in Cloudflare R2',
+            );
+          }
+        }
+
+        // One upsert against `uq_theme_member_images (theme_id, slot)` rather
+        // than a branch on the row read above: two uploads of the same slot
+        // racing each other would otherwise both see "no row" and the second
+        // would fail on the unique key.
+        //
+        // `modified_at` is assigned explicitly rather than left to the column's
+        // `ON UPDATE CURRENT_TIMESTAMP`: a replacement normally writes the
+        // *same* key, and MySQL skips a row whose assigned values all match, so
+        // the auto-stamp would keep pointing at the previous upload — and the
+        // `?v=` cache-buster derived from it would let the Members App go on
+        // serving the image this call just replaced. `UTC_TIMESTAMP()` because
+        // every DATETIME in this schema is UTC (`timezone: 'Z'`,
+        // docs/architecture.md).
+        await db.query(
+          `INSERT INTO theme_member_images (gym_id, theme_id, slot, object_key, created_at, modified_at)
+           VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+           ON DUPLICATE KEY UPDATE
+             object_key  = VALUES(object_key),
+             modified_at = UTC_TIMESTAMP()`,
+          [gymId, theme.id, slot, key],
+        );
+
+        const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [theme.id]);
+        res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, theme.id)));
+      });
+    } catch (err) { next(err); }
+  },
+);
+
+gymThemesRouter.delete('/:id/members-images/:slot', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, async () => {
+      const slot = req.params.slot;
+      if (!isMemberImageSlot(slot)) {
+        return res.status(400).json({ error: `Unknown Members image slot. Allowed: ${MEMBER_IMAGE_SLOTS.join(', ')}` });
+      }
+      const theme = await resolveWritableTheme(req.params.id, gymId, res);
+      if (!theme) return;
+
+      // #725, deliberately unlike the logo: Remove clears the reference and
+      // leaves the object in the bucket. The row — not the object — is what
+      // makes a slot configured, so the slot reads `null` immediately, and
+      // re-uploading later writes the same deterministic key again rather than
+      // a second one. Nothing here touches storage, so nothing here can fail
+      // on it.
+      await db.query(
+        'DELETE FROM theme_member_images WHERE gym_id = ? AND theme_id = ? AND slot = ?',
+        [gymId, theme.id, slot],
+      );
+
+      const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [theme.id]);
+      res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, theme.id)));
     });
   } catch (err) { next(err); }
 });

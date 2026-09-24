@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useImpersonation } from '@/context/ImpersonationContext';
+import type { MembersImages } from '@/lib/membersBackground';
 
 const ACTIVE_GYM_KEY = 'activeGymId';
 
@@ -30,6 +31,12 @@ export interface MemberGymTheme {
   /** #713: R2 URL of the logo when it is stored in the gym's Cloudflare folder. */
   logo_url: string | null;
   logo_contains_gym_name: boolean;
+  /**
+   * #725: the six Members App background images, already resolved to URLs by
+   * the API. `null` for a slot the theme does not configure — the Members App
+   * then shows the theme background colour and resolves nothing further.
+   */
+  members_images: MembersImages | null;
   tokens: Record<string, any> | null;
 }
 

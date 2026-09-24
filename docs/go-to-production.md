@@ -90,6 +90,17 @@ Tick items off in the PR that completes them.
       production bucket is not public, expose it through a custom domain / `r2.dev` and point
       `CLOUDFLARE_R2_ENDPOINT` at it; `GET /themes/:id/logo` keeps working either way (it reads the object
       with the deployment's credentials), so a misconfiguration shows up as a broken direct URL only.
+- [ ] **Confirm the R2 objects under `Themes/<theme>/Members/` are publicly readable too** (#725). The six
+      Members App backgrounds are fetched by the member's browser directly from
+      `${CLOUDFLARE_R2_ENDPOINT}/${CLOUDFLARE_R2_BUCKET}/<key>` and, unlike the logo, have **no API route
+      that serves the bytes** — a non-public bucket means a theme colour where the artwork should be, not a
+      broken image. The same custom-domain / `r2.dev` fix as the item above covers both.
+- [ ] **Sweep the Members image objects of themes that were renamed or deleted** (#725). Remove clears the
+      row and deliberately leaves the object (the ticket requires it), and a theme renamed between two
+      uploads leaves its old folder behind — the next upload sweeps that one object best-effort, nothing
+      sweeps the rest. Neither is reachable from the app, so this is bucket housekeeping, not correctness.
+      If a CSP is ever put in front of the member app, its `img-src` needs the R2 endpoint for the same
+      reason.
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be

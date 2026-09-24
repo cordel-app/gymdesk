@@ -17,6 +17,13 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
+import {
+  MEMBER_IMAGE_MAX_BYTES,
+  MEMBER_IMAGE_SLOTS,
+  ThemeMembersImagesEditor,
+  type MemberImageSlot,
+  type MembersImages,
+} from '@/components/ThemeMembersImagesEditor';
 import { btnSmall, cardSurfaceStyle } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
@@ -32,6 +39,8 @@ interface Theme {
   /** #713: R2 URL when the logo is stored in the gym's Cloudflare folder. */
   logo_url: string | null;
   logo_contains_gym_name: boolean;
+  /** #725: one nullable URL per Members App background slot; six, always. */
+  members_images: MembersImages;
   tokens: ThemeTokens;
   created_at: string;
   /** Actor snapshot captured when the theme was cloned into this gym (#712). */
@@ -61,10 +70,15 @@ const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 
 // Assignments first, then Branding → Colors → Typography — the same set for a
 // Base Theme and a Custom one (#678); see renderInlineEditor().
-type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments';
+type SectionKey = 'branding' | 'members' | 'typography' | 'colors' | 'assignments';
 const CENTERS_INITIAL_LIMIT = 10;
 
 const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
+
+/** One entry per Members image slot — the draft's shape for all three maps. */
+function bySlot<T>(value: T): Record<MemberImageSlot, T> {
+  return Object.fromEntries(MEMBER_IMAGE_SLOTS.map((slot) => [slot, value])) as Record<MemberImageSlot, T>;
+}
 
 export default function GymThemesPage() {
   const t = useTranslations('gym_themes');
@@ -90,6 +104,12 @@ export default function GymThemesPage() {
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
   const [logoRemovePending, setLogoRemovePending] = useState(false);
+  // #725 — the Members images draft. Files and removals are staged here and
+  // only leave the browser on Save, so Cancel discards both (the logo's
+  // lifecycle, one slot at a time).
+  const [membersImageFiles, setMembersImageFiles] = useState<Record<MemberImageSlot, File | null>>(bySlot(null));
+  const [membersImagePreviews, setMembersImagePreviews] = useState<Record<MemberImageSlot, string | null>>(bySlot(null));
+  const [membersImageRemovals, setMembersImageRemovals] = useState<Record<MemberImageSlot, boolean>>(bySlot(false));
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when a row is expanded for editing, cleared on Save.
   const origFormRef = useRef<typeof emptyForm | null>(null);
@@ -164,6 +184,13 @@ export default function GymThemesPage() {
       setEditLogoFile(null);
       setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
       setLogoRemovePending(false);
+      setMembersImageFiles(bySlot(null));
+      setMembersImageRemovals(bySlot(false));
+      setMembersImagePreviews(
+        Object.fromEntries(
+          MEMBER_IMAGE_SLOTS.map((slot) => [slot, theme.members_images?.[`${slot}_url`] ?? null]),
+        ) as Record<MemberImageSlot, string | null>,
+      );
       setAssignments(null);
       setCentersSearch('');
       setShowAllCenters(false);
@@ -274,8 +301,26 @@ export default function GymThemesPage() {
       editForm.logoContainsGymName !== orig.logoContainsGymName ||
       !tokensEqual(editForm.tokens, orig.tokens) ||
       editLogoFile !== null ||
-      logoRemovePending
+      logoRemovePending ||
+      MEMBER_IMAGE_SLOTS.some((slot) => membersImageFiles[slot] !== null || membersImageRemovals[slot])
     );
+  }
+
+  function pickMembersImage(slot: MemberImageSlot, file: File) {
+    if (!file.type.startsWith('image/')) { setEditError(t('members_image_error_type')); return; }
+    if (file.size > MEMBER_IMAGE_MAX_BYTES) { setEditError(t('members_image_error_size')); return; }
+    setEditError(null);
+    setMembersImageFiles((prev) => ({ ...prev, [slot]: file }));
+    setMembersImageRemovals((prev) => ({ ...prev, [slot]: false }));
+    const reader = new FileReader();
+    reader.onload = (ev) => setMembersImagePreviews((prev) => ({ ...prev, [slot]: ev.target?.result as string }));
+    reader.readAsDataURL(file);
+  }
+
+  function queueMembersImageRemove(slot: MemberImageSlot) {
+    setMembersImageFiles((prev) => ({ ...prev, [slot]: null }));
+    setMembersImagePreviews((prev) => ({ ...prev, [slot]: null }));
+    setMembersImageRemovals((prev) => ({ ...prev, [slot]: true }));
   }
 
   // Draft-only — never persists. Live preview is applied immediately so the
@@ -313,10 +358,32 @@ export default function GymThemesPage() {
       } else if (logoRemovePending) {
         await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
       }
+      // #725 — one call per slot the admin actually touched. A picked file wins
+      // over a queued removal for the same slot (picking clears the removal),
+      // so the two branches are exclusive.
+      for (const slot of MEMBER_IMAGE_SLOTS) {
+        const file = membersImageFiles[slot];
+        if (file) {
+          const token = await getToken();
+          const res = await fetch(`/api/proxy/system/themes/${theme.id}/members-images/${slot}`, {
+            method: 'POST',
+            headers: { 'Content-Type': file.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: file,
+          });
+          if (!res.ok) {
+            const json = await res.json().catch(() => ({}));
+            throw new Error(json.error ?? t('members_image_error_upload'));
+          }
+        } else if (membersImageRemovals[slot]) {
+          await apiFetch(`/system/themes/${theme.id}/members-images/${slot}`, { method: 'DELETE' });
+        }
+      }
       origFormRef.current = { ...editForm, name: editForm.name.trim(), description: editForm.description.trim() };
       setEditForm(origFormRef.current);
       setEditLogoFile(null);
       setLogoRemovePending(false);
+      setMembersImageFiles(bySlot(null));
+      setMembersImageRemovals(bySlot(false));
       await Promise.all([load(), refreshGyms(), refreshCenters()]);
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
@@ -355,7 +422,7 @@ export default function GymThemesPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editForm, editLogoFile, logoRemovePending, expandedId]);
+  }, [editForm, editLogoFile, logoRemovePending, membersImageFiles, membersImageRemovals, expandedId]);
 
   function openClone(theme: Theme) {
     setCloning(theme);
@@ -487,6 +554,16 @@ export default function GymThemesPage() {
               logoPreview={editLogoPreview}
               onLogoPick={handleLogoPick}
               onLogoRemove={queueLogoRemove}
+              readOnly={isBase}
+            />
+          ))}
+
+          {renderSection(t('section_members_images'), 'members', (
+            <ThemeMembersImagesEditor
+              previews={membersImagePreviews}
+              onPick={pickMembersImage}
+              onRemove={queueMembersImageRemove}
+              t={t}
               readOnly={isBase}
             />
           ))}

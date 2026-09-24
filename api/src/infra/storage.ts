@@ -202,13 +202,22 @@ export class StorageOperationError extends Error {
   }
 }
 
-/** Strip path separators and anything but alphanumerics/-/_ from a gym name. */
-export function sanitizeGymFolderName(name: string): string {
+/**
+ * Strip path separators and anything but alphanumerics/-/_ from a name that is
+ * about to become one folder of an object key. The one sanitizer for the whole
+ * tree: the gym folder (#417) and a Custom Theme's own folder (#725) are both
+ * built with it, so a name can never introduce a `/`, a space or a character
+ * that would have to be escaped in a URL.
+ */
+export function sanitizeStorageFolderName(name: string): string {
   return name
     .trim()
     .replace(/\s+/g, '')
     .replace(/[^A-Za-z0-9_-]/g, '');
 }
+
+/** Historical name of {@link sanitizeStorageFolderName}, kept for gym callers. */
+export const sanitizeGymFolderName = sanitizeStorageFolderName;
 
 /**
  * `gyms/<gym_id>-<sanitized_gym_name>`, guaranteed to contain no spaces.
@@ -242,6 +251,32 @@ export async function initializeGymBucket(folderPrefix: string): Promise<void> {
       // written one object at a time, so "which key" narrows a partial failure.
       throw new StorageOperationError(
         describeStorageError(err, { operation: 'initializeGymBucket', key, bucket }),
+        err,
+      );
+    }
+  }
+}
+
+/**
+ * Writes zero-byte folder markers, outermost first, for a branch of the tree
+ * that `initializeGymBucket()` did not create — a Custom Theme's own folder and
+ * its `Members/` leaf (#725), which cannot exist at gym-initialize time because
+ * the theme does not exist yet.
+ *
+ * Idempotent and non-destructive by construction: every key ends in `/`, so the
+ * object it overwrites is always another marker, never a file. Existing markers
+ * are simply rewritten with the same empty body, which is what "safely reused"
+ * means for a store with no directories.
+ */
+export async function ensureStorageFolders(keys: string[]): Promise<void> {
+  const { bucket } = getConfig();
+  const client = getClient();
+  for (const key of keys) {
+    try {
+      await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: '' }));
+    } catch (err) {
+      throw new StorageOperationError(
+        describeStorageError(err, { operation: 'ensureStorageFolders', key, bucket }),
         err,
       );
     }
