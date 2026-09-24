@@ -444,11 +444,17 @@ presentation; do not re-decide anything.
    tables were written and read before anything billed off them, while Included
    Services still fed `package-credits.ts` and Charge Benefits still drove the
    Billing Forecast. Removing a legacy concept is its own stage, after the
-   replacement is actually wired into billing — and only for the concepts the
-   replacement really replaces: stage 4 retired Charge Benefits (migration 176,
-   nothing read it once billing moved to the snapshot) but kept
-   `plan_allowances`, which is booking-access keyed by activity type, not
-   commercial configuration keyed by Sellable Item.
+   replacement is actually wired into billing: stage 4 retired Charge Benefits
+   first (migration 176, nothing read it once billing moved to the snapshot) and
+   Included Services second (migration 177).
+7. **A legacy concept the new structure does not replace needs an owner, not a
+   mapping.** `plan_allowances` was booking-access keyed by activity type, while
+   the Session Benefits meant to replace it are commercial configuration keyed by
+   Sellable Item — so it could not simply be reinterpreted. What unblocked it was
+   asking who the rule belongs to: the answer was the Activity Type, which
+   already had the same relation (`activity_type_eligible_plans`), so retiring the
+   Plan-side copy removed a duplicate rather than a feature. Ask that question
+   before inventing a side table to keep a legacy concept alive.
 
 Reference implementation: `api/src/api/membership-plans.ts` (the
 `PLAN_BENEFIT_ROUTES` loop) + `[locale]/plans/page.tsx`. Tests:

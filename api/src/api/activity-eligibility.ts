@@ -1,16 +1,22 @@
 import { Tx } from '../infra/db';
 import { registerBookingAccessHook } from './bookings';
+import { tryClaimPackageCredit } from './package-credits';
 
 /**
  * #481: Booking-time eligibility gate driven by activity_types.public_event
  * and activity_type_eligible_plans.
  *
- * This is a separate, independent gate from plan-allowances/package-credits:
- * passing eligibility here does not mean the member has an available
- * booking credit (allowance/package) — both gates must pass.
+ * Since #635 stage 4 (migration 177) this is the *only* plan-based booking
+ * gate: Included Services (`plan_allowances`) is gone, and the relation it
+ * expressed lives on the Activity Type instead — "only members on these plans
+ * may book this activity", editable from the Activity Types page.
  *
- * Must be registered BEFORE plan-allowances/package-credits (see app.ts) so
- * an ineligible member is rejected before entitlement is even evaluated.
+ * A member whose plan does not cover the activity is not refused outright if
+ * they hold a class package: the gate then claims a package credit
+ * (`package-credits.ts`), which the old `plan_allowances` gate did too. Paying
+ * per session is the alternative to being on a qualifying plan, so nothing is
+ * charged to a package for an activity the member's plan already grants, or for
+ * a `public_event` activity that needs no plan at all.
  */
 
 /**
@@ -57,6 +63,9 @@ export async function isActivityTypeEligibleForMember(
 registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, _centerId, opts) => {
   if (opts?.overrideAccess) return;
   if (await isActivityTypeEligibleForMember(tx, gymId, memberId, activityTypeId)) return;
+
+  // The plan does not cover it — a class package may still pay for it.
+  if (await tryClaimPackageCredit(tx, gymId, memberId)) return;
 
   throw Object.assign(
     new Error("This member's membership plan is not eligible to book this activity."),

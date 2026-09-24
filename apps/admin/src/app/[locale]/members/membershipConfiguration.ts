@@ -33,17 +33,6 @@ export interface MemberPlanRow {
    * plan and their second can differ. Server-computed; the API enforces it.
    */
   new_member_eligible: boolean;
-  /** The Plan's included activity allowances — empty for a plan that is not live. */
-  activity_allowances: PlanAllowance[];
-}
-
-export interface PlanAllowance {
-  id: number;
-  activity_type_name: string;
-  allowance_type: 'unlimited' | 'session_count';
-  session_count: number | null;
-  recurrence_interval: number | null;
-  recurrence_unit: string | null;
 }
 
 export interface MemberPromotionRow {

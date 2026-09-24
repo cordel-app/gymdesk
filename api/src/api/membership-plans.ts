@@ -139,7 +139,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, allowances, centers, memberCount, sellableItems, taxRateRows, promotionCount,
+  const [prices, bpRows, centers, memberCount, sellableItems, taxRateRows, promotionCount,
          sessionBenefits, oneoffBenefits, periodicalBenefits] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
@@ -147,13 +147,6 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     ).then(r => r.rows),
     db.query<BillingPolicyRow>(
       'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
-      [plan.id, gymId],
-    ).then(r => r.rows),
-    db.query(
-      `SELECT pa.*, at.name AS activity_type_name
-       FROM plan_allowances pa
-       JOIN activity_types at ON at.id = pa.activity_type_id
-       WHERE pa.membership_plan_id = ? AND pa.gym_id = ?`,
       [plan.id, gymId],
     ).then(r => r.rows),
     db.query(
@@ -263,7 +256,6 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     current_price: currentPrice ? currentPrice.price : null,
     price_history: priceHistory,
     billing_policy: billingPolicy,
-    allowances,
     centers,
     member_count: memberCount,
     promotion_count: promotionCount,
@@ -656,19 +648,10 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
         );
       }
 
-      // Copy allowances
-      const { rows: allowances } = await tx.query(
-        'SELECT * FROM plan_allowances WHERE membership_plan_id = ? AND gym_id = ?',
-        [req.params.id, gymId],
-      );
-      for (const a of allowances) {
-        await tx.query(
-          `INSERT INTO plan_allowances
-           (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, insertId, a.activity_type_id, a.allowance_type, a.session_count, a.recurrence_interval, a.recurrence_unit],
-        );
-      }
+      // #635 stage 4: Included Services (`plan_allowances`) is retired, so there
+      // are no allowances to copy. Which activities the copy may be used for is
+      // the Activity Type's own `activity_type_eligible_plans` list, which names
+      // the original plan — a copy is a new plan and starts off named by none.
 
       // Copy centers
       const { rows: centers } = await tx.query(
@@ -828,84 +811,6 @@ membershipPlansRouter.get('/:id/billing-forecast', async (req, res) => {
   if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
   const enriched = await enrichPlan(rows[0], gymId) as { billing_forecast: unknown };
   res.json(enriched.billing_forecast);
-});
-
-// ─── Allowances ───────────────────────────────────────────────────────────────
-
-membershipPlansRouter.get('/:id/allowances', async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const { rows } = await db.query(
-    `SELECT pa.*, at.name AS activity_type_name
-     FROM plan_allowances pa
-     JOIN activity_types at ON at.id = pa.activity_type_id
-     WHERE pa.membership_plan_id = ? AND pa.gym_id = ?`,
-    [req.params.id, gymId],
-  );
-  res.json(rows);
-});
-
-membershipPlansRouter.post('/:id/allowances', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const { activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit } = req.body;
-  if (!activity_type_id || !allowance_type) {
-    return res.status(400).json({ error: 'activity_type_id and allowance_type are required' });
-  }
-  try {
-    const { insertId } = await db.query(
-      `INSERT INTO plan_allowances
-       (gym_id, membership_plan_id, activity_type_id, allowance_type, session_count, recurrence_interval, recurrence_unit)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, req.params.id, activity_type_id, allowance_type, session_count ?? null, recurrence_interval ?? null, recurrence_unit ?? null],
-    );
-    const { rows } = await db.query(
-      `SELECT pa.*, at.name AS activity_type_name FROM plan_allowances pa
-       JOIN activity_types at ON at.id = pa.activity_type_id WHERE pa.id = ?`,
-      [insertId],
-    );
-    res.status(201).json(rows[0]);
-  } catch (err: any) {
-    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'An allowance for this activity type already exists.' });
-    next(err);
-  }
-});
-
-membershipPlansRouter.put('/:id/allowances/:allowanceId', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const { allowance_type, session_count, recurrence_interval, recurrence_unit } = req.body;
-  try {
-    const { rowCount } = await db.query(
-      `UPDATE plan_allowances SET
-        allowance_type = COALESCE(?, allowance_type),
-        session_count = ?,
-        recurrence_interval = ?,
-        recurrence_unit = ?
-       WHERE id = ? AND membership_plan_id = ? AND gym_id = ?`,
-      [allowance_type ?? null, session_count ?? null, recurrence_interval ?? null, recurrence_unit ?? null,
-       req.params.allowanceId, req.params.id, gymId],
-    );
-    if (rowCount === 0) return res.status(404).json({ error: 'Allowance not found' });
-    const { rows } = await db.query(
-      `SELECT pa.*, at.name AS activity_type_name FROM plan_allowances pa
-       JOIN activity_types at ON at.id = pa.activity_type_id WHERE pa.id = ?`,
-      [req.params.allowanceId],
-    );
-    res.json(rows[0]);
-  } catch (err) {
-    next(err);
-  }
-});
-
-membershipPlansRouter.delete('/:id/allowances/:allowanceId', requireRole('admin'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const { rowCount } = await db.query(
-    'DELETE FROM plan_allowances WHERE id = ? AND membership_plan_id = ? AND gym_id = ?',
-    [req.params.allowanceId, req.params.id, gymId],
-  );
-  if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Allowance not found' });
-  res.status(204).send();
 });
 
 // ─── Centers ──────────────────────────────────────────────────────────────────
@@ -1247,10 +1152,11 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 // must match what the Promotion endpoints already do.
 //
 // Since stage 3 (#714) these sections are what an assignment bills from, via
-// the snapshot it captures at assignment time. Charge Benefits, which used to
-// sit above them, were retired in stage 4 (migration 176). Included Services
-// (`plan_allowances`) is still here: it is booking-access, not commercial
-// configuration — see the note in that migration's header.
+// the snapshot it captures at assignment time. They are also all the Plan has
+// now: Charge Benefits were retired in stage 4 part 1 (migration 176) and
+// Included Services in part 2 (migration 177), the latter because the relation
+// it expressed belongs to the Activity Type (`activity_type_eligible_plans`)
+// rather than to the Plan — see the note in that migration's header.
 
 function selectPlanSellableItemBenefits(table: string): string {
   return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,

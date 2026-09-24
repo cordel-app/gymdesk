@@ -454,16 +454,17 @@ describe('Membership Plan legacy sections (stage 1 is additive)', () => {
     planId = await createPlan(gymId, 'MPB Legacy Plan');
   });
 
-  // Included Services (`plan_allowances`) still feeds package credits and
-  // booking checks, so it survives stage 4 (which retired Charge Benefits —
-  // see charge-benefits-retired.test.ts).
-  it('still serves allowances and the billing forecast', async () => {
+  // Stage 4 retired both legacy sections — Charge Benefits in part 1
+  // (charge-benefits-retired.test.ts) and Included Services in part 2
+  // (included-services-retired.test.ts). What a Plan still serves beside its
+  // three Benefit sections is the billing forecast.
+  it('still serves the billing forecast', async () => {
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.allowances)).toBe(true);
+    expect(res.body.allowances).toBeUndefined();
     expect(res.body.billing_forecast).toBeDefined();
   });
 });

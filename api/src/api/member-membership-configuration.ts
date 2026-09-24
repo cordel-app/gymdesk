@@ -45,44 +45,10 @@ function toDateOnly(v: unknown): string | null {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 }
 
-/**
- * The activity allowances each live plan includes (`plan_allowances`), keyed by
- * Assigned Plan id. The Member page has listed these under "Benefits" since
- * #511; #634 keeps them where they belong — inside the Membership Plan card,
- * which is what grants them — and now shows them for every active plan rather
- * than only the newest one.
- *
- * Read live from the Membership Plan, deliberately: allowances are the
- * entitlement model bookings consume (package-credits.ts, activity-eligibility.ts),
- * and those read the Plan's current rows too. One query for every plan.
- */
-async function loadPlanAllowances(
-  gymId: string, livePlans: any[],
-): Promise<Map<number, any[]>> {
-  const byAssignment = new Map<number, any[]>();
-  const planIds = [...new Set(livePlans.map((p) => p.membership_plan_id).filter((id) => id != null))];
-  if (planIds.length === 0) return byAssignment;
-
-  const { rows } = await db.query(
-    `SELECT pa.membership_plan_id, pa.id, pa.allowance_type, pa.session_count,
-            pa.recurrence_interval, pa.recurrence_unit, at.name AS activity_type_name
-     FROM plan_allowances pa
-     JOIN activity_types at ON at.id = pa.activity_type_id
-     WHERE pa.gym_id = ? AND pa.membership_plan_id IN (${planIds.map(() => '?').join(',')})
-     ORDER BY at.name ASC`,
-    [gymId, ...planIds],
-  );
-  const byPlan = new Map<number, any[]>();
-  for (const row of rows) {
-    const list = byPlan.get(row.membership_plan_id) ?? [];
-    list.push(row);
-    byPlan.set(row.membership_plan_id, list);
-  }
-  for (const plan of livePlans) {
-    byAssignment.set(plan.id, byPlan.get(plan.membership_plan_id) ?? []);
-  }
-  return byAssignment;
-}
+// #635 stage 4: the Membership Plan card used to list the plan's Included
+// Services (`plan_allowances`) here. The concept is retired (migration 177) —
+// which activities a Member may book is now the Activity Type's own eligible-plan
+// list, configured from the Activity Types page.
 
 export const memberMembershipConfigurationRouter = Router({ mergeParams: true });
 
@@ -123,10 +89,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // GET /user-memberships/:id/promotions answer with, so a promotion reads
   // identically whichever surface lists it. One call per live assignment: a
   // Member has a handful of plans, not a page of them.
-  const [promotionsPerPlan, services, allowances] = await Promise.all([
+  const [promotionsPerPlan, services] = await Promise.all([
     Promise.all(liveIds.map((id) => fetchAppliedPromotions(gymId, id))),
     loadServicesForAssignments(gymId, liveIds),
-    loadPlanAllowances(gymId, livePlans),
   ]);
 
   const promotions = promotionsPerPlan.flatMap((rows, i) =>
@@ -159,7 +124,6 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       next_billing_date: toDateOnly(p.next_billing_date),
       is_live: Number(p.is_live) === 1,
       new_member_eligible: qualifiesAsNewMember(plans as any, cutoff, Number(p.id)),
-      activity_allowances: allowances.get(p.id) ?? [],
     })),
     promotions,
     services: services.map((s) => ({ ...s, plan_name: planNameById.get(s.user_membership_id) ?? null })),
