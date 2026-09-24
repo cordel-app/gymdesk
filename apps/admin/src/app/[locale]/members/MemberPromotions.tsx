@@ -25,6 +25,8 @@ interface EligiblePromotion {
   id: number;
   name: string;
   stackable: boolean | number;
+  /** MySQL TINYINT(1), i.e. 0/1 over JSON. */
+  only_applicable_for_new_members: boolean | number;
 }
 
 interface Props {
@@ -91,6 +93,13 @@ export function MemberPromotions({ plans, promotions, canWrite, onChanged }: Pro
 
   function blockedReason(p: EligiblePromotion): string | null {
     if (appliedIdsOnTarget.has(p.id)) return t('promotions_already_applied');
+    // §3 — "Only applicable for new members": the Member must not have held
+    // another Membership Plan in the trailing 12 months. `new_member_eligible`
+    // is the server's own answer for this plan (the plan a Promotion attaches
+    // to never counts against its Member), so the picker and the API agree.
+    if (p.only_applicable_for_new_members && target && !target.new_member_eligible) {
+      return t('promotions_blocked_new_members_only');
+    }
     if (nonStackableApplied) return t('assign_new_plan_promotion_blocked_by_non_stackable');
     if (appliedOnTarget.length > 0 && !p.stackable) return t('assign_new_plan_promotion_blocked_non_stackable');
     return null;

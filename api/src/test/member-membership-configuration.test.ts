@@ -164,8 +164,9 @@ async function attachService(
 
 async function createPromotion(gymId: string, planId: number, name: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable)
-     VALUES (?, ?, '2026-01-01 00:00:00', '2099-12-31 00:00:00', 'active', 1)`,
+    `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
+                            only_applicable_for_new_members)
+     VALUES (?, ?, '2026-01-01 00:00:00', '2099-12-31 00:00:00', 'active', 1, 0)`,
     [gymId, name],
   );
   await db.query(
@@ -672,5 +673,78 @@ describe('GET /user-memberships/member/:memberId/configuration — promotions se
     expect(res.status).toBe(200);
     expect(res.body.plans).toHaveLength(1);
     expect(res.body.promotions).toEqual([]);
+  });
+});
+
+// ─── new_member_eligible (#634 §3) ────────────────────────────────────────────
+//
+// Whether a Promotion flagged "Only applicable for new members" would be
+// accepted on each plan. It is a property of the Member, reported per Assigned
+// Plan because the plan a Promotion is attached to never counts against its own
+// Member — so a Member's first plan and their second differ. The rule's window
+// arithmetic is unit-tested in new-member-eligibility.test.ts; the apply paths
+// enforce it in membership-promotions.test.ts. Here: that the read agrees.
+
+describe('GET /user-memberships/member/:memberId/configuration — new_member_eligible', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MMC New Member Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  const eligibilityById = (body: any) =>
+    new Map<number, boolean>(body.plans.map((p: any) => [p.id, p.new_member_eligible]));
+
+  it("is true for a Member's only Membership Plan", async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId, `NME Only Plan ${uniq()}`);
+    const umId = await createAssignment(gymId, memberId, planId, { startsAt: '2026-03-01' });
+
+    const res = await getConfiguration(gymId, memberId);
+    expect(res.status).toBe(200);
+    expect(eligibilityById(res.body).get(umId)).toBe(true);
+  });
+
+  it('is false for both of a Member\'s two parallel plans', async () => {
+    const memberId = await createMember(gymId);
+    const first = await createPlan(gymId, `NME Parallel A ${uniq()}`);
+    const second = await createPlan(gymId, `NME Parallel B ${uniq()}`);
+    const firstUm = await createAssignment(gymId, memberId, first, { startsAt: '2026-03-01' });
+    const secondUm = await createAssignment(gymId, memberId, second, { startsAt: '2026-05-01' });
+
+    const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);
+    expect(eligibility.get(firstUm)).toBe(false);
+    expect(eligibility.get(secondUm)).toBe(false);
+  });
+
+  it('is true again for a Member coming back after more than 12 months away', async () => {
+    const memberId = await createMember(gymId);
+    const oldPlan = await createPlan(gymId, `NME Lapsed ${uniq()}`);
+    const newPlan = await createPlan(gymId, `NME Returning ${uniq()}`);
+    await createAssignment(gymId, memberId, oldPlan, {
+      status: 'expired', startsAt: '2022-01-01', endsAt: '2023-01-01',
+    });
+    const returningUm = await createAssignment(gymId, memberId, newPlan, { startsAt: '2026-09-01' });
+
+    const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);
+    expect(eligibility.get(returningUm)).toBe(true);
+  });
+
+  it('is false when the previous plan ended inside the last 12 months', async () => {
+    const memberId = await createMember(gymId);
+    const oldPlan = await createPlan(gymId, `NME Recent Lapse ${uniq()}`);
+    const newPlan = await createPlan(gymId, `NME Rejoin ${uniq()}`);
+    const lapsedUm = await createAssignment(gymId, memberId, oldPlan, {
+      status: 'expired', startsAt: '2022-01-01',
+    });
+    await db.query(
+      'UPDATE user_memberships SET ends_at = CURDATE() - INTERVAL 3 MONTH, created_at = ? WHERE id = ?',
+      ['2022-01-01 09:00:00', lapsedUm],
+    );
+    const rejoinUm = await createAssignment(gymId, memberId, newPlan, { startsAt: '2026-09-01' });
+
+    const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);
+    expect(eligibility.get(rejoinUm)).toBe(false);
   });
 });

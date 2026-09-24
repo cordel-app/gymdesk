@@ -235,9 +235,9 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
 
     const { insertId } = await db.query(
       `INSERT INTO promotions
-         (gym_id, name, lifecycle_status, stackable, starts_at, ends_at,
-          free_months, paid_months, bonus_months, pay_beforehand_months)
-       VALUES (?, ?, 'active', 1, ?, ?, 0, 0, 0, 0)`,
+         (gym_id, name, lifecycle_status, stackable, only_applicable_for_new_members,
+          starts_at, ends_at, free_months, paid_months, bonus_months, pay_beforehand_months)
+       VALUES (?, ?, 'active', 1, 0, ?, ?, 0, 0, 0, 0)`,
       [gymId, `APSB-Promo-${uniq()}`, dayOffset(-30), dayOffset(365)],
     );
     promotionId = insertId;

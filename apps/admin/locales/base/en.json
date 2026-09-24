@@ -292,6 +292,7 @@
     "promotions_pick_plan": "Select a membership plan…",
     "promotions_pick_plan_first": "Select a membership plan to see the promotions it accepts.",
     "promotions_already_applied": "Already applied to this plan.",
+    "promotions_blocked_new_members_only": "Only applicable for new members — this member held a membership plan in the last 12 months.",
     "promotions_error_no_plan": "Select the membership plan the promotion applies to.",
     "promotions_error_no_promotion": "Select a promotion.",
     "promotions_needs_plan": "Add a membership plan before applying a promotion.",

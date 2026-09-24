@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
 import { fetchAppliedPromotions } from './membership-promotions';
 import { loadServicesForAssignments } from './user-membership-services';
+import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -104,6 +105,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   const { rows: plans } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status, um.final_price,
             um.starts_at, um.ends_at, um.next_billing_date,
+            um.closed_at, um.created_at,
             p.name AS plan_name,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
      FROM user_memberships um
@@ -135,13 +137,28 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     })),
   );
 
+  // #634 §3 — whether a Promotion flagged "Only applicable for new members"
+  // would be accepted on each plan. It is a property of the *Member*, but it is
+  // reported per Assigned Plan because the plan a Promotion is attached to
+  // never counts against its own Member (see new-member-eligibility.ts) — so
+  // the answer differs between a Member's first plan and their second. The
+  // enforcement point stays POST /user-memberships/:id/promotions; this only
+  // lets the PROMOTIONS section say why an option is unavailable instead of
+  // offering it and surfacing a 400.
+  const cutoff = newMemberCutoff(new Date());
+
   res.json({
     plans: plans.map((p: any) => ({
-      ...p,
+      id: p.id,
+      membership_plan_id: p.membership_plan_id,
+      plan_name: p.plan_name,
+      status: p.status,
+      final_price: p.final_price,
       starts_at: toDateOnly(p.starts_at),
       ends_at: toDateOnly(p.ends_at),
       next_billing_date: toDateOnly(p.next_billing_date),
       is_live: Number(p.is_live) === 1,
+      new_member_eligible: qualifiesAsNewMember(plans as any, cutoff, Number(p.id)),
       activity_allowances: allowances.get(p.id) ?? [],
     })),
     promotions,

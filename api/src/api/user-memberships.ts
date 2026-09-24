@@ -691,7 +691,20 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
     }
   }
 
-  const promoError = await validatePromotionSelection(gymId, Number(membership_plan_id), promotionIds);
+  // #634 §3: the "Only applicable for new members" check is about the Member,
+  // not the assignment, so the superseded row is read for its owner before the
+  // selection is validated. The new assignment doesn't exist yet at this point
+  // — nothing is excluded from the Member's history, and the row being
+  // superseded is exactly what makes a still-current member not new.
+  const { rows: supersededRows } = await db.query(
+    'SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ?',
+    [req.params.id, gymId],
+  );
+  if (supersededRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
+
+  const promoError = await validatePromotionSelection(
+    gymId, Number(membership_plan_id), promotionIds, Number(supersededRows[0].member_id),
+  );
   if (promoError) return res.status(promoError.status).json({ error: promoError.error });
 
   try {

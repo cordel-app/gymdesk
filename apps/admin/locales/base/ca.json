@@ -293,6 +293,7 @@
     "promotions_pick_plan": "Selecciona un pla de membresia…",
     "promotions_pick_plan_first": "Selecciona un pla de membresia per veure les promocions que admet.",
     "promotions_already_applied": "Ja aplicada a aquest pla.",
+    "promotions_blocked_new_members_only": "Només aplicable a nous membres: aquest membre ha tingut un pla de membresia els darrers 12 mesos.",
     "promotions_error_no_plan": "Selecciona el pla de membresia al qual s’aplica la promoció.",
     "promotions_error_no_promotion": "Selecciona una promoció.",
     "promotions_needs_plan": "Afegeix un pla de membresia abans d’aplicar una promoció.",

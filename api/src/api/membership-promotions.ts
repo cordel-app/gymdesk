@@ -4,6 +4,11 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
 import { validatePromotionStacking } from '../domain/promotionStacking';
+import {
+  isNewMember,
+  isNewMemberForNewAssignment,
+  NEW_MEMBERS_ONLY_ERROR,
+} from './new-member-eligibility';
 
 /**
  * P4.4: apply/revoke promotions on a user_membership.
@@ -272,12 +277,13 @@ export async function validatePromotionSelection(
   gymId: string,
   membershipPlanId: number,
   promotionIds: number[],
+  memberId: number,
 ): Promise<{ status: number; error: string } | null> {
   if (promotionIds.length === 0) return null;
 
   const placeholders = promotionIds.map(() => '?').join(',');
   const { rows } = await db.query(
-    `SELECT id, stackable, lifecycle_status, starts_at, ends_at
+    `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
      FROM promotions
      WHERE id IN (${placeholders}) AND gym_id = ? AND lifecycle_status != 'deleted'`,
     [...promotionIds, gymId],
@@ -306,6 +312,20 @@ export async function validatePromotionSelection(
     }
   }
 
+  // #634 §3: the assignment this selection is validated for does not exist yet
+  // — it is created right after — so it is evaluated as a pending one, which
+  // makes this answer identical to the one `applyPromotionToMembership` reaches
+  // on the real row moments later. Every plan the Member already holds counts
+  // against them. Evaluated once for the whole selection, and only when some
+  // promotion actually asks for it.
+  if (promotionIds.some((id) => !!byId.get(id).only_applicable_for_new_members)) {
+    const isNew = await isNewMemberForNewAssignment(db, gymId, memberId);
+    if (!isNew) {
+      const blocked = promotionIds.find((id) => !!byId.get(id).only_applicable_for_new_members);
+      return { status: 400, error: `Promotion ${blocked} is only applicable for new members` };
+    }
+  }
+
   const stacking = validatePromotionStacking(
     promotionIds.map((id) => ({ id, stackable: !!byId.get(id).stackable })),
   );
@@ -330,7 +350,8 @@ export async function applyPromotionToMembership(
     const um = umRows[0];
 
     const { rows: promoRows } = await tx.query(
-      "SELECT id, stackable, lifecycle_status, starts_at, ends_at FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
+      `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
+       FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
       [promotionId, gymId],
     );
     if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
@@ -347,6 +368,12 @@ export async function applyPromotionToMembership(
     );
     if (matchRows.length === 0) {
       throw Object.assign(new Error("Promotion doesn't target this membership's plan"), { status: 400 });
+    }
+
+    // #634 §3 — "Only applicable for new members", excluding the assignment
+    // being configured (see new-member-eligibility.ts).
+    if (promo.only_applicable_for_new_members && !(await isNewMember(tx, gymId, um.member_id, umId))) {
+      throw Object.assign(new Error(NEW_MEMBERS_ONLY_ERROR), { status: 400 });
     }
 
     if (!promo.stackable) {
@@ -425,7 +452,8 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
 
       // Load promotion
       const { rows: promoRows } = await tx.query(
-        "SELECT id, stackable, lifecycle_status, starts_at, ends_at FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
+        `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
+         FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
         [promotion_id, gymId],
       );
       if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
@@ -443,6 +471,13 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
       );
       if (matchRows.length === 0) {
         throw Object.assign(new Error("Promotion doesn't target this membership's plan"), { status: 400 });
+      }
+
+      // #634 §3 — "Only applicable for new members": the Member must not have
+      // held another Membership Plan in the trailing 12 months. The assignment
+      // this promotion is being added to never counts against them.
+      if (promo.only_applicable_for_new_members && !(await isNewMember(tx, gymId, um.member_id, umId))) {
+        throw Object.assign(new Error(NEW_MEMBERS_ONLY_ERROR), { status: 400 });
       }
 
       // Stackability
