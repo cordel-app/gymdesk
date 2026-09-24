@@ -41,12 +41,11 @@ Create `wp-content/mu-plugins/gymdesk-registration.php` (create the `mu-plugins`
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 /** Sends one registration to Gymdesk. Returns true when Gymdesk accepted it. */
-function gymdesk_register_member( string $name, string $email, ?int $center_id = null ): bool {
+function gymdesk_register_member( string $name, string $email ): bool {
     if ( ! defined( 'GYMDESK_REGISTRATION_URL' ) || ! defined( 'GYMDESK_API_KEY' ) ) return false;
 
     $body = array( 'name' => $name, 'email' => $email, 'locale' => substr( get_locale(), 0, 2 ) );
     if ( ! in_array( $body['locale'], array( 'en', 'es', 'ca' ), true ) ) unset( $body['locale'] );
-    if ( $center_id ) $body['center_id'] = $center_id;
 
     $response = wp_remote_post( GYMDESK_REGISTRATION_URL, array(
         'timeout' => 10,
@@ -197,8 +196,9 @@ curl -i -X POST "$GYMDESK_REGISTRATION_URL" -H "Content-Type: application/json" 
 |-------|----------|-------|
 | `name` | yes | Up to 255 characters. |
 | `email` | yes | |
-| `center_id` | only for gyms with more than one active center | The center the member joins. An inactive center is treated as non-existent: it is rejected like an unknown id and never counts towards "more than one center". |
 | `locale` | no | `es`, `ca` or `en` — language of the invitation **email** and of the page its link opens (`/{locale}/link`). Defaults to `es`. |
+
+**No center (#757).** A registration joins the **gym**; it does not choose a center, so there is no `center_id` field. One sent by an older plugin is ignored, not rejected. The member's center is assigned later in Gymdesk.
 
 **Invitation email language (#701).** The email is Clerk's *Invitation* template: one per Clerk instance, shared by every gym and every invitation (website registration, members created in the admin, staff), and Clerk's invitation API takes no language. The template therefore picks its language itself with Handlebars conditionals on the invitation's public metadata: `lang.ca` → Catalan, `lang.en` → English, anything else → **Spanish**. The registration endpoint sets `lang` from `locale` (`ca`/`en` only; Spanish needs no flag) and uses the same `locale` for the link, so the email and the page always match. A site that sends no `locale` gets Spanish for both. `lang` is cleared with `gym_signup` on first sign-in. Invitations created in the admin and staff invitations carry no `lang` yet, so they arrive in Spanish.
 
@@ -208,7 +208,7 @@ Editing the template (Clerk Dashboard → Customization → Emails → *Invitati
 |--------|---------|
 | `200` | Health check accepted — see below. Nothing was registered. |
 | `202` | Accepted. Returned for every valid, authenticated request — **including** when the email already belongs to a member, a staff login, or a pending invitation. This is deliberate: the endpoint never reveals who belongs to the gym. Always show the visitor the same "check your inbox" message. |
-| `400` | Invalid body (bad email, missing name, unknown or missing `center_id`). |
+| `400` | Invalid body (bad email, missing name, unsupported `locale`). |
 | `401` | Missing or wrong key, or the gym in the URL is unknown, inactive or not the one that owns the key. |
 | `429` | Rate limit reached (per server IP per hour, and per gym per day). |
 | `502` | The invitation service is temporarily unavailable — ask the visitor to retry later. |
@@ -236,6 +236,5 @@ Any other name, or a non-empty email, is a real registration — including the n
 | Symptom | Cause |
 |---------|-------|
 | Always "Something went wrong" | Check the PHP error log for `Gymdesk registration failed`. `HTTP 401` = wrong key, or the gym id in the URL does not match the gym that owns the key. Run the health check above to tell the two apart from the key's own behaviour. |
-| `HTTP 400 … center_id is required as the gym has more than one center` | The gym has several active centers (inactive ones don't count) — pass the center id as the third argument of `gymdesk_register_member()`. |
 | Form works once, then always fails | The page is cached. Exclude it from the page cache. |
 | "Check your inbox" but no email | The address is already a member, a staff login, already invited, or already has an account. This is reported as success on purpose. Check the spam folder, then the Members page in the admin app. |
