@@ -13,7 +13,8 @@ interface BlockExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;
   min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null;
   // #723: the exercise's own media, already carried by the plan tree (#720) —
-  // no request per exercise. The `*_thumbnail_url` pair arrives with #719.
+  // no request per exercise. #719 turned `exercise_image_thumbnail_url` on; the
+  // video pair still arrives with #719 part 2.
   exercise_image_url?: string | null;
   exercise_image_thumbnail_url?: string | null;
   exercise_video_url?: string | null;

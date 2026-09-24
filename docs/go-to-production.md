@@ -367,3 +367,18 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       `billing.date_aware_membership_fee` would switch the corrected pricing **on**
       during a rollback and move real money on the next run. Roll the API back and leave
       the row at 0; remove it only together with the stage-12 code.
+- [ ] **Existing exercise images have no thumbnail** (#719 part 1): migration 187 adds
+      `exercises.image_thumbnail_url` and backfills nothing, so every image uploaded
+      through the old `POST /storage/uploads/exercise-image` route (one `<uuid>.png`,
+      #417) and every hand-typed URL reads back with a NULL thumbnail. Nothing breaks —
+      both apps prefer the thumbnail and fall back to the master — but those rows keep
+      making list views download the full-size image until someone re-uploads through
+      `POST /exercises/:id/image`. There is no backfill script: the master is not
+      necessarily 2048×2048, and the API deliberately has no image resizer, so a
+      thumbnail can only come from a browser. Decide per gym whether to re-upload.
+- [ ] **`POST /storage/uploads/exercise-image` is now unused by the admin app**
+      (#719 part 1): the Exercises page uploads through `POST /exercises/:id/image`
+      instead. The route still exists and still works (nutrition images share the same
+      handler), so nothing has to happen at deploy time — but it writes a master with no
+      thumbnail and applies none of #719's ownership rules, so it should not be given a
+      new caller. Retire it once #719 parts 2 and 3 have landed.

@@ -6,8 +6,10 @@ import { blockConfigDisplayValue, getBlockConfig } from './blockFieldConfig';
 export interface HierExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;
   // #720: the exercise's own media, carried down the tree so a workout row can
-  // show it without a lookup per exercise.
-  exercise_image_url: string | null; exercise_video_url: string | null;
+  // show it without a lookup per exercise. #719 added the 512×512 thumbnail the
+  // row actually draws; the master stays for the views that show it larger.
+  exercise_image_url: string | null; exercise_image_thumbnail_url?: string | null;
+  exercise_video_url: string | null;
   min_reps: number | null; max_reps: number | null; sets: number | null;
   rest_seconds: number | null; tempo: string | null;
   result_type_id: number | null; result_type_slug: string | null; result_type_name: string | null;

@@ -139,7 +139,10 @@ describe('workout views (#720)', () => {
 
   it('types the media on the shared tree exercise shape', () => {
     const summaries = read(join(APP_DIR, 'workout-templates', 'summaries.ts'));
-    expect(summaries).toContain('exercise_image_url: string | null; exercise_video_url: string | null;');
+    // #719 added the 512×512 thumbnail the component already preferred; the
+    // master and the video reference are unchanged.
+    expect(summaries).toContain('exercise_image_url: string | null; exercise_image_thumbnail_url?: string | null;');
+    expect(summaries).toContain('exercise_video_url: string | null;');
   });
 });
 

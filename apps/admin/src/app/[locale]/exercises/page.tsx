@@ -13,7 +13,8 @@ import { DependencyDialog, ReferenceReport } from '@/components/DependencyDialog
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { ImageUploadField } from '@/components/ImageUploadField';
+import { ExerciseImageField } from '@/components/ExerciseImageField';
+import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { ImportExercisesModal } from './ImportExercisesModal';
@@ -25,7 +26,9 @@ interface ExerciseMuscle { key: string; role: MuscleRole }
 interface ResultType { id: number; name: string; slug: string }
 interface Exercise {
   id: number; name: string; description: string | null;
-  video_url: string | null; image_url: string | null;
+  video_url: string | null;
+  /** #719: the master reference, and the 512×512 thumbnail when the gym uploaded one. */
+  image_url: string | null; image_thumbnail_url: string | null;
   min_reps_default: number | null; max_reps_default: number | null;
   sets_default: number | null; rest_default_seconds: number | null; notes_default: string | null;
   status: 'active' | 'inactive';
@@ -43,7 +46,7 @@ const truncate = (s: string | null, n = 55) => s ? (s.length > n ? s.slice(0, n)
 
 function emptyAddForm() {
   return {
-    name: '', description: '', video_url: '', image_url: '',
+    name: '', description: '', video_url: '',
     min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '', notes_default: '',
     status: 'active',
   };
@@ -55,7 +58,6 @@ function emptyEditForm(e: Exercise): AddForm {
     name: e.name,
     description: e.description ?? '',
     video_url: e.video_url ?? '',
-    image_url: e.image_url ?? '',
     min_reps_default: e.min_reps_default != null ? String(e.min_reps_default) : '',
     max_reps_default: e.max_reps_default != null ? String(e.max_reps_default) : '',
     sets_default: e.sets_default != null ? String(e.sets_default) : '',
@@ -105,6 +107,8 @@ export default function ExercisesPage() {
   const [addResultTypeIds, setAddResultTypeIds] = useState<Set<number>>(new Set());
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  // #719: the image picked in the Add modal, uploaded once the exercise exists.
+  const [stagedImage, setStagedImage] = useState<PreparedExerciseImage | null>(null);
 
   // Details, delete, dependency
   const [detailFor, setDetailFor] = useState<Exercise | null>(null);
@@ -237,7 +241,6 @@ export default function ExercisesPage() {
           name: editForm.name.trim(),
           description: editForm.description.trim() || null,
           video_url: editForm.video_url.trim() || null,
-          image_url: editForm.image_url.trim() || null,
           min_reps_default: editForm.min_reps_default ? parseInt(editForm.min_reps_default, 10) : null,
           max_reps_default: editForm.max_reps_default ? parseInt(editForm.max_reps_default, 10) : null,
           sets_default: editForm.sets_default ? parseInt(editForm.sets_default, 10) : null,
@@ -256,6 +259,14 @@ export default function ExercisesPage() {
     } finally {
       setEditSaving(false);
     }
+  }
+
+  // #719: the media endpoints return the exercise as every other route shapes
+  // it, so the row is replaced in place — the open editor keeps its unsaved
+  // fields and the new image appears without a reload.
+  function applyExerciseUpdate(updated: Exercise) {
+    if (!updated?.id) return;
+    setRows((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
   }
 
   // ─── Duplicate ────────────────────────────────────────────────────────────
@@ -323,13 +334,12 @@ export default function ExercisesPage() {
     setAddSaving(true);
     setAddError(null);
     try {
-      await apiFetch('/exercises', {
+      const created = await apiFetch<Exercise>('/exercises', {
         method: 'POST',
         body: JSON.stringify({
           name: addForm.name.trim(),
           description: addForm.description.trim() || null,
           video_url: addForm.video_url.trim() || null,
-          image_url: addForm.image_url.trim() || null,
           min_reps_default: addForm.min_reps_default ? parseInt(addForm.min_reps_default, 10) : null,
           max_reps_default: addForm.max_reps_default ? parseInt(addForm.max_reps_default, 10) : null,
           sets_default: addForm.sets_default ? parseInt(addForm.sets_default, 10) : null,
@@ -340,10 +350,21 @@ export default function ExercisesPage() {
           allowed_result_type_ids: Array.from(addResultTypeIds),
         }),
       });
+      // #719: the image the modal staged, now that there is an exercise to
+      // attach it to. A failure here leaves the exercise created and imageless
+      // and says so, rather than discarding the exercise.
+      if (stagedImage) {
+        try {
+          await apiFetch(`/exercises/${created.id}/image`, { method: 'POST', body: JSON.stringify(stagedImage) });
+        } catch (err: any) {
+          toast(err.message ?? t('image_error_upload_failed'));
+        }
+      }
       setAddModalOpen(false);
       setAddForm(emptyAddForm());
       setAddMuscles(new Map());
       setAddResultTypeIds(new Set());
+      setStagedImage(null);
       load();
     } catch (err: any) {
       setAddError(err.message ?? t('error_generic'));
@@ -471,11 +492,17 @@ export default function ExercisesPage() {
             <input type="url" value={editForm.video_url} onChange={(e) => setEditForm({ ...editForm, video_url: e.target.value })} style={inlineInputSt} />
           </div>
           <div>
-            <label style={inlineLabelSt}>{t('label_image_url')}</label>
-            <ImageUploadField
-              uploadPath="/storage/uploads/exercise-image"
-              value={editForm.image_url || null}
-              onChange={(url) => setEditForm({ ...editForm, image_url: url ?? '' })}
+            <label style={inlineLabelSt}>{t('label_image')}</label>
+            {/* #719: the image is not part of this form. Uploading or removing
+                acts on the exercise straight away, so cancelling the editor
+                neither undoes it nor re-applies an image that was removed. */}
+            <ExerciseImageField
+              exerciseId={ex.id}
+              imageUrl={ex.image_url}
+              thumbnailUrl={ex.image_thumbnail_url}
+              onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
             />
           </div>
         </div>
@@ -540,9 +567,11 @@ export default function ExercisesPage() {
             {ex.video_url && <p style={{ margin: '0 0 4px', fontSize: 13 }}><strong>{t('label_video_url')}:</strong> {ex.video_url}</p>}
             {ex.image_url && (
               <div>
-                <strong style={{ fontSize: 13 }}>{t('label_image_url')}:</strong>
+                <strong style={{ fontSize: 13 }}>{t('label_image')}:</strong>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={ex.image_url} alt="" style={{ display: 'block', marginTop: 4, maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
+                {/* #719 §17: the 512×512 thumbnail when there is one — the
+                    2048×2048 master is never downloaded to fill a 160px box. */}
+                <img src={ex.image_thumbnail_url ?? ex.image_url} alt="" loading="lazy" style={{ display: 'block', marginTop: 4, maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
               </div>
             )}
           </div>
@@ -652,7 +681,7 @@ export default function ExercisesPage() {
             allLabel={tStatus('all')}
           />
           <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import')}</button>
-          <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
+          <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setStagedImage(null); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
         </div>
       </div>
 
@@ -674,7 +703,7 @@ export default function ExercisesPage() {
         saving={addSaving}
         cancelLabel={t('cancel')}
         saveLabel={addSaving ? t('saving') : t('modal_add')}
-        onCancel={() => { setAddModalOpen(false); setAddError(null); }}
+        onCancel={() => { setAddModalOpen(false); setStagedImage(null); setAddError(null); }}
         onSave={handleAdd}
       >
         <FormLabel>{t('label_name')} *</FormLabel>
@@ -683,11 +712,14 @@ export default function ExercisesPage() {
         <FormInput value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
         <FormLabel>{t('label_video_url')}</FormLabel>
         <FormInput type="url" value={addForm.video_url} onChange={(e) => setAddForm({ ...addForm, video_url: e.target.value })} />
-        <FormLabel>{t('label_image_url')}</FormLabel>
-        <ImageUploadField
-          uploadPath="/storage/uploads/exercise-image"
-          value={addForm.image_url || null}
-          onChange={(url) => setAddForm({ ...addForm, image_url: url ?? '' })}
+        <FormLabel>{t('label_image')}</FormLabel>
+        {/* #719: there is no exercise to upload to yet, so the prepared pair is
+            held here and posted to `POST /exercises/:id/image` the moment the
+            exercise exists. */}
+        <ExerciseImageField
+          exerciseId={null}
+          imageUrl={null}
+          onStaged={setStagedImage}
         />
         <FormLabel>{t('label_min_reps_default')}</FormLabel>
         <FormInput type="number" min="0" value={addForm.min_reps_default} onChange={(e) => setAddForm({ ...addForm, min_reps_default: e.target.value })} />
