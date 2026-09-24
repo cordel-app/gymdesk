@@ -348,27 +348,21 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       );
       newId = insertId;
 
-      const { rows: cbs } = await tx.query(
-        'SELECT * FROM promotion_charge_benefits WHERE promotion_id = ? AND gym_id = ?',
+      // #635 stage 5: the Membership Fee Benefit is a singleton row of its own
+      // (migration 178) — the copy that used to walk `promotion_charge_benefits`
+      // and `promotion_period_benefits`, both dropped by that migration, is
+      // this one insert.
+      const { rows: mfs } = await tx.query(
+        'SELECT * FROM promotion_membership_fee_benefits WHERE promotion_id = ? AND gym_id = ?',
         [src.id, gymId],
       );
-      for (const cb of cbs) {
+      for (const mf of mfs) {
         await tx.query(
-          'INSERT INTO promotion_charge_benefits (gym_id, promotion_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
-          [gymId, newId, cb.gym_charge_id, cb.action, cb.value],
-        );
-      }
-
-      const { rows: pbs } = await tx.query(
-        'SELECT * FROM promotion_period_benefits WHERE promotion_id = ? AND gym_id = ?',
-        [src.id, gymId],
-      );
-      for (const pb of pbs) {
-        await tx.query(
-          `INSERT INTO promotion_period_benefits
-             (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, newId, pb.charge_type_id, pb.quantity, pb.frequency_interval, pb.frequency_unit, pb.duration_months, pb.enabled, pb.action, pb.value],
+          `INSERT INTO promotion_membership_fee_benefits
+             (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [gymId, newId, mf.quantity, mf.frequency_interval, mf.frequency_unit,
+           mf.duration_months, mf.enabled, mf.action, mf.value],
         );
       }
 
@@ -380,17 +374,6 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
         await tx.query(
           'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
           [gymId, newId, plan.membership_plan_id],
-        );
-      }
-
-      const { rows: ibs } = await tx.query(
-        'SELECT * FROM promotion_included_benefits WHERE promotion_id = ? AND gym_id = ?',
-        [src.id, gymId],
-      );
-      for (const ib of ibs) {
-        await tx.query(
-          'INSERT INTO promotion_included_benefits (gym_id, promotion_id, charge_type_id, quantity) VALUES (?, ?, ?, ?)',
-          [gymId, newId, ib.charge_type_id, ib.quantity],
         );
       }
 

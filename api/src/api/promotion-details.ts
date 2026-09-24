@@ -15,14 +15,6 @@ async function verifyPromotion(gymId: string, promotionId: number) {
   return rows.length > 0;
 }
 
-// #551: Membership Fee Benefits is a UI-level category, not a new table — it's
-// the one promotion_period_benefits row whose charge_type is 'membership_fee',
-// pulled into its own singleton endpoint so the item can't be swapped out.
-async function getMembershipFeeChargeTypeId(): Promise<number> {
-  const { rows } = await db.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
-  return rows[0].id;
-}
-
 /* ---------- plan targeting ---------- */
 
 promotionDetailsRouter.get('/plans', async (req, res) => {
@@ -100,91 +92,27 @@ promotionDetailsRouter.put('/plans', requireRole('admin'), async (req, res, next
   } catch (err) { next(err); }
 });
 
-/* ---------- charge benefits ---------- */
+/* ---------- membership fee benefit (singleton; #551) ---------- */
+// #635 stage 5: the Membership Fee Benefit has its own table —
+// `promotion_membership_fee_benefits` (migration 178), one row per Promotion.
+// It replaces both of the places the benefit used to live: the
+// `promotion_period_benefits` row whose charge type was `membership_fee`
+// (#551) and, for Promotions configured before #626 removed the Promotion
+// Charge Benefits editor, a `promotion_charge_benefits` row on a Sellable
+// Item of that charge type. Neither table exists any more, and there is no
+// item to point at: "which item" was never a choice here, which is why the
+// old endpoint resolved the charge type server-side and refused to take one
+// from the client.
+//
+// `action`/`value` are what billing applies, for `duration_months` months
+// counted from when the Promotion was applied (see `computeFinalPrice` in
+// membership-promotions.ts); `quantity` and `frequency_interval`/
+// `frequency_unit` are descriptive, exactly as they were under #551.
 
-promotionDetailsRouter.get('/charge-benefits', async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = (req.params as any).id;
-  const { rows } = await db.query(
-    `SELECT pcb.*, COALESCE(gc.name, ct.name) AS gym_charge_name, ct.code AS gym_charge_code,
-            gc.status AS gym_charge_status
-     FROM promotion_charge_benefits pcb
-     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-     WHERE pcb.promotion_id = ? AND pcb.gym_id = ?
-     ORDER BY gym_charge_name ASC`,
-    [promotionId, gymId],
-  );
-  res.json(rows);
-});
+const MEMBERSHIP_FEE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
 
-promotionDetailsRouter.put('/charge-benefits', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
-  const promotionId = parseInt((req.params as any).id, 10);
-  const { items } = req.body;
-  if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
-  if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
-
-  const VALID_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
-  for (const item of items) {
-    if (item.action && !VALID_ACTIONS.includes(item.action)) {
-      return res.status(400).json({ error: `Invalid action: ${item.action}` });
-    }
-  }
-
-  const active = items.filter((i: any) => i.action && i.action !== 'no_benefit');
-
-  if (active.length > 0) {
-    const gymChargeIds = active.map((i: any) => i.gym_charge_id);
-    const placeholders = gymChargeIds.map(() => '?').join(',');
-    const { rows: owned } = await db.query(
-      `SELECT id FROM gym_charges WHERE gym_id = ? AND status = 'active' AND deleted_at IS NULL AND id IN (${placeholders})`,
-      [gymId, ...gymChargeIds],
-    );
-    if (owned.length !== gymChargeIds.length) {
-      return res.status(404).json({ error: 'One or more gym charges not found or not available in this gym' });
-    }
-  }
-
-  try {
-    await db.transaction(async (tx) => {
-      await tx.query('DELETE FROM promotion_charge_benefits WHERE promotion_id = ? AND gym_id = ?', [promotionId, gymId]);
-      for (const item of active) {
-        const needsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(item.action);
-        const value = needsValue && item.value != null && item.value !== '' ? parseFloat(item.value) : null;
-        await tx.query(
-          'INSERT INTO promotion_charge_benefits (gym_id, promotion_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
-          [gymId, promotionId, item.gym_charge_id, item.action, value],
-        );
-      }
-    });
-    const { rows } = await db.query(
-      `SELECT pcb.*, COALESCE(gc.name, ct.name) AS gym_charge_name, ct.code AS gym_charge_code,
-              gc.status AS gym_charge_status
-       FROM promotion_charge_benefits pcb
-       JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-       WHERE pcb.promotion_id = ? AND pcb.gym_id = ?
-       ORDER BY gym_charge_name ASC`,
-      [promotionId, gymId],
-    );
-    res.json(rows);
-  } catch (err) { next(err); }
-});
-
-/* ---------- membership fee benefit config helpers ---------- */
-// Shared by the /membership-fee-benefit singleton below. The generic
-// Period/Included Benefits CRUD that used to share these (keyed to the old
-// `charge_types` pseudo-catalog) was retired in #550 stage 3 — replaced by
-// the Sellable-Item-keyed /session-benefits, /oneoff-benefits and
-// /periodical-benefits below.
-
-// Mirrors promotion_charge_benefits' action/value convention (#487 stage 1).
-const PERIOD_BENEFIT_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
-
-function validatePeriodBenefit(body: any) {
-  const { charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, action, value } = body;
-  if (!charge_type_id) return 'charge_type_id is required';
+function validateMembershipFeeBenefit(body: any) {
+  const { quantity, frequency_interval, frequency_unit, duration_months, action, value } = body;
   const qty = parseInt(quantity, 10);
   if (isNaN(qty) || qty <= 0) return 'quantity must be a positive integer';
   const freq = parseInt(frequency_interval, 10);
@@ -194,7 +122,7 @@ function validatePeriodBenefit(body: any) {
     const dur = parseInt(duration_months, 10);
     if (isNaN(dur) || dur <= 0) return 'duration_months must be a positive integer';
   }
-  if (action != null && !PERIOD_BENEFIT_ACTIONS.includes(action)) return `Invalid action: ${action}`;
+  if (action != null && !MEMBERSHIP_FEE_ACTIONS.includes(action)) return `Invalid action: ${action}`;
   if (action === 'percentage_discount') {
     const v = value != null && value !== '' ? parseFloat(value) : NaN;
     if (isNaN(v) || v < 0 || v > 100) return 'value must be between 0 and 100 for percentage_discount';
@@ -206,30 +134,19 @@ function validatePeriodBenefit(body: any) {
 }
 
 // value is only persisted for actions that need one; no_benefit/waive/absent → null.
-function periodBenefitValue(action: any, value: any) {
+function membershipFeeValue(action: any, value: any) {
   const needsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(action);
   return needsValue && value != null && value !== '' ? parseFloat(value) : null;
 }
 
-/* ---------- membership fee benefit (singleton; #551) ---------- */
-// Reuses the Period Benefits table/validation/action-value mechanism exactly
-// (see validatePeriodBenefit/periodBenefitValue above, and computeFinalPrice's
-// duration_months gate in membership-promotions.ts) — the only difference is
-// that the item is always the 'membership_fee' charge type, server-resolved,
-// never accepted from the client.
+const SELECT_MEMBERSHIP_FEE_BENEFIT =
+  'SELECT * FROM promotion_membership_fee_benefits WHERE promotion_id = ? AND gym_id = ?';
 
 promotionDetailsRouter.get('/membership-fee-benefit', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const promotionId = (req.params as any).id;
   try {
-    const membershipFeeId = await getMembershipFeeChargeTypeId();
-    const { rows } = await db.query(
-      `SELECT ppb.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_period_benefits ppb
-       JOIN charge_types ct ON ct.id = ppb.charge_type_id
-       WHERE ppb.promotion_id = ? AND ppb.gym_id = ? AND ppb.charge_type_id = ?`,
-      [promotionId, gymId, membershipFeeId],
-    );
+    const { rows } = await db.query(SELECT_MEMBERSHIP_FEE_BENEFIT, [promotionId, gymId]);
     res.json(rows[0] ?? null);
   } catch (err) { next(err); }
 });
@@ -246,11 +163,10 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
   );
   if (promoRows.length === 0) return res.status(404).json({ error: 'Promotion not found' });
 
-  const membershipFeeId = await getMembershipFeeChargeTypeId();
-  const err = validatePeriodBenefit({ ...req.body, charge_type_id: membershipFeeId });
+  const err = validateMembershipFeeBenefit(req.body);
   if (err) return res.status(400).json({ error: err });
 
-  // #625: a Promotion Period Benefit can never outlast the Promotion. Reject an
+  // #625: a Membership Fee Benefit can never outlast the Promotion. Reject an
   // explicit duration greater than the total Promotion duration so an invalid
   // configuration is never persisted (the Promotion is the source of truth and
   // is never extended to accommodate the benefit). A null duration is allowed —
@@ -270,37 +186,23 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
 
   const { quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value } = req.body;
   try {
-    const dur = duration_months != null ? parseInt(duration_months, 10) : null;
+    const dur = duration_months != null && duration_months !== '' ? parseInt(duration_months, 10) : null;
     const act = action ?? null;
-    const val = periodBenefitValue(act, value);
-    await db.transaction(async (tx) => {
-      const { rows: existing } = await tx.query(
-        'SELECT id FROM promotion_period_benefits WHERE promotion_id = ? AND gym_id = ? AND charge_type_id = ?',
-        [promotionId, gymId, membershipFeeId],
-      );
-      if (existing.length > 0) {
-        await tx.query(
-          `UPDATE promotion_period_benefits
-             SET quantity = ?, frequency_interval = ?, frequency_unit = ?, duration_months = ?, enabled = ?, action = ?, value = ?
-           WHERE id = ? AND promotion_id = ? AND gym_id = ?`,
-          [parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit, dur ?? null,
-           enabled != null ? (enabled ? 1 : 0) : 1, act, val, existing[0].id, promotionId, gymId],
-        );
-      } else {
-        await tx.query(
-          'INSERT INTO promotion_period_benefits (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [gymId, promotionId, membershipFeeId, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit, dur ?? null,
-           enabled != null ? (enabled ? 1 : 0) : 1, act, val],
-        );
-      }
-    });
-    const { rows } = await db.query(
-      `SELECT ppb.*, ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM promotion_period_benefits ppb
-       JOIN charge_types ct ON ct.id = ppb.charge_type_id
-       WHERE ppb.promotion_id = ? AND ppb.gym_id = ? AND ppb.charge_type_id = ?`,
-      [promotionId, gymId, membershipFeeId],
+    const val = membershipFeeValue(act, value);
+    // One row per Promotion (unique key `pmfb_promotion_unique`), so the
+    // singleton PUT is an upsert rather than a replace-all delete/insert.
+    await db.query(
+      `INSERT INTO promotion_membership_fee_benefits
+         (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         quantity = VALUES(quantity), frequency_interval = VALUES(frequency_interval),
+         frequency_unit = VALUES(frequency_unit), duration_months = VALUES(duration_months),
+         enabled = VALUES(enabled), action = VALUES(action), value = VALUES(value)`,
+      [gymId, promotionId, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit,
+       dur, enabled != null ? (enabled ? 1 : 0) : 1, act, val],
     );
+    const { rows } = await db.query(SELECT_MEMBERSHIP_FEE_BENEFIT, [promotionId, gymId]);
     res.json(rows[0]);
   } catch (err) { next(err); }
 });
@@ -311,12 +213,14 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
 // keyed to a real Sellable Item (`gym_charges`, migration 155) instead of the
 // old `charge_types` pseudo-catalog, split by `classifySellableItem()` into
 // Session / One-off / Periodical. The legacy `/period-benefits` (excluding
-// Membership Fee, #551) and `/included-benefits` endpoints have been retired
-// (#550 stage 3) now that the admin frontend reads/writes these three
-// instead — `promotion_period_benefits` and `promotion_included_benefits`
-// stay in the schema (the former still backs `/membership-fee-benefit`
-// below; the latter is now unused but its data isn't backfilled anywhere per
-// the issue owner's explicit "start from scratch" instruction on #550).
+// Membership Fee, #551) and `/included-benefits` endpoints were retired in
+// #550 stage 3 once the admin frontend read/wrote these three instead, and
+// #635 stage 5 (migration 178) dropped the tables behind them —
+// `promotion_period_benefits` and `promotion_included_benefits` — along with
+// `promotion_charge_benefits`. Their data was not carried over, per the issue
+// owner's explicit "start from scratch" instruction on #550 and the "clean up
+// completely these legacy structure" answer on #635; the one exception is the
+// Membership Fee Benefit, migrated into its own table above.
 
 function selectSellableItemBenefits(table: string): string {
   return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,

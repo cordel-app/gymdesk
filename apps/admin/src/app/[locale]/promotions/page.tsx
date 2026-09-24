@@ -65,19 +65,18 @@ interface GymCharge {
   benefit_category: 'session' | 'oneoff' | 'periodical';
 }
 interface ChargeType { id: number; code: string; name: string; is_gym_charge: number }
-interface PeriodBenefit {
+// The Membership Fee Benefit singleton (#551). #635 stage 5 gave it a table
+// of its own (`promotion_membership_fee_benefits`), so it no longer carries a
+// `charge_type_*` triplet: there is exactly one per Promotion and the item is
+// always the membership fee, which is why the section labels the row with
+// `membershipFeeName` rather than a field off the payload.
+interface MembershipFeeBenefit {
   id: number;
-  charge_type_id: number;
-  charge_type_code: string;
-  charge_type_name: string;
   quantity: number;
   frequency_interval: number;
   frequency_unit: 'week' | 'month';
   duration_months: number | null;
   enabled: number;
-  // Membership Fee Benefits (#551) is the only remaining user of this shape —
-  // the generic Period/Included Benefits it once coexisted with were retired
-  // in #550 stage 3, replaced by the Sellable-Item-keyed benefits below.
   action: string | null;
   value: string | null;
 }
@@ -172,7 +171,7 @@ const toBenefitItems = (draft: SellableItemBenefit[]) =>
 
 // PUT body for the Membership Fee Benefit singleton (#551) — `value` is only
 // sent for the actions that take one.
-function membershipFeeBody(mf: PeriodBenefit, durationMonths: number | null) {
+function membershipFeeBody(mf: MembershipFeeBenefit, durationMonths: number | null) {
   const action = mf.action || 'no_benefit';
   return {
     quantity: mf.quantity,
@@ -245,14 +244,14 @@ export default function PromotionsPage() {
   // to active plans, so a plan that has since gone inactive still resolves
   // to its name instead of falling back to "#<id>" (#554).
   const [cachedPlans, setCachedPlans] = useState<Record<number, AssociatedPlan[]>>({});
-  const [cachedMf, setCachedMf] = useState<Record<number, PeriodBenefit | null>>({});
+  const [cachedMf, setCachedMf] = useState<Record<number, MembershipFeeBenefit | null>>({});
   const [cachedSessionB, setCachedSessionB] = useState<Record<number, SellableItemBenefit[]>>({});
   const [cachedOneoffB, setCachedOneoffB] = useState<Record<number, SellableItemBenefit[]>>({});
   const [cachedPeriodicalB, setCachedPeriodicalB] = useState<Record<number, SellableItemBenefit[]>>({});
 
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [plansDraft, setPlansDraft] = useState<number[]>([]);
-  const [mfDraft, setMfDraft] = useState<PeriodBenefit | null>(null);
+  const [mfDraft, setMfDraft] = useState<MembershipFeeBenefit | null>(null);
   const [sessionDraft, setSessionDraft] = useState<SellableItemBenefit[]>([]);
   const [oneoffDraft, setOneoffDraft] = useState<SellableItemBenefit[]>([]);
   const [periodicalDraft, setPeriodicalDraft] = useState<SellableItemBenefit[]>([]);
@@ -293,10 +292,9 @@ export default function PromotionsPage() {
     return opts;
   }
 
-  function defaultMfDraft(): PeriodBenefit {
+  function defaultMfDraft(): MembershipFeeBenefit {
     return {
-      id: -1, charge_type_id: 0, charge_type_code: 'membership_fee', charge_type_name: membershipFeeName,
-      quantity: 1, frequency_interval: 1, frequency_unit: 'month', duration_months: null, enabled: 1,
+      id: -1, quantity: 1, frequency_interval: 1, frequency_unit: 'month', duration_months: null, enabled: 1,
       action: 'no_benefit', value: null,
     };
   }
@@ -456,7 +454,7 @@ export default function PromotionsPage() {
     try {
       const [ap, mf, sessionB, oneoffB, periodicalB] = await Promise.all([
         apiFetch<AssociatedPlan[]>(`/promotions/${promoId}/plans`),
-        apiFetch<PeriodBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
+        apiFetch<MembershipFeeBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/session-benefits`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/oneoff-benefits`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/periodical-benefits`),
@@ -469,7 +467,7 @@ export default function PromotionsPage() {
       return { ap, mf, sessionB, oneoffB, periodicalB };
     } catch {
       return {
-        ap: [] as AssociatedPlan[], mf: null as PeriodBenefit | null,
+        ap: [] as AssociatedPlan[], mf: null as MembershipFeeBenefit | null,
         sessionB: [] as SellableItemBenefit[], oneoffB: [] as SellableItemBenefit[], periodicalB: [] as SellableItemBenefit[],
       };
     }
@@ -728,7 +726,7 @@ export default function PromotionsPage() {
 
   // ─── Membership Fee benefit draft helper (#551 — singleton) ──────────────
 
-  function updateMfDraft(patch: Partial<PeriodBenefit>) {
+  function updateMfDraft(patch: Partial<MembershipFeeBenefit>) {
     setMfDraft((prev) => (prev ? { ...prev, ...patch } : prev));
   }
 
@@ -1202,7 +1200,7 @@ export default function PromotionsPage() {
             const mfNeedsValue = ['percentage_discount', 'fixed_discount', 'fixed_price'].includes(mfAction);
             return (
               <div style={{ display: 'contents' }}>
-                <span style={{ fontSize: 13 }}>{mfDraft.charge_type_name}</span>
+                <span style={{ fontSize: 13 }}>{membershipFeeName}</span>
                 <input type="number" min="1" value={mfDraft.quantity} onChange={(e) => updateMfDraft({ quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
                 <input type="number" min="1" value={mfDraft.frequency_interval} onChange={(e) => updateMfDraft({ frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
                 <select value={mfDraft.frequency_unit} onChange={(e) => updateMfDraft({ frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
@@ -1255,7 +1253,7 @@ export default function PromotionsPage() {
   }
 
   // Read-only counterpart of renderMembershipFeeEditor (#627).
-  function renderMembershipFeeView(mf: PeriodBenefit | null) {
+  function renderMembershipFeeView(mf: MembershipFeeBenefit | null) {
     if (!mf || (mf.action ?? 'no_benefit') === 'no_benefit') {
       return <p style={hintSt}>{t('no_membership_fee_benefit')}</p>;
     }
@@ -1274,7 +1272,7 @@ export default function PromotionsPage() {
         </thead>
         <tbody>
           <tr style={{ opacity: mf.enabled ? 1 : 0.45 }}>
-            <td style={tdSt}>{mf.charge_type_name}</td>
+            <td style={tdSt}>{membershipFeeName}</td>
             <td style={tdSt}>{mf.quantity}</td>
             <td style={tdSt}>{mf.frequency_interval} {t(`frequency_${mf.frequency_unit}` as any)}</td>
             <td style={tdSt}>{mf.duration_months ?? '—'}</td>

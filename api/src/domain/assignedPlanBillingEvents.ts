@@ -69,14 +69,23 @@ export function promotionCoversDate(w: PromotionApplicationWindow, atDate: strin
 
 /**
  * A single Membership Fee benefit contributed by an applied promotion.
- * Mirrors `computeFinalPrice()` in `membership-promotions.ts`: a Charge
- * Benefit applies for as long as the promotion's own window covers the
- * date; a Period Benefit additionally expires `durationMonths` after the
- * promotion's `appliedAt` (or never, if `durationMonths` is null).
+ * Mirrors `computeFinalPrice()` in `membership-promotions.ts`: the benefit
+ * applies while the promotion's own window covers the date, and expires
+ * `durationMonths` after the promotion's `appliedAt` (or never, if
+ * `durationMonths` is null).
+ *
+ * #635 stage 5 collapsed this from a two-variant union. A Promotion used to
+ * carry the same benefit as either a Charge Benefit (no expiry) or a Period
+ * Benefit (duration-gated); both tables are gone and the one that remains is
+ * duration-gated, with a legacy Charge Benefit reading back as an enabled
+ * benefit whose duration is null — the same arithmetic it always had.
  */
-export type MembershipFeeBenefit =
-  | { kind: 'charge'; action: PromotionBenefitAction; value: number | null }
-  | { kind: 'period'; action: PromotionBenefitAction | null; value: number | null; enabled: boolean; durationMonths: number | null };
+export type MembershipFeeBenefit = {
+  action: PromotionBenefitAction | null;
+  value: number | null;
+  enabled: boolean;
+  durationMonths: number | null;
+};
 
 export interface AppliedPromotionForBilling extends PromotionApplicationWindow {
   membershipFeeBenefits: MembershipFeeBenefit[];
@@ -100,14 +109,10 @@ export function computeMembershipFeePriceAt(
   for (const promo of promotions) {
     if (!promotionCoversDate(promo, atDate)) continue;
     for (const b of promo.membershipFeeBenefits) {
-      if (b.kind === 'charge') {
-        price = applyPeriodBenefit(price, b.action, b.value);
-        affected = true;
-      } else if (b.enabled && b.action) {
-        if (b.durationMonths != null && atDate >= addCalendarMonths(promo.appliedAt, b.durationMonths)) continue;
-        price = applyPeriodBenefit(price, b.action, b.value);
-        affected = true;
-      }
+      if (!b.enabled || !b.action) continue;
+      if (b.durationMonths != null && atDate >= addCalendarMonths(promo.appliedAt, b.durationMonths)) continue;
+      price = applyPeriodBenefit(price, b.action, b.value);
+      affected = true;
     }
   }
   return { price, promotionAffected: affected };

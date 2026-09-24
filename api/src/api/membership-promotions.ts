@@ -13,9 +13,9 @@ import {
 /**
  * P4.4: apply/revoke promotions on a user_membership.
  *
- * Server recomputes final_price from the plan's base_price + charge benefits
- * and (#487 stage 3) Membership Fee period benefits, across all
- * currently-applied promos. Recomputation is server-only; the ledger records
+ * Server recomputes final_price from the plan's base_price + (#487 stage 3)
+ * the Membership Fee Benefit of every currently-applied promo — one per
+ * promotion since #635 stage 5. Recomputation is server-only; the ledger records
  * an 'adjustment' event. Recomputation only happens at these mutation points
  * (assignment, promotion apply/revoke) — there is no scheduled job that
  * reverts final_price on its own once a period benefit's duration_months
@@ -31,6 +31,23 @@ const SELECT = `
 
 export const membershipPromotionsRouter = Router({ mergeParams: true });
 
+// #635 stage 5: a Promotion's Membership Fee Benefit — one row per Promotion
+// in `promotion_membership_fee_benefits` (migration 178). The snapshot used to
+// carry three arrays (`charge_benefits`, `period_benefits`,
+// `included_benefits`) keyed to the `charge_types` pseudo-catalog; only their
+// `membership_fee` entries ever meant anything to billing, and all three
+// tables are gone. Snapshots written before this stage keep their old shape —
+// `membershipFeeBenefitsFromSnapshot()` below is what reads them.
+export interface SnapshotMembershipFeeBenefit {
+  quantity: number;
+  frequency_interval: number;
+  frequency_unit: string;
+  enabled: boolean;
+  action: string | null;
+  value: number | null;
+  duration_months: number | null;
+}
+
 interface PromotionSnapshot {
   name: string;
   description: string | null;
@@ -40,69 +57,83 @@ interface PromotionSnapshot {
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
-  charge_benefits: Array<{ charge_type_code: string; charge_type_name: string; action: string; value: number | null }>;
-  period_benefits: Array<{
-    charge_type_code: string; charge_type_name: string; quantity: number;
-    frequency_interval: number; frequency_unit: string; enabled: boolean;
-    action: string | null; value: number | null; duration_months: number | null;
-  }>;
-  included_benefits: Array<{ charge_type_code: string; charge_type_name: string; quantity: number }>;
+  // 0 or 1 entry: a Promotion has at most one Membership Fee Benefit. An
+  // array rather than a nullable object because a *legacy* snapshot could
+  // carry two (a Charge Benefit and a Period Benefit on the membership fee,
+  // both applied), and folding them loses what that assignment was charged.
+  membership_fee_benefits: SnapshotMembershipFeeBenefit[];
 }
 
 type Queryable = { query: (sql: string, params?: any[]) => Promise<{ rows: any[] }> };
 
-type LiveBenefits = Pick<PromotionSnapshot, 'charge_benefits' | 'period_benefits' | 'included_benefits'>;
+type LiveBenefits = Pick<PromotionSnapshot, 'membership_fee_benefits'>;
 
 // Shared by buildPromotionSnapshot (below, applied at INSERT time) and the
 // GET / handler's live-join fallback for rows applied before migration 149
 // (snapshot IS NULL) — those never got a snapshot, so their benefit
 // breakdown can only be read from the promotion's *current* definition.
 // Exported for reuse by user-memberships.ts's Billing Events range
-// computation (#511 stage 3), which needs the same Membership Fee
-// charge/period benefits for legacy (snapshot IS NULL) promotion applications.
+// computation (#511 stage 3), which needs the same Membership Fee benefit
+// for legacy (snapshot IS NULL) promotion applications.
 export async function fetchLiveBenefits(exec: Queryable, promotionId: number): Promise<LiveBenefits> {
-  const { rows: chargeBenefits } = await exec.query(
-    `SELECT ct.code AS charge_type_code, ct.name AS charge_type_name, pcb.action, pcb.value
-     FROM promotion_charge_benefits pcb
-     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-     JOIN charge_types ct ON ct.id = gc.charge_type_id
-     WHERE pcb.promotion_id = ?`,
+  const { rows } = await exec.query(
+    `SELECT quantity, frequency_interval, frequency_unit, enabled, action, value, duration_months
+     FROM promotion_membership_fee_benefits
+     WHERE promotion_id = ?`,
     [promotionId],
   );
-
-  const { rows: periodBenefits } = await exec.query(
-    `SELECT ct.code AS charge_type_code, ct.name AS charge_type_name,
-            ppb.quantity, ppb.frequency_interval, ppb.frequency_unit, ppb.enabled,
-            ppb.action, ppb.value, ppb.duration_months
-     FROM promotion_period_benefits ppb
-     JOIN charge_types ct ON ct.id = ppb.charge_type_id
-     WHERE ppb.promotion_id = ?`,
-    [promotionId],
-  );
-
-  const { rows: includedBenefits } = await exec.query(
-    `SELECT ct.code AS charge_type_code, ct.name AS charge_type_name, pib.quantity
-     FROM promotion_included_benefits pib
-     JOIN charge_types ct ON ct.id = pib.charge_type_id
-     WHERE pib.promotion_id = ?`,
-    [promotionId],
-  );
-
   return {
-    charge_benefits: chargeBenefits.map((r: any) => ({
-      charge_type_code: r.charge_type_code, charge_type_name: r.charge_type_name,
-      action: r.action, value: r.value != null ? parseFloat(r.value) : null,
-    })),
-    period_benefits: periodBenefits.map((r: any) => ({
-      charge_type_code: r.charge_type_code, charge_type_name: r.charge_type_name,
+    membership_fee_benefits: rows.map((r: any) => ({
       quantity: r.quantity, frequency_interval: r.frequency_interval, frequency_unit: r.frequency_unit,
-      enabled: !!r.enabled, action: r.action ?? null, value: r.value != null ? parseFloat(r.value) : null,
+      enabled: !!r.enabled, action: r.action ?? null,
+      value: r.value != null ? parseFloat(r.value) : null,
       duration_months: r.duration_months ?? null,
     })),
-    included_benefits: includedBenefits.map((r: any) => ({
-      charge_type_code: r.charge_type_code, charge_type_name: r.charge_type_name, quantity: r.quantity,
-    })),
   };
+}
+
+/**
+ * #635 stage 5: the Membership Fee benefits an applied Promotion froze onto
+ * itself, read out of `user_membership_promotions.snapshot` in whichever
+ * shape that snapshot was written in.
+ *
+ * Snapshots written from this stage on carry `membership_fee_benefits`
+ * directly. Older ones carry `charge_benefits` and `period_benefits` arrays
+ * keyed to the `charge_types` catalog, of which only the `membership_fee`
+ * entries ever affected billing. A legacy Charge Benefit applied for as long
+ * as the promotion did, which is exactly an enabled benefit with no duration
+ * — so it reads back here as one, and prices identically wherever a
+ * Membership Fee Benefit prices at all.
+ *
+ * The one place it does not is the Billing Simulation, which resolves the
+ * first entry through the Promotion's timeline (#625: a benefit belongs to a
+ * promotional period). A snapshot carrying only a Charge Benefit therefore
+ * projects like any other Membership Fee Benefit from #635 stage 5 on, rather
+ * than applying in free/bonus/regular periods too — see migration 178's
+ * header for why that is the intended end state.
+ */
+export function membershipFeeBenefitsFromSnapshot(snap: any): SnapshotMembershipFeeBenefit[] {
+  if (!snap) return [];
+  if (Array.isArray(snap.membership_fee_benefits)) return snap.membership_fee_benefits;
+
+  const isMembershipFee = (b: any) => b?.charge_type_code === 'membership_fee';
+  const legacyCharge: SnapshotMembershipFeeBenefit[] = (snap.charge_benefits ?? [])
+    .filter(isMembershipFee)
+    .map((b: any) => ({
+      quantity: 1, frequency_interval: 1, frequency_unit: 'month',
+      enabled: true, action: b.action ?? null, value: b.value ?? null, duration_months: null,
+    }));
+  const legacyPeriod: SnapshotMembershipFeeBenefit[] = (snap.period_benefits ?? [])
+    .filter(isMembershipFee)
+    .map((b: any) => ({
+      quantity: b.quantity ?? 1, frequency_interval: b.frequency_interval ?? 1,
+      frequency_unit: b.frequency_unit ?? 'month', enabled: !!b.enabled,
+      action: b.action ?? null, value: b.value ?? null, duration_months: b.duration_months ?? null,
+    }));
+  // Period benefit first: it is the one the Promotion timeline reads (see
+  // cachePromotionTimeline in domain/billingSimulation.ts), and a legacy
+  // Charge Benefit stacked on top of it rather than replacing it.
+  return [...legacyPeriod, ...legacyCharge];
 }
 
 // #511 (stage 2): captures everything needed to reproduce what a promotion
@@ -199,9 +230,7 @@ async function withSnapshot(row: any) {
       free_months: snap.free_months,
       paid_months: snap.paid_months,
       bonus_months: snap.bonus_months,
-      charge_benefits: snap.charge_benefits,
-      period_benefits: snap.period_benefits,
-      included_benefits: snap.included_benefits,
+      membership_fee_benefits: membershipFeeBenefitsFromSnapshot(snap),
     };
   }
   const live = await fetchLiveBenefits(db, row.promotion_id);
@@ -223,39 +252,30 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   // fallback to join for.
   let price = parseFloat(um.base_price);
 
-  const { rows: cbRows } = await tx.query(
-    `SELECT pcb.value, pcb.action AS action_code, ct.code AS charge_code
+  // #487 stage 3: the Membership Fee Benefit's action/value affects real
+  // billing, gated by `duration_months` counted from when the promotion was
+  // applied (`ump.applied_at`); a NULL duration means no expiration.
+  // `quantity`/`frequency_interval`/`frequency_unit` are left alone here:
+  // they describe how a count-based benefit recurs, not whether the
+  // Membership Fee action is currently in effect.
+  //
+  // #635 stage 5: one query, one table. This used to be two — the same
+  // benefit was configurable as a `promotion_charge_benefits` row (applying
+  // for as long as the promotion was applied) *and* as a
+  // `promotion_period_benefits` row, and both were applied in turn. Both
+  // tables are gone (migration 178) and their membership-fee rows migrated
+  // into `promotion_membership_fee_benefits`.
+  const { rows: mfRows } = await tx.query(
+    `SELECT mf.value, mf.action AS action_code
      FROM user_membership_promotions ump
-     JOIN promotion_charge_benefits pcb ON pcb.promotion_id = ump.promotion_id
-     JOIN gym_charges gc ON gc.id = pcb.gym_charge_id
-     JOIN charge_types ct ON ct.id = gc.charge_type_id
+     JOIN promotion_membership_fee_benefits mf ON mf.promotion_id = ump.promotion_id
      WHERE ump.user_membership_id = ? AND ump.status = 'applied'
-       AND ct.code = 'membership_fee'`,
+       AND mf.enabled = 1 AND mf.action IS NOT NULL
+       AND (mf.duration_months IS NULL OR ump.applied_at + INTERVAL mf.duration_months MONTH > NOW())`,
     [userMembershipId],
   );
-  for (const cb of cbRows) {
-    price = applyPeriodBenefit(price, cb.action_code as PromotionBenefitAction, cb.value != null ? parseFloat(cb.value) : null);
-  }
-
-  // #487 stage 3: Period Benefits' action/value (stage 1) now affects real
-  // billing too, gated by `duration_months` counted from when the promotion
-  // was applied (`ump.applied_at`) — unlike Charge Benefits, which apply for
-  // as long as the promotion itself is applied. A NULL duration_months means
-  // no expiration. `quantity`/`frequency_interval`/`frequency_unit` are left
-  // alone here: they describe how a count-based benefit (e.g. free sessions)
-  // recurs, not whether the Membership Fee action is currently in effect.
-  const { rows: ppbRows } = await tx.query(
-    `SELECT ppb.value, ppb.action AS action_code
-     FROM user_membership_promotions ump
-     JOIN promotion_period_benefits ppb ON ppb.promotion_id = ump.promotion_id
-     JOIN charge_types ct ON ct.id = ppb.charge_type_id
-     WHERE ump.user_membership_id = ? AND ump.status = 'applied'
-       AND ct.code = 'membership_fee' AND ppb.enabled = 1 AND ppb.action IS NOT NULL
-       AND (ppb.duration_months IS NULL OR ump.applied_at + INTERVAL ppb.duration_months MONTH > NOW())`,
-    [userMembershipId],
-  );
-  for (const ppb of ppbRows) {
-    price = applyPeriodBenefit(price, ppb.action_code as PromotionBenefitAction, ppb.value != null ? parseFloat(ppb.value) : null);
+  for (const mf of mfRows) {
+    price = applyPeriodBenefit(price, mf.action_code as PromotionBenefitAction, mf.value != null ? parseFloat(mf.value) : null);
   }
 
   return { price, member_id: um.member_id, previousFinal: um.final_price != null ? parseFloat(um.final_price) : null };

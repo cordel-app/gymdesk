@@ -1,8 +1,11 @@
 // Tests for membership-promotions.ts (apply/revoke promotions on a
 // user_membership) — in particular that `computeFinalPrice` correctly applies
-// `promotion_charge_benefits` for the 'membership_fee' charge type, including
-// the `fixed_price` action added in #487 stage 2 (previously unimplemented),
-// and `promotion_period_benefits` (#487 stage 3), gated by `duration_months`.
+// a Promotion's Membership Fee Benefit, including the `fixed_price` action
+// added in #487 stage 2 (previously unimplemented) and the `duration_months`
+// gate from #487 stage 3. Since #635 stage 5 that benefit is one row in
+// `promotion_membership_fee_benefits` (migration 178); the two tables it used
+// to be spread over — `promotion_charge_benefits` and
+// `promotion_period_benefits` — are gone.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -84,27 +87,22 @@ async function targetPlan(gymId: string, promoId: number, planId: number) {
   );
 }
 
-async function setChargeBenefit(gymId: string, promoId: number, gymChargeId: number, action: string, value: number | null) {
-  await db.query(
-    'INSERT INTO promotion_charge_benefits (gym_id, promotion_id, gym_charge_id, action, value) VALUES (?, ?, ?, ?, ?)',
-    [gymId, promoId, gymChargeId, action, value],
-  );
-}
-
-async function setPeriodBenefit(
+// #635 stage 5: one Membership Fee Benefit per Promotion, no item to point
+// at. The PUT endpoint is covered in promotions.test.ts; these tests write
+// the row directly, as the setup-by-SQL rule requires.
+async function setMembershipFeeBenefit(
   gymId: string,
   promoId: number,
-  chargeTypeId: number,
   action: string | null,
   value: number | null,
   opts: { durationMonths?: number | null; enabled?: boolean } = {},
 ) {
   const { durationMonths = null, enabled = true } = opts;
   await db.query(
-    `INSERT INTO promotion_period_benefits
-       (gym_id, promotion_id, charge_type_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
-     VALUES (?, ?, ?, 1, 1, 'month', ?, ?, ?, ?)`,
-    [gymId, promoId, chargeTypeId, durationMonths, enabled ? 1 : 0, action, value],
+    `INSERT INTO promotion_membership_fee_benefits
+       (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
+     VALUES (?, ?, 1, 1, 'month', ?, ?, ?, ?)`,
+    [gymId, promoId, durationMonths, enabled ? 1 : 0, action, value],
   );
 }
 
@@ -116,17 +114,14 @@ async function backdateAppliedAt(umId: number, promoId: number, monthsAgo: numbe
   );
 }
 
-// ─── Charge benefit actions applied to real billing ───────────────────────────
+// ─── Membership Fee Benefit actions applied to real billing ──────────────────
 
-describe('POST /user-memberships/:id/promotions — charge benefit calc', () => {
+describe('POST /user-memberships/:id/promotions — membership fee benefit calc', () => {
   let gymId: string;
-  let membershipFeeGymChargeId: number;
 
   beforeAll(async () => {
     gymId = await createTestGym('MP Gym');
     await createTestMembership(gymId, 'admin');
-    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
-    membershipFeeGymChargeId = await createGymCharge(gymId, membershipFeeTypeId);
   });
 
   async function applyAndGetFinalPrice(action: string, value: number | null, basePrice = 100) {
@@ -135,7 +130,7 @@ describe('POST /user-memberships/:id/promotions — charge benefit calc', () => 
     const umId = await createUserMembership(gymId, memberId, planId, basePrice);
     const promoId = await createPromo(gymId, `Promo-${action}-${Date.now()}`);
     await targetPlan(gymId, promoId, planId);
-    await setChargeBenefit(gymId, promoId, membershipFeeGymChargeId, action, value);
+    await setMembershipFeeBenefit(gymId, promoId, action, value);
 
     const res = await request
       .post(`/user-memberships/${umId}/promotions`)
@@ -182,18 +177,14 @@ describe('POST /user-memberships/:id/promotions — charge benefit calc', () => 
   });
 });
 
-// ─── Period benefit actions applied to real billing (#487 stage 3) ────────────
+// ─── The duration_months gate applied to real billing (#487 stage 3) ─────────
 
-describe('POST /user-memberships/:id/promotions — period benefit calc', () => {
+describe('POST /user-memberships/:id/promotions — membership fee benefit duration', () => {
   let gymId: string;
-  let membershipFeeTypeId: number;
-  let otherChargeTypeId: number;
 
   beforeAll(async () => {
     gymId = await createTestGym('MP Period Gym');
     await createTestMembership(gymId, 'admin');
-    membershipFeeTypeId = await getChargeTypeId('membership_fee');
-    otherChargeTypeId = await getChargeTypeId('personal_training');
   });
 
   async function setup(basePrice = 100) {
@@ -213,17 +204,17 @@ describe('POST /user-memberships/:id/promotions — period benefit calc', () => 
       .send({ promotion_id: promoId });
   }
 
-  it('a waive period benefit on membership_fee zeroes the final price', async () => {
+  it('a waive membership fee benefit zeroes the final price', async () => {
     const { umId, promoId } = await setup();
-    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'waive', null);
+    await setMembershipFeeBenefit(gymId, promoId, 'waive', null);
     const res = await apply(umId, promoId);
     expect(res.status).toBe(201);
     expect(Number(res.body.final_price)).toBe(0);
   });
 
-  it('a fixed_price period benefit within its duration_months window applies', async () => {
+  it('a fixed_price benefit within its duration_months window applies', async () => {
     const { umId, promoId } = await setup();
-    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_price', 60, { durationMonths: 3 });
+    await setMembershipFeeBenefit(gymId, promoId, 'fixed_price', 60, { durationMonths: 3 });
     const res = await apply(umId, promoId);
     expect(res.status).toBe(201);
     expect(Number(res.body.final_price)).toBe(60);
@@ -231,7 +222,7 @@ describe('POST /user-memberships/:id/promotions — period benefit calc', () => 
 
   it('a null duration_months never expires', async () => {
     const { umId, promoId } = await setup();
-    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'fixed_discount', 20, { durationMonths: null });
+    await setMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 20, { durationMonths: null });
     const applied = await apply(umId, promoId);
     expect(Number(applied.body.final_price)).toBe(80);
     await backdateAppliedAt(umId, promoId, 120);
@@ -246,9 +237,9 @@ describe('POST /user-memberships/:id/promotions — period benefit calc', () => 
     expect(Number(res.body.final_price)).toBe(80);
   });
 
-  it('a period benefit whose duration_months window has lapsed is excluded on the next recompute', async () => {
+  it('a benefit whose duration_months window has lapsed is excluded on the next recompute', async () => {
     const { umId, promoId } = await setup();
-    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'waive', null, { durationMonths: 3 });
+    await setMembershipFeeBenefit(gymId, promoId, 'waive', null, { durationMonths: 3 });
     const applied = await apply(umId, promoId);
     expect(Number(applied.body.final_price)).toBe(0);
 
@@ -263,30 +254,31 @@ describe('POST /user-memberships/:id/promotions — period benefit calc', () => 
     expect(Number(res.body.final_price)).toBe(100);
   });
 
-  it('a disabled period benefit has no effect', async () => {
+  it('a disabled benefit has no effect', async () => {
     const { umId, promoId } = await setup();
-    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'waive', null, { enabled: false });
+    await setMembershipFeeBenefit(gymId, promoId, 'waive', null, { enabled: false });
     const res = await apply(umId, promoId);
     expect(res.status).toBe(201);
     expect(Number(res.body.final_price)).toBe(100);
   });
 
-  it('a period benefit for a different charge type has no effect on the membership fee', async () => {
+  // #635 stage 5 replaced "a charge benefit and a period benefit on the same
+  // promotion stack" — one Promotion now has at most one Membership Fee
+  // Benefit, so stacking is a property of stacking *promotions*.
+  it('two stacked promotions apply their membership fee benefits in turn', async () => {
     const { umId, promoId } = await setup();
-    await setPeriodBenefit(gymId, promoId, otherChargeTypeId, 'waive', null);
-    const res = await apply(umId, promoId);
-    expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(100);
-  });
+    await setMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 20);
+    expect(Number((await apply(umId, promoId)).body.final_price)).toBe(80);
 
-  it('charge and period benefits on membership_fee stack', async () => {
-    const { umId, promoId } = await setup();
-    const membershipFeeGymChargeId = await createGymCharge(gymId, membershipFeeTypeId);
-    await setChargeBenefit(gymId, promoId, membershipFeeGymChargeId, 'fixed_discount', 20);
-    await setPeriodBenefit(gymId, promoId, membershipFeeTypeId, 'percentage_discount', 50);
-    const res = await apply(umId, promoId);
+    const { promoId: promoId2 } = await setup();
+    await setMembershipFeeBenefit(gymId, promoId2, 'percentage_discount', 50);
+    await db.query(
+      'UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?',
+      [umId, promoId2],
+    );
+    const res = await apply(umId, promoId2);
     expect(res.status).toBe(201);
-    // charge benefit first: 100 - 20 = 80, then period benefit: 80 * 0.5 = 40
+    // first promotion: 100 - 20 = 80, then the second: 80 * 0.5 = 40
     expect(Number(res.body.final_price)).toBe(40);
   });
 });
@@ -303,23 +295,20 @@ describe('POST /user-memberships/:id/promotions — period benefit calc', () => 
 
 describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 stage 2)', () => {
   let gymId: string;
-  let membershipFeeGymChargeId: number;
 
   beforeAll(async () => {
     gymId = await createTestGym('MP Snapshot Gym');
     await createTestMembership(gymId, 'admin');
-    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
-    membershipFeeGymChargeId = await createGymCharge(gymId, membershipFeeTypeId);
   });
 
-  it('keeps promotion_name/description/stackable/charge_benefits frozen after the promotion is later edited', async () => {
+  it('keeps promotion_name/description/stackable/membership_fee_benefits frozen after the promotion is later edited', async () => {
     const planId = await createPlan(gymId, `Snap-Plan-${Date.now()}`);
     const memberId = await createMember(gymId, 'Snap Member');
     const umId = await createUserMembership(gymId, memberId, planId, 100);
     const promoId = await createPromo(gymId, 'Original Promo Name', false);
     await db.query('UPDATE promotions SET description = ? WHERE id = ?', ['Original description', promoId]);
     await targetPlan(gymId, promoId, planId);
-    await setChargeBenefit(gymId, promoId, membershipFeeGymChargeId, 'fixed_discount', 10);
+    await setMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10);
 
     const applyRes = await request
       .post(`/user-memberships/${umId}/promotions`)
@@ -336,13 +325,14 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
     expect(snapRows[0].snapshot).not.toBeNull();
 
     // Now edit the promotion's own definition -- rename it, change its
-    // description, flip stackable, and swap its charge benefit's action/value.
+    // description, flip stackable, and swap its membership fee benefit's
+    // action/value.
     await db.query(
       'UPDATE promotions SET name = ?, description = ?, stackable = 1 WHERE id = ?',
       ['Renamed Promo', 'New description', promoId],
     );
     await db.query(
-      "UPDATE promotion_charge_benefits SET action = 'fixed_price', value = 999 WHERE promotion_id = ?",
+      "UPDATE promotion_membership_fee_benefits SET action = 'fixed_price', value = 999 WHERE promotion_id = ?",
       [promoId],
     );
 
@@ -358,12 +348,12 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
     expect(row.promotion_name).toBe('Original Promo Name');
     expect(row.promotion_description).toBe('Original description');
     expect(Boolean(row.stackable)).toBe(false);
-    expect(row.charge_benefits).toHaveLength(1);
-    expect(row.charge_benefits[0].action).toBe('fixed_discount');
-    expect(Number(row.charge_benefits[0].value)).toBe(10);
-    expect(row.charge_benefits[0].charge_type_code).toBe('membership_fee');
-    expect(row.period_benefits).toEqual([]);
-    expect(row.included_benefits).toEqual([]);
+    expect(row.membership_fee_benefits).toHaveLength(1);
+    expect(row.membership_fee_benefits[0].action).toBe('fixed_discount');
+    expect(Number(row.membership_fee_benefits[0].value)).toBe(10);
+    expect(row.charge_benefits).toBeUndefined();
+    expect(row.period_benefits).toBeUndefined();
+    expect(row.included_benefits).toBeUndefined();
   });
 
   it('falls back to a live join of the current promotion + benefits for a legacy row with no snapshot', async () => {
@@ -372,7 +362,7 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
     const umId = await createUserMembership(gymId, memberId, planId, 100);
     const promoId = await createPromo(gymId, 'Legacy Promo Name', false);
     await targetPlan(gymId, promoId, planId);
-    await setChargeBenefit(gymId, promoId, membershipFeeGymChargeId, 'fixed_discount', 15);
+    await setMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 15);
 
     // Simulate a promotion applied before #511 stage 2 -- inserted directly
     // with snapshot = NULL, bypassing the router's buildPromotionSnapshot call.
@@ -381,12 +371,12 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
       [gymId, umId, promoId, 'legacy-actor'],
     );
 
-    // Edit the promotion (and its charge benefit) after the fact -- a legacy
+    // Edit the promotion (and its membership fee benefit) after the fact -- a legacy
     // row has no snapshot to protect, so unlike the snapshotted case above,
     // it must reflect these live edits rather than what applied_at originally saw.
     await db.query('UPDATE promotions SET name = ? WHERE id = ?', ['Renamed Legacy Promo', promoId]);
     await db.query(
-      "UPDATE promotion_charge_benefits SET action = 'fixed_price', value = 42 WHERE promotion_id = ?",
+      "UPDATE promotion_membership_fee_benefits SET action = 'fixed_price', value = 42 WHERE promotion_id = ?",
       [promoId],
     );
 
@@ -398,11 +388,9 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
     const row = listRes.body.find((r: any) => r.promotion_id === promoId);
     expect(row).toBeDefined();
     expect(row.promotion_name).toBe('Renamed Legacy Promo');
-    expect(row.charge_benefits).toHaveLength(1);
-    expect(row.charge_benefits[0].action).toBe('fixed_price');
-    expect(Number(row.charge_benefits[0].value)).toBe(42);
-    expect(row.period_benefits).toEqual([]);
-    expect(row.included_benefits).toEqual([]);
+    expect(row.membership_fee_benefits).toHaveLength(1);
+    expect(row.membership_fee_benefits[0].action).toBe('fixed_price');
+    expect(Number(row.membership_fee_benefits[0].value)).toBe(42);
   });
 });
 

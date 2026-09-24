@@ -501,19 +501,17 @@ describe('GET /promotions/timeline', () => {
 });
 
 // ─── Membership Fee Benefits (#551) ────────────────────────────────────────────
-// Reuses the Period Benefits table/validation/action-value mechanism (#487
-// stage 1) exactly, as a singleton row whose charge_type is always
-// 'membership_fee', server-resolved — never accepted from the client. The
-// generic Period Benefits endpoints this once had to be isolated from were
-// retired in #550 stage 3 (superseded by /session-benefits, /oneoff-benefits,
-// /periodical-benefits below) — /membership-fee-benefit is now the only
-// writer of promotion_period_benefits.
+// A singleton row per Promotion in `promotion_membership_fee_benefits`
+// (#635 stage 5, migration 178), which replaced the row this benefit used to
+// squat in `promotion_period_benefits` — a table keyed to the `charge_types`
+// pseudo-catalog, dropped by the same migration along with
+// `promotion_charge_benefits` and `promotion_included_benefits`. There is no
+// item to choose here and never was, so the payload no longer carries one.
 
 describe('Membership Fee Benefit', () => {
   let gymId: string;
   let gymB: string;
   let promoId: number;
-  let membershipFeeCtId: number;
 
   beforeAll(async () => {
     gymId = await createTestGym('MF Benefit Gym');
@@ -521,7 +519,6 @@ describe('Membership Fee Benefit', () => {
     await createTestMembership(gymId, 'admin');
     await createTestMembership(gymB, 'admin');
     promoId = await createPromo(gymId, 'MF Benefit Promo');
-    membershipFeeCtId = await getChargeTypeId('membership_fee');
   });
 
   function mfBody(overrides: Record<string, any> = {}) {
@@ -545,7 +542,7 @@ describe('Membership Fee Benefit', () => {
     expect(res.body).toBeNull();
   });
 
-  it('PUT /membership-fee-benefit round-trips each of the 5 actions and always targets the membership_fee item', async () => {
+  it('PUT /membership-fee-benefit round-trips each of the 5 actions', async () => {
     const cases: [string, number | undefined][] = [
       ['no_benefit', undefined],
       ['waive', undefined],
@@ -561,8 +558,11 @@ describe('Membership Fee Benefit', () => {
         .send(mfBody({ action, value }));
       expect(res.status).toBe(200);
       expect(res.body.action).toBe(action);
-      expect(res.body.charge_type_id).toBe(membershipFeeCtId);
-      expect(res.body.charge_type_code).toBe('membership_fee');
+      // #635 stage 5: no charge_type_* triplet — the benefit is keyed to the
+      // Promotion alone.
+      expect(res.body.charge_type_id).toBeUndefined();
+      expect(res.body.charge_type_code).toBeUndefined();
+      expect(res.body.promotion_id).toBe(promoId);
       if (VALUE_ACTIONS.includes(action)) {
         expect(parseFloat(res.body.value)).toBeCloseTo(value as number, 2);
       } else {
@@ -580,13 +580,13 @@ describe('Membership Fee Benefit', () => {
         .send(mfBody({ action: 'waive' }));
     }
     const { rows } = await db.query(
-      'SELECT COUNT(*) AS n FROM promotion_period_benefits WHERE promotion_id = ? AND charge_type_id = ?',
-      [promoId, membershipFeeCtId],
+      'SELECT COUNT(*) AS n FROM promotion_membership_fee_benefits WHERE promotion_id = ?',
+      [promoId],
     );
     expect(rows[0].n).toBe(1);
   });
 
-  it('the charge_type_id in the request body cannot override the membership_fee item', async () => {
+  it('a charge_type_id in the request body is ignored — the benefit has no item', async () => {
     const otherCtId = await getChargeTypeId('nutrition_service');
     const res = await request
       .put(`/promotions/${promoId}/membership-fee-benefit`)
@@ -594,7 +594,8 @@ describe('Membership Fee Benefit', () => {
       .set('x-gym-id', gymId)
       .send(mfBody({ charge_type_id: otherCtId, action: 'waive' }));
     expect(res.status).toBe(200);
-    expect(res.body.charge_type_id).toBe(membershipFeeCtId);
+    expect(res.body.charge_type_id).toBeUndefined();
+    expect(res.body.action).toBe('waive');
   });
 
   it('GET /membership-fee-benefit returns action and value', async () => {
@@ -817,62 +818,37 @@ describe('Membership Fee Benefit', () => {
 
 });
 
-// ─── Charge benefits — fixed_price action ─────────────────────────────────────
+// ─── Charge Benefits are gone from Promotions (#635 stage 5) ─────────────────
+// #626 removed the Promotion's Charge Benefits editor; stage 5 removed the
+// endpoints and the table behind them (migration 178). The Membership Fee
+// Benefit — the only one that ever reached billing — lives in
+// `promotion_membership_fee_benefits` and is covered above.
 
-describe('Charge benefits — fixed_price action', () => {
+describe('Promotion Charge Benefits are retired', () => {
   let gymId: string;
   let promoId: number;
-  let gymChargeId: number;
 
   beforeAll(async () => {
-    gymId = await createTestGym('CB Gym');
+    gymId = await createTestGym('CB Retired Gym');
     await createTestMembership(gymId, 'admin');
-    promoId = await createPromo(gymId, 'CB Promo');
-    // createTestGym does a raw INSERT INTO gyms, bypassing POST /gyms's
-    // gym_charges seeding — insert one directly so this describe block
-    // actually exercises the endpoint (#487 stage 2: this block previously
-    // always no-opped via the `if (!gymChargeId) return` guards below, since
-    // gymChargeId was always undefined).
-    const membershipFeeTypeId = await getChargeTypeId('membership_fee');
-    const { insertId } = await db.query(
-      `INSERT INTO gym_charges (gym_id, charge_type_id, amount, currency, billing_frequency, availability)
-       VALUES (?, ?, 0, 'EUR', 'month', 'available')`,
-      [gymId, membershipFeeTypeId],
-    );
-    gymChargeId = insertId;
+    promoId = await createPromo(gymId, 'CB Retired Promo');
   });
 
-  it('PUT /charge-benefits accepts fixed_price action', async () => {
-    if (!gymChargeId) return; // gym has no charges configured
+  it('no longer routes GET /promotions/:id/charge-benefits', async () => {
+    const res = await request
+      .get(`/promotions/${promoId}/charge-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('no longer routes PUT /promotions/:id/charge-benefits', async () => {
     const res = await request
       .put(`/promotions/${promoId}/charge-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({
-        items: [{
-          gym_charge_id: gymChargeId,
-          action: 'fixed_price',
-          value: 29.99,
-        }],
-      });
-    expect(res.status).toBe(200);
-    expect(res.body[0]?.action).toBe('fixed_price');
-  });
-
-  it('PUT /charge-benefits rejects unknown action', async () => {
-    if (!gymChargeId) return;
-    const res = await request
-      .put(`/promotions/${promoId}/charge-benefits`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({
-        items: [{
-          gym_charge_id: gymChargeId,
-          action: 'invalid_action',
-          value: 10,
-        }],
-      });
-    expect(res.status).toBe(400);
+      .send({ items: [] });
+    expect(res.status).toBe(404);
   });
 });
 

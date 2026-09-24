@@ -9,6 +9,7 @@ import {
   applyPromotionToMembership,
   fetchAppliedPromotions,
   fetchLiveBenefits,
+  membershipFeeBenefitsFromSnapshot,
   validatePromotionSelection,
 } from './membership-promotions';
 import { loadAssignedPlanServices } from './user-membership-services';
@@ -239,22 +240,20 @@ export async function loadPromotionApplications(
   return Promise.all(rows.map(async (row: any) => {
     const snap = row.snapshot as {
       name?: string; free_months?: number | null; paid_months?: number | null; bonus_months?: number | null;
-      charge_benefits: any[]; period_benefits: any[];
     } | null;
-    const live = snap ? null : await fetchLiveBenefits(db, row.promotion_id);
-    const chargeBenefits = snap?.charge_benefits ?? live!.charge_benefits;
-    const periodBenefits = snap?.period_benefits ?? live!.period_benefits;
-    const membershipFeeBenefits: MembershipFeeBenefit[] = [
-      ...chargeBenefits
-        .filter((b) => b.charge_type_code === 'membership_fee')
-        .map((b): MembershipFeeBenefit => ({ kind: 'charge', action: b.action, value: b.value })),
-      ...periodBenefits
-        .filter((b) => b.charge_type_code === 'membership_fee')
-        .map((b): MembershipFeeBenefit => ({
-          kind: 'period', action: b.action, value: b.value,
-          enabled: !!b.enabled, durationMonths: b.duration_months ?? null,
-        })),
-    ];
+    // #635 stage 5: the snapshot owns the benefit; only an application from
+    // before migration 149 (snapshot IS NULL) still reads the Promotion's
+    // current definition. `membershipFeeBenefitsFromSnapshot` also understands
+    // the pre-stage-5 snapshot shape, so history keeps pricing as it did.
+    const benefits = snap
+      ? membershipFeeBenefitsFromSnapshot(snap)
+      : (await fetchLiveBenefits(db, row.promotion_id)).membership_fee_benefits;
+    const membershipFeeBenefits: MembershipFeeBenefit[] = benefits.map((b): MembershipFeeBenefit => ({
+      action: (b.action ?? null) as MembershipFeeBenefit['action'],
+      value: b.value ?? null,
+      enabled: !!b.enabled,
+      durationMonths: b.duration_months ?? null,
+    }));
     const num = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
     return {
       id: row.id as number,
