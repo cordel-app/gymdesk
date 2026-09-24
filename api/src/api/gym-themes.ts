@@ -13,18 +13,30 @@ export const gymThemesRouter = Router();
 const ALLOWED_MIME_TYPES = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/webp'];
 const LOGO_MAX_BYTES = 512 * 1024;
 
-function shapeTheme(row: any) {
+/**
+ * `gymThemeId` is the requesting gym's currently selected theme (`gyms.theme_id`);
+ * it drives `is_gym_theme` (#712), the only piece of the shape that depends on
+ * the caller rather than on the row itself.
+ */
+function shapeTheme(row: any, gymThemeId: string | null = null) {
   const { logo_bytes: _lb, ...rest } = row;
   return {
     ...rest,
     is_base: row.gym_id === null,
     has_logo: !!row.logo_mime,
     logo_contains_gym_name: !!row.logo_contains_gym_name,
+    is_gym_theme: gymThemeId !== null && row.id === gymThemeId,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
   };
 }
 
-const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at, deleted_at';
+const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, created_by_name, created_by_type, modified_at, deleted_at';
+
+/** The theme currently assigned to this gym, or null when it has none. */
+async function getGymThemeId(gymId: string): Promise<string | null> {
+  const { rows } = await db.query<{ theme_id: string | null }>('SELECT theme_id FROM gyms WHERE id = ?', [gymId]);
+  return rows[0]?.theme_id ?? null;
+}
 
 async function checkGymThemeProtected(id: string, gymId: string): Promise<{ isGymDefault: boolean; centerCount: number }> {
   const { rows: gymRefs } = await db.query<{ cnt: number }>(
@@ -60,7 +72,8 @@ gymThemesRouter.get('/', async (req, res, next) => {
          ORDER BY gym_id IS NULL DESC, created_at ASC`,
         params,
       );
-      res.json(rows.map(shapeTheme));
+      const gymThemeId = await getGymThemeId(gymId);
+      res.json(rows.map((row) => shapeTheme(row, gymThemeId)));
     });
   } catch (err) { next(err); }
 });
@@ -69,7 +82,7 @@ gymThemesRouter.get('/', async (req, res, next) => {
 
 gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
   try {
-    const { gymId } = getTenantContext(req);
+    const { gymId, actorName, isSuperadmin } = getTenantContext(req);
     await requireRole('admin')(req, res, async () => {
       const { rows: source } = await db.query(
         `SELECT ${SELECT_COLS} FROM themes
@@ -90,15 +103,18 @@ gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
 
       const id = randomUUID();
       const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
+      // Cloning is the only way a customer theme comes into existence, so this
+      // is where the creator snapshot is captured (#712).
       await db.query(
-        `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at)
-         VALUES (?, ?, ?, 'draft', ?, ?, UTC_TIMESTAMP())`,
-        [id, gymId, baseName, src.logo_contains_gym_name, tokens],
+        `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at, created_by_name, created_by_type)
+         VALUES (?, ?, ?, 'draft', ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+        [id, gymId, baseName, src.logo_contains_gym_name, tokens, actorName, isSuperadmin ? 'superadmin' : 'staff'],
       );
 
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [id]);
-      recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });
-      res.status(201).json(shapeTheme(rows[0]));
+      const gymThemeId = await getGymThemeId(gymId);
+      recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0], gymThemeId) });
+      res.status(201).json(shapeTheme(rows[0], gymThemeId));
     });
   } catch (err) { next(err); }
 });
@@ -166,8 +182,9 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
         [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), req.params.id, gymId],
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
-      recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current), next: shapeTheme(rows[0]) });
-      res.json(shapeTheme(rows[0]));
+      const gymThemeId = await getGymThemeId(gymId);
+      recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current, gymThemeId), next: shapeTheme(rows[0], gymThemeId) });
+      res.json(shapeTheme(rows[0], gymThemeId));
     });
   } catch (err) { next(err); }
 });
@@ -200,7 +217,7 @@ gymThemesRouter.post(
           [body, mime, req.params.id],
         );
         const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
-        res.json(shapeTheme(rows[0]));
+        res.json(shapeTheme(rows[0], await getGymThemeId(gymId)));
       });
     } catch (err) { next(err); }
   },
@@ -219,7 +236,7 @@ gymThemesRouter.delete('/:id/logo', async (req, res, next) => {
       if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
       await db.query('UPDATE themes SET logo_bytes = NULL, logo_mime = NULL, logo_updated_at = NULL WHERE id = ?', [req.params.id]);
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
-      res.json(shapeTheme(rows[0]));
+      res.json(shapeTheme(rows[0], await getGymThemeId(gymId)));
     });
   } catch (err) { next(err); }
 });
