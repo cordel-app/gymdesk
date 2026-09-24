@@ -217,14 +217,6 @@ describe('Bookings — activity type eligibility (#481)', () => {
       'INSERT INTO activity_type_eligible_plans (gym_id, activity_type_id, membership_plan_id) VALUES (?, ?, ?)',
       [gymId, atId, planId],
     );
-    // Eligibility (public_event/activity_type_eligible_plans) is a separate gate
-    // from entitlement (plan_allowances) — grant unlimited allowance too so this
-    // test isolates the eligibility hook rather than tripping over the other gate.
-    await db.query(
-      `INSERT INTO plan_allowances (gym_id, membership_plan_id, activity_type_id, allowance_type) VALUES (?, ?, ?, 'unlimited')`,
-      [gymId, planId, atId],
-    );
-
     const res = await request
       .post('/bookings')
       .set('Authorization', TEST_AUTH_HEADER)

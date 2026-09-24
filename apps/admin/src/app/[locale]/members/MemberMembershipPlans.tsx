@@ -242,26 +242,10 @@ function PlanCard({
           {plan.is_live && plan.next_billing_date && (
             <Field label={t('membership_next_billing')}>{fmtDate(plan.next_billing_date)}</Field>
           )}
-
-          {/* The activity allowances this Membership Plan includes (#511).
-              They belong to the plan that grants them, so unlike Promotions and
-              Additional Services (§13) they stay inside the card — and are now
-              shown for every active plan, not only the newest. */}
-          {plan.is_live && plan.activity_allowances.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={fieldLabel}>{t('section_benefits')}</div>
-              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: '#444' }}>
-                {plan.activity_allowances.map((a) => (
-                  <li key={a.id}>
-                    {a.activity_type_name}
-                    {a.allowance_type === 'session_count' && a.session_count != null
-                      ? ` — ${a.session_count}${a.recurrence_interval ? ` / ${a.recurrence_interval} ${a.recurrence_unit}` : ''}`
-                      : ' — Unlimited'}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* #635 stage 4: the card listed the Plan's Included Services here
+              (#511/#634) until the concept was retired (migration 177). Which
+              activities the Member may book is the Activity Type's own
+              eligible-plan list now, edited from the Activity Types page. */}
         </div>
         {canWrite && onAssignNewPlan && onCancelPlan && (
           <ContextMenu

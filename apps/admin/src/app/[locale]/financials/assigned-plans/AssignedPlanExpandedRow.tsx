@@ -15,6 +15,14 @@ import type { AssignedPlanDetail } from './types';
 const EDITABLE_STATUSES = ['draft', 'awaiting_payment'];
 const CLOSEABLE_STATUSES = ['awaiting_payment', 'active', 'paused'];
 
+// The three benefit kinds of the assignment's #635 snapshot, in the order the
+// Plans page lists them so both surfaces read the same way.
+const SNAPSHOT_BENEFIT_GROUPS = [
+  { key: 'oneoff_benefits', labelKey: 'benefits_oneoff' },
+  { key: 'session_benefits', labelKey: 'benefits_session' },
+  { key: 'periodical_benefits', labelKey: 'benefits_period' },
+] as const;
+
 function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
 }
@@ -264,20 +272,29 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         {detail.discount_reason && <Field label={t('label_discount_reason')}>{detail.discount_reason}</Field>}
       </Section>
 
+      {/* #635 stage 4: this section listed the Plan's Included Services
+          (`plan_allowances`) until the concept was retired (migration 177). It
+          now shows the assignment's own snapshot — the three benefit kinds as
+          they were captured at assignment time, which since stage 3 is also what
+          it bills. A later edit of the Plan or of a Sellable Item never moves
+          these lines (§13/§17). */}
       <Section label={t('section_benefits')}>
-        {detail.activity_allowances.length === 0 ? (
+        {SNAPSHOT_BENEFIT_GROUPS.every(({ key }) => detail.snapshot[key].length === 0) ? (
           <p style={dim}>{t('no_benefits')}</p>
         ) : (
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#444' }}>
-            {detail.activity_allowances.map((a) => (
-              <li key={a.activity_type_id}>
-                {a.activity_type_name}
-                {a.allowance_type === 'session_count'
-                  ? ` — ${a.remaining ?? 0}/${a.allocated ?? 0} ${t('benefit_remaining')}`
-                  : ` — ${t('benefit_unlimited')}`}
-              </li>
-            ))}
-          </ul>
+          SNAPSHOT_BENEFIT_GROUPS.filter(({ key }) => detail.snapshot[key].length > 0).map(({ key, labelKey }) => (
+            <div key={key} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 12, color: '#888', textTransform: 'uppercase', letterSpacing: 0.4 }}>{t(labelKey)}</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: '#444' }}>
+                {detail.snapshot[key].map((b) => (
+                  <li key={b.id}>
+                    {b.item_name} — {b.quantity} × {fmtMoney(b.unit_price)}
+                    {b.item_billing_frequency ? ` / ${b.item_billing_frequency}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
         )}
       </Section>
 

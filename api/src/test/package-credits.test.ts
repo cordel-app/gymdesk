@@ -65,11 +65,18 @@ async function createMembershipPlan(gymId: string): Promise<number> {
   return insertId;
 }
 
-/** Makes activityTypeId "plan-restricted" so the package-credit hook kicks in for members without a matching plan. */
+/**
+ * Makes activityTypeId "plan-restricted" so a member without a matching plan pays
+ * for it out of a class package. Since #635 stage 4 the restriction lives on the
+ * Activity Type (`activity_type_eligible_plans`, #481) rather than on the Plan
+ * (`plan_allowances`, dropped in migration 177) — a non-public activity that
+ * names a plan the booking member is not on.
+ */
 async function restrictActivityType(gymId: string, membershipPlanId: number, activityTypeId: number) {
+  await db.query('UPDATE activity_types SET public_event = 0 WHERE id = ? AND gym_id = ?', [activityTypeId, gymId]);
   await db.query(
-    `INSERT INTO plan_allowances (gym_id, membership_plan_id, activity_type_id, allowance_type) VALUES (?, ?, ?, 'unlimited')`,
-    [gymId, membershipPlanId, activityTypeId],
+    `INSERT INTO activity_type_eligible_plans (gym_id, activity_type_id, membership_plan_id) VALUES (?, ?, ?)`,
+    [gymId, activityTypeId, membershipPlanId],
   );
 }
 

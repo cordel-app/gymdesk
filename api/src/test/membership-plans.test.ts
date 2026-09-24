@@ -328,7 +328,6 @@ describe('GET /membership-plans/:id', () => {
     expect(res.body.name).toBe('GetById Plan');
     expect(res.body).toHaveProperty('price_history');
     expect(res.body).toHaveProperty('member_count');
-    expect(res.body).toHaveProperty('allowances');
     expect(res.body).toHaveProperty('centers');
   });
 

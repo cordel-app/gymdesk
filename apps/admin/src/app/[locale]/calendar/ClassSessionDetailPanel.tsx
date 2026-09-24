@@ -62,7 +62,10 @@ const btnBase: React.CSSProperties = {
 // Mirrors the existing over-capacity "book anyway" pattern below — on one of
 // these, offer a confirm-and-retry with `override_eligibility: true` rather
 // than a hard failure toast.
-const OVERRIDABLE_ACCESS_CODES = ['plan_not_eligible', 'plan_required', 'allowance_exhausted', 'center_not_covered'];
+// `allowance_exhausted` is gone with Included Services (#635 stage 4): a plan no
+// longer caps bookings per activity type, so the gates that can reject are
+// eligibility and center coverage.
+const OVERRIDABLE_ACCESS_CODES = ['plan_not_eligible', 'plan_required', 'center_not_covered'];
 
 function fmt(iso: string) {
   const d = new Date(iso);

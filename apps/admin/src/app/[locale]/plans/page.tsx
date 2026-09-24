@@ -39,16 +39,6 @@ interface BillingPolicy {
   auto_renew: boolean | number;
 }
 
-interface Allowance {
-  id: number;
-  activity_type_id: number;
-  activity_type_name: string;
-  allowance_type: 'unlimited' | 'session_count';
-  session_count: number | null;
-  recurrence_interval: number | null;
-  recurrence_unit: string | null;
-}
-
 interface Center { id: number; name: string; }
 // #547: `status` is the price's place in the plan's history — 'active' is the
 // price in force, 'applied' the price in force that has already been pushed onto
@@ -63,7 +53,6 @@ interface PriceRow {
   applied_at: string | null;
   tax_rate_percent: string | null;
 }
-interface ActivityType { id: number; name: string; }
 // `type` / `billing_frequency` / `status` / `benefit_category` back the #635
 // Benefit pickers; `benefit_category` is computed server-side (#550) and is the
 // only classification source of truth — never re-derived here.
@@ -94,7 +83,6 @@ interface Plan {
   member_count: number;
   promotion_count: number;
   billing_policy: BillingPolicy | null;
-  allowances: Allowance[];
   centers: Center[];
   price_history: PriceRow[];
   created_at: string;
@@ -125,7 +113,6 @@ const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
 const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 const MEMBER_LIMITS = ['1', '2', 'family'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
-const ALLOWANCE_TYPES = ['unlimited', 'session_count'] as const;
 
 // Applied automatically to every new plan; staff can adjust it afterwards via the Billing Policy section.
 const DEFAULT_BILLING_POLICY = {
@@ -253,17 +240,6 @@ export default function PlansPage() {
   const [pricingSaving, setPricingSaving] = useState(false);
   const [applyPricingFor, setApplyPricingFor] = useState<Plan | null>(null);
   const [applyingPricing, setApplyingPricing] = useState(false);
-
-  // Allowance sub-form (inline, per plan)
-  const [allowanceForPlanId, setAllowanceForPlanId] = useState<number | null>(null);
-  const [allowanceForm, setAllowanceForm] = useState({
-    activity_type_id: '',
-    allowance_type: 'unlimited',
-    session_count: '',
-    recurrence_interval: '1',
-    recurrence_unit: 'month',
-  });
-  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
 
   // Centers sub-form (inline, per plan)
   const [centersForPlanId, setCentersForPlanId] = useState<number | null>(null);
@@ -562,46 +538,6 @@ export default function PlansPage() {
       toast(err.message ?? t('plans.error_generic'));
     } finally {
       setApplyingPricing(false);
-    }
-  }
-
-  // ─── Allowance sub-form ─────────────────────────────────────────────────────
-
-  async function openAddAllowance(planId: number) {
-    if (activityTypes.length === 0) {
-      const data = await apiFetch<ActivityType[]>('/activity-types').catch(() => []);
-      setActivityTypes(data);
-    }
-    setAllowanceForPlanId(planId);
-    setAllowanceForm({ activity_type_id: '', allowance_type: 'unlimited', session_count: '', recurrence_interval: '1', recurrence_unit: 'month' });
-  }
-
-  async function handleSaveAllowance() {
-    if (!allowanceForPlanId || !allowanceForm.activity_type_id) return;
-    const body: any = {
-      activity_type_id: Number(allowanceForm.activity_type_id),
-      allowance_type: allowanceForm.allowance_type,
-    };
-    if (allowanceForm.allowance_type === 'session_count') {
-      body.session_count = Number(allowanceForm.session_count);
-      body.recurrence_interval = Number(allowanceForm.recurrence_interval);
-      body.recurrence_unit = allowanceForm.recurrence_unit;
-    }
-    try {
-      await apiFetch(`/membership-plans/${allowanceForPlanId}/allowances`, { method: 'POST', body: JSON.stringify(body) });
-      setAllowanceForPlanId(null);
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('plans.error_generic'));
-    }
-  }
-
-  async function handleDeleteAllowance(planId: number, allowanceId: number) {
-    try {
-      await apiFetch(`/membership-plans/${planId}/allowances/${allowanceId}`, { method: 'DELETE' });
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('plans.error_generic'));
     }
   }
 
@@ -1145,91 +1081,6 @@ export default function PlansPage() {
                     )}
 
                     <SectionHeader
-                      title={t('plans.section_allowances')}
-                      action={allowanceForPlanId === plan.id ? null : <button onClick={() => openAddAllowance(plan.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.add_allowance')}</button>}
-                    />
-                    {allowanceForPlanId === plan.id && (
-                      <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                          <div>
-                            <label style={inlineLabelStyle}>{t('plans.label_activity_type')}</label>
-                            <select
-                              value={allowanceForm.activity_type_id}
-                              onChange={(e) => setAllowanceForm({ ...allowanceForm, activity_type_id: e.target.value })}
-                              style={inlineSelectStyle}
-                            >
-                              <option value="">{t('plans.select_placeholder')}</option>
-                              {activityTypes.map((at) => <option key={at.id} value={at.id}>{at.name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label style={inlineLabelStyle}>{t('plans.allowance_type')}</label>
-                            <select
-                              value={allowanceForm.allowance_type}
-                              onChange={(e) => setAllowanceForm({ ...allowanceForm, allowance_type: e.target.value })}
-                              style={inlineSelectStyle}
-                            >
-                              {ALLOWANCE_TYPES.map((a) => <option key={a} value={a}>{t(`plans.allowance_${a}`)}</option>)}
-                            </select>
-                          </div>
-                          {allowanceForm.allowance_type === 'session_count' && (
-                            <>
-                              <div>
-                                <label style={inlineLabelStyle}>{t('plans.session_count')}</label>
-                                <input
-                                  type="number" min="1"
-                                  value={allowanceForm.session_count}
-                                  onChange={(e) => setAllowanceForm({ ...allowanceForm, session_count: e.target.value })}
-                                  style={inlineInputStyle}
-                                />
-                              </div>
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <div style={{ flex: 1 }}>
-                                  <label style={inlineLabelStyle}>{t('plans.recurrence')}</label>
-                                  <input
-                                    type="number" min="1"
-                                    value={allowanceForm.recurrence_interval}
-                                    onChange={(e) => setAllowanceForm({ ...allowanceForm, recurrence_interval: e.target.value })}
-                                    style={inlineInputStyle}
-                                  />
-                                </div>
-                                <div style={{ flex: 1 }}>
-                                  <label style={inlineLabelStyle}>&nbsp;</label>
-                                  <select
-                                    value={allowanceForm.recurrence_unit}
-                                    onChange={(e) => setAllowanceForm({ ...allowanceForm, recurrence_unit: e.target.value })}
-                                    style={inlineSelectStyle}
-                                  >
-                                    {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                            </>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={() => setAllowanceForPlanId(null)} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={handleSaveAllowance} style={btnSmall()}>{t('plans.save_changes')}</button>
-                        </div>
-                      </div>
-                    )}
-                    {(plan.allowances ?? []).length === 0 ? (
-                      <p style={hintSt}>{t('plans.no_allowances')}</p>
-                    ) : (
-                      (plan.allowances ?? []).map((a) => (
-                        <div key={a.id} style={benefitRowStyle}>
-                          <span style={benefitNameStyle}>{a.activity_type_name}</span>
-                          <span style={benefitValueStyle}>
-                            {a.allowance_type === 'unlimited'
-                              ? t('plans.unlimited')
-                              : `${a.session_count} sessions / ${fmtBillingInterval(a.recurrence_interval ?? 1, a.recurrence_unit ?? 'month')}`}
-                          </span>
-                          <button onClick={() => handleDeleteAllowance(plan.id, a.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(dangerLinkBtn, !canWrite)}>✕</button>
-                        </div>
-                      ))
-                    )}
-
-                    <SectionHeader
                       title={t('plans.section_pricing')}
                       action={pricingForPlanId === plan.id ? null : (
                         <button onClick={() => openPricing(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
@@ -1493,7 +1344,7 @@ const valueStyle: React.CSSProperties = {
   color: '#222', flex: 1,
 };
 
-// "Benefit"-style rows (Allowances, Charge Benefits, Price History): name left, muted value trailing —
+// "Benefit"-style rows (Session / One-off / Period Benefits, Price History): name left, muted value trailing —
 // mirrors Training Plan Templates' workout/exercise row layout (TrainingPlanTree.tsx BlockRow).
 const benefitRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0',

@@ -12,8 +12,8 @@ import { join } from 'path';
 // `promotions-charge-benefits-removed.test.ts` (#626).
 //
 // What must survive is pinned down too: the three Sellable-Item-keyed Benefit
-// sections that replace it (stage 1), and Included Services, which is
-// booking-access rather than commercial configuration.
+// sections that replace it (stage 1). Included Services went in part 2 of the
+// same stage — see `included-services-removed.test.ts`.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PLANS_DIR = join(__dirname, '..', 'app', '[locale]', 'plans');
@@ -116,8 +116,6 @@ describe('Plans: Charge Benefits removed (#635 stage 4)', () => {
       'section_session_benefits',
       'section_plan_period_benefits',
       'plans.section_billing_duration',
-      // Included Services is booking-access, not commercial configuration.
-      'plans.section_allowances',
     ]) {
       expect(code, `the Membership Plans editor no longer renders "${key}"`).toContain(key);
     }

@@ -12,15 +12,34 @@ export interface BillingPolicy {
   auto_renew: number | boolean;
 }
 
-export interface ActivityAllowanceUsage {
-  activity_type_id: number;
-  activity_type_name: string;
-  allowance_type: 'unlimited' | 'session_count';
-  allocated: number | null;
-  used: number | null;
-  remaining: number | null;
-  recurrence_interval: number | null;
-  recurrence_unit: string | null;
+/**
+ * One benefit line of the assignment's own #635 snapshot — the Sellable Item as
+ * it was priced and named when the plan was assigned, never the live catalogue.
+ */
+export interface AssignedPlanSnapshotBenefit {
+  id: number;
+  gym_charge_id: number;
+  quantity: number;
+  item_name: string;
+  item_type: string;
+  item_billing_frequency: string | null;
+  unit_price: number;
+  currency: string | null;
+}
+
+/** The assignment's frozen commercial configuration (#635 §11–§17). */
+export interface AssignedPlanSnapshot {
+  free_months: number | null;
+  paid_months: number | null;
+  bonus_months: number | null;
+  recurring_billing_interval: number | null;
+  recurring_billing_unit: string | null;
+  membership_fee_price: number | null;
+  session_benefits: AssignedPlanSnapshotBenefit[];
+  oneoff_benefits: AssignedPlanSnapshotBenefit[];
+  periodical_benefits: AssignedPlanSnapshotBenefit[];
+  /** False for an assignment that captured nothing — it still resolves live. */
+  snapshot_captured: boolean;
 }
 
 export interface AppliedPromotion {
@@ -101,7 +120,7 @@ export interface AssignedPlanDetail {
   modified_at: string | null;
   members: AssignedPlanMember[];
   billing_policy: BillingPolicy | null;
-  activity_allowances: ActivityAllowanceUsage[];
+  snapshot: AssignedPlanSnapshot;
   promotions: AppliedPromotion[];
   additional_services: AssignedPlanService[];
   billing_events: BillingEventsView;
