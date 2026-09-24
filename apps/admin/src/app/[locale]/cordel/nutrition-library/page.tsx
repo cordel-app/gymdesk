@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -23,6 +24,12 @@ interface LibraryItem {
   /** Per-locale names, keyed by locale (#643). Absent locales fall back to `name`. */
   translations: Record<string, string>;
   status: 'active' | 'deleted';
+  /**
+   * Cloudflare URL of this food's image, or null (#715). For a base food the
+   * object behind it always lives in `cordel/Nutrition/`; the column is the same
+   * one gym-owned items use, and the row's ownership is what decides the folder.
+   */
+  image_url: string | null;
   created_at: string;
   modified_at: string | null;
   categories: Category[];
@@ -91,6 +98,7 @@ const LIMIT = 20;
 
 export default function CordelNutritionLibraryPage() {
   const { apiFetch } = useApiClient();
+  const { getToken } = useAuth();
   const { toast } = useToast();
 
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -124,6 +132,13 @@ export default function CordelNutritionLibraryPage() {
   const newNameRef = useRef<HTMLInputElement>(null);
 
   const [deleting, setDeleting] = useState<LibraryItem | null>(null);
+
+  // Image upload (#715) — one item at a time, so a single ref and a single
+  // error are enough. `uploadingId` doubles as the "which card is busy" flag.
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  const [imageError, setImageError] = useState<{ id: number; message: string } | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const imageTargetRef = useRef<LibraryItem | null>(null);
 
   useEffect(() => {
     const id = setTimeout(() => setSearch(searchInput.trim()), 300);
@@ -251,6 +266,71 @@ export default function CordelNutritionLibraryPage() {
     } catch (e: any) {
       setEditError(e.message ?? 'Error');
     } finally { setEditSaving(false); }
+  }
+
+  // ─── Image upload (#715) ────────────────────────────────────────────────
+  //
+  // The picker is opened from the expanded card; the file it returns is checked
+  // here for the two constraints a browser can see (a PNG, exactly 512×512) and
+  // then posted as raw bytes to `POST /platform/nutrition-library/:id/image`.
+  // The server validates the same things from the file's own bytes — this pass
+  // exists to give a clear error before the upload, never instead of it.
+
+  function openImagePicker(item: LibraryItem) {
+    imageTargetRef.current = item;
+    setImageError(null);
+    if (imageInputRef.current) {
+      // Cleared so picking the same file twice still fires `onChange`.
+      imageInputRef.current.value = '';
+      imageInputRef.current.click();
+    }
+  }
+
+  /** `null` when the file is a 512×512 PNG, otherwise the reason it is not. */
+  async function checkImageFile(file: File): Promise<string | null> {
+    if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
+      return 'Image must be a PNG file.';
+    }
+    const dimensions = await readImageDimensions(file);
+    if (!dimensions) return 'That file could not be read as an image.';
+    if (dimensions.width !== IMAGE_SIZE || dimensions.height !== IMAGE_SIZE) {
+      return `Image must be exactly ${IMAGE_SIZE}×${IMAGE_SIZE} pixels (this one is ${dimensions.width}×${dimensions.height}).`;
+    }
+    return null;
+  }
+
+  async function handleImageSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const item = imageTargetRef.current;
+    if (!file || !item) return;
+
+    const problem = await checkImageFile(file);
+    if (problem) {
+      // Nothing is sent, so the existing image stays exactly as it is.
+      setImageError({ id: item.id, message: problem });
+      return;
+    }
+
+    setUploadingId(item.id);
+    setImageError(null);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/proxy/platform/nutrition-library/${item.id}/image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/png', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: file,
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error ?? 'Image upload failed');
+      }
+      toast('Image updated', 'success');
+      await load();
+    } catch (err: any) {
+      setImageError({ id: item.id, message: err.message ?? 'Image upload failed' });
+    } finally {
+      setUploadingId(null);
+    }
   }
 
   async function handleDelete() {
@@ -432,6 +512,38 @@ export default function CordelNutritionLibraryPage() {
             renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), 'Save')
           ) : (
             <div style={{ padding: '12px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {/* #715 — the food's image, shown only on the expanded card. The
+                  collapsed row keeps its compact presentation. */}
+              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 6, flexWrap: 'wrap' }}>
+                <div style={imageFrameStyle}>
+                  {item.image_url ? (
+                    <img
+                      // The key is deterministic, so a replacement reuses the
+                      // URL — `modified_at` busts the browser's cache.
+                      src={`${item.image_url}?v=${encodeURIComponent(item.modified_at ?? item.created_at)}`}
+                      alt={item.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                    />
+                  ) : (
+                    <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>No image yet</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 220 }}>
+                  <button
+                    onClick={() => openImagePicker(item)}
+                    disabled={uploadingId === item.id}
+                    style={btnSmall()}
+                  >
+                    {uploadingId === item.id ? 'Uploading…' : 'Upload Image'}
+                  </button>
+                  <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
+                    Upload a {IMAGE_SIZE}×{IMAGE_SIZE} PNG image with a transparent background.
+                  </p>
+                  {imageError?.id === item.id && (
+                    <p style={{ margin: 0, fontSize: 12.5, color: '#c0392b' }}>{imageError.message}</p>
+                  )}
+                </div>
+              </div>
               {translatableLocales.map((loc) => (
                 <DetailRow key={loc} label={localeLabel(loc)} value={item.translations[loc] ?? `${item.name} (untranslated)`} />
               ))}
@@ -459,6 +571,15 @@ export default function CordelNutritionLibraryPage() {
         </div>
       )}
 
+      {/* One picker for the page: `openImagePicker()` points it at a food. */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png"
+        onChange={handleImageSelected}
+        style={{ display: 'none' }}
+      />
+
       <ConfirmDialog
         open={deleting !== null}
         message={`Delete "${deleting?.name}"? This cannot be undone.`}
@@ -484,6 +605,33 @@ function trimmedTranslations(translations: Record<string, string>): Record<strin
   return out;
 }
 
+/**
+ * The exact square every Base Nutrition Library image is (#715 §2). Declared
+ * once: the picker's check, the hint the administrator reads and the frame the
+ * image is drawn in all come from it.
+ */
+const IMAGE_SIZE = 512;
+
+/**
+ * Natural size of an image file, or null when the browser cannot decode it.
+ * Used for the client-side half of the 512×512 check — the server repeats it
+ * from the PNG's own IHDR, so a browser that fails here costs a clear error
+ * rather than a wrong upload.
+ */
+async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', gap: 10 }}>
@@ -492,6 +640,29 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+/**
+ * A 1:1 frame for the food image. The checkerboard is what makes a transparent
+ * background legible as transparency rather than as white, and `objectFit:
+ * contain` keeps the square undistorted whatever the frame's size.
+ */
+const imageFrameStyle: React.CSSProperties = {
+  width: 160,
+  height: 160,
+  flexShrink: 0,
+  borderRadius: 8,
+  border: '1px solid var(--card-border, #e5e7eb)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  overflow: 'hidden',
+  backgroundColor: '#fff',
+  backgroundImage:
+    'linear-gradient(45deg, #eee 25%, transparent 25%), linear-gradient(-45deg, #eee 25%, transparent 25%),'
+    + ' linear-gradient(45deg, transparent 75%, #eee 75%), linear-gradient(-45deg, transparent 75%, #eee 75%)',
+  backgroundSize: '16px 16px',
+  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+};
 
 const searchInputStyle: React.CSSProperties = {
   padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 220,
