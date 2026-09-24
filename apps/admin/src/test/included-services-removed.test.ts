@@ -103,11 +103,15 @@ describe('Plans: Included Services removed (#635 stage 4)', () => {
       expect(code, `${file} still reads activity_allowances`).not.toContain('activity_allowances');
     }
     // The section is not left empty: it renders the assignment's own #635
-    // snapshot, which is what it bills from since stage 3 (#714).
+    // snapshot, which is what it bills from since stage 3 (#714). Stage 6 moved
+    // the three benefit kinds into their own editable sections
+    // (AssignedPlanConfiguration.tsx), so the keys are looked for across the
+    // card's sources rather than in the expanded row alone.
     const rowSrc = sources.find((s) => s.file === 'AssignedPlanExpandedRow.tsx')!.src;
     expect(rowSrc).toContain('detail.snapshot');
+    const cardSrc = sources.map((s) => s.src).join('\n');
     for (const key of ['benefits_oneoff', 'benefits_session', 'benefits_period']) {
-      expect(rowSrc, `the Assigned Plan card does not render "${key}"`).toContain(key);
+      expect(cardSrc, `the Assigned Plan card does not render "${key}"`).toContain(key);
     }
   });
 

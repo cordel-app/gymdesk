@@ -37,6 +37,12 @@ import type {
  * copy. The fallbacks live next to the loaders below (`ASSIGNMENT_CADENCE`,
  * `loadPlanBenefitsForSimulation`, `loadPromotionGrantSnapshots`), so every
  * caller resolves them the same way rather than re-deriving the rule.
+ *
+ * #635 stage 6 lets staff *edit* it: `writeAssignedPlanBenefitSection` and the
+ * Billing & Duration route in `user-memberships.ts` change this assignment's
+ * own rows and nothing else (§15), and `materialiseAssignedPlanSnapshot` first
+ * writes down what an assignment that never captured one resolves live today,
+ * so an edit can never leave it half-snapshotted.
  */
 
 /**
@@ -178,6 +184,56 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
   }
 }
 
+/**
+ * True when this assignment already owns a snapshot — any of the six billing
+ * columns set, or any benefit row in any of the three sections. Exactly the
+ * condition `snapshot_captured` reports and the one stage 3's fallbacks key
+ * off, read inside the caller's transaction so an edit can decide whether it
+ * still has to capture one (see `materialiseAssignedPlanSnapshot`).
+ */
+export async function hasAssignedPlanSnapshot(tx: Tx, gymId: string, umId: number): Promise<boolean> {
+  const { rows } = await tx.query(
+    `SELECT EXISTS(
+       SELECT 1 FROM user_memberships
+        WHERE id = ? AND gym_id = ?
+          AND (free_months IS NOT NULL OR paid_months IS NOT NULL OR bonus_months IS NOT NULL
+               OR recurring_billing_interval IS NOT NULL OR recurring_billing_unit IS NOT NULL
+               OR membership_fee_price IS NOT NULL)
+     ) ${CATEGORIES.map((c) => `OR EXISTS(
+       SELECT 1 FROM ${BENEFIT_TABLE_BY_CATEGORY[c]}
+        WHERE user_membership_id = ? AND gym_id = ?
+     )`).join(' ')} AS captured`,
+    [umId, gymId, ...CATEGORIES.flatMap(() => [umId, gymId])],
+  );
+  return Number(rows[0]?.captured) === 1;
+}
+
+/**
+ * #635 stage 6 — captures the snapshot of an assignment that never got one,
+ * immediately before its first explicit edit.
+ *
+ * An assignment created before migration 174 that the backfill could not reach
+ * still resolves live (`loadPlanBenefitsForSimulation`, `regularMembershipFee`),
+ * and that fallback is all-or-nothing: the moment one section of it is edited,
+ * the assignment stops being "uncaptured" and the other sections would silently
+ * drop to nothing. So the live values it bills today are written down first —
+ * the same numbers, from the same Plan, exactly as migration 174's backfill did
+ * — and the edit then changes only the section the user asked for.
+ *
+ * A no-op for an assignment that already has a snapshot, which is the normal
+ * case: every assignment created since stage 2 captures one at assignment time.
+ */
+export async function materialiseAssignedPlanSnapshot(tx: Tx, params: {
+  gymId: string;
+  userMembershipId: number;
+  membershipPlanId: number | null;
+  membershipFeePrice: number | null;
+}): Promise<boolean> {
+  if (await hasAssignedPlanSnapshot(tx, params.gymId, params.userMembershipId)) return false;
+  await snapshotAssignedPlan(tx, params);
+  return true;
+}
+
 /** The snapshot of one assignment, for the expanded card and (in stage 3) billing. */
 export async function loadAssignedPlanSnapshot(
   gymId: string, umId: number,
@@ -216,6 +272,80 @@ export async function loadAssignedPlanSnapshot(
       Object.values(billing).some((v) => v != null)
       || session.length > 0 || oneoff.length > 0 || periodical.length > 0,
   };
+}
+
+/** One section of the snapshot, for the editor's own refetch (#635 stage 6). */
+export async function loadAssignedPlanBenefitSection(
+  gymId: string, umId: number, category: SellableItemBenefitCategory,
+): Promise<AssignedPlanBenefitRow[]> {
+  const { rows } = await db.query(
+    `SELECT * FROM ${BENEFIT_TABLE_BY_CATEGORY[category]}
+     WHERE user_membership_id = ? AND gym_id = ? ORDER BY item_name ASC, id ASC`,
+    [umId, gymId],
+  );
+  return rows.map(shapeBenefit);
+}
+
+/**
+ * #635 stage 6 §15 — replaces one benefit section of *this assignment's*
+ * snapshot. Nothing else is touched: not the Membership Plan the assignment
+ * came from, not another assignment of the same Plan, not the Sellable Item.
+ *
+ * A line whose item was already in the section keeps the commercial facts it
+ * was captured with and only changes quantity — editing one line must never
+ * silently reprice its neighbours to today's catalogue (§17). A line for an
+ * item that was not in the section is new, so it freezes the item as it is
+ * now, exactly as `snapshotAssignedPlan()` does at assignment time. Re-pricing
+ * a kept line is therefore a deliberate remove-then-add, never a side effect.
+ */
+export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
+  gymId: string;
+  userMembershipId: number;
+  category: SellableItemBenefitCategory;
+  items: { gym_charge_id: number; quantity: number }[];
+}): Promise<void> {
+  const { gymId, userMembershipId, category, items } = params;
+  const table = BENEFIT_TABLE_BY_CATEGORY[category];
+
+  const { rows: existing } = await tx.query(
+    `SELECT * FROM ${table} WHERE user_membership_id = ? AND gym_id = ? FOR UPDATE`,
+    [userMembershipId, gymId],
+  );
+  const kept = new Map<number, any>(existing.map((r: any) => [r.gym_charge_id, r]));
+
+  await tx.query(`DELETE FROM ${table} WHERE user_membership_id = ? AND gym_id = ?`, [userMembershipId, gymId]);
+
+  for (const item of items) {
+    const previous = kept.get(item.gym_charge_id);
+    if (previous) {
+      await tx.query(
+        `INSERT INTO ${table}
+           (gym_id, user_membership_id, gym_charge_id, quantity,
+            item_name, item_type, item_billing_frequency, unit_price, currency)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          gymId, userMembershipId, item.gym_charge_id, item.quantity,
+          previous.item_name, previous.item_type, previous.item_billing_frequency,
+          previous.unit_price, previous.currency,
+        ],
+      );
+      continue;
+    }
+    // A newly added line freezes the Sellable Item as it is now. `gym_charges`
+    // is not filtered on `deleted_at` for the same reason as at assignment
+    // time: the route has already decided the item may be attached.
+    await tx.query(
+      `INSERT INTO ${table}
+         (gym_id, user_membership_id, gym_charge_id, quantity,
+          item_name, item_type, item_billing_frequency, unit_price, currency)
+       SELECT ?, ?, gc.id, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
+              gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency
+       FROM gym_charges gc
+       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+       WHERE gc.id = ? AND gc.gym_id = ?`,
+      [gymId, userMembershipId, item.quantity, item.gym_charge_id, gymId],
+    );
+  }
 }
 
 /* ── Stage 3: billing reads the snapshot ─────────────────────────────────── */
