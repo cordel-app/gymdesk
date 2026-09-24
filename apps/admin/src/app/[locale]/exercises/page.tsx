@@ -16,6 +16,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ImageUploadField } from '@/components/ImageUploadField';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
+import { ImportExercisesModal } from './ImportExercisesModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,6 +30,8 @@ interface Exercise {
   sets_default: number | null; rest_default_seconds: number | null; notes_default: string | null;
   status: 'active' | 'inactive';
   gym_id: string | null;
+  /** #718: set when the row was imported from a Base Exercise — the "System sourced" half of the source label. */
+  cloned_from_id: number | null;
   created_at: string; created_by_name: string | null;
   modified_at: string | null; modified_by_name: string | null;
   muscles: ExerciseMuscle[] | null;
@@ -108,7 +111,7 @@ export default function ExercisesPage() {
   const [deleting, setDeleting] = useState<Exercise | null>(null);
   const [depDialog, setDepDialog] = useState<{ action: 'edit' | 'delete'; entity: Exercise; refs: ReferenceReport } | null>(null);
   const [depBusy, setDepBusy] = useState(false);
-  const [importing, setImporting] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   // #613: impersonation-aware; read-only roles see controls disabled.
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
@@ -349,17 +352,17 @@ export default function ExercisesPage() {
     }
   }
 
-  async function importDefaults() {
-    setImporting(true);
-    try {
-      const result: any = await apiFetch('/exercises/import-defaults', { method: 'POST' });
-      toast(t('imported', { n: result.inserted }), 'success');
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    } finally {
-      setImporting(false);
-    }
+  // #718: the gym picks which Base Exercises to import; the modal owns the
+  // filters and the selection, this page only refreshes once they land.
+  function handleImported(result: { imported: unknown[]; skipped: unknown[] }) {
+    setImportOpen(false);
+    toast(
+      result.skipped.length > 0
+        ? t('imported_with_skipped', { n: result.imported.length, skipped: result.skipped.length })
+        : t('imported', { n: result.imported.length }),
+      'success',
+    );
+    load();
   }
 
   if (gymLoading || !canRead) return null;
@@ -553,6 +556,11 @@ export default function ExercisesPage() {
     const isEditing = editingId === ex.id;
     const isExpanded = isEditing || expandedId === ex.id;
     const isBase = ex.gym_id === null;
+    // #718 §12: two origins, and only two — an exercise the platform provides
+    // (the library row itself, or the gym's copy of one) is "System sourced";
+    // one the gym wrote is "Custom". The ownership model is untouched: this
+    // reads `gym_id` and `cloned_from_id`, it does not change them.
+    const isSystemSourced = isBase || ex.cloned_from_id != null;
     const principalMuscles = (ex.muscles ?? []).filter((m) => m.role === 'principal').map((m) => muscleLabel(m.key)).join(', ') || '—';
 
     const menuItems: ContextMenuItem[] = isBase
@@ -588,10 +596,10 @@ export default function ExercisesPage() {
           <div style={{ minWidth: 120, flexShrink: 0, fontSize: 13, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ex.created_by_name ?? '—'}
           </div>
-          <div style={{ minWidth: 64, flexShrink: 0 }}>
-            {isBase
-              ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
-              : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
+          <div style={{ minWidth: 110, flexShrink: 0 }}>
+            {isSystemSourced
+              ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_system_sourced')}</span>
+              : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_custom')}</span>
             }
           </div>
           <div style={{ minWidth: 80, flexShrink: 0 }}>
@@ -615,7 +623,7 @@ export default function ExercisesPage() {
         <span style={{ minWidth: 140, flexShrink: 0 }}>{t('col_primary_muscles')}</span>
         <span style={{ minWidth: 90, flexShrink: 0 }}>{t('col_created_at')}</span>
         <span style={{ minWidth: 120, flexShrink: 0 }}>{t('col_created_by')}</span>
-        <span style={{ minWidth: 64, flexShrink: 0 }}>{t('col_type')}</span>
+        <span style={{ minWidth: 110, flexShrink: 0 }}>{t('col_type')}</span>
         <span style={{ minWidth: 80, flexShrink: 0 }}>{t('col_status')}</span>
         <span style={{ minWidth: 13, flexShrink: 0 }} />
         <span style={{ minWidth: 32, flexShrink: 0 }} />
@@ -643,7 +651,7 @@ export default function ExercisesPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={importDefaults} disabled={!canWrite || importing} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{importing ? '…' : t('import_defaults')}</button>
+          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import')}</button>
           <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
         </div>
       </div>
@@ -765,6 +773,15 @@ export default function ExercisesPage() {
           onClose={() => setDetailFor(null)}
         />
       )}
+
+      {/* ── Import Exercises modal (#718) ── */}
+      <ImportExercisesModal
+        open={importOpen}
+        muscleKeys={muscleKeys}
+        muscleLabel={muscleLabel}
+        onCancel={() => setImportOpen(false)}
+        onImported={handleImported}
+      />
     </div>
   );
 }

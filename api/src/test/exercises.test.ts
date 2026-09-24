@@ -586,3 +586,349 @@ describe('POST /exercises/:id/duplicate', () => {
     expect(res.status).toBe(403);
   });
 });
+
+// ─── GET /exercises/base (#718) ───────────────────────────────────────────────
+
+describe('GET /exercises/base', () => {
+  let gymId: string;
+  let otherGym: string;
+  let gymNoAccess: string;
+  let activeBaseId: number;
+  let inactiveBaseId: number;
+  let otherBaseId: number;
+  const baseIds: number[] = [];
+
+  async function createBaseExercise(name: string, status = 'active'): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (NULL, ?, ?)`,
+      [name, status],
+    );
+    baseIds.push(insertId);
+    return insertId;
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Exercises Base List Gym');
+    await createTestMembership(gymId, 'admin');
+    otherGym = await createTestGym('Exercises Base List Other Gym');
+    await createTestMembership(otherGym, 'admin');
+    gymNoAccess = await createTestGym('Exercises Base List No Access Gym');
+    await createTestMembership(gymNoAccess, 'accountant');
+
+    activeBaseId = await createBaseExercise('Zz718 Barbell Bench Press');
+    await db.query(
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'chest', 'principal')`,
+      [activeBaseId],
+    );
+    await db.query(
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'triceps', 'secondary')`,
+      [activeBaseId],
+    );
+
+    otherBaseId = await createBaseExercise('Zz718 Lat Pulldown');
+    await db.query(
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'back', 'principal')`,
+      [otherBaseId],
+    );
+
+    inactiveBaseId = await createBaseExercise('Zz718 Retired Machine Press', 'inactive');
+  });
+
+  // Base exercises are platform rows (gym_id IS NULL), so cleanupTestGyms — which
+  // deletes by gym_id — cannot reach them. Remove them by id instead.
+  afterAll(async () => {
+    if (baseIds.length === 0) return;
+    const marks = baseIds.map(() => '?').join(',');
+    await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+  });
+
+  function get(path: string, gym = gymId) {
+    return request.get(path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gym);
+  }
+
+  it('returns 401 without auth', async () => {
+    const res = await request.get('/exercises/base').set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for accountant role (TRAINING module NONE)', async () => {
+    const res = await get('/exercises/base', gymNoAccess);
+    expect(res.status).toBe(403);
+  });
+
+  it('lists active base exercises with their muscles', async () => {
+    const res = await get('/exercises/base');
+    expect(res.status).toBe(200);
+    const row = res.body.find((e: any) => e.id === activeBaseId);
+    expect(row).toBeDefined();
+    expect(row.name).toBe('Zz718 Barbell Bench Press');
+    expect(row.imported_exercise_id).toBeNull();
+    expect(row.muscles.some((m: any) => m.key === 'chest' && m.role === 'principal')).toBe(true);
+  });
+
+  it('excludes inactive base exercises', async () => {
+    const res = await get('/exercises/base');
+    expect(res.body.map((e: any) => e.id)).not.toContain(inactiveBaseId);
+  });
+
+  it("excludes the gym's own exercises and other gyms' custom ones", async () => {
+    const { insertId: ownId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (?, 'Zz718 Own Custom', 'active')`,
+      [gymId],
+    );
+    const { insertId: foreignId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (?, 'Zz718 Foreign Custom', 'active')`,
+      [otherGym],
+    );
+    const res = await get('/exercises/base');
+    const ids = res.body.map((e: any) => e.id);
+    expect(ids).not.toContain(ownId);
+    expect(ids).not.toContain(foreignId);
+  });
+
+  it('filters by name, case-insensitively', async () => {
+    const res = await get('/exercises/base?q=zz718%20barbell');
+    expect(res.status).toBe(200);
+    expect(res.body.map((e: any) => e.id)).toEqual([activeBaseId]);
+  });
+
+  it('filters by muscle', async () => {
+    const res = await get('/exercises/base?muscle=back');
+    expect(res.status).toBe(200);
+    const ids = res.body.map((e: any) => e.id);
+    expect(ids).toContain(otherBaseId);
+    expect(ids).not.toContain(activeBaseId);
+  });
+
+  it('combines the name and muscle filters', async () => {
+    const both = await get('/exercises/base?q=Zz718&muscle=chest');
+    expect(both.body.map((e: any) => e.id)).toEqual([activeBaseId]);
+    const neither = await get('/exercises/base?q=Zz718%20Lat&muscle=chest');
+    expect(neither.body).toEqual([]);
+  });
+
+  it('returns 400 for an invalid muscle key', async () => {
+    const res = await get('/exercises/base?muscle=not a muscle');
+    expect(res.status).toBe(400);
+  });
+
+  it('marks a base exercise the gym imported (cloned_from_id) as already imported', async () => {
+    const { insertId: copyId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status, cloned_from_id) VALUES (?, 'Zz718 Renamed Copy', 'active', ?)`,
+      [gymId, activeBaseId],
+    );
+    const res = await get('/exercises/base');
+    const row = res.body.find((e: any) => e.id === activeBaseId);
+    expect(row.imported_exercise_id).toBe(copyId);
+
+    // …and only for that gym: the copy belongs to gymId alone.
+    const other = await get('/exercises/base', otherGym);
+    expect(other.body.find((e: any) => e.id === activeBaseId).imported_exercise_id).toBeNull();
+
+    await db.query('DELETE FROM exercises WHERE id = ?', [copyId]);
+  });
+
+  it('marks a same-named copy with no provenance as already imported', async () => {
+    const { insertId: legacyId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (?, 'Zz718 Lat Pulldown', 'active')`,
+      [gymId],
+    );
+    const res = await get('/exercises/base');
+    expect(res.body.find((e: any) => e.id === otherBaseId).imported_exercise_id).toBe(legacyId);
+    await db.query('DELETE FROM exercises WHERE id = ?', [legacyId]);
+  });
+
+  it('ignores a soft-deleted copy when deciding whether it is imported', async () => {
+    const { insertId: deletedCopy } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status, cloned_from_id) VALUES (?, 'Zz718 Deleted Copy', 'deleted', ?)`,
+      [gymId, activeBaseId],
+    );
+    const res = await get('/exercises/base');
+    expect(res.body.find((e: any) => e.id === activeBaseId).imported_exercise_id).toBeNull();
+    await db.query('DELETE FROM exercises WHERE id = ?', [deletedCopy]);
+  });
+});
+
+// ─── POST /exercises/import (#718) ────────────────────────────────────────────
+
+describe('POST /exercises/import', () => {
+  let gymId: string;
+  let otherGym: string;
+  let benchId: number;
+  let squatId: number;
+  let inactiveBaseId: number;
+  let resultTypeId: number;
+  const baseIds: number[] = [];
+
+  async function createBaseExercise(name: string, status = 'active'): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status, sets_default, rest_default_seconds) VALUES (NULL, ?, ?, 4, 90)`,
+      [name, status],
+    );
+    baseIds.push(insertId);
+    return insertId;
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Exercises Import Gym');
+    await createTestMembership(gymId, 'admin');
+    otherGym = await createTestGym('Exercises Import Other Gym');
+    await createTestMembership(otherGym, 'admin');
+
+    benchId = await createBaseExercise('Zz718i Bench Press');
+    squatId = await createBaseExercise('Zz718i Back Squat');
+    inactiveBaseId = await createBaseExercise('Zz718i Withdrawn Exercise', 'inactive');
+
+    await db.query(
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'chest', 'principal')`,
+      [benchId],
+    );
+    await db.query(
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'triceps', 'secondary')`,
+      [benchId],
+    );
+    const { rows: rts } = await db.query<{ id: number }>('SELECT id FROM result_types ORDER BY id LIMIT 1');
+    resultTypeId = rts[0].id;
+    await db.query(
+      'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
+      [benchId, resultTypeId],
+    );
+  });
+
+  afterAll(async () => {
+    if (baseIds.length === 0) return;
+    const marks = baseIds.map(() => '?').join(',');
+    await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercise_allowed_result_types WHERE exercise_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+  });
+
+  function post(body: unknown, gym = gymId) {
+    return request
+      .post('/exercises/import')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gym)
+      .send(body as any);
+  }
+
+  it('returns 401 without auth', async () => {
+    const res = await request.post('/exercises/import').set('x-gym-id', gymId).send({ baseExerciseIds: [benchId] });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for front_desk role (requireModuleWrite TRAINING)', async () => {
+    const gymFD = await createTestGym('Exercises Import FrontDesk Gym');
+    await createTestMembership(gymFD, 'front_desk');
+    const res = await post({ baseExerciseIds: [benchId] }, gymFD);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 400 when baseExerciseIds is missing, empty or not an array', async () => {
+    expect((await post({})).status).toBe(400);
+    expect((await post({ baseExerciseIds: [] })).status).toBe(400);
+    expect((await post({ baseExerciseIds: 'all' })).status).toBe(400);
+  });
+
+  it('returns 400 for a non-integer id', async () => {
+    const res = await post({ baseExerciseIds: ['abc'] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for more ids than one request may carry', async () => {
+    const res = await post({ baseExerciseIds: Array.from({ length: 501 }, (_, i) => i + 1) });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a gym exercise id — a gym cannot import another gym's custom exercise", async () => {
+    const { insertId: foreignId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (?, 'Zz718i Foreign Custom', 'active')`,
+      [otherGym],
+    );
+    const res = await post({ baseExerciseIds: [foreignId] });
+    expect(res.status).toBe(400);
+    expect(res.body.invalid_ids).toEqual([foreignId]);
+    const { rows } = await db.query(
+      "SELECT id FROM exercises WHERE gym_id = ? AND name = 'Zz718i Foreign Custom'",
+      [gymId],
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('rejects an inactive base exercise and an unknown id', async () => {
+    expect((await post({ baseExerciseIds: [inactiveBaseId] })).status).toBe(400);
+    expect((await post({ baseExerciseIds: [999999999] })).status).toBe(400);
+  });
+
+  it('imports several base exercises in one request, keeping their names', async () => {
+    const res = await post({ baseExerciseIds: [benchId, squatId] });
+    expect(res.status).toBe(201);
+    expect(res.body.skipped).toEqual([]);
+    expect(res.body.imported).toHaveLength(2);
+    const names = res.body.imported.map((e: any) => e.name).sort();
+    expect(names).toEqual(['Zz718i Back Squat', 'Zz718i Bench Press']);
+    for (const row of res.body.imported) {
+      expect(row.gym_id).toBe(gymId);
+      expect(row.status).toBe('active');
+      expect(row.name).not.toContain('(Copy)');
+    }
+    const bench = res.body.imported.find((e: any) => e.name === 'Zz718i Bench Press');
+    expect(bench.cloned_from_id).toBe(benchId);
+    expect(bench.sets_default).toBe(4);
+    expect(bench.muscles.some((m: any) => m.key === 'chest' && m.role === 'principal')).toBe(true);
+    expect(bench.muscles.some((m: any) => m.key === 'triceps' && m.role === 'secondary')).toBe(true);
+    expect(bench.allowed_result_types.map((rt: any) => rt.id)).toContain(resultTypeId);
+  });
+
+  it('makes the imported exercises visible in the gym list', async () => {
+    const res = await request.get('/exercises').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    const names = res.body.filter((e: any) => e.gym_id === gymId).map((e: any) => e.name);
+    expect(names).toContain('Zz718i Bench Press');
+  });
+
+  it('skips an exercise the gym already has instead of importing it twice', async () => {
+    const res = await post({ baseExerciseIds: [benchId] });
+    expect(res.status).toBe(201);
+    expect(res.body.imported).toEqual([]);
+    expect(res.body.skipped).toHaveLength(1);
+    expect(res.body.skipped[0]).toMatchObject({ id: benchId, reason: 'already_imported' });
+    const { rows } = await db.query(
+      "SELECT id FROM exercises WHERE gym_id = ? AND name = 'Zz718i Bench Press' AND status != 'deleted'",
+      [gymId],
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('skips a same-named copy that carries no provenance', async () => {
+    const legacyBaseId = await createBaseExercise('Zz718i Legacy Seeded Name');
+    await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (?, 'Zz718i Legacy Seeded Name', 'active')`,
+      [gymId],
+    );
+    const res = await post({ baseExerciseIds: [legacyBaseId] });
+    expect(res.status).toBe(201);
+    expect(res.body.imported).toEqual([]);
+    expect(res.body.skipped[0].reason).toBe('already_imported');
+  });
+
+  it('imports into the requesting gym only (tenant isolation)', async () => {
+    const res = await post({ baseExerciseIds: [squatId] }, otherGym);
+    expect(res.status).toBe(201);
+    expect(res.body.imported).toHaveLength(1);
+    expect(res.body.imported[0].gym_id).toBe(otherGym);
+    const { rows } = await db.query(
+      "SELECT gym_id FROM exercises WHERE name = 'Zz718i Back Squat' AND gym_id IS NOT NULL AND status != 'deleted'",
+    );
+    expect(rows.map((r: any) => r.gym_id).sort()).toEqual([gymId, otherGym].sort());
+  });
+
+  it('no longer exposes the retired import-defaults endpoint', async () => {
+    const res = await request
+      .post('/exercises/import-defaults')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+});
