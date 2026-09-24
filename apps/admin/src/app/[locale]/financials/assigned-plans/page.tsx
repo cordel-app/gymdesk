@@ -7,6 +7,7 @@ import { useGym } from '@/context/GymContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, type Column } from '@/components/DataTable';
+import { FilterBar, FilterField, filterButtonStyle, filterControlStyle } from '@/components/FilterBar';
 import { AssignedPlanExpandedRow } from './AssignedPlanExpandedRow';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ function MemberFilter({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
-          style={{ flex: 1, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+          style={{ ...filterControlStyle, flex: 1 }}
         />
         {query && (
           <button
@@ -213,74 +214,56 @@ export default function AssignedPlansPage() {
     <div>
       <h1 style={{ margin: '0 0 16px' }}>{t('assigned_plans_page.title')}</h1>
 
-      {/* Filter bar */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16, alignItems: 'flex-end' }}>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('assigned_plans_page.filter_status')}
-          </label>
+      {/* Filter bar — the shared labelled bar (#724); unchanged to look at. */}
+      <FilterBar>
+        <FilterField label={t('assigned_plans_page.filter_status')}>
           <MultiSelectFilter
             label={t('assigned_plans_page.filter_status')}
             options={LIFECYCLE_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
             selected={statusFilter}
             onChange={setStatusFilter}
           />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('assigned_plans_page.filter_member')}
-          </label>
+        </FilterField>
+        <FilterField label={t('assigned_plans_page.filter_member')}>
           <MemberFilter
             value={memberName}
             placeholder={t('assigned_plans_page.filter_member')}
             onSelect={(m) => { setMemberId(m.id); setMemberName(m.name); }}
             onClear={() => { setMemberId(null); setMemberName(''); }}
           />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('assigned_plans_page.filter_from')}
-          </label>
+        </FilterField>
+        <FilterField label={t('assigned_plans_page.filter_from')}>
           <input
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+            style={filterControlStyle}
           />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('assigned_plans_page.filter_to')}
-          </label>
+        </FilterField>
+        <FilterField label={t('assigned_plans_page.filter_to')}>
           <input
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
+            style={filterControlStyle}
           />
-        </div>
-        <div>
-          <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-            {t('assigned_plans_page.filter_document')}
-          </label>
+        </FilterField>
+        <FilterField label={t('assigned_plans_page.filter_document')}>
           <input
             type="search"
             value={documentFilter}
             onChange={(e) => setDocumentFilter(e.target.value)}
             placeholder={t('assigned_plans_page.filter_document')}
             aria-label={t('assigned_plans_page.filter_document')}
-            style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, minWidth: 160 }}
+            style={{ ...filterControlStyle, minWidth: 160 }}
           />
-        </div>
+        </FilterField>
         {hasFilters && (
-          <button
-            onClick={clearFilters}
-            style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer', border: '1px solid #d1d5db', borderRadius: 6, alignSelf: 'flex-end' }}
-          >
+          <button onClick={clearFilters} style={filterButtonStyle}>
             {t('assigned_plans_page.filter_clear')}
           </button>
         )}
-      </div>
+      </FilterBar>
 
       {error && <p style={{ color: 'red', fontSize: 14 }}>{error}</p>}
 

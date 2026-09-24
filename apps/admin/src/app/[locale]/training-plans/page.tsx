@@ -13,7 +13,12 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
+import {
+  LIST_PADDING_X, listCellStyle, listExpandedStyle, listHeaderCellStyle,
+  listHeaderRowStyle, listRowDividerStyle, listSurfaceStyle,
+} from '@/components/listChrome';
+import { btnStyle, readOnlyStyle } from '@/components/ui';
 import { NewTrainingPlanDialog } from './NewTrainingPlanDialog';
 import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
 import { HierBlock } from '../workout-templates/summaries';
@@ -62,6 +67,51 @@ const STATUSES = ['draft', 'active', 'expired', 'completed'] as const;
 const EDITABLE_STATUSES = ['draft', 'active', 'expired'] as const;
 const LIMIT = 20;
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+
+/* ---- List columns (#724) ----
+ *
+ * The list header and every plan row are laid out on one grid built from this
+ * list, so a column title cannot drift away from the values underneath it. The
+ * columns themselves are the ones the page already had: the ticket is a layout
+ * change, not a column change. Member and description ride along in the Name
+ * column and the end date under the start date, the way Assigned Plans puts a
+ * member's document number under their name.
+ */
+
+interface ListColumn {
+  key: string;
+  /** Header label, a key in the `training_plans` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Selecting the title sorts by this key. Absent = not sortable. */
+  sortKey?: SortKey;
+  /** Fixed track width in px — also the minimum for the flexible column. */
+  width: number;
+  /** Set on the one flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'expand', width: 20 },
+  { key: 'name', labelKey: 'col_name', sortKey: 'name', width: 180, grow: 2 },
+  { key: 'status', labelKey: 'col_status', sortKey: 'status', width: 100 },
+  { key: 'start_date', labelKey: 'col_start_date', sortKey: 'start_date', width: 120 },
+  // Wide enough for the longest translated title plus its sort arrow.
+  { key: 'created_at', labelKey: 'col_created_at', sortKey: 'created_at', width: 120 },
+  { key: 'modified_at', labelKey: 'col_modified_at', sortKey: 'modified_at', width: 120 },
+  { key: 'actions', width: 44 },
+];
+
+const LIST_COLUMN_GAP = 10;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + LIST_PADDING_X * 2;
 
 /* ---- Page ---- */
 
@@ -332,71 +382,98 @@ export default function TrainingPlansPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('training_plans.title')}</h1>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder={t('training_plans.filter_name')} style={filterInputStyle} />
-          <select value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)} style={filterInputStyle}>
+        <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>{t('training_plans.new_plan')}</button>
+      </div>
+
+      {/* Filters — the same labelled bar Assigned Plans uses (#724). Same five
+          filters as before, same behaviour; each one now carries its label. */}
+      <FilterBar>
+        <FilterField label={t('training_plans.filter_label_name')} htmlFor="tp-filter-name">
+          <input
+            id="tp-filter-name"
+            value={nameInput}
+            onChange={(e) => setNameInput(e.target.value)}
+            placeholder={t('training_plans.filter_name')}
+            style={{ ...filterControlStyle, minWidth: 180 }}
+          />
+        </FilterField>
+        <FilterField label={t('training_plans.filter_label_member')} htmlFor="tp-filter-member">
+          <select id="tp-filter-member" value={memberFilter} onChange={(e) => setMemberFilter(e.target.value)} style={filterControlStyle}>
             <option value="">{t('training_plans.filter_member_all')}</option>
             {memberOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <select value={templateFilter} onChange={(e) => setTemplateFilter(e.target.value)} style={filterInputStyle}>
+        </FilterField>
+        <FilterField label={t('training_plans.filter_label_source')} htmlFor="tp-filter-source">
+          <select id="tp-filter-source" value={templateFilter} onChange={(e) => setTemplateFilter(e.target.value)} style={filterControlStyle}>
             <option value="">{t('training_plans.filter_template_all')}</option>
             <option value="custom">{t('training_plans.custom')}</option>
             {templateOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
-          <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterInputStyle}>
+        </FilterField>
+        <FilterField label={t('training_plans.filter_label_author')} htmlFor="tp-filter-author">
+          <select id="tp-filter-author" value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
             <option value="">{t('training_plans.filter_created_by_all')}</option>
             {createdByOptions.map((o) => <option key={o.membership_id} value={o.membership_id}>{o.name}</option>)}
           </select>
-          <StatusFilter value={statusFilter} onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))} allLabel={t('status.all')} />
-          <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>{t('training_plans.new_plan')}</button>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 12, fontSize: 13, color: '#666' }}>
-        {([
-          ['name', t('training_plans.col_name')],
-          ['status', t('training_plans.col_status')],
-          ['start_date', t('training_plans.col_start_date')],
-          ['created_at', t('training_plans.col_created_at')],
-          ['modified_at', t('training_plans.col_modified_at')],
-        ] as [SortKey, string][]).map(([key, label]) => <React.Fragment key={key}>{sortBtn(key, label)}</React.Fragment>)}
-      </div>
+        </FilterField>
+        <FilterField label={t('training_plans.filter_label_status')} htmlFor="tp-filter-status">
+          <StatusFilter id="tp-filter-status" value={statusFilter} onChange={setStatusFilter}
+            options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))} allLabel={t('status.all')}
+            style={filterControlStyle} />
+        </FilterField>
+      </FilterBar>
 
       {loading ? (
         <p style={{ color: '#888' }}>{t('training_plans.loading')}</p>
       ) : rows.length === 0 ? (
         <p style={{ color: '#888' }}>{t('training_plans.empty')}</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {rows.map((row) => (
-            <PlanCard
-              key={row.id}
-              row={row}
-              expanded={expanded.has(row.id)}
-              editing={editingId === row.id}
-              editForm={editForm}
-              editError={editError}
-              editSaving={editSaving}
-              hierarchy={hierarchies[row.id] ?? null}
-              hierLoading={hierLoading.has(row.id)}
-              canWrite={!!canWrite}
-              locale={locale}
-              t={t}
-              onToggleExpand={() => guardUnsaved(() => toggleExpand(row))}
-              onEdit={() => guardUnsaved(() => startEdit(row))}
-              onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
-              onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
-              onComplete={() => guardUnsaved(() => { setCompletingPlan(row); setCompleteEndDate(new Date().toISOString().slice(0, 10)); })}
-              onDelete={() => guardUnsaved(() => setDeleting(row))}
-              onEditFormChange={setEditForm}
-              onSave={saveEdit}
-              onCancel={cancelEdit}
-              apiFetch={apiFetch}
-              toast={toast}
-              onChanged={() => refetchHierarchy(row.id)}
-            />
-          ))}
+        /* The header band and the rows are one list surface (#724): they share
+           LIST_GRID_COLUMNS and scroll together, so they cannot fall out of
+           line, and a narrow viewport scrolls the list instead of the page. */
+        <div style={listSurfaceStyle}>
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ minWidth: LIST_MIN_WIDTH }}>
+              <div style={colHeaderStyle}>
+                {LIST_COLUMNS.map((col) => (
+                  <div key={col.key} style={cellStyle}>
+                    {col.labelKey && col.sortKey
+                      ? sortBtn(col.sortKey, t(`training_plans.${col.labelKey}`))
+                      : null}
+                  </div>
+                ))}
+              </div>
+
+              {rows.map((row) => (
+                <PlanCard
+                  key={row.id}
+                  row={row}
+                  expanded={expanded.has(row.id)}
+                  editing={editingId === row.id}
+                  editForm={editForm}
+                  editError={editError}
+                  editSaving={editSaving}
+                  hierarchy={hierarchies[row.id] ?? null}
+                  hierLoading={hierLoading.has(row.id)}
+                  canWrite={!!canWrite}
+                  locale={locale}
+                  t={t}
+                  onToggleExpand={() => guardUnsaved(() => toggleExpand(row))}
+                  onEdit={() => guardUnsaved(() => startEdit(row))}
+                  onDetails={() => guardUnsaved(() => setDetailsPlan(row))}
+                  onDuplicate={() => guardUnsaved(() => handleDuplicate(row))}
+                  onComplete={() => guardUnsaved(() => { setCompletingPlan(row); setCompleteEndDate(new Date().toISOString().slice(0, 10)); })}
+                  onDelete={() => guardUnsaved(() => setDeleting(row))}
+                  onEditFormChange={setEditForm}
+                  onSave={saveEdit}
+                  onCancel={cancelEdit}
+                  apiFetch={apiFetch}
+                  toast={toast}
+                  onChanged={() => refetchHierarchy(row.id)}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -507,7 +584,7 @@ function PlanCard({
   ];
 
   return (
-    <div data-plan-id={row.id} style={cardStyle(editing)}>
+    <div data-plan-id={row.id} style={rowContainerStyle(editing)}>
       {/* Editing mode header */}
       {editing ? (
         <div style={{ padding: '16px 16px 0' }}>
@@ -543,28 +620,38 @@ function PlanCard({
           </div>
         </div>
       ) : (
-        /* Normal header row */
+        /* Normal row — one cell per LIST_COLUMNS entry, same order */
         <div onClick={onToggleExpand} style={headerRowStyle} role="button" tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}>
-          <span style={{ fontSize: 12, color: '#aaa', userSelect: 'none', flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
-          <span style={nameCellStyle}>{row.name}</span>
-          <span style={memberCellStyle}>{row.member_name}</span>
-          <span style={descCellStyle}>{row.description ?? '—'}</span>
-          <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
-          <span style={dateCellStyle}>{formatDate(row.start_date, locale)}</span>
-          <span style={dateCellStyle}>{row.end_date ? formatDate(row.end_date, locale) : '—'}</span>
-          <span onClick={(e) => e.stopPropagation()}>
+          <span style={{ ...cellStyle, fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
+          <div style={cellStyle}>
+            <div style={nameCellStyle}>{row.name}</div>
+            <div style={subCellStyle}>
+              {row.member_name}{row.description ? ` · ${row.description}` : ''}
+            </div>
+          </div>
+          <div style={badgeCellStyle}>
+            <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
+          </div>
+          <div style={cellStyle}>
+            <div style={dateCellStyle}>{formatDate(row.start_date, locale)}</div>
+            {row.end_date && <div style={subCellStyle}>→ {formatDate(row.end_date, locale)}</div>}
+          </div>
+          <div style={{ ...cellStyle, ...dateCellStyle }}>{formatDate(row.created_at, locale)}</div>
+          <div style={{ ...cellStyle, ...dateCellStyle }}>
+            {row.modified_at ? formatDate(row.modified_at, locale) : '—'}
+          </div>
+          <div style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('training_plans.col_actions')} items={menuItems} />
-          </span>
+          </div>
         </div>
       )}
 
-      {/* Expanded content */}
+      {/* Expanded content — recessed, like an expanded DataTable row */}
       {expanded && (
-        <>
-          <div style={{ borderTop: '1px solid #ececf0' }} />
+        <div style={listExpandedStyle}>
           {isCompleted && (
-            <div style={{ padding: '8px 20px', background: '#f9f9f9', fontSize: 13, color: '#888' }}>
+            <div style={{ padding: '8px 20px', fontSize: 13, color: '#888' }}>
               {t('training_plans.completed_read_only')}
             </div>
           )}
@@ -581,7 +668,7 @@ function PlanCard({
               onChanged={onChanged}
             />
           )}
-        </>
+        </div>
       )}
 
       {/* Save/cancel footer (edit mode only) */}
@@ -896,39 +983,57 @@ function formatDate(value: string, locale: string): string {
   return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-const filterInputStyle: React.CSSProperties = { padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff' };
 const modalInputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' };
+/** A column title: the header band's own type, brand-coloured while it sorts. */
 const sortBtnStyle = (active: boolean): React.CSSProperties => ({
-  background: 'none', border: 'none', padding: '2px 8px', cursor: 'pointer',
-  fontSize: 13, color: active ? '#4b45c6' : '#666', fontWeight: active ? 600 : 400, borderRadius: 4,
+  background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
+  fontFamily: 'inherit', fontSize: 15, fontWeight: 600, color: active ? '#4b45c6' : 'inherit',
 });
 const pagerStyle = (disabled: boolean): React.CSSProperties => ({
   background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '4px 12px',
   cursor: disabled ? 'default' : 'pointer', color: disabled ? '#bbb' : '#333', fontSize: 16,
 });
-const cardStyle = (editing: boolean): React.CSSProperties => ({
-  ...cardSurfaceStyle,
-  ...(editing ? { border: '1.5px solid #4b45c6' } : {}),
-  overflow: 'hidden',
+
+// The grid the column headers and every plan row share (#724).
+const listGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center',
+  gap: LIST_COLUMN_GAP,
+};
+const colHeaderStyle: React.CSSProperties = {
+  ...listGridStyle, ...listHeaderRowStyle, ...listHeaderCellStyle,
+};
+/** A plan's own band inside the list surface, divided from the one above it. */
+const rowContainerStyle = (editing: boolean): React.CSSProperties => ({
+  ...listRowDividerStyle,
+  // Being edited used to widen the card's border, which would now shift every
+  // column by 1.5px; an inset accent leaves the grid where it is.
+  ...(editing ? { boxShadow: 'inset 3px 0 0 #4b45c6' } : {}),
 });
 const headerRowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-  cursor: 'pointer', userSelect: 'none',
+  ...listGridStyle, ...listCellStyle, cursor: 'pointer', userSelect: 'none',
+};
+/** Keeps an over-long value inside its track instead of widening the row. */
+const cellStyle: React.CSSProperties = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+/** Badges size themselves, so this cell only needs to not stretch them. */
+const badgeCellStyle: React.CSSProperties = {
+  minWidth: 0, display: 'flex', alignItems: 'center',
+};
+const actionsCellStyle: React.CSSProperties = {
+  minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
 };
 const nameCellStyle: React.CSSProperties = {
-  fontWeight: 600, fontSize: 15, flexShrink: 0, maxWidth: 200,
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  ...cellStyle, fontWeight: 600, fontSize: 15,
 };
-const memberCellStyle: React.CSSProperties = {
-  fontSize: 13.5, color: '#555', flexShrink: 0, maxWidth: 150,
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-};
-const descCellStyle: React.CSSProperties = {
-  color: '#888', fontSize: 13.5, flex: 1,
-  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+/** The secondary line under a value (member + description, the end date). */
+const subCellStyle: React.CSSProperties = {
+  ...cellStyle, fontSize: 12, color: '#6b7280',
 };
 const dateCellStyle: React.CSSProperties = {
-  fontSize: 13, color: '#666', whiteSpace: 'nowrap', flexShrink: 0,
+  fontSize: 13, color: '#666', whiteSpace: 'nowrap',
 };
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
 const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
