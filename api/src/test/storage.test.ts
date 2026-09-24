@@ -120,7 +120,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(10);
+    expect(sendMock).toHaveBeenCalledTimes(11);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -133,9 +133,70 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/Branding/Logo/',
       'gym_123-GymName/Branding/Images/',
       'gym_123-GymName/Members/',
+      'gym_123-GymName/Themes/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
+    }
+  });
+
+  // ─── #735: the gym-level Themes/ folder ────────────────────────────────────
+
+  it('creates the gym-level Themes/ folder marker', async () => {
+    setConfigured();
+    const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket(buildGymFolderPrefix('gym_123', 'Gym Name'));
+
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
+    expect(keys).toContain('gyms/gym_123-GymName/Themes/');
+  });
+
+  // The folder is the same one `THEME_STORAGE_FOLDER` names, so a Custom Theme's
+  // own folder is written under the marker initialization creates, not beside it.
+  it('uses the same Themes folder a theme folder prefix is built from', async () => {
+    setConfigured();
+    const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
+    const { buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
+    const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
+    await initializeGymBucket(prefix);
+
+    const themesMarker = sendMock.mock.calls
+      .map((call) => call[0].input.Key)
+      .find((key: string) => key.endsWith('/Themes/'));
+    expect(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern').startsWith(themesMarker)).toBe(true);
+  });
+
+  // §"Important Scope": initialization creates the root and nothing below it —
+  // a theme's own folder and its Members/ leaf belong to the upload workflow.
+  it('creates no theme-specific folders below Themes/', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    const belowThemes = sendMock.mock.calls
+      .map((call) => call[0].input.Key)
+      .filter((key: string) => key.includes('/Themes/') && key !== 'gyms/gym_123-GymName/Themes/');
+    expect(belowThemes).toEqual([]);
+  });
+
+  // §"Existing Gym Support" / §"Idempotency": re-running writes the same marker
+  // set again — every key ends in `/`, and the body is empty, so an existing
+  // Themes/ folder (and anything inside it) is left exactly as it was.
+  it('is idempotent: a second run writes the same keys, all empty markers', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+    const firstRun = sendMock.mock.calls.map((call) => call[0].input.Key);
+
+    sendMock.mockClear();
+    await initializeGymBucket('gyms/gym_123-GymName');
+    const secondRun = sendMock.mock.calls.map((call) => call[0].input.Key);
+
+    expect(secondRun).toEqual(firstRun);
+    expect(new Set(secondRun).size).toBe(secondRun.length);
+    for (const call of sendMock.mock.calls) {
+      expect(call[0].input.Key.endsWith('/')).toBe(true);
+      expect(call[0].input.Body).toBe('');
     }
   });
 

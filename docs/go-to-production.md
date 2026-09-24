@@ -95,6 +95,13 @@ Tick items off in the PR that completes them.
       `${CLOUDFLARE_R2_ENDPOINT}/${CLOUDFLARE_R2_BUCKET}/<key>` and, unlike the logo, have **no API route
       that serves the bytes** — a non-public bucket means a theme colour where the artwork should be, not a
       broken image. The same custom-domain / `r2.dev` fix as the item above covers both.
+- [ ] **Re-run Initialize Bucket for every gym provisioned before the `Themes/` folder existed** (#735).
+      The gym-level `Themes/` marker is written by `initializeGymBucket()`, so a gym whose bucket was
+      initialized earlier does not have it until a superadmin re-runs **Cordel → Gyms → Initialize Bucket**
+      for it (`SELECT id, name FROM gyms WHERE storage_initialized_at IS NOT NULL AND deleted_at IS NULL`).
+      Re-running is idempotent and non-destructive — it rewrites the same zero-byte markers under the
+      prefix already captured — and nothing breaks without it: an upload into a Custom Theme's own folder
+      creates the missing parents itself. This is so the R2 browser shows the same tree for every gym.
 - [ ] **Sweep the Members image objects of themes that were renamed or deleted** (#725). Remove clears the
       row and deliberately leaves the object (the ticket requires it), and a theme renamed between two
       uploads leaves its old folder behind — the next upload sweeps that one object best-effort, nothing
