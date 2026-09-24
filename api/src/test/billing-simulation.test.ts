@@ -13,6 +13,7 @@ import {
   SimulationService,
   computeBillingSimulation,
 } from '../domain/billingSimulation';
+import { NO_PLAN_DURATION, toPlanDuration } from '../domain/planDuration';
 
 const START = '2026-09-01';
 
@@ -28,6 +29,9 @@ function assignment(over: Partial<SimulationAssignment> = {}): SimulationAssignm
     promotions: [],
     services: [],
     planBenefits: [],
+    // #635 stage 8 — no Billing & Duration configured, which is what every case
+    // that predates it assumed.
+    planDuration: NO_PLAN_DURATION,
     ...over,
   };
 }
@@ -578,5 +582,129 @@ describe('computeBillingSimulation — Membership Plan benefits (#635)', () => {
       assignments: [assignment({ planBenefits: [planBenefit({ billingFrequency: null })] })],
     });
     expect(section(result, 'month')!.events[0].lines).toHaveLength(1);
+  });
+});
+
+// ─── #635 stage 8 — the assignment's own Billing & Duration ──────────────────
+
+describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
+  it('waives the Membership Fee for the Free Period and continues to the first regular charge', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ planDuration: toPlanDuration(2, 0, 0) })],
+    });
+    const events = section(result, 'month')!.events;
+    expect(events.map((e) => e.date)).toEqual(['2026-09-01', '2026-10-01', '2026-11-01']);
+    expect(events.map((e) => e.total)).toEqual([0, 0, 100]);
+    expect(events[0].lines[0]).toMatchObject({ regular_price: 100, actual_charge: 0 });
+    expect(events[0].lines[0].benefits[0]).toEqual({
+      source: 'membership_plan', name: null, action: 'waive', value: null, period_status: 'free_plan',
+    });
+    expect(events[2].lines[0].benefits).toEqual([]);
+    expect(result.horizon_date).toBe('2026-11-01');
+  });
+
+  it('bills the Paid Duration at the regular price, with no benefit line', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ planDuration: toPlanDuration(1, 12, 0) })],
+    });
+    const events = section(result, 'month')!.events;
+    // Free month, then the first paid one — which *is* the regular charge, so
+    // the projection stops there rather than listing all twelve.
+    expect(events.map((e) => e.total)).toEqual([0, 100]);
+    expect(events[1].lines[0].benefits).toEqual([]);
+  });
+
+  it('projects through the Paid Duration when a Bonus Duration is still ahead', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ planDuration: toPlanDuration(1, 2, 2) })],
+    });
+    const events = section(result, 'month')!.events;
+    expect(events.map((e) => e.total)).toEqual([0, 100, 100, 0, 0, 100]);
+    expect(events[0].lines[0].benefits[0].period_status).toBe('free_plan');
+    expect(events[3].lines[0].benefits[0]).toMatchObject({
+      source: 'membership_plan', action: 'waive', period_status: 'bonus_plan',
+    });
+    expect(events[5].lines[0].benefits).toEqual([]);
+  });
+
+  it('changes nothing when no Billing & Duration is configured', () => {
+    const withNothing = computeBillingSimulation({ assignments: [assignment()] });
+    const withZeroes = computeBillingSimulation({
+      assignments: [assignment({ planDuration: toPlanDuration(0, 0, 0) })],
+    });
+    expect(withZeroes).toEqual(withNothing);
+    expect(section(withZeroes, 'month')!.events).toHaveLength(1);
+  });
+
+  it('waives only the Membership Fee — a Period Benefit is still charged', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ planDuration: toPlanDuration(1, 0, 0), planBenefits: [planBenefit()] })],
+    });
+    const first = section(result, 'month')!.events[0];
+    expect(first.lines.map((l) => [l.label, l.actual_charge])).toEqual([
+      ['Standard', 0],
+      ['Locker Rental', 20],
+    ]);
+    expect(first.total).toBe(20);
+  });
+
+  it('counts the periods from the assignment start date, not from the first of its month', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({ startsAt: '2026-09-20', planDuration: toPlanDuration(1, 0, 0) })],
+    });
+    const events = section(result, 'month')!.events;
+    expect(events.map((e) => [e.date, e.total])).toEqual([['2026-09-20', 0], ['2026-10-20', 100]]);
+  });
+
+  // The thread's Q2 answer: "in case of conflict, prioritize the promotion".
+  describe('a Promotion governing the same date decides the fee alone', () => {
+    it('lets the Promotion charge its paid month even inside the Plan\'s Free Period', () => {
+      const result = computeBillingSimulation({
+        assignments: [assignment({
+          planDuration: toPlanDuration(3, 0, 0),
+          promotions: [promotion({
+            paidMonths: 1,
+            membershipFeeBenefits: [{ action: 'fixed_price', value: 80, enabled: true, durationMonths: null }],
+          })],
+        })],
+      });
+      const first = section(result, 'month')!.events[0];
+      expect(first.total).toBe(80);
+      expect(first.lines[0].benefits).toHaveLength(1);
+      expect(first.lines[0].benefits[0]).toMatchObject({ source: 'promotion', period_status: 'pay_promotion' });
+    });
+
+    it('does not report the waiver twice when both would waive the fee', () => {
+      const result = computeBillingSimulation({
+        assignments: [assignment({
+          planDuration: toPlanDuration(2, 0, 0),
+          promotions: [promotion({ freeMonths: 1 })],
+        })],
+      });
+      const events = section(result, 'month')!.events;
+      expect(events[0].total).toBe(0);
+      expect(events[0].lines[0].benefits).toHaveLength(1);
+      expect(events[0].lines[0].benefits[0]).toMatchObject({ source: 'promotion', period_status: 'free_promotion' });
+      // The Promotion covers month 1 only — month 2 falls back to the Plan's
+      // own Free Period, and month 3 is the first regular charge.
+      expect(events.map((e) => e.total)).toEqual([0, 0, 100]);
+      expect(events[1].lines[0].benefits[0]).toMatchObject({ source: 'membership_plan', period_status: 'free_plan' });
+    });
+
+    it('applies the Plan\'s own period once a Promotion has been revoked', () => {
+      const result = computeBillingSimulation({
+        assignments: [assignment({
+          planDuration: toPlanDuration(2, 0, 0),
+          promotions: [promotion({
+            paidMonths: 6, revokedAt: '2026-09-15',
+            membershipFeeBenefits: [{ action: 'fixed_price', value: 80, enabled: true, durationMonths: null }],
+          })],
+        })],
+      });
+      const events = section(result, 'month')!.events;
+      expect(events[0].total).toBe(80);
+      expect(events[1].lines[0].benefits[0]).toMatchObject({ source: 'membership_plan', period_status: 'free_plan' });
+      expect(events.map((e) => e.total)).toEqual([80, 0, 100]);
+    });
   });
 });
