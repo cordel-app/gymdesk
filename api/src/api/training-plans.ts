@@ -139,6 +139,7 @@ export const PLAN_TREE_SELECT = `
                 'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                   SELECT JSON_OBJECT(
                       'id', we.id, 'position', we.position, 'exercise_id', we.exercise_id, 'exercise_name', e.name,
+                      'exercise_image_url', e.image_url, 'exercise_video_url', e.video_url,
                       'min_reps', we.min_reps, 'max_reps', we.max_reps, 'sets', we.sets,
                       'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes,
                       'result_type_id', we.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,
@@ -443,7 +444,9 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
       [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
-      'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
+      `SELECT we.*, e.name AS exercise_name,
+              e.image_url AS exercise_image_url, e.video_url AS exercise_video_url
+       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       (id) => [id],
     );
     recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: row.id, next: row });
@@ -492,7 +495,9 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
-      'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
+      `SELECT we.*, e.name AS exercise_name,
+              e.image_url AS exercise_image_url, e.video_url AS exercise_video_url
+       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [exId],
     );
     recordAudit(req, { action: 'update', entityType: 'workout_exercise', entityId: exId, next: rows[0] });
@@ -631,7 +636,9 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
       await reorder(tx, 'workout_exercises', 'workout_block_id', String(targetId), targetOrder);
     });
     const { rows } = await db.query(
-      'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
+      `SELECT we.*, e.name AS exercise_name,
+              e.image_url AS exercise_image_url, e.video_url AS exercise_video_url
+       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [exId],
     );
     recordAudit(req, { action: 'update', entityType: 'workout_exercise', entityId: exId, next: rows[0] });
@@ -851,7 +858,9 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     );
     if (!insertId) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
-      'SELECT we.*, e.name AS exercise_name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?',
+      `SELECT we.*, e.name AS exercise_name,
+              e.image_url AS exercise_image_url, e.video_url AS exercise_video_url
+       FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [insertId],
     );
     recordAudit(req, { action: 'create', entityType: 'workout_exercise', entityId: insertId, next: rows[0] });

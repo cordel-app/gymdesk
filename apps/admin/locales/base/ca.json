@@ -1714,6 +1714,12 @@
     "save_changes": "Desa els canvis",
     "close": "Tanca"
   },
+  "exercise_media": {
+    "image": "Imatge de l'exercici",
+    "image_alt": "Imatge de {name}",
+    "play_video": "Reproduir el vídeo de l'exercici",
+    "play_video_of": "Reproduir el vídeo de {name}"
+  },
   "member_training_plans": {
     "title": "Plans d'entrenament",
     "loading": "Carregant…",

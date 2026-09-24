@@ -9,6 +9,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
+import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import { HierBlock, HierExercise } from './summaries';
 import {
   BLOCK_TYPES, BLOCK_TYPE_MAX_EXERCISES,
@@ -494,6 +495,8 @@ function ExerciseTable({ templateId, block, canWrite, exercises, atLimit, onDele
             <th style={{ ...thStyle, width: 90 }}>{t('block_exercises.col_target')}</th>
             <th style={{ ...thStyle, width: 56 }}>{t('block_exercises.col_unit')}</th>
             <th style={{ ...thStyle, width: 80 }}>{t('block_exercises.col_rest_min')}</th>
+            {/* #720: media column — header stays empty, the thumbnails label themselves. */}
+            <th style={{ ...thStyle, width: 72 }} />
             {canWrite && <th style={thStyle} />}
           </tr>
         </thead>
@@ -729,6 +732,11 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
           {numInput(restMin, setRestMin, handleBlurRest, 48)}
           <span style={{ color: '#888', fontSize: 12 }}>min</span>
         </div>
+      </td>
+
+      {/* Media (#720) — whatever image/video the exercise carries, at the right of the row. */}
+      <td style={{ ...tdStyle, textAlign: 'right' }}>
+        <ExerciseMediaThumbnails exercise={exercise} />
       </td>
 
       {/* Context menu */}

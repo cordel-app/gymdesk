@@ -5,11 +5,14 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
 
 interface ExerciseOption { id: number; name: string; min_reps_default: number | null; max_reps_default: number | null; sets_default: number | null; rest_default_seconds: number | null }
 interface BlockExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;
+  // #720: the exercise's own media, returned with the row.
+  exercise_image_url: string | null; exercise_video_url: string | null;
   min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null; notes: string | null;
 }
 
@@ -115,6 +118,8 @@ export function PlanBlockExercisesModal({ memberId, planId, workoutId, blockId, 
                 <th style={th}>{t('block_exercises.col_max_reps')}</th>
                 <th style={th}>{t('block_exercises.col_sets')}</th>
                 <th style={th}>{t('block_exercises.col_rest_seconds')}</th>
+                {/* #720: media column — the thumbnails label themselves. */}
+                <th style={{ ...th, width: 72 }} />
                 <th style={{ ...th, width: 220 }} />
               </tr>
             </thead>
@@ -126,6 +131,7 @@ export function PlanBlockExercisesModal({ memberId, planId, workoutId, blockId, 
                   <td style={td}>{i.max_reps ?? '—'}</td>
                   <td style={td}>{i.sets ?? '—'}</td>
                   <td style={td}>{i.rest_seconds ?? '—'}</td>
+                  <td style={{ ...td, textAlign: 'right' }}><ExerciseMediaThumbnails exercise={i} /></td>
                   <td style={{ ...td, display: 'flex', gap: 6 }}>
                     <button onClick={() => move(idx, -1)} style={btnSmall('#888')} disabled={idx === 0}>↑</button>
                     <button onClick={() => move(idx, 1)} style={btnSmall('#888')} disabled={idx === items.length - 1}>↓</button>

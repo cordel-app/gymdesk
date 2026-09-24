@@ -16,6 +16,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
+import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import { btnStyle } from '@/components/ui';
 import { HierBlock, blockSummary, exerciseSummary } from '../workout-templates/summaries';
 
@@ -277,11 +278,13 @@ function BlockRow({ block }: { block: HierBlock }) {
           <p style={{ color: '#bbb', fontSize: 12.5, margin: '2px 0' }}>{t('training_plan_templates.tree_no_exercises')}</p>
         ) : (
           exercises.map((ex) => (
-            <div key={ex.id} style={{ padding: '3px 0' }}>
+            <div key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
               <span style={{ fontSize: 13.5 }}>{ex.exercise_name}</span>
               {exerciseSummary(ex, t) && (
-                <span style={{ color: '#999', fontSize: 12.5, marginLeft: 8 }}>{exerciseSummary(ex, t)}</span>
+                <span style={{ color: '#999', fontSize: 12.5 }}>{exerciseSummary(ex, t)}</span>
               )}
+              {/* Media (#720) — pushed to the right of the line. */}
+              <span style={{ marginLeft: 'auto' }}><ExerciseMediaThumbnails exercise={ex} size={24} /></span>
             </div>
           ))
         )}

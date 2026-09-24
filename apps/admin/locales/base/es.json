@@ -1714,6 +1714,12 @@
     "save_changes": "Guardar cambios",
     "close": "Cerrar"
   },
+  "exercise_media": {
+    "image": "Imagen del ejercicio",
+    "image_alt": "Imagen de {name}",
+    "play_video": "Reproducir el vídeo del ejercicio",
+    "play_video_of": "Reproducir el vídeo de {name}"
+  },
   "member_training_plans": {
     "title": "Planes de entrenamiento",
     "loading": "Cargando…",
