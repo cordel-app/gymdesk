@@ -11,8 +11,10 @@ import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
 interface ExerciseOption { id: number; name: string; min_reps_default: number | null; max_reps_default: number | null; sets_default: number | null; rest_default_seconds: number | null }
 interface BlockExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;
-  // #720: the exercise's own media, returned with the row.
-  exercise_image_url: string | null; exercise_video_url: string | null;
+  // #720: the exercise's own media, returned with the row. #719 added the
+  // 512×512 thumbnail the row prefers.
+  exercise_image_url: string | null; exercise_image_thumbnail_url?: string | null;
+  exercise_video_url: string | null;
   min_reps: number | null; max_reps: number | null; sets: number | null; rest_seconds: number | null; tempo: string | null; notes: string | null;
 }
 

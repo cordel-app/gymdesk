@@ -12,6 +12,8 @@ interface ExerciseDetail {
   description: string | null;
   video_url: string | null;
   image_url: string | null;
+  /** #719: the 512×512 companion, when the gym uploaded one. */
+  image_thumbnail_url: string | null;
   min_reps_default: number | null;
   max_reps_default: number | null;
   sets_default: number | null;
@@ -84,10 +86,11 @@ export function ExerciseDetailModal({ exerciseId, exerciseName, onClose }: {
             <p style={{ ...sectionLabelSt, marginTop: 20 }}>{t('section_media')}</p>
             {field(t('label_video_url'), detail.video_url)}
             <div style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
-              <span style={{ width: 180, flexShrink: 0, fontSize: 13, color: '#888', fontWeight: 500 }}>{t('label_image_url')}</span>
+              <span style={{ width: 180, flexShrink: 0, fontSize: 13, color: '#888', fontWeight: 500 }}>{t('label_image')}</span>
               {detail.image_url
                 ? /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={detail.image_url} alt="" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
+                  /* #719 §17: the thumbnail is what a 160px box needs. */
+                  <img src={detail.image_thumbnail_url ?? detail.image_url} alt="" loading="lazy" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
                 : <span style={{ fontSize: 13, color: '#333' }}>—</span>}
             </div>
 

@@ -158,6 +158,12 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           description           = IF(?, ?, description),
           video_url             = IF(?, ?, video_url),
           image_url             = IF(?, ?, image_url),
+          -- #719: same rule as the gym-side PUT — a thumbnail belongs to the
+          -- master it was made from, so repointing the master drops it. A Base
+          -- Exercise has no thumbnail to drop yet (#716 is what will upload
+          -- one), which is exactly why the clause belongs here now rather than
+          -- after something starts writing it.
+          image_thumbnail_url   = IF(?, NULL, image_thumbnail_url),
           min_reps_default      = IF(?, ?, min_reps_default),
           max_reps_default      = IF(?, ?, max_reps_default),
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
@@ -171,6 +177,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           'description' in req.body ? 1 : 0, description ?? null,
           'video_url' in req.body ? 1 : 0, video_url ?? null,
           'image_url' in req.body ? 1 : 0, image_url ?? null,
+          'image_url' in req.body ? 1 : 0,
           'min_reps_default' in req.body ? 1 : 0, min_reps_default ?? null,
           'max_reps_default' in req.body ? 1 : 0, max_reps_default ?? null,
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,

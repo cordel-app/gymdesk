@@ -6,7 +6,7 @@
 // file owns *where an image goes* and *what is accepted*, so both are decided in
 // one place and can be unit-tested without a database or a bucket.
 
-import { PLATFORM_STORAGE_ROOT } from '../infra/storage';
+import { PLATFORM_STORAGE_ROOT, sanitizeStorageObjectName } from '../infra/storage';
 import { readPngMetadata, pngSupportsTransparency } from './pngImage';
 
 /**
@@ -39,16 +39,12 @@ export const PLATFORM_NUTRITION_PREFIX = `${PLATFORM_STORAGE_ROOT}/${PLATFORM_NU
  *
  * Deterministic and case-preserving: the same name always yields the same key,
  * which is what makes a re-upload overwrite rather than orphan.
+ *
+ * The rule itself is {@link sanitizeStorageObjectName} (#719 gave it a second
+ * caller, Gym Exercise images); only the fallback word is this feature's.
  */
 export function sanitizeNutritionImageName(name: string): string {
-  const sanitized = (name ?? '')
-    .normalize('NFD')
-    // Strip combining marks so `Jamón` reads as `Jamon` rather than `Jam-n`.
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^A-Za-z0-9_-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-  return sanitized.length > 0 ? sanitized : 'food';
+  return sanitizeStorageObjectName(name, 'food');
 }
 
 /**

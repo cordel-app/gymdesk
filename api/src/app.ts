@@ -44,7 +44,9 @@ import { memberBillingSimulationRouter } from './api/billing-simulation';
 import { membershipFeeDriftRouter } from './api/membership-fee-drift';
 import { memberMembershipConfigurationRouter } from './api/member-membership-configuration';
 import { userMembershipServicesRouter } from './api/user-membership-services';
-import { musclesRouter, exercisesRouter } from './api/exercises';
+import {
+  EXERCISE_IMAGE_UPLOAD_PATH, exerciseImageBodyParser, exercisesRouter, musclesRouter,
+} from './api/exercises';
 import { resultTypesRouter } from './api/result-types';
 import { workoutTemplatesRouter } from './api/workout-templates';
 import { trainingPlanTemplatesRouter } from './api/training-plan-templates';
@@ -116,6 +118,16 @@ app.use('/webhooks/clerk', express.raw({ type: 'application/json' }), clerkWebho
 // Payment webhooks must also precede express.json() for the same reason.
 // express.raw({ type: '*/*' }) captures any content-type Monei may use.
 app.use('/webhooks/payment', express.raw({ type: '*/*' }), paymentWebhookRouter);
+
+// #719: a Gym Exercise image upload carries two PNGs (a 2048×2048 master and
+// its 512×512 thumbnail) as base64 in one JSON body — the two must succeed or
+// fail together — so it is parsed here, with its own limit, before the global
+// parser's 100 kB default would reject it as a bare 413.
+app.use((req, res, next) => (
+  req.method === 'POST' && EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)
+    ? exerciseImageBodyParser(req, res, next)
+    : next()
+));
 
 app.use(express.json());
 

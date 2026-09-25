@@ -247,6 +247,37 @@ export function sanitizeStorageFolderName(name: string): string {
 export const sanitizeGymFolderName = sanitizeStorageFolderName;
 
 /**
+ * A *name* as it appears inside an object key — `Salmon, Atlantic` →
+ * `Salmon-Atlantic`, `Barbell Back Squat` → `Barbell-Back-Squat`.
+ *
+ * Deliberately not {@link sanitizeStorageFolderName}, which deletes whitespace
+ * outright (`BarbellBackSquat`): that one labels a *folder*, this one carries a
+ * phrase a person typed. The rules, in order:
+ *
+ *  1. Anything that is not a letter, digit, `_` or `-` becomes a separator —
+ *     spaces, commas, `%`, `/`, accents, and anything else that would have to be
+ *     escaped in a URL. Combining marks are stripped first, so `Jamón` reads as
+ *     `Jamon` rather than `Jam-n`.
+ *  2. Runs of separators collapse to a single `-`, and leading/trailing ones go.
+ *  3. An empty result (a name of nothing but punctuation) becomes `fallback`, so
+ *     a key can never end up as `…/12-.png`.
+ *
+ * Deterministic and case-preserving: the same name always yields the same key,
+ * which is what makes a re-upload overwrite rather than orphan. One rule, two
+ * callers — `sanitizeNutritionImageName()` (#715) and
+ * `sanitizeExerciseImageName()` (#719) differ only in their fallback word.
+ */
+export function sanitizeStorageObjectName(name: string, fallback: string): string {
+  const sanitized = (name ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return sanitized.length > 0 ? sanitized : fallback;
+}
+
+/**
  * `gyms/<gym_id>-<sanitized_gym_name>`, guaranteed to contain no spaces.
  * The `gyms/` root (#668) is part of the key prefix that gets captured in
  * `gyms.storage_folder_prefix` at initialize time, so both the folder markers

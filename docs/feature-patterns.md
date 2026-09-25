@@ -740,6 +740,23 @@ Reference implementation: `apps/member/src/components/ExerciseMedia.tsx` + `Exer
 
 ---
 
+## Owned Media with a Browser-Made Thumbnail (#719 part 1)
+
+A record that carries an image *it may not own* — a Gym Exercise's, copied from the platform's library at import time — needs three things the single-asset patterns above do not.
+
+1. **The thumbnail is a sibling column, and the browser makes it.** A master plus a derived size is two references (`image_url`, `image_thumbnail_url`), not one plus a naming convention: only images this feature uploaded would follow the convention, and the pair has to be able to say "master, no thumbnail" for every row that already exists. The API image has no `sharp` and no `ffmpeg` (a deliberate infrastructure decision, #719 Q2), so a canvas in the browser draws the thumbnail and posts both files in **one** request — a pair that must succeed or fail together cannot be two requests. Base64 members of a JSON body are how two files travel when the API has no multipart parser; the route raises its own `express.json` limit rather than the app's.
+
+2. **A browser-made file is still an upload, so validate it like one.** Re-check *each* file from its own bytes — signature, exact dimensions, alpha channel — never from the `Content-Type` header or the file name, and reject the whole request when either fails. Upload nothing and write nothing until both pass: that is what makes "an invalid upload never replaces valid media" true, and it is the only reason a failed thumbnail cannot leave a master without one.
+
+3. **Ownership decides deletion, and it is derived, not stored.** The record may point at a platform object, at a gym object or at an external URL; only the middle one may be deleted. Decide it by turning the stored URL back into a key (`storageKeyFromObjectUrl()`, which already answers "not ours" for another deployment) and asking whether that key sits under *this* tenant's own prefix — anchored with a trailing `/`, so one gym's prefix cannot match another's longer name. No `is_system_media` column: a second source of truth would be one more thing to get wrong on every copy.
+
+Two consequences worth stating explicitly:
+
+- **Copies share objects, so check before deleting one.** Duplicate/clone/import copy *references* (nothing is duplicated in the bucket), so before removing a gym-owned object, confirm no other live record still points at it. A shared object stays; only the reference goes.
+- **Removal does not fall back.** When the ticket says the record simply has no image afterwards, do not resolve the platform's version at read time — the record's references are the whole answer, and re-importing is how the platform media comes back. The consuming UI then resolves nothing at all: it renders the URLs the record carries, preferring the thumbnail.
+
+In the editor, the media control is **not** a form field: uploading and removing act immediately on their own endpoints, so cancelling the form neither undoes an upload nor re-applies a removed image. Where the record does not exist yet (a create form), stage the prepared pair and upload it as soon as it does.
+
 ## Dependency Awareness (shared catalog entities)
 
 Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:
