@@ -108,8 +108,7 @@ async function decodeFirstFrame(url: string): Promise<HTMLVideoElement | null> {
     // URL, which here would be the whole clip (~67 MB at the 50 MB cap) in a
     // media element that then has to seek — trading a false positive for
     // uploads that fail on large files.
-    // codeql[js/xss-through-dom]
-    video.src = url;
+    video.src = url; // lgtm[js/xss-through-dom]
   });
 }
 
