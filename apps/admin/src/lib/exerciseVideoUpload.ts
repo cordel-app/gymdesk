@@ -97,6 +97,18 @@ async function decodeFirstFrame(url: string): Promise<HTMLVideoElement | null> {
         finish(video);
       }
     };
+    // `url` is a `blob:` URL this module minted from a locally picked File one
+    // frame ago, and `video` is never attached to the document — a media element
+    // fetches and decodes its `src`, it does not parse HTML. CodeQL reaches the
+    // opposite conclusion only because the element came from
+    // `createElement('video')`: the identical `img.src = url` in
+    // `exerciseImageUpload.ts` is not flagged, because `new Image()` resolves to
+    // a known element type. Suppressed rather than rewritten: the only shape
+    // that cleared the alert on #763 was feeding the element a base64 `data:`
+    // URL, which here would be the whole clip (~67 MB at the 50 MB cap) in a
+    // media element that then has to seek — trading a false positive for
+    // uploads that fail on large files.
+    // codeql[js/xss-through-dom]
     video.src = url;
   });
 }
