@@ -304,11 +304,12 @@ async function loadAssignmentFeeContext(gymId: string, umId: number): Promise<{
   const { rows } = await db.query(
     `SELECT um.membership_plan_id, um.membership_fee_price, um.final_price,
             um.base_price, um.starts_at,
-            um.free_months, um.paid_months, um.bonus_months,
+            um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
             p.free_months AS plan_free_months,
             p.paid_months AS plan_paid_months,
             p.bonus_months AS plan_bonus_months,
-            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+            p.pay_beforehand_months AS plan_pay_beforehand_months,
+            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
              OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
             ) AS has_billing_snapshot
@@ -322,8 +323,8 @@ async function loadAssignmentFeeContext(gymId: string, umId: number): Promise<{
   return {
     regularFee: await regularMembershipFee(gymId, um, toDateOnly(um.starts_at)),
     planDuration: Number(um.has_billing_snapshot) === 1
-      ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months)
-      : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months),
+      ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
+      : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
   };
 }
 
@@ -997,7 +998,7 @@ const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 async function loadAssignmentForSnapshotEdit(gymId: string, id: string | string[]) {
   const { rows } = await db.query(
     `SELECT id, membership_plan_id, status, starts_at,
-            free_months, paid_months, bonus_months,
+            free_months, paid_months, bonus_months, pay_beforehand_months,
             recurring_billing_interval, recurring_billing_unit, membership_fee_price
      FROM user_memberships WHERE id = ? AND gym_id = ?`,
     [id, gymId],
@@ -1026,6 +1027,15 @@ function optionalNumber(raw: unknown): number | null | typeof NaN {
 /** Rejects a half-set cadence from inside the transaction, so nothing commits. */
 class CadencePairError extends Error {}
 
+/**
+ * Rejects a Pre-paid Duration longer than the Paid Duration it is a slice of
+ * (#635 stage 13 — the Promotion's own 0..paid_months bound,
+ * `validatePayBeforehandMonths`). Thrown from inside the transaction for the
+ * same reason as the cadence pair: the snapshot `materialiseAssignedPlanSnapshot`
+ * may just have captured must roll back with the rejected edit.
+ */
+class PrepaidBoundError extends Error {}
+
 function nonNegativeInteger(raw: unknown): number | null | false {
   const n = optionalNumber(raw);
   if (n === null) return null;
@@ -1044,7 +1054,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
   // Only the fields the caller sent are written, so a section's editor can save
   // Billing & Duration without having to resend the cadence it doesn't show.
   const patch: Record<string, number | string | null> = {};
-  for (const field of ['free_months', 'paid_months', 'bonus_months', 'recurring_billing_interval'] as const) {
+  for (const field of ['free_months', 'paid_months', 'bonus_months', 'pay_beforehand_months', 'recurring_billing_interval'] as const) {
     if (!(field in req.body)) continue;
     const value = nonNegativeInteger(req.body[field]);
     if (value === false) return res.status(400).json({ error: `${field} must be a non-negative integer` });
@@ -1094,7 +1104,8 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       // captured its snapshot above already has the Plan's cadence on it, so
       // sending one half of the pair is valid for it.
       const { rows: current } = await tx.query(
-        'SELECT recurring_billing_interval, recurring_billing_unit FROM user_memberships WHERE id = ? AND gym_id = ?',
+        `SELECT recurring_billing_interval, recurring_billing_unit, paid_months, pay_beforehand_months
+         FROM user_memberships WHERE id = ? AND gym_id = ?`,
         [req.params.id, gymId],
       );
       const nextInterval = 'recurring_billing_interval' in patch
@@ -1104,6 +1115,14 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       // Thrown rather than returned: the materialise above must roll back with
       // the rejected edit, so a 400 leaves the assignment exactly as it was.
       if ((nextInterval == null) !== (nextUnit == null)) throw new CadencePairError();
+
+      // The Pre-paid Duration is a slice of the Paid Duration, so it is checked
+      // against the row as it will stand — sending only one of the two is valid,
+      // and either one alone can break the bound.
+      const nextPaid = 'paid_months' in patch ? patch.paid_months : current[0].paid_months;
+      const nextPrepaid = 'pay_beforehand_months' in patch
+        ? patch.pay_beforehand_months : current[0].pay_beforehand_months;
+      if (nextPrepaid != null && Number(nextPrepaid) > Number(nextPaid ?? 0)) throw new PrepaidBoundError();
 
       const assignments = Object.keys(patch).map((c) => `${c} = ?`).join(', ');
       await tx.query(
@@ -1121,6 +1140,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       action: 'update', entityType: 'user_membership', entityId: req.params.id,
       previous: {
         free_months: um.free_months, paid_months: um.paid_months, bonus_months: um.bonus_months,
+        pay_beforehand_months: um.pay_beforehand_months,
         recurring_billing_interval: um.recurring_billing_interval,
         recurring_billing_unit: um.recurring_billing_unit,
         membership_fee_price: um.membership_fee_price,
@@ -1131,6 +1151,9 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
   } catch (err) {
     if (err instanceof CadencePairError) {
       return res.status(400).json({ error: 'recurring_billing_interval and recurring_billing_unit must be set together' });
+    }
+    if (err instanceof PrepaidBoundError) {
+      return res.status(400).json({ error: 'pay_beforehand_months cannot exceed paid_months' });
     }
     next(err);
   }

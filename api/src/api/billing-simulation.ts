@@ -70,15 +70,18 @@ interface AssignmentRow {
   recurring_billing_unit: string | null;
   /** The regular Membership Fee frozen at assignment time — NULL for a pre-snapshot row. */
   membership_fee_price: string | number | null;
-  /** 1 when any of the six snapshot columns is set; decides the benefit fallback. */
+  /** 1 when any of the seven snapshot columns is set; decides the benefit fallback. */
   has_billing_snapshot: number;
   /** #635 stage 8 — the assignment's own Billing & Duration, and its Plan's live one. */
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
+  /** #635 stage 13 — the Pre-paid Duration, on the assignment and on its Plan. */
+  pay_beforehand_months: number | null;
   plan_free_months: number | null;
   plan_paid_months: number | null;
   plan_bonus_months: number | null;
+  plan_pay_beforehand_months: number | null;
 }
 
 /**
@@ -94,8 +97,8 @@ interface AssignmentRow {
  */
 function assignmentPlanDuration(row: AssignmentRow): PlanDuration {
   return Number(row.has_billing_snapshot) === 1
-    ? toPlanDuration(row.free_months, row.paid_months, row.bonus_months)
-    : toPlanDuration(row.plan_free_months, row.plan_paid_months, row.plan_bonus_months);
+    ? toPlanDuration(row.free_months, row.paid_months, row.bonus_months, row.pay_beforehand_months)
+    : toPlanDuration(row.plan_free_months, row.plan_paid_months, row.plan_bonus_months, row.plan_pay_beforehand_months);
 }
 
 /**
@@ -154,14 +157,15 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
   const { rows } = await db.query<AssignmentRow>(
     `SELECT um.id, um.membership_plan_id, um.status, um.final_price, um.starts_at, um.ends_at,
             um.membership_fee_price,
-            um.free_months, um.paid_months, um.bonus_months,
+            um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
             p.name AS plan_name,
             p.free_months AS plan_free_months,
             p.paid_months AS plan_paid_months,
             p.bonus_months AS plan_bonus_months,
+            p.pay_beforehand_months AS plan_pay_beforehand_months,
             ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
-            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
              OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
             ) AS has_billing_snapshot

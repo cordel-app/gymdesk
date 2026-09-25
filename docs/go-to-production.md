@@ -119,6 +119,14 @@ Tick items off in the PR that completes them.
       script renders a consistent stylized form per food, not a photograph of it — supply real
       artwork with `--from`, or replace individual foods later with **Upload Image** on the expanded
       card (512×512 transparent PNG).
+- [ ] **Upload the Base Exercise images** (#716). Unlike the base foods above there is deliberately
+      no generator and no backfill script: the ticket's own answer put generating the artwork out of
+      scope, so every Base Exercise has `image_url = NULL` and its expanded card reads "No image yet"
+      until an administrator uploads a master on Cordel → Base Exercises (**Upload Image**, a
+      2048×2048 transparent PNG — the 512×512 thumbnail is made from it in the browser). The upload
+      needs the `CLOUDFLARE_R2_*` variables set; without them the route answers 503 and nothing is
+      written. Nothing falls back to another image, so a Gym Exercise imported before its base
+      exercise has artwork carries no image either — re-importing (#719 part 3) is what picks it up.
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be
@@ -281,6 +289,20 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       Charge Benefits configured. If any gym still has rows when this ships, capture
       `SELECT * FROM plan_charge_benefits` and `… FROM user_membership_charge_benefits`
       first — the drop is not recoverable from the migration alone.
+- [ ] **Migration 189 must run *after* the API build that stops reading the retired
+      billing pairs** (#635 stage 13): it `DROP`s `billing_policies.initial_billing_*`,
+      `initial_service_*` and `recurring_service_*`. Run it first and the previous build
+      500s with `ER_BAD_FIELD_ERROR` on `GET`/`PUT /membership-plans/:id/billing-policy`,
+      on the Plans list (every plan embeds its policy) and on duplicating a plan. Deploy
+      the API first — it selects `*` and writes only the surviving
+      `recurring_billing_*` + `auto_renew` — then migrate, in that order.
+- [ ] **Migration 189 drops configured cadences with no archive** (#635 stage 13): nothing
+      bills off the three pairs (the Plans editor was their only reader), so nothing a
+      member is charged changes — but a gym that had set a non-default Initial Billing,
+      Initial Service or Recurring Service loses those numbers, and `down()` restores the
+      columns at their migration-060 defaults (1 month each), not at what they held. If
+      any environment has meaningful values when this ships, capture
+      `SELECT * FROM billing_policies` first.
 - [ ] **Migration 179 must run *after* the API build that stops reading the Promotion
       benefit tables** (#635 stage 5): it `DROP`s `promotion_charge_benefits`,
       `promotion_period_benefits` and `promotion_included_benefits`. Run it first and the

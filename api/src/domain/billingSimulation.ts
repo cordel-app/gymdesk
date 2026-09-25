@@ -385,7 +385,11 @@ function cachePromotionTimeline(promo: AppliedPromotionForBilling) {
  *
  * Where no Promotion governs the date, the Plan's own Free Period and Bonus
  * Duration waive the fee, exactly as a Promotion's do (§7: "the same semantics
- * as the Promotion configuration"). Its Paid Duration bills the regular price
+ * as the Promotion configuration"), and since stage 13 so does a **Pre-paid**
+ * month — one of the Paid Duration's months that was already paid up front, so
+ * the cycle charges nothing further and the line reads "pre-paid" rather than
+ * "free" (the two are told apart by the benefit's `period_status`, which is
+ * what the simulation labels). Its Paid Duration bills the regular price
  * and produces no benefit line at all — it *is* the regular charge, so the
  * horizon (#629 §6: project until each item has been charged once at its
  * regular price) stops there, unless a Bonus Duration is still ahead of it: a

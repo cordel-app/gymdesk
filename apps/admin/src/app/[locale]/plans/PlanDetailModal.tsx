@@ -7,8 +7,6 @@ import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 interface BillingPolicySummary {
   recurring_billing_interval: number;
   recurring_billing_unit: string;
-  recurring_service_interval: number;
-  recurring_service_unit: string;
 }
 
 interface PlanSummary {
@@ -19,6 +17,12 @@ interface PlanSummary {
   enrollment_status: 'public' | 'staff_only';
   current_price: string | null;
   billing_policy: BillingPolicySummary | null;
+  // #635 stage 13: the Plan's Duration is its Billing & Duration, not the
+  // retired `recurring_service_*` pair this row used to read (migration 189).
+  free_months: number | null;
+  paid_months: number | null;
+  pay_beforehand_months: number | null;
+  bonus_months: number | null;
   // #635 stage 4: the Benefits count is the three Sellable-Item-keyed
   // sections, now that Charge Benefits are gone.
   session_benefits: unknown[];
@@ -53,10 +57,13 @@ export function PlanDetailModal({ plan, onClose }: {
     </div>
   );
 
+  // Each Billing & Duration field on its own row: the four are what the Plan
+  // stores, and summing them here would be business logic in the frontend.
+  const months = (label: string, value: number | null) =>
+    field(label, value != null ? t('months_value', { n: value }) : t('not_configured'));
+
   const priceLabel = plan.current_price != null ? `€${parseFloat(plan.current_price).toFixed(2)}` : null;
-  const durationLabel = plan.billing_policy
-    ? fmtBillingInterval(plan.billing_policy.recurring_service_interval, plan.billing_policy.recurring_service_unit)
-    : null;
+
   const billingLabel = plan.billing_policy
     ? `Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`
     : null;
@@ -77,7 +84,6 @@ export function PlanDetailModal({ plan, onClose }: {
           {field(t('details_summary_promotions'), String(plan.promotion_count))}
           {field(t('details_summary_pricing'), priceLabel)}
           {field(t('details_summary_benefits'), String(benefitCount))}
-          {field(t('details_summary_duration'), durationLabel)}
           {field(t('details_summary_billing'), billingLabel)}
           {field(t('details_summary_enrollment'), enrollmentLabel)}
         </div>
@@ -88,7 +94,10 @@ export function PlanDetailModal({ plan, onClose }: {
         {field(t('details_status'), tStatus(plan.lifecycle_status as any))}
         {field(t('details_enrollment_status'), enrollmentLabel)}
         {field(t('label_current_price'), priceLabel)}
-        {field(t('details_duration'), durationLabel)}
+        {months(t('label_free_months'), plan.free_months)}
+        {months(t('label_paid_months'), plan.paid_months)}
+        {months(t('label_pay_beforehand_months'), plan.pay_beforehand_months)}
+        {months(t('label_bonus_months'), plan.bonus_months)}
         {field(t('details_billing_frequency'), billingLabel)}
         {field(t('details_benefits'), String(benefitCount))}
         {field(t('details_promotions'), String(plan.promotion_count))}

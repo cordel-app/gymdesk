@@ -77,11 +77,13 @@ export interface DueAssignmentRow {
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
+  pay_beforehand_months: number | null;
   /** Its Plan's live ones — the fallback for an assignment that captured nothing. */
   plan_free_months: number | null;
   plan_paid_months: number | null;
   plan_bonus_months: number | null;
-  /** 1 when any of the six snapshot columns is set; decides that fallback. */
+  plan_pay_beforehand_months: number | null;
+  /** 1 when any of the seven snapshot columns is set; decides that fallback. */
   has_billing_snapshot: number;
 }
 
@@ -125,8 +127,8 @@ function toDateOnly(v: unknown): string {
  */
 function durationForRow(row: DueAssignmentRow) {
   return Number(row.has_billing_snapshot) === 1
-    ? toPlanDuration(row.free_months, row.paid_months, row.bonus_months)
-    : toPlanDuration(row.plan_free_months, row.plan_paid_months, row.plan_bonus_months);
+    ? toPlanDuration(row.free_months, row.paid_months, row.bonus_months, row.pay_beforehand_months)
+    : toPlanDuration(row.plan_free_months, row.plan_paid_months, row.plan_bonus_months, row.plan_pay_beforehand_months);
 }
 
 /**

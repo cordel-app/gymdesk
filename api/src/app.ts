@@ -72,7 +72,9 @@ import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
 import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
 import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
-import { platformExercisesRouter } from './api/platform-exercises';
+import {
+  PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH, platformExerciseImageBodyParser, platformExercisesRouter,
+} from './api/platform-exercises';
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
@@ -123,12 +125,14 @@ app.use('/webhooks/payment', express.raw({ type: '*/*' }), paymentWebhookRouter)
 // #719: a Gym Exercise image upload carries two PNGs (a 2048×2048 master and
 // its 512×512 thumbnail) as base64 in one JSON body — the two must succeed or
 // fail together — so it is parsed here, with its own limit, before the global
-// parser's 100 kB default would reject it as a bare 413.
-app.use((req, res, next) => (
-  req.method === 'POST' && EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)
-    ? exerciseImageBodyParser(req, res, next)
-    : next()
-));
+// parser's 100 kB default would reject it as a bare 413. #716 gives a Base
+// Exercise the same pair on the platform router, with the same reasoning.
+app.use((req, res, next) => {
+  if (req.method !== 'POST') return next();
+  if (EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return exerciseImageBodyParser(req, res, next);
+  if (PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return platformExerciseImageBodyParser(req, res, next);
+  return next();
+});
 
 // #719 part 2: the same for a video upload — an MP4 and its 512×512 poster in
 // one JSON body, with a limit of its own (EXERCISE_VIDEO_MAX_MB) because an MP4

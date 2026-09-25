@@ -765,6 +765,8 @@ The pattern generalises to a second kind of media on the same record (#719 part 
 
 Deleting stays one rule for all of a record's media: check **every** media reference before removing an object, because two kinds can point at the same one, and keep the other kind's references in the "keep" set when replacing this one.
 
+**The platform's own copy of the same media (#716).** When the platform catalogue a gym imports from needs the same pair, reuse the rules rather than the routes. Three things change and nothing else: the key hangs off `PLATFORM_STORAGE_ROOT` instead of `gyms.storage_folder_prefix` (a `gym_id IS NULL` row has no prefix to hang off), the route sits on the `/platform/*` router behind `requireSuperadmin`, and the ownership test is mirrored — the platform may delete only what is under *its* prefix, never a gym's object. Two rules that look symmetrical are not: the reference check before deleting an object must span **every** tenant, because import copies references and each gym that imported the row points at the platform's own object, and the *validator* is not copied at all (one `validate…Pair()`, two routers), since a second copy of "what is a valid image" is how the two ends drift. Keep each router answering for its own rows — 404 for the other's — so neither can be aimed at the other's folder.
+
 ## Dependency Awareness (shared catalog entities)
 
 Entities referenced by other records (Workout Templates ← Training Plan Templates, Exercises ← Workout Templates) warn the user before edit/delete instead of blocking (#62). Three pieces, all generic — a new catalog entity adopts the pattern by adding one resolver and one route:
