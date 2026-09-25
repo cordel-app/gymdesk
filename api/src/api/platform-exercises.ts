@@ -157,6 +157,9 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           name                  = COALESCE(?, name),
           description           = IF(?, ?, description),
           video_url             = IF(?, ?, video_url),
+          -- #719 part 2: and the video's poster belongs to the video it was
+          -- captured from, so repointing video_url drops it too.
+          video_thumbnail_url   = IF(?, NULL, video_thumbnail_url),
           image_url             = IF(?, ?, image_url),
           -- #719: same rule as the gym-side PUT — a thumbnail belongs to the
           -- master it was made from, so repointing the master drops it. A Base
@@ -176,6 +179,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           name?.trim() ?? null,
           'description' in req.body ? 1 : 0, description ?? null,
           'video_url' in req.body ? 1 : 0, video_url ?? null,
+          'video_url' in req.body ? 1 : 0,
           'image_url' in req.body ? 1 : 0, image_url ?? null,
           'image_url' in req.body ? 1 : 0,
           'min_reps_default' in req.body ? 1 : 0, min_reps_default ?? null,

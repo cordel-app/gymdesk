@@ -45,7 +45,8 @@ import { membershipFeeDriftRouter } from './api/membership-fee-drift';
 import { memberMembershipConfigurationRouter } from './api/member-membership-configuration';
 import { userMembershipServicesRouter } from './api/user-membership-services';
 import {
-  EXERCISE_IMAGE_UPLOAD_PATH, exerciseImageBodyParser, exercisesRouter, musclesRouter,
+  EXERCISE_IMAGE_UPLOAD_PATH, EXERCISE_VIDEO_UPLOAD_PATH,
+  exerciseImageBodyParser, exerciseVideoBodyParser, exercisesRouter, musclesRouter,
 } from './api/exercises';
 import { resultTypesRouter } from './api/result-types';
 import { workoutTemplatesRouter } from './api/workout-templates';
@@ -126,6 +127,15 @@ app.use('/webhooks/payment', express.raw({ type: '*/*' }), paymentWebhookRouter)
 app.use((req, res, next) => (
   req.method === 'POST' && EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)
     ? exerciseImageBodyParser(req, res, next)
+    : next()
+));
+
+// #719 part 2: the same for a video upload — an MP4 and its 512×512 poster in
+// one JSON body, with a limit of its own (EXERCISE_VIDEO_MAX_MB) because an MP4
+// is orders of magnitude larger than a PNG pair.
+app.use((req, res, next) => (
+  req.method === 'POST' && EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)
+    ? exerciseVideoBodyParser(req, res, next)
     : next()
 ));
 

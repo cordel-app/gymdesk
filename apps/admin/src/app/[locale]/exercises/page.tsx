@@ -14,7 +14,9 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ExerciseImageField } from '@/components/ExerciseImageField';
+import { ExerciseVideoField } from '@/components/ExerciseVideoField';
 import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
+import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { ImportExercisesModal } from './ImportExercisesModal';
@@ -26,7 +28,8 @@ interface ExerciseMuscle { key: string; role: MuscleRole }
 interface ResultType { id: number; name: string; slug: string }
 interface Exercise {
   id: number; name: string; description: string | null;
-  video_url: string | null;
+  /** #719: the video reference, and its stored poster when the gym uploaded one. */
+  video_url: string | null; video_thumbnail_url: string | null;
   /** #719: the master reference, and the 512×512 thumbnail when the gym uploaded one. */
   image_url: string | null; image_thumbnail_url: string | null;
   min_reps_default: number | null; max_reps_default: number | null;
@@ -109,6 +112,8 @@ export default function ExercisesPage() {
   const [addError, setAddError] = useState<string | null>(null);
   // #719: the image picked in the Add modal, uploaded once the exercise exists.
   const [stagedImage, setStagedImage] = useState<PreparedExerciseImage | null>(null);
+  // #719 part 2: and the video picked there, uploaded the same way.
+  const [stagedVideo, setStagedVideo] = useState<PreparedExerciseVideo | null>(null);
 
   // Details, delete, dependency
   const [detailFor, setDetailFor] = useState<Exercise | null>(null);
@@ -360,11 +365,19 @@ export default function ExercisesPage() {
           toast(err.message ?? t('image_error_upload_failed'));
         }
       }
+      if (stagedVideo) {
+        try {
+          await apiFetch(`/exercises/${created.id}/video`, { method: 'POST', body: JSON.stringify(stagedVideo) });
+        } catch (err: any) {
+          toast(err.message ?? t('video_error_upload_failed'));
+        }
+      }
       setAddModalOpen(false);
       setAddForm(emptyAddForm());
       setAddMuscles(new Map());
       setAddResultTypeIds(new Set());
       setStagedImage(null);
+      setStagedVideo(null);
       load();
     } catch (err: any) {
       setAddError(err.message ?? t('error_generic'));
@@ -491,19 +504,35 @@ export default function ExercisesPage() {
             <label style={inlineLabelSt}>{t('label_video_url')}</label>
             <input type="url" value={editForm.video_url} onChange={(e) => setEditForm({ ...editForm, video_url: e.target.value })} style={inlineInputSt} />
           </div>
-          <div>
-            <label style={inlineLabelSt}>{t('label_image')}</label>
-            {/* #719: the image is not part of this form. Uploading or removing
-                acts on the exercise straight away, so cancelling the editor
-                neither undoes it nor re-applies an image that was removed. */}
-            <ExerciseImageField
-              exerciseId={ex.id}
-              imageUrl={ex.image_url}
-              thumbnailUrl={ex.image_thumbnail_url}
-              onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
-              disabled={!canWrite}
-              disabledTitle={readOnlyTitle}
-            />
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            <div>
+              <label style={inlineLabelSt}>{t('label_image')}</label>
+              {/* #719: the image is not part of this form. Uploading or removing
+                  acts on the exercise straight away, so cancelling the editor
+                  neither undoes it nor re-applies an image that was removed. */}
+              <ExerciseImageField
+                exerciseId={ex.id}
+                imageUrl={ex.image_url}
+                thumbnailUrl={ex.image_thumbnail_url}
+                onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
+                disabled={!canWrite}
+                disabledTitle={readOnlyTitle}
+              />
+            </div>
+            <div>
+              <label style={inlineLabelSt}>{t('label_video')}</label>
+              {/* #719 part 2: the uploaded video, likewise acted on directly.
+                  The URL field above stays for a YouTube or external link —
+                  setting one drops the poster, which belonged to the MP4. */}
+              <ExerciseVideoField
+                exerciseId={ex.id}
+                videoUrl={ex.video_url}
+                posterUrl={ex.video_thumbnail_url}
+                onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
+                disabled={!canWrite}
+                disabledTitle={readOnlyTitle}
+              />
+            </div>
           </div>
         </div>
 
@@ -565,6 +594,15 @@ export default function ExercisesPage() {
           <div style={subSectionSt}>
             <p style={sectionLabelSt}>{t('section_media')}</p>
             {ex.video_url && <p style={{ margin: '0 0 4px', fontSize: 13 }}><strong>{t('label_video_url')}:</strong> {ex.video_url}</p>}
+            {ex.video_thumbnail_url && (
+              <div style={{ marginBottom: 8 }}>
+                <strong style={{ fontSize: 13 }}>{t('label_video')}:</strong>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {/* #719 §17: the stored poster — the MP4 itself is never
+                    downloaded to draw a preview. */}
+                <img src={ex.video_thumbnail_url} alt="" loading="lazy" style={{ display: 'block', marginTop: 4, maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'cover' }} />
+              </div>
+            )}
             {ex.image_url && (
               <div>
                 <strong style={{ fontSize: 13 }}>{t('label_image')}:</strong>
@@ -681,7 +719,7 @@ export default function ExercisesPage() {
             allLabel={tStatus('all')}
           />
           <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import')}</button>
-          <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setStagedImage(null); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
+          <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setStagedImage(null); setStagedVideo(null); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
         </div>
       </div>
 
@@ -703,7 +741,7 @@ export default function ExercisesPage() {
         saving={addSaving}
         cancelLabel={t('cancel')}
         saveLabel={addSaving ? t('saving') : t('modal_add')}
-        onCancel={() => { setAddModalOpen(false); setStagedImage(null); setAddError(null); }}
+        onCancel={() => { setAddModalOpen(false); setStagedImage(null); setStagedVideo(null); setAddError(null); }}
         onSave={handleAdd}
       >
         <FormLabel>{t('label_name')} *</FormLabel>
@@ -720,6 +758,14 @@ export default function ExercisesPage() {
           exerciseId={null}
           imageUrl={null}
           onStaged={setStagedImage}
+        />
+        <FormLabel>{t('label_video')}</FormLabel>
+        {/* #719 part 2: same staging as the image — the pair is posted to
+            `POST /exercises/:id/video` the moment the exercise exists. */}
+        <ExerciseVideoField
+          exerciseId={null}
+          videoUrl={null}
+          onStaged={setStagedVideo}
         />
         <FormLabel>{t('label_min_reps_default')}</FormLabel>
         <FormInput type="number" min="0" value={addForm.min_reps_default} onChange={(e) => setAddForm({ ...addForm, min_reps_default: e.target.value })} />

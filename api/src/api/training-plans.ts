@@ -139,7 +139,7 @@ export const PLAN_TREE_SELECT = `
                 'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                   SELECT JSON_OBJECT(
                       'id', we.id, 'position', we.position, 'exercise_id', we.exercise_id, 'exercise_name', e.name,
-                      'exercise_image_url', e.image_url, 'exercise_image_thumbnail_url', e.image_thumbnail_url, 'exercise_video_url', e.video_url,
+                      'exercise_image_url', e.image_url, 'exercise_image_thumbnail_url', e.image_thumbnail_url, 'exercise_video_url', e.video_url, 'exercise_video_thumbnail_url', e.video_thumbnail_url,
                       'min_reps', we.min_reps, 'max_reps', we.max_reps, 'sets', we.sets,
                       'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes,
                       'result_type_id', we.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,
@@ -445,7 +445,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
        parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
       `SELECT we.*, e.name AS exercise_name,
-              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url
+              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       (id) => [id],
     );
@@ -496,7 +496,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
       `SELECT we.*, e.name AS exercise_name,
-              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url
+              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [exId],
     );
@@ -637,7 +637,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     });
     const { rows } = await db.query(
       `SELECT we.*, e.name AS exercise_name,
-              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url
+              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [exId],
     );
@@ -859,7 +859,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     if (!insertId) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
       `SELECT we.*, e.name AS exercise_name,
-              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url
+              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [insertId],
     );

@@ -9,7 +9,8 @@ export interface HierExercise {
   // show it without a lookup per exercise. #719 added the 512×512 thumbnail the
   // row actually draws; the master stays for the views that show it larger.
   exercise_image_url: string | null; exercise_image_thumbnail_url?: string | null;
-  exercise_video_url: string | null;
+  // #719 part 2 added the stored poster the row draws instead of the MP4.
+  exercise_video_url: string | null; exercise_video_thumbnail_url?: string | null;
   min_reps: number | null; max_reps: number | null; sets: number | null;
   rest_seconds: number | null; tempo: string | null;
   result_type_id: number | null; result_type_slug: string | null; result_type_name: string | null;

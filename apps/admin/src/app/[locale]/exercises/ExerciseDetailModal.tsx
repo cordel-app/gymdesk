@@ -11,6 +11,8 @@ interface ExerciseDetail {
   name: string;
   description: string | null;
   video_url: string | null;
+  /** #719 part 2: the poster, when the gym uploaded an MP4. */
+  video_thumbnail_url: string | null;
   image_url: string | null;
   /** #719: the 512×512 companion, when the gym uploaded one. */
   image_thumbnail_url: string | null;
@@ -91,6 +93,14 @@ export function ExerciseDetailModal({ exerciseId, exerciseName, onClose }: {
                 ? /* eslint-disable-next-line @next/next/no-img-element */
                   /* #719 §17: the thumbnail is what a 160px box needs. */
                   <img src={detail.image_thumbnail_url ?? detail.image_url} alt="" loading="lazy" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
+                : <span style={{ fontSize: 13, color: '#333' }}>—</span>}
+            </div>
+            <div style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+              <span style={{ width: 180, flexShrink: 0, fontSize: 13, color: '#888', fontWeight: 500 }}>{t('label_video')}</span>
+              {detail.video_thumbnail_url
+                ? /* eslint-disable-next-line @next/next/no-img-element */
+                  /* #719 part 2 §17: the stored poster, never the MP4. */
+                  <img src={detail.video_thumbnail_url} alt="" loading="lazy" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'cover' }} />
                 : <span style={{ fontSize: 13, color: '#333' }}>—</span>}
             </div>
 
