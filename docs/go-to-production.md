@@ -119,6 +119,14 @@ Tick items off in the PR that completes them.
       script renders a consistent stylized form per food, not a photograph of it — supply real
       artwork with `--from`, or replace individual foods later with **Upload Image** on the expanded
       card (512×512 transparent PNG).
+- [ ] **Upload the Base Exercise images** (#716). Unlike the base foods above there is deliberately
+      no generator and no backfill script: the ticket's own answer put generating the artwork out of
+      scope, so every Base Exercise has `image_url = NULL` and its expanded card reads "No image yet"
+      until an administrator uploads a master on Cordel → Base Exercises (**Upload Image**, a
+      2048×2048 transparent PNG — the 512×512 thumbnail is made from it in the browser). The upload
+      needs the `CLOUDFLARE_R2_*` variables set; without them the route answers 503 and nothing is
+      written. Nothing falls back to another image, so a Gym Exercise imported before its base
+      exercise has artwork carries no image either — re-importing (#719 part 3) is what picks it up.
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be
