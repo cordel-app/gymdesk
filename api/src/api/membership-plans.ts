@@ -30,6 +30,9 @@ interface PlanRow {
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
+  // #635 stage 13 — Pre-paid Duration: how many of `paid_months` are already
+  // paid up front (the Promotion's own `pay_beforehand_months`, migration 189).
+  pay_beforehand_months: number | null;
   created_by: number | null;
   created_by_name?: string | null;
   modified_at: string | null;
@@ -63,14 +66,12 @@ interface BillingPolicyRow {
   id: number;
   gym_id: string;
   membership_plan_id: number;
-  initial_billing_interval: number | null;
-  initial_billing_unit: string | null;
+  // #635 stage 13 (migration 189): the Initial Billing / Initial Service /
+  // Recurring Service pairs are gone — nothing billed off them. What is left is
+  // the Billing frequency, presented inside the Plan's BILLING & DURATION
+  // section, and Auto-renew beside it.
   recurring_billing_interval: number | null;
   recurring_billing_unit: string | null;
-  initial_service_interval: number | null;
-  initial_service_unit: string | null;
-  recurring_service_interval: number | null;
-  recurring_service_unit: string | null;
   auto_renew: boolean;
 }
 
@@ -110,11 +111,14 @@ export const membershipPlansRouter = Router();
 
 const VALID_MEMBER_LIMIT = ['1', '2', 'family'];
 const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'];
+// The `billing_policies.recurring_billing_unit` ENUM (migration 060) — the one
+// cadence a Plan still carries after stage 13 (migration 189).
+const BILLING_UNITS = ['day', 'week', 'month', 'year'];
 
 // #635 §7: Billing & Duration, with the Promotion's semantics (migration 102) —
 // whole months, never negative. Sent together by the section's own Save, and an
 // empty field clears the value back to "not configured" rather than writing 0.
-const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
+const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months', 'pay_beforehand_months'] as const;
 
 /** null = absent (leave as is), or a parsed non-negative integer. Throws the error string for a bad value. */
 function parseDurationMonths(raw: unknown, field: string): number | null | string {
@@ -395,6 +399,24 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
     if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
     durations[field] = parsed;
   }
+  // #635 stage 13: the Pre-paid Duration is a slice of the Paid Duration, the
+  // Promotion's own 0..paid_months bound (`validatePayBeforehandMonths`).
+  // Checked against the plan as it will stand, because either field can be sent
+  // on its own and either one alone can break the bound.
+  if ('pay_beforehand_months' in req.body || 'paid_months' in req.body) {
+    const { rows: current } = await db.query(
+      `SELECT paid_months, pay_beforehand_months FROM membership_plans
+       WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+      [req.params.id, gymId],
+    );
+    if (!current[0]) return res.status(404).json({ error: 'Plan not found' });
+    const nextPaid = 'paid_months' in req.body ? durations.paid_months : current[0].paid_months;
+    const nextPrepaid = 'pay_beforehand_months' in req.body
+      ? durations.pay_beforehand_months : current[0].pay_beforehand_months;
+    if (nextPrepaid != null && Number(nextPrepaid) > Number(nextPaid ?? 0)) {
+      return res.status(400).json({ error: 'pay_beforehand_months cannot exceed paid_months' });
+    }
+  }
   // Shrinking the cap must not orphan Members already covered by an active
   // Membership on this plan (#374 — the limit is enforced server-side).
   if (member_limit && member_limit !== 'family') {
@@ -429,6 +451,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         free_months       = IF(?, ?, free_months),
         paid_months       = IF(?, ?, paid_months),
         bonus_months      = IF(?, ?, bonus_months),
+        pay_beforehand_months = IF(?, ?, pay_beforehand_months),
         modified_at       = NOW(),
         modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -446,6 +469,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         'free_months' in req.body ? 1 : 0, durations.free_months,
         'paid_months' in req.body ? 1 : 0, durations.paid_months,
         'bonus_months' in req.body ? 1 : 0, durations.bonus_months,
+        'pay_beforehand_months' in req.body ? 1 : 0, durations.pay_beforehand_months,
         callerMemberId,
         req.params.id, gymId,
       ],
@@ -601,12 +625,13 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       const { insertId } = await tx.query(
         `INSERT INTO membership_plans
          (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior,
-          free_months, paid_months, bonus_months, created_by)
-         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?, ?, ?, ?)`,
+          free_months, paid_months, bonus_months, pay_beforehand_months, created_by)
+         VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, orig.tax_rate_id, orig.tax_behavior,
          // #635: Billing & Duration is part of the plan's commercial config, so
          // a copy that dropped it would quietly differ from its original.
-         orig.free_months ?? null, orig.paid_months ?? null, orig.bonus_months ?? null, callerMemberId],
+         orig.free_months ?? null, orig.paid_months ?? null, orig.bonus_months ?? null,
+         orig.pay_beforehand_months ?? null, callerMemberId],
       );
 
       // Copy billing policy
@@ -618,15 +643,9 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
         const b = bp[0];
         await tx.query(
           `INSERT INTO billing_policies
-           (gym_id, membership_plan_id, initial_billing_interval, initial_billing_unit,
-            recurring_billing_interval, recurring_billing_unit,
-            initial_service_interval, initial_service_unit,
-            recurring_service_interval, recurring_service_unit, auto_renew)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, insertId, b.initial_billing_interval, b.initial_billing_unit,
-           b.recurring_billing_interval, b.recurring_billing_unit,
-           b.initial_service_interval, b.initial_service_unit,
-           b.recurring_service_interval, b.recurring_service_unit, b.auto_renew],
+           (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit, auto_renew)
+           VALUES (?, ?, ?, ?, ?)`,
+          [gymId, insertId, b.recurring_billing_interval, b.recurring_billing_unit, b.auto_renew],
         );
       }
 
@@ -756,37 +775,29 @@ membershipPlansRouter.get('/:id/billing-policy', async (req, res) => {
 membershipPlansRouter.put('/:id/billing-policy', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-  const {
-    initial_billing_interval, initial_billing_unit,
-    recurring_billing_interval, recurring_billing_unit,
-    initial_service_interval, initial_service_unit,
-    recurring_service_interval, recurring_service_unit,
-    auto_renew,
-  } = req.body;
+  const { recurring_billing_interval, recurring_billing_unit, auto_renew } = req.body;
+  // #635 stage 13: the Billing frequency is now the section's only cadence, so
+  // it is validated here rather than left to the column defaults — a half-sent
+  // or nonsense pair used to reach the DB and either throw or quietly store a
+  // cadence nobody configured, and this pair is what every assignment of the
+  // plan snapshots and bills on.
+  const interval = Number(recurring_billing_interval);
+  if (!Number.isInteger(interval) || interval < 1) {
+    return res.status(400).json({ error: 'recurring_billing_interval must be a positive integer' });
+  }
+  if (!BILLING_UNITS.includes(recurring_billing_unit)) {
+    return res.status(400).json({ error: `recurring_billing_unit must be one of: ${BILLING_UNITS.join(', ')}` });
+  }
   try {
     await db.query(
       `INSERT INTO billing_policies
-       (gym_id, membership_plan_id, initial_billing_interval, initial_billing_unit,
-        recurring_billing_interval, recurring_billing_unit,
-        initial_service_interval, initial_service_unit,
-        recurring_service_interval, recurring_service_unit, auto_renew)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit, auto_renew)
+       VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-        initial_billing_interval    = VALUES(initial_billing_interval),
-        initial_billing_unit        = VALUES(initial_billing_unit),
         recurring_billing_interval  = VALUES(recurring_billing_interval),
         recurring_billing_unit      = VALUES(recurring_billing_unit),
-        initial_service_interval    = VALUES(initial_service_interval),
-        initial_service_unit        = VALUES(initial_service_unit),
-        recurring_service_interval  = VALUES(recurring_service_interval),
-        recurring_service_unit      = VALUES(recurring_service_unit),
         auto_renew                  = VALUES(auto_renew)`,
-      [gymId, req.params.id,
-       initial_billing_interval, initial_billing_unit,
-       recurring_billing_interval, recurring_billing_unit,
-       initial_service_interval, initial_service_unit,
-       recurring_service_interval, recurring_service_unit,
-       auto_renew ?? true],
+      [gymId, req.params.id, interval, recurring_billing_unit, auto_renew ?? true],
     );
     const { rows } = await db.query(
       'SELECT * FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',

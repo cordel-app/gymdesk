@@ -20,7 +20,7 @@ import type {
  * decides what it bills is copied onto it at assignment time:
  *
  *     Membership Plan ──assign──▶ Assigned Plan snapshot
- *                                   ├── Billing & Duration (free/paid/bonus)
+ *                                   ├── Billing & Duration (free/prepaid/paid/bonus)
  *                                   ├── billing cadence (interval + unit)
  *                                   ├── regular Membership Fee
  *                                   └── One-off / Session / Period Benefits
@@ -79,6 +79,8 @@ export interface AssignedPlanBillingSnapshot {
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
+  /** Stage 13 — of `paid_months`, how many were already paid up front. */
+  pay_beforehand_months: number | null;
   recurring_billing_interval: number | null;
   recurring_billing_unit: string | null;
   membership_fee_price: number | null;
@@ -143,7 +145,7 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
   if (membershipPlanId == null) return;
 
   const { rows: planRows } = await tx.query(
-    `SELECT p.free_months, p.paid_months, p.bonus_months,
+    `SELECT p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
             bp.recurring_billing_interval, bp.recurring_billing_unit
      FROM membership_plans p
      LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = p.gym_id
@@ -154,11 +156,12 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
 
   await tx.query(
     `UPDATE user_memberships
-     SET free_months = ?, paid_months = ?, bonus_months = ?,
+     SET free_months = ?, paid_months = ?, bonus_months = ?, pay_beforehand_months = ?,
          recurring_billing_interval = ?, recurring_billing_unit = ?, membership_fee_price = ?
      WHERE id = ? AND gym_id = ?`,
     [
       plan.free_months ?? null, plan.paid_months ?? null, plan.bonus_months ?? null,
+      plan.pay_beforehand_months ?? null,
       plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
       membershipFeePrice ?? null,
       userMembershipId, gymId,
@@ -185,7 +188,7 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
 }
 
 /**
- * True when this assignment already owns a snapshot — any of the six billing
+ * True when this assignment already owns a snapshot — any of the seven billing
  * columns set, or any benefit row in any of the three sections. Exactly the
  * condition `snapshot_captured` reports and the one stage 3's fallbacks key
  * off, read inside the caller's transaction so an edit can decide whether it
@@ -197,6 +200,7 @@ export async function hasAssignedPlanSnapshot(tx: Tx, gymId: string, umId: numbe
        SELECT 1 FROM user_memberships
         WHERE id = ? AND gym_id = ?
           AND (free_months IS NOT NULL OR paid_months IS NOT NULL OR bonus_months IS NOT NULL
+               OR pay_beforehand_months IS NOT NULL
                OR recurring_billing_interval IS NOT NULL OR recurring_billing_unit IS NOT NULL
                OR membership_fee_price IS NOT NULL)
      ) ${CATEGORIES.map((c) => `OR EXISTS(
@@ -240,7 +244,7 @@ export async function loadAssignedPlanSnapshot(
 ): Promise<AssignedPlanSnapshot> {
   const [{ rows: umRows }, ...benefitResults] = await Promise.all([
     db.query(
-      `SELECT free_months, paid_months, bonus_months,
+      `SELECT free_months, paid_months, bonus_months, pay_beforehand_months,
               recurring_billing_interval, recurring_billing_unit, membership_fee_price
        FROM user_memberships WHERE id = ? AND gym_id = ?`,
       [umId, gymId],
@@ -258,6 +262,7 @@ export async function loadAssignedPlanSnapshot(
     free_months: um.free_months ?? null,
     paid_months: um.paid_months ?? null,
     bonus_months: um.bonus_months ?? null,
+    pay_beforehand_months: um.pay_beforehand_months ?? null,
     recurring_billing_interval: um.recurring_billing_interval ?? null,
     recurring_billing_unit: um.recurring_billing_unit ?? null,
     membership_fee_price: um.membership_fee_price != null ? Number(um.membership_fee_price) : null,
@@ -382,7 +387,7 @@ function positiveQuantity(v: unknown): number {
  * simulates what it is actually entitled to rather than nothing.
  *
  * `hasBillingSnapshot` comes from the caller's own `user_memberships` row (any
- * of the six snapshot columns set): an assignment that captured a cadence but
+ * of the seven snapshot columns set): an assignment that captured a cadence but
  * whose Plan carried no benefits must read back as "no benefits", not fall
  * through to a Plan that has gained some since.
  */

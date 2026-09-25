@@ -72,11 +72,8 @@ async function createPlan(duration?: { free?: number; paid?: number; bonus?: num
   );
   await db.query(
     `INSERT INTO billing_policies
-       (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit,
-        initial_billing_interval, initial_billing_unit,
-        initial_service_interval, initial_service_unit,
-        recurring_service_interval, recurring_service_unit)
-     VALUES (?, ?, 1, 'month', 1, 'month', 1, 'month', 1, 'month')`,
+       (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+     VALUES (?, ?, 1, 'month')`,
     [gymId, planId],
   );
   return planId;
@@ -84,7 +81,7 @@ async function createPlan(duration?: { free?: number; paid?: number; bonus?: num
 
 interface AssignmentOptions {
   /** The assignment's own frozen Billing & Duration; omitted = captured nothing. */
-  snapshot?: { free?: number | null; paid?: number | null; bonus?: number | null; fee?: number };
+  snapshot?: { free?: number | null; paid?: number | null; bonus?: number | null; prepaid?: number | null; fee?: number };
   nextBillingDate: string;
   startsAt?: string;
 }
@@ -95,11 +92,13 @@ async function createDueAssignment(
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price,
-        next_billing_date, free_months, paid_months, bonus_months, membership_fee_price)
-     VALUES (?, ?, ?, 'active', ?, '29.99', '29.99', ?, ?, ?, ?, ?)`,
+        next_billing_date, free_months, paid_months, bonus_months, pay_beforehand_months,
+        membership_fee_price)
+     VALUES (?, ?, ?, 'active', ?, '29.99', '29.99', ?, ?, ?, ?, ?, ?)`,
     [
       gymId, memberId, planId, opts.startsAt ?? '2000-01-01', opts.nextBillingDate,
       opts.snapshot?.free ?? null, opts.snapshot?.paid ?? null, opts.snapshot?.bonus ?? null,
+      opts.snapshot?.prepaid ?? null,
       opts.snapshot ? (opts.snapshot.fee ?? 29.99) : null,
     ],
   );
@@ -197,6 +196,43 @@ describe('POST /billing/run — a waived cycle is recorded, not charged', () => 
     expect(await eventsFor(umId)).toEqual([
       { event_type: 'waived_billing', amount: '0.00', notes: 'bonus_plan' },
     ]);
+  });
+
+  // #635 stage 13 — a Pre-paid month is one of the Paid Duration's months that
+  // was already paid up front, so the run must charge nothing for it and must
+  // not call the provider, exactly as for a free or bonus cycle.
+  it('waives a cycle inside the Pre-paid Duration', async () => {
+    const memberId = await createMember();
+    const planId = await createPlan();
+    const umId = await createDueAssignment(memberId, planId, {
+      snapshot: { free: 0, paid: 3, prepaid: 2 }, nextBillingDate: '2000-01-15',
+    });
+
+    await runBilling();
+
+    expect(await eventsFor(umId)).toEqual([
+      { event_type: 'waived_billing', amount: '0.00', notes: 'prepaid_plan' },
+    ]);
+    const { rows: txs } = await db.query(
+      'SELECT id FROM payment_requests WHERE user_membership_id = ?', [umId],
+    );
+    expect(txs).toHaveLength(0);
+    expect(await scheduleFor(umId)).toMatchObject({
+      next_billing_date: '2000-02-15', last_billed_at: null,
+    });
+  });
+
+  it('charges a paid cycle the Pre-paid Duration no longer covers', async () => {
+    const memberId = await createMember();
+    const planId = await createPlan();
+    const umId = await createDueAssignment(memberId, planId, {
+      // Prepaid covers 2000-01-01 .. 2000-02-29; this cycle is the month after.
+      snapshot: { free: 0, paid: 3, prepaid: 2 }, nextBillingDate: '2000-03-15',
+    });
+
+    await runBilling();
+
+    expect((await eventsFor(umId)).map((e: any) => e.event_type)).not.toContain('waived_billing');
   });
 
   it('charges the agreed price once the Free Period is over', async () => {

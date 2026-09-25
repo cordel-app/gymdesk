@@ -47,11 +47,12 @@ const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, loadLocale(c)])) 
   Messages
 >;
 
-const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
+// #635 stage 13 added the fourth field, Pre-paid Duration.
+const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
 const BENEFIT_SECTIONS = ['oneoff', 'session', 'periodical'] as const;
 
 describe('Assigned Plan: Billing & Duration (#635 §7/§9)', () => {
-  it('renders its own section with Free Period, Paid Duration and Bonus Duration', () => {
+  it('renders its own section with Free Period, Paid, Pre-paid and Bonus Duration', () => {
     expect(src).toContain('section_billing_duration');
     for (const field of DURATION_FIELDS) {
       expect(src, `${field} missing from DURATION_FIELDS`).toMatch(
@@ -64,6 +65,13 @@ describe('Assigned Plan: Billing & Duration (#635 §7/§9)', () => {
     for (const key of ['label_billing_interval', 'label_billing_unit', 'label_membership_fee']) {
       expect(src, `the section does not render "${key}"`).toContain(key);
     }
+  });
+
+  // Stage 13: the Pre-paid Duration is sent like the other three — blank means
+  // "not configured", which the API stores as NULL and reads differently from 0.
+  it('sends the Pre-paid Duration, blank included', () => {
+    expect(src).toContain('pay_beforehand_months: durationForm.pay_beforehand_months');
+    expect(src).toMatch(/pay_beforehand_months[\s\S]{0,80}\? null : Number\(durationForm\.pay_beforehand_months\)/);
   });
 
   it('saves it to the assignment, never to the Membership Plan (§15)', () => {
@@ -129,6 +137,7 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
 describe('Assigned Plan configuration: locales', () => {
   const REQUIRED_KEYS = [
     'section_configuration', 'section_billing_duration',
+    'label_pay_beforehand_months',
     'label_free_months', 'label_paid_months', 'label_bonus_months',
     'label_billing_interval', 'label_billing_unit', 'label_membership_fee',
     'months_value', 'not_configured', 'snapshot_edit_hint',

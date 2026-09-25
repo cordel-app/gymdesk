@@ -114,11 +114,12 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
               ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
               um.final_price, um.membership_fee_price, um.base_price,
               um.discount_reason, um.discount_expires_at,
-              um.free_months, um.paid_months, um.bonus_months,
+              um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
               p.free_months AS plan_free_months,
               p.paid_months AS plan_paid_months,
               p.bonus_months AS plan_bonus_months,
-              (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+              p.pay_beforehand_months AS plan_pay_beforehand_months,
+              (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
                OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
                OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
               ) AS has_billing_snapshot,

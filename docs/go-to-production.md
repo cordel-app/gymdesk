@@ -281,6 +281,20 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       Charge Benefits configured. If any gym still has rows when this ships, capture
       `SELECT * FROM plan_charge_benefits` and `… FROM user_membership_charge_benefits`
       first — the drop is not recoverable from the migration alone.
+- [ ] **Migration 189 must run *after* the API build that stops reading the retired
+      billing pairs** (#635 stage 13): it `DROP`s `billing_policies.initial_billing_*`,
+      `initial_service_*` and `recurring_service_*`. Run it first and the previous build
+      500s with `ER_BAD_FIELD_ERROR` on `GET`/`PUT /membership-plans/:id/billing-policy`,
+      on the Plans list (every plan embeds its policy) and on duplicating a plan. Deploy
+      the API first — it selects `*` and writes only the surviving
+      `recurring_billing_*` + `auto_renew` — then migrate, in that order.
+- [ ] **Migration 189 drops configured cadences with no archive** (#635 stage 13): nothing
+      bills off the three pairs (the Plans editor was their only reader), so nothing a
+      member is charged changes — but a gym that had set a non-default Initial Billing,
+      Initial Service or Recurring Service loses those numbers, and `down()` restores the
+      columns at their migration-060 defaults (1 month each), not at what they held. If
+      any environment has meaningful values when this ships, capture
+      `SELECT * FROM billing_policies` first.
 - [ ] **Migration 179 must run *after* the API build that stops reading the Promotion
       benefit tables** (#635 stage 5): it `DROP`s `promotion_charge_benefits`,
       `promotion_period_benefits` and `promotion_included_benefits`. Run it first and the

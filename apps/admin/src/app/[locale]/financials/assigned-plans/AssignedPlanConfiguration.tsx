@@ -35,7 +35,9 @@ import type { AssignedPlanSnapshot, AssignedPlanSnapshotBenefit } from './types'
 // configuration is read-only.
 const EDITABLE_STATUSES = ['draft', 'awaiting_payment', 'active', 'paused'];
 
-const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
+// Stage 13: Pre-paid Duration beside the Paid Duration it is a slice of —
+// the same four fields, in the same order, as the Plan's own section.
+const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
 type BenefitSection = 'oneoff' | 'session' | 'periodical';
@@ -57,6 +59,7 @@ const BENEFIT_SECTIONS: {
 interface DurationForm {
   free_months: string;
   paid_months: string;
+  pay_beforehand_months: string;
   bonus_months: string;
   recurring_billing_interval: string;
   recurring_billing_unit: string;
@@ -138,6 +141,7 @@ export function AssignedPlanConfiguration({
     setDurationForm({
       free_months: numField(snapshot.free_months),
       paid_months: numField(snapshot.paid_months),
+      pay_beforehand_months: numField(snapshot.pay_beforehand_months),
       bonus_months: numField(snapshot.bonus_months),
       recurring_billing_interval: numField(snapshot.recurring_billing_interval),
       recurring_billing_unit: snapshot.recurring_billing_unit ?? '',
@@ -169,6 +173,8 @@ export function AssignedPlanConfiguration({
         body: JSON.stringify({
           free_months: durationForm.free_months === '' ? null : Number(durationForm.free_months),
           paid_months: durationForm.paid_months === '' ? null : Number(durationForm.paid_months),
+          pay_beforehand_months: durationForm.pay_beforehand_months === ''
+            ? null : Number(durationForm.pay_beforehand_months),
           bonus_months: durationForm.bonus_months === '' ? null : Number(durationForm.bonus_months),
           recurring_billing_interval: durationForm.recurring_billing_interval === ''
             ? null : Number(durationForm.recurring_billing_interval),
@@ -219,7 +225,7 @@ export function AssignedPlanConfiguration({
       <SectionHeader title={t('section_billing_duration')} action={editing === 'billing' ? null : editButton(openDurationEdit)} />
       {editing === 'billing' && durationForm ? (
         <div style={{ margin: '6px 0 14px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
             {DURATION_FIELDS.map((field) => (
               <div key={field}>
                 <label style={labelSt}>{t(`label_${field}` as any)}</label>

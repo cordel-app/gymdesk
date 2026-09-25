@@ -79,11 +79,8 @@ describe('GET /payment-page/token/:token', () => {
     chargeTypeId = await getChargeTypeId();
     await db.query(
       `INSERT INTO billing_policies
-         (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit,
-          initial_billing_interval, initial_billing_unit,
-          initial_service_interval, initial_service_unit,
-          recurring_service_interval, recurring_service_unit)
-       VALUES (?, ?, 1, 'month', 1, 'month', 1, 'month', 1, 'month')`,
+         (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+       VALUES (?, ?, 1, 'month')`,
       [gymId, planId],
     );
   });
