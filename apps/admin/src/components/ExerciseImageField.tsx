@@ -58,7 +58,11 @@ export function ExerciseImageField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<'upload' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Staged mode only: a preview of the file the parent will upload after create.
+  // Staged mode only: the prepared thumbnail, as its own `data:image/png`
+  // bytes. Not an object URL minted from the picked file: the frame draws the
+  // 512×512 companion rather than the 2048 master (§17), it is exactly what the
+  // upload will carry, there is nothing to revoke, and no string the page read
+  // out of the file input reaches the DOM (CodeQL `js/xss-through-dom`).
   const [stagedPreview, setStagedPreview] = useState<string | null>(null);
 
   const notConfigured = activeGym != null && !activeGym.storage_configured;
@@ -93,10 +97,7 @@ export function ExerciseImageField({
         return;
       }
       if (exerciseId == null) {
-        setStagedPreview((previous) => {
-          if (previous) URL.revokeObjectURL(previous);
-          return URL.createObjectURL(file);
-        });
+        setStagedPreview(`data:image/png;base64,${prepared.thumbnail}`);
         onStaged?.(prepared);
         return;
       }
@@ -115,10 +116,7 @@ export function ExerciseImageField({
   async function handleRemove() {
     setError(null);
     if (exerciseId == null) {
-      setStagedPreview((previous) => {
-        if (previous) URL.revokeObjectURL(previous);
-        return null;
-      });
+      setStagedPreview(null);
       onStaged?.(null);
       return;
     }

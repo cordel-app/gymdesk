@@ -153,6 +153,16 @@ describe('ExerciseImageField', () => {
     expect(componentSrc).toContain('const hasImage = preview != null');
   });
 
+  it('previews a staged pick as its own prepared thumbnail, not the picked file', () => {
+    expect(componentSrc).toContain('setStagedPreview(`data:image/png;base64,${prepared.thumbnail}`)');
+    // No object URL is minted from the file the input handed over: the frame
+    // draws the 512×512 companion (§17) — the very bytes the upload carries —
+    // so nothing read out of the file input reaches the DOM, and there is no
+    // object URL left to revoke.
+    expect(componentSrc).not.toContain('createObjectURL');
+    expect(componentSrc).not.toContain('revokeObjectURL');
+  });
+
   it('resolves no media of its own — no Base Exercise fallback (§13)', () => {
     expect(componentSrc).not.toMatch(/cordel|base_exercise|cloned_from_id/);
   });
