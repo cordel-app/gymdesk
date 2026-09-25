@@ -53,6 +53,7 @@ const SIMULATION_KEYS = [
   'billing_simulation_truncated',
   // #635 stage 8 — the Plan's own Billing & Duration periods.
   'billing_simulation_plan_free',
+  'billing_simulation_plan_prepaid',
   'billing_simulation_plan_paid',
   'billing_simulation_plan_bonus',
   'billing_simulation_plan_regular',
@@ -112,6 +113,8 @@ describe('Member Billing Simulation (#629)', () => {
     expect(simulationSrc).toContain('PLAN_PERIOD_STATUS_KEY');
     expect(simulationSrc).toMatch(/free_plan:\s*'billing_simulation_plan_free'/);
     expect(simulationSrc).toMatch(/bonus_plan:\s*'billing_simulation_plan_bonus'/);
+    // #635 stage 13: a pre-paid month reads as pre-paid, not as a waiver.
+    expect(simulationSrc).toMatch(/prepaid_plan:\s*'billing_simulation_plan_prepaid'/);
   });
 
   it('derives no Billing & Duration period of its own', () => {

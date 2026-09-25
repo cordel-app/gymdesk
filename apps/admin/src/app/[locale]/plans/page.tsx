@@ -26,16 +26,14 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// #635 stage 13 (migration 189): Initial Billing, Initial Service and
+// Recurring Service are gone — nothing billed off them. What survives is the
+// Billing frequency, which the BILLING & DURATION section now carries, and
+// Auto-renew beside it.
 interface BillingPolicy {
   id: number;
-  initial_billing_interval: number;
-  initial_billing_unit: string;
   recurring_billing_interval: number;
   recurring_billing_unit: string;
-  initial_service_interval: number;
-  initial_service_unit: string;
-  recurring_service_interval: number;
-  recurring_service_unit: string;
   auto_renew: boolean | number;
 }
 
@@ -100,6 +98,7 @@ interface Plan {
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
+  pay_beforehand_months: number | null;
   tax_rate_id: number | null;
   tax_behavior: 'inclusive' | 'exclusive';
   tax_rate_name: string | null;
@@ -114,25 +113,34 @@ const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 const MEMBER_LIMITS = ['1', '2', 'family'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
-// Applied automatically to every new plan; staff can adjust it afterwards via the Billing Policy section.
+// Applied automatically to every new plan; staff can adjust it afterwards in
+// the Billing & Duration section.
 const DEFAULT_BILLING_POLICY = {
-  initial_billing_interval: 1,
-  initial_billing_unit: 'month',
   recurring_billing_interval: 1,
   recurring_billing_unit: 'month',
-  initial_service_interval: 1,
-  initial_service_unit: 'month',
-  recurring_service_interval: 1,
-  recurring_service_unit: 'month',
   auto_renew: true,
 };
 
-const BILLING_POLICY_FIELDS = ['initial_billing', 'recurring_billing', 'initial_service', 'recurring_service'] as const;
-
-// #635 §7: Billing & Duration — the Promotion's three fields, minus Pay
-// Beforehand (the ticket lists Free Period, Paid Duration and Bonus Duration).
-const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
+// #635 §7 + stage 13: Billing & Duration — the Promotion's four fields, in the
+// Promotion's own order. Pre-paid Duration is a slice of the Paid Duration, so
+// it sits next to it.
+const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
 type DurationField = typeof DURATION_FIELDS[number];
+
+// The section's draft: the four durations, plus the cadence and Auto-renew it
+// absorbed from the retired Billing Policy section.
+type DurationForm = Record<DurationField, string> & {
+  recurring_billing_interval: string;
+  recurring_billing_unit: string;
+  auto_renew: boolean;
+};
+
+const EMPTY_DURATION_FORM: DurationForm = {
+  free_months: '', paid_months: '', pay_beforehand_months: '', bonus_months: '',
+  recurring_billing_interval: String(DEFAULT_BILLING_POLICY.recurring_billing_interval),
+  recurring_billing_unit: DEFAULT_BILLING_POLICY.recurring_billing_unit,
+  auto_renew: DEFAULT_BILLING_POLICY.auto_renew,
+};
 
 // #635 §3–§5: the three Sellable-Item-keyed Benefit sections a Plan now has,
 // same shape and same endpoints' contract as the Promotion ones (#550). Each is
@@ -246,17 +254,14 @@ export default function PlansPage() {
   const [allCenters, setAllCenters] = useState<Center[]>([]);
   const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
 
-  // Billing policy sub-form (inline, per plan)
-  const [billingEditForPlanId, setBillingEditForPlanId] = useState<number | null>(null);
-  const [billingForm, setBillingForm] = useState(DEFAULT_BILLING_POLICY);
-  const [billingSaving, setBillingSaving] = useState(false);
-
   // Charge benefits
   const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
 
-  // Billing & Duration (#635 §7) — its own section, edited independently.
+  // Billing & Duration (#635 §7, stage 13) — the Plan's only billing section,
+  // edited independently: the four durations plus the cadence and Auto-renew
+  // that used to live in a second "Billing Policy" section of their own.
   const [durationEditForPlanId, setDurationEditForPlanId] = useState<number | null>(null);
-  const [durationForm, setDurationForm] = useState<Record<DurationField, string>>({ free_months: '', paid_months: '', bonus_months: '' });
+  const [durationForm, setDurationForm] = useState<DurationForm>(EMPTY_DURATION_FORM);
   const [durationSaving, setDurationSaving] = useState(false);
 
   // Session / One-off / Period Benefits (#635 §3–§5). Exactly one section of
@@ -431,50 +436,6 @@ export default function PlansPage() {
     }
   }
 
-  // ─── Billing policy sub-form ────────────────────────────────────────────────
-
-  function openBillingEdit(plan: Plan) {
-    const bp = plan.billing_policy;
-    setBillingForm(bp ? {
-      initial_billing_interval: bp.initial_billing_interval,
-      initial_billing_unit: bp.initial_billing_unit,
-      recurring_billing_interval: bp.recurring_billing_interval,
-      recurring_billing_unit: bp.recurring_billing_unit,
-      initial_service_interval: bp.initial_service_interval,
-      initial_service_unit: bp.initial_service_unit,
-      recurring_service_interval: bp.recurring_service_interval,
-      recurring_service_unit: bp.recurring_service_unit,
-      auto_renew: !!bp.auto_renew,
-    } : DEFAULT_BILLING_POLICY);
-    setBillingEditForPlanId(plan.id);
-  }
-
-  function cancelBillingEdit() {
-    setBillingEditForPlanId(null);
-  }
-
-  async function handleSaveBilling(planId: number) {
-    setBillingSaving(true);
-    try {
-      await apiFetch(`/membership-plans/${planId}/billing-policy`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          ...billingForm,
-          initial_billing_interval: Number(billingForm.initial_billing_interval),
-          recurring_billing_interval: Number(billingForm.recurring_billing_interval),
-          initial_service_interval: Number(billingForm.initial_service_interval),
-          recurring_service_interval: Number(billingForm.recurring_service_interval),
-        }),
-      });
-      setBillingEditForPlanId(null);
-      load();
-    } catch (err: any) {
-      toast(err.message ?? t('plans.error_generic'));
-    } finally {
-      setBillingSaving(false);
-    }
-  }
-
   // ─── Pricing sub-form (#547) ────────────────────────────────────────────────
   // One editable price per plan, always VAT-inclusive. Saving supersedes the
   // current price, which moves to the price history below — nothing here ever
@@ -569,10 +530,15 @@ export default function PlansPage() {
   // ─── Billing & Duration (#635 §7) ───────────────────────────────────────────
 
   function openDurationEdit(plan: Plan) {
+    const bp = plan.billing_policy;
     setDurationForm({
       free_months: plan.free_months != null ? String(plan.free_months) : '',
       paid_months: plan.paid_months != null ? String(plan.paid_months) : '',
+      pay_beforehand_months: plan.pay_beforehand_months != null ? String(plan.pay_beforehand_months) : '',
       bonus_months: plan.bonus_months != null ? String(plan.bonus_months) : '',
+      recurring_billing_interval: String(bp ? bp.recurring_billing_interval : DEFAULT_BILLING_POLICY.recurring_billing_interval),
+      recurring_billing_unit: bp ? bp.recurring_billing_unit : DEFAULT_BILLING_POLICY.recurring_billing_unit,
+      auto_renew: bp ? !!bp.auto_renew : DEFAULT_BILLING_POLICY.auto_renew,
     });
     setDurationEditForPlanId(plan.id);
   }
@@ -592,6 +558,18 @@ export default function PlansPage() {
         body[field] = raw === '' ? null : parseInt(raw, 10);
       }
       await apiFetch(`/membership-plans/${planId}`, { method: 'PUT', body: JSON.stringify(body) });
+      // The cadence and Auto-renew are the same section to the user but a
+      // different resource to the API (`billing_policies`), so the section's
+      // Save writes both. The durations go first: they are what the section is
+      // about, and a rejected one must not leave a changed cadence behind.
+      await apiFetch(`/membership-plans/${planId}/billing-policy`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          recurring_billing_interval: Number(durationForm.recurring_billing_interval) || 1,
+          recurring_billing_unit: durationForm.recurring_billing_unit,
+          auto_renew: durationForm.auto_renew,
+        }),
+      });
       setDurationEditForPlanId(null);
       load();
     } catch (err: any) {
@@ -710,7 +688,6 @@ export default function PlansPage() {
           <p style={{ ...fieldDescStyle, margin: '0 0 12px' }}>
             {t('plans.default_billing_notice', {
               billing: fmtBillingInterval(DEFAULT_BILLING_POLICY.recurring_billing_interval, DEFAULT_BILLING_POLICY.recurring_billing_unit),
-              service: fmtBillingInterval(DEFAULT_BILLING_POLICY.recurring_service_interval, DEFAULT_BILLING_POLICY.recurring_service_unit),
             })}
           </p>
           {inlineNew.error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{inlineNew.error}</p>}
@@ -903,68 +880,12 @@ export default function PlansPage() {
                     />
                     <DetailRow label={t('plans.members_using_plan')} value={String(plan.member_count)} />
 
-                    <SectionHeader
-                      title={t('plans.section_billing')}
-                      action={billingEditForPlanId === plan.id ? null : <button onClick={() => openBillingEdit(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>}
-                    />
-                    {billingEditForPlanId === plan.id ? (
-                      <div style={{ margin: '6px 0 10px' }}>
-                        {BILLING_POLICY_FIELDS.map((key) => (
-                          <div key={key} style={{ marginBottom: 8 }}>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              <div style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t(`plans.label_${key}_interval`)}</div>
-                              <input
-                                type="number" min="1"
-                                value={(billingForm as any)[`${key}_interval`]}
-                                onChange={(e) => setBillingForm({ ...billingForm, [`${key}_interval`]: parseInt(e.target.value) || 1 })}
-                                style={{ ...inlineInputStyle, width: 70 }}
-                              />
-                              <select
-                                value={(billingForm as any)[`${key}_unit`]}
-                                onChange={(e) => setBillingForm({ ...billingForm, [`${key}_unit`]: e.target.value })}
-                                style={{ ...inlineSelectStyle, flex: 1 }}
-                              >
-                                {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                              </select>
-                            </div>
-                            <div style={{ ...fieldDescStyle, marginLeft: 168 }}>{t(`plans.desc_${key}`)}</div>
-                          </div>
-                        ))}
-                        <div style={{ marginBottom: 10 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <input
-                              type="checkbox"
-                              id={`auto_renew_${plan.id}`}
-                              checked={!!billingForm.auto_renew}
-                              onChange={(e) => setBillingForm({ ...billingForm, auto_renew: e.target.checked })}
-                            />
-                            <label htmlFor={`auto_renew_${plan.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{t('plans.label_auto_renew')}</label>
-                          </div>
-                          <div style={{ ...fieldDescStyle, marginLeft: 26 }}>{t('plans.desc_auto_renew')}</div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={cancelBillingEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={() => handleSaveBilling(plan.id)} disabled={billingSaving} style={btnSmall()}>
-                            {billingSaving ? t('plans.saving') : t('plans.save_changes')}
-                          </button>
-                        </div>
-                      </div>
-                    ) : plan.billing_policy ? (
-                      <>
-                        <DetailRow label={t('plans.billing_initial')} value={fmtBillingInterval(plan.billing_policy.initial_billing_interval, plan.billing_policy.initial_billing_unit)} description={t('plans.desc_initial_billing')} />
-                        <DetailRow label={t('plans.billing_recurring')} value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`} description={t('plans.desc_recurring_billing')} />
-                        <DetailRow label={t('plans.service_initial')} value={fmtBillingInterval(plan.billing_policy.initial_service_interval, plan.billing_policy.initial_service_unit)} description={t('plans.desc_initial_service')} />
-                        <DetailRow label={t('plans.service_recurring')} value={fmtBillingInterval(plan.billing_policy.recurring_service_interval, plan.billing_policy.recurring_service_unit)} description={t('plans.desc_recurring_service')} />
-                        <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} description={t('plans.desc_auto_renew')} />
-                      </>
-                    ) : (
-                      <p style={hintSt}>{t('plans.no_billing')}</p>
-                    )}
-
-                    {/* #635 §7: Billing & Duration — the Promotion's Free Period /
-                        Paid Duration / Bonus Duration, on the Plan itself. Its own
-                        Edit/Save/Cancel (§10); nothing else on the card is unlocked
-                        by it, and nothing bills off it yet (stage 3). */}
+                    {/* #635 §7 + stage 13: Billing & Duration — the Promotion's
+                        Free Period / Paid Duration / Pre-paid Duration / Bonus
+                        Duration, on the Plan itself, plus the Billing frequency
+                        and Auto-renew that used to be a "Billing Policy" section
+                        of their own. It is the Plan's only billing section now,
+                        with its own Edit/Save/Cancel (§10). */}
                     <SectionHeader
                       title={t('plans.section_billing_duration')}
                       action={durationEditForPlanId === plan.id ? null : (
@@ -975,7 +896,7 @@ export default function PlansPage() {
                     />
                     {durationEditForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
                           {DURATION_FIELDS.map((field) => (
                             <div key={field}>
                               <label style={inlineLabelStyle}>{t(`plans.label_${field}`)}</label>
@@ -990,6 +911,37 @@ export default function PlansPage() {
                           ))}
                         </div>
                         <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.desc_billing_duration')}</p>
+                        {/* The cadence: how often the member is charged, which
+                            the durations do not say (stage 13). */}
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                          <div style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t('plans.label_billing_frequency')}</div>
+                          <input
+                            type="number" min="1"
+                            value={durationForm.recurring_billing_interval}
+                            onChange={(e) => setDurationForm({ ...durationForm, recurring_billing_interval: e.target.value })}
+                            style={{ ...inlineInputStyle, width: 70 }}
+                          />
+                          <select
+                            value={durationForm.recurring_billing_unit}
+                            onChange={(e) => setDurationForm({ ...durationForm, recurring_billing_unit: e.target.value })}
+                            style={{ ...inlineSelectStyle, flex: 1 }}
+                          >
+                            {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                          </select>
+                        </div>
+                        <div style={{ ...fieldDescStyle, marginLeft: 168, marginBottom: 10 }}>{t('plans.desc_recurring_billing')}</div>
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <input
+                              type="checkbox"
+                              id={`auto_renew_${plan.id}`}
+                              checked={durationForm.auto_renew}
+                              onChange={(e) => setDurationForm({ ...durationForm, auto_renew: e.target.checked })}
+                            />
+                            <label htmlFor={`auto_renew_${plan.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{t('plans.label_auto_renew')}</label>
+                          </div>
+                          <div style={{ ...fieldDescStyle, marginLeft: 26 }}>{t('plans.desc_auto_renew')}</div>
+                        </div>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                           <button onClick={cancelDurationEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
                           <button onClick={() => saveDurationEdit(plan.id)} disabled={durationSaving} style={btnSmall()}>
@@ -998,13 +950,27 @@ export default function PlansPage() {
                         </div>
                       </div>
                     ) : (
-                      DURATION_FIELDS.map((field) => (
-                        <DetailRow
-                          key={field}
-                          label={t(`plans.label_${field}`)}
-                          value={plan[field] != null ? t('plans.months_value', { n: plan[field] }) : t('plans.not_configured')}
-                        />
-                      ))
+                      <>
+                        {DURATION_FIELDS.map((field) => (
+                          <DetailRow
+                            key={field}
+                            label={t(`plans.label_${field}`)}
+                            value={plan[field] != null ? t('plans.months_value', { n: plan[field] }) : t('plans.not_configured')}
+                          />
+                        ))}
+                        {plan.billing_policy ? (
+                          <>
+                            <DetailRow
+                              label={t('plans.label_billing_frequency')}
+                              value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`}
+                              description={t('plans.desc_recurring_billing')}
+                            />
+                            <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} description={t('plans.desc_auto_renew')} />
+                          </>
+                        ) : (
+                          <p style={hintSt}>{t('plans.no_billing')}</p>
+                        )}
+                      </>
                     )}
 
                     {/* #635 §3–§5: One-off / Session / Period Benefits, the same

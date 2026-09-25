@@ -22,7 +22,7 @@ type PeriodStatus = 'free_promotion' | 'pay_promotion' | 'prepaid_promotion' | '
 // #635 stage 8 — the Plan's own Billing & Duration. Only the two periods that
 // waive the Membership Fee ever reach a benefit line; the others are the
 // regular price and carry no explanation.
-type PlanPeriodStatus = 'free_plan' | 'pay_plan' | 'bonus_plan' | 'pay_regular';
+type PlanPeriodStatus = 'free_plan' | 'prepaid_plan' | 'pay_plan' | 'bonus_plan' | 'pay_regular';
 
 interface SimulationBenefit {
   /** `membership_plan` = the assignment's own Free Period / Bonus Duration. */
@@ -95,6 +95,9 @@ const PERIOD_STATUS_KEY: Record<PeriodStatus, string> = {
 // statements and can appear on the same charge's neighbours.
 const PLAN_PERIOD_STATUS_KEY: Record<PlanPeriodStatus, string> = {
   free_plan: 'billing_simulation_plan_free',
+  // #635 stage 13: a Pre-paid month charges nothing because it was already
+  // paid, which is a different statement from the Plan waiving the fee.
+  prepaid_plan: 'billing_simulation_plan_prepaid',
   bonus_plan: 'billing_simulation_plan_bonus',
   pay_plan: 'billing_simulation_plan_paid',
   pay_regular: 'billing_simulation_plan_regular',

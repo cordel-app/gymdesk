@@ -21,9 +21,19 @@
 //     assignment, whose billing dates are its own `starts_at` — snapping them
 //     to the first of that month would make a plan starting on the 31st free
 //     for 30 days it was never given;
-//   - a Plan carries no `pay_beforehand_months` (migration 173) and no
-//     Membership Fee Benefit (§6), so Prepaid and the benefit-bearing Billing
-//     column have no counterpart here.
+//   - a Plan carries no Membership Fee Benefit (§6), so the benefit-bearing
+//     Billing column has no counterpart here.
+//
+// #635 stage 13 adds the fourth field, **Pre-paid Duration**
+// (`pay_beforehand_months`, migration 189) — the thread's "pre-paid duration
+// which will flag in the simulation as pre-paid - no charge". It is the
+// Promotion's own `pay_beforehand_months` (migration 141) with the same
+// meaning: the first N of the Paid Duration's months are already paid up
+// front, so they charge no Membership Fee even though they sit inside the
+// paid stretch:
+//
+//     |<- free ->|<- prepaid ->|<---- paid ---->|<- bonus ->|<- regular, open-ended
+//        waived      no charge    regular price     waived        regular price
 //
 // The month arithmetic itself is not duplicated: it is `advanceBillingDate`,
 // the same helper every billing projection advances with.
@@ -35,38 +45,53 @@ import { advanceBillingDate } from './billingDate';
  * differ from `PromotionTimelineStatus`'s on purpose: a line saying "free
  * period" has to say whose, and the two can appear in the same simulation.
  */
-export type PlanDurationStatus = 'free_plan' | 'pay_plan' | 'bonus_plan' | 'pay_regular';
+export type PlanDurationStatus = 'free_plan' | 'prepaid_plan' | 'pay_plan' | 'bonus_plan' | 'pay_regular';
 
 /** A Plan's (or an assignment's frozen) Billing & Duration, normalized. */
 export interface PlanDuration {
   freeMonths: number;
   paidMonths: number;
   bonusMonths: number;
+  /** Of `paidMonths`, how many are already paid up front (stage 13). */
+  prepaidMonths: number;
 }
 
-/** "Never configured" — also what a NULL/0 column trio normalizes to. */
-export const NO_PLAN_DURATION: PlanDuration = { freeMonths: 0, paidMonths: 0, bonusMonths: 0 };
+/** "Never configured" — also what a NULL/0 column set normalizes to. */
+export const NO_PLAN_DURATION: PlanDuration = { freeMonths: 0, paidMonths: 0, bonusMonths: 0, prepaidMonths: 0 };
 
 /**
- * Normalizes the three nullable `free_months` / `paid_months` / `bonus_months`
- * columns. NULL ("never configured") and 0 both mean "no such period" for
- * billing purposes — the distinction only matters to the editor, which reads
- * the raw columns.
+ * Normalizes the nullable `free_months` / `paid_months` / `bonus_months` /
+ * `pay_beforehand_months` columns. NULL ("never configured") and 0 both mean
+ * "no such period" for billing purposes — the distinction only matters to the
+ * editor, which reads the raw columns.
+ *
+ * `pay_beforehand_months` is clamped to `paid_months`, exactly as
+ * `computePromotionTimeline` clamps the Promotion's: the API validates the
+ * bound on write, and a row that predates the validation (or was edited
+ * straight in the DB) must not be able to prepay months the contract never
+ * had.
  */
 export function toPlanDuration(
-  freeMonths: unknown, paidMonths: unknown, bonusMonths: unknown,
+  freeMonths: unknown, paidMonths: unknown, bonusMonths: unknown, prepaidMonths?: unknown,
 ): PlanDuration {
   const months = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
+  const paid = months(paidMonths);
   return {
     freeMonths: months(freeMonths),
-    paidMonths: months(paidMonths),
+    paidMonths: paid,
     bonusMonths: months(bonusMonths),
+    prepaidMonths: Math.min(months(prepaidMonths), paid),
   };
 }
 
-/** The two periods in which the Plan itself waives the Membership Fee. */
+/**
+ * The periods in which the Plan itself charges no Membership Fee: the Free
+ * Period and the Bonus Duration waive it, and a Pre-paid month has already
+ * been paid — it bills nothing further, which is the "pre-paid - no charge"
+ * line the simulation draws for it (stage 13).
+ */
 export function planDurationWaivesFee(status: PlanDurationStatus): boolean {
-  return status === 'free_plan' || status === 'bonus_plan';
+  return status === 'free_plan' || status === 'bonus_plan' || status === 'prepaid_plan';
 }
 
 /**
@@ -87,8 +112,11 @@ export function classifyPlanDurationPeriod(
   duration: PlanDuration, startsAt: string, date: string,
 ): PlanDurationStatus {
   if (date < startsAt) return 'pay_regular';
-  const { freeMonths, paidMonths, bonusMonths } = duration;
+  const { freeMonths, paidMonths, bonusMonths, prepaidMonths } = duration;
   if (date < advanceBillingDate(startsAt, freeMonths, 'month')) return 'free_plan';
+  // The prepaid months are the *first* of the paid ones — the same slice
+  // `computePromotionTimeline` draws as Prepaid before it draws Pay.
+  if (date < advanceBillingDate(startsAt, freeMonths + prepaidMonths, 'month')) return 'prepaid_plan';
   if (date < advanceBillingDate(startsAt, freeMonths + paidMonths, 'month')) return 'pay_plan';
   if (date < advanceBillingDate(startsAt, freeMonths + paidMonths + bonusMonths, 'month')) return 'bonus_plan';
   return 'pay_regular';

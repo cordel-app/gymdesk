@@ -46,11 +46,12 @@ const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, loadLocale(c)])) 
   Messages
 >;
 
-const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
+// #635 stage 13 added the fourth field, Pre-paid Duration.
+const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
 const BENEFIT_SECTIONS = ['oneoff', 'session', 'periodical'] as const;
 
 describe('Plans: Billing & Duration (#635 §7)', () => {
-  it('renders its own section with Free Period, Paid Duration and Bonus Duration', () => {
+  it('renders its own section with Free Period, Paid, Pre-paid and Bonus Duration', () => {
     expect(pageSrc).toContain('plans.section_billing_duration');
     for (const field of DURATION_FIELDS) {
       expect(pageSrc, `${field} missing from DURATION_FIELDS`).toMatch(
@@ -70,8 +71,26 @@ describe('Plans: Billing & Duration (#635 §7)', () => {
     expect(pageSrc).toMatch(/raw === ''\s*\?\s*null/);
   });
 
-  it('does not add Pay Beforehand, which stays Promotion-only (§6/§7)', () => {
-    expect(pageSrc).not.toContain('pay_beforehand');
+  // Stage 1 kept Pay Beforehand out of a Plan because §7 listed three fields.
+  // The thread's stage 13 answer asks for it ("I'd also like to include the
+  // pre-paid duration which will flag in the simulation as pre-paid - no
+  // charge"), so the Plan now carries it — the Membership Fee Benefit is what
+  // stays Promotion-only (§6).
+  it('carries Pre-paid Duration, and still no Membership Fee Benefit (§6)', () => {
+    expect(pageSrc).toContain('pay_beforehand_months');
+    expect(pageSrc).not.toContain('membership_fee_benefit');
+  });
+
+  // Stage 13: Initial Billing / Initial Service / Recurring Service are gone
+  // (migration 189) and the surviving cadence is presented inside this section.
+  it('is the only billing section, carrying the Billing frequency and Auto-renew', () => {
+    expect(pageSrc).not.toContain('initial_billing');
+    expect(pageSrc).not.toContain('initial_service');
+    expect(pageSrc).not.toContain('recurring_service');
+    expect(pageSrc).not.toContain('plans.section_billing\'');
+    expect(pageSrc).toContain('plans.label_billing_frequency');
+    expect(pageSrc).toContain('recurring_billing_unit');
+    expect(pageSrc).toContain('plans.label_auto_renew');
   });
 });
 
@@ -141,6 +160,8 @@ describe('Plans: locale coverage', () => {
     'label_free_months',
     'label_paid_months',
     'label_bonus_months',
+    'label_pay_beforehand_months',
+    'label_billing_frequency',
     'desc_billing_duration',
     'months_value',
     'not_configured',

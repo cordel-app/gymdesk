@@ -375,11 +375,12 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
   const { rows: umRows } = await tx.query(
     `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price, um.final_price,
             um.membership_fee_price, um.starts_at, um.next_billing_date,
-            um.free_months, um.paid_months, um.bonus_months,
+            um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
             p.free_months AS plan_free_months,
             p.paid_months AS plan_paid_months,
             p.bonus_months AS plan_bonus_months,
-            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL
+            p.pay_beforehand_months AS plan_pay_beforehand_months,
+            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
              OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
             ) AS has_billing_snapshot
@@ -408,8 +409,8 @@ async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number
     const charge = resolveMembershipFee(regular, pricingDateFor(um), {
       startsAt: toDateOnly(um.starts_at),
       planDuration: Number(um.has_billing_snapshot) === 1
-        ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months)
-        : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months),
+        ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
+        : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
       promotions: await loadStandingApplicationsForPricing(tx, gymId, userMembershipId),
     });
     return { price: charge.amount, member_id: um.member_id, previousFinal };

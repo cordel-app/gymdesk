@@ -19,7 +19,18 @@ describe('toPlanDuration', () => {
   });
 
   it('accepts the strings mysql2 can hand back for an INT column', () => {
-    expect(toPlanDuration('1', '12', '2')).toEqual({ freeMonths: 1, paidMonths: 12, bonusMonths: 2 });
+    expect(toPlanDuration('1', '12', '2', '3'))
+      .toEqual({ freeMonths: 1, paidMonths: 12, bonusMonths: 2, prepaidMonths: 3 });
+  });
+
+  // #635 stage 13: the Pre-paid Duration is a slice of the Paid Duration, so a
+  // row carrying more prepaid months than paid ones (written before the API
+  // validated the bound, or edited straight in the DB) is clamped rather than
+  // allowed to prepay months the contract never had.
+  it('clamps the prepaid months to the paid ones', () => {
+    expect(toPlanDuration(0, 3, 0, 5).prepaidMonths).toBe(3);
+    expect(toPlanDuration(0, 0, 0, 2).prepaidMonths).toBe(0);
+    expect(toPlanDuration(1, 12, 2).prepaidMonths).toBe(0);
   });
 
   it('clamps a negative or non-numeric value to zero rather than inverting a boundary', () => {

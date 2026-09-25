@@ -31,6 +31,8 @@ export interface AssignedPlanSnapshotBenefit {
 export interface AssignedPlanSnapshot {
   free_months: number | null;
   paid_months: number | null;
+  /** #635 stage 13 — of `paid_months`, how many were already paid up front. */
+  pay_beforehand_months: number | null;
   bonus_months: number | null;
   recurring_billing_interval: number | null;
   recurring_billing_unit: string | null;
