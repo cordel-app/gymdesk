@@ -13,6 +13,7 @@ import {
   validatePromotionSelection,
 } from './membership-promotions';
 import { loadAssignedPlanServices } from './user-membership-services';
+import { currentMembershipFee, currentMembershipFees } from './membership-fee-pricing';
 import {
   loadAssignedPlanBenefitSection,
   loadAssignedPlanSnapshot,
@@ -93,6 +94,21 @@ export const LIST_SELECT = `
 `;
 // Note: um.* already includes next_billing_date and last_billed_at (added in migration 111).
 
+/**
+ * One assignment as every write endpoint answers with it: its row plus
+ * `membership_fee` — the fee resolved for the cycle it is next charged for
+ * (#635 stage 15). The row itself carries only `membership_fee_price`, the
+ * *regular* fee an edit writes; what it actually pays depends on the date, so it
+ * cannot be a column.
+ */
+async function loadAssignmentRow(gymId: string, id: string | string[] | number, scoped = true) {
+  const { rows } = scoped
+    ? await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [id, gymId])
+    : await db.query(`${LIST_SELECT} WHERE um.id = ?`, [id]);
+  if (rows.length === 0) return null;
+  return { ...rows[0], membership_fee: await currentMembershipFee(gymId, Number(rows[0].id)) };
+}
+
 // '1' | '2' -> that many covered Members; 'family' -> unlimited (#374).
 function memberLimitCount(limit: string | null | undefined): number {
   if (limit === 'family') return Infinity;
@@ -138,7 +154,13 @@ userMembershipsRouter.get('/', async (req, res) => {
   sql += ' ORDER BY ap.starts_at DESC';
 
   const { rows } = await db.query(sql, params);
-  res.json(rows);
+  // #635 stage 15 — `membership_fee` is what each assignment pays for the cycle
+  // it is next charged for, resolved through the one rule the nightly run uses.
+  // It replaces the stored `final_price` this list used to return: a number with
+  // no date in it could not say that a cycle is inside a Free Period, or that an
+  // applied Promotion's discount has already ended.
+  const fees = await currentMembershipFees(gymId, rows.map((r: any) => Number(r.id)));
+  res.json(rows.map((r: any) => ({ ...r, membership_fee: fees.get(Number(r.id)) ?? null })));
 });
 
 // #511 (stage 2 — Assigned Plan Details modal): `created_by`/`modified_by`
@@ -240,15 +262,30 @@ export interface PromotionApplication extends AppliedPromotionForBilling {
 export async function loadPromotionApplications(
   gymId: string, umId: number,
 ): Promise<PromotionApplication[]> {
+  return (await loadPromotionApplicationsFor(gymId, [umId])).get(umId) ?? [];
+}
+
+/**
+ * The same, for many assignments in one query. Every list that prices a
+ * Membership Fee per row needs each row's standing applications, and one query
+ * per row turns an Assigned Plans page into hundreds of round trips.
+ */
+export async function loadPromotionApplicationsFor(
+  gymId: string, umIds: number[],
+): Promise<Map<number, PromotionApplication[]>> {
+  const byAssignment = new Map<number, PromotionApplication[]>();
+  const ids = [...new Set(umIds)];
+  if (ids.length === 0) return byAssignment;
   const { rows } = await db.query(
-    `SELECT ump.id, ump.promotion_id, ump.status, ump.applied_at, ump.revoked_at, ump.snapshot,
+    `SELECT ump.id, ump.user_membership_id, ump.promotion_id, ump.status,
+            ump.applied_at, ump.revoked_at, ump.snapshot,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
      FROM user_membership_promotions ump
      LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ump.user_membership_id = ? AND ump.gym_id = ?`,
-    [umId, gymId],
+     WHERE ump.user_membership_id IN (${ids.map(() => '?').join(',')}) AND ump.gym_id = ?`,
+    [...ids, gymId],
   );
-  return Promise.all(rows.map(async (row: any) => {
+  const shaped = await Promise.all(rows.map(async (row: any) => {
     const snap = row.snapshot as {
       name?: string; free_months?: number | null; paid_months?: number | null; bonus_months?: number | null;
     } | null;
@@ -267,19 +304,28 @@ export async function loadPromotionApplications(
     }));
     const num = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
     return {
-      id: row.id as number,
-      promotionId: row.promotion_id as number,
-      status: row.status as string,
-      name: (snap?.name as string | undefined) ?? row.promotion_name ?? null,
-      freeMonths: num(snap?.free_months ?? row.free_months),
-      paidMonths: num(snap?.paid_months ?? row.paid_months),
-      bonusMonths: num(snap?.bonus_months ?? row.bonus_months),
-      payBeforehandMonths: num(row.pay_beforehand_months),
-      appliedAt: toDateOnly(row.applied_at),
-      revokedAt: row.revoked_at != null ? toDateOnly(row.revoked_at) : null,
-      membershipFeeBenefits,
+      userMembershipId: Number(row.user_membership_id),
+      application: {
+        id: row.id as number,
+        promotionId: row.promotion_id as number,
+        status: row.status as string,
+        name: (snap?.name as string | undefined) ?? row.promotion_name ?? null,
+        freeMonths: num(snap?.free_months ?? row.free_months),
+        paidMonths: num(snap?.paid_months ?? row.paid_months),
+        bonusMonths: num(snap?.bonus_months ?? row.bonus_months),
+        payBeforehandMonths: num(row.pay_beforehand_months),
+        appliedAt: toDateOnly(row.applied_at),
+        revokedAt: row.revoked_at != null ? toDateOnly(row.revoked_at) : null,
+        membershipFeeBenefits,
+      } as PromotionApplication,
     };
   }));
+  for (const { userMembershipId, application } of shaped) {
+    const list = byAssignment.get(userMembershipId) ?? [];
+    list.push(application);
+    byAssignment.set(userMembershipId, list);
+  }
+  return byAssignment;
 }
 
 /**
@@ -302,7 +348,7 @@ async function loadAssignmentFeeContext(gymId: string, umId: number): Promise<{
   regularFee: number | null; planDuration: PlanDuration;
 }> {
   const { rows } = await db.query(
-    `SELECT um.membership_plan_id, um.membership_fee_price, um.final_price,
+    `SELECT um.membership_plan_id, um.membership_fee_price,
             um.base_price, um.starts_at,
             um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
             p.free_months AS plan_free_months,
@@ -395,9 +441,14 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     loadAssignedPlanSnapshot(gymId, um.id),
   ]);
   const billingEvents = await computeBillingEventsView(gymId, um);
+  const membershipFee = await currentMembershipFee(gymId, Number(um.id));
 
   res.json({
     ...um, ...audit,
+    // The fee resolved for this assignment's current cycle (#635 stage 15) —
+    // the read-only counterpart of `snapshot.membership_fee_price`, which is the
+    // regular fee it is priced from and the one an edit writes.
+    membership_fee: membershipFee,
     members,
     billing_policy: billingPolicy,
     promotions,
@@ -494,39 +545,45 @@ export async function effectivePrice(planId: number, gymId: string, date: string
  * snapshotted from `effectivePrice()`, which has returned a constant 0 for that
  * field since `membership_plans.base_price` was dropped in migration 058 — but a
  * row that does carry a non-zero one (written before that, or by a fixture) is
- * still saying what the fee was before any Promotion, so it comes ahead of
- * `final_price`. `final_price` is the last resort only: it already has the
- * applied Promotions baked into it, so discounting from it double-counts them —
- * for an assignment with no snapshot, no price window and no base price there is
- * simply nothing better to read.
+ * still saying what the fee was before any Promotion, so it is read before giving
+ * up. `null` means this assignment has no fee anyone can name.
+ *
+ * `ignoreFrozenFee` skips the frozen number and resolves the Plan's price window
+ * instead. Its one caller is a **negotiated fee that has lapsed** (a
+ * `discount_reason` with a past `discount_expires_at`, see
+ * `membership-fee-pricing.ts`): the frozen column carries that agreement, so
+ * while it holds it outranks the catalogue, and when it stops the catalogue is
+ * what the assignment falls back to. The frozen fee is still the last resort —
+ * an assignment whose Plan has no price window has nothing better to bill.
  *
  * One function since #635 stage 12, because it decides the number every path
  * discounts *from*: the Billing Simulation, the Billing Events projection, the
- * nightly run and the drift report. Two copies of this chain would reintroduce
- * exactly the drift stage 12 exists to remove.
+ * nightly run and every screen that shows what a member pays. Two copies of this
+ * chain would reintroduce exactly the drift stage 12 exists to remove.
  */
 export async function regularMembershipFee(
   gymId: string,
   row: {
     membership_plan_id: number | null;
     membership_fee_price: string | number | null;
-    final_price: string | number | null;
     base_price?: string | number | null;
   },
   startsAt: string,
+  opts?: { ignoreFrozenFee?: boolean },
 ): Promise<number | null> {
-  if (row.membership_fee_price != null) return Number(row.membership_fee_price);
+  const frozen = row.membership_fee_price != null ? Number(row.membership_fee_price) : null;
+  if (frozen != null && !opts?.ignoreFrozenFee) return frozen;
   if (row.membership_plan_id != null) {
     const eff = await effectivePrice(row.membership_plan_id, gymId, startsAt);
     if (eff && eff.plan_price_id != null) return eff.price;
   }
   if (row.base_price != null && Number(row.base_price) > 0) return Number(row.base_price);
-  return row.final_price != null ? Number(row.final_price) : null;
+  return frozen;
 }
 
 userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { member_id, membership_plan_id, starts_at, ends_at, final_price, discount_reason, discount_expires_at } = req.body;
+  const { member_id, membership_plan_id, starts_at, ends_at, membership_fee_price, discount_reason, discount_expires_at } = req.body;
   if (!member_id || !membership_plan_id || !starts_at) {
     return res.status(400).json({ error: 'member_id, membership_plan_id and starts_at are required' });
   }
@@ -540,14 +597,17 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
   const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
 
-  // Snapshot: base_price + plan_price_id reference the price at signup; final_price
-  // can be overridden (discount) but requires a reason.
-  const finalOverride = final_price != null && final_price !== '';
-  const parsedFinal = finalOverride ? parseFloat(final_price) : eff.price;
-  if (finalOverride) {
-    if (isNaN(parsedFinal) || parsedFinal < 0) return res.status(400).json({ error: 'final_price must be a non-negative number' });
+  // Snapshot: base_price + plan_price_id reference the price at signup, and the
+  // assignment's own Membership Fee is frozen onto it by `snapshotAssignedPlan`
+  // below. #635 stage 15: a negotiated fee is a different *value of that same
+  // column* — there is no second stored price any more — so it still requires a
+  // reason, and it is the number every later cycle is priced from (§15).
+  const feeOverride = membership_fee_price != null && membership_fee_price !== '';
+  const parsedFee = feeOverride ? parseFloat(membership_fee_price) : eff.price;
+  if (feeOverride) {
+    if (isNaN(parsedFee) || parsedFee < 0) return res.status(400).json({ error: 'membership_fee_price must be a non-negative number' });
     if (!discount_reason || !String(discount_reason).trim()) {
-      return res.status(400).json({ error: 'discount_reason is required when final_price differs from the effective price' });
+      return res.status(400).json({ error: 'discount_reason is required when membership_fee_price differs from the effective price' });
     }
   }
 
@@ -558,13 +618,13 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, final_price,
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id,
           discount_reason, discount_expires_at, starts_at, ends_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
         [
           member_id, gymId, membership_plan_id,
-          eff.base_price, eff.plan_price_id, parsedFinal,
-          finalOverride ? String(discount_reason).trim() : null,
+          eff.base_price, eff.plan_price_id,
+          feeOverride ? String(discount_reason).trim() : null,
           discount_expires_at || null,
           starts_at, ends_at ?? null,
         ],
@@ -584,13 +644,15 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
       await snapshotAssignedPlan(tx, {
         gymId, userMembershipId: insertId,
         membershipPlanId: Number(membership_plan_id),
-        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+        // A negotiated fee is frozen in place of the catalogue one: it is this
+        // assignment's agreed regular price, and nothing else stores it (§15).
+        membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
       });
       return insertId;
     });
-    const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ?`, [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'user_membership', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    const created = await loadAssignmentRow(gymId, insertId, false);
+    recordAudit(req, { action: 'create', entityType: 'user_membership', entityId: insertId, next: created });
+    res.status(201).json(created);
   } catch (err: any) {
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
   }
@@ -600,7 +662,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
 // only admin can cancel (see DELETE) but staff can flip status through 'active' or 'paused'.
 userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { starts_at, ends_at, status, final_price, discount_reason, discount_expires_at } = req.body;
+  const { starts_at, ends_at, status, discount_reason, discount_expires_at } = req.body;
   if (status && !STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
@@ -608,10 +670,6 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   const role = (req as any).tenantCtx?.role;
   if (status === 'cancelled' && role !== 'admin') {
     return res.status(403).json({ error: 'Only admins can cancel a membership' });
-  }
-  const parsedFinal = final_price != null && final_price !== '' ? parseFloat(final_price) : null;
-  if (parsedFinal !== null && (isNaN(parsedFinal) || parsedFinal < 0)) {
-    return res.status(400).json({ error: 'final_price must be a non-negative number' });
   }
   try {
     const { userId } = getTenantContext(req);
@@ -634,7 +692,6 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           starts_at            = COALESCE(?, starts_at),
           ends_at              = IF(?, ?, ends_at),
           status               = COALESCE(?, status),
-          final_price          = COALESCE(?, final_price),
           discount_reason      = IF(?, ?, discount_reason),
           discount_expires_at  = IF(?, ?, discount_expires_at)
          WHERE id = ? AND gym_id = ?`,
@@ -642,7 +699,6 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           starts_at ?? null,
           'ends_at' in req.body ? 1 : 0, ends_at ?? null,
           status ?? null,
-          parsedFinal,
           'discount_reason' in req.body ? 1 : 0, discount_reason ?? null,
           'discount_expires_at' in req.body ? 1 : 0, discount_expires_at ?? null,
           req.params.id, gymId,
@@ -661,9 +717,9 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
     if (result.kind === 'invalid_transition') {
       return res.status(400).json({ error: `Cannot transition a membership from '${result.from}' to '${status}'` });
     }
-    const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
-    recordAudit(req, { action: 'update', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
-    res.json(rows[0]);
+    const updated = await loadAssignmentRow(gymId, req.params.id);
+    recordAudit(req, { action: 'update', entityType: 'user_membership', entityId: req.params.id, next: updated });
+    res.json(updated);
   } catch (err: any) {
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
   }
@@ -722,7 +778,7 @@ function parsePromotionIds(raw: unknown): number[] | null {
 // invalid selection must never leave a half-configured assignment behind.
 userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
-  const { membership_plan_id, starts_at, ends_at, final_price, discount_reason, discount_expires_at, promotion_ids } = req.body;
+  const { membership_plan_id, starts_at, ends_at, membership_fee_price, discount_reason, discount_expires_at, promotion_ids } = req.body;
   if (!membership_plan_id || !starts_at) {
     return res.status(400).json({ error: 'membership_plan_id and starts_at are required' });
   }
@@ -738,12 +794,12 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
 
-  const finalOverride = final_price != null && final_price !== '';
-  const parsedFinal = finalOverride ? parseFloat(final_price) : eff.price;
-  if (finalOverride) {
-    if (isNaN(parsedFinal) || parsedFinal < 0) return res.status(400).json({ error: 'final_price must be a non-negative number' });
+  const feeOverride = membership_fee_price != null && membership_fee_price !== '';
+  const parsedFee = feeOverride ? parseFloat(membership_fee_price) : eff.price;
+  if (feeOverride) {
+    if (isNaN(parsedFee) || parsedFee < 0) return res.status(400).json({ error: 'membership_fee_price must be a non-negative number' });
     if (!discount_reason || !String(discount_reason).trim()) {
-      return res.status(400).json({ error: 'discount_reason is required when final_price differs from the effective price' });
+      return res.status(400).json({ error: 'discount_reason is required when membership_fee_price differs from the effective price' });
     }
   }
 
@@ -784,13 +840,13 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
 
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, final_price,
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id,
           discount_reason, discount_expires_at, starts_at, ends_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
         [
           prev.member_id, gymId, membership_plan_id,
-          eff.base_price, eff.plan_price_id, parsedFinal,
-          finalOverride ? String(discount_reason).trim() : null,
+          eff.base_price, eff.plan_price_id,
+          feeOverride ? String(discount_reason).trim() : null,
           discount_expires_at || null,
           starts_at, ends_at ?? null,
         ],
@@ -809,15 +865,16 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       await snapshotAssignedPlan(tx, {
         gymId, userMembershipId: insertId,
         membershipPlanId: Number(membership_plan_id),
-        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+        // A negotiated fee is frozen in place of the catalogue one: it is this
+        // assignment's agreed regular price, and nothing else stores it (§15).
+        membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
       });
       return insertId;
     });
     if (newId === null) return res.status(404).json({ error: 'Membership not found' });
 
     // Applied after the assignment commits, one at a time, because each apply
-    // runs its own transaction (and recomputes final_price from base_price +
-    // the benefits of every promotion applied so far). The selection was
+    // runs its own transaction. The selection was
     // validated above, so a failure here means the promotion changed
     // underneath us between the two steps — surface it rather than silently
     // assigning a plan without the promotions that were asked for.
@@ -825,12 +882,12 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       await applyPromotionToMembership(gymId, userId, sourceForRole(role), newId, promotionId);
     }
 
-    const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ?`, [newId]);
+    const created = await loadAssignmentRow(gymId, newId, false);
     recordAudit(req, {
       action: 'assign_new_plan', entityType: 'user_membership', entityId: newId,
-      next: rows[0], previous: { supersedes_user_membership_id: Number(req.params.id) },
+      next: created, previous: { supersedes_user_membership_id: Number(req.params.id) },
     });
-    res.status(201).json({ ...rows[0], applied_promotion_ids: promotionIds });
+    res.status(201).json({ ...created, applied_promotion_ids: promotionIds });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
@@ -868,9 +925,9 @@ async function transitionMembership(
   if (result.kind === 'invalid') {
     return res.status(400).json({ error: `Cannot ${action} a membership with status '${result.from}'` });
   }
-  const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
-  recordAudit(req, { action, entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
-  res.json(rows[0]);
+  const moved = await loadAssignmentRow(gymId, req.params.id);
+  recordAudit(req, { action, entityType: 'user_membership', entityId: req.params.id, next: moved });
+  res.json(moved);
 }
 
 // Submit (#511 Q1): draft -> awaiting_payment. Persisted future Billing
@@ -964,9 +1021,9 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   if (result.kind === 'invalid') {
     return res.status(400).json({ error: `Cannot close a membership with status '${result.from}'` });
   }
-  const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
-  recordAudit(req, { action: 'close', entityType: 'user_membership', entityId: req.params.id, next: rows[0] });
-  res.json(rows[0]);
+  const closed = await loadAssignmentRow(gymId, req.params.id);
+  recordAudit(req, { action: 'close', entityType: 'user_membership', entityId: req.params.id, next: closed });
+  res.json(closed);
 });
 
 // ─── The Assigned Plan's own snapshot, edited section by section (#635 stage 6) ─
@@ -1012,7 +1069,7 @@ async function loadAssignmentForSnapshotEdit(gymId: string, id: string | string[
  * what `regularMembershipFee()` resolves live for it today. Null when the Plan
  * has no price window (nothing to freeze) or the assignment has no Plan.
  */
-async function snapshotFeeForAssignment(gymId: string, um: any): Promise<number | null> {
+export async function snapshotFeeForAssignment(gymId: string, um: any): Promise<number | null> {
   if (um.membership_plan_id == null) return null;
   const eff = await effectivePrice(Number(um.membership_plan_id), gymId, toDateOnly(um.starts_at));
   return eff && eff.plan_price_id != null ? eff.price : null;

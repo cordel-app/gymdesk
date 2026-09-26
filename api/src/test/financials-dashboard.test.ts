@@ -56,7 +56,7 @@ async function assignPlan(
   startsAt: string | null = null,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, final_price)
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
      VALUES (?, ?, ?, ?, COALESCE(?, CURDATE()), ?, 29.99)`,
     [gym, memberId, planId, status, startsAt, endsAt],
   );

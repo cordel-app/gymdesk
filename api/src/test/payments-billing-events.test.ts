@@ -87,7 +87,7 @@ async function createUserMembership(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, final_price, next_billing_date)
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
      VALUES (?, ?, ?, 'active', '2000-01-01', '29.99', ?)`,
     [gymId, memberId, planId, nextBillingDate],
   );
@@ -220,6 +220,60 @@ describe('GET /payments/billing-events', () => {
     expect(v.id).toBeNull();
     expect(v.status).toBe('scheduled');
     expect(v.event_type).toBe('upcoming');
+  });
+
+  // #635 stage 15 — a projected row's amount is the Membership Fee resolved on
+  // the date it projects. Until then it repeated `user_memberships.final_price`
+  // for all five dates, so the dashboard promised a charge for a cycle the
+  // nightly run would waive, and kept showing a lapsed Promotion's discount.
+  describe('projected amounts are priced per date (#635 stage 15)', () => {
+    async function fetchItems() {
+      const res = await request
+        .get('/payments/billing-events')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      return res.body.items as any[];
+    }
+
+    it("shows €0 for a cycle the assignment's own Free Period covers", async () => {
+      const planId = await createPlanWithPolicy(gymId);
+      const memberId = await createMember(gymId);
+      // The contract started a few days ago, so today — the first projected cycle
+      // — falls inside its one free month rather than on the boundary.
+      const started = new Date();
+      started.setDate(started.getDate() - 5);
+      const startsAt = started.toISOString().slice(0, 10);
+      const { insertId: umId } = await db.query(
+        `INSERT INTO user_memberships
+           (gym_id, member_id, membership_plan_id, status, starts_at, next_billing_date,
+            membership_fee_price, free_months, paid_months,
+            recurring_billing_interval, recurring_billing_unit)
+         VALUES (?, ?, ?, 'active', ?, ?, 55.00, 1, 12, 1, 'month')`,
+        [gymId, memberId, planId, startsAt, new Date().toISOString().slice(0, 10)],
+      );
+
+      const rows = (await fetchItems()).filter((i) => i.type === 'virtual' && i.user_membership_id === umId);
+      expect(rows.length).toBeGreaterThan(1);
+      // The list is newest-first, so the earliest projected cycle is last: it
+      // falls in the free month, and the latest one is charged in full.
+      const byDate = [...rows].sort((a, b) => (a.billing_date < b.billing_date ? -1 : 1));
+      expect(Number(byDate[0].amount)).toBe(0);
+      expect(Number(byDate[byDate.length - 1].amount)).toBe(55);
+    });
+
+    it("prices from the assignment's frozen fee, not its base price", async () => {
+      const planId = await createPlanWithPolicy(gymId);
+      const memberId = await createMember(gymId);
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 20);
+      const umId = await createUserMembership(gymId, memberId, planId, futureDate.toISOString().slice(0, 10));
+      await db.query('UPDATE user_memberships SET membership_fee_price = 73.25 WHERE id = ?', [umId]);
+
+      const rows = (await fetchItems()).filter((i) => i.type === 'virtual' && i.user_membership_id === umId);
+      expect(rows.length).toBeGreaterThan(0);
+      for (const r of rows) expect(Number(r.amount)).toBe(73.25);
+    });
   });
 
   // ── #416: multi-select status filtering ──

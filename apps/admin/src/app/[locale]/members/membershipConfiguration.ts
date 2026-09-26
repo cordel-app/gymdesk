@@ -14,7 +14,7 @@ export interface MemberPlanRow {
   membership_plan_id: number | null;
   plan_name: string | null;
   status: string;
-  final_price: string | null;
+  membership_fee: number | null;
   starts_at: string | null;
   ends_at: string | null;
   next_billing_date: string | null;

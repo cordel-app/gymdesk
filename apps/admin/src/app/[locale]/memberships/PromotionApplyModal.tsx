@@ -6,7 +6,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
 
-interface Membership { id: number; member_name: string; plan_name: string | null; final_price: string | null }
+interface Membership { id: number; member_name: string; plan_name: string | null; membership_fee: number | null }
 interface Applied {
   id: number; promotion_id: number; promotion_name: string;
   applied_by: string; applied_at: string; status: 'applied' | 'consumed' | 'revoked';

@@ -383,25 +383,32 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       deploy output) rather than deleting rows to make the narrow one fit. Roll the API
       back first if the constraint has to narrow; the rows themselves are history and
       should stay.
-- [ ] **Review the Membership Fee drift report, then switch
-      `billing.date_aware_membership_fee` on** (#635 stage 12): the flag ships
-      **disabled** (migration 186), so the nightly run keeps charging
-      `user_memberships.final_price` — a Promotion whose Free/Paid/Bonus months have
-      elapsed keeps discounting every later cycle. Turning it on prices each cycle
-      through `resolveMembershipFee()`, which *raises* the charge of every member in
-      that state. Before flipping it, per gym: read
-      **Payments → Membership Fee Drift** (#635 stage 14 — the page over
-      `GET /user-memberships/reports/membership-fee-drift`; the `drift` counter and the
-      per-assignment log lines of the nightly run say the same thing), confirm the
-      assignments it lists and tell the gyms whose members will start paying more. The
-      page is read-only and switches nothing: flipping the flag stays a deliberate act in
-      Cordel → Feature Flags. The epic's remaining acceptance criteria are not met until
-      the flag is on.
-- [ ] **Migration 186's `down()` deliberately keeps its row** (#635 stage 12): a missing
-      feature-flag key counts as *enabled*, so deleting
-      `billing.date_aware_membership_fee` would switch the corrected pricing **on**
-      during a rollback and move real money on the next run. Roll the API back and leave
-      the row at 0; remove it only together with the stage-12 code.
+- [x] **Review the Membership Fee drift report, then switch
+      `billing.date_aware_membership_fee` on** (#635 stage 12) — **superseded by stage 15.**
+      The review happened on the #635 thread and its answer was to stop switching it:
+      *"remove the billing.date_aware_membership_fee feature flag entirely, as well as the
+      stored final_price approach."* Migration 191 deletes both flag rows and the
+      `user_memberships.final_price` column, and **Payments → Membership Fee Drift** is
+      gone with them. There is no flag left to flip.
+- [x] **Migration 186's `down()` deliberately keeps its row** (#635 stage 12) — also
+      superseded: migration 191 removes the row together with the code that read it,
+      which is exactly the condition 186's comment named.
+- [ ] **Announce that a lapsed Promotion stops discounting** (#635 stage 15): migration
+      191 makes date-aware Membership Fee pricing unconditional, so on the first run after
+      the deploy a member whose promotional Free/Paid/Bonus months have already elapsed
+      starts paying the regular fee. That is the correction the drift report existed to
+      surface, and it *raises* real charges. There is no longer a report to read it from,
+      so check who is affected before the deploy — active assignments carrying a standing
+      Promotion whose timeline has ended:
+      `SELECT um.gym_id, COUNT(*) FROM user_memberships um JOIN user_membership_promotions ump ON ump.user_membership_id = um.id AND ump.status = 'applied' WHERE um.status = 'active' GROUP BY um.gym_id`
+      — then confirm each one's timeline against `promotions.free_months`/`paid_months`/`bonus_months`,
+      and tell the gyms whose members will start paying more.
+- [ ] **Migration 191's `down()` cannot restore what `final_price` held** (#635 stage 15):
+      the column comes back and is seeded from `membership_fee_price`, which is the closest
+      honest value — the agreed-after-promotions numbers were derived from promotion
+      snapshots the rollback does not replay. A rollback that has to bill the old way must
+      be followed by an apply/revoke on each affected assignment (which is what used to
+      recompute the column), or by restoring from backup.
 - [ ] **Existing exercise images have no thumbnail** (#719 part 1): migration 187 adds
       `exercises.image_thumbnail_url` and backfills nothing, so every image uploaded
       through the old `POST /storage/uploads/exercise-image` route (one `<uuid>.png`,

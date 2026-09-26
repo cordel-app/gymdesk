@@ -61,7 +61,6 @@ interface AssignmentRow {
   id: number;
   membership_plan_id: number | null;
   status: string;
-  final_price: string | number | null;
   starts_at: unknown;
   ends_at: unknown;
   plan_name: string | null;
@@ -70,6 +69,13 @@ interface AssignmentRow {
   recurring_billing_unit: string | null;
   /** The regular Membership Fee frozen at assignment time — NULL for a pre-snapshot row. */
   membership_fee_price: string | number | null;
+  /**
+   * Only read when the frozen fee and the Plan's price window give nothing — the
+   * last link of `regularMembershipFee()`'s chain, and 0 for anything created
+   * since migration 058. Selected here so the simulation resolves the same fee the
+   * nightly run does; #635 stage 15 removed the stored price both used to end at.
+   */
+  base_price: string | number | null;
   /** 1 when any of the seven snapshot columns is set; decides the benefit fallback. */
   has_billing_snapshot: number;
   /** #635 stage 8 — the assignment's own Billing & Duration, and its Plan's live one. */
@@ -155,8 +161,8 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
 /** Builds the engine's input for one Member and runs it. Read-only end to end. */
 export async function computeMemberBillingSimulation(gymId: string, memberId: number): Promise<BillingSimulationResult> {
   const { rows } = await db.query<AssignmentRow>(
-    `SELECT um.id, um.membership_plan_id, um.status, um.final_price, um.starts_at, um.ends_at,
-            um.membership_fee_price,
+    `SELECT um.id, um.membership_plan_id, um.status, um.starts_at, um.ends_at,
+            um.membership_fee_price, um.base_price,
             um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
             p.name AS plan_name,
             p.free_months AS plan_free_months,

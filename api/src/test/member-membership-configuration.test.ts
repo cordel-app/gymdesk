@@ -96,9 +96,9 @@ async function createAssignment(
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, ends_at,
-        base_price, final_price, next_billing_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, memberId, planId, status, startsAt, endsAt, finalPrice, finalPrice, nextBillingDate],
+        base_price, next_billing_date)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [gymId, memberId, planId, status, startsAt, endsAt, finalPrice, nextBillingDate],
   );
   return insertId;
 }
@@ -303,7 +303,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
       status: 'active',
       is_live: true,
     });
-    expect(Number(plan.final_price)).toBe(49.5);
+    expect(Number(plan.membership_fee)).toBe(49.5);
     expect(dateOnly(plan.starts_at)).toBe('2026-03-01');
     expect(plan.ends_at).toBeNull();
     expect(dateOnly(plan.next_billing_date)).toBe('2026-04-01');
@@ -418,7 +418,7 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
       'Parallel Premium', 'Parallel Standard',
     ]);
     expect(res.body.plans.map((p: any) => p.is_live)).toEqual([true, true]);
-    expect(res.body.plans.map((p: any) => Number(p.final_price))).toEqual([100, 75]);
+    expect(res.body.plans.map((p: any) => Number(p.membership_fee))).toEqual([100, 75]);
   });
 
   it('lists the promotions of both plans, each carrying its Assigned Plan', async () => {

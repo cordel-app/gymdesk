@@ -6,7 +6,7 @@
 //      applied it, how it reads today, and the Sellable Items it granted at
 //      the prices agreed — comes from the application, never from the
 //      Promotion's current definition.
-//   2. What it *charges* does too: `computeFinalPrice` now reads each
+//   2. What it *charges* does too: the fee resolution reads each
 //      application's Membership Fee Benefit out of its snapshot, so editing
 //      the Promotion between two recomputations can no longer reprice an
 //      assignment that already exists (§13/§16).
@@ -69,23 +69,32 @@ async function createMember(gymId: string): Promise<number> {
 async function createAssignment(gymId: string, planId: number, basePrice = 100): Promise<number> {
   const memberId = await createMember(gymId);
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price)
-     VALUES (?, ?, ?, 'active', CURDATE(), ?, ?)`,
-    [gymId, memberId, planId, basePrice, basePrice],
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+     VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
+    [gymId, memberId, planId, basePrice],
   );
   return insertId;
 }
 
+/**
+ * `freeMonths` is an option because it decides whether the Promotion's own
+ * Membership Fee Benefit is even reachable on the date being priced: inside a
+ * Promotion's Free Period the fee is *waived*, and the Promotion outranks
+ * everything else (#635 §7, the thread's Q2 answer). The pricing cases below
+ * therefore ask for 0 free months, so the date they price falls in the paid
+ * period where the benefit's own action is what shows.
+ */
 async function createPromotion(
-  gymId: string, name: string, opts: { stackable?: boolean; endsAt?: string } = {},
+  gymId: string, name: string,
+  opts: { stackable?: boolean; endsAt?: string; freeMonths?: number } = {},
 ): Promise<number> {
-  const { stackable = true, endsAt = '2099-12-31' } = opts;
+  const { stackable = true, endsAt = '2099-12-31', freeMonths = 1 } = opts;
   const { insertId } = await db.query(
     `INSERT INTO promotions
        (gym_id, name, description, starts_at, ends_at, lifecycle_status, stackable,
         only_applicable_for_new_members, free_months, paid_months, bonus_months)
-     VALUES (?, ?, 'Agreed description', '2026-01-01', ?, 'active', ?, 0, 1, 6, 2)`,
-    [gymId, name, endsAt, stackable ? 1 : 0],
+     VALUES (?, ?, 'Agreed description', '2026-01-01', ?, 'active', ?, 0, ?, 6, 2)`,
+    [gymId, name, endsAt, stackable ? 1 : 0, freeMonths],
   );
   return insertId;
 }
@@ -135,11 +144,10 @@ const revokePromotion = (gymId: string, umId: number, promotionId: number) =>
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId);
 
-async function finalPrice(umId: number): Promise<number> {
-  const { rows } = await db.query<{ final_price: string }>(
-    'SELECT final_price FROM user_memberships WHERE id = ?', [umId],
-  );
-  return parseFloat(rows[0].final_price);
+async function finalPrice(gymId: string, umId: number): Promise<number> {
+  const res = await request.get(`/user-memberships/${umId}`)
+    .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+  return Number(res.body.membership_fee);
 }
 
 // ─── What the card reads ─────────────────────────────────────────────────────
@@ -311,8 +319,8 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
 
   it('keeps the agreed price when the Promotion is repriced and another one is revoked', async () => {
     const umId = await createAssignment(gymId, planId, 100);
-    const keptId = await createPromotion(gymId, `Kept-${uniq()}`);
-    const revokedId = await createPromotion(gymId, `ToRevoke-${uniq()}`);
+    const keptId = await createPromotion(gymId, `Kept-${uniq()}`, { freeMonths: 0 });
+    const revokedId = await createPromotion(gymId, `ToRevoke-${uniq()}`, { freeMonths: 0 });
     await targetPlan(gymId, keptId, planId);
     await targetPlan(gymId, revokedId, planId);
     await setMembershipFeeBenefit(gymId, keptId, 'fixed_discount', 10);
@@ -320,7 +328,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
 
     await applyPromotion(gymId, umId, keptId);
     await applyPromotion(gymId, umId, revokedId);
-    expect(await finalPrice(umId)).toBe(85);
+    expect(await finalPrice(gymId, umId)).toBe(85);
 
     // The Promotion is repriced after being applied. Revoking the *other* one
     // recomputes the price, which used to pull in this new value.
@@ -330,37 +338,37 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     );
     expect((await revokePromotion(gymId, umId, revokedId)).status).toBe(200);
 
-    expect(await finalPrice(umId)).toBe(90);
+    expect(await finalPrice(gymId, umId)).toBe(90);
   });
 
   it('keeps the agreed price when the Promotion\'s benefit is deleted outright', async () => {
     const umId = await createAssignment(gymId, planId, 200);
-    const promotionId = await createPromotion(gymId, `Deleted-Benefit-${uniq()}`);
-    const otherId = await createPromotion(gymId, `Other-${uniq()}`);
+    const promotionId = await createPromotion(gymId, `Deleted-Benefit-${uniq()}`, { freeMonths: 0 });
+    const otherId = await createPromotion(gymId, `Other-${uniq()}`, { freeMonths: 0 });
     await targetPlan(gymId, promotionId, planId);
     await targetPlan(gymId, otherId, planId);
     await setMembershipFeeBenefit(gymId, promotionId, 'percentage_discount', 50);
 
     await applyPromotion(gymId, umId, promotionId);
-    expect(await finalPrice(umId)).toBe(100);
+    expect(await finalPrice(gymId, umId)).toBe(100);
 
     await db.query('DELETE FROM promotion_membership_fee_benefits WHERE promotion_id = ?', [promotionId]);
     // Any later recompute — here, applying a second Promotion — must still
     // honour the first one's agreed benefit.
     expect((await applyPromotion(gymId, umId, otherId)).status).toBe(201);
-    expect(await finalPrice(umId)).toBe(100);
+    expect(await finalPrice(gymId, umId)).toBe(100);
   });
 
   it('still honours the duration gate, counted from when it was applied', async () => {
     const umId = await createAssignment(gymId, planId, 100);
-    const lapsedId = await createPromotion(gymId, `Lapsed-${uniq()}`);
-    const otherId = await createPromotion(gymId, `Recompute-${uniq()}`);
+    const lapsedId = await createPromotion(gymId, `Lapsed-${uniq()}`, { freeMonths: 0 });
+    const otherId = await createPromotion(gymId, `Recompute-${uniq()}`, { freeMonths: 0 });
     await targetPlan(gymId, lapsedId, planId);
     await targetPlan(gymId, otherId, planId);
     await setMembershipFeeBenefit(gymId, lapsedId, 'fixed_discount', 40, { durationMonths: 3 });
 
     await applyPromotion(gymId, umId, lapsedId);
-    expect(await finalPrice(umId)).toBe(60);
+    expect(await finalPrice(gymId, umId)).toBe(60);
 
     // Four months later its three-month window is over: the next recompute
     // drops it, exactly as the SQL gate did before the snapshot cutover.
@@ -370,13 +378,13 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
       [umId, lapsedId],
     );
     expect((await applyPromotion(gymId, umId, otherId)).status).toBe(201);
-    expect(await finalPrice(umId)).toBe(100);
+    expect(await finalPrice(gymId, umId)).toBe(100);
   });
 
   it('prices a snapshot-less application from the Promotion, which is all it has', async () => {
     const umId = await createAssignment(gymId, planId, 100);
-    const legacyId = await createPromotion(gymId, `Legacy-Price-${uniq()}`);
-    const otherId = await createPromotion(gymId, `Legacy-Recompute-${uniq()}`);
+    const legacyId = await createPromotion(gymId, `Legacy-Price-${uniq()}`, { freeMonths: 0 });
+    const otherId = await createPromotion(gymId, `Legacy-Recompute-${uniq()}`, { freeMonths: 0 });
     await targetPlan(gymId, legacyId, planId);
     await targetPlan(gymId, otherId, planId);
     await setMembershipFeeBenefit(gymId, legacyId, 'fixed_discount', 25);
@@ -387,7 +395,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     );
 
     expect((await applyPromotion(gymId, umId, otherId)).status).toBe(201);
-    expect(await finalPrice(umId)).toBe(75);
+    expect(await finalPrice(gymId, umId)).toBe(75);
   });
 });
 

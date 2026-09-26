@@ -7,7 +7,7 @@ import { cleanupTestGyms, createTestGym, createTestMembership, request } from '.
  *
  * Stage 8 made the Billing Simulation bill from the assignment's own Billing &
  * Duration and stage 10 put the same numbers in front of the Member; the run
- * still charged `final_price` flat, so a Plan sold with a free first month was
+ * still charged a stored price flat, so a Plan sold with a free first month was
  * shown €0 and charged that night. These cases pin the new behaviour end to
  * end: which cycles are waived, which are still charged, and that a waived one
  * still moves the schedule on.
@@ -91,10 +91,10 @@ async function createDueAssignment(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price,
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
         next_billing_date, free_months, paid_months, bonus_months, pay_beforehand_months,
         membership_fee_price)
-     VALUES (?, ?, ?, 'active', ?, '29.99', '29.99', ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, 'active', ?, '29.99', ?, ?, ?, ?, ?, ?)`,
     [
       gymId, memberId, planId, opts.startsAt ?? '2000-01-01', opts.nextBillingDate,
       opts.snapshot?.free ?? null, opts.snapshot?.paid ?? null, opts.snapshot?.bonus ?? null,

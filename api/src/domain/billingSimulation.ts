@@ -42,11 +42,12 @@
 //
 // #635 stage 12 makes `resolveMembershipFee` below the *only* implementation of
 // "what does the Membership Fee cost on this date": the Billing Events
-// projection, `computeFinalPrice`, the Member's My Membership page and the
+// projection, the Member's My Membership page, promotion apply/revoke and the
 // nightly run all call it, so none of them can price a cycle differently from
 // what the Member was shown. A Promotion's Membership Fee Benefit therefore ends
 // with the Promotion's own Free/Paid/Bonus timeline everywhere (the thread's
-// stage 12 answer (a)), instead of surviving in a stored `final_price`.
+// stage 12 answer (a)); since stage 15 there is no stored agreed price left for
+// one of them to survive in.
 
 import { advanceBillingDate } from './billingDate';
 import {
@@ -193,7 +194,7 @@ export interface MembershipFeeContext {
    * The applications still standing on the assignment. Typed as the shared
    * `AppliedPromotionForBilling` rather than `SimulationPromotion` since #635
    * stage 12, so a caller that prices only the fee (the nightly run, the Billing
-   * Events projection, `computeFinalPrice`) needs no granted Sellable Items to
+   * Events projection, promotion apply/revoke) needs no granted Sellable Items to
    * ask the question.
    */
   promotions: AppliedPromotionForBilling[];
@@ -432,7 +433,7 @@ export function resolveMembershipFee(regular: number, date: string, a: Membershi
  * caps the benefit at free + paid + bonus = 0.
  *
  * Since stage 12 this is the *only* implementation of that rule: the Billing
- * Events projection (`computeMembershipFeePriceAt`), `computeFinalPrice`, the
+ * Events projection (`computeMembershipFeePriceAt`), `priceMembershipFeeOn()`, the
  * nightly run and the Member's own My Membership page all resolve a date
  * through here, so none of them can answer a different price for the same
  * cycle.

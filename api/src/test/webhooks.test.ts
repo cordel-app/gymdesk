@@ -57,7 +57,7 @@ async function createMembershipPlan(gymId: string): Promise<number> {
 
 async function createUserMembership(gymId: string, memberId: number, planId: number): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), '5.00')`,
     [gymId, memberId, planId],
   );

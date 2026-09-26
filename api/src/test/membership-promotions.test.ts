@@ -1,5 +1,5 @@
 // Tests for membership-promotions.ts (apply/revoke promotions on a
-// user_membership) — in particular that `computeFinalPrice` correctly applies
+// user_membership) — in particular that the resolved Membership Fee correctly applies
 // a Promotion's Membership Fee Benefit, including the `fixed_price` action
 // added in #487 stage 2 (previously unimplemented) and the `duration_months`
 // gate from #487 stage 3. Since #635 stage 5 that benefit is one row in
@@ -56,9 +56,9 @@ async function createMember(gymId: string, name: string): Promise<number> {
 
 async function createUserMembership(gymId: string, memberId: number, planId: number, basePrice: number): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price)
-     VALUES (?, ?, ?, 'active', CURDATE(), ?, ?)`,
-    [gymId, memberId, planId, basePrice, basePrice],
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+     VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
+    [gymId, memberId, planId, basePrice],
   );
   return insertId;
 }
@@ -68,14 +68,20 @@ async function createUserMembership(gymId: string, memberId: number, planId: num
 // since #634 §3, that flag refuses the apply for a Member who held another
 // Membership Plan in the trailing 12 months. Promotions that are not about
 // that rule opt out; the rule's own tests below pass `newMembersOnly`.
+// `paid_months` is set because a Membership Fee Benefit lives *inside* the
+// Promotion's own Free/Paid/Bonus timeline and ends with it (#635 stage 12's
+// answer (a), unconditional since stage 15): a Promotion configured with no
+// months at all discounts nothing on any date, so a fixture that leaves them
+// NULL would test the absence of a benefit rather than the action it carries.
+// Twelve paid months put every case below comfortably inside the timeline.
 async function createPromo(
-  gymId: string, name: string, stackable = false, newMembersOnly = false,
+  gymId: string, name: string, stackable = false, newMembersOnly = false, paidMonths = 12,
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, stackable,
-                             only_applicable_for_new_members)
-     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', ?, ?)`,
-    [gymId, name, stackable ? 1 : 0, newMembersOnly ? 1 : 0],
+                             only_applicable_for_new_members, paid_months)
+     VALUES (?, ?, '2026-01-01', '2099-12-31', 'active', ?, ?, ?)`,
+    [gymId, name, stackable ? 1 : 0, newMembersOnly ? 1 : 0, paidMonths],
   );
   return insertId;
 }
@@ -143,37 +149,37 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit calc'
   it('waive brings the membership fee to 0', async () => {
     const res = await applyAndGetFinalPrice('waive', null);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(0);
+    expect(Number(res.body.membership_fee)).toBe(0);
   });
 
   it('percentage_discount reduces the fee proportionally', async () => {
     const res = await applyAndGetFinalPrice('percentage_discount', 50);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(50);
+    expect(Number(res.body.membership_fee)).toBe(50);
   });
 
   it('fixed_discount subtracts a fixed amount', async () => {
     const res = await applyAndGetFinalPrice('fixed_discount', 20);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(80);
+    expect(Number(res.body.membership_fee)).toBe(80);
   });
 
   it('fixed_price replaces the fee with a specific price (#487 stage 2)', async () => {
     const res = await applyAndGetFinalPrice('fixed_price', 60);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(60);
+    expect(Number(res.body.membership_fee)).toBe(60);
   });
 
   it('fixed_price of 0 waives the fee entirely', async () => {
     const res = await applyAndGetFinalPrice('fixed_price', 0);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(0);
+    expect(Number(res.body.membership_fee)).toBe(0);
   });
 
   it('fixed_discount larger than the base price clamps at 0', async () => {
     const res = await applyAndGetFinalPrice('fixed_discount', 500);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(0);
+    expect(Number(res.body.membership_fee)).toBe(0);
   });
 });
 
@@ -209,7 +215,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     await setMembershipFeeBenefit(gymId, promoId, 'waive', null);
     const res = await apply(umId, promoId);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(0);
+    expect(Number(res.body.membership_fee)).toBe(0);
   });
 
   it('a fixed_price benefit within its duration_months window applies', async () => {
@@ -217,31 +223,35 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     await setMembershipFeeBenefit(gymId, promoId, 'fixed_price', 60, { durationMonths: 3 });
     const res = await apply(umId, promoId);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(60);
+    expect(Number(res.body.membership_fee)).toBe(60);
   });
 
-  it('a null duration_months never expires', async () => {
+  // #635 stage 12 (answer (a)), unconditional since stage 15: a null
+  // `duration_months` does not mean "for ever". The benefit still lives inside
+  // the Promotion's own Free/Paid/Bonus timeline and ends with it — which is the
+  // overcharge/undercharge the stored `final_price` could never express, because
+  // it had no date in it and nothing re-ran once a promotional period elapsed.
+  it('a null duration_months still ends with the Promotion timeline', async () => {
     const { umId, promoId } = await setup();
     await setMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 20, { durationMonths: null });
     const applied = await apply(umId, promoId);
-    expect(Number(applied.body.final_price)).toBe(80);
+    expect(Number(applied.body.membership_fee)).toBe(80);
+    // Ten years back: the Promotion's twelve paid months are long past, so the
+    // next cycle is priced at the regular fee with no recompute of any kind.
     await backdateAppliedAt(umId, promoId, 120);
-    // Trigger a fresh recompute via a second stackable promotion, per how
-    // computeFinalPrice is invoked today (no scheduled job — see stage 3
-    // comment in membership-promotions.ts).
     const { promoId: promoId2 } = await setup();
     // re-target the same membership/plan for the trivial trigger promo
     await db.query('UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?', [umId, promoId2]);
     const res = await apply(umId, promoId2);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(80);
+    expect(Number(res.body.membership_fee)).toBe(100);
   });
 
   it('a benefit whose duration_months window has lapsed is excluded on the next recompute', async () => {
     const { umId, promoId } = await setup();
     await setMembershipFeeBenefit(gymId, promoId, 'waive', null, { durationMonths: 3 });
     const applied = await apply(umId, promoId);
-    expect(Number(applied.body.final_price)).toBe(0);
+    expect(Number(applied.body.membership_fee)).toBe(0);
 
     await backdateAppliedAt(umId, promoId, 6);
 
@@ -251,7 +261,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     await db.query('UPDATE promotion_membership_plans SET membership_plan_id = (SELECT membership_plan_id FROM user_memberships WHERE id = ?) WHERE promotion_id = ?', [umId, promoId2]);
     const res = await apply(umId, promoId2);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(100);
+    expect(Number(res.body.membership_fee)).toBe(100);
   });
 
   it('a disabled benefit has no effect', async () => {
@@ -259,7 +269,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     await setMembershipFeeBenefit(gymId, promoId, 'waive', null, { enabled: false });
     const res = await apply(umId, promoId);
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(100);
+    expect(Number(res.body.membership_fee)).toBe(100);
   });
 
   // #635 stage 5 replaced "a charge benefit and a period benefit on the same
@@ -268,7 +278,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
   it('two stacked promotions apply their membership fee benefits in turn', async () => {
     const { umId, promoId } = await setup();
     await setMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 20);
-    expect(Number((await apply(umId, promoId)).body.final_price)).toBe(80);
+    expect(Number((await apply(umId, promoId)).body.membership_fee)).toBe(80);
 
     const { promoId: promoId2 } = await setup();
     await setMembershipFeeBenefit(gymId, promoId2, 'percentage_discount', 50);
@@ -279,7 +289,7 @@ describe('POST /user-memberships/:id/promotions — membership fee benefit durat
     const res = await apply(umId, promoId2);
     expect(res.status).toBe(201);
     // first promotion: 100 - 20 = 80, then the second: 80 * 0.5 = 40
-    expect(Number(res.body.final_price)).toBe(40);
+    expect(Number(res.body.membership_fee)).toBe(40);
   });
 });
 
@@ -486,8 +496,8 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     const { status = 'active', startsAt = 'CURDATE()', endsAt = null, createdMonthsAgo = 0 } = opts;
     const { insertId } = await db.query(
       `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price, final_price, created_at)
-       VALUES (?, ?, ?, ?, ${startsAt}, ?, 100, 100, UTC_TIMESTAMP() - INTERVAL ? MONTH)`,
+         (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price, created_at)
+       VALUES (?, ?, ?, ?, ${startsAt}, ?, 100, UTC_TIMESTAMP() - INTERVAL ? MONTH)`,
       [gymId, memberId, membershipPlanId, status, endsAt, createdMonthsAgo],
     );
     return insertId;

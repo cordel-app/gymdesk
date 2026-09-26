@@ -2,8 +2,8 @@
 // `promotion_charge_benefits` and `promotion_period_benefits` both persist the
 // same action/value vocabulary (see migrations 092/102/144) — this is the one
 // place that turns an (action, value) pair into a resulting amount, so every
-// caller (real billing in `computeFinalPrice`, and later the Period Benefit
-// billing/forecast wiring of stages 3-4) agrees on the same math.
+// caller (real billing in `membership-fee-pricing.ts`, and later the Period
+// Benefit billing/forecast wiring of stages 3-4) agrees on the same math.
 
 export type PromotionBenefitAction =
   | 'no_benefit'

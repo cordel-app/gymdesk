@@ -61,7 +61,7 @@ async function createUserMembershipDirect(
   status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, ?, CURDATE(), 29.99)`,
     [gymId, memberId, planId, status],
   );
@@ -213,9 +213,9 @@ async function createUserMembershipWithPrice(
   basePrice: number, startsAt: string, endsAt: string | null = null,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price, final_price)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, memberId, planId, status, startsAt, endsAt, basePrice, basePrice],
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [gymId, memberId, planId, status, startsAt, endsAt, basePrice],
   );
   await db.query(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
@@ -569,7 +569,7 @@ describe('GET /user-memberships — lifecycle_status', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const { insertId: umId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_ADD(CURDATE(), INTERVAL 7 DAY), 29.99)`,
       [gymId, memberId, planId],
     );
@@ -587,7 +587,7 @@ describe('GET /user-memberships — lifecycle_status', () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const { insertId: umId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, final_price)
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_SUB(CURDATE(), INTERVAL 60 DAY), DATE_SUB(CURDATE(), INTERVAL 1 DAY), 29.99)`,
       [gymId, memberId, planId],
     );
@@ -622,7 +622,7 @@ describe('GET /user-memberships — advanced filtering', () => {
 
     const pendingMemberId = await createMember(gymId, 'UM Filter Pending');
     ({ insertId: pendingId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_ADD(CURDATE(), INTERVAL 7 DAY), 29.99)`,
       [gymId, pendingMemberId, planId],
     ));
@@ -632,7 +632,7 @@ describe('GET /user-memberships — advanced filtering', () => {
 
     const expiredMemberId = await createMember(gymId, 'UM Filter Expired');
     ({ insertId: expiredId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, final_price)
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_SUB(CURDATE(), INTERVAL 60 DAY), DATE_SUB(CURDATE(), INTERVAL 1 DAY), 29.99)`,
       [gymId, expiredMemberId, planId],
     ));
@@ -1056,7 +1056,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when final_price overrides the effective price without a discount_reason', async () => {
+  it('returns 400 when membership_fee_price overrides the effective price without a discount_reason', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId);
@@ -1065,7 +1065,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .post(`/user-memberships/${umId}/assign-new-plan`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), final_price: 10 });
+      .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), membership_fee_price: 10 });
     expect(res.status).toBe(400);
   });
 
@@ -1150,7 +1150,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(oldRows[0].status).toBe('cancelled');
   });
 
-  it('accepts a final_price override together with a discount_reason', async () => {
+  it('accepts a membership_fee_price override together with a discount_reason', async () => {
     const memberId = await createMember(gymId, 'UM Assign Discount Member');
     const oldPlanId = await createPlan(gymId);
     const newPlanId = await createPlan(gymId);
@@ -1163,11 +1163,14 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .send({
         membership_plan_id: newPlanId,
         starts_at: isoDate(1),
-        final_price: 5,
+        membership_fee_price: 5,
         discount_reason: 'Loyalty discount',
       });
     expect(res.status).toBe(201);
-    expect(Number(res.body.final_price)).toBe(5);
+    // The negotiated fee is the assignment's own frozen Membership Fee since
+    // #635 stage 15 — there is no second stored price for it to live in.
+    expect(Number(res.body.membership_fee_price)).toBe(5);
+    expect(Number(res.body.membership_fee)).toBe(5);
     expect(res.body.discount_reason).toBe('Loyalty discount');
   });
 

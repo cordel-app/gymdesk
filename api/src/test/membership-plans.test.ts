@@ -1735,7 +1735,7 @@ describe('Membership Plan Pricing (#547)', () => {
     await savePricing(planId, { price: 60, tax_rate_id: taxRate21 });
     const memberId = await createMember(gymId);
     const membershipId = await createActiveUserMembership(gymId, memberId, planId);
-    await db.query('UPDATE user_memberships SET base_price = 40, final_price = 40 WHERE id = ?', [membershipId]);
+    await db.query('UPDATE user_memberships SET base_price = 40, membership_fee_price = 40 WHERE id = ?', [membershipId]);
 
     await savePricing(planId, { price: 75, tax_rate_id: taxRate21 });
     const res = await request
@@ -1749,7 +1749,7 @@ describe('Membership Plan Pricing (#547)', () => {
 
     const { rows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
     expect(Number(rows[0].base_price)).toBeCloseTo(75, 2);
-    expect(Number(rows[0].final_price)).toBeCloseTo(75, 2);
+    expect(Number(rows[0].membership_fee_price)).toBeCloseTo(75, 2);
 
     const prices = await priceRows(planId);
     const current = prices.find((p) => Number(p.price) === 75);
@@ -1763,7 +1763,7 @@ describe('Membership Plan Pricing (#547)', () => {
     const memberId = await createMember(gymId);
     const membershipId = await createActiveUserMembership(gymId, memberId, planId);
     await db.query(
-      "UPDATE user_memberships SET base_price = 100, final_price = 80, discount_reason = 'Loyalty' WHERE id = ?",
+      "UPDATE user_memberships SET base_price = 100, membership_fee_price = 80, discount_reason = 'Loyalty' WHERE id = ?",
       [membershipId],
     );
 
@@ -1778,7 +1778,7 @@ describe('Membership Plan Pricing (#547)', () => {
 
     const { rows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
     expect(Number(rows[0].base_price)).toBeCloseTo(130, 2);
-    expect(Number(rows[0].final_price)).toBeCloseTo(80, 2);
+    expect(Number(rows[0].membership_fee_price)).toBeCloseTo(80, 2);
   });
 
   it('never touches a cancelled assigned plan or an already-generated billing event', async () => {
@@ -1787,7 +1787,7 @@ describe('Membership Plan Pricing (#547)', () => {
     const memberId = await createMember(gymId);
     const membershipId = await createActiveUserMembership(gymId, memberId, planId);
     await db.query(
-      "UPDATE user_memberships SET status = 'cancelled', base_price = 50, final_price = 50 WHERE id = ?",
+      "UPDATE user_memberships SET status = 'cancelled', base_price = 50, membership_fee_price = 50 WHERE id = ?",
       [membershipId],
     );
     const { insertId: eventId } = await db.query(
@@ -1805,7 +1805,7 @@ describe('Membership Plan Pricing (#547)', () => {
     expect(res.body.updated).toBe(0);
 
     const { rows: umRows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
-    expect(Number(umRows[0].final_price)).toBeCloseTo(50, 2);
+    expect(Number(umRows[0].membership_fee_price)).toBeCloseTo(50, 2);
     const { rows: beRows } = await db.query('SELECT * FROM billing_events WHERE id = ?', [eventId]);
     expect(Number(beRows[0].amount)).toBeCloseTo(50, 2);
   });
