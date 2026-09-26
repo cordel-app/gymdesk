@@ -703,13 +703,20 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           && !ALLOWED_TRANSITIONS[current[0].status as Status].includes(status as Status)) {
         return { kind: 'invalid_transition', from: current[0].status } as const;
       }
+      // #785: a direct flip to `active` clears the nightly run's dunning state
+      // for the same reason `/reactivate` does — the resumed assignment gets the
+      // documented two attempts, not one. Nothing else on this route touches the
+      // pair, which is run state and not an editable field.
+      const resetDunning = status === 'active' && current[0].status !== 'active'
+        ? ', failed_attempts = 0, last_failed_at = NULL'
+        : '';
       await tx.query(
         `UPDATE user_memberships SET
           starts_at            = COALESCE(?, starts_at),
           ends_at              = IF(?, ?, ends_at),
           status               = COALESCE(?, status),
           discount_reason      = IF(?, ?, discount_reason),
-          discount_expires_at  = IF(?, ?, discount_expires_at)
+          discount_expires_at  = IF(?, ?, discount_expires_at)${resetDunning}
          WHERE id = ? AND gym_id = ?`,
         [
           starts_at ?? null,
@@ -937,7 +944,19 @@ async function transitionMembership(
     if (current.length === 0) return { kind: 'not_found' } as const;
     const prev = current[0];
     if (!allowedFrom.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
-    await tx.query('UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?', [targetStatus, prev.id, gymId]);
+    // #785: reactivating means "bill this again", so the nightly run's dunning
+    // state starts over. An assignment the run paused carries
+    // `failed_attempts = 2`; leaving it there would give the resumed assignment
+    // one attempt instead of the documented two — the next rejection would pause
+    // it immediately. Only on the way *to* `active`: pausing or cancelling has
+    // no reason to forget how the last cycle went.
+    const resetDunning = targetStatus === 'active'
+      ? ', failed_attempts = 0, last_failed_at = NULL'
+      : '';
+    await tx.query(
+      `UPDATE user_memberships SET status = ?${resetDunning} WHERE id = ? AND gym_id = ?`,
+      [targetStatus, prev.id, gymId],
+    );
     await recordStatusChange(tx, {
       gymId, userMembershipId: prev.id, memberId: prev.member_id,
       previousStatus: prev.status, newStatus: targetStatus,

@@ -84,10 +84,23 @@ jobs:
           fi
 
           IFS=$'\t' read -r processed succeeded failed waived <<<"$counters"
-          echo "processed=$processed succeeded=$succeeded failed=$failed waived=$waived"
+
+          # #785: how many assignments this run escalated to `paused` after a
+          # second consecutive rejection. Read defensively (`// 0`) rather than
+          # through the parse above: an API that predates the counter must not
+          # turn a readable run into an unreadable one mid-deploy.
+          paused="$(printf '%s' "$body" | jq -r '.paused // 0')"
+          echo "processed=$processed succeeded=$succeeded failed=$failed waived=$waived paused=$paused"
 
           if [ "$failed" -gt 0 ]; then
             echo "::error title=$failed failed recurring charge(s)::The nightly run could not charge $failed of $processed due membership(s). Open Payments -> Billing Events with the status filter set to 'failed' (oldest first) to see which members and why."
+            if [ "$paused" -gt 0 ]; then
+              # A pause is always accompanied by the rejection that caused it, so
+              # this never needs to fail the step on its own — but it is the part
+              # a person has to act on: those members are no longer being billed
+              # and staff must reactivate them explicitly once they have paid.
+              echo "::error title=$paused assigned plan(s) paused::A second consecutive rejection paused $paused assigned plan(s) (#785). They are no longer selected by the run. Settle the failed charge (Retry Payment or Manual payment) and reactivate each one explicitly from its Assigned Plan."
+            fi
             exit 1
           fi
 
