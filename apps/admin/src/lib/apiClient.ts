@@ -46,5 +46,32 @@ export function useApiClient() {
     [getToken, activeGymId, activeCenterId, impersonationSession, locale],
   ) as <T>(path: string, options?: RequestInit) => Promise<T>;
 
-  return { apiFetch };
+  /**
+   * #787: the same request, for an endpoint that answers a PDF rather than
+   * JSON. Receipts are the only such endpoint today, and two screens now offer
+   * them (the member's Payments modal and Billing Events), so the headers —
+   * bearer token, gym, center, impersonation, locale — live here once instead
+   * of being re-assembled per screen.
+   */
+  const pdfFetch = useCallback(
+    async (path: string, method: 'GET' | 'POST' = 'GET'): Promise<Blob> => {
+      const token = await getToken();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (activeGymId) headers['x-gym-id'] = activeGymId;
+      if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
+      if (impersonationSession) headers['x-impersonate-as'] = impersonationSession.effectiveUserId;
+      if (locale) headers['x-locale'] = locale;
+
+      const res = await fetch(`/api/proxy${path}`, { method, headers });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), { status: res.status, body });
+      }
+      return res.blob();
+    },
+    [getToken, activeGymId, activeCenterId, impersonationSession, locale],
+  );
+
+  return { apiFetch, pdfFetch };
 }

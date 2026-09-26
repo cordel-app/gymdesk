@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
-import { useGym } from '@/context/GymContext';
 import { StatusBadge } from '@/components/StatusBadge';
 import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
 
@@ -73,9 +71,7 @@ export function MemberPaymentsModal({
   onClose: () => void;
 }) {
   const t = useTranslations();
-  const { apiFetch } = useApiClient();
-  const { getToken } = useAuth();
-  const { activeGymId } = useGym();
+  const { apiFetch, pdfFetch } = useApiClient();
 
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
@@ -172,16 +168,6 @@ export function MemberPaymentsModal({
     } finally {
       setCashSubmitting(false);
     }
-  }
-
-  async function pdfFetch(path: string, method: 'GET' | 'POST' = 'GET'): Promise<Blob> {
-    const token = await getToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (activeGymId) headers['x-gym-id'] = activeGymId;
-    const res = await fetch(`/api/proxy${path}`, { method, headers });
-    if (!res.ok) throw new Error(`${res.status}`);
-    return res.blob();
   }
 
   async function generateReceipt(eventId: number) {

@@ -337,6 +337,19 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       the paused list. Confirm both are acceptable operationally, and watch the first
       month's `paused` counter in the Billing Run workflow log for a rule that pauses
       more members than expected.
+- [ ] **Confirm the receipt numbering the nightly run now allocates** (#787). The run
+      issues a *factura simplificada* number for every charge it settles, so from the
+      first live night the gym's `receipt_sequences` advances unattended rather than only
+      when a staff member clicks. Before the first real gym: agree with the gym that
+      every recurring charge should carry a numbered receipt (it is a fiscal document
+      series, and a number allocated is a number that must stay accounted for), and
+      confirm the gym's fiscal identity fields (`legal_name`, `cif`, `fiscal_address`,
+      `fiscal_phone`) and its system tax rate are set — the PDF falls back to a 21% IVA
+      rate when no `is_system` `tax_rates` row exists. Note the allocation runs *after*
+      the charge transaction commits and its failure is logged and swallowed, so a gym
+      whose receipts stop appearing is a log to read (`billing/run: receipt number
+      allocation failed`), not a red run; the on-demand `POST /payments/:id/receipt`
+      issues anything the run missed.
 - [ ] **A gym's Payment Provider is metadata, not yet the adapter selector** (#636):
       `gyms.payment_provider_id` is mandatory and administered from Cordel → Payment
       Providers, but `getPaymentProvider()` still resolves the adapter (and its
