@@ -30,12 +30,58 @@
  * assignment that has no frozen fee, no Plan price window covering its start
  * date and no non-zero `base_price`.
  *
- * That is what the backfill below preserves, and only that: `membership_fee_price`
- * is written from `final_price` exactly where the chain would have returned
- * `final_price` anyway. Copying it more widely would be wrong in the other
- * direction — `final_price` has the applied Promotions baked into it, so making
- * it an assignment's *regular* fee would freeze a promotional discount into the
- * contract for ever, which is the bug stage 12 existed to fix.
+ * That is what the first backfill below preserves, and only that:
+ * `membership_fee_price` is written from `final_price` exactly where the chain
+ * would have returned `final_price` anyway. Copying it more widely would be
+ * wrong in the other direction — `final_price` has the applied Promotions baked
+ * into it, so making it an assignment's *regular* fee would freeze a
+ * promotional discount into the contract for ever, which is the bug stage 12
+ * existed to fix.
+ *
+ * ── The negotiated price the snapshot never carried (#777) ─────────────────
+ *
+ * One row shape slips through that reasoning: an assignment created with a
+ * price override before this migration, whose Plan has a price window covering
+ * its start date. Until stage 15 `POST /user-memberships` (and
+ * `/:id/assign-new-plan`, and a `PUT /:id` carrying a price) wrote the agreed
+ * price to `final_price` with the `discount_reason` it still requires, while
+ * `membership_fee_price` took the Plan's **catalogue** price — the window
+ * covering `starts_at` — from `snapshotAssignedPlan()` for a row created after
+ * migration 174 and from 174's own backfill for one created before it. Both
+ * pre-stage-15 paths still honoured the agreement (the run charged
+ * `final_price` flat; the date-aware branch read the manual discount first),
+ * but after this migration
+ * `regularMembershipFee()` reads the frozen column, so the member would be
+ * charged the catalogue fee from the next nightly run. `final_price` is the
+ * *discounted* number, so that drift is always upward — the direction the #635
+ * thread asked not to let happen silently.
+ *
+ * The second backfill moves that agreement into `membership_fee_price`, which is
+ * where a negotiated fee lives since stage 15. Its guards, and why each one:
+ *
+ *   - `discount_reason` non-empty — the only marker of a negotiated price, then
+ *     as now. A row without one had no override, so its `final_price` differs
+ *     from the frozen fee only by an applied Promotion.
+ *   - `membership_fee_price IS NOT NULL AND <> final_price` — the two row sets
+ *     are disjoint by construction (the first pass keys on the column being NULL,
+ *     this one on it holding a different number), so no row is written twice,
+ *     and `<>` is exact on two `DECIMAL(10,2)` columns, so a row that already
+ *     agrees is skipped and a re-run is a no-op.
+ *   - `status NOT IN ('cancelled', 'expired')` — a terminal assignment's
+ *     configuration is history, not "what was agreed"; nothing bills it.
+ *   - no standing Promotion — an applied Promotion's discount is baked into
+ *     `final_price`, and the two components cannot be separated from a single
+ *     stored total. Copying it would freeze a promotional price into the
+ *     contract, so such an assignment keeps the catalogue fee instead and is
+ *     listed in `docs/go-to-production.md` for a staff re-negotiation.
+ *   - `discount_expires_at` is deliberately *not* a guard: the column means
+ *     "what was agreed", not "what is still in force", and a lapsed agreement
+ *     resolves the catalogue price anyway through `regularMembershipFee()`'s
+ *     `ignoreFrozenFee`.
+ *
+ * These rows already carry a frozen fee, so they are captured by definition
+ * and no materialisation is needed — that hazard (next section) only applies
+ * to the `membership_fee_price IS NULL` set the first pass handles.
  *
  * ── Why the fee is never written on its own ────────────────────────────────
  *
@@ -112,6 +158,24 @@ const UNCAPTURED = `
   AND NOT EXISTS (SELECT 1 FROM user_membership_oneoff     o WHERE o.user_membership_id = um.id)
   AND NOT EXISTS (SELECT 1 FROM user_membership_periodical r WHERE r.user_membership_id = um.id)`;
 
+/**
+ * The negotiated-price rows described in the header: a non-empty
+ * `discount_reason`, a frozen fee that disagrees with the agreed one, a
+ * non-terminal status and no standing Promotion. Exported so the guard test can
+ * pin each clause — this predicate reads a column the migration drops, so no
+ * integration test can exercise it after the fact.
+ */
+const NEGOTIATED_CANDIDATE = `
+  um.final_price IS NOT NULL
+  AND um.discount_reason IS NOT NULL AND TRIM(um.discount_reason) <> ''
+  AND um.membership_fee_price IS NOT NULL
+  AND um.membership_fee_price <> um.final_price
+  AND um.status NOT IN ('cancelled', 'expired')
+  AND NOT EXISTS (
+    SELECT 1 FROM user_membership_promotions ump
+     WHERE ump.user_membership_id = um.id AND ump.status = 'applied'
+  )`;
+
 exports.up = async (knex) => {
   // Guarded on the column rather than on the backfill: MySQL commits DDL
   // implicitly, so if anything after the DROP fails, `migrate:latest` re-runs
@@ -172,6 +236,22 @@ exports.up = async (knex) => {
       `UPDATE user_memberships um
           SET um.membership_fee_price = um.final_price
         WHERE ${BACKFILL_CANDIDATE}`,
+    );
+
+    // ── 3. The negotiated price the snapshot never carried (#777) ───────────
+    // Until stage 15 a price override went to `final_price` — the column this
+    // migration drops — while `membership_fee_price` took the Plan's catalogue
+    // price (from `snapshotAssignedPlan()`, or from migration 174's backfill for
+    // an older row). Moving it keeps the member on the price they were sold. An assignment with a standing
+    // Promotion is skipped: its `final_price` has that Promotion's discount
+    // baked in, so copying it would freeze a promotional price into the
+    // contract, which is the bug stage 12 existed to fix. Runs after pass 2 on
+    // purpose: a row pass 2 just wrote now has `membership_fee_price = final_price`
+    // and the `<>` guard leaves it alone.
+    await knex.raw(
+      `UPDATE user_memberships um
+          SET um.membership_fee_price = um.final_price
+        WHERE ${NEGOTIATED_CANDIDATE}`,
     );
 
     await knex.raw('DROP TABLE IF EXISTS _m191_materialised');
@@ -243,3 +323,6 @@ exports.down = async (knex) => {
     }
   }
 };
+
+exports.BACKFILL_CANDIDATE = BACKFILL_CANDIDATE;
+exports.NEGOTIATED_CANDIDATE = NEGOTIATED_CANDIDATE;
