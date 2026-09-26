@@ -740,7 +740,7 @@ Reference implementation: `apps/member/src/components/ExerciseMedia.tsx` + `Exer
 
 ---
 
-## Owned Media with a Browser-Made Thumbnail (#719 part 1)
+## Owned Media with a Browser-Made Thumbnail (#719 parts 1–2)
 
 A record that carries an image *it may not own* — a Gym Exercise's, copied from the platform's library at import time — needs three things the single-asset patterns above do not.
 
@@ -756,6 +756,14 @@ Two consequences worth stating explicitly:
 - **Removal does not fall back.** When the ticket says the record simply has no image afterwards, do not resolve the platform's version at read time — the record's references are the whole answer, and re-importing is how the platform media comes back. The consuming UI then resolves nothing at all: it renders the URLs the record carries, preferring the thumbnail.
 
 In the editor, the media control is **not** a form field: uploading and removing act immediately on their own endpoints, so cancelling the form neither undoes an upload nor re-applies a removed image. Where the record does not exist yet (a create form), stage the prepared pair and upload it as soon as it does.
+
+The pattern generalises to a second kind of media on the same record (#719 part 2 adds a video and its poster beside the image and its thumbnail), with three adjustments:
+
+- **Validate the container, not the extension.** Where an image has a signature and an IHDR, a video has boxes: read the `ftyp` brand, require a `moov`, and look for a video sample entry in the `stsd` (`domain/mp4Video.ts`). That rejects a QuickTime file renamed to `.mp4` and an audio-only track without `ffprobe` in the API image, and it stays header-only — the payload box is skipped by its declared size, never scanned.
+- **A derived image is not always a thumbnail of an image.** A poster captured from a frame of video is opaque and cover-cropped, so it keeps the square size and the PNG requirement but drops the alpha-channel rule the image thumbnail has. State why in the constant, or the next reader will "fix" it.
+- **A large upload needs a cap, and the cap is configuration.** A buffered `PutObject` holds the whole file in the API process, so the ceiling is an env var with a default and a hard clamp (`EXERCISE_VIDEO_MAX_MB`), and the route's own body-parser limit is derived from it. The client mirrors the number only to refuse early; the server is the authority.
+
+Deleting stays one rule for all of a record's media: check **every** media reference before removing an object, because two kinds can point at the same one, and keep the other kind's references in the "keep" set when replacing this one.
 
 **The platform's own copy of the same media (#716).** When the platform catalogue a gym imports from needs the same pair, reuse the rules rather than the routes. Three things change and nothing else: the key hangs off `PLATFORM_STORAGE_ROOT` instead of `gyms.storage_folder_prefix` (a `gym_id IS NULL` row has no prefix to hang off), the route sits on the `/platform/*` router behind `requireSuperadmin`, and the ownership test is mirrored — the platform may delete only what is under *its* prefix, never a gym's object. Two rules that look symmetrical are not: the reference check before deleting an object must span **every** tenant, because import copies references and each gym that imported the row points at the platform's own object, and the *validator* is not copied at all (one `validate…Pair()`, two routers), since a second copy of "what is a valid image" is how the two ends drift. Keep each router answering for its own rows — 404 for the other's — so neither can be aimed at the other's folder.
 

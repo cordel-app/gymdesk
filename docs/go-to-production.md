@@ -401,9 +401,27 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       `POST /exercises/:id/image`. There is no backfill script: the master is not
       necessarily 2048×2048, and the API deliberately has no image resizer, so a
       thumbnail can only come from a browser. Decide per gym whether to re-upload.
+- [ ] **Existing exercise videos have no poster** (#719 part 2): migration 188 adds
+      `exercises.video_thumbnail_url` and backfills nothing, so every `video_url`
+      configured before it — a YouTube link, a hand-typed URL — reads back with a NULL
+      poster. Nothing breaks: both apps fall back to the YouTube still and then to a
+      play tile. There is no backfill script and there cannot be a server-side one —
+      the API has no `ffmpeg` (#719 Q2), so a poster can only be captured by a browser.
+      Decide per gym whether to re-upload through `POST /exercises/:id/video`.
+- [ ] **An exercise video upload is buffered in the API process** (#719 part 2):
+      `EXERCISE_VIDEO_MAX_MB` (default 50, clamped at 200) is what bounds that memory,
+      and the request body is base64, so peak usage is roughly 1.4× the cap per
+      concurrent upload. Size the API container for the value you set, or lower it.
+      A presigned PUT straight to R2 is the change that removes this ceiling; it needs
+      `@aws-sdk/s3-request-presigner` and CORS on the bucket, and is not in this part.
+- [ ] **No sweep exists for orphaned exercise media objects** (#719 parts 1–2): the
+      media routes delete the objects they replace, but `PUT /exercises/:id` clears a
+      thumbnail/poster reference (when the master or video URL is repointed) without
+      deleting the object, and a hard-deleted gym leaves its whole folder behind. Write
+      a sweep, or accept the orphans and budget the storage.
 - [ ] **`POST /storage/uploads/exercise-image` is now unused by the admin app**
       (#719 part 1): the Exercises page uploads through `POST /exercises/:id/image`
       instead. The route still exists and still works (nutrition images share the same
       handler), so nothing has to happen at deploy time — but it writes a master with no
       thumbnail and applies none of #719's ownership rules, so it should not be given a
-      new caller. Retire it once #719 parts 2 and 3 have landed.
+      new caller. Retire it once #719 part 3 has landed.
