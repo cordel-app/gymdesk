@@ -18,6 +18,15 @@ on:
   schedule:
     # 03:00 UTC = 04:00 CET (05:00 CEST) — night in the gyms' timezone, and
     # three hours clear of the 06:00 billing run so the two never overlap.
+    #
+    # #781 §3: deliberately ONE attempt, unlike `billing-run.yml`, which gained a
+    # 10:00 UTC safety net. A missed billing night means nobody is charged that
+    # day and the cycle has to be caught up; a missed booking night costs
+    # nothing lasting, because this run re-projects the rolling 2-month window
+    # from *now* and books every date it still finds free — the next night's run
+    # creates exactly what this one would have. The guard is the same either way
+    # (#780), so a second schedule can be added here later without any other
+    # change if a dropped night ever turns out to matter.
     - cron: '0 3 * * *'
   workflow_dispatch: # manual trigger for testing
 
