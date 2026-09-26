@@ -380,10 +380,13 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       elapsed keeps discounting every later cycle. Turning it on prices each cycle
       through `resolveMembershipFee()`, which *raises* the charge of every member in
       that state. Before flipping it, per gym: read
-      `GET /user-memberships/reports/membership-fee-drift` (or the `drift` counter and
-      the per-assignment log lines of the nightly run), confirm the assignments it lists
-      and tell the gyms whose members will start paying more. The epic's remaining
-      acceptance criteria are not met until the flag is on.
+      **Payments → Membership Fee Drift** (#635 stage 14 — the page over
+      `GET /user-memberships/reports/membership-fee-drift`; the `drift` counter and the
+      per-assignment log lines of the nightly run say the same thing), confirm the
+      assignments it lists and tell the gyms whose members will start paying more. The
+      page is read-only and switches nothing: flipping the flag stays a deliberate act in
+      Cordel → Feature Flags. The epic's remaining acceptance criteria are not met until
+      the flag is on.
 - [ ] **Migration 186's `down()` deliberately keeps its row** (#635 stage 12): a missing
       feature-flag key counts as *enabled*, so deleting
       `billing.date_aware_membership_fee` would switch the corrected pricing **on**

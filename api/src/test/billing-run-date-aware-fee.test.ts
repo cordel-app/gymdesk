@@ -454,3 +454,60 @@ describe('final_price is resolved on a date once the flag is on (#635 stage 12)'
     expect(await finalPriceOf(umId)).toBe(0);
   });
 });
+
+/* ── the report's own feature key (#635 stage 14) ────────────────────────── */
+
+// Stage 14 gave Payments → Membership Fee Drift its own
+// `payments.membership_fee_drift` key (migration 190) so the page can be
+// switched off without taking Transactions with it. Superadmins bypass flags
+// entirely, so the caller here is a plain gym admin.
+describe('GET /user-memberships/reports/membership-fee-drift — feature flag (#635 stage 14)', () => {
+  const KEY = 'payments.membership_fee_drift';
+  let original: number | undefined;
+
+  beforeAll(async () => {
+    const { rows } = await db.query<{ enabled: number }>(
+      'SELECT enabled FROM feature_flags WHERE feature_key = ?',
+      [KEY],
+    );
+    original = rows[0]?.enabled;
+  });
+
+  afterEach(async () => {
+    if (original !== undefined) {
+      await db.query('UPDATE feature_flags SET enabled = ? WHERE feature_key = ?', [original, KEY]);
+    }
+    invalidateFeatureFlagsCache();
+  });
+
+  // Without this, a renamed or unseeded key would make the case below pass
+  // vacuously — an absent flag row counts as enabled. Migration 190 seeds the
+  // key from `payments.transactions`, which is enabled on a migrated database,
+  // so the expected value here is 1.
+  it('seeds the payments.membership_fee_drift flag', () => {
+    expect(original).toBe(1);
+  });
+
+  it('returns 403 when payments.membership_fee_drift is switched off', async () => {
+    await db.query('UPDATE feature_flags SET enabled = 0 WHERE feature_key = ?', [KEY]);
+    invalidateFeatureFlagsCache();
+    expect((await driftReport()).status).toBe(403);
+  });
+
+  it('serves the report again once the flag is back on', async () => {
+    expect((await driftReport()).status).toBe(200);
+  });
+
+  // The report must not be hostage to a sibling page's key: stage 12 mounted it
+  // under `payments.transactions`, which the Drift page can outlive.
+  it('serves the report while payments.transactions is switched off', async () => {
+    await db.query("UPDATE feature_flags SET enabled = 0 WHERE feature_key = 'payments.transactions'");
+    invalidateFeatureFlagsCache();
+    try {
+      expect((await driftReport()).status).toBe(200);
+    } finally {
+      await db.query("UPDATE feature_flags SET enabled = 1 WHERE feature_key = 'payments.transactions'");
+      invalidateFeatureFlagsCache();
+    }
+  });
+});
