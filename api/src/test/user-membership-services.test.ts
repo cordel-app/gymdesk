@@ -74,8 +74,8 @@ async function createAssignedPlan(
   const planId = await createPlan(gymId);
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price, final_price)
-     VALUES (?, ?, ?, ?, ?, ?, 40, 40)`,
+       (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
+     VALUES (?, ?, ?, ?, ?, ?, 40)`,
     [gymId, memberId, planId, status, startsAt, endsAt],
   );
   return insertId;

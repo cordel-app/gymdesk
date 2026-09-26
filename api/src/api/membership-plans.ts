@@ -3,10 +3,10 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
-import { effectivePrice, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
+import { effectivePrice, snapshotFeeForAssignment, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
-import { snapshotAssignedPlan } from './assigned-plan-snapshot';
+import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
 import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { computeBillingForecast } from '../domain/billingForecast';
 import {
@@ -551,9 +551,9 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     const insertId: number = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, final_price, starts_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
-        [ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, eff.price, starts_at],
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, starts_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+        [ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, starts_at],
       );
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: ownerId,
@@ -1107,8 +1107,16 @@ membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res,
 // Pushes the plan's current price onto the Assigned Plans that still run on it.
 // Terminal (cancelled/expired) memberships and already-generated Billing Events
 // are never touched — this only changes what an ongoing Assigned Plan costs from
-// now on. A negotiated discount (an Assigned Plan with a discount_reason) keeps
-// its agreed final price; only its plan-price snapshot is refreshed.
+// now on. A negotiated fee (an Assigned Plan with a discount_reason) keeps the
+// price that was agreed for it; only its plan-price reference is refreshed.
+//
+// #635 stage 15: the number that decides what an assignment bills is its own
+// frozen `membership_fee_price`, so that is what this writes — `final_price` is
+// gone, and writing only `base_price`/`plan_price_id` (as this did) would leave
+// every assignment billing the price it was created with. Writing it makes the
+// assignment "captured" for the all-or-nothing snapshot rule, so each row is
+// materialised first (see `materialiseAssignedPlanSnapshot`) — otherwise a row
+// that never got a snapshot would flip to captured with empty benefit sections.
 membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
@@ -1120,9 +1128,25 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 
   try {
     const result = await db.transaction(async (tx) => {
+      const { rows: repriced } = await tx.query(
+        `SELECT id, starts_at FROM user_memberships
+          WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
+            AND (discount_reason IS NULL OR discount_reason = '')
+          FOR UPDATE`,
+        [req.params.id, gymId, ...ASSIGNABLE_STATUSES],
+      );
+      for (const row of repriced) {
+        await materialiseAssignedPlanSnapshot(tx, {
+          gymId, userMembershipId: Number(row.id),
+          membershipPlanId: Number(req.params.id),
+          // The fee it bills today, so materialising changes nothing on its own;
+          // the UPDATE below is what moves it to the Plan's new price.
+          membershipFeePrice: await snapshotFeeForAssignment(gymId, row),
+        });
+      }
       const { rowCount: updated } = await tx.query(
         `UPDATE user_memberships
-            SET base_price = ?, plan_price_id = ?, final_price = ?
+            SET base_price = ?, plan_price_id = ?, membership_fee_price = ?
           WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
             AND (discount_reason IS NULL OR discount_reason = '')`,
         [price, current.id, price, req.params.id, gymId, ...ASSIGNABLE_STATUSES],

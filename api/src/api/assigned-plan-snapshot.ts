@@ -125,9 +125,10 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
  * `membershipFeePrice` is the *regular* (pre-Promotion, pre-discount) price the
  * caller already resolved with `effectivePrice()`. It is passed in rather than
  * re-read here because the caller may have no price window at all, in which
- * case there is no regular price to freeze and the column stays NULL —
- * `final_price` is not a substitute, being the agreed price after promotions
- * and manual discounts.
+ * case there is no regular price to freeze and the column stays NULL. Since
+ * #635 stage 15 it is also where a *negotiated* fee lives: there is no second
+ * stored price any more, so a staff-agreed number is this column's value and the
+ * assignment's Promotions are resolved on top of it, per cycle.
  *
  * Benefit rows carry the Sellable Item's price as it is now: the item itself
  * may be repriced, renamed or retired later without touching what was agreed

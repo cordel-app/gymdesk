@@ -67,9 +67,9 @@ async function createAssignment(gymId: string, memberId: number, planId: number,
   const { snapshot } = opts;
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price,
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
         next_billing_date, recurring_billing_interval, recurring_billing_unit, membership_fee_price)
-     VALUES (?, ?, ?, 'active', '2026-01-10', 60, 60, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, 'active', '2026-01-10', 60, ?, ?, ?, ?)`,
     [gymId, memberId, planId, NEXT_BILLING,
      snapshot?.interval ?? null, snapshot?.unit ?? null, snapshot?.fee ?? null],
   );
@@ -334,14 +334,15 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
     memberId = await createCallingMember(gymId);
     planId = await createPlan(gymId, { interval: 1, unit: 'month' });
 
-    // €60 regular, €48 stored — what a 20%-off Promotion left in `final_price`
-    // when it was applied. Its Paid Duration covers January to March 2099, so the
-    // March cycle is still discounted and the April one is not.
+    // €60 regular, discounted 20% by a Promotion whose Paid Duration covers
+    // January to March 2099 — so the March cycle is still discounted and the
+    // April one is not. #635 stage 15: there is no stored discounted number to
+    // disagree with that, only the regular fee and the application.
     const { insertId } = await db.query(
       `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price,
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
           next_billing_date, recurring_billing_interval, recurring_billing_unit, membership_fee_price)
-       VALUES (?, ?, ?, 'active', '2099-01-10', 0, 48, ?, 1, 'month', 60)`,
+       VALUES (?, ?, ?, 'active', '2099-01-10', 0, ?, 1, 'month', 60)`,
       [gymId, memberId, planId, NEXT_BILLING],
     );
     umId = insertId;
@@ -375,9 +376,9 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
 
   it('shows the discounted cycle and the regular one that follows it', async () => {
     const { body } = await getMembership(gymId);
-    // Until stage 12 this repeated `final_price` (48.00) for every future date —
-    // a promise the nightly run would not keep once the Promotion's own months
-    // were over.
+    // Until stage 12 this repeated one stored number (48.00) for every future
+    // date — a promise the nightly run would not keep once the Promotion's own
+    // months were over.
     expect(body.membership.upcoming_payments).toEqual([
       { date: NEXT_BILLING, amount: '48.00', status: 'scheduled' },
       { date: '2099-04-10', amount: '60.00', status: 'scheduled' },
@@ -385,9 +386,9 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
   });
 
   it('resolves the same amounts the nightly run would charge for those dates', async () => {
-    const { priceDueMembershipFee } = await import('../api/billing-run-pricing');
+    const { priceMembershipFeeOn } = await import('../api/membership-fee-pricing');
     const { rows } = await db.query(
-      `SELECT um.id, um.gym_id, um.membership_plan_id, um.starts_at, um.final_price,
+      `SELECT um.id, um.gym_id, um.membership_plan_id, um.starts_at, um.next_billing_date,
               um.membership_fee_price, um.base_price, um.discount_reason, um.discount_expires_at,
               um.free_months, um.paid_months, um.bonus_months,
               p.free_months AS plan_free_months, p.paid_months AS plan_paid_months,
@@ -397,9 +398,18 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
        WHERE um.id = ?`,
       [umId],
     );
-    const march = await priceDueMembershipFee(rows[0] as any, NEXT_BILLING, true);
-    const april = await priceDueMembershipFee(rows[0] as any, '2099-04-10', true);
+    const march = await priceMembershipFeeOn(rows[0] as any, NEXT_BILLING);
+    const april = await priceMembershipFeeOn(rows[0] as any, '2099-04-10');
     expect([march.amount, april.amount]).toEqual([48, 60]);
+  });
+
+  // #635 stage 15 — the page states what the Member pays for their current cycle
+  // as a resolved number. It used to be the stored `final_price`, which is what
+  // let the page and the nightly run disagree.
+  it('reports membership_fee for the current cycle, and no stored final_price', async () => {
+    const { body } = await getMembership(gymId);
+    expect(Number(body.membership.membership_fee)).toBe(48);
+    expect(body.membership).not.toHaveProperty('final_price');
   });
 
   it('does not leak the months it resolved from', async () => {

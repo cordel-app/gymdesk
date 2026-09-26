@@ -24,23 +24,25 @@ describe('advanceDate', () => {
 
 describe('computeUpcomingPayments', () => {
   it('returns empty array when next_billing_date is null', () => {
-    expect(computeUpcomingPayments(null, 1, 'month', '59.00')).toEqual([]);
+    expect(computeUpcomingPayments(null, 1, 'month', () => 59.00)).toEqual([]);
   });
 
   it('returns empty array when billing interval is null', () => {
-    expect(computeUpcomingPayments('2026-10-01', null, 'month', '59.00')).toEqual([]);
+    expect(computeUpcomingPayments('2026-10-01', null, 'month', () => 59.00)).toEqual([]);
   });
 
   it('returns empty array when billing unit is null', () => {
-    expect(computeUpcomingPayments('2026-10-01', 1, null, '59.00')).toEqual([]);
+    expect(computeUpcomingPayments('2026-10-01', 1, null, () => 59.00)).toEqual([]);
   });
 
-  it('returns empty array when amount is null', () => {
+  // #635 stage 15: there is no stored amount to repeat, so a caller with no way
+  // to price a date has nothing to promise.
+  it('returns empty array when there is no way to price a date', () => {
     expect(computeUpcomingPayments('2026-10-01', 1, 'month', null)).toEqual([]);
   });
 
   it('returns 2 upcoming monthly payments when both are in the future', () => {
-    const result = computeUpcomingPayments('2099-09-15', 1, 'month', '59.00');
+    const result = computeUpcomingPayments('2099-09-15', 1, 'month', () => 59.00);
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual({ date: '2099-09-15', amount: '59.00', status: 'scheduled' });
     expect(result[1]).toEqual({ date: '2099-10-15', amount: '59.00', status: 'scheduled' });
@@ -49,7 +51,7 @@ describe('computeUpcomingPayments', () => {
   it('returns 1 upcoming payment when next billing date is far future and only one fits in window', () => {
     // Only one date because there won't be a second within 24 months of today
     // But actually we just need 2 from next_billing_date — test that correctly
-    const result = computeUpcomingPayments('2099-11-01', 13, 'month', '100.00');
+    const result = computeUpcomingPayments('2099-11-01', 13, 'month', () => 100.00);
     expect(result).toHaveLength(2);
     expect(result[0].status).toBe('scheduled');
     expect(result[1].status).toBe('scheduled');
@@ -58,7 +60,7 @@ describe('computeUpcomingPayments', () => {
   it('advances past a stale next_billing_date to find future dates', () => {
     // next_billing_date is in the past; should advance until future
     const past = '2020-01-15';
-    const result = computeUpcomingPayments(past, 1, 'month', '30.00');
+    const result = computeUpcomingPayments(past, 1, 'month', () => 30.00);
     // Should return 2 future dates, each 1 month apart
     const today = new Date().toISOString().slice(0, 10);
     expect(result).toHaveLength(2);
@@ -72,13 +74,13 @@ describe('computeUpcomingPayments', () => {
   });
 
   it('formats amount to 2 decimal places', () => {
-    const result = computeUpcomingPayments('2099-01-01', 1, 'month', '59.9');
+    const result = computeUpcomingPayments('2099-01-01', 1, 'month', () => 59.9);
     expect(result[0].amount).toBe('59.90');
   });
 
   it('accepts a Date object for next_billing_date', () => {
     const dateObj = new Date('2099-06-15T00:00:00Z');
-    const result = computeUpcomingPayments(dateObj, 1, 'month', '50.00');
+    const result = computeUpcomingPayments(dateObj, 1, 'month', () => 50.00);
     expect(result[0].date).toBe('2099-06-15');
   });
 });

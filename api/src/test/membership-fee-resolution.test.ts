@@ -167,7 +167,7 @@ describe('resolveMembershipFee — an applied Promotion outranks the Plan', () =
  * Membership stopped the benefit at the end of the Promotion's own timeline. The
  * thread chose the timeline — answer (a) — so these cases pin the chosen rule and
  * then assert that the paths which can be exercised purely agree on it, cycle by
- * cycle. The DB-backed ones (`computeFinalPrice`, `POST /billing/run`) are pinned
+ * cycle. The DB-backed ones (apply/revoke, `POST /billing/run`) are pinned
  * against the same numbers in `billing-run-date-aware-fee.test.ts`.
  */
 describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its timeline', () => {
@@ -245,7 +245,7 @@ describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its 
       })],
     });
     const upcoming = computeUpcomingPayments(
-      '2099-02-01', 1, 'month', String(REGULAR),
+      '2099-02-01', 1, 'month',
       (date) => resolveMembershipFee(REGULAR, date, future).amount,
     );
     expect(upcoming.map((p) => `${p.date}:${p.amount}`)).toEqual(['2099-02-01:32.00', '2099-03-01:40.00']);

@@ -105,7 +105,7 @@ promotionDetailsRouter.put('/plans', requireRole('admin'), async (req, res, next
 // from the client.
 //
 // `action`/`value` are what billing applies, for `duration_months` months
-// counted from when the Promotion was applied (see `computeFinalPrice` in
+// counted from when the Promotion was applied (see the fee resolution in
 // membership-promotions.ts); `quantity` and `frequency_interval`/
 // `frequency_unit` are descriptive, exactly as they were under #551.
 

@@ -5,8 +5,11 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { advanceBillingDate } from '../domain/billingDate';
-import { DueAssignmentRow, priceDueMembershipFee } from './billing-run-pricing';
-import { isDateAwareMembershipFeeEnabled } from '../infra/featureFlags';
+import {
+  FEE_ASSIGNMENT_COLUMNS,
+  FeeAssignmentRow,
+  priceMembershipFeeOn,
+} from './membership-fee-pricing';
 
 // The date arithmetic itself lives in `domain/billingDate.ts` since #635
 // stage 11 (see that module for why), and is re-exported here so every caller
@@ -40,7 +43,7 @@ function checkInternalSecret(req: Request, res: Response): boolean {
  *
  * #635 stage 11: the amount is no longer `final_price` flat — it is the fee the
  * assignment's own snapshot owes **on the date being billed**, resolved by
- * `priceDueMembershipFee` through the same engine the Billing Simulation uses.
+ * `priceMembershipFeeOn` through the same engine the Billing Simulation uses.
  * A cycle that owes nothing (a Free Period, a Bonus Duration, a Promotion's
  * free month) is not sent to the provider at all: it records a `waived_billing`
  * ledger row and moves `next_billing_date` on.
@@ -48,11 +51,9 @@ function checkInternalSecret(req: Request, res: Response): boolean {
  * #635 stage 12: the *price* of a cycle that is not waived comes from that same
  * resolver too, so a Promotion's Membership Fee Benefit stops when the
  * Promotion's Free/Paid/Bonus timeline does instead of discounting for ever.
- * Because that can raise a charge, it is gated on
- * `billing.date_aware_membership_fee` (seeded off, migration 186): while the flag
- * is off every assignment is charged exactly as before and the response's
- * `drift` counts the ones that would have been charged differently — the same
- * set `GET /user-memberships/membership-fee-drift` lists.
+ * #635 stage 15 made that unconditional and deleted the stored
+ * `final_price` it replaced — there is no flag and no second rule left, so the
+ * run has exactly one way to know what a cycle costs.
  *
  * Auth: X-Internal-Secret header (BILLING_INTERNAL_SECRET env var).
  * Rate-limited: rejects with 429 if the last successful run was < 23 h ago.
@@ -64,9 +65,6 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
   let succeeded = 0;
   let failed = 0;
   let waived = 0;
-  // #635 stage 12 — assignments whose corrected price differs from what was
-  // charged. Always 0 once the flag is on, since then the two are the same.
-  let drift = 0;
 
   try {
     // Rate-limit: reject a second call within 23 hours.
@@ -86,10 +84,6 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
     // Stamp the run start time to prevent concurrent/duplicate runs.
     await db.query('UPDATE billing_run_log SET last_run_at = UTC_TIMESTAMP() WHERE id = 1');
 
-    // Read once for the whole run, so a flag flipped mid-run can't charge two
-    // members of the same gym under different rules.
-    const dateAware = await isDateAwareMembershipFeeEnabled();
-
     // Look up membership_fee charge type id (used for billing_events rows).
     const { rows: ctRows } = await db.query<{ id: number }>(
       "SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1",
@@ -100,7 +94,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
     // assignment's own frozen pair, its Plan's only as the fallback
     // (ASSIGNMENT_CADENCE) — hence the LEFT JOIN: an INNER one would drop
     // every assignment whose Plan has since lost its billing policy.
-    const { rows: due } = await db.query<DueAssignmentRow & {
+    const { rows: due } = await db.query<FeeAssignmentRow & {
       member_id: number;
       next_billing_date: Date | string;
       recurring_billing_interval: number;
@@ -109,21 +103,10 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       sequence_id: string | null;
       provider: string;
     }>(
-      `SELECT um.id, um.gym_id, um.member_id, um.membership_plan_id,
-              um.next_billing_date, um.starts_at,
+      `SELECT ${FEE_ASSIGNMENT_COLUMNS},
+              um.member_id,
               ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
-              um.final_price, um.membership_fee_price, um.base_price,
-              um.discount_reason, um.discount_expires_at,
-              um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
-              p.free_months AS plan_free_months,
-              p.paid_months AS plan_paid_months,
-              p.bonus_months AS plan_bonus_months,
-              p.pay_beforehand_months AS plan_pay_beforehand_months,
-              (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-               OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
-               OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
-              ) AS has_billing_snapshot,
               pm.payment_token, pm.sequence_id, pm.provider
        FROM user_memberships um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
@@ -144,19 +127,8 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       // the date the assignment's Billing & Duration and its Promotions are
       // resolved on — never "today", which may be days later if a run was missed.
       const billingDate = toDateOnly(row.next_billing_date);
-      const priced = await priceDueMembershipFee(row, billingDate, dateAware);
+      const priced = await priceMembershipFeeOn(row, billingDate);
       const amount = priced.amount;
-      if (priced.drift !== 0) {
-        drift++;
-        req.log.warn(
-          {
-            userMembershipId: row.id, memberId: row.member_id, gymId: row.gym_id, billingDate,
-            charged: amount, resolved: priced.resolvedAmount, difference: priced.drift,
-          },
-          'billing/run: date-aware Membership Fee differs from the charged amount — '
-          + 'enable billing.date_aware_membership_fee to charge the resolved price',
-        );
-      }
       const nextBillingDate = advanceBillingDate(
         row.next_billing_date,
         row.recurring_billing_interval,
@@ -314,8 +286,8 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       }
     }
 
-    req.log.info({ processed, succeeded, failed, waived, drift }, 'billing/run: complete');
-    res.json({ processed, succeeded, failed, waived, drift });
+    req.log.info({ processed, succeeded, failed, waived }, 'billing/run: complete');
+    res.json({ processed, succeeded, failed, waived });
   } catch (err) {
     req.log.error({ err: (err as Error).message }, 'billing/run: unexpected error');
     res.status(500).json({ error: 'Internal server error' });

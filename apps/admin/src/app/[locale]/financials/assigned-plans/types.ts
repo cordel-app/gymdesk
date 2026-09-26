@@ -152,7 +152,8 @@ export interface AssignedPlanDetail {
   membership_plan_id: number | null;
   plan_name: string | null;
   base_price: string | number | null;
-  final_price: string | number | null;
+  /** The Membership Fee resolved for this assignment's current cycle (#635 stage 15). */
+  membership_fee: number | null;
   discount_reason: string | null;
   discount_expires_at: string | null;
   starts_at: string;

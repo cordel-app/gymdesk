@@ -14,6 +14,11 @@ import {
 } from '../domain/billingEventStatus';
 import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
+import {
+  FEE_ASSIGNMENT_COLUMNS,
+  FeeAssignmentRow,
+  priceMembershipFeesFor,
+} from './membership-fee-pricing';
 
 /**
  * #129: Payments module — operational payment actions over billing_events.
@@ -311,19 +316,26 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const futureParams: any[] = [gymId];
     if (q.member_id !== undefined) { futureWhere.push('um.member_id = ?'); futureParams.push(q.member_id); }
 
+    // #635 stage 15 — a projected row's amount is the fee resolved for the date
+    // it projects, not one stored number repeated five times. The staff screen
+    // therefore shows a Free Period's €0 and the cycle after an applied
+    // Promotion's timeline ends at the regular price, which is exactly what the
+    // nightly run will charge on those dates.
     const includeScheduled = !q.status || q.status.includes('scheduled');
-    const activeRows = includeScheduled ? (await db.query<{
-      user_membership_id: number; member_id: number; member_name: string | null;
-      plan_name: string | null; next_billing_date: Date | string;
+    const activeRows = includeScheduled ? (await db.query<FeeAssignmentRow & {
+      member_id: number; member_name: string | null;
+      plan_name: string | null;
       recurring_billing_interval: number; recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
-      final_price: string; currency: string | null;
+      currency: string | null;
     }>(
-      `SELECT um.id AS user_membership_id, um.member_id, m.name AS member_name,
-              mp.name AS plan_name, um.next_billing_date,
+      `SELECT ${FEE_ASSIGNMENT_COLUMNS},
+              um.member_id, m.name AS member_name,
+              mp.name AS plan_name,
               ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
-              um.final_price, NULL AS currency
+              NULL AS currency
        FROM user_memberships um
+       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
        LEFT JOIN members m ON m.id = um.member_id
        LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
@@ -334,9 +346,13 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const today = new Date().toISOString().slice(0, 10);
     const future: BillingEventRow[] = [];
 
+    // The dates each assignment projects, worked out once so every fee can be
+    // priced in one batch rather than one query per projected row.
+    const projectedDates = new Map<number, string[]>();
     for (const um of activeRows) {
       const nextPaymentDate = toDateOnly(um.next_billing_date);
       if (!nextPaymentDate) continue;
+      const dates: string[] = [];
       let date = nextPaymentDate;
       for (let i = 0; i < 5; i++) {
         if (date < today) {
@@ -345,25 +361,34 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         }
         if (q.from && date < q.from.slice(0, 10)) { date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit); continue; }
         if (q.to   && date > q.to.slice(0, 10))   break;
+        dates.push(date);
+        date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
+      }
+      projectedDates.set(um.id, dates);
+    }
+    const pricedFees = await priceMembershipFeesFor(activeRows, (row) => projectedDates.get(row.id) ?? []);
 
+    for (const um of activeRows) {
+      const nextPaymentDate = toDateOnly(um.next_billing_date);
+      if (!nextPaymentDate) continue;
+      for (const date of projectedDates.get(um.id) ?? []) {
         future.push({
           id: null as any,
           type: 'virtual',
           member_id: um.member_id,
           member_name: um.member_name,
-          user_membership_id: um.user_membership_id,
+          user_membership_id: um.id,
           plan_name: um.plan_name,
           billing_date: date,
           // Projected rows aren't persisted yet, so they have no creation instant.
           created_at: null,
           next_payment_date: nextPaymentDate,
-          amount: um.final_price,
+          amount: (pricedFees.get(um.id)?.get(date)?.amount ?? 0).toFixed(2),
           event_type: 'upcoming',
           status: 'scheduled',
           currency: um.currency,
           payment_actions_available: false,
         });
-        date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
       }
     }
 

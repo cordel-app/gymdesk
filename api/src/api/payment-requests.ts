@@ -5,6 +5,7 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { parseQuery, z } from '../infra/validate';
+import { currentMembershipFee } from './membership-fee-pricing';
 
 export const paymentRequestsRouter = Router();
 
@@ -74,12 +75,11 @@ paymentRequestsRouter.post(
     try {
       const { rows: umRows } = await db.query<{
         member_id: number;
-        final_price: string;
         membership_plan_id: number;
         member_email: string;
         member_name: string;
       }>(
-        `SELECT um.member_id, um.final_price, um.membership_plan_id,
+        `SELECT um.member_id, um.membership_plan_id,
                 m.email AS member_email, m.name AS member_name
          FROM user_memberships um
          JOIN members m ON m.id = um.member_id
@@ -89,12 +89,22 @@ paymentRequestsRouter.post(
       if (!umRows[0]) return res.status(404).json({ error: 'Membership not found' });
       const um = umRows[0];
 
+      // #635 stage 15 — what to ask for is the Membership Fee resolved on the
+      // cycle this assignment is next charged for, not a stored number: a
+      // request raised during a Free Period, or after an applied Promotion's
+      // timeline has ended, has to ask for what the nightly run would take.
+      const fee = await currentMembershipFee(gymId, Number(user_membership_id));
+      if (fee == null) return res.status(404).json({ error: 'Membership not found' });
+      if (!(fee > 0)) {
+        return res.status(400).json({ error: 'This membership owes nothing for its current billing cycle' });
+      }
+
       const { rows: ctRows } = await db.query<{ id: number }>(
         `SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1`,
       );
       if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
-      const amount = toMinorUnits(um.final_price);
+      const amount = toMinorUnits(fee);
       const orderId = crypto.randomUUID();
       const pageToken = crypto.randomUUID();
       const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
@@ -122,7 +132,7 @@ paymentRequestsRouter.post(
             initiated_by, source)
          VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin')`,
         [
-          gymId, user_membership_id, um.member_id, um.final_price, ctRows[0].id,
+          gymId, user_membership_id, um.member_id, fee.toFixed(2), ctRows[0].id,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
           (req as any).auth.userId,
         ],

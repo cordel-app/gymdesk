@@ -52,7 +52,7 @@ async function createUserMembership(
   finalPrice = '29.99',
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, final_price)
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
     [gymId, memberId, planId, finalPrice],
   );
@@ -336,5 +336,51 @@ describe('POST /payment-requests', () => {
     expect(rows[0].status).toBe('pending');
     expect(rows[0].gym_id).toBe(gymId);
     expect(rows[0].provider_ref).toBe('monei-test-order-123');
+  });
+
+  // #635 stage 15 — the amount asked for is the Membership Fee resolved on the
+  // cycle the assignment is next charged for, not a stored number. Before this,
+  // `user_memberships.final_price` was requested flat, so a request raised during
+  // a Free Period asked a member to pay for a cycle the run would have waived.
+  it("asks for the assignment's own frozen fee, not its base price", async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createMembershipPlan(gymId);
+    const umId = await createUserMembership(gymId, memberId, planId, '49.99');
+    await db.query('UPDATE user_memberships SET membership_fee_price = 61.50 WHERE id = ?', [umId]);
+
+    const res = await request
+      .post('/payment-requests')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ user_membership_id: umId });
+    expect(res.status).toBe(201);
+
+    const { rows } = await db.query<{ amount: string }>(
+      'SELECT amount FROM payment_requests WHERE id = ?', [res.body.id],
+    );
+    expect(rows[0].amount).toBe('61.50');
+  });
+
+  it('refuses to raise a request for a cycle the contract waives', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createMembershipPlan(gymId);
+    const umId = await createUserMembership(gymId, memberId, planId, '49.99');
+    // A Free Period covering the assignment's first month: nothing is owed for
+    // the cycle a request would be raised against.
+    await db.query(
+      'UPDATE user_memberships SET membership_fee_price = 40, free_months = 1, paid_months = 12 WHERE id = ?',
+      [umId],
+    );
+
+    const res = await request
+      .post('/payment-requests')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ user_membership_id: umId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/owes nothing/);
+
+    const { rows } = await db.query('SELECT id FROM payment_requests WHERE user_membership_id = ?', [umId]);
+    expect(rows).toEqual([]);
   });
 });

@@ -41,7 +41,7 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
         {field(t('label_start_date'), fmtDate(detail.starts_at))}
         {field(t('label_end_date'), detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended'))}
         {detail.closed_at && field(t('label_closure_date'), fmtDate(detail.closed_at))}
-        {field(t('detail_effective_price'), fmtMoney(detail.final_price))}
+        {field(t('detail_effective_price'), fmtMoney(detail.membership_fee))}
         {detail.billing_policy && field(
           t('label_billing_frequency'),
           `${detail.billing_policy.recurring_billing_interval} / ${detail.billing_policy.recurring_billing_unit}`,

@@ -41,7 +41,6 @@ import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
 import { memberBillingSimulationRouter } from './api/billing-simulation';
-import { membershipFeeDriftRouter } from './api/membership-fee-drift';
 import { memberMembershipConfigurationRouter } from './api/member-membership-configuration';
 import { userMembershipServicesRouter } from './api/user-membership-services';
 import {
@@ -288,7 +287,6 @@ app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('
 // can be switched off without taking Transactions with it, and vice versa — which
 // only holds if it is mounted *before* '/user-memberships', whose own
 // `payments.transactions` gate runs on every path under that prefix.
-app.use('/user-memberships/reports/membership-fee-drift', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.membership_fee_drift'), membershipFeeDriftRouter);
 app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipsRouter);
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), membershipPromotionsRouter);
 // #631: Additional Periodic Services attached to one Assigned Plan. Three path

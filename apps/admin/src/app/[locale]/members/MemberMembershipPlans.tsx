@@ -234,7 +234,7 @@ function PlanCard({
           <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <StatusBadge status={plan.status} label={statusLabel(plan.status)} />
             <span style={{ fontSize: 13 }}>
-              {plan.final_price ? `€${parseFloat(plan.final_price).toFixed(2)}` : '—'}
+              {plan.membership_fee != null ? `€${plan.membership_fee.toFixed(2)}` : '—'}
             </span>
           </div>
           {plan.starts_at && <Field label={t('membership_start')}>{fmtDate(plan.starts_at)}</Field>}

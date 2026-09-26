@@ -4,6 +4,7 @@ import { getTenantContext } from '../infra/tenantContext';
 import { fetchAppliedPromotions } from './membership-promotions';
 import { loadServicesForAssignments } from './user-membership-services';
 import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
+import { currentMembershipFees } from './membership-fee-pricing';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -69,7 +70,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // history since #412 and #634 §14 does not retire it; `is_live` marks the
   // ones the Promotions/Services sections and the simulation act on.
   const { rows: plans } = await db.query(
-    `SELECT um.id, um.membership_plan_id, um.status, um.final_price,
+    `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at, um.next_billing_date,
             um.closed_at, um.created_at,
             p.name AS plan_name,
@@ -112,13 +113,18 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // offering it and surfacing a 400.
   const cutoff = newMemberCutoff(new Date());
 
+  // #635 stage 15 — what each plan costs is resolved per assignment on the cycle
+  // it is next charged for, not read off a stored column: a Free Period reads €0
+  // and an applied Promotion's discount stops with the Promotion's own timeline.
+  const fees = await currentMembershipFees(gymId, plans.map((p: any) => Number(p.id)));
+
   res.json({
     plans: plans.map((p: any) => ({
       id: p.id,
       membership_plan_id: p.membership_plan_id,
       plan_name: p.plan_name,
       status: p.status,
-      final_price: p.final_price,
+      membership_fee: fees.get(Number(p.id)) ?? null,
       starts_at: toDateOnly(p.starts_at),
       ends_at: toDateOnly(p.ends_at),
       next_billing_date: toDateOnly(p.next_billing_date),
