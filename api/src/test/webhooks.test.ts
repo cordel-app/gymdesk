@@ -182,4 +182,35 @@ describe('POST /webhooks/payment — completion flow', () => {
     );
     expect(rows[0].status).toBe('expired');
   });
+
+  // #785: the member paying their checkout link is the third money-arrival path,
+  // beside the nightly run's own success branch and the two staff actions. It
+  // settles the very cycle a rejection is counted against, so it has to clear the
+  // run's dunning state too — otherwise a member who was one rejection away, paid
+  // the link, and declined on the *next* cycle would be paused an attempt short.
+  //
+  // Its own membership, so the `payment_recorded` row it writes cannot disturb the
+  // event count the test above asserts on the shared one.
+  it('clears the nightly run\u2019s dunning state when a payment completes (#785)', async () => {
+    const ownMemberId = await createMember(gymId);
+    const ownPlanId = await createMembershipPlan(gymId);
+    const ownMembershipId = await createUserMembership(gymId, ownMemberId, ownPlanId);
+    await db.query(
+      'UPDATE user_memberships SET failed_attempts = 1, last_failed_at = UTC_TIMESTAMP() WHERE id = ?',
+      [ownMembershipId],
+    );
+
+    const orderId = crypto.randomUUID();
+    const chargeId = crypto.randomBytes(20).toString('hex');
+    await insertPendingPaymentRequest(gymId, ownMembershipId, ownMemberId, chargeTypeId, orderId);
+
+    expect((await postWebhook(buildMoneiEnvelope(orderId, 'SUCCEEDED', chargeId))).status).toBe(200);
+
+    const { rows } = await db.query<{ failed_attempts: number; last_failed_at: Date | null }>(
+      'SELECT failed_attempts, last_failed_at FROM user_memberships WHERE id = ?',
+      [ownMembershipId],
+    );
+    expect(Number(rows[0].failed_attempts)).toBe(0);
+    expect(rows[0].last_failed_at).toBeNull();
+  });
 });

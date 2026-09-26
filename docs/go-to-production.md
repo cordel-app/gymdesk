@@ -313,11 +313,19 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       stubbed-provider tests. Run one real charge end to end in staging and confirm the
       **amount Monei settled**, the `billing_events` row, its `payment_requests` row and
       the advanced `next_billing_date` before the first live gym.
-- [ ] **The nightly billing run still neither auto-retries nor pauses** (#640): the
-      retry-once-then-pause rule from that ticket's Q3 is implemented for the *manual*
-      Retry Payment action only, because issue §6 forbids changing automatic payment
-      processing. Decide before production whether an unattended failed charge should
-      follow the same rule, and open a ticket if so.
+- [x] **The nightly billing run auto-retries once, then pauses** (#640 → #785): the
+      retry-once-then-pause rule from #640 Q3 now applies to the unattended run too.
+      A first rejection bumps `user_memberships.failed_attempts` and is retried on the
+      **next run day** (`next_billing_date` does not move); the second consecutive
+      rejection of the same cycle pauses the assignment through `recordStatusChange`
+      (`active → paused`, `source = 'system'`), which drops it out of the run's
+      `WHERE status = 'active'`. A provider exception and a missing stored card do not
+      count (`domain/billingDunning.ts`). **Still open before production:** the member
+      is *not* notified (#785 was decided as an internal process — the staff see it via
+      the paused status and #779), and reactivation is explicit, so someone has to work
+      the paused list. Confirm both are acceptable operationally, and watch the first
+      month's `paused` counter in the Billing Run workflow log for a rule that pauses
+      more members than expected.
 - [ ] **A gym's Payment Provider is metadata, not yet the adapter selector** (#636):
       `gyms.payment_provider_id` is mandatory and administered from Cordel → Payment
       Providers, but `getPaymentProvider()` still resolves the adapter (and its
