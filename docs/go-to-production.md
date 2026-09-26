@@ -313,6 +313,17 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       stubbed-provider tests. Run one real charge end to end in staging and confirm the
       **amount Monei settled**, the `billing_events` row, its `payment_requests` row and
       the advanced `next_billing_date` before the first live gym.
+- [ ] **Confirm zero-amount card verification against the live Monei account** (#788):
+      replacing a stored card sends `amount: 0` + `transactionType: 'VERIF'` +
+      `generatePaymentToken: true`, which is MONEI's documented tokenisation — but some
+      acquirers answer a zero-amount verification with a small authorisation they then
+      void, and no environment has a configured provider yet, so the flow is covered only
+      by a stubbed-provider test. Run one replacement end to end in staging and confirm:
+      the member is **not** charged (or is charged a voided authorisation that clears), the
+      `completed` webhook carries `paymentToken`/`sequenceId`, `payment_methods` holds the
+      new pair, and no `billing_events` row was written. If the acquirer requires a real
+      authorisation, decide then whether the flow voids it (a new provider method) or the
+      amount becomes configuration — it is deliberately neither today.
 - [x] **The nightly billing run auto-retries once, then pauses** (#640 → #785): the
       retry-once-then-pause rule from #640 Q3 now applies to the unattended run too.
       A first rejection bumps `user_memberships.failed_attempts` and is retried on the

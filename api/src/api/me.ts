@@ -26,6 +26,14 @@ import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration } from '../domain/planDuration';
+import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
+import {
+  createCardUpdateRequest,
+  loadCardRemovalBlock,
+  loadLatestCardUpdate,
+  loadStoredCard,
+  resolveCardUpdateMembership,
+} from './card-updates';
 import type { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
@@ -1565,6 +1573,10 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
+      // #788: a card replacement writes a `payment_requests` row to carry its
+      // page token, but it is a verification and not a payment — it must not
+      // appear in the member's payment history, and the return page's "has
+      // anything completed?" poll must not read one as a paid fee.
       `SELECT pr.id, pr.user_membership_id, pr.amount, pr.currency, pr.status,
               pr.provider, pr.source, pr.created_at, pr.completed_at,
               bp.recurring_billing_interval AS billing_interval,
@@ -1572,9 +1584,9 @@ meRouter.get('/payment-requests', requireRole('member'), async (req: Request, re
        FROM payment_requests pr
        LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = pr.gym_id
-       WHERE pr.gym_id = ? AND pr.member_id = ?
+       WHERE pr.gym_id = ? AND pr.member_id = ? AND pr.source <> ?
        ORDER BY pr.created_at DESC`,
-      [gymId, memberId],
+      [gymId, memberId, CARD_UPDATE_SOURCE],
     );
     res.json(rows);
   } catch (err: any) {
@@ -1668,6 +1680,121 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     res.status(201).json({ id: insertId, checkoutUrl });
   } catch (err: any) {
     req.log.error({ err: (err as Error).message }, 'Member payment request creation failed');
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// ── Member stored card (#788) ───────────────────────────────────────────────
+
+const memberCardUpdateRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: (req) => (req as any).auth?.userId ?? 'unauthenticated',
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many card update requests. Please try again later.' }),
+});
+
+/**
+ * The card the member's recurring charges are taken from, what they may do with
+ * it, and how their last replacement attempt went. The token itself never
+ * leaves the API — `describeStoredCard()` projects brand, last4 and when the
+ * current card was stored, and nothing else.
+ */
+meRouter.get('/payment-method', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const [payment_method, removalBlock, last_update] = await Promise.all([
+      loadStoredCard(gymId, memberId),
+      loadCardRemovalBlock(gymId, memberId),
+      loadLatestCardUpdate(gymId, memberId),
+    ]);
+    res.json({
+      payment_method,
+      can_remove: payment_method != null && removalBlock == null,
+      removal_blocked_reason: payment_method != null ? removalBlock : null,
+      last_update,
+    });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * Starts a card replacement: a zero-amount verification on the isolated payment
+ * page, never a charge. Available whatever the membership owes this cycle and
+ * whatever its status — the point of #788 is that updating a card used to cost a
+ * whole membership fee and was only offered when the cycle happened to owe one.
+ * The member has no card stored yet? Then this is how they store their first one
+ * without paying ahead of the nightly run.
+ */
+meRouter.post('/payment-method/replace-requests', requireRole('member'), memberCardUpdateRateLimit as any, async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const { rows: memberRows } = await db.query<{ email: string | null }>(
+      'SELECT email FROM members WHERE id = ? AND gym_id = ?',
+      [memberId, gymId],
+    );
+    const userMembershipId = await resolveCardUpdateMembership(gymId, memberId);
+    if (userMembershipId == null) {
+      return res.status(400).json({ error: 'No membership to store a card for' });
+    }
+
+    const created = await createCardUpdateRequest({
+      gymId,
+      memberId,
+      memberEmail: memberRows[0]?.email ?? '',
+      userMembershipId,
+      initiatedBy: null,
+      stampConsent: true,
+    });
+
+    req.log.info({ memberId, paymentRequestId: created.id }, 'Member card replacement request created');
+    res.status(201).json(created);
+  } catch (err: any) {
+    req.log.error({ err: (err as Error).message }, 'Member card replacement request failed');
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * Removes the stored card. Refused with 409 while any of the member's
+ * assignments is still scheduled to be charged (#788 §3): the nightly run skips
+ * an assignment with no `payment_methods` row *silently*, so a member under a
+ * live contract could stop paying without the gym ever seeing a failure. The
+ * decision is `cardRemovalBlock()`, and replacing the card — the case this
+ * ticket exists for — is never blocked.
+ */
+meRouter.delete('/payment-method', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const stored = await loadStoredCard(gymId, memberId);
+    if (!stored) return res.status(404).json({ error: 'No stored card' });
+
+    const blocked = await loadCardRemovalBlock(gymId, memberId);
+    if (blocked) {
+      return res.status(409).json({
+        error: blocked,
+        message: 'This card pays for a membership that is still scheduled to be charged. Replace it, or cancel the membership first.',
+      });
+    }
+
+    await db.query(
+      'DELETE FROM payment_methods WHERE gym_id = ? AND member_id = ?',
+      [gymId, memberId],
+    );
+    req.log.info({ memberId }, 'Member removed their stored card');
+    res.status(204).send();
+  } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }

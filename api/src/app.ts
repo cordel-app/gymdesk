@@ -86,6 +86,7 @@ import { paymentProvidersRouter } from './api/payment-providers';
 import { requireFeatureEnabled } from './infra/featureFlags';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
 import { paymentRequestsRouter } from './api/payment-requests';
+import { paymentMethodsRouter } from './api/payment-methods';
 import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
 import { recurringBookingsRouter } from './api/recurring-bookings';
@@ -308,6 +309,7 @@ app.use('/members/:memberId/class-packages', requireAuth(), tenantContext, requi
 app.use('/payments/dashboard', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.dashboard'), paymentsDashboardRouter);
 app.use('/payments',          requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentsRouter);
 app.use('/payment-requests',  requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentRequestsRouter);
+app.use('/payment-methods',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), paymentMethodsRouter);
 
 // SYSTEM module — admin=RW, all others=NONE
 app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.audit'), auditLogsRouter);

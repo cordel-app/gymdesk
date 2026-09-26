@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 
@@ -15,6 +15,10 @@ export default function PaymentSuccessPage() {
   const router = useRouter();
   const { isLinked, loading: appLoading } = useApp();
   const { apiFetch } = useApiClient();
+  // #788: both a paid fee and a replaced card come back here. A card update
+  // writes no payment at all, so the poll below has to look somewhere else —
+  // PAYMENT_OK_URL carries `purpose=card_update` for exactly that.
+  const isCardUpdate = useSearchParams().get('purpose') === 'card_update';
   const [status, setStatus] = useState<'processing' | 'done' | 'timeout'>('processing');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -23,14 +27,21 @@ export default function PaymentSuccessPage() {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
 
+    const settled = () => {
+      setStatus('done');
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+
     const poll = async () => {
       try {
-        const requests = await apiFetch<Array<{ status: string }>>('/me/payment-requests');
-        if (requests.some((r) => r.status === 'completed')) {
-          setStatus('done');
-          if (intervalRef.current) clearInterval(intervalRef.current);
-          if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        if (isCardUpdate) {
+          const card = await apiFetch<{ last_update: { status: string } | null }>('/me/payment-method');
+          if (card.last_update?.status === 'completed') settled();
+          return;
         }
+        const requests = await apiFetch<Array<{ status: string }>>('/me/payment-requests');
+        if (requests.some((r) => r.status === 'completed')) settled();
       } catch {}
     };
 
@@ -45,7 +56,7 @@ export default function PaymentSuccessPage() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [appLoading, isLinked, locale]);
+  }, [appLoading, isLinked, locale, isCardUpdate]);
 
   return (
     <main style={styles.container}>
@@ -54,21 +65,23 @@ export default function PaymentSuccessPage() {
         {status === 'processing' && (
           <>
             <div style={styles.spinner} />
-            <p style={styles.message}>{t('payment_success.processing')}</p>
+            <p style={styles.message}>
+              {t(isCardUpdate ? 'payment_success.card_processing' : 'payment_success.processing')}
+            </p>
           </>
         )}
         {status === 'done' && (
           <>
             <div style={styles.checkmark}>✓</div>
             <p style={{ ...styles.message, color: '#1e7e40', fontWeight: 700 }}>
-              {t('payment_success.done')}
+              {t(isCardUpdate ? 'payment_success.card_done' : 'payment_success.done')}
             </p>
           </>
         )}
         {status === 'timeout' && (
           <>
             <p style={{ ...styles.message, color: '#71717a' }}>
-              {t('payment_success.timeout')}
+              {t(isCardUpdate ? 'payment_success.card_timeout' : 'payment_success.timeout')}
             </p>
           </>
         )}

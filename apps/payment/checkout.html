@@ -20,9 +20,10 @@
     <div id="checkout" hidden>
       <img id="gym-logo" class="gym-logo" alt="" hidden>
       <p class="eyebrow" id="gym-name"></p>
-      <h1>Pago de membresía</h1>
+      <h1 id="page-title">Pago de membresía</h1>
       <p class="member" id="member-name"></p>
-      <p class="amount"><span id="amount"></span> <span id="currency"></span></p>
+      <!-- Hidden for a card verification (#788): there is nothing to charge. -->
+      <p class="amount" id="amount-row"><span id="amount"></span> <span id="currency"></span></p>
 
       <div class="consent">
         <p id="consent-text"></p>
