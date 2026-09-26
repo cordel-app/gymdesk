@@ -200,6 +200,16 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       (IP-restricted by nginx, `infra/nginx/corback.conf`), `/themes`, and the two
       `/webhooks/*` routes (signature-verified). Re-audit this list before launch.
 - [ ] Decide whether `/docs` (Swagger UI) should be exposed in production.
+- [ ] **Close out `js/missing-rate-limiting`** (#767): `/sellable-items` and `/taxes`
+      carried `// lgtm[js/missing-rate-limiting]` comments that suppressed nothing (inline
+      suppression is inert here — see *Code scanning* in `docs/architecture.md`), and
+      removing them leaves the alerts, if any are open, visible again. They are false
+      positives: `app.ts` applies a global `apiLimiter` (500 requests / 15 min, per IP)
+      with `app.use()` before every route, so no route is unthrottled — the `as any` cast
+      the limiter needs is the most likely reason CodeQL does not see it. If the rule has
+      open alerts, dismiss them with that reasoning rather than bolting a second limiter
+      onto two routes; if it has none, nothing is owed. Worth deciding before launch either
+      way, since 500/15 min is a *global* default nobody has tuned per route.
 - [ ] nginx on the production host matches `infra/nginx/corback.conf`, including the
       `/billing/` GitHub Actions IP allowlist (refresh with
       `infra/nginx/update-github-actions-allowlist.sh`).

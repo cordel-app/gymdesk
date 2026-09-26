@@ -909,11 +909,76 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | Workflow | Purpose |
 |----------|---------|
 | `ci.yml` | API tests + admin typecheck/build + `apps/payment` Docker smoke build |
+| `codeql.yml` | CodeQL analysis (`security-and-quality`) on push to `main`, on every PR, and weekly — see *Code scanning* below |
 | `deploy.yml` | Build/push `fitness-api`, run migrations on the VPS, restart |
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
 | `deploy-payment.yml` | Build/push/restart `fitness-pay` (corfront `:8083`) |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
+
+### Code scanning (CodeQL) — how an alert is cleared (#767)
+
+`codeql.yml` runs the **`security-and-quality`** query suite (advanced setup, not default
+setup) and uploads SARIF, so a PR carries two separate checks: `Analyze
+(javascript-typescript)`, which is the *scan* and goes green whenever the scan itself
+finishes, and **`CodeQL`**, the code-scanning *results* check, which goes red while the PR
+introduces an alert. A green Analyze and a red CodeQL on the same PR means the scan worked
+and found something — not a broken workflow.
+
+**Inline suppression comments do not work in this repository.** Both documented forms were
+tried on the same alert and neither changed the check:
+
+| Form | Result |
+|---|---|
+| `// codeql[js/xss-through-dom]` on the preceding line | still red |
+| trailing `// lgtm[js/xss-through-dom]` | still red |
+
+So a suppression comment in this tree suppresses nothing; it only makes the next reader
+believe the alert is handled. **Do not add one** — the two
+`// lgtm[js/missing-rate-limiting]` comments that sat on `/sellable-items` and `/taxes` in
+`app.ts` were inert for that reason and were removed by #767, and
+`api/src/test/codeql-suppressions.unit.test.ts` now fails the build if one comes back.
+Write the reasoning as ordinary prose at the sink instead, saying why the flow is safe and
+that clearing the alert takes a dismissal (see `apps/admin/src/lib/exerciseVideoUpload.ts`
+for the shape).
+
+The four routes an alert can take, in the order to consider them:
+
+1. **Fix the code.** The default. An alert on a flow that really is unsafe is a bug, and
+   restructuring away from the sink is worth doing even when the fix is only cosmetic *if
+   it costs nothing* — #763 handed a detached `<img>` a base64 `data:` URL instead of an
+   object URL (~100 KB) and the alert went with it. Weigh the cost: the same move on a
+   video would have meant a ~67 MB `data:` URL in an element that then has to seek, i.e.
+   trading a false positive for large uploads that silently stop working.
+2. **Dismiss it in code scanning** (Security → Code scanning → *Dismiss alert* → **False
+   positive**, with the reasoning in the comment). This is the route for a genuine false
+   positive, and it is per-alert: it needs `security_events: write`, which the automation
+   token does not have, so **a human with admin/maintainer rights has to do it** — an
+   agent can neither dismiss nor re-open one.
+3. **Merge with the results check red**, when the alert has been assessed as a false
+   positive and the repository owner authorizes it. The authorization and the assessment
+   go in the merge commit message, and the alert stays tracked until someone dismisses it
+   (this is how #764 landed).
+4. **Narrow the query suite** in `codeql.yml`. Repo-wide security posture change — only for
+   a rule that is wrong *systematically*, never to get one PR green.
+
+**The other suppressed-in-name-only rule.** `js/missing-rate-limiting` was marked on
+`/sellable-items` and `/taxes` alone, which never reflected the code: `app.ts` applies a
+global `apiLimiter` (500 requests / 15 min per IP) with `app.use()` ahead of every route,
+and several routers add their own on top. Whatever the rule saw, those two routes are not
+less throttled than the rest of the API — the `as any` cast the limiter needs to satisfy
+Express 5's types is the likeliest reason the flow is invisible to it. Treat an alert of
+that rule as (2), a dismissal, and `docs/go-to-production.md` carries the item.
+
+**The known false positive.** `js/xss-through-dom` fires on a browser media helper that
+hands a locally picked file to a **detached** media element: `URL.createObjectURL(file)` →
+`el.src = url` on an element built with `document.createElement('video')` and never
+inserted into the document. Nothing attacker-controlled reaches the sink and no HTML is
+parsed — a media element fetches and decodes its `src`. The tell that it is element-type
+imprecision rather than a real flow: the identical `img.src = url` in
+`exerciseImageUpload.ts` is **unflagged**, because `new Image()` resolves to a known
+element type while `createElement('video')` does not. Every future upload helper of that
+shape will raise it again; the answer is (2) or (3), not a rewrite.
 
 ---
 
