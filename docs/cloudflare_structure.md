@@ -13,7 +13,7 @@
 │           ├── logo/
 │           │   └── logo.{extension}                                       — logo del theme
 │           │
-│           └── members/
+│           └── members_app/
 │               ├── training.png                                           — tamaño definido por el diseño
 │               ├── nutrition.png                                          — tamaño definido por el diseño
 │               ├── calendar.png                                           — tamaño definido por el diseño
@@ -38,7 +38,7 @@
                 ├── logo/
                 │   └── logo.{extension}                                   — logo del theme
                 │
-                └── members/
+                └── members_app/
                     ├── training.png                                       — tamaño definido por el diseño
                     ├── nutrition.png                                      — tamaño definido por el diseño
                     ├── calendar.png                                       — tamaño definido por el diseño
