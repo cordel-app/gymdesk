@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import { logger } from '../lib/logger';
 import { normalizeMuscleKey } from '../domain/muscles';
 import {
@@ -346,12 +347,13 @@ async function loadBaseExerciseForMedia(
  * gym-side).
  */
 async function isBaseMediaStillReferenced(url: string, exceptExerciseId: number | string): Promise<boolean> {
+  const { clause, params } = mediaReferenceClause(url);
   const { rows } = await db.query(
     `SELECT id FROM exercises
       WHERE id != ? AND status != 'deleted'
-        AND (image_url = ? OR image_thumbnail_url = ? OR video_url = ? OR video_thumbnail_url = ?)
+        AND ${clause}
       LIMIT 1`,
-    [exceptExerciseId, url, url, url, url],
+    [exceptExerciseId, ...params],
   );
   return rows.length > 0;
 }
@@ -373,11 +375,13 @@ async function deleteReplacedBaseExerciseMedia(
   staleUrls: (string | null)[],
   keepUrls: (string | null)[],
 ): Promise<void> {
-  const keep = new Set(keepUrls.filter((u): u is string => !!u));
+  const keep = new Set(keepUrls.filter((u): u is string => !!u).map(mediaIdentity));
   const seen = new Set<string>();
   for (const url of staleUrls) {
-    if (!url || keep.has(url) || seen.has(url)) continue;
-    seen.add(url);
+    if (!url) continue;
+    const identity = mediaIdentity(url);
+    if (keep.has(identity) || seen.has(identity)) continue;
+    seen.add(identity);
     if (!isPlatformOwnedExerciseImageUrl(url) && !isPlatformOwnedExerciseVideoUrl(url)) continue;
     if (await isBaseMediaStillReferenced(url, exerciseId)) continue;
     const key = storageKeyFromObjectUrl(url);

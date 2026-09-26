@@ -43,6 +43,7 @@ import {
   storageKeyFromObjectUrl,
   uploadStorageObject,
 } from '../infra/storage';
+import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import { logger } from '../lib/logger';
 
 /**
@@ -751,12 +752,13 @@ function decodeBase64File(value: unknown): Buffer | null {
  * (an `image_url` hand-set to a poster's URL, say) still counts as a reference.
  */
 async function isMediaStillReferenced(gymId: string, url: string, exceptExerciseId: number | string): Promise<boolean> {
+  const { clause, params } = mediaReferenceClause(url);
   const { rows } = await db.query(
     `SELECT id FROM exercises
       WHERE gym_id = ? AND id != ? AND status != 'deleted'
-        AND (image_url = ? OR image_thumbnail_url = ? OR video_url = ? OR video_thumbnail_url = ?)
+        AND ${clause}
       LIMIT 1`,
-    [gymId, exceptExerciseId, url, url, url, url],
+    [gymId, exceptExerciseId, ...params],
   );
   return rows.length > 0;
 }
@@ -791,11 +793,13 @@ async function deleteReplacedExerciseMedia(
   staleUrls: (string | null)[],
   keepUrls: (string | null)[],
 ): Promise<void> {
-  const keep = new Set(keepUrls.filter((u): u is string => !!u));
+  const keep = new Set(keepUrls.filter((u): u is string => !!u).map(mediaIdentity));
   const seen = new Set<string>();
   for (const url of staleUrls) {
-    if (!url || keep.has(url) || seen.has(url)) continue;
-    seen.add(url);
+    if (!url) continue;
+    const identity = mediaIdentity(url);
+    if (keep.has(identity) || seen.has(identity)) continue;
+    seen.add(identity);
     if (!isGymOwnedImageUrl(url, folderPrefix)) continue;
     if (await isMediaStillReferenced(gymId, url, exerciseId)) continue;
     const key = storageKeyFromObjectUrl(url);
