@@ -548,4 +548,125 @@ describe('POST /billing/cleanup', () => {
     );
     expect(rows[0]?.status).toBe('expired');
   });
+
+  // ── #789: the two deadlines ────────────────────────────────────────────────
+  //
+  // `page_token_expires` bounds how long the checkout *link* may be opened, not
+  // how long the member has to pay through it. Cleanup used it for both, so a
+  // member who opened the page at minute 9 and paid at minute 12 got an
+  // `expired` row — which the webhook then skipped as already processed.
+
+  /**
+   * A request whose checkout page has been opened: `page_token` is NULL, which
+   * `GET /payment-page/token/:token` is the only writer to do on a `pending`
+   * row. `openedHoursAgo` moves `page_token_expires` back, which is what the
+   * abandonment window is measured from.
+   */
+  async function insertOpenedPaymentRequest(
+    gymId: string,
+    userMembershipId: number,
+    memberId: number,
+    openedHoursAgo: number,
+  ): Promise<number> {
+    const { rows: ctRows } = await db.query<{ id: number }>(
+      "SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1",
+    );
+    const { insertId } = await db.query(
+      `INSERT INTO payment_requests
+         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+          status, provider, provider_order, page_token, page_token_expires, source)
+       VALUES (?, ?, ?, '29.99', 'EUR', ?, 'pending', 'monei', UUID(), NULL,
+               DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR), 'customer')`,
+      [gymId, userMembershipId, memberId, ctRows[0].id, openedHoursAgo],
+    );
+    return insertId;
+  }
+
+  async function statusOf(id: number): Promise<string> {
+    const { rows } = await db.query<{ status: string }>(
+      'SELECT status FROM payment_requests WHERE id = ?',
+      [id],
+    );
+    return rows[0].status;
+  }
+
+  async function cleanupFixture(name: string) {
+    const gymId = await createTestGym(name);
+    const memberId = await createMember(gymId);
+    const planId = await createPlanWithPolicy(gymId);
+    const userMembershipId = await createDueMembership(gymId, memberId, planId);
+    return { gymId, memberId, userMembershipId };
+  }
+
+  it('leaves a request pending when its page was opened and the abandonment window has not passed', async () => {
+    const { gymId, memberId, userMembershipId } = await cleanupFixture('Cleanup Opened Gym');
+    // One hour past the ten-minute token TTL — the old query expired this row.
+    const prId = await insertOpenedPaymentRequest(gymId, userMembershipId, memberId, 1);
+
+    const res = await request.post('/billing/cleanup').set('x-internal-secret', SECRET);
+    expect(res.status).toBe(200);
+
+    expect(await statusOf(prId)).toBe('pending');
+  });
+
+  it('expires a request whose page was opened once the abandonment window has passed', async () => {
+    const { gymId, memberId, userMembershipId } = await cleanupFixture('Cleanup Abandoned Gym');
+    const prId = await insertOpenedPaymentRequest(gymId, userMembershipId, memberId, 25);
+
+    const res = await request.post('/billing/cleanup').set('x-internal-secret', SECRET);
+    expect(res.status).toBe(200);
+
+    expect(await statusOf(prId)).toBe('expired');
+  });
+
+  it('honours PAYMENT_REQUEST_ABANDONED_HOURS for the opened-page window', async () => {
+    const { gymId, memberId, userMembershipId } = await cleanupFixture('Cleanup Window Gym');
+    const prId = await insertOpenedPaymentRequest(gymId, userMembershipId, memberId, 3);
+
+    // Inside the default 24 h window, so untouched...
+    expect((await request.post('/billing/cleanup').set('x-internal-secret', SECRET)).status).toBe(200);
+    expect(await statusOf(prId)).toBe('pending');
+
+    // ...and outside a 2 h one.
+    const original = process.env.PAYMENT_REQUEST_ABANDONED_HOURS;
+    process.env.PAYMENT_REQUEST_ABANDONED_HOURS = '2';
+    try {
+      expect((await request.post('/billing/cleanup').set('x-internal-secret', SECRET)).status).toBe(200);
+    } finally {
+      if (original === undefined) delete process.env.PAYMENT_REQUEST_ABANDONED_HOURS;
+      else process.env.PAYMENT_REQUEST_ABANDONED_HOURS = original;
+    }
+    expect(await statusOf(prId)).toBe('expired');
+  });
+
+  // `expired` stays the total because .github/workflows/billing-run.yml parses
+  // that field (#778); the breakdown is reported beside it.
+  it('reports the two kinds of expiry separately and as one total', async () => {
+    const { gymId, memberId, userMembershipId } = await cleanupFixture('Cleanup Counters Gym');
+    await insertExpiredPaymentRequest(gymId, userMembershipId, memberId);
+    await insertOpenedPaymentRequest(gymId, userMembershipId, memberId, 30);
+    // Opened and still inside the window — counted by neither.
+    const stillPending = await insertOpenedPaymentRequest(gymId, userMembershipId, memberId, 2);
+
+    const res = await request.post('/billing/cleanup').set('x-internal-secret', SECRET);
+    expect(res.status).toBe(200);
+    expect(res.body.expired_unopened).toBeGreaterThanOrEqual(1);
+    expect(res.body.expired_abandoned).toBeGreaterThanOrEqual(1);
+    expect(res.body.expired).toBe(res.body.expired_unopened + res.body.expired_abandoned);
+
+    expect(await statusOf(stillPending)).toBe('pending');
+  });
+
+  it('never expires a request that is already completed', async () => {
+    const { gymId, memberId, userMembershipId } = await cleanupFixture('Cleanup Completed Gym');
+    const prId = await insertOpenedPaymentRequest(gymId, userMembershipId, memberId, 99);
+    await db.query(
+      `UPDATE payment_requests SET status = 'completed', completed_at = UTC_TIMESTAMP() WHERE id = ?`,
+      [prId],
+    );
+
+    expect((await request.post('/billing/cleanup').set('x-internal-secret', SECRET)).status).toBe(200);
+
+    expect(await statusOf(prId)).toBe('completed');
+  });
 });

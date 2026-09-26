@@ -6,6 +6,7 @@ import { toMinorUnits } from '../payments/money';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { advanceBillingDate } from '../domain/billingDate';
 import { registerRejection } from '../domain/billingDunning';
+import { abandonedRequestHours } from '../domain/paymentRequestExpiry';
 import { recordStatusChange } from './billing-events';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
@@ -520,21 +521,61 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
 
 /**
  * POST /billing/cleanup
- * Expires pending payment_requests whose page_token TTL has passed.
+ * Expires stale pending payment_requests.
  * Auth: X-Internal-Secret header (BILLING_INTERNAL_SECRET env var).
+ *
+ * #789: this used to expire every `pending` row past its ten-minute
+ * `page_token_expires`, which is the deadline for *opening* the checkout link,
+ * not for paying through it. `GET /payment-page/token/:token` consumes the token
+ * as the page loads (`page_token = NULL`), and the member then spends minutes in
+ * the Card Input and a 3DS redirect; Monei may retry its webhook later still.
+ * A row expired inside that window was skipped by the webhook's
+ * `pr.status !== 'pending'` guard, so a member who had actually been charged
+ * ended up with no completed request, no stored card and no `next_billing_date`.
+ *
+ * Two deadlines, therefore — see `domain/paymentRequestExpiry.ts`:
+ *
+ *  - **Never opened** (`page_token IS NOT NULL` — the single writer that clears
+ *    it is the page load): expires with the token, as before. No page was
+ *    opened, so no payment can be in flight.
+ *  - **Opened** (`page_token IS NULL` on a row still `pending`): kept for the
+ *    long window below, counted from the token's own TTL, so a terminal webhook
+ *    can still land on it. Past that the provider never resolved it and the row
+ *    is written off.
+ *
+ * `expired` stays the total, because `.github/workflows/billing-run.yml` parses
+ * that field (#778); the two components are reported beside it.
  */
 billingRouter.post('/cleanup', async (req: Request, res: Response) => {
   if (!checkInternalSecret(req, res)) return;
 
   try {
-    const { rowCount } = await db.query(
+    const { rowCount: unopened } = await db.query(
       `UPDATE payment_requests
        SET status = 'expired', page_token = NULL
-       WHERE status = 'pending' AND page_token_expires < UTC_TIMESTAMP()`,
+       WHERE status = 'pending'
+         AND page_token IS NOT NULL
+         AND page_token_expires < UTC_TIMESTAMP()`,
     );
 
-    req.log.info({ expired: rowCount }, 'payment_requests cleanup: expired rows');
-    res.json({ expired: rowCount });
+    // The grace period is added in SQL so the comparison stays in the database's
+    // UTC clock, the same one `page_token_expires` was written against.
+    const hours = abandonedRequestHours();
+    const { rowCount: abandoned } = await db.query(
+      `UPDATE payment_requests
+       SET status = 'expired'
+       WHERE status = 'pending'
+         AND page_token IS NULL
+         AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)`,
+      [hours],
+    );
+
+    const expired = unopened + abandoned;
+    req.log.info(
+      { expired, unopened, abandoned, abandonedAfterHours: hours },
+      'payment_requests cleanup: expired rows',
+    );
+    res.json({ expired, expired_unopened: unopened, expired_abandoned: abandoned });
   } catch (err) {
     req.log.error({ err: (err as Error).message }, 'billing cleanup failed');
     res.status(500).json({ error: 'Internal server error' });

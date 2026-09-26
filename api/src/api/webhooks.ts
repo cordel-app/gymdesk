@@ -164,7 +164,23 @@ paymentWebhookRouter.post(
 
       const pr = rows[0];
 
-      if (pr.status !== 'pending') {
+      // #789 — the provider is the source of truth about money. A `pending` row
+      // is the normal case, but an `expired` one still accepts a `completed`
+      // webhook: `POST /billing/cleanup` no longer expires a request whose page
+      // was opened before its long window runs out, and Monei itself can retry a
+      // webhook after a transient 5xx on our side, yet neither guarantee is worth
+      // losing a charge over. Refusing it is what produced the defect this
+      // belongs to — a member charged, with no completed request, no stored card
+      // and no `next_billing_date`.
+      //
+      // Deliberately narrow: only `completed` may revive a terminal row. A
+      // `failed`/`expired` webhook on an already-terminal row changes nothing,
+      // and an already-`completed` row is still skipped, which is what keeps the
+      // handler idempotent under Monei's retries.
+      const settleable =
+        pr.status === 'pending' || (pr.status === 'expired' && payload.status === 'completed');
+
+      if (!settleable) {
         req.log.info({ orderId: payload.orderId, status: pr.status }, 'Payment webhook: already processed, skipping');
         return res.status(200).json({ received: true });
       }
@@ -210,6 +226,12 @@ paymentWebhookRouter.post(
 
         req.log.info({ orderId: payload.orderId, paymentRequestId: pr.id }, 'Payment webhook: card updated');
       } else if (payload.status === 'completed') {
+        if (pr.status === 'expired') {
+          req.log.warn(
+            { orderId: payload.orderId, paymentRequestId: pr.id },
+            'Payment webhook: completing a request cleanup had already expired',
+          );
+        }
         await db.transaction(async (tx) => {
           await tx.query(
             `UPDATE payment_requests
