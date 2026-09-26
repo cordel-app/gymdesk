@@ -6,6 +6,20 @@ on:
     - cron: '0 6 * * *'
   workflow_dispatch: # manual trigger for testing
 
+# #778: this workflow is the alerting channel for the nightly run, not only its
+# trigger. `curl -sf` alone fails on a non-2xx status, and `POST /billing/run`
+# answers `200 { processed, succeeded, failed, waived }` even when every charge
+# was rejected — so a night nobody could be charged looked exactly like a night
+# everybody was, and the only trace was a `failed_billing` row somebody had to
+# go and read. Every step below therefore reads the response body and exits
+# non-zero when the run did not do its job: a red run is the notification, and
+# it reaches whoever GitHub notifies for this environment.
+
+env:
+  # #784 will move this to an environment variable so a production run can
+  # target a different API; until then the host stays a literal, in one place.
+  API_BASE_URL: https://api.vdicube.com
+
 jobs:
   billing-run:
     name: MIT billing run
@@ -14,15 +28,74 @@ jobs:
 
     steps:
       - name: POST /billing/run
+        env:
+          BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
         run: |
-          curl -sf -X POST https://api.vdicube.com/billing/run \
-            -H "X-Internal-Secret: ${{ secrets.BILLING_INTERNAL_SECRET }}" \
+          set -euo pipefail
+
+          # `--fail-with-body` keeps `curl -f`'s non-2xx failure while still
+          # printing what the API said. The 429 from the run guard is one of
+          # those failures on purpose: with a single daily schedule, a refused
+          # run means something ran it earlier or the clock drifted, and a
+          # person should look. (#780 revisits the guard itself.)
+          rc=0
+          body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/billing/run" \
+            -H "X-Internal-Secret: $BILLING_INTERNAL_SECRET" \
             -H "Content-Type: application/json" \
-            --max-time 120
+            --max-time 120)" || rc=$?
+
+          printf 'POST /billing/run -> %s\n' "$body"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Billing run did not execute::POST /billing/run failed (curl exit $rc) — no membership was charged. Check the API, the X-Internal-Secret pair, the nginx GitHub Actions allowlist, and whether another run already stamped billing_run_log today."
+            exit 1
+          fi
+
+          # A body with no counters (HTML error page, empty answer, a renamed
+          # field) is a failure too: a run whose outcome cannot be read is not a
+          # run that is known to have worked.
+          if ! counters="$(printf '%s' "$body" \
+            | jq -er '[.processed, .succeeded, .failed, .waived] | map(numbers) | select(length == 4) | @tsv')"; then
+            echo "::error title=Billing run answered an unreadable body::POST /billing/run returned 2xx but carried no processed/succeeded/failed/waived counters. The body is in the step log."
+            exit 1
+          fi
+
+          IFS=$'\t' read -r processed succeeded failed waived <<<"$counters"
+          echo "processed=$processed succeeded=$succeeded failed=$failed waived=$waived"
+
+          if [ "$failed" -gt 0 ]; then
+            echo "::error title=$failed failed recurring charge(s)::The nightly run could not charge $failed of $processed due membership(s). Open Payments -> Billing Events with the status filter set to 'failed' (oldest first) to see which members and why."
+            exit 1
+          fi
+
+          # processed=0 is a normal night: nothing was due.
+          echo 'Billing run completed with no failed charges.'
 
       - name: POST /billing/cleanup
+        # Expiring stale pending payment requests is unrelated to the charge
+        # outcome, so it must still run when the step above went red.
+        if: ${{ !cancelled() }}
+        env:
+          BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
         run: |
-          curl -sf -X POST https://api.vdicube.com/billing/cleanup \
-            -H "X-Internal-Secret: ${{ secrets.BILLING_INTERNAL_SECRET }}" \
+          set -euo pipefail
+
+          rc=0
+          body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/billing/cleanup" \
+            -H "X-Internal-Secret: $BILLING_INTERNAL_SECRET" \
             -H "Content-Type: application/json" \
-            --max-time 30
+            --max-time 30)" || rc=$?
+
+          printf 'POST /billing/cleanup -> %s\n' "$body"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Billing cleanup did not execute::POST /billing/cleanup failed (curl exit $rc). Stale pending payment requests were not expired."
+            exit 1
+          fi
+
+          if ! expired="$(printf '%s' "$body" | jq -er '.expired | numbers')"; then
+            echo "::error title=Billing cleanup answered an unreadable body::POST /billing/cleanup returned 2xx but carried no expired counter. The body is in the step log."
+            exit 1
+          fi
+
+          echo "expired=$expired stale pending payment request(s)."

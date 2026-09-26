@@ -4,12 +4,27 @@ name: Recurring Booking Run
 # The issue thread's Q4 answer asks for "a daily activity at night"; the API
 # exposes the run as an endpoint (like /billing/run) and this workflow is what
 # fires it, so nothing has to run a timer inside the API process.
+#
+# #778: the workflow is also the alerting channel. `curl -sf` alone fails on a
+# non-2xx status, and `POST /recurring-bookings/run` answers 200 with its
+# counters however the night went, so this step reads the body and goes red when
+# the run could not do its job. `skipped` is *not* such a case: a date that is a
+# festivity, already booked or full is the expected, silently-ignored outcome
+# stage 4 was designed around (#647 Q5) and it is already reported to the member
+# as a `recurring_booking_skipped` notification. `failed` is what is left over
+# once those are accounted for — an unexpected error on one date — and a member
+# whose whole pass threw is reported as an `error` on their entry.
 on:
   schedule:
     # 03:00 UTC = 04:00 CET (05:00 CEST) — night in the gyms' timezone, and
     # three hours clear of the 06:00 billing run so the two never overlap.
     - cron: '0 3 * * *'
   workflow_dispatch: # manual trigger for testing
+
+env:
+  # #784 will move this to an environment variable so a production run can
+  # target a different API; until then the host stays a literal, in one place.
+  API_BASE_URL: https://api.vdicube.com
 
 jobs:
   recurring-booking-run:
@@ -19,8 +34,49 @@ jobs:
 
     steps:
       - name: POST /recurring-bookings/run
+        env:
+          RECURRING_BOOKINGS_INTERNAL_SECRET: ${{ secrets.RECURRING_BOOKINGS_INTERNAL_SECRET }}
         run: |
-          curl -sf -X POST https://api.vdicube.com/recurring-bookings/run \
-            -H "X-Internal-Secret: ${{ secrets.RECURRING_BOOKINGS_INTERNAL_SECRET }}" \
+          set -euo pipefail
+
+          # `--fail-with-body` keeps `curl -f`'s non-2xx failure while still
+          # printing what the API said — including the 403 the run answers when
+          # the feature flag is off and the 429 from its own run guard.
+          rc=0
+          body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/recurring-bookings/run" \
+            -H "X-Internal-Secret: $RECURRING_BOOKINGS_INTERNAL_SECRET" \
             -H "Content-Type: application/json" \
-            --max-time 600
+            --max-time 600)" || rc=$?
+
+          if [ "$rc" -ne 0 ]; then
+            printf 'POST /recurring-bookings/run -> %s\n' "$body"
+            echo "::error title=Recurring booking run did not execute::POST /recurring-bookings/run failed (curl exit $rc) — the rolling 2-month window did not advance tonight. Check the API, the X-Internal-Secret pair and the organization.professional_services feature flag."
+            exit 1
+          fi
+
+          # The response carries a per-member report, so log the counters rather
+          # than the whole body.
+          if ! counters="$(printf '%s' "$body" \
+            | jq -er '[.processed, .created, .skipped, .failed, .notified] | map(numbers) | select(length == 5) | @tsv')"; then
+            printf 'POST /recurring-bookings/run -> %s\n' "$body"
+            echo "::error title=Recurring booking run answered an unreadable body::POST /recurring-bookings/run returned 2xx but carried no processed/created/skipped/failed/notified counters. The body is in the step log."
+            exit 1
+          fi
+
+          IFS=$'\t' read -r processed created skipped failed notified <<<"$counters"
+          echo "processed=$processed created=$created skipped=$skipped failed=$failed notified=$notified"
+
+          # A member whose pass threw is reported with `error` and zero counters,
+          # so it would otherwise be invisible in `failed`.
+          errored="$(printf '%s' "$body" | jq -er '[.members[]? | select(has("error"))] | length')"
+          if [ "$errored" -gt 0 ]; then
+            printf '%s' "$body" | jq -r '.members[]? | select(has("error")) | "  member \(.member_id) (gym \(.gym_id)): \(.error)"'
+          fi
+
+          if [ "$failed" -gt 0 ] || [ "$errored" -gt 0 ]; then
+            echo "::error title=Recurring booking run reported $failed failed date(s) and $errored failed member pass(es)::The rolling 2-month window is incomplete for at least one member. Dates that are festivities, already booked or full count as 'skipped' and are not this error; see the step log for the reasons."
+            exit 1
+          fi
+
+          # processed=0 is a normal night: no member has recurring slots.
+          echo 'Recurring booking run completed with no failures.'

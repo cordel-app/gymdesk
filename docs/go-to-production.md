@@ -13,7 +13,12 @@ Tick items off in the PR that completes them.
 - [ ] Create a GitHub **`production`** environment (Settings → Environments) with its own
       secrets/vars. Every workflow currently hardcodes `environment: dev`
       (`deploy.yml`, `deploy-admin.yml`, `deploy-member.yml`, `deploy-payment.yml`,
-      `billing-run.yml`, `ci.yml`) — they need a production target.
+      `billing-run.yml`, `recurring-booking-run.yml`, `ci.yml`) — they need a production
+      target. **The environment is also the alerting channel** (#778): a nightly run that
+      fails a charge, or does not execute at all, turns `billing-run.yml` red, and the email
+      goes to whoever GitHub notifies for that environment. So the `production` environment
+      needs the right recipients — the people who act on a failed payment, not only the
+      committer of the last workflow change. Tracked as its own ticket in #784.
 - [ ] Runtime env stays GitHub-sourced: `deploy.yml` writes it into the Podman quadlet on
       every deploy. Do not hand-edit the VPS. Any env var added for production must also be
       forwarded in the workflow's `env:` / `envs:` / heredoc block, or it never reaches the
