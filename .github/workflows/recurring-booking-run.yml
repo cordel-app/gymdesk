@@ -41,7 +41,10 @@ jobs:
 
           # `--fail-with-body` keeps `curl -f`'s non-2xx failure while still
           # printing what the API said — including the 403 the run answers when
-          # the feature flag is off and the 429 from its own run guard.
+          # the feature flag is off and the 429 its run guard answers while
+          # another run is in progress. Since #780 "today's run already
+          # completed" is not that 429: it answers 200 with `skipped_reason`,
+          # handled below.
           rc=0
           body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/recurring-bookings/run" \
             -H "X-Internal-Secret: $RECURRING_BOOKINGS_INTERNAL_SECRET" \
@@ -61,6 +64,16 @@ jobs:
             printf 'POST /recurring-bookings/run -> %s\n' "$body"
             echo "::error title=Recurring booking run answered an unreadable body::POST /recurring-bookings/run returned 2xx but carried no processed/created/skipped/failed/notified counters. The body is in the step log."
             exit 1
+          fi
+
+          # #780: today's run already completed — a no-op, not a bad night.
+          # The field is `skipped_reason` rather than `skipped` because
+          # `skipped` is this run's own counter for a date it could not book.
+          skip="$(printf '%s' "$body" | jq -r '.skipped_reason // empty')"
+          if [ -n "$skip" ]; then
+            run_date="$(printf '%s' "$body" | jq -r '.run_date // "unknown"')"
+            echo "Recurring booking run skipped ($skip) — a run already completed for $run_date. Nothing to do."
+            exit 0
           fi
 
           IFS=$'\t' read -r processed created skipped failed notified <<<"$counters"

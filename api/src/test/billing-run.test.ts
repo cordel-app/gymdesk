@@ -29,8 +29,10 @@ beforeAll(() => {
 });
 
 afterEach(async () => {
-  // Reset the rate-limit singleton between tests.
-  await db.query('UPDATE billing_run_log SET last_run_at = NULL WHERE id = 1');
+  // #780: the run log is a history now (migration 193), so clearing it —
+  // rather than nulling one singleton's stamp — is what gives the next test a
+  // day on which nothing has run yet.
+  await db.query('DELETE FROM billing_run_log');
   providerResult.current = { success: true, providerRef: 'test-provider-ref' };
   providerResult.calls = [];
 });
@@ -41,6 +43,16 @@ afterAll(async () => {
 });
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+
+/** The UTC calendar date the run guard counts (#780). */
+function utcToday(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** mysql2 hands a DATE back as a string or a Date depending on the connection. */
+function dateOnly(v: Date | string): string {
+  return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+}
 
 async function createMember(gymId: string): Promise<number> {
   const { insertId } = await db.query(
@@ -119,10 +131,92 @@ describe('POST /billing/run', () => {
     expect(res.body).toHaveProperty('failed');
   });
 
-  it('returns 429 when run again within 23 hours', async () => {
+  // ── #780: one completed run per UTC date ───────────────────────────────
+  //
+  // The guard used to be "23 hours since the last *start*", which skipped a
+  // day whenever a cron ran late and locked the day whenever a run crashed.
+
+  it('records the run in billing_run_log as a completed row for today', async () => {
     await request.post('/billing/run').set('x-internal-secret', SECRET);
+
+    const { rows } = await db.query<{ status: string; run_date: string; finished_at: Date | null }>(
+      'SELECT status, run_date, started_at, finished_at FROM billing_run_log',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('completed');
+    expect(rows[0].finished_at).not.toBeNull();
+    expect(dateOnly(rows[0].run_date)).toBe(utcToday());
+  });
+
+  it('answers 200 skipped_reason (not 429) when today\u2019s run already completed', async () => {
+    expect((await request.post('/billing/run').set('x-internal-secret', SECRET)).status).toBe(200);
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+
+    // 200, so the second daily attempt (#781) is a green no-op rather than a
+    // red workflow every morning, and the counters stay readable for #778's
+    // body parse.
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      skipped_reason: 'already_completed_today',
+      run_date: utcToday(),
+      processed: 0, succeeded: 0, failed: 0, waived: 0,
+    });
+  });
+
+  it('runs again when the only completed run is on an earlier date, 22 hours ago', async () => {
+    // Exactly the case that used to be refused: Monday ran late, Tuesday is on
+    // time, and the gap is under 23 hours.
+    await db.query(
+      `INSERT INTO billing_run_log (run_date, status, started_at, finished_at)
+       VALUES (DATE_SUB(UTC_DATE(), INTERVAL 1 DAY),
+               'completed',
+               DATE_SUB(UTC_TIMESTAMP(), INTERVAL 22 HOUR),
+               DATE_SUB(UTC_TIMESTAMP(), INTERVAL 22 HOUR))`,
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('skipped_reason');
+  });
+
+  it('runs again after a run that failed earlier today', async () => {
+    await db.query(
+      `INSERT INTO billing_run_log (run_date, status, started_at, finished_at)
+       VALUES (UTC_DATE(), 'failed', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('skipped_reason');
+  });
+
+  it('runs again after a run that started today and never finished (crashed)', async () => {
+    // Stale: older than STALE_RUN_MINUTES, so the dead row is retired and the
+    // new run takes over rather than waiting out the rest of the day.
+    await db.query(
+      `INSERT INTO billing_run_log (run_date, status, started_at)
+       VALUES (UTC_DATE(), 'in_progress', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR))`,
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+    expect(res.status).toBe(200);
+
+    const { rows } = await db.query<{ status: string }>(
+      "SELECT status FROM billing_run_log WHERE status = 'failed'",
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('returns 429 while another run is genuinely in progress', async () => {
+    await db.query(
+      `INSERT INTO billing_run_log (run_date, status, started_at)
+       VALUES (UTC_DATE(), 'in_progress', UTC_TIMESTAMP())`,
+    );
+
     const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
     expect(res.status).toBe(429);
+    expect(res.body.error).toMatch(/in progress/i);
   });
 
   // The due-memberships query uses an INNER JOIN on payment_methods.

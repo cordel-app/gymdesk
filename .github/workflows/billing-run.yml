@@ -34,10 +34,11 @@ jobs:
           set -euo pipefail
 
           # `--fail-with-body` keeps `curl -f`'s non-2xx failure while still
-          # printing what the API said. The 429 from the run guard is one of
-          # those failures on purpose: with a single daily schedule, a refused
-          # run means something ran it earlier or the clock drifted, and a
-          # person should look. (#780 revisits the guard itself.)
+          # printing what the API said. Since #780 the only 429 left is "a run
+          # is genuinely in progress right now", which with these schedules
+          # means two triggers overlapped or a run is wedged — a person should
+          # look, so it stays a failure. "Today's run already completed" is no
+          # longer a 429: it answers 200 with `skipped_reason`, handled below.
           rc=0
           body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/billing/run" \
             -H "X-Internal-Secret: $BILLING_INTERNAL_SECRET" \
@@ -47,7 +48,7 @@ jobs:
           printf 'POST /billing/run -> %s\n' "$body"
 
           if [ "$rc" -ne 0 ]; then
-            echo "::error title=Billing run did not execute::POST /billing/run failed (curl exit $rc) — no membership was charged. Check the API, the X-Internal-Secret pair, the nginx GitHub Actions allowlist, and whether another run already stamped billing_run_log today."
+            echo "::error title=Billing run did not execute::POST /billing/run failed (curl exit $rc) — no membership was charged. Check the API, the X-Internal-Secret pair, the nginx GitHub Actions allowlist, and whether a run is still in progress (#780: a completed run for today answers 200, not a failure)."
             exit 1
           fi
 
@@ -58,6 +59,18 @@ jobs:
             | jq -er '[.processed, .succeeded, .failed, .waived] | map(numbers) | select(length == 4) | @tsv')"; then
             echo "::error title=Billing run answered an unreadable body::POST /billing/run returned 2xx but carried no processed/succeeded/failed/waived counters. The body is in the step log."
             exit 1
+          fi
+
+          # #780: an attempt that found today's run already completed is a
+          # no-op, not a night that went wrong. From #781 the second daily
+          # schedule hits this every day the first one worked, so it has to be
+          # green — and it must not be reported as "completed with no failed
+          # charges", which would hide a first attempt that never ran.
+          skip="$(printf '%s' "$body" | jq -r '.skipped_reason // empty')"
+          if [ -n "$skip" ]; then
+            run_date="$(printf '%s' "$body" | jq -r '.run_date // "unknown"')"
+            echo "Billing run skipped ($skip) — a run already completed for $run_date. Nothing to do."
+            exit 0
           fi
 
           IFS=$'\t' read -r processed succeeded failed waived <<<"$counters"

@@ -40,10 +40,10 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  // The run is rate-limited to one call per 23 hours and the log is a global
-  // singleton — reset it before each case so a run left behind elsewhere cannot
-  // turn the first case here into a 429.
-  await db.query('UPDATE billing_run_log SET last_run_at = NULL WHERE id = 1');
+  // #780: one completed run per UTC date, and the log is global — clear it
+  // before each case so a run left behind elsewhere cannot turn the first case
+  // here into an `already_completed_today` no-op.
+  await db.query('DELETE FROM billing_run_log');
   executeRecurring.mockClear();
 });
 
