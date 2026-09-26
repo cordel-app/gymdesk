@@ -106,9 +106,13 @@ membersRouter.get('/', async (req, res) => {
             -- join through user_membership_members a failed (or retried, or
             -- manually settled) charge would move the owner's status and leave
             -- everyone else on the same plan reading as if nothing happened.
+            -- #788: a card replacement is a payment_requests row with no money
+            -- in it, so the latest one must not become the member's payment
+            -- status — a pending verification would read as an unpaid fee.
             (SELECT pr.status
              FROM payment_requests pr
              WHERE pr.gym_id = m.gym_id
+               AND pr.source <> 'card_update'
                AND (pr.member_id = m.id
                     OR pr.user_membership_id IN (
                          SELECT umm.user_membership_id FROM user_membership_members umm

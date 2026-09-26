@@ -339,7 +339,13 @@
     "col_receipt": "Receipt",
     "receipt_generate": "Generate receipt",
     "receipt_generating": "Generating…",
-    "receipt_error": "Error — retry"
+    "receipt_error": "Error — retry",
+    "card_label": "Card on file",
+    "card_generic": "Card",
+    "card_none": "none stored",
+    "card_since": "stored {date}",
+    "card_replace_button": "Send replace-card link",
+    "card_link_label": "Send this link to the member — no payment is taken, it only replaces the stored card:"
   },
   "billing_events_page": {
     "title": "Billing Events",

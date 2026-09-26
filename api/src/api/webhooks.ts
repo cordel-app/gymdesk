@@ -7,6 +7,7 @@ import { recordPlatformAudit } from '../infra/audit';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
+import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 
 /**
  * Clerk webhook receiver. `user.deleted` (#709) removes every Gymdesk link to
@@ -146,11 +147,12 @@ paymentWebhookRouter.post(
         gym_id: string;
         user_membership_id: number;
         member_id: number;
-        charge_type_id: number;
+        charge_type_id: number | null;
         amount: string;
         status: string;
+        source: string;
       }>(
-        `SELECT id, gym_id, user_membership_id, member_id, charge_type_id, amount, status
+        `SELECT id, gym_id, user_membership_id, member_id, charge_type_id, amount, status, source
          FROM payment_requests WHERE provider_order = ?`,
         [payload.orderId],
       );
@@ -183,7 +185,47 @@ paymentWebhookRouter.post(
         return res.status(200).json({ received: true });
       }
 
-      if (payload.status === 'completed') {
+      // #788: a card replacement is a zero-amount verification, not a payment.
+      // It settles no cycle, so it writes no `payment_recorded` Billing Event,
+      // stamps no `next_billing_date`, and clears none of #785's dunning
+      // counters — the rejection that started the member replacing their card is
+      // still owed until something actually pays it. All it does is hand the new
+      // token to the same upsert a first payment uses. A verification that did
+      // not complete falls through to the branches below, which only move the
+      // request's own status: the previous token stays exactly where it was.
+      if (payload.status === 'completed' && pr.source === CARD_UPDATE_SOURCE) {
+        await db.transaction(async (tx) => {
+          await tx.query(
+            `UPDATE payment_requests
+             SET status = 'completed', provider_ref = ?, completed_at = UTC_TIMESTAMP()
+             WHERE id = ?`,
+            [payload.providerRef, pr.id],
+          );
+
+          if (payload.paymentToken && payload.sequenceId) {
+            await tx.query(
+              `INSERT INTO payment_methods
+                 (gym_id, member_id, provider, payment_token, sequence_id, card_last4, card_brand, updated_at)
+               VALUES (?, ?, 'monei', ?, ?, ?, ?, UTC_TIMESTAMP())
+               ON DUPLICATE KEY UPDATE
+                 payment_token = VALUES(payment_token),
+                 sequence_id   = VALUES(sequence_id),
+                 card_last4    = VALUES(card_last4),
+                 card_brand    = VALUES(card_brand),
+                 updated_at    = UTC_TIMESTAMP()`,
+              [pr.gym_id, pr.member_id, payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
+            );
+          } else {
+            // The verification succeeded but the provider returned no reusable
+            // token, so there is nothing to store and the old card still stands.
+            // Logged rather than failed: retrying the webhook cannot conjure a
+            // token, and the member's next attempt is the way out.
+            req.log.warn({ orderId: payload.orderId }, 'Payment webhook: card update completed without a token');
+          }
+        });
+
+        req.log.info({ orderId: payload.orderId, paymentRequestId: pr.id }, 'Payment webhook: card updated');
+      } else if (payload.status === 'completed') {
         if (pr.status === 'expired') {
           req.log.warn(
             { orderId: payload.orderId, paymentRequestId: pr.id },
@@ -233,13 +275,14 @@ paymentWebhookRouter.post(
           if (payload.paymentToken && payload.sequenceId) {
             await tx.query(
               `INSERT INTO payment_methods
-                 (gym_id, member_id, provider, payment_token, sequence_id, card_last4, card_brand)
-               VALUES (?, ?, 'monei', ?, ?, ?, ?)
+                 (gym_id, member_id, provider, payment_token, sequence_id, card_last4, card_brand, updated_at)
+               VALUES (?, ?, 'monei', ?, ?, ?, ?, UTC_TIMESTAMP())
                ON DUPLICATE KEY UPDATE
                  payment_token = VALUES(payment_token),
                  sequence_id   = VALUES(sequence_id),
                  card_last4    = VALUES(card_last4),
-                 card_brand    = VALUES(card_brand)`,
+                 card_brand    = VALUES(card_brand),
+                 updated_at    = UTC_TIMESTAMP()`,
               [pr.gym_id, pr.member_id, payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
             );
 

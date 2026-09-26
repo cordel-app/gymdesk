@@ -36,6 +36,25 @@ interface BillingEvent {
   member_name: string | null;
 }
 
+/**
+ * #788: the card the member's recurring charges are taken from. Read-only here —
+ * no admin route accepts card data, so the PCI scope stays on the isolated
+ * payment page — and the only action is sending the member the same replacement
+ * link they could raise themselves.
+ */
+interface StoredCard {
+  provider: string;
+  card_brand: string | null;
+  card_last4: string | null;
+  since: string | null;
+}
+
+interface PaymentMethodState {
+  payment_method: StoredCard | null;
+  member_can_remove: boolean;
+  removal_blocked_reason: string | null;
+}
+
 interface ChargeType {
   id: number;
   code: string;
@@ -59,10 +78,14 @@ export function MemberPaymentsModal({
   const [activeMembership, setActiveMembership] = useState<UserMembership | null>(null);
   const [hasFailedCharge, setHasFailedCharge] = useState(false);
   const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
+  const [card, setCard] = useState<PaymentMethodState | null>(null);
   const [loading, setLoading] = useState(true);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  // Which flow the link box below is showing — the two links go to the same
+  // hosted page but ask the member for different things (#788).
+  const [linkPurpose, setLinkPurpose] = useState<'payment' | 'card_update'>('payment');
   const [copied, setCopied] = useState(false);
 
   // Cash payment form state
@@ -80,12 +103,14 @@ export function MemberPaymentsModal({
   async function load() {
     setLoading(true);
     try {
-      const [rows, memberships, events, types] = await Promise.all([
+      const [rows, memberships, events, types, storedCard] = await Promise.all([
         apiFetch<PaymentRequest[]>(`/payment-requests?member_id=${memberId}`),
         apiFetch<UserMembership[]>(`/user-memberships?member_id=${memberId}&status=active`).catch(() => []),
         apiFetch<{ items: BillingEvent[] }>(`/payments/member/${memberId}?limit=50`).catch(() => ({ items: [] })),
         apiFetch<ChargeType[]>('/charge-types').catch(() => []),
+        apiFetch<PaymentMethodState>(`/payment-methods?member_id=${memberId}`).catch(() => null),
       ]);
+      setCard(storedCard);
       setRequests(rows);
       setActiveMembership(memberships[0] ?? null);
       const allEvents = events.items ?? [];
@@ -176,6 +201,7 @@ export function MemberPaymentsModal({
     setRequesting(true);
     setError(null);
     setCheckoutUrl(null);
+    setLinkPurpose('payment');
     try {
       const result = await apiFetch<{ id: number; checkoutUrl: string }>(
         '/payment-requests',
@@ -183,6 +209,29 @@ export function MemberPaymentsModal({
       );
       setCheckoutUrl(result.checkoutUrl);
       load();
+    } catch (err: any) {
+      setError(err.message ?? t('member_payments.error_generic'));
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+  /**
+   * The same card replacement the member can start from My Membership, handed
+   * over as a link. It charges nothing — the hosted page runs a zero-amount
+   * verification — so it is offered whatever the membership owes this cycle.
+   */
+  async function requestCardReplacement() {
+    setRequesting(true);
+    setError(null);
+    setCheckoutUrl(null);
+    setLinkPurpose('card_update');
+    try {
+      const result = await apiFetch<{ id: number; checkoutUrl: string }>(
+        '/payment-methods/replace-requests',
+        { method: 'POST', body: JSON.stringify({ member_id: memberId }) },
+      );
+      setCheckoutUrl(result.checkoutUrl);
     } catch (err: any) {
       setError(err.message ?? t('member_payments.error_generic'));
     } finally {
@@ -363,6 +412,24 @@ export function MemberPaymentsModal({
           </div>
         )}
 
+        {/* Stored card (#788) */}
+        {!loading && (
+          <div style={{ marginBottom: 16, fontSize: 13, color: '#555' }}>
+            <strong>{t('member_payments.card_label')}:</strong>{' '}
+            {card?.payment_method ? (
+              <>
+                {card.payment_method.card_brand ?? t('member_payments.card_generic')}
+                {card.payment_method.card_last4 ? ` •••• ${card.payment_method.card_last4}` : ''}
+                {card.payment_method.since
+                  ? ` · ${t('member_payments.card_since', { date: new Date(card.payment_method.since).toLocaleDateString() })}`
+                  : ''}
+              </>
+            ) : (
+              t('member_payments.card_none')
+            )}
+          </div>
+        )}
+
         <div style={{ borderTop: '1px solid #eee', paddingTop: 16 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
@@ -381,13 +448,20 @@ export function MemberPaymentsModal({
                 {t('member_payments.cash_button')}
               </button>
             )}
+            <button
+              onClick={requestCardReplacement}
+              style={btnStyle('#444')}
+              disabled={requesting}
+            >
+              {t('member_payments.card_replace_button')}
+            </button>
           </div>
 
           {error && <p style={{ color: '#c0392b', margin: '10px 0 0', fontSize: 14 }}>{error}</p>}
 
           {checkoutUrl && (
             <div style={{ marginTop: 14, padding: 12, background: '#f8f8f8', borderRadius: 8, border: '1px solid #e0e0e0' }}>
-              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>{t('member_payments.link_label')}</p>
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#555' }}>{t(linkPurpose === 'card_update' ? 'member_payments.card_link_label' : 'member_payments.link_label')}</p>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <code style={{ fontSize: 12, wordBreak: 'break-all', flex: 1, color: '#333' }}>{checkoutUrl}</code>
                 <button onClick={copyLink} style={btnSmall(copied ? '#1e7e40' : '#444')}>

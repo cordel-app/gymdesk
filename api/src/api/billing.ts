@@ -143,6 +143,20 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       "SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1",
     );
     const membershipFeeChargeTypeId = ctRows[0]?.id ?? null;
+    // #788: until migration 195 the NOT NULL on `payment_requests.charge_type_id`
+    // was what turned a missing global `membership_fee` charge type into a loud
+    // failure here. That column is nullable now — a NULL charge type is how a
+    // card verification says "this row is not a charge" — so the run would
+    // otherwise write real money charges carrying that same marker. Fail before
+    // charging anyone, as the retry and manual-payment paths already do
+    // (`domain/billingEventPayments.ts`); a `charge_types` row missing from a
+    // seeded global lookup means a broken install, not a night to work through.
+    if (membershipFeeChargeTypeId == null) {
+      await finishRun(BILLING_RUN_LOG, claim.runId, 'failed', { processed: 0, succeeded: 0, failed: 0, waived: 0 })
+        .catch((logErr) => req.log.error({ err: (logErr as Error).message }, 'billing/run: could not close run log'));
+      req.log.error('billing/run: charge_type membership_fee is not configured');
+      return res.status(500).json({ error: 'charge_type membership_fee not configured' });
+    }
 
     // Query all active memberships due for billing. The cadence is the
     // assignment's own frozen pair, its Plan's only as the fallback

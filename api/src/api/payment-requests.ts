@@ -6,6 +6,7 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { parseQuery, z } from '../infra/validate';
 import { currentMembershipFee } from './membership-fee-pricing';
+import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 
 export const paymentRequestsRouter = Router();
 
@@ -22,8 +23,10 @@ paymentRequestsRouter.get('/', async (req: Request, res: Response, next: NextFun
   if (!q) return;
 
   try {
-    const params: (string | number)[] = [gymId];
-    let where = 'WHERE pr.gym_id = ?';
+    // #788: card verifications carry no money and no charge type — they are read
+    // through GET /payment-methods, not as a 0.00 payment in this list.
+    const params: (string | number)[] = [gymId, CARD_UPDATE_SOURCE];
+    let where = 'WHERE pr.gym_id = ? AND pr.source <> ?';
     if (q.member_id !== undefined) { where += ' AND pr.member_id = ?'; params.push(q.member_id); }
     if (q.status) { where += ' AND pr.status = ?'; params.push(q.status); }
 
@@ -48,11 +51,14 @@ paymentRequestsRouter.get('/:id', async (req: Request, res: Response, next: Next
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
+      // Excluded here too, not only from the list: a card verification reachable
+      // by id would render in the staff transaction detail view as a 0.00
+      // payment with no charge type.
       `SELECT pr.*, m.name AS member_name, m.email AS member_email
        FROM payment_requests pr
        JOIN members m ON m.id = pr.member_id
-       WHERE pr.id = ? AND pr.gym_id = ?`,
-      [Number(req.params.id), gymId],
+       WHERE pr.id = ? AND pr.gym_id = ? AND pr.source <> ?`,
+      [Number(req.params.id), gymId, CARD_UPDATE_SOURCE],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);

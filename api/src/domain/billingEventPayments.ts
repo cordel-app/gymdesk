@@ -131,7 +131,12 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
   return null;
 }
 
-/** `payment_requests.charge_type_id` is NOT NULL; fall back to membership_fee. */
+/**
+ * The charge type a *charge* names. Nullable since migration 195 (a #788 card
+ * verification bills nothing and carries NULL), so the fallback is no longer the
+ * schema's requirement but the invariant these two paths keep: a row that moves
+ * money always says what for.
+ */
 async function resolveChargeTypeId(ev: EventContext): Promise<number | null> {
   if (ev.charge_type_id) return ev.charge_type_id;
   const { rows } = await db.query<{ id: number }>(
