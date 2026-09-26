@@ -283,10 +283,20 @@ hardening:
 
 ## 5. Payments (Monei / PCI)
 
-Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they are not missed:
+Settled in `docs/decisions.md` (§8 payment page / SAQ A, §15 the scheduler, §16 no member
+notification, §17 minor units) — listed here so they are not missed. The four PCI/Monei
+account items below have no ticket: they are account and attestation work, not code.
+
+**Before working through this section, read `docs/payments.md`** — it documents both
+processes end to end and carries the **manual test runbook** (§C) that exercises them
+against Monei test keys. Most items here are "confirm X against the live account", and the
+runbook is how.
 
 - [ ] Live `MONEI_API_KEY`, `MONEI_WEBHOOK_SECRET` and `MONEI_ACCOUNT_ID`; webhook endpoint
-      (`/webhooks/payment`) registered on the live Monei account.
+      (`/webhooks/payment`) registered on the live Monei account, subscribed to **charge**
+      events. `PAYMENT_ENV`, `PAYMENT_PAGE_URL`, `PAYMENT_OK_URL`, `PAYMENT_KO_URL` and
+      `PAYMENT_NOTIFICATION_URL` set for the live hosts — see the env table in
+      `docs/payments.md` § Provider layer for the full list and what reads each.
 - [ ] **Monei AoC** (Attestation of Compliance) obtained — SAQ A eligibility is void
       without it.
 - [ ] **PCI DSS v4.0 Req 6.4.3** — versioned `monei.js` URL + `sha384` SRI hash from Monei,
