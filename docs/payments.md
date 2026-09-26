@@ -25,7 +25,7 @@ would add it — this document describes what runs today, never what is planned.
 
 Nothing charges a member automatically until they have paid once through the hosted page:
 the nightly run INNER JOINs `payment_methods` (`api/src/api/billing.ts`), and the only thing
-that *stores* a card there is the payment webhook — `webhooks.ts:191` and `:255`, its
+that *stores* a card there is the payment webhook — `webhooks.ts:207` and `:277`, its
 card-update and first-payment branches, are the only two `INSERT INTO payment_methods` in
 the codebase (`DELETE /me/payment-method` is the only other writer, and it removes). So the
 first payment is what turns an assignment into a billable one.
@@ -111,7 +111,8 @@ parameter and calls the **only** bridge into the API:
 
 - reads the row `FOR UPDATE` where `page_token = ? AND page_token_expires > UTC_TIMESTAMP()
   AND status = 'pending'`, then **sets `page_token = NULL`** — a single-use token, and the
-  only writer that clears the column;
+  only writer that clears the column on a row still `pending`, which is what makes that NULL
+  usable as the record that the page was **opened** (§B8, #789);
 - returns display fields only: `{ paymentId, purpose, amount, currency, gymName,
   memberName, billingInterval, logoUrl, logoContainsGymName, themeColors, okUrl, koUrl }`.
   No Gymdesk internal id, and `paymentId` is the Monei payment id stored in `provider_ref`.
@@ -145,8 +146,21 @@ exact bytes Monei signed. 60 req/min per IP.
   dashboard preflights a new webhook URL with a GET and rejects a non-2xx.
 
 The row is found by `provider_order = payload.orderId`. No row ⇒ `200` and a warning.
-**`pr.status !== 'pending'` ⇒ skip as already processed** — this is what makes the handler
-idempotent under Monei's retries, and it is also the hole #789 is about.
+Then the row must be **processable**, which since #789 is two cases, not one:
+
+```ts
+pr.status === 'pending' || (pr.status === 'expired' && payload.status === 'completed')
+```
+
+Anything else is skipped as already processed, and that skip is what makes the handler
+idempotent under Monei's retries — an already-`completed` row is *always* skipped, so nothing
+may widen it further. The second clause is deliberately narrow: the provider is the source of
+truth about money, so a `completed` payload is allowed to reopen a row cleanup had written
+off (logged as `Payment webhook: completing a request cleanup had already expired`), while a
+`failed` or `expired` payload never revives a terminal row.
+
+That clause is the **backstop**, not the normal path. The primary fix is that cleanup no
+longer expires a request the member is still paying through at all — §B8.
 
 Then, by branch:
 
@@ -154,10 +168,10 @@ Then, by branch:
 |---|---|
 | `completed` **and** `source = 'card_update'` | the request → `completed`, and the `payment_methods` upsert. **Nothing else**: no Billing Event, no `next_billing_date`, no dunning reset (#788 — replacing a card is not paying) |
 | `completed` | the five writes below, in one transaction |
-| `failed` / `expired` | `payment_requests.status` and `provider_ref` only |
+| `failed` / `expired` | `payment_requests.status` and `provider_ref` only — and only on a row still `pending`, since a terminal row is never revived by a non-`completed` payload |
 | `pending` | **nothing** — an intermediate status must not flip the row, or the guard above would strand it before the real outcome arrives |
 
-The `completed` transaction (`webhooks.ts:212-288`):
+The `completed` transaction (`webhooks.ts:235-319`):
 
 1. `payment_requests` → `status = 'completed'`, `provider_ref`, `completed_at`;
 2. a `payment_recorded` Billing Event (`source = 'provider'`, `actor_user_id` NULL) carrying
@@ -181,11 +195,14 @@ assignment's frozen pair, its Plan's live `billing_policies` row only as a fallb
 the **LEFT** JOIN. `WHERE next_billing_date IS NULL` means only the *first* payment stamps
 it.
 
-> ⚠️ Two known defects live in this step. **#790**: `starts_at` is whatever the staff
+> ⚠️ A known defect lives in this step. **#790**: `starts_at` is whatever the staff
 > typed, so a back-dated assignment gets a `next_billing_date` in the past and is charged
-> one catch-up cycle per night. **#789**: `POST /billing/cleanup` can expire an opened
-> request while the member is still paying through it, after which the guard above skips
-> the completed webhook as "already processed" and the charge is lost.
+> one catch-up cycle per night.
+>
+> The other one that lived here is closed. **#789**: `POST /billing/cleanup` used to expire
+> a request the member was still paying through, after which the guard above skipped the
+> completed webhook as "already processed" and the charge was lost. Cleanup now keeps an
+> opened request `pending` for hours — §B8.
 
 ### A6. What is visible afterwards
 
@@ -357,19 +374,44 @@ is a monthly statistic, not a to-do.
 
 ### B8. `POST /billing/cleanup`
 
+`payment_requests` carries **two** deadlines and they are not interchangeable (#789,
+`api/src/domain/paymentRequestExpiry.ts`). `page_token_expires` (creation + 10 minutes)
+bounds how long the checkout *link* may be **opened**; how long the member may then take to
+pay through it is a different, much longer question — Card Input, a 3DS redirect, and Monei
+retrying its webhook after a transient 5xx of ours.
+
+What tells the two apart is `page_token` itself: §A4's page load is the only writer that
+clears it on a row still `pending`, so a `NULL` token *is* the record that someone opened the
+page. Cleanup therefore runs two statements:
+
 ```sql
+-- Never opened: expires with its token, because no payment can be in flight.
 UPDATE payment_requests SET status = 'expired', page_token = NULL
-WHERE status = 'pending' AND page_token_expires < UTC_TIMESTAMP()
+WHERE status = 'pending' AND page_token IS NOT NULL
+  AND page_token_expires < UTC_TIMESTAMP()
+
+-- Opened: written off only once the provider has plainly never resolved it.
+UPDATE payment_requests SET status = 'expired'
+WHERE status = 'pending' AND page_token IS NULL
+  AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)
 ```
 
-Answers `{ expired: <rowCount> }`, which the workflow parses by name. It runs twice a day
-because the workflow does (#781), which is harmless: expiring stale pending requests is
-idempotent.
+The grace period is `abandonedRequestHours()` — `PAYMENT_REQUEST_ABANDONED_HOURS`, default
+24, **floored at 1** so a deployment that sets `0` cannot reintroduce a deadline shorter than
+a checkout takes. It is added in SQL, keeping the comparison in the same UTC clock
+`page_token_expires` was written against.
 
-`page_token_expires` is the deadline for **opening** the checkout link (creation +
-10 minutes), not for paying through it — so this statement can expire a request a member is
-still paying through, and the webhook then skips the completed event as already processed.
-See #789.
+Answers `{ expired, expired_unopened, expired_abandoned }`. **`expired` stays the total**,
+because `.github/workflows/billing-run.yml` parses that field by name (#778); the two
+components are reported beside it, not instead of it. It runs twice a day because the
+workflow does (#781), which is harmless: expiring stale pending requests is idempotent.
+
+> Until #789 this was one statement on the ten-minute deadline, which expired requests
+> members were part-way through paying — and §A5's `pr.status !== 'pending'` guard then
+> skipped the completed webhook, so the money moved and Gymdesk kept no record of it: no
+> `payment_methods` row, no `next_billing_date`, and the member app still offering to pay.
+> Do not collapse the two deadlines back into one, and do not add a shorter window that
+> expires an opened request.
 
 ---
 
@@ -498,6 +540,7 @@ gated on `detail.status === 'draft'`) are therefore unreachable.
 | `PAYMENT_OK_URL`, `PAYMENT_KO_URL` | the hosted page's return URLs |
 | `PAYMENT_NOTIFICATION_URL` | the `callbackUrl` Monei posts the webhook to |
 | `BILLING_INTERNAL_SECRET` | `/billing/run`, `/billing/cleanup` |
+| `PAYMENT_REQUEST_ABANDONED_HOURS` | optional (default 24, floored at 1) — `abandonedRequestHours()`, §B8 |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | `/recurring-bookings/run` |
 
 The `payment_providers` catalogue (#636, `api/src/api/payment-providers.ts`) names **which**
@@ -699,13 +742,26 @@ Benefit covers the date), assign it, make the cycle due, and run step 9. Expect
 **no** `payment_requests` row, `next_billing_date` advanced, and `last_billed_at`
 **untouched**.
 
-**15. Cleanup.** Raise a request, do not pay, wait past the 10-minute token TTL, then:
+**15. Cleanup, both deadlines (#789).** Raise **two** requests. Open the checkout page of
+the second one only (`GET /payment-page/token/:token`, which clears its `page_token`), do not
+pay either, back-date both past the ten-minute TTL, then:
 
 ```bash
 curl -sS -X POST http://localhost:3000/billing/cleanup -H "X-Internal-Secret: $BILLING_INTERNAL_SECRET"
 ```
 
-Expect `{ expired: 1 }` and the row `expired` with `page_token = NULL`.
+Expect `{ expired: 1, expired_unopened: 1, expired_abandoned: 0 }`: the untouched request is
+`expired` with `page_token = NULL`, and the **opened** one is still `pending` — that is the
+whole point, because a completed webhook must still be able to land on it. To see the second
+deadline, back-date the opened row's `page_token_expires` by more than
+`PAYMENT_REQUEST_ABANDONED_HOURS` (default 24) and run cleanup again:
+
+```sql
+UPDATE payment_requests SET page_token_expires = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 48 HOUR)
+WHERE id = <the opened request>;
+```
+
+Expect `{ expired: 1, expired_unopened: 0, expired_abandoned: 1 }`.
 
 **16. Tear down.** Drop the throwaway gym, or `npm run db:down` and start clean.
 
@@ -729,7 +785,7 @@ differently.
 | [#786](https://github.com/cordel-app/gymdesk/issues/786) | `draft`/`awaiting_payment` are unreachable statuses, and `POST /:id/submit` is dead code |
 | [#787](https://github.com/cordel-app/gymdesk/issues/787) | ✅ done — the run allocates receipt numbers |
 | [#788](https://github.com/cordel-app/gymdesk/issues/788) | ✅ done — replacing a card charges nothing |
-| [#789](https://github.com/cordel-app/gymdesk/issues/789) | `POST /billing/cleanup` can expire a request the member is paying through, after which the completed webhook is skipped and the charge is lost |
+| [#789](https://github.com/cordel-app/gymdesk/issues/789) | ✅ done — cleanup keeps an opened request `pending`, so a member's payment is not lost |
 | [#790](https://github.com/cordel-app/gymdesk/issues/790) | A back-dated `starts_at` yields a past first `next_billing_date`, charged one catch-up cycle per night |
 | — | No reconciliation job against the provider. `POST /payments` (the staff ledger write) records a charge or a cash payment; nothing reads the provider back to confirm our rows agree with it. |
 

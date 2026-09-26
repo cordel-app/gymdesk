@@ -360,6 +360,22 @@ runbook is how.
       whose receipts stop appearing is a log to read (`billing/run: receipt number
       allocation failed`), not a red run; the on-demand `POST /payments/:id/receipt`
       issues anything the run missed.
+- [ ] **Set `PAYMENT_REQUEST_ABANDONED_HOURS` against Monei's real retry schedule** (#789).
+      `POST /billing/cleanup` no longer expires a payment request whose checkout page was
+      opened until this window has passed (default 24 h, measured from the token's own
+      ten-minute TTL); only a request that was *never* opened still expires with its token.
+      The window exists because a terminal webhook can arrive long after the member left the
+      Card Input — Monei retries after a transient 5xx on our side — and a row expired in
+      the meantime used to be skipped as already-processed, losing a payment that had been
+      made. No environment has a configured provider yet, so the default was chosen as a
+      generous guess and not measured: before the first live gym, confirm how long Monei
+      keeps retrying a `charge.succeeded` and how long its own hosted payment stays
+      resolvable, and set the window past both. Erring long costs only a `pending` row
+      lingering on the Payments screens; erring short loses money silently. The webhook
+      accepting a `completed` payload on an already-`expired` row is the backstop for
+      whatever the schedule turns out to be — verify it stays that and not the normal path,
+      by watching for `Payment webhook: completing a request cleanup had already expired` in
+      the first month's logs.
 - [ ] **A gym's Payment Provider is metadata, not yet the adapter selector** (#636):
       `gyms.payment_provider_id` is mandatory and administered from Cordel → Payment
       Providers, but `getPaymentProvider()` still resolves the adapter (and its

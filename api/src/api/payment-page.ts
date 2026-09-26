@@ -51,6 +51,11 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
 
       if (!rows[0] || !rows[0].provider_ref) return null;
 
+      // Consuming the token is also the record that the page was *opened*:
+      // this is the only writer that clears `page_token` on a row still
+      // `pending`, so `POST /billing/cleanup` reads `page_token IS NULL` as
+      // "a member is in the middle of paying" and gives the row the long
+      // abandonment window instead of the token's ten minutes (#789).
       await tx.query(
         `UPDATE payment_requests SET page_token = NULL WHERE id = ?`,
         [rows[0].id],
