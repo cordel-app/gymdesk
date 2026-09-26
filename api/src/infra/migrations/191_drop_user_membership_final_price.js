@@ -48,7 +48,11 @@
  * it, so it has nothing to rescue, and writing today's catalogue onto a contract
  * that has ended would claim it as "what was agreed" (migration 174's own reason
  * for skipping such a row). It keeps no stored fee after the drop; what it was
- * actually charged is in its Billing Events ledger, which is untouched.
+ * actually charged is in its Billing Events ledger, which is untouched. That is
+ * the **stored** status, not the date-aware `lifecycle_status` projection: a row
+ * whose `ends_at` has passed while `status` is still `active` is billed by the
+ * nightly run (which never looks at `ends_at`) and is therefore rescued like any
+ * other.
  *
  * Two things the passes deliberately do not do. `discount_expires_at` is not
  * honoured — it is inert in code today (stored and displayed, never priced), and
@@ -122,6 +126,7 @@ const MOVED = `((${NEEDS_FEE}) OR (${NEGOTIATED}))`;
  * has ended as "what was agreed" — migration 174's own reason for skipping it.
  * What it was actually charged is in its Billing Events ledger, which is
  * untouched. All four writes share this filter so the row sets cannot diverge.
+ * `status` is NOT NULL (migration 001), so `NOT IN` eliminates nothing silently.
  */
 const BILLABLE = `um.status NOT IN ('cancelled', 'expired')`;
 
@@ -226,11 +231,15 @@ exports.up = async (knex) => {
     try {
       await knex.raw('ALTER TABLE user_memberships DROP COLUMN final_price, ALGORITHM=INSTANT');
     } catch (err) {
-      // Only "this ALTER cannot be INSTANT" is retried as a rebuild
-      // (ER_ALTER_OPERATION_NOT_SUPPORTED / _REASON). A lock-wait timeout or a
-      // lost connection must not be answered with the far more expensive
-      // statement on a server that just failed the cheap one.
-      if (err.errno !== 1845 && err.errno !== 1846) throw err;
+      // The rebuild is the right answer to every "INSTANT is not available here"
+      // — `ER_ALTER_OPERATION_NOT_SUPPORTED[_REASON]`, and also the 64-row-version
+      // budget InnoDB spends on each instant ADD/DROP, which `user_memberships`
+      // has been collecting since migration 007. Rather than enumerate those
+      // codes, this refuses the retry only for the failures a second, heavier
+      // statement would make worse: a lock wait, a deadlock, an interrupted query
+      // or a lost connection. Anything else falls through to the plain ALTER,
+      // which surfaces its own error if the real cause was something else again.
+      if ([1205, 1213, 1317, 2006, 2013].includes(err.errno)) throw err;
       console.warn(`[191] INSTANT drop unavailable (${err.message}); rebuilding the table instead`);
       await knex.raw('ALTER TABLE user_memberships DROP COLUMN final_price');
     }
