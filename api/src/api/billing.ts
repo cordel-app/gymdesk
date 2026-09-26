@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { advanceBillingDate } from '../domain/billingDate';
 import { DueAssignmentRow, priceDueMembershipFee } from './billing-run-pricing';
@@ -207,7 +208,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       try {
         const result = await getPaymentProvider().executeRecurring({
           orderId,
-          amount,
+          amount: toMinorUnits(amount),
           currency: 'EUR',
           paymentToken: row.payment_token,
           sequenceId: row.sequence_id,

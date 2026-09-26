@@ -12,6 +12,7 @@ import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
@@ -1612,7 +1613,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     );
     if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
-    const amount = Math.round(parseFloat(um.final_price) * 100);
+    const amount = toMinorUnits(um.final_price);
     const orderId = crypto.randomUUID();
     const pageToken = crypto.randomUUID();
     const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
