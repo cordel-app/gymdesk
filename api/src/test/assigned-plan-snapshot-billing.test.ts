@@ -408,7 +408,7 @@ describe('POST /billing/run — charges on the assignment\'s own cadence', () =>
        VALUES (?, ?, 'monei', NULL, NULL)`,
       [gymId, memberId],
     );
-    await db.query('UPDATE billing_run_log SET last_run_at = NULL WHERE id = 1');
+    await db.query('DELETE FROM billing_run_log');
   });
 
   it('still bills an assignment whose Plan lost its billing policy', async () => {
@@ -425,7 +425,7 @@ describe('POST /billing/run — charges on the assignment\'s own cadence', () =>
 
   it('advances the schedule by the frozen cadence, not the Plan\'s current one', async () => {
     // A monthly assignment whose Plan has since been switched to yearly.
-    await db.query('UPDATE billing_run_log SET last_run_at = NULL WHERE id = 1');
+    await db.query('DELETE FROM billing_run_log');
     await setBillingPolicy(gymId, planId, 1, 'year');
     await db.query(
       'UPDATE payment_methods SET payment_token = ?, sequence_id = ? WHERE gym_id = ? AND member_id = ?',

@@ -51,11 +51,12 @@ beforeAll(() => {
 });
 
 afterEach(async () => {
-  // Reset the rate-limit singleton between tests — the same shape billing-run
-  // uses. Scoped runs never touch it, so this only matters for the rate-limit
-  // block, but resetting unconditionally keeps one stray unscoped run from
-  // poisoning everything after it.
-  await db.query('UPDATE recurring_booking_run_log SET last_run_at = NULL WHERE id = 1');
+  // #780: the run log is a history now (migration 193) — the same shape
+  // billing-run uses. Clearing it is what gives the next test a day on which
+  // nothing has run yet. Scoped runs never touch it, so this only matters for
+  // the run-guard block, but clearing unconditionally keeps one stray unscoped
+  // run from poisoning everything after it.
+  await db.query('DELETE FROM recurring_booking_run_log');
 });
 
 afterAll(async () => {
@@ -332,11 +333,20 @@ async function skipAlerts(gymId: string, memberId: number): Promise<SkipAlert[]>
   }));
 }
 
+/**
+ * #780: when the last run of the history started, or null when the log is
+ * empty. Replaces the singleton's `last_run_at` the guard used to read.
+ */
 async function lastRunAt(): Promise<Date | null> {
-  const { rows } = await db.query<{ last_run_at: Date | null }>(
-    'SELECT last_run_at FROM recurring_booking_run_log WHERE id = 1',
+  const { rows } = await db.query<{ started_at: Date | null }>(
+    'SELECT started_at FROM recurring_booking_run_log ORDER BY id DESC LIMIT 1',
   );
-  return rows[0]?.last_run_at ?? null;
+  return rows[0]?.started_at ?? null;
+}
+
+/** The UTC calendar date the run guard counts. */
+function utcToday(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 // ─── The action under test ────────────────────────────────────────────────────
@@ -459,21 +469,72 @@ describe('POST /recurring-bookings/run — 23-hour rate limit', () => {
     expect(await lastRunAt()).not.toBeNull();
   });
 
-  it('returns 429 for a second unscoped run within 23 hours', async () => {
+  it('answers 200 skipped_reason for a second unscoped run once today\u2019s completed', async () => {
     expect((await runJob()).status).toBe(200);
 
     const res = await runJob();
-    expect(res.status).toBe(429);
-    expect(res.body.error).toMatch(/23 hours/);
+    // #780: not 429 — the work is done, which is not something to retry or to
+    // alert on. `skipped_reason`, not `skipped`: this run already reports a
+    // numeric `skipped` counter for a date it could not book.
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      skipped_reason: 'already_completed_today',
+      run_date: utcToday(),
+      processed: 0, created: 0, skipped: 0, failed: 0, notified: 0,
+    });
+    expect(res.body.members).toEqual([]);
   });
 
-  it('runs unscoped again once the stamp is older than 23 hours', async () => {
-    await runJob();
+  it('runs unscoped again when the completed run is on an earlier date, 22 hours ago', async () => {
     await db.query(
-      'UPDATE recurring_booking_run_log SET last_run_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR) WHERE id = 1',
+      `INSERT INTO recurring_booking_run_log (run_date, status, started_at, finished_at)
+       VALUES (DATE_SUB(UTC_DATE(), INTERVAL 1 DAY),
+               'completed',
+               DATE_SUB(UTC_TIMESTAMP(), INTERVAL 22 HOUR),
+               DATE_SUB(UTC_TIMESTAMP(), INTERVAL 22 HOUR))`,
+    );
+
+    const res = await runJob();
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('skipped_reason');
+  });
+
+  it('runs unscoped again after a run that started today and never finished', async () => {
+    await db.query(
+      `INSERT INTO recurring_booking_run_log (run_date, status, started_at)
+       VALUES (UTC_DATE(), 'in_progress', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 2 HOUR))`,
     );
 
     expect((await runJob()).status).toBe(200);
+
+    const { rows } = await db.query<{ status: string }>(
+      "SELECT status FROM recurring_booking_run_log WHERE status = 'failed'",
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('returns 429 while another unscoped run is genuinely in progress', async () => {
+    await db.query(
+      `INSERT INTO recurring_booking_run_log (run_date, status, started_at)
+       VALUES (UTC_DATE(), 'in_progress', UTC_TIMESTAMP())`,
+    );
+
+    const res = await runJob();
+    expect(res.status).toBe(429);
+    expect(res.body.error).toMatch(/in progress/i);
+  });
+
+  it('stores the run\u2019s counters on its history row', async () => {
+    expect((await runJob()).status).toBe(200);
+
+    const { rows } = await db.query<Record<string, number | string>>(
+      `SELECT status, processed, created, skipped, failed, notified
+         FROM recurring_booking_run_log ORDER BY id DESC LIMIT 1`,
+    );
+    expect(rows[0]).toMatchObject({
+      status: 'completed', created: 0, skipped: 0, failed: 0, notified: 0,
+    });
+    expect(Number(rows[0].processed)).toBeGreaterThanOrEqual(0);
   });
 
   it('does not rate-limit a scoped run fired straight after an unscoped one', async () => {
@@ -484,7 +545,7 @@ describe('POST /recurring-bookings/run — 23-hour rate limit', () => {
     const byGym = await runJob({ gym_id: emptyGymId });
     expect(byGym.status).toBe(200);
 
-    // …and the scoped run left the singleton exactly where the unscoped one put it.
+    // …and the scoped run added no row of its own to the history.
     expect((await lastRunAt())?.getTime()).toBe(stamped?.getTime());
   });
 
@@ -753,7 +814,7 @@ describe('A soft-deleted gym is not processed', () => {
   });
 
   it('is skipped by an unscoped run too', async () => {
-    await db.query('UPDATE recurring_booking_run_log SET last_run_at = NULL WHERE id = 1');
+    await db.query('DELETE FROM recurring_booking_run_log');
     const res = await runJob();
     expect(res.status).toBe(200);
     expect(res.body.members.map((m: any) => m.gym_id)).not.toContain(gymId);
@@ -765,7 +826,7 @@ describe('A soft-deleted gym is not processed', () => {
     // strand the fixture — but restore it anyway so the teardown path is the
     // same one every other block exercises.
     await db.query('UPDATE gyms SET deleted_at = NULL WHERE id = ?', [gymId]);
-    await db.query('UPDATE recurring_booking_run_log SET last_run_at = NULL WHERE id = 1');
+    await db.query('DELETE FROM recurring_booking_run_log');
   });
 });
 

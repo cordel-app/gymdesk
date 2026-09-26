@@ -53,6 +53,14 @@ export async function createTestMembership(
 
 /** Deletes gyms created by this worker and their dependent rows. */
 export async function cleanupTestGyms() {
+  // #780: the two run histories are the deliberate no-`gym_id` exception, so
+  // no cascade from `gyms` reaches them and the `ids` early-return below would
+  // skip them. They have to go regardless: one `completed` row for today's UTC
+  // date makes `POST /billing/run` (and the unscoped recurring booking run)
+  // answer `already_completed_today` for every test in every later file.
+  await db.query('DELETE FROM billing_run_log');
+  await db.query('DELETE FROM recurring_booking_run_log');
+
   const ids = _createdGymIds.splice(0);
   if (ids.length === 0) return;
   const marks = ids.map(() => '?').join(',');

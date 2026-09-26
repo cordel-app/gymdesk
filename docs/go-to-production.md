@@ -245,6 +245,36 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       video viewer's embed) and `media-src` needs the R2 endpoint (a video stored as an
       object plays in a `<video>` element).
 
+## 4b. Scheduled runs (GitHub Actions)
+
+The nightly billing run and the recurring booking run are triggered by GitHub Actions,
+which is a deliberate decision (2026-09-26: keep the trigger, make the API and the
+workflows robust to its delays) rather than a placeholder. These are the pieces of that
+hardening:
+
+- [x] **One completed run per UTC date, not 23 hours since the last start** (#780).
+      `billing_run_log` and `recurring_booking_run_log` are histories now (migration 193,
+      one row per run with `run_date`, `status`, `started_at`/`finished_at` and the run's
+      counters), and `POST /billing/run` / `POST /recurring-bookings/run` refuse only when
+      a run for today's UTC date has already **completed**. A late cron no longer skips a
+      day, and a crashed run no longer locks one — the row is closed as `failed`, and a
+      row left `in_progress` past `STALE_RUN_MINUTES` (30) is taken over. An attempt that
+      finds today's run already done answers `200 { skipped_reason:
+      'already_completed_today', run_date, …zeroed counters }`, which both workflows treat
+      as a green no-op; a genuine overlap is still `429`.
+- [ ] **A second scheduled attempt** at 10:00 UTC as a safety net for a run GitHub dropped
+      (#781). Depends on the item above, which is what makes the second attempt a no-op on
+      a normal day.
+- [ ] **A freshness alert** when no run has completed in 26 hours (#782) — the only signal
+      that covers "nothing reached the API at all", which no red workflow can report
+      because there is no run.
+- [ ] **Decide the `/billing/` GitHub Actions IP allowlist**: automate its refresh or
+      remove it (#783). See the nginx item in §4.
+- [ ] **A `production` GitHub environment** for the scheduled and deploy workflows (#784).
+      See §1.
+- [ ] **Bounded automatic retry, then pause** on a rejected recurring charge (#785). See
+      the `#640` follow-up item in §5.
+
 ## 5. Payments (Monei / PCI)
 
 Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they are not missed:

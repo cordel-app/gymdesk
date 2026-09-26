@@ -5,6 +5,7 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { advanceBillingDate } from '../domain/billingDate';
+import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import {
   FEE_ASSIGNMENT_COLUMNS,
   FeeAssignmentRow,
@@ -17,6 +18,9 @@ import {
 export { advanceBillingDate } from '../domain/billingDate';
 
 export const billingRouter = Router();
+
+/** #780: the history this run claims a row in. */
+const BILLING_RUN_LOG: RunLogTable = 'billing_run_log';
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
 // on the connection's timezone config (same note as user-memberships.ts) — the
@@ -56,7 +60,15 @@ function checkInternalSecret(req: Request, res: Response): boolean {
  * run has exactly one way to know what a cycle costs.
  *
  * Auth: X-Internal-Secret header (BILLING_INTERNAL_SECRET env var).
- * Rate-limited: rejects with 429 if the last successful run was < 23 h ago.
+ *
+ * #780 — the run guard is a calendar rule, not a rolling window:
+ *   - a run that already **completed** today (UTC) answers
+ *     `200 { skipped_reason: 'already_completed_today', run_date, …zeroed counters }`,
+ *     so the second daily attempt (#781) is a green no-op rather than an alert;
+ *   - a run that started less than `STALE_RUN_MINUTES` ago and has not finished
+ *     answers `429` — that one really is "try later";
+ *   - a run that started today and crashed blocks nothing: its row is closed as
+ *     `failed`, and the next attempt is the day's real run.
  */
 billingRouter.post('/run', async (req: Request, res: Response) => {
   if (!checkInternalSecret(req, res)) return;
@@ -66,24 +78,41 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
   let failed = 0;
   let waived = 0;
 
+  // #780: one **completed** run per UTC date, not "23 hours since the last
+  // start". The claim is taken before the try/catch's work so that a crash
+  // below can close the row as `failed` — which is what stops a half-finished
+  // run from locking the rest of the day.
+  let claim: ClaimResult;
   try {
-    // Rate-limit: reject a second call within 23 hours.
-    const { rows: logRows } = await db.query<{ last_run_at: Date | null }>(
-      'SELECT last_run_at FROM billing_run_log WHERE id = 1',
-    );
-    const lastRun = logRows[0]?.last_run_at;
-    if (lastRun) {
-      const diffMs = Date.now() - new Date(lastRun).getTime();
-      const diffHours = diffMs / (1000 * 60 * 60);
-      if (diffHours < 23) {
-        req.log.warn({ lastRun, diffHours }, 'billing/run: rate-limited — run within last 23h');
-        return res.status(429).json({ error: 'Billing run already executed within the last 23 hours' });
-      }
+    claim = await claimRun(BILLING_RUN_LOG);
+  } catch (err) {
+    req.log.error({ err: (err as Error).message }, 'billing/run: could not claim the run log');
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+  if (!claim.claimed) {
+    if (claim.reason === 'already_completed_today') {
+      // Deliberately 200, not 429: from #781 a second schedule hits this every
+      // day the first one worked, and the honest answer is "the work is done",
+      // not "retry later". The zeroed counters keep the workflow's body parse
+      // (#778) working unchanged, and `skipped_reason` is what tells it apart
+      // from a night when nothing was due. It is not called `skipped` because
+      // the recurring booking run already reports a numeric `skipped` counter
+      // and the two must not collide in one contract.
+      req.log.info({ runDate: claim.runDate }, 'billing/run: already completed today');
+      return res.json({
+        skipped_reason: 'already_completed_today',
+        run_date: claim.runDate,
+        processed: 0, succeeded: 0, failed: 0, waived: 0,
+      });
     }
+    req.log.warn({ startedAt: claim.startedAt }, 'billing/run: another run is in progress');
+    return res.status(429).json({
+      error: 'A billing run is already in progress',
+      started_at: claim.startedAt,
+    });
+  }
 
-    // Stamp the run start time to prevent concurrent/duplicate runs.
-    await db.query('UPDATE billing_run_log SET last_run_at = UTC_TIMESTAMP() WHERE id = 1');
-
+  try {
     // Look up membership_fee charge type id (used for billing_events rows).
     const { rows: ctRows } = await db.query<{ id: number }>(
       "SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1",
@@ -286,9 +315,17 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       }
     }
 
+    await finishRun(BILLING_RUN_LOG, claim.runId, 'completed', { processed, succeeded, failed, waived });
+
     req.log.info({ processed, succeeded, failed, waived }, 'billing/run: complete');
     res.json({ processed, succeeded, failed, waived });
   } catch (err) {
+    // Close the run as `failed` with whatever it got through. Without this the
+    // row would stay `in_progress` until STALE_RUN_MINUTES retires it, and the
+    // freshness alert (#782) would read a run that never ended.
+    await finishRun(BILLING_RUN_LOG, claim.runId, 'failed', { processed, succeeded, failed, waived })
+      .catch((logErr) => req.log.error({ err: (logErr as Error).message }, 'billing/run: could not close run log'));
+
     req.log.error({ err: (err as Error).message }, 'billing/run: unexpected error');
     res.status(500).json({ error: 'Internal server error' });
   }

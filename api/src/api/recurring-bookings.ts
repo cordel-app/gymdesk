@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
+import { RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { isFeatureEnabled } from '../infra/featureFlags';
 import { recordNotifications } from '../infra/notifications';
 import {
@@ -57,14 +58,20 @@ import {
 export const recurringBookingsRouter = Router();
 
 /**
- * Minimum gap between two *full* runs, mirroring `POST /billing/run`'s guard.
+ * #780: the run history this job claims a row in, mirroring `POST
+ * /billing/run`'s guard exactly — one **completed** run per UTC date, with a
+ * short `in_progress` lock instead of a 23-hour window.
  *
- * 23 rather than 24 so a nightly cron whose fire time drifts by a few minutes
- * is never rejected. Unlike billing, a second run would not double-charge
- * anyone — it is idempotent by construction — so this exists to stop two runs
- * overlapping and walking the same members at once, not to protect money.
+ * The 23-hour rule this replaces had the same two defects here as there: a
+ * cron that fired 22.5 h after a late one was refused (and this job's missed
+ * day means a member's rolling window silently stops two months out), and a
+ * run that died half way held the lock for the rest of the day. Unlike
+ * billing, a second run would not double-charge anyone — the job is idempotent
+ * by construction — so the guard exists to stop two runs walking the same
+ * members at once, not to protect money, which is exactly what the
+ * `in_progress` half of the new guard does.
  */
-const MIN_RUN_INTERVAL_HOURS = 23;
+const RECURRING_BOOKING_RUN_LOG: RunLogTable = 'recurring_booking_run_log';
 
 /** The flag the Member-facing slot endpoints are mounted behind (see app.ts). */
 const FEATURE_KEY = 'organization.professional_services';
@@ -255,7 +262,13 @@ export async function runMemberRecurringBookings(
  * POST /recurring-bookings/run
  *
  * Auth: X-Internal-Secret header (RECURRING_BOOKINGS_INTERNAL_SECRET env var).
- * Rate-limited: a full run rejects with 429 if the last one started < 23 h ago.
+ *
+ * #780 — a **full** run is guarded by the calendar, exactly as `POST
+ * /billing/run` is: a run that already completed today (UTC) answers
+ * `200 { skipped_reason: 'already_completed_today', run_date, …zeroed counters }`,
+ * a run that started less than `STALE_RUN_MINUTES` ago and has not finished
+ * answers `429`, and a run that crashed blocks nothing. A **scoped** run
+ * (`gym_id`/`member_id`) is a manual re-run and is never guarded.
  *
  * Body (all optional, all for operators rather than the nightly cron):
  *   gym_id     — restrict the run to one gym
@@ -298,6 +311,8 @@ recurringBookingsRouter.post('/run', async (req: Request, res: Response) => {
   }
   const detail = body.detail === true;
   const scoped = gymId !== null || memberId !== null;
+  /** The `recurring_booking_run_log` row this call owns, for a full run. */
+  let runId: number | null = null;
 
   try {
     // Turning the feature off has to stop the scheduler too, not just the UI —
@@ -306,22 +321,33 @@ recurringBookingsRouter.post('/run', async (req: Request, res: Response) => {
       return res.status(403).json({ error: 'Feature not available.' });
     }
 
+    // A scoped run (one gym, one member) is a manual re-run and claims
+    // nothing: it walks a subset nobody else is walking, and refusing it
+    // because the night's full run succeeded would make it useless.
     if (!scoped) {
-      const { rows } = await db.query<{ last_run_at: Date | null }>(
-        'SELECT last_run_at FROM recurring_booking_run_log WHERE id = 1',
-      );
-      const lastRun = rows[0]?.last_run_at;
-      if (lastRun) {
-        const diffHours = (Date.now() - new Date(lastRun).getTime()) / (1000 * 60 * 60);
-        if (diffHours < MIN_RUN_INTERVAL_HOURS) {
-          req.log.warn({ lastRun, diffHours }, 'recurring-bookings/run: rate-limited');
-          return res.status(429).json({
-            error: 'Recurring booking run already executed within the last 23 hours',
+      const claim = await claimRun(RECURRING_BOOKING_RUN_LOG);
+      if (!claim.claimed) {
+        if (claim.reason === 'already_completed_today') {
+          // 200 with zeroed counters, for the reason `POST /billing/run` gives
+          // in full: a refusal because the work is already done is not
+          // something to alert on. `skipped_reason` rather than `skipped`,
+          // because `skipped` is this run's own numeric counter for a date it
+          // could not book (#647 Q5).
+          req.log.info({ runDate: claim.runDate }, 'recurring-bookings/run: already completed today');
+          return res.json({
+            skipped_reason: 'already_completed_today',
+            run_date: claim.runDate,
+            processed: 0, created: 0, skipped: 0, failed: 0, notified: 0,
+            members: [],
           });
         }
+        req.log.warn({ startedAt: claim.startedAt }, 'recurring-bookings/run: another run is in progress');
+        return res.status(429).json({
+          error: 'A recurring booking run is already in progress',
+          started_at: claim.startedAt,
+        });
       }
-      // Stamped at the start, so a run that dies half way still holds the lock.
-      await db.query('UPDATE recurring_booking_run_log SET last_run_at = UTC_TIMESTAMP() WHERE id = 1');
+      runId = claim.runId;
     }
 
     const targets = await loadRunTargets(gymId, memberId, limit);
@@ -351,6 +377,12 @@ recurringBookingsRouter.post('/run', async (req: Request, res: Response) => {
       }
     }
 
+    if (runId !== null) {
+      await finishRun(RECURRING_BOOKING_RUN_LOG, runId, 'completed', {
+        processed: targets.length, created, skipped, failed, notified,
+      });
+    }
+
     res.json({
       processed: targets.length,
       created,
@@ -360,6 +392,12 @@ recurringBookingsRouter.post('/run', async (req: Request, res: Response) => {
       members,
     });
   } catch (err) {
+    // Close the claimed row as `failed`, so a crash does not leave a run that
+    // never ends — and does not count as today's completed run either.
+    if (runId !== null) {
+      await finishRun(RECURRING_BOOKING_RUN_LOG, runId, 'failed')
+        .catch((logErr) => req.log.error({ err: logErr }, 'recurring-bookings/run: could not close run log'));
+    }
     req.log.error({ err }, 'recurring-bookings/run: failed');
     res.status(500).json({ error: 'Recurring booking run failed' });
   }
