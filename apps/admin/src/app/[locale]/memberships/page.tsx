@@ -211,6 +211,20 @@ export default function MembershipsPage() {
     setError(null);
     try {
       if (editing) {
+        // #635 stage 15 — the fee lives in the assignment's own snapshot, whose
+        // single writer is the Billing & Duration route (it materialises the
+        // snapshot of an assignment that never captured one before touching it).
+        // Only sent when it actually changed, so editing a date never rewrites it,
+        // and sent *first*: that route refuses a cancelled or expired assignment,
+        // and a refusal should leave the row exactly as it was rather than half
+        // saved.
+        const previousFee = editing.membership_fee_price != null ? String(editing.membership_fee_price) : '';
+        if (form.membership_fee_price !== previousFee) {
+          await apiFetch(`/user-memberships/${editing.id}/billing-duration`, {
+            method: 'PUT',
+            body: JSON.stringify({ membership_fee_price: form.membership_fee_price === '' ? null : parsedFee }),
+          });
+        }
         const body: Record<string, unknown> = {
           starts_at: form.starts_at || null,
           ends_at: form.ends_at || null,
@@ -219,17 +233,6 @@ export default function MembershipsPage() {
           discount_expires_at: form.discount_expires_at || null,
         };
         await apiFetch(`/user-memberships/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
-        // #635 stage 15 — the fee lives in the assignment's own snapshot, whose
-        // single writer is the Billing & Duration route (it materialises the
-        // snapshot of an assignment that never captured one before touching it).
-        // Only sent when it actually changed, so editing a date never rewrites it.
-        const previousFee = editing.membership_fee_price != null ? String(editing.membership_fee_price) : '';
-        if (form.membership_fee_price !== previousFee) {
-          await apiFetch(`/user-memberships/${editing.id}/billing-duration`, {
-            method: 'PUT',
-            body: JSON.stringify({ membership_fee_price: form.membership_fee_price === '' ? null : parsedFee }),
-          });
-        }
       } else {
         const body: Record<string, unknown> = {
           member_id: parseInt(form.member_id, 10),
