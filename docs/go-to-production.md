@@ -127,6 +127,15 @@ Tick items off in the PR that completes them.
       needs the `CLOUDFLARE_R2_*` variables set; without them the route answers 503 and nothing is
       written. Nothing falls back to another image, so a Gym Exercise imported before its base
       exercise has artwork carries no image either — re-importing (#719 part 3) is what picks it up.
+- [ ] **Upload the Base Exercise videos** (#717). Same story as the images above and for the same
+      reason: no generator, no backfill, so every Base Exercise has `video_url = NULL` (or an
+      external link someone typed) until an administrator uploads an MP4 on Cordel → Base
+      Exercises (**Upload Video**; the 512×512 poster is captured from the clip in the browser).
+      Needs the `CLOUDFLARE_R2_*` variables, and `EXERCISE_VIDEO_MAX_MB` if 50 MB is the wrong
+      ceiling for this deployment — the upload is buffered in the API process, so that number is
+      also a memory budget per request. Nothing falls back to another video, so a Gym Exercise
+      imported before its base exercise has one carries none either; re-importing (#719 part 3)
+      is what picks it up, and it is what a System poster comes from.
 - [ ] **Set `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` explicitly** in the API's production env
       (#643). Both default to `en,es,ca` / `en`, which matches the apps' next-intl
       configuration today — if a locale is ever added to the frontends, the API must be

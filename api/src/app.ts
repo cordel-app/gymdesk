@@ -72,7 +72,8 @@ import { nutritionLibraryRouter } from './api/nutrition-library';
 import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
 import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
 import {
-  PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH, platformExerciseImageBodyParser, platformExercisesRouter,
+  PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH, PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH,
+  platformExerciseImageBodyParser, platformExerciseVideoBodyParser, platformExercisesRouter,
 } from './api/platform-exercises';
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
@@ -135,12 +136,14 @@ app.use((req, res, next) => {
 
 // #719 part 2: the same for a video upload — an MP4 and its 512×512 poster in
 // one JSON body, with a limit of its own (EXERCISE_VIDEO_MAX_MB) because an MP4
-// is orders of magnitude larger than a PNG pair.
-app.use((req, res, next) => (
-  req.method === 'POST' && EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)
-    ? exerciseVideoBodyParser(req, res, next)
-    : next()
-));
+// is orders of magnitude larger than a PNG pair. #717 gives a Base Exercise the
+// same pair on the platform router, under the same limit.
+app.use((req, res, next) => {
+  if (req.method !== 'POST') return next();
+  if (EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)) return exerciseVideoBodyParser(req, res, next);
+  if (PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)) return platformExerciseVideoBodyParser(req, res, next);
+  return next();
+});
 
 app.use(express.json());
 

@@ -245,7 +245,10 @@ export default function ExercisesPage() {
         body: JSON.stringify({
           name: editForm.name.trim(),
           description: editForm.description.trim() || null,
-          video_url: editForm.video_url.trim() || null,
+          // #717 Q6: the editor no longer offers `video_url`, so it no longer
+          // submits it. Leaving it in would also re-send a value captured when
+          // the editor opened — which, after a video was uploaded in the same
+          // session, would repoint the reference and drop the poster with it.
           min_reps_default: editForm.min_reps_default ? parseInt(editForm.min_reps_default, 10) : null,
           max_reps_default: editForm.max_reps_default ? parseInt(editForm.max_reps_default, 10) : null,
           sets_default: editForm.sets_default ? parseInt(editForm.sets_default, 10) : null,
@@ -509,10 +512,12 @@ export default function ExercisesPage() {
 
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_media')}</p>
-          <div>
-            <label style={inlineLabelSt}>{t('label_video_url')}</label>
-            <input type="url" value={editForm.video_url} onChange={(e) => setEditForm({ ...editForm, video_url: e.target.value })} style={inlineInputSt} />
-          </div>
+          {/* #717 Q6: `video_url` is no longer a directly editable field —
+              video management goes through the control below, which writes the
+              reference and its poster together. The column itself is unchanged
+              and a row that carries an external link keeps it (the view section
+              still shows it); the editor simply no longer offers a text box
+              that could repoint it at anything and silently drop the poster. */}
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
             <div>
               <label style={inlineLabelSt}>{t('label_image')}</label>
@@ -531,8 +536,8 @@ export default function ExercisesPage() {
             <div>
               <label style={inlineLabelSt}>{t('label_video')}</label>
               {/* #719 part 2: the uploaded video, likewise acted on directly.
-                  The URL field above stays for a YouTube or external link —
-                  setting one drops the poster, which belonged to the MP4. */}
+                  #717 Q6 removed the URL text box that used to sit above: the
+                  video is managed here and nowhere else. */}
               <ExerciseVideoField
                 exerciseId={ex.id}
                 videoUrl={ex.video_url}
