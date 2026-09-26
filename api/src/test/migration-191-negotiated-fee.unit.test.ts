@@ -15,6 +15,7 @@ const require = createRequire(__filename);
 const migration = require('../infra/migrations/191_retire_stored_final_price.js') as {
   BACKFILL_CANDIDATE: string;
   NEGOTIATED_CANDIDATE: string;
+  DISAGREEING_FEE: string;
 };
 
 const squash = (sql: string) => sql.replace(/\s+/g, ' ').trim();
@@ -47,12 +48,23 @@ describe('migration 191 — the negotiated price the snapshot never carried (#77
     expect(sql).toContain("um.status NOT IN ('cancelled', 'expired')");
   });
 
-  it('skips an assignment with a standing Promotion, whose final_price has the discount baked in', () => {
-    // Only `status = 'applied'` counts as standing (#635 stage 9): a revoked
-    // application must not stop the negotiated price from being kept.
+  it('skips an assignment with any Promotion application, whatever its status today', () => {
+    // A standing application has its discount baked into `final_price`. A
+    // revoked one is no better: before stage 15 every apply/revoke recomputed
+    // the column from scratch (from the catalogue fee, or from `base_price` = 0
+    // under the legacy rule), so the negotiated number is gone either way and a
+    // `status = 'applied'` filter would freeze a 0.00 as a 100 % override.
     expect(sql).toMatch(
-      /NOT EXISTS \( SELECT 1 FROM user_membership_promotions ump WHERE ump\.user_membership_id = um\.id AND ump\.status = 'applied' \)/,
+      /NOT EXISTS \( SELECT 1 FROM user_membership_promotions ump WHERE ump\.user_membership_id = um\.id AND ump\.gym_id = um\.gym_id \)/,
     );
+    expect(sql).not.toContain("ump.status = 'applied'");
+  });
+
+  it('counts what it leaves behind with the same fee-disagreement guards, minus the two it narrows by', () => {
+    const left = squash(migration.DISAGREEING_FEE);
+    expect(sql.startsWith(left)).toBe(true);
+    expect(left).not.toContain('discount_reason');
+    expect(left).not.toContain('user_membership_promotions');
   });
 
   it('does not gate on discount_expires_at — the column means "what was agreed", not "what is in force"', () => {

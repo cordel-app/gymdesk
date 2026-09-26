@@ -59,9 +59,13 @@
  * The second backfill moves that agreement into `membership_fee_price`, which is
  * where a negotiated fee lives since stage 15. Its guards, and why each one:
  *
- *   - `discount_reason` non-empty — the only marker of a negotiated price, then
- *     as now. A row without one had no override, so its `final_price` differs
- *     from the frozen fee only by an applied Promotion.
+ *   - `discount_reason` non-empty — the marker of a negotiated price, then as
+ *     now, and what keeps this pass to the issue's statement. Two pre-stage-15
+ *     shapes fall outside it and are accepted losses, counted in the log below:
+ *     a `PUT /:id` that wrote a `final_price` with no reason (it never required
+ *     one), and a Plan repricing pushed through `apply-to-assigned-plans`, which
+ *     wrote `final_price` but never the frozen fee — after this migration such
+ *     an assignment bills the fee frozen at assignment time again.
  *   - `membership_fee_price IS NOT NULL AND <> final_price` — the two row sets
  *     are disjoint by construction (the first pass keys on the column being NULL,
  *     this one on it holding a different number), so no row is written twice,
@@ -69,11 +73,19 @@
  *     agrees is skipped and a re-run is a no-op.
  *   - `status NOT IN ('cancelled', 'expired')` — a terminal assignment's
  *     configuration is history, not "what was agreed"; nothing bills it.
- *   - no standing Promotion — an applied Promotion's discount is baked into
- *     `final_price`, and the two components cannot be separated from a single
- *     stored total. Copying it would freeze a promotional price into the
- *     contract, so such an assignment keeps the catalogue fee instead and is
- *     listed in `docs/go-to-production.md` for a staff re-negotiation.
+ *   - no Promotion application at all — *whatever its status today*. A standing
+ *     one has its discount baked into `final_price`, and the two components
+ *     cannot be separated from a single stored total. But a revoked one is no
+ *     better: before stage 15 every apply and revoke *recomputed* `final_price`
+ *     from scratch — from the frozen catalogue fee under the date-aware rule,
+ *     and from `base_price` (a constant 0 since migration 058) under the legacy
+ *     rule every environment actually ran — so once a Promotion has touched the
+ *     row the negotiated number is no longer in the column, and a row with a
+ *     revoked application typically reads `final_price = 0.00`. Filtering on
+ *     `status = 'applied'` would freeze that 0 as a 100 % override that
+ *     `apply-to-assigned-plans` then never corrects (it skips a
+ *     `discount_reason`). Such an assignment keeps the catalogue fee instead
+ *     and is listed in `docs/go-to-production.md` for a staff re-negotiation.
  *   - `discount_expires_at` is deliberately *not* a guard: the column means
  *     "what was agreed", not "what is still in force", and a lapsed agreement
  *     resolves the catalogue price anyway through `regularMembershipFee()`'s
@@ -161,19 +173,27 @@ const UNCAPTURED = `
 /**
  * The negotiated-price rows described in the header: a non-empty
  * `discount_reason`, a frozen fee that disagrees with the agreed one, a
- * non-terminal status and no standing Promotion. Exported so the guard test can
- * pin each clause — this predicate reads a column the migration drops, so no
- * integration test can exercise it after the fact.
+ * non-terminal status and no Promotion application in any status. Exported so
+ * the guard test can pin each clause — this predicate reads a column the
+ * migration drops, so no integration test can exercise it after the fact.
+ *
+ * The rows a *later* pass could still have moved but this one leaves behind —
+ * the same predicate minus the reason and application guards — are counted
+ * into the migration log before the DROP, so the transcript says whether
+ * anyone has to act.
  */
-const NEGOTIATED_CANDIDATE = `
+const DISAGREEING_FEE = `
   um.final_price IS NOT NULL
-  AND um.discount_reason IS NOT NULL AND TRIM(um.discount_reason) <> ''
   AND um.membership_fee_price IS NOT NULL
   AND um.membership_fee_price <> um.final_price
-  AND um.status NOT IN ('cancelled', 'expired')
+  AND um.status NOT IN ('cancelled', 'expired')`;
+
+const NEGOTIATED_CANDIDATE = `
+  ${DISAGREEING_FEE}
+  AND um.discount_reason IS NOT NULL AND TRIM(um.discount_reason) <> ''
   AND NOT EXISTS (
     SELECT 1 FROM user_membership_promotions ump
-     WHERE ump.user_membership_id = um.id AND ump.status = 'applied'
+     WHERE ump.user_membership_id = um.id AND ump.gym_id = um.gym_id
   )`;
 
 exports.up = async (knex) => {
@@ -242,17 +262,37 @@ exports.up = async (knex) => {
     // Until stage 15 a price override went to `final_price` — the column this
     // migration drops — while `membership_fee_price` took the Plan's catalogue
     // price (from `snapshotAssignedPlan()`, or from migration 174's backfill for
-    // an older row). Moving it keeps the member on the price they were sold. An assignment with a standing
-    // Promotion is skipped: its `final_price` has that Promotion's discount
-    // baked in, so copying it would freeze a promotional price into the
-    // contract, which is the bug stage 12 existed to fix. Runs after pass 2 on
-    // purpose: a row pass 2 just wrote now has `membership_fee_price = final_price`
-    // and the `<>` guard leaves it alone.
+    // an older row). Moving it keeps the member on the price they were sold. An
+    // assignment with any Promotion application is skipped: a standing one has
+    // its discount baked into `final_price`, and a revoked one had `final_price`
+    // recomputed from scratch at the revoke (see the header), so neither column
+    // still holds the negotiated number. Runs after pass 2 on purpose: a row
+    // pass 2 just wrote now has `membership_fee_price = final_price` and the
+    // `<>` guard leaves it alone.
     await knex.raw(
       `UPDATE user_memberships um
           SET um.membership_fee_price = um.final_price
         WHERE ${NEGOTIATED_CANDIDATE}`,
     );
+
+    // What the DROP below makes unrecoverable: a `final_price` that still
+    // disagrees with the frozen fee after both passes. `down()` logs the
+    // analogous count; the transcript of `migrate:latest` is the one place the
+    // go-to-production checklist can read it from afterwards.
+    // mysql2 returns `[rows, fields]` from knex.raw, not `{ rows }`.
+    const [leftBehind] = await knex.raw(
+      `SELECT COUNT(*) AS n FROM user_memberships um WHERE ${DISAGREEING_FEE}`,
+    );
+    const left = Number(leftBehind?.[0]?.n ?? 0);
+    if (left > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `191_retire_stored_final_price: ${left} assignment(s) still carried a final_price `
+        + 'that differs from membership_fee_price and were not moved (a Promotion was '
+        + 'applied at some point, or there is no discount_reason) — see '
+        + 'docs/go-to-production.md before the next billing run.',
+      );
+    }
 
     await knex.raw('DROP TABLE IF EXISTS _m191_materialised');
 
@@ -300,6 +340,13 @@ exports.down = async (knex) => {
     // reasoning: on a rollback, never move money upward). Re-price those
     // assignments by re-running an apply/revoke, which is what used to recompute
     // the column, or restore from backup.
+    //
+    // Nor does the negotiated-price pass (#777) round-trip: for a row it moved,
+    // `membership_fee_price` now holds the agreed fee rather than the catalogue
+    // one, so the pre-stage-15 lapsed-discount path (`regularMembershipFee()`
+    // once `discount_expires_at` is past) reads the negotiated number where it
+    // used to read the catalogue. `final_price` itself is seeded correctly —
+    // it carried the agreement before, and does again.
     await knex.raw(`
       UPDATE user_memberships um
          SET um.final_price = um.membership_fee_price
@@ -326,3 +373,4 @@ exports.down = async (knex) => {
 
 exports.BACKFILL_CANDIDATE = BACKFILL_CANDIDATE;
 exports.NEGOTIATED_CANDIDATE = NEGOTIATED_CANDIDATE;
+exports.DISAGREEING_FEE = DISAGREEING_FEE;

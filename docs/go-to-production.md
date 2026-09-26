@@ -424,13 +424,20 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       and tell the gyms whose members will start paying more.
 - [ ] **A negotiated price under a standing Promotion is not carried by migration 191**
       (#777): the migration's second backfill moves a pre-stage-15 price override from
-      `final_price` into `membership_fee_price`, but skips an assignment that has a
-      Promotion applied — its `final_price` has that Promotion's discount baked in, and the
-      agreed regular fee cannot be separated from it. Such an assignment is charged the
-      Plan's catalogue price after the deploy. Before running the migration, list them and
-      have each gym re-negotiate through `PUT /user-memberships/:id/billing-duration`:
-      `SELECT um.id, um.gym_id, um.member_id, um.membership_fee_price, um.final_price, um.discount_reason FROM user_memberships um WHERE um.final_price IS NOT NULL AND um.discount_reason IS NOT NULL AND TRIM(um.discount_reason) <> '' AND um.membership_fee_price IS NOT NULL AND um.membership_fee_price <> um.final_price AND um.status NOT IN ('cancelled','expired') AND EXISTS (SELECT 1 FROM user_membership_promotions ump WHERE ump.user_membership_id = um.id AND ump.status = 'applied')`
-      — the query only works while `final_price` still exists, so it has to run first.
+      `final_price` into `membership_fee_price`, but skips an assignment that ever had a
+      Promotion applied, in any status — a standing one has its discount baked into
+      `final_price`, and a revoked one had the column recomputed from scratch at the revoke
+      (to the catalogue fee, or to `base_price` = 0 under the legacy rule), so the agreed
+      number is in neither column. Such an assignment is charged the Plan's catalogue price
+      after the deploy; the `discount_reason` text is the only record of what was agreed.
+      It also leaves a `final_price` written with no `discount_reason` (a pre-stage-15
+      `PUT /user-memberships/:id`, or a Plan repricing pushed through
+      `apply-to-assigned-plans`, which never wrote the frozen fee). Before running the
+      migration, list every row whose two prices disagree and have each gym re-negotiate
+      through `PUT /user-memberships/:id/billing-duration` — the migration logs the count
+      it left behind, but the query only works while `final_price` still exists, so it
+      has to run first:
+      `SELECT um.id, um.gym_id, um.member_id, um.membership_fee_price, um.final_price, um.discount_reason, EXISTS (SELECT 1 FROM user_membership_promotions ump WHERE ump.user_membership_id = um.id) AS had_promotion FROM user_memberships um WHERE um.final_price IS NOT NULL AND um.membership_fee_price IS NOT NULL AND um.membership_fee_price <> um.final_price AND um.status NOT IN ('cancelled','expired') AND (um.discount_reason IS NULL OR TRIM(um.discount_reason) = '' OR EXISTS (SELECT 1 FROM user_membership_promotions ump WHERE ump.user_membership_id = um.id))`
 - [ ] **Migration 191's `down()` cannot restore what `final_price` held** (#635 stage 15):
       the column comes back and is seeded from `membership_fee_price`, which is the closest
       honest value — the agreed-after-promotions numbers were derived from promotion
