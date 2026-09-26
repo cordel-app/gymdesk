@@ -105,7 +105,8 @@ async function decodeFirstFrame(url: string): Promise<HTMLVideoElement | null> {
     // in `exerciseImageUpload.ts` is unflagged, because `new Image()` resolves
     // to a known element type.
     //
-    // Clearing that alert takes a dismissal in code scanning (#767), not a
+    // Clearing that alert takes a dismissal in code scanning (#767 — the repo's
+    // standing rule is "Code scanning (CodeQL)" in docs/architecture.md), not a
     // change here. Inline suppression does not work in this repo — a preceding
     // `// codeql[js/xss-through-dom]` and a trailing `// lgtm[...]` were both
     // tried on this line and GitHub honoured neither — and the only rewrite
