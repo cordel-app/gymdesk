@@ -388,14 +388,23 @@ export default function ExercisesPage() {
 
   // #718: the gym picks which Base Exercises to import; the modal owns the
   // filters and the selection, this page only refreshes once they land.
-  function handleImported(result: { imported: unknown[]; skipped: unknown[] }) {
+  /**
+   * #719 §12: a single import request can do three things — import new
+   * exercises, refresh the System media of copies the gym already has, and skip
+   * the rest — so the toast is composed from the parts that actually happened.
+   * An import of nothing but skips still reports the (zero) import, so the
+   * action never appears to have done nothing silently.
+   */
+  function handleImported(result: { imported: unknown[]; refreshed: unknown[]; skipped: unknown[] }) {
     setImportOpen(false);
-    toast(
-      result.skipped.length > 0
-        ? t('imported_with_skipped', { n: result.imported.length, skipped: result.skipped.length })
-        : t('imported', { n: result.imported.length }),
-      'success',
-    );
+    const refreshedCount = result.refreshed?.length ?? 0;
+    const parts: string[] = [];
+    if (result.imported.length > 0 || refreshedCount === 0) {
+      parts.push(t('imported', { n: result.imported.length }));
+    }
+    if (refreshedCount > 0) parts.push(t('imported_media_refreshed', { n: refreshedCount }));
+    if (result.skipped.length > 0) parts.push(t('imported_skipped', { n: result.skipped.length }));
+    toast(parts.join(' '), 'success');
     load();
   }
 

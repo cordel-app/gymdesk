@@ -23,13 +23,23 @@ export interface BaseExercise {
   name: string;
   description: string | null;
   image_url: string | null;
+  image_thumbnail_url: string | null;
+  video_url: string | null;
+  video_thumbnail_url: string | null;
   muscles: BaseMuscle[] | null;
   /** The gym's own copy, when it already has one — such a row can't be imported again. */
   imported_exercise_id: number | null;
+  /**
+   * #719 §12: the gym already has this one, but re-importing would restore
+   * System media its copy no longer carries. The server decides this — the
+   * modal never compares URLs itself, and never resolves System-vs-gym media.
+   */
+  media_refreshable: boolean;
 }
 
 interface ImportResult {
   imported: { id: number }[];
+  refreshed: { id: number; exercise_id: number }[];
   skipped: { id: number; name: string; reason: string }[];
 }
 
@@ -108,6 +118,10 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
   if (!open) return null;
 
   const importable = rows.filter((r) => r.imported_exercise_id == null);
+  // §12: a row the gym already has is selectable only when re-importing would
+  // actually restore System media onto its copy.
+  const refreshable = rows.filter((r) => r.imported_exercise_id != null && r.media_refreshable);
+  const selectableIds = new Set([...importable, ...refreshable].map((r) => r.id));
   const allMatchingSelected = importable.length > 0 && importable.every((r) => selected.has(r.id));
 
   function toggle(id: number) {
@@ -122,6 +136,10 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
    * §6: applies to the current filtered result set only — never to rows the
    * filters exclude, and never to an exercise the gym already has. When every
    * matching row is already ticked the same control clears them again.
+   *
+   * Deliberately **not** extended to the re-importable rows (#719 §12): a
+   * re-import overwrites media the gym may have uploaded itself, so it is ticked
+   * one row at a time rather than swept up by a bulk control.
    */
   function toggleAllMatching() {
     setSelected((prev) => {
@@ -210,6 +228,11 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
           <span style={{ fontSize: 13, color: '#777' }}>
             {t('import_available_count', { n: importable.length })}
           </span>
+          {refreshable.length > 0 && (
+            <span style={{ fontSize: 13, color: '#8a5a00' }}>
+              {t('import_media_update_count', { n: refreshable.length })}
+            </span>
+          )}
           <span style={{ fontSize: 13, color: '#777' }}>
             {t('import_selected_count', { n: selected.size })}
           </span>
@@ -222,6 +245,8 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
           )}
           {!loading && rows.map((row) => {
             const alreadyImported = row.imported_exercise_id != null;
+            const selectable = selectableIds.has(row.id);
+            const mediaUpdate = alreadyImported && row.media_refreshable;
             const principal = (row.muscles ?? []).filter((m) => m.role === 'principal').map((m) => muscleLabel(m.key)).join(', ');
             return (
               <label
@@ -229,18 +254,26 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
                   borderBottom: '1px solid var(--gd-card-border, #eee)',
-                  cursor: alreadyImported ? 'default' : 'pointer',
-                  opacity: alreadyImported ? 0.6 : 1,
+                  cursor: selectable ? 'pointer' : 'default',
+                  opacity: selectable ? 1 : 0.6,
                 }}
               >
                 <input
                   type="checkbox"
                   checked={selected.has(row.id)}
-                  disabled={alreadyImported || importing}
+                  disabled={!selectable || importing}
                   onChange={() => toggle(row.id)}
                 />
                 <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{row.name}</span>
                 {principal && <span style={{ fontSize: 12, color: '#777' }}>{principal}</span>}
+                {mediaUpdate && (
+                  <span
+                    title={t('import_media_update_hint')}
+                    style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#fdf3e0', color: '#8a5a00' }}
+                  >
+                    {t('import_media_update')}
+                  </span>
+                )}
                 {alreadyImported && (
                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>
                     {t('type_system_sourced')}

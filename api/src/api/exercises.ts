@@ -16,6 +16,12 @@ import {
   validateExerciseImagePair,
 } from '../domain/exerciseImages';
 import {
+  EXERCISE_MEDIA_COLUMNS,
+  ExerciseMediaRefs,
+  mediaRefsAfterRefresh,
+  planExerciseMediaRefresh,
+} from '../domain/exerciseMediaImport';
+import {
   EXERCISE_VIDEO_MIME,
   EXERCISE_VIDEO_POSTER_MAX_BYTES,
   EXERCISE_VIDEO_POSTER_MIME,
@@ -57,6 +63,25 @@ const SETTABLE_STATUSES = ['active', 'inactive'];
  * cap sits well above the size of the Base Exercises library.
  */
 const MAX_IMPORT_IDS = 500;
+
+/**
+ * One re-imported exercise (#719 part 3): what the media refresh moved, plus the
+ * audit pair and the objects it stopped pointing at. The last two never leave
+ * the route — `stale` drives the ownership-aware cleanup after the transaction
+ * commits, and the response carries only the flags the modal reports.
+ */
+interface RefreshedImport {
+  /** The Base Exercise's id, as the request named it. */
+  id: number;
+  name: string;
+  /** The gym's own copy that was refreshed. */
+  exercise_id: number;
+  image_refreshed: boolean;
+  video_refreshed: boolean;
+  previous: ExerciseMediaRefs;
+  next: ExerciseMediaRefs;
+  stale: string[];
+}
 
 export const musclesRouter = Router();
 export const exercisesRouter = Router();
@@ -172,6 +197,33 @@ const IMPORTED_COPY_ID = `
     WHERE g.gym_id = ? AND g.status != 'deleted'
       AND (g.cloned_from_id = e.id OR g.name = e.name))`;
 
+/**
+ * #719 part 3 (§12): whether re-importing this Base Exercise would actually move
+ * the gym copy's media — the flag the Import modal needs to offer a row it
+ * otherwise disables as already imported.
+ *
+ * Mirrors `planExerciseMediaRefresh()` exactly, so the row the modal offers is
+ * the row the import refreshes: the image pair and the video pair are
+ * independent, and a pair the Base Exercise does not have (`e.image_url IS
+ * NULL`) counts for nothing — re-import restores System media, it never clears a
+ * gym's own upload. `<=>` is NULL-safe, so "both absent" reads as unchanged.
+ *
+ * `ORDER BY g.id LIMIT 1` picks the same copy `MIN(g.id)` does above, and the
+ * same one `POST /import` refreshes, for a gym that somehow holds two matches
+ * (one by provenance, one by name).
+ */
+const MEDIA_REFRESHABLE = `
+  COALESCE((SELECT
+      CASE WHEN (e.image_url IS NOT NULL
+                  AND NOT ((g.image_url <=> e.image_url) AND (g.image_thumbnail_url <=> e.image_thumbnail_url)))
+                OR (e.video_url IS NOT NULL
+                  AND NOT ((g.video_url <=> e.video_url) AND (g.video_thumbnail_url <=> e.video_thumbnail_url)))
+        THEN 1 ELSE 0 END
+    FROM exercises g
+    WHERE g.gym_id = ? AND g.status != 'deleted'
+      AND (g.cloned_from_id = e.id OR g.name = e.name)
+    ORDER BY g.id ASC LIMIT 1), 0)`;
+
 exercisesRouter.get('/base', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const q = req.query.q as string | undefined;
@@ -181,14 +233,16 @@ exercisesRouter.get('/base', async (req, res, next) => {
     muscle = normalizeMuscleKey(muscleParam);
     if (!muscle) return res.status(400).json({ error: `invalid muscle key: ${JSON.stringify(muscleParam)}` });
   }
-  // The `?` inside IMPORTED_COPY_ID sits in the SELECT list, so its gymId binds
-  // before the WHERE-clause filters below.
-  const params: any[] = [gymId];
+  // The `?`s inside IMPORTED_COPY_ID and MEDIA_REFRESHABLE sit in the SELECT
+  // list, so their gymIds bind before the WHERE-clause filters below, in order.
+  const params: any[] = [gymId, gymId];
   let sql = `
-    SELECT e.id, e.name, e.description, e.image_url,
+    SELECT e.id, e.name, e.description, e.image_url, e.image_thumbnail_url,
+      e.video_url, e.video_thumbnail_url,
       (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
        FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
-      ${IMPORTED_COPY_ID} AS imported_exercise_id
+      ${IMPORTED_COPY_ID} AS imported_exercise_id,
+      ${MEDIA_REFRESHABLE} AS media_refreshable
     FROM exercises e
     WHERE e.gym_id IS NULL AND e.status = 'active'`;
   if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
@@ -199,7 +253,8 @@ exercisesRouter.get('/base', async (req, res, next) => {
   sql += ' ORDER BY e.name ASC';
   try {
     const { rows } = await db.query(sql, params);
-    res.json(rows);
+    // MySQL answers the CASE with 0/1; the contract is a boolean.
+    res.json(rows.map((row: any) => ({ ...row, media_refreshable: Number(row.media_refreshable) === 1 })));
   } catch (err) { next(err); }
 });
 
@@ -483,6 +538,16 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
  * a gym's catalog through this route. Ids the gym already has are *not* an
  * error: the modal hides them, but a concurrent import would otherwise turn a
  * harmless race into a failed batch, so they come back under `skipped`.
+ *
+ * #719 part 3 (§12): an id the gym already has is also how it gets the **System
+ * media** back. Re-importing refreshes that copy's media references from the
+ * Base Exercise's current ones — the only supported restore path, since §12
+ * rules out a separate "restore System media" action and §3 rules out any
+ * runtime fallback. It refreshes *media only*: the name, description, defaults,
+ * muscles, result types and `cloned_from_id` of a copy the gym may have edited
+ * are its own. A copy that already carries the current references, or whose Base
+ * Exercise has no media to give, stays `skipped` exactly as before; one that
+ * moves comes back under `refreshed`.
  */
 exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
@@ -517,19 +582,55 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
     }
 
     const callerMemberId = await getCallerMembershipId(req);
-    const { insertedIds, skipped } = await db.transaction(async (tx) => {
+    const { insertedIds, refreshed, skipped } = await db.transaction(async (tx) => {
       const insertedIds: number[] = [];
+      const refreshed: RefreshedImport[] = [];
       const skipped: { id: number; name: string; reason: string; exercise_id: number }[] = [];
       for (const id of ids) {
         const src = base.get(id);
-        const { rows: existing } = await tx.query(
-          `SELECT id FROM exercises
+        // `ORDER BY id` so the copy refreshed here is the one MEDIA_REFRESHABLE
+        // reported on, for a gym that holds both a provenance and a name match.
+        const { rows: existing } = await tx.query<ExerciseMediaRow>(
+          `SELECT id, name, image_url, image_thumbnail_url, video_url, video_thumbnail_url
+             FROM exercises
             WHERE gym_id = ? AND status != 'deleted' AND (cloned_from_id = ? OR name = ?)
-            LIMIT 1`,
+            ORDER BY id ASC LIMIT 1`,
           [gymId, id, src.name],
         );
         if (existing.length > 0) {
-          skipped.push({ id, name: src.name, reason: 'already_imported', exercise_id: existing[0].id });
+          const copy = existing[0];
+          // #719 §12: re-import restores the Base Exercise's current media
+          // references onto the copy the gym already has. Media only, and only
+          // the pairs the Base Exercise actually has.
+          const plan = planExerciseMediaRefresh(src, copy);
+          if (!plan) {
+            skipped.push({ id, name: src.name, reason: 'already_imported', exercise_id: copy.id });
+            continue;
+          }
+          // Column names come from EXERCISE_MEDIA_COLUMNS, never from the plan's
+          // own keys, so nothing but this module's literals reaches the SQL.
+          const columns = EXERCISE_MEDIA_COLUMNS.filter((c) => c in plan.changes);
+          await tx.query(
+            `UPDATE exercises SET ${columns.map((c) => `${c} = ?`).join(', ')},
+               modified_at = UTC_TIMESTAMP(), modified_by = ?
+              WHERE id = ? AND gym_id = ?`,
+            [...columns.map((c) => plan.changes[c] ?? null), callerMemberId ?? null, copy.id, gymId],
+          );
+          refreshed.push({
+            id,
+            name: src.name,
+            exercise_id: copy.id,
+            image_refreshed: plan.image,
+            video_refreshed: plan.video,
+            previous: {
+              image_url: copy.image_url,
+              image_thumbnail_url: copy.image_thumbnail_url,
+              video_url: copy.video_url,
+              video_thumbnail_url: copy.video_thumbnail_url,
+            },
+            next: mediaRefsAfterRefresh(copy, plan),
+            stale: plan.stale,
+          });
           continue;
         }
         const { insertId } = await tx.query(
@@ -549,7 +650,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         await replaceAllowedResultTypes(tx, insertId, rts.map((rt) => rt.id));
         insertedIds.push(insertId);
       }
-      return { insertedIds, skipped };
+      return { insertedIds, refreshed, skipped };
     });
 
     let imported: any[] = [];
@@ -564,7 +665,39 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         recordAudit(req, { action: 'create', entityType: 'exercise', entityId: row.id, next: row });
       }
     }
-    res.status(201).json({ imported, skipped });
+
+    // Objects a refreshed copy stopped pointing at, cleaned up *after* the
+    // references were committed: a failure here leaves an orphan to sweep rather
+    // than an exercise pointing at a missing object, and only this gym's own
+    // objects are ever touched — the System object the copy is now pointing at
+    // is the whole point of the re-import (§19).
+    if (refreshed.length > 0) {
+      const folderPrefix = await gymStorageFolderPrefix(gymId);
+      for (const entry of refreshed) {
+        await deleteReplacedExerciseMedia(
+          gymId,
+          folderPrefix,
+          entry.exercise_id,
+          entry.stale,
+          [entry.next.image_url, entry.next.image_thumbnail_url, entry.next.video_url, entry.next.video_thumbnail_url],
+        );
+        recordAudit(req, {
+          action: 'update',
+          entityType: 'exercise',
+          entityId: entry.exercise_id,
+          previous: entry.previous,
+          next: entry.next,
+        });
+      }
+    }
+
+    res.status(201).json({
+      imported,
+      refreshed: refreshed.map(({ id, name, exercise_id, image_refreshed, video_refreshed }) => ({
+        id, name, exercise_id, image_refreshed, video_refreshed,
+      })),
+      skipped,
+    });
   } catch (err) { next(err); }
 });
 
@@ -626,6 +759,20 @@ async function isMediaStillReferenced(gymId: string, url: string, exceptExercise
     [gymId, exceptExerciseId, url, url, url, url],
   );
   return rows.length > 0;
+}
+
+/**
+ * The gym's own R2 folder prefix, or null for a gym whose bucket was never
+ * initialized. Deleting media needs it only to answer "is this object mine?" —
+ * without it `isGymOwnedImageUrl()` owns nothing and nothing is deleted, which
+ * is the safe direction.
+ */
+async function gymStorageFolderPrefix(gymId: string): Promise<string | null> {
+  const { rows } = await db.query<{ storage_folder_prefix: string | null }>(
+    'SELECT storage_folder_prefix FROM gyms WHERE id = ? AND deleted_at IS NULL',
+    [gymId],
+  );
+  return rows[0]?.storage_folder_prefix ?? null;
 }
 
 /**
@@ -711,11 +858,7 @@ async function loadExerciseForMedia(
     res.status(404).json({ error: 'Exercise not found' });
     return null;
   }
-  const { rows: gymRows } = await db.query<{ storage_folder_prefix: string | null }>(
-    'SELECT storage_folder_prefix FROM gyms WHERE id = ? AND deleted_at IS NULL',
-    [gymId],
-  );
-  const folderPrefix = gymRows[0]?.storage_folder_prefix ?? null;
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
   if (!folderPrefix && options.requireStoragePrefix) {
     const media = options.mediaLabel ?? 'images';
     res.status(409).json({ error: `Cloudflare storage has not been initialized for this gym, therefore ${media} cannot be uploaded.` });
