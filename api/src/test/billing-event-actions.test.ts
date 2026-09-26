@@ -276,6 +276,11 @@ describe('POST /payments/billing-events/:id/retry', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
 
+    // The 40.00 € event is retried as a 4000-cent MIT — minor units, like the
+    // nightly run and the customer checkout. `40` here would be forty cents.
+    expect(executeRecurring).toHaveBeenCalledTimes(1);
+    expect(executeRecurring.mock.calls[0][0]).toMatchObject({ amount: 4000, currency: 'EUR' });
+
     const { rows } = await db.query<any>(
       'SELECT next_billing_date, last_billed_at FROM user_memberships WHERE id = ?', [f.membershipId],
     );

@@ -256,9 +256,13 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       a "provider error", rolled back, and left `next_billing_date` where it was — which
       would have re-charged the same period the following night. No environment has a
       configured provider yet, so the fix is covered only by a stubbed-provider test.
-      Run one real charge end to end in staging and confirm the `billing_events` row,
-      its `payment_requests` row and the advanced `next_billing_date` before the first
-      live gym.
+      The same stub hid a second defect for as long: the run and the staff Retry passed
+      the euro amount (`29.99`) to `executeRecurring()` where the customer checkout passes
+      cents (`2999`), so a real renewal would have charged twenty-nine cents. Both MIT
+      callers now convert through `toMinorUnits()` (`payments/money.ts`), asserted by
+      stubbed-provider tests. Run one real charge end to end in staging and confirm the
+      **amount Monei settled**, the `billing_events` row, its `payment_requests` row and
+      the advanced `next_billing_date` before the first live gym.
 - [ ] **The nightly billing run still neither auto-retries nor pauses** (#640): the
       retry-once-then-pause rule from that ticket's Q3 is implemented for the *manual*
       Retry Payment action only, because issue §6 forbids changing automatic payment

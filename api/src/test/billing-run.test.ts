@@ -12,10 +12,16 @@ const providerResult = vi.hoisted(() => ({
   current: { success: true, providerRef: 'test-provider-ref' } as {
     success: boolean; providerRef: string; errorCode?: string; errorMessage?: string;
   },
+  calls: [] as Array<{ orderId: string; amount: number; currency: string }>,
 }));
 vi.mock('../payments', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../payments')>()),
-  getPaymentProvider: () => ({ executeRecurring: async () => providerResult.current }),
+  getPaymentProvider: () => ({
+    executeRecurring: async (params: { orderId: string; amount: number; currency: string }) => {
+      providerResult.calls.push(params);
+      return providerResult.current;
+    },
+  }),
 }));
 
 beforeAll(() => {
@@ -26,6 +32,7 @@ afterEach(async () => {
   // Reset the rate-limit singleton between tests.
   await db.query('UPDATE billing_run_log SET last_run_at = NULL WHERE id = 1');
   providerResult.current = { success: true, providerRef: 'test-provider-ref' };
+  providerResult.calls = [];
 });
 
 afterAll(async () => {
@@ -158,11 +165,20 @@ describe('POST /billing/run', () => {
     expect(res.status).toBe(200);
     expect(res.body.succeeded).toBeGreaterThan(0);
 
+    // The provider takes minor units: a 29.99 € fee is a 2999-cent MIT, the
+    // same number the customer-initiated checkout sent for it. Passing 29.99
+    // as-is is what Monei reads as twenty-nine cents.
+    const call = providerResult.calls.find((c) => c.orderId.includes(`-${umId}-`));
+    expect(call).toMatchObject({ amount: 2999, currency: 'EUR' });
+    expect(Number.isInteger(call!.amount)).toBe(true);
+
     const { rows: events } = await db.query(
-      `SELECT id, event_type FROM billing_events WHERE user_membership_id = ?`, [umId],
+      `SELECT id, event_type, amount FROM billing_events WHERE user_membership_id = ?`, [umId],
     );
     expect(events).toHaveLength(1);
     expect(events[0].event_type).toBe('recurring_payment');
+    // The ledger keeps euros; only the provider call is in cents.
+    expect(Number(events[0].amount)).toBe(29.99);
 
     const { rows: txs } = await db.query(
       `SELECT status, billing_event_id, provider_ref FROM payment_requests WHERE user_membership_id = ?`, [umId],

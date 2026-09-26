@@ -12,6 +12,7 @@ import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
@@ -1595,14 +1596,15 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     );
     if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
-    // #635 stage 15 — the fee the next cycle actually owes (see payment-requests.ts).
+    // #635 stage 15 — the fee the next cycle actually owes (see payment-requests.ts),
+    // converted to the provider's minor unit by #773's one helper.
     const priced = await priceMembershipFeeNow(gymId, um.id);
     if (priced == null) return res.status(404).json({ error: 'No active membership found' });
     if (priced.waived) {
       return res.status(400).json({ error: 'Your membership owes nothing for its next billing cycle' });
     }
     const fee = priced.amount;
-    const amount = Math.round(fee * 100);
+    const amount = toMinorUnits(fee);
     const orderId = crypto.randomUUID();
     const pageToken = crypto.randomUUID();
     const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);

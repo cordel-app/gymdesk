@@ -4,6 +4,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { priceMembershipFeeNow } from './membership-fee-pricing';
 import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
 import { parseQuery, z } from '../infra/validate';
 
 export const paymentRequestsRouter = Router();
@@ -105,7 +106,8 @@ paymentRequestsRouter.post(
         return res.status(400).json({ error: 'This membership owes nothing for its next billing cycle' });
       }
       const fee = priced.amount;
-      const amount = Math.round(fee * 100);
+      // #773 — the provider takes the currency's minor unit; `fee` is euros.
+      const amount = toMinorUnits(fee);
       const orderId = crypto.randomUUID();
       const pageToken = crypto.randomUUID();
       const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
