@@ -416,6 +416,44 @@ describe('POST /exercises/:id/image — replacement', () => {
   });
 });
 
+// ─── Stored URLs from before CLOUDFLARE_R2_PUBLIC_URL ─────────────────────────
+//
+// A row written before the public origin existed holds the private
+// endpoint + bucket form of its URL; a new upload writes the public form. Both
+// name the same object, so the sweep must compare objects, not strings.
+describe('POST /exercises/:id/image — legacy URL forms', () => {
+  const PUBLIC_ORIGIN = 'https://pub-test.r2.dev';
+
+  beforeEach(() => { process.env.CLOUDFLARE_R2_PUBLIC_URL = PUBLIC_ORIGIN; });
+  afterEach(() => { delete process.env.CLOUDFLARE_R2_PUBLIC_URL; });
+
+  it('writes the public URL and does not delete the object it just re-uploaded under the legacy form', async () => {
+    const masterKey = `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press.png`;
+    const thumbnailKey = `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`;
+    await setMedia(exerciseId, url(masterKey), url(thumbnailKey));
+    const res = await upload(exerciseId, { image: MASTER, thumbnail: THUMBNAIL });
+    expect(res.status).toBe(200);
+    expect(res.body.image_url).toBe(`${PUBLIC_ORIGIN}/${masterKey}`);
+    expect(deletedKeys()).toHaveLength(0);
+  });
+
+  it('keeps an object another exercise references in the legacy form', async () => {
+    const sharedKey = `${gymPrefix}/Exercises/Images/shared.png`;
+    await setMedia(exerciseId, `${PUBLIC_ORIGIN}/${sharedKey}`, null);
+    await setMedia(secondExerciseId, url(sharedKey), null);
+    const res = await upload(exerciseId, { image: MASTER, thumbnail: THUMBNAIL });
+    expect(res.status).toBe(200);
+    expect(deletedKeys()).toHaveLength(0);
+  });
+
+  it('still deletes a replaced object stored in the legacy form', async () => {
+    await setMedia(exerciseId, url(`${gymPrefix}/Exercises/Images/legacy-uuid.png`), null);
+    const res = await upload(exerciseId, { image: MASTER, thumbnail: THUMBNAIL });
+    expect(res.status).toBe(200);
+    expect(deletedKeys()).toEqual([`${gymPrefix}/Exercises/Images/legacy-uuid.png`]);
+  });
+});
+
 // ─── Removal (#719 §10, §12) ──────────────────────────────────────────────────
 
 describe('DELETE /exercises/:id/image', () => {

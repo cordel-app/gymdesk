@@ -89,17 +89,31 @@ Tick items off in the PR that completes them.
       storage folder — so they are not part of this. Note the rollback is one-way for an R2-backed logo:
       `down()` drops the key and returns those rows to "no logo" (the object survives in the bucket, but
       nothing can reach it), so the header falls back to the gym name rather than rendering a broken image.
-- [ ] **Confirm the R2 objects under `Branding/Logo/` are publicly readable** (#713). The logo URL the API
-      hands to the apps is `${CLOUDFLARE_R2_ENDPOINT}/${CLOUDFLARE_R2_BUCKET}/<key>` — the same composition
-      #417 has used for exercise/nutrition images — so the browser fetches it unauthenticated. If the
-      production bucket is not public, expose it through a custom domain / `r2.dev` and point
-      `CLOUDFLARE_R2_ENDPOINT` at it; `GET /themes/:id/logo` keeps working either way (it reads the object
-      with the deployment's credentials), so a misconfiguration shows up as a broken direct URL only.
+- [ ] **Give the production bucket a public origin and set `CLOUDFLARE_R2_PUBLIC_URL`** (#713, #725).
+      Every media URL the API hands to the apps is built on that variable, and the browser fetches it
+      unauthenticated. Without it the URL falls back to `${CLOUDFLARE_R2_ENDPOINT}/${CLOUDFLARE_R2_BUCKET}/<key>`,
+      the S3 API endpoint, which answers `400 Authorization`: every image renders broken, and every Members
+      App background shows the theme colour instead. Connect a custom domain to the production bucket in the
+      Cloudflare account that owns it (r2.dev is rate-limited and meant for development only), put that
+      origin in the `CLOUDFLARE_R2_PUBLIC_URL` repository variable with no trailing slash and no bucket name,
+      and redeploy. **Never point `CLOUDFLARE_R2_ENDPOINT` at the public origin**: the API uploads through
+      that variable, and a public origin cannot accept an S3 write. `GET /themes/:id/logo` keeps working
+      either way, because it reads the object with the deployment's credentials.
+- [ ] **Rewrite the media URLs stored before `CLOUDFLARE_R2_PUBLIC_URL` was set.** Theme logos and Members
+      App backgrounds store an object key and pick up the public origin on the next read.
+      `nutrition_library_items.image_url` and the four `exercises` media columns store a whole URL, so rows
+      written before the variable keep the private form until they are rewritten. After the deploy that
+      sets the variable, run the script inside the API container on the VPS (the image ships compiled
+      scripts, and the database is only reachable from there), dry run first:
+      `node dist/scripts/rewrite-storage-urls.js --dry-run`, then without `--dry-run`. It is idempotent and
+      keeps every key byte for byte. Until it runs, those images stay broken, but nothing is lost: a
+      replaced-media sweep compares objects, not URL strings, so the mixed state never deletes an object
+      that is still in use.
 - [ ] **Confirm the R2 objects under `Themes/<theme>/Members/` are publicly readable too** (#725). The six
       Members App backgrounds are fetched by the member's browser directly from
-      `${CLOUDFLARE_R2_ENDPOINT}/${CLOUDFLARE_R2_BUCKET}/<key>` and, unlike the logo, have **no API route
-      that serves the bytes** — a non-public bucket means a theme colour where the artwork should be, not a
-      broken image. The same custom-domain / `r2.dev` fix as the item above covers both.
+      the public origin and, unlike the logo, have **no API route that serves the bytes**: a missing public
+      origin means a theme colour where the artwork should be, not a broken image. Setting
+      `CLOUDFLARE_R2_PUBLIC_URL`, as in the item above, covers both.
 - [ ] **Re-run Initialize Bucket for every gym provisioned before the `Themes/` folder existed** (#735).
       The gym-level `Themes/` marker is written by `initializeGymBucket()`, so a gym whose bucket was
       initialized earlier does not have it until a superadmin re-runs **Cordel → Gyms → Initialize Bucket**
@@ -124,6 +138,17 @@ Tick items off in the PR that completes them.
       script renders a consistent stylized form per food, not a photograph of it — supply real
       artwork with `--from`, or replace individual foods later with **Upload Image** on the expanded
       card (512×512 transparent PNG).
+      **Real artwork exists for all 32 base foods and must be uploaded too.** A set of photographic
+      512×512 transparent PNGs was prepared in September 2026, one per base food, each already passing
+      the upload route's checks. Pass that folder as `--from` so the run uses it instead of the
+      generated placeholders. The files are named after the food (`Salmon.png`, `Brown-Rice.png`,
+      `Sweet-Potatoes.png`), which the script matches by sanitized name, so they still apply if the
+      production ids differ from the development ones. A food with no matching file falls back to the
+      generated form without any warning, so run it with `--dry-run` first, which lists each food as
+      `supplied` or `generated`, and check that the `supplied` count reads 32. The images are not in the repository; the set currently lives outside it as
+      `~/Downloads/base-nutrition-images/` on the machine it was prepared on, so move it somewhere
+      durable before this step. The development deployment (admin.vdicube.com) has not received them
+      either.
 - [ ] **Upload the Base Exercise images** (#716). Unlike the base foods above there is deliberately
       no generator and no backfill script: the ticket's own answer put generating the artwork out of
       scope, so every Base Exercise has `image_url = NULL` and its expanded card reads "No image yet"

@@ -173,6 +173,7 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 | `BILLING_INTERNAL_SECRET` | Secret for `POST /billing/run` and `/billing/cleanup` (nightly `billing-run.yml`) |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | Secret for `POST /recurring-bookings/run` (nightly `recurring-booking-run.yml`) |
 | `CLOUDFLARE_R2_ENDPOINT` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` / `_BUCKET` | Optional — object storage for uploads and gym folders; unset disables storage features |
+| `CLOUDFLARE_R2_PUBLIC_URL` | Optional: the bucket's public origin (r2.dev URL or custom domain) that stored image URLs are built on. Unset falls back to endpoint + bucket, which browsers cannot read |
 | `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` | Optional — locales for translated DB content (defaults: `en,es,ca` / `en`) |
 | `TRUST_PROXY_HOPS` | Optional — reverse-proxy hops in front of the API (default: `1`) |
 | `PUBLIC_REGISTRATION_IP_LIMIT_PER_HOUR` / `PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY` | Optional — website self-registration rate limits (defaults: `60` / `200`) |
