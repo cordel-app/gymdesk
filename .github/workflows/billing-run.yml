@@ -4,6 +4,16 @@ on:
   schedule:
     # 06:00 UTC = 07:00 CET (08:00 CEST)
     - cron: '0 6 * * *'
+    # #781: a second attempt, four hours later, as a safety net for a 06:00 run
+    # GitHub delayed past usefulness or dropped entirely (scheduled workflows are
+    # best-effort and are shed under load). 10:00 UTC is inside the gyms' working
+    # day, so a charge that lands here is still same-day, and it is well clear of
+    # the 03:00 recurring booking run. On a normal day this attempt charges
+    # nobody: #780's guard answers `200 { skipped_reason:
+    # 'already_completed_today', … }`, which the step below reports as a green
+    # no-op. Only the day the 06:00 run never completed does this become the
+    # real run, judged by #778's rules like any other.
+    - cron: '0 10 * * *'
   workflow_dispatch: # manual trigger for testing
 
 # #778: this workflow is the alerting channel for the nightly run, not only its
@@ -62,10 +72,10 @@ jobs:
           fi
 
           # #780: an attempt that found today's run already completed is a
-          # no-op, not a night that went wrong. From #781 the second daily
-          # schedule hits this every day the first one worked, so it has to be
-          # green — and it must not be reported as "completed with no failed
-          # charges", which would hide a first attempt that never ran.
+          # no-op, not a night that went wrong. The 10:00 UTC safety net (#781)
+          # hits this every day the 06:00 run worked, so it has to be green —
+          # and it must not be reported as "completed with no failed charges",
+          # which would hide a first attempt that never ran.
           skip="$(printf '%s' "$body" | jq -r '.skipped_reason // empty')"
           if [ -n "$skip" ]; then
             run_date="$(printf '%s' "$body" | jq -r '.run_date // "unknown"')"

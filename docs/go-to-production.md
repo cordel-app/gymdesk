@@ -262,9 +262,15 @@ hardening:
       finds today's run already done answers `200 { skipped_reason:
       'already_completed_today', run_date, …zeroed counters }`, which both workflows treat
       as a green no-op; a genuine overlap is still `429`.
-- [ ] **A second scheduled attempt** at 10:00 UTC as a safety net for a run GitHub dropped
-      (#781). Depends on the item above, which is what makes the second attempt a no-op on
-      a normal day.
+- [x] **A second scheduled attempt** at 10:00 UTC as a safety net for a run GitHub dropped
+      (#781). `.github/workflows/billing-run.yml` carries both `0 6 * * *` and `0 10 * * *`;
+      the job body is unchanged, so the second attempt hits the item above and is reported
+      as a green no-op on every day the first one completed. `POST /billing/cleanup` runs
+      twice a day as a result, which is idempotent. `recurring-booking-run.yml`
+      deliberately keeps its single 03:00 schedule (#781 §3): a dropped booking night is
+      recovered by the next one, because the run re-projects the rolling window from *now*.
+      Still to do before the first real gym: confirm on a live day that the 10:00 run is
+      green and charges nobody, and that a manually skipped 06:00 run is charged at 10:00.
 - [ ] **A freshness alert** when no run has completed in 26 hours (#782) — the only signal
       that covers "nothing reached the API at all", which no red workflow can report
       because there is no run.
