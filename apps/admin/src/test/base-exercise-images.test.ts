@@ -44,9 +44,12 @@ describe('Base Exercises images (#716)', () => {
 
   it('draws the thumbnail, never the master, for normal rendering (§4)', () => {
     expect(pageSrc).toMatch(/const thumbnail = exercise\.image_thumbnail_url \?\? exercise\.image_url;/);
-    // The only `<img src>` on the page is the thumbnail's.
-    const imgSources = [...pageSrc.matchAll(/src=\{`?\$?\{?([^}`]+)/g)].map((m) => m[1]);
-    expect(imgSources).toEqual(['thumbnail']);
+    // The image block draws the thumbnail and nothing else; the other two
+    // `src`s on the page are #717's video block (its poster, and the clip
+    // itself once the player is asked for). The master is drawn by neither.
+    const srcs = [...pageSrc.matchAll(/src=\{`?\$?\{?([^}`]+)/g)].map((m) => m[1]);
+    expect(srcs).toEqual(['thumbnail', 'video', 'poster']);
+    expect(srcs).not.toContain('master');
     expect(pageSrc).toContain('loading="lazy"');
   });
 

@@ -17,6 +17,19 @@ import {
   isPlatformOwnedExerciseImageUrl,
 } from '../domain/baseExerciseImages';
 import {
+  EXERCISE_VIDEO_MIME,
+  EXERCISE_VIDEO_POSTER_MAX_BYTES,
+  EXERCISE_VIDEO_POSTER_MIME,
+  exerciseVideoMaxBytes,
+  validateExerciseVideoPair,
+} from '../domain/exerciseVideos';
+import {
+  baseExerciseVideoFolderKeys,
+  buildBaseExerciseVideoKey,
+  buildBaseExerciseVideoPosterKey,
+  isPlatformOwnedExerciseVideoUrl,
+} from '../domain/baseExerciseVideos';
+import {
   StorageOperationError,
   buildStorageObjectUrl,
   deleteStorageObject,
@@ -271,14 +284,24 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
 // replaced by on the issue thread. So there is no generator, no backfill script
 // and no runtime fallback — a Base Exercise with no image simply has none.
 
-/** base64 → Buffer, or null when the value is not base64 at all. */
-function decodeBase64Image(value: unknown): Buffer | null {
+/** base64 → Buffer, or null when the value is not base64 at all (a PNG, an MP4). */
+function decodeBase64File(value: unknown): Buffer | null {
   if (typeof value !== 'string' || value.length === 0) return null;
   // A data: URL is what a careless client sends; take the payload rather than
   // decoding the prefix into garbage bytes that would fail as "not a PNG".
   const payload = value.startsWith('data:') ? value.slice(value.indexOf(',') + 1) : value;
   const buffer = Buffer.from(payload, 'base64');
   return buffer.length > 0 ? buffer : null;
+}
+
+/** The four media references a platform media route reads and writes. */
+interface BaseExerciseMediaRow {
+  id: number;
+  name: string;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
+  video_url: string | null;
+  video_thumbnail_url: string | null;
 }
 
 /**
@@ -291,9 +314,10 @@ function decodeBase64Image(value: unknown): Buffer | null {
 async function loadBaseExerciseForMedia(
   req: express.Request,
   res: express.Response,
-): Promise<{ id: number; name: string; image_url: string | null; image_thumbnail_url: string | null } | null> {
-  const { rows } = await db.query<{ id: number; name: string; status: string; image_url: string | null; image_thumbnail_url: string | null }>(
-    'SELECT id, name, status, image_url, image_thumbnail_url FROM exercises WHERE id = ? AND gym_id IS NULL',
+): Promise<BaseExerciseMediaRow | null> {
+  const { rows } = await db.query<BaseExerciseMediaRow & { status: string }>(
+    `SELECT id, name, status, image_url, image_thumbnail_url, video_url, video_thumbnail_url
+       FROM exercises WHERE id = ? AND gym_id IS NULL`,
     [req.params.id],
   );
   const row = rows[0];
@@ -305,8 +329,9 @@ async function loadBaseExerciseForMedia(
 }
 
 /**
- * Whether any *other* non-deleted exercise still points at `url` — including a
- * **gym's** exercise, which is the case this check exists for.
+ * Whether any *other* non-deleted exercise still points at `url` — through any
+ * of its **four** media columns, and including a **gym's** exercise, which is
+ * the case this check exists for.
  *
  * `POST /exercises/import` copies media *references* rather than objects (#719
  * §2), so every gym that imported a base exercise points at the platform's own
@@ -314,30 +339,36 @@ async function loadBaseExerciseForMedia(
  * break each of those rows, so a shared object is left in the bucket and only
  * the base row's reference changes. Unlike the gym-side check (`gym_id = ?`),
  * this one deliberately spans every tenant: the platform is the one owner whose
- * objects other rows legitimately reference.
+ * objects other rows legitimately reference. All four columns are read because
+ * a duplicate, a clone or an import copies media *references*, and an object
+ * this exercise stopped pointing at may be another row's image, thumbnail,
+ * video or poster (#719's rule, the same one `isMediaStillReferenced()` applies
+ * gym-side).
  */
-async function isBaseImageStillReferenced(url: string, exceptExerciseId: number | string): Promise<boolean> {
+async function isBaseMediaStillReferenced(url: string, exceptExerciseId: number | string): Promise<boolean> {
   const { rows } = await db.query(
     `SELECT id FROM exercises
       WHERE id != ? AND status != 'deleted'
-        AND (image_url = ? OR image_thumbnail_url = ?)
+        AND (image_url = ? OR image_thumbnail_url = ? OR video_url = ? OR video_thumbnail_url = ?)
       LIMIT 1`,
-    [exceptExerciseId, url, url],
+    [exceptExerciseId, url, url, url, url],
   );
   return rows.length > 0;
 }
 
 /**
- * Best-effort removal of objects a base exercise has stopped pointing at (§13:
- * replacing an image leaves no orphan). Only ever called *after* the row has
- * been updated, so a failure here leaves an orphan to sweep rather than an
- * exercise pointing at a missing object.
+ * Best-effort removal of objects a base exercise has stopped pointing at (#716
+ * §13, #717 §6: replacing media leaves no orphan). Only ever called *after* the
+ * row has been updated, so a failure here leaves an orphan to sweep rather than
+ * an exercise pointing at a missing object.
  *
- * `isPlatformOwnedExerciseImageUrl()` is what keeps a gym's object and an
- * external link out of this — the mirror of the rule that stops a gym deleting
- * a `cordel/…` object (#719 §19).
+ * `isPlatformOwnedExerciseImageUrl()` / `isPlatformOwnedExerciseVideoUrl()` are
+ * what keep a gym's object and an external link (a YouTube URL, typically) out
+ * of this — the mirror of the rule that stops a gym deleting a `cordel/…`
+ * object (#719 §19). Both are asked, because one sweep serves both kinds of
+ * media and each owns its own folder.
  */
-async function deleteReplacedBaseExerciseImages(
+async function deleteReplacedBaseExerciseMedia(
   exerciseId: number | string,
   staleUrls: (string | null)[],
   keepUrls: (string | null)[],
@@ -347,8 +378,8 @@ async function deleteReplacedBaseExerciseImages(
   for (const url of staleUrls) {
     if (!url || keep.has(url) || seen.has(url)) continue;
     seen.add(url);
-    if (!isPlatformOwnedExerciseImageUrl(url)) continue;
-    if (await isBaseImageStillReferenced(url, exerciseId)) continue;
+    if (!isPlatformOwnedExerciseImageUrl(url) && !isPlatformOwnedExerciseVideoUrl(url)) continue;
+    if (await isBaseMediaStillReferenced(url, exerciseId)) continue;
     const key = storageKeyFromObjectUrl(url);
     if (!key) continue;
     try {
@@ -357,7 +388,7 @@ async function deleteReplacedBaseExerciseImages(
       const details = err instanceof StorageOperationError
         ? err.details
         : describeStorageError(err, { operation: 'deleteStorageObject', key });
-      logger.warn({ err, details, exerciseId }, 'Replaced base exercise image left an orphaned object in Cloudflare R2');
+      logger.warn({ err, details, exerciseId }, 'Replaced base exercise media left an orphaned object in Cloudflare R2');
     }
   }
 }
@@ -377,8 +408,8 @@ export const platformExerciseImageBodyParser = express.json({
 
 platformExercisesRouter.post('/:id/image', requireSuperadmin, async (req, res, next) => {
   try {
-    const image = decodeBase64Image(req.body?.image);
-    const thumbnail = decodeBase64Image(req.body?.thumbnail);
+    const image = decodeBase64File(req.body?.image);
+    const thumbnail = decodeBase64File(req.body?.thumbnail);
     if (!image || !thumbnail) {
       return res.status(400).json({
         error: 'Both `image` (the 2048×2048 master) and `thumbnail` (the 512×512 thumbnail) are required, base64-encoded.',
@@ -436,10 +467,13 @@ platformExercisesRouter.post('/:id/image', requireSuperadmin, async (req, res, n
     // objects it replaces and there is nothing to orphan. The exception is an
     // exercise renamed since its last upload: the derived keys moved, so the
     // row's old objects are now unreachable.
-    await deleteReplacedBaseExerciseImages(
+    await deleteReplacedBaseExerciseMedia(
       exercise.id,
       [exercise.image_url, exercise.image_thumbnail_url],
-      [imageUrl, thumbnailUrl],
+      // The video pair is kept as well as the new image pair: an exercise whose
+      // poster happens to share an object with its old thumbnail must not lose
+      // it because the image was replaced (#719's four-reference rule).
+      [imageUrl, thumbnailUrl, exercise.video_url, exercise.video_thumbnail_url],
     );
 
     recordAudit(req, {
@@ -472,10 +506,10 @@ platformExercisesRouter.delete('/:id/image', requireSuperadmin, async (req, res,
       [exercise.id],
     );
 
-    await deleteReplacedBaseExerciseImages(
+    await deleteReplacedBaseExerciseMedia(
       exercise.id,
       [exercise.image_url, exercise.image_thumbnail_url],
-      [],
+      [exercise.video_url, exercise.video_thumbnail_url],
     );
 
     recordAudit(req, {
@@ -484,6 +518,170 @@ platformExercisesRouter.delete('/:id/image', requireSuperadmin, async (req, res,
       entityId: exercise.id,
       previous: { image_url: exercise.image_url, image_thumbnail_url: exercise.image_thumbnail_url },
       next: { image_url: null, image_thumbnail_url: null },
+    });
+    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+/* ── Base Exercise video (#717) ───────────────────────────────────────────── */
+//
+// A Base Exercise's video is an **MP4 plus a 512×512 poster** (§3, and the
+// answer to this ticket's Q4), stored in the platform's own folder under keys
+// derived from the row: `cordel/Exercises/Videos/<id>-<Name>.mp4` and
+// `…-thumbnail.png` (§1). It is the image pair of #716 one folder over, and
+// every rule established there holds unchanged — the route takes neither the
+// folder nor the key from the request, the exercise is looked up with
+// `gym_id IS NULL` (so a gym-owned row is simply 404 here, whoever asks), and
+// nothing a client sends can reach a gym's folder.
+//
+// The columns are the ones migration 188 already added: `video_url` holds the
+// uploaded object's URL and `video_thumbnail_url` its poster (this ticket's Q5 —
+// **no** `video_object_key` column). A base row whose `video_url` is an external
+// link today keeps working: an upload replaces the link with the object's URL,
+// and a `PUT` that repoints `video_url` back at a YouTube link clears the
+// poster, because the poster belonged to the MP4 it was captured from.
+//
+// The **browser** captures that poster (#719 Q2, inherited here: no `sharp`, no
+// `ffmpeg` in the API image) and uploads both files in one JSON body, so a
+// failed poster fails the whole upload rather than leaving a video the UI would
+// have to download to draw a row (§5, §9). The server validates each file from
+// its own bytes — the MP4's `ftyp` brand, its `moov` and its video sample
+// entries (`domain/mp4Video.ts`, this ticket's Q3), the poster's PNG signature
+// and exact size — and never from the `Content-Type` header or the file name
+// (§3). Nothing is uploaded and nothing is written until both pass, so an
+// invalid upload cannot disturb the video already there (§6). The old objects
+// are deleted only *after* the row points at the new ones, and only when they
+// are the platform's own and no other exercise — in any gym — still references
+// them (§6's "no orphaned video objects").
+
+/** The path `platformExerciseVideoBodyParser` applies to, mounted in `app.ts`. */
+export const PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH = /^\/platform\/exercises\/[^/]+\/video\/?$/;
+
+/**
+ * The body parser for `POST /platform/exercises/:id/video`.
+ *
+ * Mounted **before** the global `express.json()`, whose 100 kB default an MP4
+ * blows through long before the route is reached — the request would fail as a
+ * bare 413 with no chance to say which file was too large. Same ceiling and same
+ * reasoning as the gym-side upload's parser: the two file limits plus base64's
+ * ~4/3 overhead, read once at start-up (`EXERCISE_VIDEO_MAX_MB` — this ticket's
+ * Q2 — needs a restart to change the request ceiling; the per-file check
+ * re-reads it).
+ */
+export const platformExerciseVideoBodyParser = express.json({
+  limit: Math.ceil((exerciseVideoMaxBytes() + EXERCISE_VIDEO_POSTER_MAX_BYTES) * 1.4),
+});
+
+platformExercisesRouter.post('/:id/video', requireSuperadmin, async (req, res, next) => {
+  try {
+    const video = decodeBase64File(req.body?.video);
+    const poster = decodeBase64File(req.body?.poster);
+    if (!video || !poster) {
+      return res.status(400).json({
+        error: 'Both `video` (the MP4) and `poster` (its 512×512 thumbnail) are required, base64-encoded.',
+      });
+    }
+    const problem = validateExerciseVideoPair(video, poster);
+    if (problem) {
+      return res.status(problem.rejection === 'too_large' ? 413 : 400).json({
+        error: problem.message,
+        reason: problem.rejection,
+        file: problem.kind,
+      });
+    }
+
+    if (!isStorageConfigured()) {
+      const missingConfig = getMissingStorageConfigKeys();
+      return res.status(503).json({
+        error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+        missingConfig,
+      });
+    }
+
+    const exercise = await loadBaseExerciseForMedia(req, res);
+    if (!exercise) return;
+
+    const videoKey = buildBaseExerciseVideoKey(exercise.id, exercise.name);
+    const posterKey = buildBaseExerciseVideoPosterKey(exercise.id, exercise.name);
+    const videoUrl = buildStorageObjectUrl(videoKey);
+    const posterUrl = buildStorageObjectUrl(posterKey);
+
+    try {
+      await ensureStorageFolders(baseExerciseVideoFolderKeys());
+      await uploadStorageObject(videoKey, EXERCISE_VIDEO_MIME, video);
+      await uploadStorageObject(posterKey, EXERCISE_VIDEO_POSTER_MIME, poster);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'uploadStorageObject', key: videoKey });
+      logger.error(
+        { err, details, diagnostics: getStorageDiagnostics(), exerciseId: exercise.id },
+        'Cloudflare R2 base exercise video upload failed',
+      );
+      // The row still points at whatever it pointed at before, so the previous
+      // video and poster stay exactly as they were — nothing was written (§6).
+      return res.status(502).json({ error: `Failed to upload video: ${details.message}`, details });
+    }
+
+    await db.query(
+      `UPDATE exercises SET video_url = ?, video_thumbnail_url = ?, modified_at = UTC_TIMESTAMP()
+        WHERE id = ? AND gym_id IS NULL`,
+      [videoUrl, posterUrl, exercise.id],
+    );
+
+    // The keys are deterministic, so a replacement normally overwrites the
+    // objects it replaces and there is nothing to orphan. The exceptions are an
+    // exercise renamed since its last upload (the derived keys moved) and a row
+    // that carried an external link, which is never ours to delete anyway.
+    await deleteReplacedBaseExerciseMedia(
+      exercise.id,
+      [exercise.video_url, exercise.video_thumbnail_url],
+      [videoUrl, posterUrl, exercise.image_url, exercise.image_thumbnail_url],
+    );
+
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'exercise',
+      entityId: exercise.id,
+      previous: { video_url: exercise.video_url, video_thumbnail_url: exercise.video_thumbnail_url },
+      next: { video_url: videoUrl, video_thumbnail_url: posterUrl },
+    });
+    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+/**
+ * Clears a Base Exercise's video (§7). Both references go, the platform's own
+ * objects are deleted when nothing else references them, and a gym's object a
+ * `PUT` had somehow left on the row is never touched. There is deliberately no
+ * fallback afterwards — the exercise simply has no video, and uploading one is
+ * how it gets another (the no-runtime-fallback rule, #719 §12).
+ */
+platformExercisesRouter.delete('/:id/video', requireSuperadmin, async (req, res, next) => {
+  try {
+    const exercise = await loadBaseExerciseForMedia(req, res);
+    if (!exercise) return;
+
+    await db.query(
+      `UPDATE exercises SET video_url = NULL, video_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP()
+        WHERE id = ? AND gym_id IS NULL`,
+      [exercise.id],
+    );
+
+    await deleteReplacedBaseExerciseMedia(
+      exercise.id,
+      [exercise.video_url, exercise.video_thumbnail_url],
+      [exercise.image_url, exercise.image_thumbnail_url],
+    );
+
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'exercise',
+      entityId: exercise.id,
+      previous: { video_url: exercise.video_url, video_thumbnail_url: exercise.video_thumbnail_url },
+      next: { video_url: null, video_thumbnail_url: null },
     });
     const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
     res.json(rows[0]);
