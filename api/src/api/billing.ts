@@ -8,6 +8,7 @@ import { advanceBillingDate } from '../domain/billingDate';
 import { registerRejection } from '../domain/billingDunning';
 import { recordStatusChange } from './billing-events';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
+import { issueReceiptNumber } from '../domain/receiptNumbers';
 import {
   FEE_ASSIGNMENT_COLUMNS,
   FeeAssignmentRow,
@@ -94,6 +95,11 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
   // deliberately *not* written to `billing_run_log`: the pause is already a
   // `status_changed` ledger row, which is where it is explicable from.
   let paused = 0;
+  // #787: how many settled charges got a receipt number allocated in this run.
+  // Reported for visibility only — it is not a run-log column either, because
+  // a receipt that failed to auto-issue is not a failed run (it stays issuable
+  // on demand), and the workflow must not turn one red because of it.
+  let receiptsIssued = 0;
 
   // #780: one **completed** run per UTC date, not "23 hours since the last
   // start". The claim is taken before the try/catch's work so that a crash
@@ -120,6 +126,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
         skipped_reason: 'already_completed_today',
         run_date: claim.runDate,
         processed: 0, succeeded: 0, failed: 0, waived: 0, paused: 0,
+        receipts_issued: 0,
       });
     }
     req.log.warn({ startedAt: claim.startedAt }, 'billing/run: another run is in progress');
@@ -245,6 +252,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
         });
 
         if (result.success) {
+          let settledBillingEventId = 0;
           // Billing event first so payment_requests can reference it.
           await db.transaction(async (tx) => {
             // `insertId` is a property of the query result, not of `rows` —
@@ -260,6 +268,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
                VALUES (?, ?, ?, 'recurring_payment', ?, ?, 'system', NULL)`,
               [row.gym_id, row.id, row.member_id, amount, membershipFeeChargeTypeId],
             );
+            settledBillingEventId = billingEventId;
 
             await tx.query(
               `INSERT INTO payment_requests
@@ -293,6 +302,35 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
             'billing/run: charge succeeded',
           );
           succeeded++;
+
+          // #787: a settled recurring charge gets its receipt number here, so
+          // the member finds the receipt on their own billing history without
+          // a staff member having to issue it first.
+          //
+          // Deliberately *after* the charge transaction commits, in one of its
+          // own — not inside it. That transaction records money the provider
+          // has already taken; a failure in it rolls the record back while the
+          // charge stands, which is the exact bug the `insertId` comment above
+          // documents. A receipt number is a convenience that the on-demand
+          // `POST /payments/:id/receipt` can still allocate later, so it is
+          // never worth risking the charge record for. Hence the swallow: the
+          // run logs and carries on.
+          try {
+            const issued = await db.transaction((tx) =>
+              issueReceiptNumber(tx, row.gym_id, settledBillingEventId),
+            );
+            receiptsIssued += issued.allocated ? 1 : 0;
+          } catch (receiptErr: any) {
+            req.log.error(
+              {
+                err: receiptErr,
+                billingEventId: settledBillingEventId,
+                gymId: row.gym_id,
+                memberId: row.member_id,
+              },
+              'billing/run: receipt number allocation failed (charge stands, issue on demand)',
+            );
+          }
         } else {
           // Failed charge — billing event first, then payment_requests.
           const failNote = [result.errorCode, result.errorMessage].filter(Boolean).join(': ');
@@ -446,8 +484,14 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
 
     await finishRun(BILLING_RUN_LOG, claim.runId, 'completed', { processed, succeeded, failed, waived });
 
-    req.log.info({ processed, succeeded, failed, waived, paused }, 'billing/run: complete');
-    res.json({ processed, succeeded, failed, waived, paused });
+    req.log.info(
+      { processed, succeeded, failed, waived, paused, receiptsIssued },
+      'billing/run: complete',
+    );
+    res.json({
+      processed, succeeded, failed, waived, paused,
+      receipts_issued: receiptsIssued,
+    });
   } catch (err) {
     // Close the run as `failed` with whatever it got through. Without this the
     // row would stay `in_progress` until STALE_RUN_MINUTES retires it, and the

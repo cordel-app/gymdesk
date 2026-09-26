@@ -11,7 +11,10 @@ import {
   BILLING_EVENT_STATUSES,
   deriveBillingEventStatus,
   isPaymentActionable,
+  isReceiptableEvent,
+  receiptRefusalReason,
 } from '../domain/billingEventStatus';
+import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import {
@@ -524,6 +527,12 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       failure_reason: failureReason,
       can_retry: actionable,
       can_record_manual_payment: actionable,
+      // #787: the Details view offers the receipt action on any event that
+      // represents money received, not only a cash `payment_recorded`. Issuing
+      // is a write; downloading an already-issued receipt is not, so the flag
+      // says "eligible" and the button reads `receipt_number` to pick which.
+      can_issue_receipt:
+        isReceiptableEvent(be.event_type, be.latest_tx_status) && parseFloat(be.amount ?? '0') > 0,
     });
   } catch (err) {
     next(err);
@@ -617,7 +626,10 @@ paymentsRouter.post('/apply-promotion', requireModuleWrite('PAYMENTS'), async (r
 });
 
 // POST /payments/:id/receipt — generate (idempotent) and return a factura simplificada PDF.
-// Only for payment_recorded events. Allocates a gapless receipt number on first call.
+// #787: issued for any event that represents money actually received — a cash
+// `payment_recorded`, the nightly run's `recurring_payment`, or a `failed_billing`
+// settled afterwards by Retry or Manual payment. `isReceiptableEvent` is the only
+// place that rule lives. Allocates a gapless receipt number on first call.
 paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const eventId = parseInt(String(req.params.id), 10);
@@ -627,7 +639,10 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
     const { rows: evRows } = await db.query<any>(
       `SELECT be.id, be.event_type, be.amount, be.receipt_number, be.receipt_issued_at,
               be.gym_id, be.charge_type_id, ct.code AS charge_type_code,
-              m.name AS member_name
+              m.name AS member_name,
+              (SELECT pr.status FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
        FROM billing_events be
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
        LEFT JOIN members m ON m.id = be.member_id
@@ -636,9 +651,8 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
     );
     if (evRows.length === 0) return res.status(404).json({ error: 'Billing event not found' });
     const ev = evRows[0];
-    if (ev.event_type !== 'payment_recorded') {
-      return res.status(400).json({ error: 'Receipts can only be generated for payment_recorded events' });
-    }
+    const refusal = receiptRefusalReason(ev.event_type, ev.latest_tx_status);
+    if (refusal) return res.status(400).json({ error: refusal });
     if (!ev.amount || parseFloat(ev.amount) <= 0) {
       return res.status(400).json({ error: 'Billing event has no valid amount' });
     }
@@ -661,32 +675,14 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
     let issuedAt = ev.receipt_issued_at ? new Date(ev.receipt_issued_at) : null;
 
     if (!receiptNumber) {
-      const year = new Date().getUTCFullYear();
-      const newNumber = await db.transaction(async (tx) => {
-        await tx.query(
-          'INSERT IGNORE INTO receipt_sequences (gym_id, year, last_seq) VALUES (?, ?, 0)',
-          [gymId, year],
-        );
-        await tx.query(
-          'UPDATE receipt_sequences SET last_seq = last_seq + 1 WHERE gym_id = ? AND year = ?',
-          [gymId, year],
-        );
-        const { rows } = await tx.query<{ last_seq: number }>(
-          'SELECT last_seq FROM receipt_sequences WHERE gym_id = ? AND year = ?',
-          [gymId, year],
-        );
-        const seq = rows[0].last_seq;
-        const formatted = `${year}-${String(seq).padStart(4, '0')}`;
-        const now = new Date();
-        await tx.query(
-          'UPDATE billing_events SET receipt_number = ?, receipt_issued_at = UTC_TIMESTAMP() WHERE id = ?',
-          [formatted, eventId],
-        );
-        return { formatted, now };
-      });
-      receiptNumber = newNumber.formatted;
-      issuedAt = newNumber.now;
-      recordAudit(req, { action: 'issue_receipt', entityType: 'billing_event', entityId: eventId, next: { receipt_number: receiptNumber } });
+      const issued = await db.transaction((tx) => issueReceiptNumber(tx, gymId, eventId));
+      receiptNumber = issued.receiptNumber;
+      issuedAt = issued.issuedAt;
+      // Only an allocation is an audited act. A concurrent caller that found
+      // the number already there changed nothing and must not log as if it had.
+      if (issued.allocated) {
+        recordAudit(req, { action: 'issue_receipt', entityType: 'billing_event', entityId: eventId, next: { receipt_number: receiptNumber } });
+      }
     }
 
     const pdfBuffer = await generateReceiptPdf({
