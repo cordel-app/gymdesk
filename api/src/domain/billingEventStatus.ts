@@ -68,3 +68,65 @@ export function deriveBillingEventStatus(
 export function isPaymentActionable(status: BillingEventStatus): boolean {
   return status === 'failed';
 }
+
+/**
+ * #787: which Billing Events may carry a receipt ("factura simplificada").
+ *
+ * The rule is *money actually received*, not the shape of the ledger row. A
+ * Billing Event is the charge; the `payment_requests` rows pointing at it are
+ * the attempts to settle it, so the question "was this paid?" is already
+ * answered by `deriveBillingEventStatus` and must not be re-derived here.
+ *
+ * That single predicate covers the three ways money arrives, without a special
+ * case for any of them:
+ *
+ *  - `payment_recorded` — a front-desk cash payment (no transaction at all, so
+ *    the event type itself answers) or a member's completed checkout, which is
+ *    the only branch of the webhook that writes this row. Receipt-able since
+ *    #114; unchanged.
+ *  - `recurring_payment` — the nightly run's settled charge. Its success branch
+ *    writes the event and a `completed` transaction in one transaction, so it
+ *    always has one. This is what #787 adds.
+ *  - `failed_billing` whose latest transaction is `completed` — a rejected
+ *    charge later settled by the staff's Retry or Manual payment (#640). Those
+ *    actions deliberately never append a second Billing Event, so the money is
+ *    recorded against the failed row and there is nothing else to issue against.
+ *    It falls out of the predicate rather than being special-cased, which is
+ *    what the ticket asked us to confirm.
+ *
+ * Everything else is refused: a `waived_billing` (no money moved — a waived
+ * cycle calls no provider and writes no transaction), an `adjustment`, a
+ * `status_changed`, and any of the three above whose latest transaction says
+ * the payment failed, expired or is still pending.
+ */
+const RECEIPTABLE_EVENT_TYPES = ['payment_recorded', 'recurring_payment', 'failed_billing'] as const;
+
+export function isReceiptableEvent(
+  eventType: string,
+  latestTransactionStatus: string | null | undefined,
+): boolean {
+  if (!RECEIPTABLE_EVENT_TYPES.includes(eventType as any)) return false;
+  return deriveBillingEventStatus(eventType, latestTransactionStatus) === 'paid';
+}
+
+/**
+ * Why a receipt was refused, for the route's `400` body. Returns `null` when
+ * the event is receipt-able, so a caller can use it as the whole check.
+ *
+ * Kept beside the predicate so the two can never disagree: a reason that says
+ * "not paid" for an event the predicate accepted would be worse than no reason
+ * at all.
+ */
+export function receiptRefusalReason(
+  eventType: string,
+  latestTransactionStatus: string | null | undefined,
+): string | null {
+  if (isReceiptableEvent(eventType, latestTransactionStatus)) return null;
+  if (!RECEIPTABLE_EVENT_TYPES.includes(eventType as any)) {
+    return `Receipts can only be issued for a payment that was received; `
+      + `'${eventType}' events record no payment`;
+  }
+  const status = deriveBillingEventStatus(eventType, latestTransactionStatus);
+  return `Receipts can only be issued for a payment that was received; `
+    + `this event's payment is '${status}'`;
+}

@@ -362,6 +362,152 @@ describe('POST /billing/run', () => {
   });
 });
 
+// ── #787: receipts for the charges the run settles ───────────────────────────
+//
+// Before this, a fee collected by the run wrote a `recurring_payment` that no
+// receipt could ever be issued for, so the member's billing history showed a
+// payment with no document behind it. The run now allocates the number itself,
+// which is what makes the member-side link real rather than something a staff
+// member has to remember to click.
+
+describe('POST /billing/run — receipts (#787)', () => {
+  async function settledEventOf(userMembershipId: number) {
+    const { rows } = await db.query<{ id: number; receipt_number: string | null; receipt_issued_at: Date | null }>(
+      `SELECT id, receipt_number, receipt_issued_at FROM billing_events
+        WHERE user_membership_id = ? AND event_type = 'recurring_payment'`,
+      [userMembershipId],
+    );
+    return rows;
+  }
+
+  it('allocates a receipt number for a charge it settles', async () => {
+    const gymId = await createTestGym('Billing Receipt Gym');
+    await createTestMembership(gymId);
+    const memberId = await createMember(gymId);
+    const planId = await createPlanWithPolicy(gymId);
+    const umId = await createDueMembership(gymId, memberId, planId);
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)
+       VALUES (?, ?, 'monei', 'tok_receipt', 'seq_receipt')`,
+      [gymId, memberId],
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+
+    expect(res.status).toBe(200);
+    expect(res.body.receipts_issued).toBeGreaterThan(0);
+
+    const events = await settledEventOf(umId);
+    expect(events).toHaveLength(1);
+    expect(events[0].receipt_number).toMatch(/^\d{4}-\d{4}$/);
+    expect(events[0].receipt_issued_at).not.toBeNull();
+
+    // The number came out of the gym's own sequence, so a cash receipt issued
+    // afterwards continues it rather than colliding with it.
+    const { rows: sequence } = await db.query<{ last_seq: number }>(
+      'SELECT last_seq FROM receipt_sequences WHERE gym_id = ?', [gymId],
+    );
+    expect(sequence[0].last_seq).toBe(1);
+  });
+
+  it('issues no receipt for a rejected charge', async () => {
+    providerResult.current = {
+      success: false, providerRef: 'test-rejected-ref', errorCode: 'E101', errorMessage: 'Card declined',
+    };
+    const gymId = await createTestGym('Billing Receipt Rejected Gym');
+    await createTestMembership(gymId);
+    const memberId = await createMember(gymId);
+    const planId = await createPlanWithPolicy(gymId);
+    const umId = await createDueMembership(gymId, memberId, planId);
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)
+       VALUES (?, ?, 'monei', 'tok_rej_receipt', 'seq_rej_receipt')`,
+      [gymId, memberId],
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+
+    expect(res.body.failed).toBeGreaterThan(0);
+    const { rows } = await db.query<{ receipt_number: string | null }>(
+      'SELECT receipt_number FROM billing_events WHERE user_membership_id = ?', [umId],
+    );
+    expect(rows.every((r) => r.receipt_number === null)).toBe(true);
+    // Nothing was taken, so nothing was spent from the sequence either.
+    const { rows: sequence } = await db.query(
+      'SELECT last_seq FROM receipt_sequences WHERE gym_id = ?', [gymId],
+    );
+    expect(sequence).toHaveLength(0);
+  });
+
+  it('issues no receipt for a waived cycle', async () => {
+    const gymId = await createTestGym('Billing Receipt Waived Gym');
+    await createTestMembership(gymId);
+    const memberId = await createMember(gymId);
+    const planId = await createPlanWithPolicy(gymId);
+    // A Free Period covering the due cycle: the run waives it, calls no
+    // provider, and there is no payment to receipt.
+    const { insertId: umId } = await db.query(
+      `INSERT INTO user_memberships
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
+          next_billing_date, free_months)
+       VALUES (?, ?, ?, 'active', '2000-01-01', '29.99', '2000-01-01', 120)`,
+      [gymId, memberId, planId],
+    );
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)
+       VALUES (?, ?, 'monei', 'tok_waived_receipt', 'seq_waived_receipt')`,
+      [gymId, memberId],
+    );
+
+    const res = await request.post('/billing/run').set('x-internal-secret', SECRET);
+
+    expect(res.body.waived).toBeGreaterThan(0);
+    const { rows } = await db.query<{ event_type: string; receipt_number: string | null }>(
+      'SELECT event_type, receipt_number FROM billing_events WHERE user_membership_id = ?', [umId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].event_type).toBe('waived_billing');
+    expect(rows[0].receipt_number).toBeNull();
+  });
+
+  it('does not re-issue on a later run, because the cycle is no longer due', async () => {
+    // Guards the idempotence that matters operationally: the second daily
+    // attempt (#781) and a re-run must never produce a second receipt — and
+    // therefore never burn a second number — for one payment.
+    const gymId = await createTestGym('Billing Receipt Once Gym');
+    await createTestMembership(gymId);
+    const memberId = await createMember(gymId);
+    const planId = await createPlanWithPolicy(gymId);
+    // Due yesterday on a monthly cadence, so the first run's advance lands the
+    // next cycle in the future and the second run finds nothing to charge.
+    const { insertId: umId } = await db.query(
+      `INSERT INTO user_memberships
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
+       VALUES (?, ?, ?, 'active', '2000-01-01', '29.99', DATE_SUB(UTC_DATE(), INTERVAL 1 DAY))`,
+      [gymId, memberId, planId],
+    );
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)
+       VALUES (?, ?, 'monei', 'tok_once_receipt', 'seq_once_receipt')`,
+      [gymId, memberId],
+    );
+
+    await request.post('/billing/run').set('x-internal-secret', SECRET);
+    const first = (await settledEventOf(umId))[0].receipt_number;
+
+    await db.query('DELETE FROM billing_run_log');
+    await request.post('/billing/run').set('x-internal-secret', SECRET);
+
+    const events = await settledEventOf(umId);
+    expect(events).toHaveLength(1);
+    expect(events[0].receipt_number).toBe(first);
+    const { rows: sequence } = await db.query<{ last_seq: number }>(
+      'SELECT last_seq FROM receipt_sequences WHERE gym_id = ?', [gymId],
+    );
+    expect(sequence[0].last_seq).toBe(1);
+  });
+});
+
 // ── POST /billing/cleanup ─────────────────────────────────────────────────────
 
 describe('POST /billing/cleanup', () => {

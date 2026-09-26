@@ -399,7 +399,11 @@ export default function MembershipPage() {
                     </span>
                   )}
                   {e.notes && <span> · {e.notes}</span>}
-                  {e.event_type === 'payment_recorded' && e.receipt_number && (
+                  {/* #787: any event carrying a receipt number offers the
+                      download — a recurring charge now gets one too. The
+                      number is the gate: the server only ever allocates it
+                      for a payment that was received. */}
+                  {e.receipt_number && (
                     <span>
                       {' · '}
                       <button

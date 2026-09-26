@@ -87,6 +87,8 @@ interface BillingEventDetails {
   failure_reason: string | null;
   can_retry: boolean;
   can_record_manual_payment: boolean;
+  /** #787: the event represents money received, so a receipt may be issued for it. */
+  can_issue_receipt: boolean;
 }
 
 interface RetryResult {
@@ -280,7 +282,7 @@ function ExpandedRow({
   t: ReturnType<typeof useTranslations>;
 }) {
   const billingEventId = billingEvent.id!;
-  const { apiFetch } = useApiClient();
+  const { apiFetch, pdfFetch } = useApiClient();
   const { toast } = useToast();
   const [details, setDetails] = useState<BillingEventDetails | null>(null);
   const [rows, setRows] = useState<Transaction[] | null>(null);
@@ -288,6 +290,7 @@ function ExpandedRow({
   const [manualAmount, setManualAmount] = useState('');
   const [manualNotes, setManualNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [receiptBusy, setReceiptBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -309,6 +312,30 @@ function ExpandedRow({
   }, [billingEventId]);
 
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * #787: one button for both halves of the receipt. A `POST` issues the
+   * number on first use and returns the PDF; once the event carries a number
+   * there is nothing to allocate, so a `GET` fetches the same PDF without a
+   * write — which is what lets a read-only PAYMENTS role still open it.
+   */
+  async function openReceipt() {
+    if (!details) return;
+    const alreadyIssued = !!details.receipt_number;
+    setReceiptBusy(true);
+    try {
+      const blob = await pdfFetch(`/payments/${billingEventId}/receipt`, alreadyIssued ? 'GET' : 'POST');
+      window.open(URL.createObjectURL(blob), '_blank');
+      if (!alreadyIssued) {
+        await load();
+        onChanged();
+      }
+    } catch (err: any) {
+      toast(err.message ?? t('billing_events_page.action_error'));
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
 
   async function submitManualPayment() {
     setSaving(true);
@@ -385,8 +412,27 @@ function ExpandedRow({
               )}
             </div>
             {/* #675: same deep link every Details view offers — filtered to this event. */}
-            <div style={{ marginBottom: 16 }}>
+            <div style={{ marginBottom: 16, display: 'flex', gap: 8, alignItems: 'center' }}>
               <ViewAuditLogButton entityType="billing_event" entityId={details.id} size="small" />
+              {/* #787: issuing allocates a number, so it needs write access;
+                  downloading one already issued does not. */}
+              {details.can_issue_receipt && (
+                <button
+                  onClick={openReceipt}
+                  disabled={receiptBusy || (!details.receipt_number && !canWrite)}
+                  title={details.receipt_number ? undefined : readOnlyTitle}
+                  style={readOnlyStyle({
+                    padding: '4px 10px', fontSize: 12, cursor: 'pointer', borderRadius: 6,
+                    border: '1px solid #166534', background: '#fff', color: '#166534', fontWeight: 600,
+                  }, receiptBusy || (!details.receipt_number && !canWrite))}
+                >
+                  {receiptBusy
+                    ? t('billing_events_page.receipt_working')
+                    : details.receipt_number
+                    ? `${t('billing_events_page.receipt_download')} (${details.receipt_number})`
+                    : t('billing_events_page.receipt_issue')}
+                </button>
+              )}
             </div>
           </>
         )}
