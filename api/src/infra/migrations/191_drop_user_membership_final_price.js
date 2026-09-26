@@ -36,13 +36,19 @@
  *      already carry: the agreement is in `final_price` and nowhere else, so it
  *      moves into the column a Promotion now discounts *from*.
  *
- * Both passes skip an assignment carrying a **standing Promotion**, whose
- * `final_price` has that Promotion's discount baked in — copying it would make the
- * Promotion discount its own discounted result on the next cycle. Separating the
- * two is not attempted (it would mean re-running `computeFinalPrice`'s arithmetic
- * backwards inside a migration); the one exception is pass 1's real hazard: an
- * assignment that would be left with *no* fee at all is rescued even then, because
- * a fee that is merely stale beats one that silently bills nothing.
+ * `final_price` on an assignment carrying a **standing Promotion** has that
+ * Promotion's discount baked in, and copying it would make the Promotion discount
+ * its own discounted result on the next cycle. Separating the two is not attempted
+ * — it would mean running `computeFinalPrice`'s arithmetic backwards inside a
+ * migration — so pass 2 skips such a row outright. Pass 1 does not: its rows have
+ * no other number at all, and a fee that is merely stale beats one that silently
+ * bills nothing.
+ *
+ * A `cancelled`/`expired` assignment is out of scope for all of it: nothing bills
+ * it, so it has nothing to rescue, and writing today's catalogue onto a contract
+ * that has ended would claim it as "what was agreed" (migration 174's own reason
+ * for skipping such a row). It keeps no stored fee after the drop; what it was
+ * actually charged is in its Billing Events ledger, which is untouched.
  *
  * Two things the passes deliberately do not do. `discount_expires_at` is not
  * honoured — it is inert in code today (stored and displayed, never priced), and
@@ -109,6 +115,16 @@ const NEGOTIATED = `
 /** Every row either pass will write a fee onto. */
 const MOVED = `((${NEEDS_FEE}) OR (${NEGOTIATED}))`;
 
+/**
+ * A `cancelled`/`expired` assignment is left out of every write below. Nothing
+ * bills it (`POST /billing/run` filters `status = 'active'`), so it has nothing to
+ * rescue, and materialising it would stamp today's catalogue on a contract that
+ * has ended as "what was agreed" — migration 174's own reason for skipping it.
+ * What it was actually charged is in its Billing Events ledger, which is
+ * untouched. All four writes share this filter so the row sets cannot diverge.
+ */
+const BILLABLE = `um.status NOT IN ('cancelled', 'expired')`;
+
 /** None of the seven snapshot columns set — the row `materialise` exists for. */
 const CAPTURED_NOTHING = `
   um.membership_fee_price IS NULL
@@ -140,26 +156,18 @@ async function hasColumn(knex, table, column) {
 exports.up = async (knex) => {
   if (await hasColumn(knex, 'user_memberships', 'final_price')) {
     // ── Materialise, before any fee is written ────────────────────────────────
-    // The Plan's Billing & Duration and cadence, for a rescued row that captured
-    // nothing. Same statement shape as migration 174's backfill; only the row set
-    // differs, and the fee is written separately below.
-    await knex.raw(`
-      UPDATE user_memberships um
-        JOIN membership_plans p ON p.id = um.membership_plan_id AND p.gym_id = um.gym_id
-        LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = um.gym_id
-      SET um.free_months = p.free_months,
-          um.paid_months = p.paid_months,
-          um.bonus_months = p.bonus_months,
-          um.pay_beforehand_months = p.pay_beforehand_months,
-          um.recurring_billing_interval = bp.recurring_billing_interval,
-          um.recurring_billing_unit = bp.recurring_billing_unit
-      WHERE ${MOVED} AND ${CAPTURED_NOTHING}
-    `);
-
-    // …and the Plan's three benefit sections, for a rescued row that has none of
-    // that category yet. A `cancelled`/`expired` assignment is left alone, as in
-    // migration 174: stamping today's catalogue on it would claim it as "what was
-    // agreed".
+    //
+    // **The order of these two steps is load-bearing.** The duration UPDATE below
+    // writes the cadence, and `billing_policies.recurring_billing_*` is NOT NULL
+    // (migration 060), so it falsifies `CAPTURED_NOTHING` for every row whose Plan
+    // has a policy — which is every Plan. The benefit sections have to be copied
+    // while that predicate still describes the assignment's pre-migration state,
+    // or they would silently never be copied at all and the rescued row would read
+    // back with no benefits. It also makes a partial re-run correct: "durations
+    // set" then implies "benefits already copied".
+    //
+    // The Plan's three benefit sections, for a rescued row that has none of that
+    // category yet.
     for (const [target, source] of Object.entries(BENEFIT_SOURCE)) {
       await knex.raw(`
         INSERT INTO ${target}
@@ -175,18 +183,41 @@ exports.up = async (knex) => {
         LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
         LEFT JOIN ${target} existing ON existing.user_membership_id = um.id
         WHERE existing.id IS NULL
-          AND um.status NOT IN ('cancelled', 'expired')
-          AND ${MOVED} AND ${CAPTURED_NOTHING}
+          AND ${BILLABLE} AND ${MOVED} AND ${CAPTURED_NOTHING}
       `);
     }
 
+    // …then its Billing & Duration and cadence. Same statement shape as migration
+    // 174's backfill; only the row set differs. An assignment with no Plan at all
+    // (migration 007 kept the legacy `plan` text column for unmatched rows) is not
+    // joined and so is not materialised — it has no Plan to read durations or
+    // benefits from either way, so both branches resolve to nothing.
+    await knex.raw(`
+      UPDATE user_memberships um
+        JOIN membership_plans p ON p.id = um.membership_plan_id AND p.gym_id = um.gym_id
+        LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = um.gym_id
+      SET um.free_months = p.free_months,
+          um.paid_months = p.paid_months,
+          um.bonus_months = p.bonus_months,
+          um.pay_beforehand_months = p.pay_beforehand_months,
+          um.recurring_billing_interval = bp.recurring_billing_interval,
+          um.recurring_billing_unit = bp.recurring_billing_unit
+      WHERE ${BILLABLE} AND ${MOVED} AND ${CAPTURED_NOTHING}
+    `);
+
     // ── The fee itself ────────────────────────────────────────────────────────
     // Pass 1: the assignments that would otherwise be left with no fee at all.
-    await knex.raw(`UPDATE user_memberships um SET um.membership_fee_price = um.final_price WHERE ${NEEDS_FEE}`);
+    await knex.raw(
+      `UPDATE user_memberships um SET um.membership_fee_price = um.final_price
+        WHERE ${BILLABLE} AND ${NEEDS_FEE}`,
+    );
     // Pass 2: a negotiated price the snapshot does not already carry. `<>` is
     // exact — both columns are DECIMAL(10,2) — so a row that already agrees is
     // skipped and a re-run is a no-op.
-    await knex.raw(`UPDATE user_memberships um SET um.membership_fee_price = um.final_price WHERE ${NEGOTIATED}`);
+    await knex.raw(
+      `UPDATE user_memberships um SET um.membership_fee_price = um.final_price
+        WHERE ${BILLABLE} AND ${NEGOTIATED}`,
+    );
 
     // `user_memberships` is the hottest table in the schema, and a plain DROP
     // COLUMN rebuilds it under a metadata lock. INSTANT is O(1) on MySQL 8.0.29+;
@@ -195,6 +226,11 @@ exports.up = async (knex) => {
     try {
       await knex.raw('ALTER TABLE user_memberships DROP COLUMN final_price, ALGORITHM=INSTANT');
     } catch (err) {
+      // Only "this ALTER cannot be INSTANT" is retried as a rebuild
+      // (ER_ALTER_OPERATION_NOT_SUPPORTED / _REASON). A lock-wait timeout or a
+      // lost connection must not be answered with the far more expensive
+      // statement on a server that just failed the cheap one.
+      if (err.errno !== 1845 && err.errno !== 1846) throw err;
       console.warn(`[191] INSTANT drop unavailable (${err.message}); rebuilding the table instead`);
       await knex.raw('ALTER TABLE user_memberships DROP COLUMN final_price');
     }
