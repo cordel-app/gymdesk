@@ -1,5 +1,6 @@
 import type { PaymentProvider } from '../../provider';
 import type {
+  CreateCardVerificationParams,
   CreatePaymentRequestParams,
   CreatePaymentRequestResult,
   WebhookPayload,
@@ -35,6 +36,44 @@ export class MoneiProvider implements PaymentProvider {
 
     if (!payment.id) {
       throw new Error('Monei createPayment returned no payment id');
+    }
+
+    return {
+      providerOrderId: payment.id,
+      checkoutUrl: payment.nextAction?.redirectUrl ?? '',
+    };
+  }
+
+  /**
+   * #788: MONEI's documented way to obtain a reusable token without charging —
+   * `amount: 0` + `transactionType: 'VERIF'` + `generatePaymentToken: true`
+   * (docs.monei.com/guides/save-payment-method). The verification still runs
+   * the whole Card Input + `confirmPayment` flow on the hosted page, so the
+   * `completed` webhook carries `paymentToken`/`sequenceId` exactly as a first
+   * real payment does — which is what lets the webhook reuse one upsert for
+   * both. Some acquirers answer a zero-amount verification with a small
+   * authorisation they then void; that is the acquirer's behaviour, not a
+   * second code path here, and it is on the go-to-production checklist to
+   * confirm against the live account.
+   */
+  async createCardVerificationRequest(
+    params: CreateCardVerificationParams,
+  ): Promise<CreatePaymentRequestResult> {
+    const payment = await this.client.createPayment({
+      orderId: params.orderId,
+      amount: 0,
+      transactionType: 'VERIF',
+      currency: params.currency,
+      description: params.description,
+      customer: { email: params.memberEmail },
+      callbackUrl: params.notificationUrl,
+      completeUrl: params.okUrl,
+      cancelUrl: params.koUrl,
+      generatePaymentToken: true,
+    });
+
+    if (!payment.id) {
+      throw new Error('Monei createPayment (VERIF) returned no payment id');
     }
 
     return {

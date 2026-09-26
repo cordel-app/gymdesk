@@ -339,7 +339,13 @@
     "col_receipt": "Recibo",
     "receipt_generate": "Generar recibo",
     "receipt_generating": "Generando…",
-    "receipt_error": "Error — reintentar"
+    "receipt_error": "Error — reintentar",
+    "card_label": "Tarjeta guardada",
+    "card_generic": "Tarjeta",
+    "card_none": "ninguna",
+    "card_since": "guardada el {date}",
+    "card_replace_button": "Enviar enlace para cambiar tarjeta",
+    "card_link_label": "Envía este enlace al miembro — no se realiza ningún cargo, solo cambia la tarjeta guardada:"
   },
   "billing_events_page": {
     "title": "Eventos de Facturación",

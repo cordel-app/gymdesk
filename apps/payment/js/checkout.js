@@ -6,6 +6,8 @@
   var gymLogoEl = document.getElementById('gym-logo');
   var gymNameEl = document.getElementById('gym-name');
   var memberNameEl = document.getElementById('member-name');
+  var pageTitleEl = document.getElementById('page-title');
+  var amountRowEl = document.getElementById('amount-row');
   var amountEl = document.getElementById('amount');
   var currencyEl = document.getElementById('currency');
   var consentTextEl = document.getElementById('consent-text');
@@ -89,6 +91,12 @@
     okUrl = data.okUrl || '';
     koUrl = data.koUrl || '';
 
+    // #788: the same page either charges a membership fee or verifies a card
+    // for nothing, and the server says which — see `purpose` in
+    // GET /payment-page/token/:token. A verification shows no amount, because
+    // none is taken.
+    var isCardUpdate = data.purpose === 'card_update';
+
     applyThemeColors(data.themeColors);
 
     if (data.logoUrl) {
@@ -102,13 +110,26 @@
     gymNameEl.hidden = !!(data.logoUrl && data.logoContainsGymName);
     gymNameEl.textContent = data.gymName || '';
     memberNameEl.textContent = data.memberName || '';
-    amountEl.textContent = formatAmount(data.amount, data.currency);
     currencyEl.textContent = '';
-    consentTextEl.textContent =
-      'Al completar este pago autorizas a ' + (data.gymName || 'el gimnasio') +
-      ' a cargar ' + formatAmount(data.amount, data.currency) +
-      ' ' + billingIntervalLabel(data.billingInterval) +
-      ' a esta tarjeta hasta que canceles tu membresía.';
+
+    if (isCardUpdate) {
+      pageTitleEl.textContent = 'Actualizar tarjeta';
+      amountRowEl.hidden = true;
+      payButtonEl.textContent = 'Guardar tarjeta';
+      consentTextEl.textContent =
+        'No se realizará ningún cargo ahora. Al guardar esta tarjeta autorizas a ' +
+        (data.gymName || 'el gimnasio') + ' a cargar en ella tu cuota de membresía ' +
+        billingIntervalLabel(data.billingInterval) +
+        ' hasta que canceles tu membresía.';
+    } else {
+      amountRowEl.hidden = false;
+      amountEl.textContent = formatAmount(data.amount, data.currency);
+      consentTextEl.textContent =
+        'Al completar este pago autorizas a ' + (data.gymName || 'el gimnasio') +
+        ' a cargar ' + formatAmount(data.amount, data.currency) +
+        ' ' + billingIntervalLabel(data.billingInterval) +
+        ' a esta tarjeta hasta que canceles tu membresía.';
+    }
 
     checkoutEl.hidden = false;
   }

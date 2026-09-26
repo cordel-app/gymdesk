@@ -89,6 +89,24 @@ async function insertPendingPaymentRequest(
   return insertId;
 }
 
+/** #788: a card verification request — zero amount, no charge type. */
+async function insertPendingCardUpdate(
+  gymId: string,
+  userMembershipId: number,
+  memberId: number,
+  providerOrder: string,
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO payment_requests
+       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+        status, provider, provider_order, page_token, page_token_expires, consent_given_at, source)
+     VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei',
+             ?, UUID(), DATE_ADD(NOW(), INTERVAL 10 MINUTE), UTC_TIMESTAMP(), 'card_update')`,
+    [gymId, userMembershipId, memberId, providerOrder],
+  );
+  return insertId;
+}
+
 function buildMoneiEnvelope(orderId: string, status: string, chargeId: string) {
   return {
     id: `evt_${chargeId}`,
@@ -104,6 +122,20 @@ function buildMoneiEnvelope(orderId: string, status: string, chargeId: string) {
       status,
     },
   };
+}
+
+/** The same envelope with the token pair a tokenising charge returns. */
+function buildTokenisedEnvelope(
+  orderId: string,
+  status: string,
+  chargeId: string,
+  token: { paymentToken: string; sequenceId: string; last4: string; brand: string },
+) {
+  const envelope = buildMoneiEnvelope(orderId, status, chargeId) as any;
+  envelope.object.paymentToken = token.paymentToken;
+  envelope.object.sequenceId = token.sequenceId;
+  envelope.object.paymentMethod = { card: { last4: token.last4, brand: token.brand } };
+  return envelope;
 }
 
 function signedHeaders(body: string, secret: string, timestamp = String(Math.floor(Date.now() / 1000))) {
@@ -212,5 +244,163 @@ describe('POST /webhooks/payment — completion flow', () => {
     );
     expect(Number(rows[0].failed_attempts)).toBe(0);
     expect(rows[0].last_failed_at).toBeNull();
+  });
+});
+
+// #788: a card replacement is a zero-amount verification. It hands the webhook a
+// new token and nothing else — no money arrived, so nothing may be recorded as
+// if it had.
+describe('POST /webhooks/payment — card update (#788)', () => {
+  let gymId: string;
+  let memberId: number;
+  let userMembershipId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Webhook Card Update Gym');
+    memberId = await createMember(gymId);
+    const planId = await createMembershipPlan(gymId);
+    userMembershipId = await createUserMembership(gymId, memberId, planId);
+  });
+
+  async function storedCard() {
+    const { rows } = await db.query<{
+      payment_token: string; sequence_id: string; card_last4: string | null;
+      card_brand: string | null; updated_at: Date | null;
+    }>(
+      'SELECT payment_token, sequence_id, card_last4, card_brand, updated_at FROM payment_methods WHERE gym_id = ? AND member_id = ?',
+      [gymId, memberId],
+    );
+    return rows[0] ?? null;
+  }
+
+  it('stores the new token and records no payment at all', async () => {
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id, card_last4, card_brand)
+       VALUES (?, ?, 'monei', 'tok_old', 'seq_old', '1111', 'visa')`,
+      [gymId, memberId],
+    );
+
+    const orderId = crypto.randomUUID();
+    const chargeId = crypto.randomBytes(20).toString('hex');
+    const prId = await insertPendingCardUpdate(gymId, userMembershipId, memberId, orderId);
+
+    const res = await postWebhook(buildTokenisedEnvelope(orderId, 'SUCCEEDED', chargeId, {
+      paymentToken: 'tok_new', sequenceId: 'seq_new', last4: '4242', brand: 'mastercard',
+    }));
+    expect(res.status).toBe(200);
+
+    const card = await storedCard();
+    expect(card).toMatchObject({
+      payment_token: 'tok_new', sequence_id: 'seq_new', card_last4: '4242', card_brand: 'mastercard',
+    });
+    // Migration 195: the upsert dates the card on file, so "stored since" does
+    // not keep reporting the first payment's timestamp.
+    expect(card!.updated_at).not.toBeNull();
+
+    const { rows: request_row } = await db.query<{ status: string; completed_at: Date | null }>(
+      'SELECT status, completed_at FROM payment_requests WHERE id = ?',
+      [prId],
+    );
+    expect(request_row[0].status).toBe('completed');
+    expect(request_row[0].completed_at).not.toBeNull();
+
+    // No Billing Event of any kind: the ledger records money, and none moved.
+    const { rows: events } = await db.query(
+      'SELECT id, event_type FROM billing_events WHERE user_membership_id = ?',
+      [userMembershipId],
+    );
+    expect(events).toEqual([]);
+
+    // And no billing schedule was invented for a member who has not paid yet.
+    const { rows: um } = await db.query<{ next_billing_date: Date | null }>(
+      'SELECT next_billing_date FROM user_memberships WHERE id = ?',
+      [userMembershipId],
+    );
+    expect(um[0].next_billing_date).toBeNull();
+  });
+
+  it('leaves the nightly run\u2019s dunning state alone \u2014 the rejected cycle is still owed', async () => {
+    const ownMemberId = await createMember(gymId);
+    const ownPlanId = await createMembershipPlan(gymId);
+    const ownMembershipId = await createUserMembership(gymId, ownMemberId, ownPlanId);
+    await db.query(
+      'UPDATE user_memberships SET failed_attempts = 1, last_failed_at = UTC_TIMESTAMP() WHERE id = ?',
+      [ownMembershipId],
+    );
+
+    const orderId = crypto.randomUUID();
+    const chargeId = crypto.randomBytes(20).toString('hex');
+    await insertPendingCardUpdate(gymId, ownMembershipId, ownMemberId, orderId);
+
+    expect((await postWebhook(buildTokenisedEnvelope(orderId, 'SUCCEEDED', chargeId, {
+      paymentToken: 'tok_dunning', sequenceId: 'seq_dunning', last4: '4242', brand: 'visa',
+    }))).status).toBe(200);
+
+    // Replacing a card is not paying: #785's counter clears when a cycle is
+    // settled, waived or reactivated, and a verification does none of those.
+    const { rows } = await db.query<{ failed_attempts: number; last_failed_at: Date | null }>(
+      'SELECT failed_attempts, last_failed_at FROM user_memberships WHERE id = ?',
+      [ownMembershipId],
+    );
+    expect(Number(rows[0].failed_attempts)).toBe(1);
+    expect(rows[0].last_failed_at).not.toBeNull();
+  });
+
+  it('a rejected verification leaves the previous card in place', async () => {
+    const ownMemberId = await createMember(gymId);
+    const ownPlanId = await createMembershipPlan(gymId);
+    const ownMembershipId = await createUserMembership(gymId, ownMemberId, ownPlanId);
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id, card_last4, card_brand)
+       VALUES (?, ?, 'monei', 'tok_keep', 'seq_keep', '9999', 'visa')`,
+      [gymId, ownMemberId],
+    );
+
+    const orderId = crypto.randomUUID();
+    const chargeId = crypto.randomBytes(20).toString('hex');
+    const prId = await insertPendingCardUpdate(gymId, ownMembershipId, ownMemberId, orderId);
+
+    expect((await postWebhook(buildMoneiEnvelope(orderId, 'FAILED', chargeId))).status).toBe(200);
+
+    const { rows } = await db.query<{ payment_token: string; card_last4: string | null }>(
+      'SELECT payment_token, card_last4 FROM payment_methods WHERE gym_id = ? AND member_id = ?',
+      [gymId, ownMemberId],
+    );
+    expect(rows[0]).toMatchObject({ payment_token: 'tok_keep', card_last4: '9999' });
+
+    const { rows: request_row } = await db.query<{ status: string }>(
+      'SELECT status FROM payment_requests WHERE id = ?',
+      [prId],
+    );
+    expect(request_row[0].status).toBe('failed');
+  });
+
+  it('a verification that completes without a token keeps the card that is there', async () => {
+    const ownMemberId = await createMember(gymId);
+    const ownPlanId = await createMembershipPlan(gymId);
+    const ownMembershipId = await createUserMembership(gymId, ownMemberId, ownPlanId);
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id, card_last4, card_brand)
+       VALUES (?, ?, 'monei', 'tok_still_here', 'seq_still_here', '4444', 'visa')`,
+      [gymId, ownMemberId],
+    );
+
+    const orderId = crypto.randomUUID();
+    const chargeId = crypto.randomBytes(20).toString('hex');
+    const prId = await insertPendingCardUpdate(gymId, ownMembershipId, ownMemberId, orderId);
+
+    expect((await postWebhook(buildMoneiEnvelope(orderId, 'SUCCEEDED', chargeId))).status).toBe(200);
+
+    const { rows } = await db.query<{ payment_token: string }>(
+      'SELECT payment_token FROM payment_methods WHERE gym_id = ? AND member_id = ?',
+      [gymId, ownMemberId],
+    );
+    expect(rows[0].payment_token).toBe('tok_still_here');
+
+    const { rows: request_row } = await db.query<{ status: string }>(
+      'SELECT status FROM payment_requests WHERE id = ?',
+      [prId],
+    );
+    expect(request_row[0].status).toBe('completed');
   });
 });

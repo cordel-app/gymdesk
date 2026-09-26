@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { db } from '../infra/db';
+import { CARD_UPDATE_SOURCE, withPurposeParam, type PaymentPagePurpose } from '../domain/storedCards';
 
 export const paymentPageRouter = Router();
 
@@ -25,7 +26,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       // FOR UPDATE serializes concurrent requests on the same token so only
       // one caller can consume it — the loser sees no row after the winner commits.
       const { rows } = await tx.query(
-        `SELECT pr.id, pr.amount, pr.currency, pr.provider_ref,
+        `SELECT pr.id, pr.amount, pr.currency, pr.provider_ref, pr.source,
                 g.name AS gym_name,
                 m.name AS member_name,
                 bp.recurring_billing_interval,
@@ -92,8 +93,16 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
         }
       : null;
 
+    // #788: the same page renders a membership-fee charge and a zero-amount card
+    // verification. It is told which, rather than inferring it from `amount`: a
+    // fee resolved to 0 is not payable at all (the routes refuse it), and a page
+    // guessing from the number would offer "save card" for a free cycle.
+    const purpose: PaymentPagePurpose =
+      row.source === CARD_UPDATE_SOURCE ? 'card_update' : 'membership_fee';
+
     res.json({
       paymentId: row.provider_ref,
+      purpose,
       amount: Number(row.amount),
       currency: row.currency,
       gymName: row.gym_name,
@@ -102,8 +111,17 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       logoUrl,
       logoContainsGymName: !!row.theme_logo_contains_gym_name,
       themeColors,
-      okUrl: process.env.PAYMENT_OK_URL ?? '',
-      koUrl: process.env.PAYMENT_KO_URL ?? '',
+      // The page redirects here itself when the provider needs no 3DS hop, so
+      // these have to carry the same `purpose` marker the provider-side
+      // `completeUrl`/`cancelUrl` were created with (#788) — otherwise a card
+      // update lands on the member app's return page as if a fee had been paid,
+      // and it polls a payment that will never exist.
+      okUrl: purpose === 'card_update'
+        ? withPurposeParam(process.env.PAYMENT_OK_URL ?? '', purpose)
+        : (process.env.PAYMENT_OK_URL ?? ''),
+      koUrl: purpose === 'card_update'
+        ? withPurposeParam(process.env.PAYMENT_KO_URL ?? '', purpose)
+        : (process.env.PAYMENT_KO_URL ?? ''),
     });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });

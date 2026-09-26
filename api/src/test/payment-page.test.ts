@@ -65,6 +65,25 @@ async function insertPendingRequest(opts: {
   return insertId;
 }
 
+/** #788: a card verification request — zero amount, no charge type. */
+async function insertPendingCardUpdate(opts: {
+  gymId: string;
+  userMembershipId: number;
+  memberId: number;
+  pageToken: string;
+  providerRef: string;
+}): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO payment_requests
+       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+        status, provider, provider_order, provider_ref, page_token, page_token_expires, source)
+     VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei',
+             UUID(), ?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 10 MINUTE), 'card_update')`,
+    [opts.gymId, opts.userMembershipId, opts.memberId, opts.providerRef, opts.pageToken],
+  );
+  return insertId;
+}
+
 describe('GET /payment-page/token/:token', () => {
   let gymId: string;
   let memberId: number;
@@ -106,6 +125,36 @@ describe('GET /payment-page/token/:token', () => {
     expect(res.body).not.toHaveProperty('id');
     expect(res.body).not.toHaveProperty('gym_id');
     expect(res.body).not.toHaveProperty('member_id');
+  });
+
+  it('tells a membership-fee page from a card verification (#788)', async () => {
+    const feeToken = crypto.randomUUID();
+    await insertPendingRequest({
+      gymId, userMembershipId, memberId, chargeTypeId,
+      pageToken: feeToken, providerRef: 'pay_fee',
+    });
+    const fee = await request.get(`/payment-page/token/${feeToken}`);
+    expect(fee.body.purpose).toBe('membership_fee');
+
+    const cardToken = crypto.randomUUID();
+    await insertPendingCardUpdate({
+      gymId, userMembershipId, memberId, pageToken: cardToken, providerRef: 'pay_verif',
+    });
+    const card = await request.get(`/payment-page/token/${cardToken}`);
+    expect(card.status).toBe(200);
+    // Told, not inferred from the amount: a fee resolved to 0 is not payable at
+    // all, so a page guessing from the number would offer "save card" for a free
+    // cycle. The page still gets everything it renders — the gym, the member and
+    // the billing interval the consent sentence names.
+    expect(card.body.purpose).toBe('card_update');
+    expect(card.body.paymentId).toBe('pay_verif');
+    expect(card.body.amount).toBe(0);
+    expect(card.body.billingInterval).toBe('1 month');
+    // The page redirects here itself when there is no 3DS hop, so the return URL
+    // has to carry what came back — or the member app polls a payment a
+    // verification never writes.
+    if (card.body.okUrl) expect(card.body.okUrl).toContain('purpose=card_update');
+    if (fee.body.okUrl) expect(fee.body.okUrl).not.toContain('purpose=');
   });
 
   it('includes themeColors when the gym has a theme with color tokens (#489 stage 4)', async () => {

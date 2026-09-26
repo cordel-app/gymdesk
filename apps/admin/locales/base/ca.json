@@ -340,7 +340,13 @@
     "col_receipt": "Rebut",
     "receipt_generate": "Generar rebut",
     "receipt_generating": "Generant…",
-    "receipt_error": "Error — torna-ho a intentar"
+    "receipt_error": "Error — torna-ho a intentar",
+    "card_label": "Targeta guardada",
+    "card_generic": "Targeta",
+    "card_none": "cap",
+    "card_since": "guardada el {date}",
+    "card_replace_button": "Enviar enllaç per canviar la targeta",
+    "card_link_label": "Envia aquest enllaç al membre — no es fa cap càrrec, només canvia la targeta guardada:"
   },
   "billing_events_page": {
     "title": "Esdeveniments de Facturació",
