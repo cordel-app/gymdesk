@@ -10,6 +10,7 @@
     "db:migrate:down": "knex migrate:rollback --knexfile knexfile.cjs",
     "db:seed": "node -r tsx/cjs src/infra/seed.ts",
     "nutrition:base-images": "tsx src/scripts/backfill-base-nutrition-images.ts",
+    "storage:rewrite-urls": "tsx src/scripts/rewrite-storage-urls.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
