@@ -41,7 +41,6 @@ import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
 import { membershipPromotionsRouter } from './api/membership-promotions';
 import { memberBillingSimulationRouter } from './api/billing-simulation';
-import { membershipFeeDriftRouter } from './api/membership-fee-drift';
 import { memberMembershipConfigurationRouter } from './api/member-membership-configuration';
 import { userMembershipServicesRouter } from './api/user-membership-services';
 import {
@@ -282,13 +281,13 @@ app.use('/promotions/:id',   requireAuth(), tenantContext, requireModuleAccess('
 
 // PAYMENTS module — admin/front_desk=RW, accountant=R, member=R_OWN (via /me/*), trainer*/nutritionist=NONE
 app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), billingEventsRouter);
-// #635 stage 12: the Membership Fee drift report — two path segments, neither of
-// which userMembershipsRouter has a route for ('/:id' is one segment). Stage 14
-// gave it its own feature key (migration 190) so Payments → Membership Fee Drift
-// can be switched off without taking Transactions with it, and vice versa — which
-// only holds if it is mounted *before* '/user-memberships', whose own
-// `payments.transactions` gate runs on every path under that prefix.
-app.use('/user-memberships/reports/membership-fee-drift', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.membership_fee_drift'), membershipFeeDriftRouter);
+// #635 stage 15: Payments → Membership Fee Drift is gone with the stored price it
+// compared against. It existed to quantify, before the corrected pricing moved
+// money, how far `user_memberships.final_price` had drifted from the fee resolved
+// for the cycle being billed. There is no stored price to drift any more
+// (migration 191) — every surface resolves the same rule — so the report would
+// report nothing by construction, and its `payments.membership_fee_drift` key is
+// dropped with it.
 app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipsRouter);
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), membershipPromotionsRouter);
 // #631: Additional Periodic Services attached to one Assigned Plan. Three path

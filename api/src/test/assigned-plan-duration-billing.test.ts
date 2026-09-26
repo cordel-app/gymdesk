@@ -205,8 +205,8 @@ describe('Billing Simulation — an assignment with no snapshot reads the Plan\'
     // snapshot columns set, and no benefit rows of its own.
     await db.query(
       `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price)
-       VALUES (?, ?, ?, 'active', ?, 0, 100)`,
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'active', ?, 0)`,
       [gymId, memberId, planId, START],
     );
   });

@@ -21,7 +21,8 @@ interface PaymentRequest {
 interface UserMembership {
   id: number;
   status: string;
-  final_price: string | null;
+  /** #635 stage 15 — resolved for the cycle the member is next charged for, never stored. */
+  membership_fee: number | null;
   currency: string | null;
   next_billing_date: string | null;
   last_billed_at: string | null;
@@ -106,7 +107,7 @@ export function MemberPaymentsModal({
   useEffect(() => { load(); }, [memberId]);
 
   function openCashForm() {
-    setCashAmount(activeMembership?.final_price ? parseFloat(activeMembership.final_price).toFixed(2) : '');
+    setCashAmount(activeMembership?.membership_fee != null ? activeMembership.membership_fee.toFixed(2) : '');
     const membershipFee = chargeTypes.find((ct) => ct.code === 'membership_fee');
     setCashChargeTypeId(membershipFee ? String(membershipFee.id) : (chargeTypes[0] ? String(chargeTypes[0].id) : ''));
     setCashNotes('');

@@ -46,7 +46,10 @@
 // nightly run all call it, so none of them can price a cycle differently from
 // what the Member was shown. A Promotion's Membership Fee Benefit therefore ends
 // with the Promotion's own Free/Paid/Bonus timeline everywhere (the thread's
-// stage 12 answer (a)), instead of surviving in a stored `final_price`.
+// stage 12 answer (a)), instead of surviving in a stored price. Stage 15 removed
+// that store entirely (`user_memberships.final_price`, migration 191), so this
+// function is not merely the agreed rule — it is the only place an assignment's
+// Membership Fee exists at all.
 
 import { advanceBillingDate } from './billingDate';
 import {

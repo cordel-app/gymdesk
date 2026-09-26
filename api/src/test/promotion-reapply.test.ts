@@ -57,7 +57,7 @@ async function createAssignment(gymId: string, planId: number, basePrice = 100):
     [gymId, 'PRA Member', `pra-${uniq()}@test.com`],
   );
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price)
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, membership_fee_price)
      VALUES (?, ?, ?, 'active', CURDATE(), ?, ?)`,
     [gymId, memberId, planId, basePrice, basePrice],
   );
@@ -108,11 +108,17 @@ const revokePromotion = (gymId: string, umId: number, promotionId: number) =>
 const listPromotions = (gymId: string, umId: number) =>
   request.get(`/user-memberships/${umId}/promotions`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
 
-async function finalPrice(umId: number): Promise<number> {
-  const { rows } = await db.query<{ final_price: string }>(
-    'SELECT final_price FROM user_memberships WHERE id = ?', [umId],
-  );
-  return parseFloat(rows[0].final_price);
+/**
+ * The fee the assignment's next cycle comes to. #635 stage 15 — nothing is
+ * stored, so this asks the API, which resolves the assignment's snapshot against
+ * its standing applications.
+ */
+async function membershipFee(gymId: string, umId: number): Promise<number> {
+  const res = await request
+    .get(`/user-memberships/${umId}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+  return Number(res.body.membership_fee);
 }
 
 /** Every application of one Promotion on one assignment, oldest first. */
@@ -254,9 +260,9 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     await setMembershipFeeBenefit(gymId, promotionId, 'fixed_discount', 20);
 
     await applyPromotion(gymId, umId, promotionId);
-    expect(await finalPrice(umId)).toBeCloseTo(80, 2);
+    expect(await membershipFee(gymId, umId)).toBeCloseTo(80, 2);
     await revokePromotion(gymId, umId, promotionId);
-    expect(await finalPrice(umId)).toBeCloseTo(100, 2);
+    expect(await membershipFee(gymId, umId)).toBeCloseTo(100, 2);
 
     // The Promotion is repriced between the two decisions. §13 keeps that off
     // the existing (spent) application; the new one is a new agreement.
@@ -264,7 +270,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     await db.query('UPDATE promotions SET description = ? WHERE id = ?', ['Repriced', promotionId]);
 
     expect((await applyPromotion(gymId, umId, promotionId)).status).toBe(201);
-    expect(await finalPrice(umId)).toBeCloseTo(65, 2);
+    expect(await membershipFee(gymId, umId)).toBeCloseTo(65, 2);
 
     const rows = await applicationRows(umId, promotionId);
     const spent = rows[0].snapshot as any;
@@ -292,7 +298,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     );
     expect(rows.map((r) => r.notes)).toEqual(['Promotion applied', 'Promotion revoked', 'Promotion applied']);
     expect(parseFloat(rows[2].amount)).toBeCloseTo(-10, 2);
-    expect(await finalPrice(umId)).toBeCloseTo(90, 2);
+    expect(await membershipFee(gymId, umId)).toBeCloseTo(90, 2);
   });
 
   it('grants the Sellable Items again, snapshotted onto the new application', async () => {

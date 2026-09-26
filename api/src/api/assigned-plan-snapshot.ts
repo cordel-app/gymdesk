@@ -122,12 +122,13 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
  * assignment. Runs inside the caller's transaction, so an assignment can never
  * commit half-snapshotted.
  *
- * `membershipFeePrice` is the *regular* (pre-Promotion, pre-discount) price the
- * caller already resolved with `effectivePrice()`. It is passed in rather than
- * re-read here because the caller may have no price window at all, in which
- * case there is no regular price to freeze and the column stays NULL —
- * `final_price` is not a substitute, being the agreed price after promotions
- * and manual discounts.
+ * `membershipFeePrice` is the *regular* (pre-Promotion) price the caller already
+ * resolved with `effectivePrice()`, or the price it negotiated with the member
+ * (#635 stage 15 — a negotiated price *is* this assignment's own regular fee).
+ * It is passed in rather than re-read here because the caller may have no price
+ * window at all, in which case there is no regular price to freeze and the column
+ * stays NULL. Since stage 15 this is the only fee an assignment stores: what a
+ * Promotion makes of it is resolved per cycle (`membership-fee-pricing.ts`).
  *
  * Benefit rows carry the Sellable Item's price as it is now: the item itself
  * may be repriced, renamed or retired later without touching what was agreed

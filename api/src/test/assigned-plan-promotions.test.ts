@@ -66,11 +66,21 @@ async function createMember(gymId: string): Promise<number> {
   return insertId;
 }
 
+/**
+ * `next_billing_date` is 45 days out deliberately: it is the cycle the fee is
+ * resolved on (#635 stage 15 — there is no stored price, so "what does this
+ * assignment cost" is always "on which date"), and these Promotions carry one
+ * free month. A cycle inside the free month costs nothing whatever the benefit
+ * says, so pricing one *paid* promotional month is what makes the benefit — the
+ * thing these cases are about — observable.
+ */
 async function createAssignment(gymId: string, planId: number, basePrice = 100): Promise<number> {
   const memberId = await createMember(gymId);
   const { insertId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price)
-     VALUES (?, ?, ?, 'active', CURDATE(), ?, ?)`,
+    `INSERT INTO user_memberships
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, membership_fee_price,
+        next_billing_date)
+     VALUES (?, ?, ?, 'active', CURDATE(), ?, ?, CURDATE() + INTERVAL 45 DAY)`,
     [gymId, memberId, planId, basePrice, basePrice],
   );
   return insertId;
@@ -135,11 +145,18 @@ const revokePromotion = (gymId: string, umId: number, promotionId: number) =>
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId);
 
-async function finalPrice(umId: number): Promise<number> {
-  const { rows } = await db.query<{ final_price: string }>(
-    'SELECT final_price FROM user_memberships WHERE id = ?', [umId],
-  );
-  return parseFloat(rows[0].final_price);
+/**
+ * What the assignment's Membership Fee comes to on the cycle it is next charged
+ * for. #635 stage 15 — there is no stored price to read: the API resolves it from
+ * the assignment's own snapshot and its standing applications, which is exactly
+ * what these cases are about.
+ */
+async function membershipFee(gymId: string, umId: number): Promise<number> {
+  const res = await request
+    .get(`/user-memberships/${umId}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+  return Number(res.body.membership_fee);
 }
 
 // ─── What the card reads ─────────────────────────────────────────────────────
@@ -320,7 +337,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
 
     await applyPromotion(gymId, umId, keptId);
     await applyPromotion(gymId, umId, revokedId);
-    expect(await finalPrice(umId)).toBe(85);
+    expect(await membershipFee(gymId, umId)).toBe(85);
 
     // The Promotion is repriced after being applied. Revoking the *other* one
     // recomputes the price, which used to pull in this new value.
@@ -330,7 +347,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     );
     expect((await revokePromotion(gymId, umId, revokedId)).status).toBe(200);
 
-    expect(await finalPrice(umId)).toBe(90);
+    expect(await membershipFee(gymId, umId)).toBe(90);
   });
 
   it('keeps the agreed price when the Promotion\'s benefit is deleted outright', async () => {
@@ -342,13 +359,13 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     await setMembershipFeeBenefit(gymId, promotionId, 'percentage_discount', 50);
 
     await applyPromotion(gymId, umId, promotionId);
-    expect(await finalPrice(umId)).toBe(100);
+    expect(await membershipFee(gymId, umId)).toBe(100);
 
     await db.query('DELETE FROM promotion_membership_fee_benefits WHERE promotion_id = ?', [promotionId]);
     // Any later recompute — here, applying a second Promotion — must still
     // honour the first one's agreed benefit.
     expect((await applyPromotion(gymId, umId, otherId)).status).toBe(201);
-    expect(await finalPrice(umId)).toBe(100);
+    expect(await membershipFee(gymId, umId)).toBe(100);
   });
 
   it('still honours the duration gate, counted from when it was applied', async () => {
@@ -360,7 +377,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     await setMembershipFeeBenefit(gymId, lapsedId, 'fixed_discount', 40, { durationMonths: 3 });
 
     await applyPromotion(gymId, umId, lapsedId);
-    expect(await finalPrice(umId)).toBe(60);
+    expect(await membershipFee(gymId, umId)).toBe(60);
 
     // Four months later its three-month window is over: the next recompute
     // drops it, exactly as the SQL gate did before the snapshot cutover.
@@ -370,7 +387,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
       [umId, lapsedId],
     );
     expect((await applyPromotion(gymId, umId, otherId)).status).toBe(201);
-    expect(await finalPrice(umId)).toBe(100);
+    expect(await membershipFee(gymId, umId)).toBe(100);
   });
 
   it('prices a snapshot-less application from the Promotion, which is all it has', async () => {
@@ -387,7 +404,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     );
 
     expect((await applyPromotion(gymId, umId, otherId)).status).toBe(201);
-    expect(await finalPrice(umId)).toBe(75);
+    expect(await membershipFee(gymId, umId)).toBe(75);
   });
 });
 

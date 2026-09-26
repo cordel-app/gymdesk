@@ -4,6 +4,12 @@ import { getTenantContext } from '../infra/tenantContext';
 import { fetchAppliedPromotions } from './membership-promotions';
 import { loadServicesForAssignments } from './user-membership-services';
 import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
+import {
+  MEMBERSHIP_FEE_COLUMNS,
+  MembershipFeeRow,
+  nextPricingDate,
+  priceMembershipFeesOn,
+} from './membership-fee-pricing';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -69,8 +75,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // history since #412 and #634 §14 does not retire it; `is_live` marks the
   // ones the Promotions/Services sections and the simulation act on.
   const { rows: plans } = await db.query(
-    `SELECT um.id, um.membership_plan_id, um.status, um.final_price,
-            um.starts_at, um.ends_at, um.next_billing_date,
+    `SELECT ${MEMBERSHIP_FEE_COLUMNS},
+            um.status, um.ends_at, um.next_billing_date,
             um.closed_at, um.created_at,
             p.name AS plan_name,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
@@ -79,6 +85,13 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
      WHERE um.gym_id = ? AND um.member_id = ?
      ORDER BY um.starts_at DESC, um.id DESC`,
     [...LIVE_STATUSES, gymId, memberId],
+  );
+
+  // #635 stage 15 — the fee each assignment owes on its next cycle, resolved from
+  // its own snapshot and its standing Promotions instead of read from a stored
+  // `final_price`. Batched over the Member's plans, so the history costs one query.
+  const feeByPlan = await priceMembershipFeesOn(
+    gymId, plans as MembershipFeeRow[], (row) => nextPricingDate(row),
   );
 
   const livePlans = plans.filter((p: any) => Number(p.is_live) === 1);
@@ -118,7 +131,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       membership_plan_id: p.membership_plan_id,
       plan_name: p.plan_name,
       status: p.status,
-      final_price: p.final_price,
+      membership_fee: feeByPlan.get(Number(p.id))?.amount ?? null,
+      membership_fee_price: p.membership_fee_price != null ? Number(p.membership_fee_price) : null,
       starts_at: toDateOnly(p.starts_at),
       ends_at: toDateOnly(p.ends_at),
       next_billing_date: toDateOnly(p.next_billing_date),

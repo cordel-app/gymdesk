@@ -352,8 +352,8 @@ describe('Billing Simulation — an assignment with no snapshot still resolves l
     // fee, no benefit rows of its own.
     await db.query(
       `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price)
-       VALUES (?, ?, ?, 'active', ?, 0, 45)`,
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'active', ?, 0)`,
       [gymId, memberId, planId, dayOffset(0)],
     );
   });
@@ -396,7 +396,7 @@ describe('POST /billing/run — charges on the assignment\'s own cadence', () =>
     expect(res.status).toBe(201);
     umId = res.body.id;
     await db.query(
-      `UPDATE user_memberships SET status = 'active', next_billing_date = '2000-01-01', final_price = 30 WHERE id = ?`,
+      `UPDATE user_memberships SET status = 'active', next_billing_date = '2000-01-01', membership_fee_price = 30 WHERE id = ?`,
       [umId],
     );
     // A payment method with no stored token: the run selects the assignment

@@ -20,9 +20,12 @@ import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
-import { loadPromotionApplications } from './user-memberships';
-import { resolveMembershipFee } from '../domain/billingSimulation';
-import { toPlanDuration } from '../domain/planDuration';
+import {
+  MEMBERSHIP_FEE_COLUMNS,
+  loadMembershipFeeResolver,
+  nextPricingDate,
+  priceMembershipFeeNow,
+} from './membership-fee-pricing';
 import type { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
@@ -43,24 +46,21 @@ function toDateOnly(v: unknown): string {
  * number: an applied Promotion's Membership Fee Benefit ends with the Promotion's
  * own Free/Paid/Bonus timeline, so the second of two upcoming payments can
  * legitimately cost more than the first, and a cycle the contract waives costs
- * nothing. Without it the page repeated `final_price` for every future date,
- * which is exactly the disagreement between what a Member is shown and what the
- * nightly run resolves that this stage closes. `amount` stays the fallback for a
- * caller with no fee context to resolve from.
+ * nothing. Stage 15 made it the only way to price one of these dates — the stored
+ * `final_price` this used to fall back to is gone, and with it the disagreement
+ * between what a Member is shown and what the nightly run charges.
  */
 export function computeUpcomingPayments(
   nextBillingDate: Date | string | null,
   billingInterval: number | null,
   billingUnit: 'day' | 'week' | 'month' | 'year' | null,
-  amount: string | null,
-  priceOn?: (date: string) => number,
+  priceOn: (date: string) => number,
 ): UpcomingPayment[] {
-  if (!nextBillingDate || !billingInterval || !billingUnit || (!amount && !priceOn)) return [];
+  if (!nextBillingDate || !billingInterval || !billingUnit) return [];
   const dateStr = nextBillingDate instanceof Date
     ? nextBillingDate.toISOString().slice(0, 10)
     : String(nextBillingDate).slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
-  const fallback = amount != null ? parseFloat(amount).toFixed(2) : '0.00';
   const payments: UpcomingPayment[] = [];
   // Advance from next_billing_date until we reach a future date (safety cap: 5000 iterations)
   let cursor = dateStr;
@@ -72,7 +72,7 @@ export function computeUpcomingPayments(
   while (payments.length < 2) {
     payments.push({
       date: cursor,
-      amount: priceOn ? priceOn(cursor).toFixed(2) : fallback,
+      amount: priceOn(cursor).toFixed(2),
       status: 'scheduled',
     });
     cursor = advanceDate(cursor, billingInterval, billingUnit);
@@ -1377,22 +1377,12 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: mships } = await db.query(
-      `SELECT um.id, um.member_id, um.membership_plan_id,
-              um.base_price, um.final_price, um.discount_reason, um.discount_expires_at,
-              um.starts_at, um.ends_at, um.status, um.created_at,
-              um.next_billing_date, um.membership_fee_price,
-              um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
-              p.free_months AS plan_free_months,
-              p.paid_months AS plan_paid_months,
-              p.bonus_months AS plan_bonus_months,
-              p.pay_beforehand_months AS plan_pay_beforehand_months,
+      `SELECT ${MEMBERSHIP_FEE_COLUMNS},
+              um.member_id, um.discount_reason, um.discount_expires_at,
+              um.ends_at, um.status, um.created_at, um.next_billing_date,
               p.name AS plan_name, p.description AS plan_description,
               ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
-              ${ASSIGNMENT_CADENCE.unit()} AS billing_unit,
-              (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-               OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
-               OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
-              ) AS has_billing_snapshot
+              ${ASSIGNMENT_CADENCE.unit()} AS billing_unit
        FROM user_memberships um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
@@ -1418,25 +1408,18 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // what the run will take: a cycle inside the contract's Free Period or Bonus
     // Duration shows €0, and an applied Promotion's Membership Fee Benefit stops
     // discounting once the Promotion's own Free/Paid/Bonus timeline ends.
-    const feeContext = {
-      startsAt: toDateOnly(um.starts_at),
-      planDuration: Number(um.has_billing_snapshot) === 1
-        ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
-        : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
-      promotions: (await loadPromotionApplications(gymId, um.id)).filter((a) => a.status === 'applied'),
-    };
-    const regularFee = um.membership_fee_price != null
-      ? Number(um.membership_fee_price)
-      : (um.final_price != null ? Number(um.final_price) : null);
+    const { priceOn } = await loadMembershipFeeResolver(gymId, um);
     const upcoming_payments = computeUpcomingPayments(
       um.next_billing_date,
       um.billing_interval,
       um.billing_unit,
-      um.final_price,
-      regularFee != null
-        ? (date) => resolveMembershipFee(regularFee, date, feeContext).amount
-        : undefined,
+      (date) => priceOn(date).amount,
     );
+    // #635 stage 15 — what the Member owes on the cycle they are next charged for,
+    // resolved rather than read from a stored `final_price`: the column carried no
+    // date, so this page used to promise a promotional price for a cycle after the
+    // Promotion's months had run out — and the nightly run charged something else.
+    const membership_fee = priceOn(nextPricingDate(um)).amount;
 
     // The months and `has_billing_snapshot` only decide the resolution above —
     // they are not part of the contract the Member app reads.
@@ -1446,7 +1429,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       plan_free_months, plan_paid_months, plan_bonus_months, plan_pay_beforehand_months,
       ...membership
     } = um as any;
-    res.json({ membership: { ...membership, benefits, upcoming_payments } });
+    res.json({ membership: { ...membership, membership_fee, benefits, upcoming_payments } });
   } catch (err) {
     next(err);
   }
@@ -1590,13 +1573,13 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       }
     }
     const params: any[] = [gymId, memberId];
-    let sql = `SELECT um.id, um.final_price, m.email AS member_email
+    let sql = `SELECT um.id, m.email AS member_email
        FROM user_memberships um
        JOIN members m ON m.id = um.member_id
        WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'`;
     if (requestedId !== null) { sql += ' AND um.id = ?'; params.push(requestedId); }
     sql += ' ORDER BY um.starts_at DESC, um.id DESC';
-    const { rows: umRows } = await db.query<{ id: number; final_price: string; member_email: string }>(sql, params);
+    const { rows: umRows } = await db.query<{ id: number; member_email: string }>(sql, params);
     if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
     if (umRows.length > 1) {
       return res.status(409).json({
@@ -1612,7 +1595,14 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     );
     if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
-    const amount = Math.round(parseFloat(um.final_price) * 100);
+    // #635 stage 15 — the fee the next cycle actually owes (see payment-requests.ts).
+    const priced = await priceMembershipFeeNow(gymId, um.id);
+    if (priced == null) return res.status(404).json({ error: 'No active membership found' });
+    if (priced.waived) {
+      return res.status(400).json({ error: 'Your membership owes nothing for its next billing cycle' });
+    }
+    const fee = priced.amount;
+    const amount = Math.round(fee * 100);
     const orderId = crypto.randomUUID();
     const pageToken = crypto.randomUUID();
     const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
@@ -1639,7 +1629,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source)
        VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
-      [gymId, um.id, memberId, um.final_price, ctRows[0].id, orderId, result.providerOrderId, pageToken, pageTokenExpires],
+      [gymId, um.id, memberId, fee, ctRows[0].id, orderId, result.providerOrderId, pageToken, pageTokenExpires],
     );
 
     const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;

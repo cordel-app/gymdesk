@@ -2,15 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
-import { resolveMembershipFee } from '../domain/billingSimulation';
-import { toPlanDuration } from '../domain/planDuration';
-import {
-  AppliedPromotionForBilling,
-  MembershipFeeBenefit,
-} from '../domain/promotionApplication';
-import { isDateAwareMembershipFeeEnabled } from '../infra/featureFlags';
-import { regularMembershipFee } from './user-memberships';
+import { priceMembershipFeeNow } from './membership-fee-pricing';
 import { validatePromotionStacking } from '../domain/promotionStacking';
 import { canReapplyPromotion, promotionApplicationStatus } from '../domain/promotionApplicationStatus';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
@@ -24,13 +16,14 @@ import {
 /**
  * P4.4: apply/revoke promotions on a user_membership.
  *
- * Server recomputes final_price from the plan's base_price + (#487 stage 3)
- * the Membership Fee Benefit of every currently-applied promo — one per
- * promotion since #635 stage 5. Recomputation is server-only; the ledger records
- * an 'adjustment' event. Recomputation only happens at these mutation points
- * (assignment, promotion apply/revoke) — there is no scheduled job that
- * reverts final_price on its own once a period benefit's duration_months
- * window lapses without a new mutation; that's a possible future stage 4/5.
+ * Applying or revoking a Promotion changes what the assignment's Membership Fee
+ * comes to — it never *stores* that number. Since #635 stage 15 there is no
+ * `user_memberships.final_price` to recompute: the fee is resolved from the
+ * assignment's own snapshot and its standing applications whenever it is read
+ * (`membership-fee-pricing.ts`), which is also why a Promotion whose Free/Paid/
+ * Bonus timeline has run out stops discounting without any mutation to trigger
+ * it. What these handlers still write is the ledger: an `adjustment` event for
+ * the difference this apply or revoke makes to the next cycle.
  */
 
 // #635 stage 7: `applied_by` stores the acting user's id (the same value
@@ -275,208 +268,58 @@ async function withSnapshot(row: any) {
 }
 
 /**
- * Which `(application, duration_months)` pairs are still inside their window,
- * as MySQL itself decides it: `applied_at + INTERVAL n MONTH > NOW()`.
+ * #635 stage 15 — what this assignment's Membership Fee costs *now*, and who
+ * owns it.
  *
- * The durations come out of each application's snapshot JSON, so the check
- * cannot be a plain join any more (#635 stage 7) — but it stays in SQL rather
- * than being re-derived in JS, because `applied_at` is a database timestamp
- * and month arithmetic clamps at end of month. One round trip for the whole
- * set; a benefit with no duration never reaches here (it never expires).
- */
-async function effectiveDurations(
-  tx: Tx, pairs: { applicationId: number; months: number }[],
-): Promise<Set<string>> {
-  if (pairs.length === 0) return new Set();
-  const { rows } = await tx.query(
-    pairs.map(() => `
-      SELECT ? AS application_id, ? AS months,
-             (applied_at + INTERVAL ? MONTH > NOW()) AS in_effect
-      FROM user_membership_promotions WHERE id = ?`).join(' UNION ALL '),
-    pairs.flatMap((p) => [p.applicationId, p.months, p.months, p.applicationId]),
-  );
-  return new Set(
-    (rows as any[])
-      .filter((r) => Number(r.in_effect) === 1)
-      .map((r) => `${r.application_id}:${r.months}`),
-  );
-}
-
-/**
- * Every application still standing on this assignment, as the shared fee rule
- * needs it — read inside the caller's transaction, because `computeFinalPrice`
- * runs immediately after the apply/revoke that changed the set (the `db`-scoped
- * `loadPromotionApplications` would not see it yet).
+ * Until stage 15 this was `computeFinalPrice()`: it resolved the fee and the
+ * caller wrote it to `user_memberships.final_price`. The column is gone
+ * (migration 191) — a single number with no date in it could not say that a
+ * Promotion's Membership Fee Benefit ends with the Promotion's own Free/Paid/Bonus
+ * timeline — so nothing is written any more. The fee is resolved from the
+ * assignment's own snapshot and its standing applications whenever it is needed
+ * (`membership-fee-pricing.ts`), and this helper exists only to answer two
+ * questions an apply or a revoke still has: what does the response say the fee is
+ * now, and did that change enough to deserve an `adjustment` on the ledger.
  *
- * §16 precedence, the same as everywhere else: the application's own snapshot
- * owns its benefits *and* its Free/Paid/Bonus months; only an application with
- * no snapshot at all (applied before migration 149) reads the Promotion live.
- * `pay_beforehand_months` was never snapshotted, so it is always live.
+ * Read through the caller's transaction, so the application it just inserted (or
+ * revoked) is already part of the answer.
  */
-async function loadStandingApplicationsForPricing(
+async function currentMembershipFee(
   tx: Tx, gymId: string, userMembershipId: number,
-): Promise<AppliedPromotionForBilling[]> {
+): Promise<{ price: number; member_id: number } | null> {
   const { rows } = await tx.query(
-    `SELECT ump.id, ump.promotion_id, ump.snapshot, ump.applied_at, ump.revoked_at,
-            p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months,
-            p.pay_beforehand_months
-     FROM user_membership_promotions ump
-     LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ump.user_membership_id = ? AND ump.gym_id = ? AND ump.status = 'applied'
-     ORDER BY ump.applied_at ASC, ump.id ASC`,
+    'SELECT member_id FROM user_memberships WHERE id = ? AND gym_id = ?',
     [userMembershipId, gymId],
   );
-  return Promise.all(rows.map(async (row: any) => {
-    const snap = row.snapshot as PromotionSnapshot | null;
-    const benefits = snap
-      ? membershipFeeBenefitsFromSnapshot(snap)
-      : (await fetchLiveBenefits(tx, row.promotion_id)).membership_fee_benefits;
-    const num = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
-    return {
-      name: (snap?.name as string | undefined) ?? row.promotion_name ?? null,
-      appliedAt: toDateOnly(row.applied_at),
-      revokedAt: row.revoked_at != null ? toDateOnly(row.revoked_at) : null,
-      freeMonths: num(snap?.free_months ?? row.free_months),
-      paidMonths: num(snap?.paid_months ?? row.paid_months),
-      bonusMonths: num(snap?.bonus_months ?? row.bonus_months),
-      payBeforehandMonths: num(row.pay_beforehand_months),
-      membershipFeeBenefits: benefits.map((b): MembershipFeeBenefit => ({
-        action: (b.action ?? null) as MembershipFeeBenefit['action'],
-        value: b.value ?? null,
-        enabled: !!b.enabled,
-        durationMonths: b.duration_months ?? null,
-      })),
-    };
-  }));
+  if (rows.length === 0) return null;
+  const priced = await priceMembershipFeeNow(gymId, userMembershipId, tx);
+  if (priced == null) return null;
+  return { price: priced.amount, member_id: Number(rows[0].member_id) };
 }
 
 /**
- * The cycle `final_price` speaks for: the next one this assignment will actually
- * be charged. "The agreed price" is only meaningful on a date once a Promotion's
- * benefit can end (#635 stage 12), and this is the date the member's next charge
- * falls on.
- *
- * Never a date already past, even when `next_billing_date` is (an assignment
- * whose run was missed, or a fixture): the column is read as "what this member
- * pays now", so pricing it on a cycle from before the Promotion was even applied
- * would report a discount the staff screen had just been asked to add. And never
- * before `starts_at` — nothing is waived, or discounted, before the contract it
- * belongs to begins.
+ * The `adjustment` ledger row an apply or a revoke leaves behind: what the
+ * assignment's fee was worth on its next cycle before the change, and what it is
+ * worth after. Both are resolved the same way, so the delta is the change the
+ * Promotion actually made rather than the difference between two stored numbers
+ * written under different rules.
  */
-function pricingDateFor(um: any): string {
-  const startsAt = toDateOnly(um.starts_at);
-  const today = new Date().toISOString().slice(0, 10);
-  const next = um.next_billing_date != null ? toDateOnly(um.next_billing_date) : startsAt;
-  const date = next > today ? next : today;
-  return date > startsAt ? date : startsAt;
-}
-
-async function computeFinalPrice(tx: Tx, gymId: string, userMembershipId: number) {
-  const { rows: umRows } = await tx.query(
-    `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price, um.final_price,
-            um.membership_fee_price, um.starts_at, um.next_billing_date,
-            um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
-            p.free_months AS plan_free_months,
-            p.paid_months AS plan_paid_months,
-            p.bonus_months AS plan_bonus_months,
-            p.pay_beforehand_months AS plan_pay_beforehand_months,
-            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-             OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
-             OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
-            ) AS has_billing_snapshot
-     FROM user_memberships um
-     LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-     WHERE um.id = ? AND um.gym_id = ?`,
-    [userMembershipId, gymId],
+async function recordFeeAdjustment(tx: Tx, params: {
+  gymId: string; userMembershipId: number; memberId: number;
+  before: number; after: number; source: string; actorUserId: string | null; notes: string;
+}): Promise<void> {
+  if (Math.abs(params.after - params.before) <= 0.001) return;
+  const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
+  const chargeTypeId = ctRows[0]?.id ?? null;
+  await tx.query(
+    `INSERT INTO billing_events
+     (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+     VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, ?)`,
+    [
+      params.gymId, params.userMembershipId, params.memberId, chargeTypeId,
+      params.source, params.actorUserId, params.after - params.before, params.notes,
+    ],
   );
-  if (umRows.length === 0) return null;
-  const um = umRows[0];
-  const previousFinal = um.final_price != null ? parseFloat(um.final_price) : null;
-
-  // #635 stage 12 — the corrected rule: the fee this assignment owes on the
-  // cycle it is about to be charged, resolved by `resolveMembershipFee`, so a
-  // Promotion's Membership Fee Benefit stops with the Promotion's own
-  // Free/Paid/Bonus timeline instead of surviving forever in this column.
-  //
-  // The regular price it starts from is `regularMembershipFee()` — the assignment's
-  // own frozen fee (§13), else its Plan's price window — never `base_price`: that
-  // column is snapshotted from `effectivePrice()`, which has returned a constant 0
-  // since migration 058 dropped `membership_plans.base_price`, so the legacy path
-  // below discounts from zero for every assignment created through the API.
-  if (await isDateAwareMembershipFeeEnabled()) {
-    const regular = (await regularMembershipFee(gymId, um, toDateOnly(um.starts_at)))
-      ?? parseFloat(um.base_price);
-    const charge = resolveMembershipFee(regular, pricingDateFor(um), {
-      startsAt: toDateOnly(um.starts_at),
-      planDuration: Number(um.has_billing_snapshot) === 1
-        ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
-        : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
-      promotions: await loadStandingApplicationsForPricing(tx, gymId, userMembershipId),
-    });
-    return { price: charge.amount, member_id: um.member_id, previousFinal };
-  }
-  // ── The pre-stage-12 rule, kept until the flag above is switched on ──────
-  //
-  // A standing application's Membership Fee Benefit applies whatever the date,
-  // gated only by its own `duration_months`: a Promotion whose promotional
-  // months have elapsed keeps discounting. That is the overcharge/undercharge
-  // the drift report quantifies before the corrected rule moves any money.
-  //
-  // base_price is snapshotted onto the membership at assignment time (see
-  // effectivePrice() in user-memberships.ts) and is never null — membership_plans
-  // itself has carried no price column since migration 058, so there is no plan
-  // fallback to join for.
-  let price = parseFloat(um.base_price);
-
-  // #487 stage 3: the Membership Fee Benefit's action/value affects real
-  // billing, gated by `duration_months` counted from when the promotion was
-  // applied (`ump.applied_at`); a NULL duration means no expiration.
-  // `quantity`/`frequency_interval`/`frequency_unit` are left alone here:
-  // they describe how a count-based benefit recurs, not whether the
-  // Membership Fee action is currently in effect.
-  //
-  // #635 stage 5: one benefit, one table. This used to be two — the same
-  // benefit was configurable as a `promotion_charge_benefits` row (applying
-  // for as long as the promotion was applied) *and* as a
-  // `promotion_period_benefits` row, and both were applied in turn. Both
-  // tables are gone (migration 179) and their membership-fee rows migrated
-  // into `promotion_membership_fee_benefits`.
-  //
-  // #635 stage 7: it is read from the *application's* snapshot rather than
-  // joined live off the Promotion. This was the last path by which editing a
-  // Promotion could still move an existing assignment's price (§13/§16):
-  // final_price is recomputed at every apply/revoke, so a Promotion repriced
-  // between two of them used to reprice everything already applied. Only an
-  // application with no snapshot (applied before migration 149) still reads
-  // the Promotion's current definition — it has nothing else to read.
-  const { rows: applications } = await tx.query(
-    `SELECT id, promotion_id, snapshot
-     FROM user_membership_promotions
-     WHERE user_membership_id = ? AND gym_id = ? AND status = 'applied'
-     ORDER BY applied_at ASC, id ASC`,
-    [userMembershipId, gymId],
-  );
-  const perApplication = await Promise.all(applications.map(async (app: any) => ({
-    id: app.id as number,
-    benefits: app.snapshot
-      ? membershipFeeBenefitsFromSnapshot(app.snapshot)
-      : (await fetchLiveBenefits(tx, app.promotion_id)).membership_fee_benefits,
-  })));
-  const effective = await effectiveDurations(
-    tx,
-    perApplication.flatMap(({ id, benefits }) => benefits
-      .filter((b) => b.enabled && b.action != null && b.duration_months != null)
-      .map((b) => ({ applicationId: id, months: b.duration_months as number }))),
-  );
-  for (const { id, benefits } of perApplication) {
-    for (const b of benefits) {
-      if (!b.enabled || b.action == null) continue;
-      if (b.duration_months != null && !effective.has(`${id}:${b.duration_months}`)) continue;
-      price = applyPeriodBenefit(price, b.action as PromotionBenefitAction, b.value ?? null);
-    }
-  }
-
-  return { price, member_id: um.member_id, previousFinal };
 }
 
 /**
@@ -558,7 +401,7 @@ export async function applyPromotionToMembership(
   source: string,
   umId: number,
   promotionId: number,
-): Promise<{ user_membership_id: number; promotion_id: number; final_price: number }> {
+): Promise<{ user_membership_id: number; promotion_id: number; membership_fee: number }> {
   return db.transaction(async (tx) => {
     const { rows: umRows } = await tx.query(
       'SELECT id, member_id, membership_plan_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
@@ -566,6 +409,9 @@ export async function applyPromotionToMembership(
     );
     if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
     const um = umRows[0];
+    // What the next cycle is worth *before* this application exists — the other
+    // half of the `adjustment` ledger row below (#635 stage 15).
+    const feeBefore = (await currentMembershipFee(tx, gymId, umId))?.price ?? 0;
 
     const { rows: promoRows } = await tx.query(
       `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
@@ -627,22 +473,14 @@ export async function applyPromotionToMembership(
     }
     await snapshotPromotionGrants(tx, gymId, applicationId, promotionId);
 
-    const calc = await computeFinalPrice(tx, gymId, umId);
+    const calc = await currentMembershipFee(tx, gymId, umId);
     if (!calc) throw Object.assign(new Error('Recompute failed'), { status: 500 });
-    const prevFinal = calc.previousFinal;
-    await tx.query('UPDATE user_memberships SET final_price = ? WHERE id = ? AND gym_id = ?', [calc.price, umId, gymId]);
-
-    if (prevFinal !== null && Math.abs(prevFinal - calc.price) > 0.001) {
-      const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
-      const chargeTypeId = ctRows[0]?.id ?? null;
-      await tx.query(
-        `INSERT INTO billing_events
-         (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-         VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, 'Promotion applied')`,
-        [gymId, umId, calc.member_id, chargeTypeId, source, userId, calc.price - prevFinal],
-      );
-    }
-    return { user_membership_id: umId, promotion_id: promotionId, final_price: calc.price };
+    await recordFeeAdjustment(tx, {
+      gymId, userMembershipId: umId, memberId: calc.member_id,
+      before: feeBefore, after: calc.price,
+      source, actorUserId: userId, notes: 'Promotion applied',
+    });
+    return { user_membership_id: umId, promotion_id: promotionId, membership_fee: calc.price };
   });
 }
 
@@ -815,6 +653,9 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
       );
       if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
       const um = umRows[0];
+      // The fee this assignment owes on its next cycle before this application
+      // exists (#635 stage 15) — the `before` of the adjustment below.
+      const feeBefore = (await currentMembershipFee(tx, gymId, umId))?.price ?? 0;
 
       // Load promotion
       const { rows: promoRows } = await tx.query(
@@ -890,27 +731,18 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
       }
       await snapshotPromotionGrants(tx, gymId, applicationId, Number(promotion_id));
 
-      // Recompute final_price
-      const calc = await computeFinalPrice(tx, gymId, umId);
+      // #635 stage 15 — nothing is written back to the assignment: what it now
+      // owes is resolved from its snapshot and its standing applications, and the
+      // ledger records the change this apply made to it.
+      const calc = await currentMembershipFee(tx, gymId, umId);
       if (!calc) throw Object.assign(new Error('Recompute failed'), { status: 500 });
-      const prevFinal = calc.previousFinal;
-      await tx.query(
-        'UPDATE user_memberships SET final_price = ? WHERE id = ? AND gym_id = ?',
-        [calc.price, umId, gymId],
-      );
-
-      // Ledger: adjustment for the delta
-      if (prevFinal !== null && Math.abs(prevFinal - calc.price) > 0.001) {
-        const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
-        const chargeTypeId = ctRows[0]?.id ?? null;
-        await tx.query(
-          `INSERT INTO billing_events
-           (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-           VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, 'Promotion applied')`,
-          [gymId, umId, calc.member_id, chargeTypeId, role === 'admin' ? 'admin' : 'employee', userId, calc.price - prevFinal],
-        );
-      }
-      return { user_membership_id: umId, promotion_id, final_price: calc.price };
+      await recordFeeAdjustment(tx, {
+        gymId, userMembershipId: umId, memberId: calc.member_id,
+        before: feeBefore, after: calc.price,
+        source: role === 'admin' ? 'admin' : 'employee', actorUserId: userId,
+        notes: 'Promotion applied',
+      });
+      return { user_membership_id: umId, promotion_id, membership_fee: calc.price };
     });
     recordAudit(req, { action: 'apply_promotion', entityType: 'user_membership', entityId: umId, next: applied });
     res.status(201).json(applied);
@@ -926,6 +758,9 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
   const promotionId = parseInt(String(req.params.promotionId), 10);
   try {
     const result = await db.transaction(async (tx) => {
+      // What the next cycle is worth while the application still stands (#635
+      // stage 15) — the `before` of the adjustment this revoke records.
+      const feeBefore = (await currentMembershipFee(tx, gymId, umId))?.price ?? 0;
       // #511 (stage 3): revoked_at stamps precisely when this promotion
       // stopped affecting billing, so the Billing Events range calculation
       // (assignedPlanBillingEvents.ts) can tell which persisted events fell
@@ -936,21 +771,15 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
         [umId, promotionId, gymId],
       );
       if (rowCount === 0) return null;
-      const calc = await computeFinalPrice(tx, gymId, umId);
+      const calc = await currentMembershipFee(tx, gymId, umId);
       if (!calc) return null;
-      const prevFinal = calc.previousFinal;
-      await tx.query('UPDATE user_memberships SET final_price = ? WHERE id = ? AND gym_id = ?', [calc.price, umId, gymId]);
-      if (prevFinal !== null && Math.abs(prevFinal - calc.price) > 0.001) {
-        const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
-        const chargeTypeId = ctRows[0]?.id ?? null;
-        await tx.query(
-          `INSERT INTO billing_events
-           (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-           VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, 'Promotion revoked')`,
-          [gymId, umId, calc.member_id, chargeTypeId, role === 'admin' ? 'admin' : 'employee', userId, calc.price - prevFinal],
-        );
-      }
-      return { final_price: calc.price };
+      await recordFeeAdjustment(tx, {
+        gymId, userMembershipId: umId, memberId: calc.member_id,
+        before: feeBefore, after: calc.price,
+        source: role === 'admin' ? 'admin' : 'employee', actorUserId: userId,
+        notes: 'Promotion revoked',
+      });
+      return { membership_fee: calc.price };
     });
     if (!result) return res.status(404).json({ error: 'Applied promotion not found' });
     recordAudit(req, { action: 'revoke_promotion', entityType: 'user_membership', entityId: umId, next: { promotion_id: promotionId, ...result } });

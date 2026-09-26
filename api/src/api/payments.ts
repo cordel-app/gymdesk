@@ -14,6 +14,11 @@ import {
 } from '../domain/billingEventStatus';
 import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
+import {
+  MEMBERSHIP_FEE_COLUMNS,
+  MembershipFeeRow,
+  loadMembershipFeeResolvers,
+} from './membership-fee-pricing';
 
 /**
  * #129: Payments module — operational payment actions over billing_events.
@@ -312,18 +317,19 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     if (q.member_id !== undefined) { futureWhere.push('um.member_id = ?'); futureParams.push(q.member_id); }
 
     const includeScheduled = !q.status || q.status.includes('scheduled');
-    const activeRows = includeScheduled ? (await db.query<{
+    const activeRows = includeScheduled ? (await db.query<MembershipFeeRow & {
       user_membership_id: number; member_id: number; member_name: string | null;
       plan_name: string | null; next_billing_date: Date | string;
       recurring_billing_interval: number; recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
-      final_price: string; currency: string | null;
+      currency: string | null;
     }>(
       `SELECT um.id AS user_membership_id, um.member_id, m.name AS member_name,
               mp.name AS plan_name, um.next_billing_date,
               ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
-              um.final_price, NULL AS currency
+              ${MEMBERSHIP_FEE_COLUMNS}, NULL AS currency
        FROM user_memberships um
+       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
        LEFT JOIN members m ON m.id = um.member_id
        LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
@@ -334,9 +340,17 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const today = new Date().toISOString().slice(0, 10);
     const future: BillingEventRow[] = [];
 
+    // #635 stage 15 — each projected cycle is priced on its own date by the one
+    // Membership Fee rule, so a Free Period, a Pre-paid or Bonus Duration and a
+    // Promotion whose months have run out all show here exactly as the nightly run
+    // will charge them. Loaded for the whole page in a bounded number of queries;
+    // pricing the five dates of each assignment off that is pure.
+    const feeResolvers = await loadMembershipFeeResolvers(gymId, activeRows);
+
     for (const um of activeRows) {
       const nextPaymentDate = toDateOnly(um.next_billing_date);
       if (!nextPaymentDate) continue;
+      const priceOn = feeResolvers.get(um.id)!.priceOn;
       let date = nextPaymentDate;
       for (let i = 0; i < 5; i++) {
         if (date < today) {
@@ -357,7 +371,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           // Projected rows aren't persisted yet, so they have no creation instant.
           created_at: null,
           next_payment_date: nextPaymentDate,
-          amount: um.final_price,
+          amount: priceOn(date).amount.toFixed(2),
           event_type: 'upcoming',
           status: 'scheduled',
           currency: um.currency,

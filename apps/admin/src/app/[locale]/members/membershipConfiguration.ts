@@ -14,7 +14,14 @@ export interface MemberPlanRow {
   membership_plan_id: number | null;
   plan_name: string | null;
   status: string;
-  final_price: string | null;
+  /**
+   * #635 stage 15 — the Membership Fee this assignment owes on the cycle it is next
+   * charged for, resolved server-side from its own snapshot and its standing
+   * Promotions rather than read from a stored price.
+   */
+  membership_fee: number | null;
+  /** Its own regular fee (the snapshot's), edited in the Assigned Plan's BILLING & DURATION. */
+  membership_fee_price: number | null;
   starts_at: string | null;
   ends_at: string | null;
   next_billing_date: string | null;

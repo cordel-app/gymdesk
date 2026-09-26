@@ -39,7 +39,13 @@ interface Membership {
   id: number;
   membership_plan_id: number | null;
   base_price: string | null;
-  final_price: string | null;
+  /**
+   * #635 stage 15 — what the Membership Fee comes to on the cycle you are next
+   * charged for, resolved server-side for that date. There is no stored price: a
+   * free month, a pre-paid month and a Promotion whose months have run out are all
+   * already reflected here, exactly as the nightly run will charge them.
+   */
+  membership_fee: number | null;
   discount_reason: string | null;
   starts_at: string;
   ends_at: string | null;
@@ -150,13 +156,13 @@ export default function MembershipPage() {
   const pendingRequest = paymentRequests.find(r => r.status === 'pending') ?? null;
   const showStartPayment = !pendingRequest
     && membership?.status === 'active'
-    && !!membership?.final_price
-    && parseFloat(membership.final_price) > 0;
+    && membership?.membership_fee != null
+    && membership.membership_fee > 0;
 
   // Resolve amount and interval shown in the consent modal
   const consentAmount = pendingRequest
     ? parseFloat(pendingRequest.amount).toFixed(2)
-    : membership?.final_price ? parseFloat(membership.final_price).toFixed(2) : '';
+    : membership?.membership_fee != null ? membership.membership_fee.toFixed(2) : '';
   const consentCurrency = pendingRequest?.currency ?? 'EUR';
   const consentInterval = pendingRequest
     ? (pendingRequest.billing_interval ?? membership?.billing_interval ?? null)
@@ -250,7 +256,7 @@ export default function MembershipPage() {
           <div style={styles.row}>
             <dt style={styles.dt}>{t('membership.price')}</dt>
             <dd style={styles.dd}>
-              {membership.final_price ? parseFloat(membership.final_price).toFixed(2) : '—'}
+              {membership.membership_fee != null ? membership.membership_fee.toFixed(2) : '—'}
               {membership.discount_reason && (
                 <span style={styles.discount}> · {membership.discount_reason}</span>
               )}

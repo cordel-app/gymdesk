@@ -3,10 +3,15 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
-import { effectivePrice, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
+import {
+  attachMembershipFees,
+  effectivePrice,
+  LIST_SELECT as MEMBERSHIP_LIST_SELECT,
+  MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT,
+} from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
-import { snapshotAssignedPlan } from './assigned-plan-snapshot';
+import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
 import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { computeBillingForecast } from '../domain/billingForecast';
 import {
@@ -551,9 +556,9 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     const insertId: number = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, final_price, starts_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
-        [ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, eff.price, starts_at],
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, starts_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+        [ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, starts_at],
       );
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: ownerId,
@@ -597,9 +602,10 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     }
 
     const { rows } = await db.query(`${MEMBERSHIP_LIST_SELECT} WHERE um.id = ?`, [insertId]);
+    const [assigned] = await attachMembershipFees(gymId, rows);
     const { rows: coveredMembers } = await db.query(MEMBERSHIP_MEMBERS_SELECT, [insertId, gymId]);
-    recordAudit(req, { action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0] });
-    res.status(201).json({ ...rows[0], members: coveredMembers });
+    recordAudit(req, { action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: assigned });
+    res.status(201).json({ ...assigned, members: coveredMembers });
   } catch (err: any) {
     // #634 (migration 172): several Membership Plans may be active for the same
     // Member at once, so a duplicate key here means one of the selected Members
@@ -1108,7 +1114,15 @@ membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res,
 // Terminal (cancelled/expired) memberships and already-generated Billing Events
 // are never touched — this only changes what an ongoing Assigned Plan costs from
 // now on. A negotiated discount (an Assigned Plan with a discount_reason) keeps
-// its agreed final price; only its plan-price snapshot is refreshed.
+// its agreed fee; only its plan-price snapshot is refreshed.
+//
+// #635 stage 15 — the price it pushes is the assignment's own
+// `membership_fee_price`, the regular fee its snapshot owns, because the stored
+// `final_price` this used to write is gone (migration 191) and a Promotion's effect
+// on that fee is resolved per cycle instead. Writing a snapshot column means an
+// assignment that never captured a snapshot has to capture one first
+// (`materialiseAssignedPlanSnapshot`): the fallback is all-or-nothing, so setting
+// this column alone would leave such an assignment reading empty benefit sections.
 membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
@@ -1120,9 +1134,30 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 
   try {
     const result = await db.transaction(async (tx) => {
+      const { rows: targets } = await tx.query(
+        `SELECT id, starts_at FROM user_memberships
+          WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
+            AND (discount_reason IS NULL OR discount_reason = '')`,
+        [req.params.id, gymId, ...ASSIGNABLE_STATUSES],
+      );
+      for (const target of targets) {
+        // The fee such an assignment bills *today* — its Plan's price window at its
+        // own start date — so what is frozen is what it already resolves live, and
+        // only the push below changes it.
+        const startsAt = String(target.starts_at instanceof Date
+          ? target.starts_at.toISOString().slice(0, 10)
+          : target.starts_at).slice(0, 10);
+        const atStart = await effectivePrice(Number(req.params.id), gymId, startsAt);
+        await materialiseAssignedPlanSnapshot(tx, {
+          gymId,
+          userMembershipId: Number(target.id),
+          membershipPlanId: Number(req.params.id),
+          membershipFeePrice: atStart && atStart.plan_price_id != null ? atStart.price : null,
+        });
+      }
       const { rowCount: updated } = await tx.query(
         `UPDATE user_memberships
-            SET base_price = ?, plan_price_id = ?, final_price = ?
+            SET base_price = ?, plan_price_id = ?, membership_fee_price = ?
           WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
             AND (discount_reason IS NULL OR discount_reason = '')`,
         [price, current.id, price, req.params.id, gymId, ...ASSIGNABLE_STATUSES],

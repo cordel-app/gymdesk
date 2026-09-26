@@ -280,8 +280,9 @@ describe('the other assignment entry points snapshot too', () => {
     expect(body.snapshot.periodical_benefits).toHaveLength(1);
   });
 
-  // A Plan with no price window has no regular fee to freeze: `final_price` is
-  // the *agreed* price after discounts, so it must not be written here.
+  // A Plan with no price window has no regular fee to freeze, and nothing else may
+  // be written into the column: since #635 stage 15 it is the only fee an
+  // assignment has, so a wrong value here is what it bills.
   it('leaves the regular fee null when the Plan has no price window', async () => {
     const planId = await createPlan(gymId);
     const res = await assign(gymId, {
@@ -389,8 +390,8 @@ describe('an assignment with no snapshot still reads back', () => {
     // columns set, no benefit rows. The reader must not treat that as "this
     // assignment bills nothing" — stage 3 falls back to the live catalogue.
     const { insertId } = await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, final_price)
-       VALUES (?, ?, NULL, 'active', ?, 40, 40)`,
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, NULL, 'active', ?, 40)`,
       [gymId, await createMember(gymId), dayOffset(-10)],
     );
     umId = insertId;

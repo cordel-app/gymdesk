@@ -61,7 +61,6 @@ interface AssignmentRow {
   id: number;
   membership_plan_id: number | null;
   status: string;
-  final_price: string | number | null;
   starts_at: unknown;
   ends_at: unknown;
   plan_name: string | null;
@@ -155,8 +154,8 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
 /** Builds the engine's input for one Member and runs it. Read-only end to end. */
 export async function computeMemberBillingSimulation(gymId: string, memberId: number): Promise<BillingSimulationResult> {
   const { rows } = await db.query<AssignmentRow>(
-    `SELECT um.id, um.membership_plan_id, um.status, um.final_price, um.starts_at, um.ends_at,
-            um.membership_fee_price,
+    `SELECT um.id, um.membership_plan_id, um.status, um.starts_at, um.ends_at,
+            um.membership_fee_price, um.base_price,
             um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
             p.name AS plan_name,
             p.free_months AS plan_free_months,

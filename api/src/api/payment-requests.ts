@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { priceMembershipFeeNow } from './membership-fee-pricing';
 import { getPaymentProvider } from '../payments';
 import { parseQuery, z } from '../infra/validate';
 
@@ -73,12 +74,11 @@ paymentRequestsRouter.post(
     try {
       const { rows: umRows } = await db.query<{
         member_id: number;
-        final_price: string;
         membership_plan_id: number;
         member_email: string;
         member_name: string;
       }>(
-        `SELECT um.member_id, um.final_price, um.membership_plan_id,
+        `SELECT um.member_id, um.membership_plan_id,
                 m.email AS member_email, m.name AS member_name
          FROM user_memberships um
          JOIN members m ON m.id = um.member_id
@@ -93,7 +93,19 @@ paymentRequestsRouter.post(
       );
       if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
-      const amount = Math.round(parseFloat(um.final_price) * 100);
+      // #635 stage 15 — the Membership Fee this assignment owes on the cycle it is
+      // about to be charged, resolved from its own snapshot and its standing
+      // Promotions. Until stage 15 this was `user_memberships.final_price`, which
+      // carried no date: a link sent after a Promotion's months had run out asked
+      // for the promotional price, and a cycle the contract waives asked for money
+      // at all.
+      const priced = await priceMembershipFeeNow(gymId, Number(user_membership_id));
+      if (priced == null) return res.status(404).json({ error: 'Membership not found' });
+      if (priced.waived) {
+        return res.status(400).json({ error: 'This membership owes nothing for its next billing cycle' });
+      }
+      const fee = priced.amount;
+      const amount = Math.round(fee * 100);
       const orderId = crypto.randomUUID();
       const pageToken = crypto.randomUUID();
       const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
@@ -121,7 +133,7 @@ paymentRequestsRouter.post(
             initiated_by, source)
          VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin')`,
         [
-          gymId, user_membership_id, um.member_id, um.final_price, ctRows[0].id,
+          gymId, user_membership_id, um.member_id, fee, ctRows[0].id,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
           (req as any).auth.userId,
         ],

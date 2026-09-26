@@ -28,7 +28,6 @@ function fmtMoney(v: string | number | null) {
 interface EditForm {
   starts_at: string;
   ends_at: string;
-  final_price: string;
   discount_reason: string;
   discount_expires_at: string;
 }
@@ -84,7 +83,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
     setEditForm({
       starts_at: detail.starts_at.slice(0, 10),
       ends_at: detail.ends_at ? detail.ends_at.slice(0, 10) : '',
-      final_price: detail.final_price != null ? String(detail.final_price) : '',
       discount_reason: detail.discount_reason ?? '',
       discount_expires_at: detail.discount_expires_at ? detail.discount_expires_at.slice(0, 10) : '',
     });
@@ -108,7 +106,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         body: JSON.stringify({
           starts_at: editForm.starts_at,
           ends_at: editForm.ends_at || null,
-          final_price: editForm.final_price,
           discount_reason: editForm.discount_reason || null,
           discount_expires_at: editForm.discount_expires_at || null,
         }),
@@ -224,9 +221,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
             <LabeledInput label={t('label_end_date')}>
               <input type="date" value={editForm.ends_at} onChange={(e) => setEditForm({ ...editForm, ends_at: e.target.value })} style={inputStyle} />
             </LabeledInput>
-            <LabeledInput label={t('detail_effective_price')}>
-              <input type="number" min={0} step="0.01" value={editForm.final_price} onChange={(e) => setEditForm({ ...editForm, final_price: e.target.value })} style={inputStyle} />
-            </LabeledInput>
             <LabeledInput label={t('label_discount_reason')}>
               <input type="text" value={editForm.discount_reason} onChange={(e) => setEditForm({ ...editForm, discount_reason: e.target.value })} style={inputStyle} />
             </LabeledInput>
@@ -253,7 +247,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
       </Section>
 
       <Section label={t('section_pricing')}>
-        <Field label={t('detail_effective_price')}>{fmtMoney(detail.final_price)}</Field>
+        {/* #635 stage 15 — the fee this assignment owes on its next cycle, resolved
+            rather than stored. Its own regular fee is edited in BILLING & DURATION. */}
+        <Field label={t('detail_effective_price')}>{fmtMoney(detail.membership_fee)}</Field>
         {detail.billing_policy && (
           <Field label={t('label_billing_frequency')}>
             {detail.billing_policy.recurring_billing_interval} / {detail.billing_policy.recurring_billing_unit}

@@ -475,10 +475,10 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
     const memberId = await createMember(gym);
     const { insertId } = await db.query(
       `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, final_price, starts_at, status,
+         (member_id, gym_id, membership_plan_id, base_price, starts_at, status,
           free_months, paid_months, bonus_months, recurring_billing_interval, recurring_billing_unit,
           membership_fee_price)
-       VALUES (?, ?, ?, 0, 80, ?, 'active', 1, 12, 2, 1, 'month', 80)`,
+       VALUES (?, ?, ?, 0, ?, 'active', 1, 12, 2, 1, 'month', 80)`,
       [memberId, gym, planId, dayOffset(0)],
     );
     await db.query(

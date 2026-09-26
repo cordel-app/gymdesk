@@ -133,7 +133,7 @@ describe('resolveMembershipFee — an applied Promotion outranks the Plan', () =
     expect(charge.benefits[0]).toMatchObject({ source: 'promotion', action: 'fixed_discount', value: 15 });
   });
 
-  // §16, and why `final_price` — one number with no date attached — cannot be
+  // §16, and why one stored number with no date attached cannot be
   // the whole answer: the benefit stops once the Promotion's own months are up.
   it('stops applying the benefit once the Promotion\'s months have run out', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-05-01', context({
@@ -162,13 +162,13 @@ describe('resolveMembershipFee — an applied Promotion outranks the Plan', () =
  * #635 stage 12 — one rule, every path.
  *
  * The stage's premise was that three code paths answered different prices for
- * the same cycle: `final_price` (what the nightly run charged) and the Billing
+ * the same cycle: the stored price (what the nightly run charged) and the Billing
  * Events projection both discounted for ever, while the Billing Simulation and My
  * Membership stopped the benefit at the end of the Promotion's own timeline. The
  * thread chose the timeline — answer (a) — so these cases pin the chosen rule and
  * then assert that the paths which can be exercised purely agree on it, cycle by
- * cycle. The DB-backed ones (`computeFinalPrice`, `POST /billing/run`) are pinned
- * against the same numbers in `billing-run-date-aware-fee.test.ts`.
+ * cycle. The DB-backed ones (the staff screens, a payment link, `POST /billing/run`)
+ * are pinned against the same numbers in `membership-fee-dynamic-pricing.test.ts`.
  */
 describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its timeline', () => {
   // The thread's table, row 1: applied 2026-01-01, Paid Duration 3, "20% off",
@@ -189,7 +189,8 @@ describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its 
   });
 
   // The thread's table, row 2. Left to itself an application that stands for ever
-  // would discount for ever, which is exactly what a stored `final_price` did.
+  // would discount for ever, which is exactly what the stored price did (stage 15
+  // removed it: there is nothing left that can outlive the timeline).
   it('never applies the benefit of a Promotion configured with no Free/Paid/Bonus months', () => {
     const unbounded = promotion({
       membershipFeeBenefits: [{ action: 'percentage_discount', value: 20, enabled: true, durationMonths: null }],
@@ -245,7 +246,7 @@ describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its 
       })],
     });
     const upcoming = computeUpcomingPayments(
-      '2099-02-01', 1, 'month', String(REGULAR),
+      '2099-02-01', 1, 'month',
       (date) => resolveMembershipFee(REGULAR, date, future).amount,
     );
     expect(upcoming.map((p) => `${p.date}:${p.amount}`)).toEqual(['2099-02-01:32.00', '2099-03-01:40.00']);

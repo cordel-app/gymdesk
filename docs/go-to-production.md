@@ -383,25 +383,31 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       deploy output) rather than deleting rows to make the narrow one fit. Roll the API
       back first if the constraint has to narrow; the rows themselves are history and
       should stay.
-- [ ] **Review the Membership Fee drift report, then switch
-      `billing.date_aware_membership_fee` on** (#635 stage 12): the flag ships
-      **disabled** (migration 186), so the nightly run keeps charging
-      `user_memberships.final_price` — a Promotion whose Free/Paid/Bonus months have
-      elapsed keeps discounting every later cycle. Turning it on prices each cycle
-      through `resolveMembershipFee()`, which *raises* the charge of every member in
-      that state. Before flipping it, per gym: read
-      **Payments → Membership Fee Drift** (#635 stage 14 — the page over
-      `GET /user-memberships/reports/membership-fee-drift`; the `drift` counter and the
-      per-assignment log lines of the nightly run say the same thing), confirm the
-      assignments it lists and tell the gyms whose members will start paying more. The
-      page is read-only and switches nothing: flipping the flag stays a deliberate act in
-      Cordel → Feature Flags. The epic's remaining acceptance criteria are not met until
-      the flag is on.
-- [ ] **Migration 186's `down()` deliberately keeps its row** (#635 stage 12): a missing
-      feature-flag key counts as *enabled*, so deleting
-      `billing.date_aware_membership_fee` would switch the corrected pricing **on**
-      during a rollback and move real money on the next run. Roll the API back and leave
-      the row at 0; remove it only together with the stage-12 code.
+- [x] **Review the Membership Fee drift report, then switch
+      `billing.date_aware_membership_fee` on** (#635 stage 12) — *superseded by stage 15*.
+      The review happened and its answer was to remove the switch rather than flip it:
+      *"remove the `billing.date_aware_membership_fee` feature flag entirely, as well as
+      the stored `final_price` approach."* Migration 191 drops the column, both flag rows
+      and the drift report, so the corrected pricing is simply how the system prices a
+      cycle. What the review was protecting against still happens on deploy, which is why
+      the item below exists.
+- [ ] **Announce that a lapsed Promotion stops discounting** (#635 stage 15): the nightly
+      run now prices every cycle through `resolveMembershipFee()`, so a member whose
+      Promotion's Free/Paid/Bonus months have elapsed starts paying their assignment's
+      regular fee — more than the stored `final_price` was charging them. There is no
+      longer a flag to stage this behind, so the notice has to go out before the deploy.
+      Who is affected, per gym:
+      `SELECT um.gym_id, COUNT(DISTINCT um.id) FROM user_memberships um JOIN user_membership_promotions ump ON ump.user_membership_id = um.id AND ump.status = 'applied' WHERE um.status = 'active' GROUP BY um.gym_id`
+      — then read each assignment's own cycle on **Assigned Plans** (its
+      `membership_fee` is what the run will charge). Run it *before* migration 191: after
+      it, the price the run used to charge is gone.
+- [ ] **Migration 191 must run *after* the API build that stops reading `final_price`**
+      (#635 stage 15): it drops the column, and the previous build selects it in the
+      nightly run, the payment-request routes and every assignment read. Deploy the API
+      first, then migrate — the same order as 176/177/179/184. Its `down()` re-adds the
+      column and backfills it from `membership_fee_price` (a Promotion's discount is not
+      re-baked in; the rolled-back `computeFinalPrice()` does that on the next
+      apply/revoke).
 - [ ] **Existing exercise images have no thumbnail** (#719 part 1): migration 187 adds
       `exercises.image_thumbnail_url` and backfills nothing, so every image uploaded
       through the old `POST /storage/uploads/exercise-image` route (one `<uuid>.png`,

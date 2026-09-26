@@ -22,7 +22,10 @@ interface Membership {
   membership_plan_id: number | null;
   base_price: string | null;
   plan_price_id: number | null;
-  final_price: string | null;
+  /** #635 stage 15 — the assignment's own regular fee (its snapshot), what an edit submits back. */
+  membership_fee_price: string | number | null;
+  /** What that fee comes to on the cycle the member is next charged for, resolved server-side. */
+  membership_fee: number | null;
   discount_reason: string | null;
   discount_expires_at: string | null;
   starts_at: string;
@@ -47,7 +50,7 @@ const emptyForm = {
   starts_at: today(),
   ends_at: '',
   status: 'active' as (typeof STATUSES)[number],
-  final_price: '',
+  membership_fee_price: '',
   discount_reason: '',
   discount_expires_at: '',
 };
@@ -121,7 +124,7 @@ export default function MembershipsPage() {
 
   // Compute the effective price whenever plan or start date changes in ADD mode
   // (or when editing but the user hasn't manually overridden). The user can
-  // still type a different final_price — that flips the override flag on.
+  // still type a different fee — that flips the override flag on.
   useEffect(() => {
     if (!modalOpen) return;
     const planId = parseInt(form.membership_plan_id, 10);
@@ -134,7 +137,7 @@ export default function MembershipsPage() {
         if (cancelled) return;
         const eff = effectivePrice(plan, prices, form.starts_at || today());
         setPriceHint(eff);
-        if (!priceOverridden) setForm((f) => ({ ...f, final_price: eff.toFixed(2) }));
+        if (!priceOverridden) setForm((f) => ({ ...f, membership_fee_price: eff.toFixed(2) }));
       })
       .catch(() => { if (!cancelled) setPriceHint(parseFloat(plan.base_price)); });
     return () => { cancelled = true; };
@@ -157,11 +160,11 @@ export default function MembershipsPage() {
       starts_at: day(m.starts_at),
       ends_at: day(m.ends_at),
       status: m.status,
-      final_price: m.final_price ?? '',
+      membership_fee_price: m.membership_fee_price != null ? String(m.membership_fee_price) : '',
       discount_reason: m.discount_reason ?? '',
       discount_expires_at: day(m.discount_expires_at),
     });
-    // Assume the existing final_price is intentional; only recompute-and-autofill
+    // Assume the existing fee is intentional; only recompute-and-autofill
     // if the user changes the plan or starts_at.
     setPriceOverridden(true);
     setPriceHint(null);
@@ -176,16 +179,16 @@ export default function MembershipsPage() {
     setError(null);
   }
 
-  function onFinalPriceChange(v: string) {
+  function onFeeChange(v: string) {
     setPriceOverridden(true);
-    setForm({ ...form, final_price: v });
+    setForm({ ...form, membership_fee_price: v });
   }
 
   const overrideActive = useMemo(() => {
-    if (!form.final_price || priceHint === null) return false;
-    const parsed = parseFloat(form.final_price);
+    if (!form.membership_fee_price || priceHint === null) return false;
+    const parsed = parseFloat(form.membership_fee_price);
     return !isNaN(parsed) && Math.abs(parsed - priceHint) > 0.005;
-  }, [form.final_price, priceHint]);
+  }, [form.membership_fee_price, priceHint]);
 
   async function handleSave() {
     if (!editing) {
@@ -194,8 +197,8 @@ export default function MembershipsPage() {
         return;
       }
     }
-    const parsedFinal = form.final_price ? parseFloat(form.final_price) : null;
-    if (form.final_price && (parsedFinal === null || isNaN(parsedFinal) || parsedFinal < 0)) {
+    const parsedFee = form.membership_fee_price ? parseFloat(form.membership_fee_price) : null;
+    if (form.membership_fee_price && (parsedFee === null || isNaN(parsedFee) || parsedFee < 0)) {
       setError(t('memberships.error_price'));
       return;
     }
@@ -212,11 +215,21 @@ export default function MembershipsPage() {
           starts_at: form.starts_at || null,
           ends_at: form.ends_at || null,
           status: form.status,
-          final_price: form.final_price === '' ? null : parsedFinal,
           discount_reason: form.discount_reason.trim() || null,
           discount_expires_at: form.discount_expires_at || null,
         };
         await apiFetch(`/user-memberships/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
+        // #635 stage 15 — the fee lives in the assignment's own snapshot, whose
+        // single writer is the Billing & Duration route (it materialises the
+        // snapshot of an assignment that never captured one before touching it).
+        // Only sent when it actually changed, so editing a date never rewrites it.
+        const previousFee = editing.membership_fee_price != null ? String(editing.membership_fee_price) : '';
+        if (form.membership_fee_price !== previousFee) {
+          await apiFetch(`/user-memberships/${editing.id}/billing-duration`, {
+            method: 'PUT',
+            body: JSON.stringify({ membership_fee_price: form.membership_fee_price === '' ? null : parsedFee }),
+          });
+        }
       } else {
         const body: Record<string, unknown> = {
           member_id: parseInt(form.member_id, 10),
@@ -224,8 +237,8 @@ export default function MembershipsPage() {
           starts_at: form.starts_at,
           ends_at: form.ends_at || null,
         };
-        if (overrideActive && parsedFinal !== null) {
-          body.final_price = parsedFinal;
+        if (overrideActive && parsedFee !== null) {
+          body.membership_fee_price = parsedFee;
           body.discount_reason = form.discount_reason.trim();
           if (form.discount_expires_at) body.discount_expires_at = form.discount_expires_at;
         }
@@ -258,7 +271,7 @@ export default function MembershipsPage() {
     { header: t('memberships.col_member'), render: (m) => m.member_name },
     { header: t('memberships.col_plan'),   render: (m) => m.plan_name ?? '—' },
     { header: t('memberships.col_status'), width: 110, render: (m) => <StatusBadge status={m.status} label={t(`status.${m.status}`)} /> },
-    { header: t('memberships.col_price'),  width: 110, render: (m) => m.final_price ? parseFloat(m.final_price).toFixed(2) : '—' },
+    { header: t('memberships.col_price'),  width: 110, render: (m) => m.membership_fee != null ? m.membership_fee.toFixed(2) : '—' },
     { header: t('memberships.col_starts'), width: 130, render: (m) => day(m.starts_at) },
     { header: t('memberships.col_ends'),   width: 130, render: (m) => day(m.ends_at) || <em style={{ color: '#888' }}>{t('memberships.ongoing')}</em> },
     {
@@ -357,13 +370,13 @@ export default function MembershipsPage() {
           </div>
         </div>
 
-        <FormLabel>{t('memberships.label_final_price')}</FormLabel>
+        <FormLabel>{t('memberships.label_membership_fee')}</FormLabel>
         <FormInput
           type="number"
           min="0"
           step="0.01"
-          value={form.final_price}
-          onChange={(e) => onFinalPriceChange(e.target.value)}
+          value={form.membership_fee_price}
+          onChange={(e) => onFeeChange(e.target.value)}
           placeholder="0.00"
         />
         {priceHint !== null && (

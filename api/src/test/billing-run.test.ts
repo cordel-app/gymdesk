@@ -66,7 +66,7 @@ async function createDueMembership(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, final_price, next_billing_date)
+       (gym_id, member_id, membership_plan_id, status, starts_at, membership_fee_price, next_billing_date)
      VALUES (?, ?, ?, 'active', '2000-01-01', ?, '2000-01-01')`,
     [gymId, memberId, planId, finalPrice],
   );
@@ -230,7 +230,7 @@ describe('POST /billing/run', () => {
     const planId = await createPlanWithPolicy(gymId);
     await db.query(
       `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, final_price, next_billing_date)
+         (gym_id, member_id, membership_plan_id, status, starts_at, membership_fee_price, next_billing_date)
        VALUES (?, ?, ?, 'active', CURDATE(), '29.99', DATE_ADD(CURDATE(), INTERVAL 30 DAY))`,
       [gymId, memberId, planId],
     );

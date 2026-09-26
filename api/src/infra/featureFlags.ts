@@ -45,31 +45,6 @@ export async function isFeatureEnabled(key: string): Promise<boolean> {
 }
 
 /**
- * #635 stage 12 — the switch for the corrected Membership Fee pricing.
- *
- * With it **off** (how migration 186 seeds it), `computeFinalPrice` and the
- * nightly run behave exactly as they did before stage 12: the fee a Promotion
- * discounted stays discounted for as long as the application stands. With it
- * **on**, both resolve the fee for the cycle being priced through
- * `resolveMembershipFee`, so a Promotion's Membership Fee Benefit ends with the
- * Promotion's own Free/Paid/Bonus timeline — which can *raise* what a member
- * whose promotional months already elapsed is charged. The thread asked for that
- * impact to be surfaced before it moves money, so it ships switchable and off:
- * `GET /user-memberships/membership-fee-drift` (and the run's own `drift`
- * counter) report every assignment it would reprice.
- *
- * Every read-only surface — the Billing Simulation, the Billing Events
- * projection, My Membership — resolves dates through the same rule regardless of
- * this flag: showing the agreed timeline correctly charges nobody.
- */
-export const DATE_AWARE_MEMBERSHIP_FEE_FLAG = 'billing.date_aware_membership_fee';
-
-/** Is the corrected (date-aware) Membership Fee pricing live for real billing? */
-export function isDateAwareMembershipFeeEnabled(): Promise<boolean> {
-  return isFeatureEnabled(DATE_AWARE_MEMBERSHIP_FEE_FLAG);
-}
-
-/**
  * Express middleware that blocks access to a navigation feature when it is
  * disabled. Checks the given key AND every ancestor key (split on '.'), so
  * disabling 'nutrition' also blocks 'nutrition.nutrition_library'.

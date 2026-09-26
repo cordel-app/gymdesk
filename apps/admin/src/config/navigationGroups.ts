@@ -179,11 +179,6 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.billing_events',
         featureKey: 'payments.billing_events',
       },
-      {
-        href: '/{{locale}}/payments/membership-fee-drift',
-        labelKey: 'nav.membership_fee_drift',
-        featureKey: 'payments.membership_fee_drift',
-      },
     ],
   },
   {
