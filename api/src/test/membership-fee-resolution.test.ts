@@ -4,6 +4,7 @@ import {
   SimulationPromotion,
   resolveMembershipFee,
 } from '../domain/billingSimulation';
+import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
 import { toPlanDuration } from '../domain/planDuration';
 import { computeMembershipFeePriceAt } from '../domain/assignedPlanBillingEvents';
 import { promotionTimelineEndsOn } from '../domain/promotionTimeline';
@@ -43,6 +44,7 @@ function context(over: Partial<MembershipFeeContext> = {}): MembershipFeeContext
   return {
     startsAt: '2026-01-01',
     planDuration: toPlanDuration(0, 0, 0),
+    personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
     promotions: [],
     ...over,
   };

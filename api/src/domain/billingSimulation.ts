@@ -48,6 +48,11 @@
 // with the Promotion's own Free/Paid/Bonus timeline everywhere (the thread's
 // stage 12 answer (a)); since stage 15 there is no stored agreed price left for
 // one of them to survive in.
+//
+// #772 adds the one thing in here that is *not* bounded in time: the Assigned
+// Plan's own Personal Membership Fee Benefit, applied on top of whatever the
+// Promotions and the Billing & Duration resolve, on every cycle for the whole
+// life of the assignment.
 
 import { advanceBillingDate } from './billingDate';
 import {
@@ -56,6 +61,11 @@ import {
   classifyPlanDurationPeriod,
   planDurationWaivesFee,
 } from './planDuration';
+import {
+  PersonalFeeBenefit,
+  applyPersonalFeeBenefit,
+  personalFeeBenefitApplies,
+} from './personalFeeBenefit';
 import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
 import {
   AppliedPromotionForBilling,
@@ -178,6 +188,8 @@ export interface SimulationAssignment {
    * `startsAt`, not from any Promotion's application date.
    */
   planDuration: PlanDuration;
+  /** #772 — the assignment's own Personal Membership Fee Benefit. */
+  personalFeeBenefit: PersonalFeeBenefit;
 }
 
 /**
@@ -198,6 +210,15 @@ export interface MembershipFeeContext {
    * ask the question.
    */
   promotions: AppliedPromotionForBilling[];
+  /**
+   * #772 — the assignment's own Personal Membership Fee Benefit. Unlike
+   * everything else here it is bounded by nothing: it is applied on top of
+   * whatever the Promotions and the Billing & Duration resolve, on every cycle
+   * for the whole life of the assignment. Required rather than optional so a
+   * new pricing path cannot silently forget it and charge a member the
+   * undiscounted fee.
+   */
+  personalFeeBenefit: PersonalFeeBenefit;
 }
 
 export interface BillingSimulationInput {
@@ -211,10 +232,13 @@ export interface SimulationBenefit {
   /**
    * `promotion` — an applied Promotion. `membership_plan` (#635 stage 8) — the
    * assignment's own Billing & Duration, whose Free Period and Bonus Duration
-   * waive the Membership Fee. A plan-sourced benefit carries no `name`: the
-   * line it sits on already names the Plan (`plan_name`).
+   * waive the Membership Fee. `personal` (#772) — the assignment's own
+   * Personal Membership Fee Benefit, which belongs to the contract rather than
+   * to any Promotion and so applies to every cycle. Neither of the latter two
+   * carries a `name`: the line they sit on already names the Plan
+   * (`plan_name`).
    */
-  source: 'promotion' | 'membership_plan';
+  source: 'promotion' | 'membership_plan' | 'personal';
   name: string | null;
   /** `included` = the item itself is granted by the Promotion (session/one-off/periodical benefit). */
   action: PromotionBenefitAction | 'included';
@@ -402,6 +426,11 @@ function cachePromotionTimeline(promo: AppliedPromotionForBilling) {
  * from what the simulation — and the Member's own My Membership page — shows.
  */
 export function resolveMembershipFee(regular: number, date: string, a: MembershipFeeContext): ResolvedCharge {
+  return withPersonalFeeBenefit(resolveAgreedMembershipFee(regular, date, a), a.personalFeeBenefit);
+}
+
+/** Everything that is bounded in time: the Promotions, then the Plan's own durations. */
+function resolveAgreedMembershipFee(regular: number, date: string, a: MembershipFeeContext): ResolvedCharge {
   const fromPromotions = resolvePromotionMembershipFee(regular, date, a.promotions);
   if (fromPromotions.promotional || fromPromotions.benefits.length > 0) return fromPromotions;
 
@@ -418,6 +447,37 @@ export function resolveMembershipFee(regular: number, date: string, a: Membershi
     benefits: [{ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: status }],
     promotional: true,
     pending: fromPromotions.pending,
+  };
+}
+
+/**
+ * #772 — the Personal Membership Fee Benefit, applied **last and always**.
+ *
+ * The ticket fixes both halves of that. *Last*, because it is applied "on top
+ * of the resolved Membership Fee": the Promotions and the Billing & Duration
+ * decide what the cycle costs, and this discounts that number. *Always*,
+ * because it belongs to the Assigned Plan rather than to any Promotion and
+ * "must not expire when a Promotion ends" — so unlike a Promotion's own
+ * Membership Fee Benefit there is no window to be inside, and unlike the Plan's
+ * Free Period there is nothing for a governing Promotion to outrank. The two
+ * stack: a cycle inside a Promotion that halves the fee, on an assignment with
+ * a personal 10% off, pays 45% of the regular price.
+ *
+ * It deliberately does **not** set `promotional`. That flag is the projection's
+ * horizon (#629 §6: run until every item has shown one charge at its regular
+ * price), and a benefit that never ends would push the horizon to
+ * `MAX_SIMULATION_MONTHS` for every discounted assignment. A cycle whose only
+ * benefit is the personal one *is* this contract's regular charge.
+ */
+function withPersonalFeeBenefit(resolved: ResolvedCharge, benefit: PersonalFeeBenefit): ResolvedCharge {
+  if (!personalFeeBenefitApplies(benefit)) return resolved;
+  return {
+    ...resolved,
+    amount: applyPersonalFeeBenefit(resolved.amount, benefit),
+    benefits: [
+      ...resolved.benefits,
+      { source: 'personal', name: null, action: benefit.action, value: benefit.value, period_status: null },
+    ],
   };
 }
 

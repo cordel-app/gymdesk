@@ -300,7 +300,8 @@
     "promotions_needs_plan": "Afegeix un pla de membresia abans d’aplicar una promoció.",
     "additional_services_needs_plan": "Afegeix un pla de membresia abans d’afegir un servei.",
     "event_waived_billing": "Quota exempta",
-    "billing_simulation_plan_prepaid": "Durada prepagada del pla"
+    "billing_simulation_plan_prepaid": "Durada prepagada del pla",
+    "billing_simulation_benefit_personal": "Benefici personal"
   },
   "member_payments": {
     "title": "Pagaments del soci",
@@ -3238,7 +3239,14 @@
     "promo_action_percentage_discount": "% Descompte",
     "promo_action_fixed_discount": "Descompte fix",
     "promo_action_fixed_price": "Preu fix",
-    "label_pay_beforehand_months": "Durada Prepagada (mesos)"
+    "label_pay_beforehand_months": "Durada Prepagada (mesos)",
+    "section_membership_fee_benefit": "Benefici de la Quota de Soci",
+    "label_personal_fee_benefit": "Benefici Personal de la Quota de Soci",
+    "label_personal_fee_benefit_percentage": "Descompte (%)",
+    "personal_fee_benefit_no_benefit": "Sense benefici",
+    "personal_fee_benefit_percentage_discount": "Descompte %",
+    "personal_fee_benefit_percentage_value": "{value}% de descompte",
+    "personal_fee_benefit_hint": "Aquest benefici pertany al Pla Assignat, no a una Promoció: s'aplica a tots els períodes de facturació durant tota la vida del pla i no acaba quan acaba una Promoció."
   },
   "taxes": {
     "title": "Impostos",

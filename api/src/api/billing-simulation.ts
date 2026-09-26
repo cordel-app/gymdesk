@@ -11,6 +11,7 @@ import {
   SimulationPromotion,
   computeBillingSimulation,
 } from '../domain/billingSimulation';
+import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { PlanDuration, toPlanDuration } from '../domain/planDuration';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 import { loadServicesForSimulation } from './user-membership-services';
@@ -88,6 +89,9 @@ interface AssignmentRow {
   plan_paid_months: number | null;
   plan_bonus_months: number | null;
   plan_pay_beforehand_months: number | null;
+  /** #772 — the assignment's own Personal Membership Fee Benefit. */
+  personal_fee_benefit_action: string | null;
+  personal_fee_benefit_value: string | number | null;
 }
 
 /**
@@ -164,6 +168,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
     `SELECT um.id, um.membership_plan_id, um.status, um.starts_at, um.ends_at,
             um.membership_fee_price, um.base_price,
             um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
+            um.personal_fee_benefit_action, um.personal_fee_benefit_value,
             p.name AS plan_name,
             p.free_months AS plan_free_months,
             p.paid_months AS plan_paid_months,
@@ -233,6 +238,9 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       services: servicesByAssignment.get(row.id) ?? [],
       planBenefits: planBenefitsByAssignment.get(row.id) ?? [],
       planDuration: assignmentPlanDuration(row),
+      // #772 — read straight off the assignment: it has no catalogue
+      // counterpart, so the snapshot's all-or-nothing fallback does not apply.
+      personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
     };
   }));
 
