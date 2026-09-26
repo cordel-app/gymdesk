@@ -2,6 +2,7 @@ export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'expired';
 
 export interface CreatePaymentRequestParams {
   orderId: string;
+  /** Minor units of `currency` (cents for EUR) — see `toMinorUnits()` in ./money.ts. */
   amount: number;
   currency: string;
   description: string;
@@ -29,6 +30,7 @@ export interface WebhookPayload {
 
 export interface ExecuteRecurringParams {
   orderId: string;
+  /** Minor units of `currency` (cents for EUR) — see `toMinorUnits()` in ./money.ts. */
   amount: number;
   currency: string;
   paymentToken: string;

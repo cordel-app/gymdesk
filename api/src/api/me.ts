@@ -12,6 +12,7 @@ import { PLAN_TREE_SELECT } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
@@ -1626,7 +1627,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     if (!(fee > 0)) {
       return res.status(400).json({ error: 'This membership owes nothing for its current billing cycle' });
     }
-    const amount = Math.round(fee * 100);
+    const amount = toMinorUnits(fee);
     const orderId = crypto.randomUUID();
     const pageToken = crypto.randomUUID();
     const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);

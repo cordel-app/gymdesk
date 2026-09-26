@@ -3,6 +3,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
 import { parseQuery, z } from '../infra/validate';
 import { currentMembershipFee } from './membership-fee-pricing';
 
@@ -103,7 +104,7 @@ paymentRequestsRouter.post(
       );
       if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
-      const amount = Math.round(fee * 100);
+      const amount = toMinorUnits(fee);
       const orderId = crypto.randomUUID();
       const pageToken = crypto.randomUUID();
       const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
