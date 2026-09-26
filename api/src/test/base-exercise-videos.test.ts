@@ -587,7 +587,12 @@ describe('GET /platform/exercises — video references', () => {
 
   it('exposes the URL rather than proxying the bytes (§10)', async () => {
     const res = await upload(baseExerciseId, { video: VIDEO, poster: POSTER });
-    expect(res.body.video_url.startsWith(R2_ENDPOINT)).toBe(true);
+    // The whole object URL, compared exactly rather than by prefix: a
+    // `startsWith(endpoint)` test passes for any host that merely begins with
+    // this one (CodeQL `js/incomplete-url-substring-sanitization`), and the
+    // point here is that the response carries the R2 URL the browser will
+    // stream from — while the response itself is JSON, not the MP4's bytes.
+    expect(res.body.video_url).toBe(url(videoKey(baseExerciseId, BASE_SLUG)));
     expect(res.headers['content-type']).toContain('application/json');
   });
 });
