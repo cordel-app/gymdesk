@@ -4,6 +4,7 @@ import { advanceBillingDate } from './billingDate';
 import { recordStatusChange } from '../api/billing-events';
 import { ASSIGNMENT_CADENCE } from '../api/assigned-plan-snapshot';
 import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
 import {
   BillingEventStatus,
   deriveBillingEventStatus,
@@ -259,7 +260,7 @@ export async function retryBillingEventPayment(
     try {
       const result = await getPaymentProvider().executeRecurring({
         orderId,
-        amount,
+        amount: toMinorUnits(amount),
         currency: 'EUR',
         paymentToken: pm.payment_token,
         sequenceId: pm.sequence_id,
