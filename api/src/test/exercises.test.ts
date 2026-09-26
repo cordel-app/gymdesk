@@ -892,6 +892,10 @@ describe('POST /exercises/import', () => {
     const res = await post({ baseExerciseIds: [benchId] });
     expect(res.status).toBe(201);
     expect(res.body.imported).toEqual([]);
+    // #719 part 3: a re-import refreshes media, and these base rows have none —
+    // so the row stays `skipped` exactly as #718 left it. The media cases live in
+    // exercise-media-reimport.test.ts, which mocks R2.
+    expect(res.body.refreshed).toEqual([]);
     expect(res.body.skipped).toHaveLength(1);
     expect(res.body.skipped[0]).toMatchObject({ id: benchId, reason: 'already_imported' });
     const { rows } = await db.query(

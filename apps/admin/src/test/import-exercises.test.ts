@@ -52,7 +52,12 @@ const MODAL_KEYS = [
   'import_selected_count',
   'import_empty',
   'import_importing',
-  'imported_with_skipped',
+  'imported',
+  'imported_skipped',
+  'imported_media_refreshed',
+  'import_media_update',
+  'import_media_update_hint',
+  'import_media_update_count',
   'type_system_sourced',
   'type_custom',
 ];
@@ -68,6 +73,8 @@ describe('Exercises: Import Exercises modal (#718)', () => {
     expect(exercisesKey(locales[code], 'import_defaults')).toBeUndefined();
     expect(exercisesKey(locales[code], 'type_base')).toBeUndefined();
     expect(exercisesKey(locales[code], 'type_gym')).toBeUndefined();
+    // #719 part 3: the toast is composed from parts, so the combined key is gone.
+    expect(exercisesKey(locales[code], 'imported_with_skipped')).toBeUndefined();
   });
 
   it('labels the header button Import and opens the modal instead of importing', () => {
@@ -126,7 +133,11 @@ describe('Exercises: Import Exercises modal (#718)', () => {
 
   it('shows already-imported exercises but does not let them be selected again', () => {
     expect(modal).toContain('const alreadyImported = row.imported_exercise_id != null');
-    expect(modal).toContain('disabled={alreadyImported || importing}');
+    // #719 part 3: selectability is `selectable`, which is the importable rows
+    // plus the ones a re-import would restore System media onto — an
+    // already-imported row with no media update stays disabled.
+    expect(modal).toContain('disabled={!selectable || importing}');
+    expect(modal).toContain('const selectable = selectableIds.has(row.id)');
     expect(modal).toContain("t('type_system_sourced')");
   });
 
@@ -149,5 +160,45 @@ describe('Exercises: Import Exercises modal (#718)', () => {
   it('shows an empty state when the filters match nothing', () => {
     expect(modal).toContain("t('import_empty')");
     expect(modal).toContain('rows.length === 0');
+  });
+});
+
+// ─── Re-import restores System media (#719 part 3, §12) ───────────────────────
+
+describe('Exercises: re-import restores System media (#719 §12)', () => {
+  it('lets an already-imported row be selected only when the server says media would move', () => {
+    expect(modal).toContain('media_refreshable: boolean');
+    expect(modal).toContain('const refreshable = rows.filter((r) => r.imported_exercise_id != null && r.media_refreshable)');
+    expect(modal).toContain('const selectableIds = new Set([...importable, ...refreshable].map((r) => r.id))');
+  });
+
+  it('never decides System-vs-gym media in the browser', () => {
+    // The flag is the server's answer; the modal compares no URLs of its own.
+    expect(modal).not.toContain('cordel/');
+    expect(modal).not.toContain('image_url ===');
+    expect(modal).not.toContain('video_url ===');
+  });
+
+  it('keeps Select all matching away from the re-importable rows', () => {
+    const fn = modal.slice(modal.indexOf('function toggleAllMatching'));
+    const body = fn.slice(0, fn.indexOf('\n  }'));
+    expect(body).toContain('for (const row of importable)');
+    expect(body).not.toContain('refreshable');
+  });
+
+  it('badges a re-importable row and counts them', () => {
+    expect(modal).toContain('const mediaUpdate = alreadyImported && row.media_refreshable');
+    expect(modal).toContain("t('import_media_update')");
+    expect(modal).toContain("t('import_media_update_hint')");
+    expect(modal).toContain("t('import_media_update_count', { n: refreshable.length })");
+  });
+
+  it('reports imported, refreshed and skipped counts in the toast', () => {
+    const handler = page.slice(page.indexOf('function handleImported'));
+    const body = handler.slice(0, handler.indexOf('\n  }'));
+    expect(body).toContain("t('imported'");
+    expect(body).toContain("t('imported_media_refreshed'");
+    expect(body).toContain("t('imported_skipped'");
+    expect(body).not.toContain('imported_with_skipped');
   });
 });

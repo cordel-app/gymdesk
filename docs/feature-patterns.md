@@ -740,7 +740,7 @@ Reference implementation: `apps/member/src/components/ExerciseMedia.tsx` + `Exer
 
 ---
 
-## Owned Media with a Browser-Made Thumbnail (#719 parts 1–2)
+## Owned Media with a Browser-Made Thumbnail (#719 parts 1–3)
 
 A record that carries an image *it may not own* — a Gym Exercise's, copied from the platform's library at import time — needs three things the single-asset patterns above do not.
 
@@ -764,6 +764,14 @@ The pattern generalises to a second kind of media on the same record (#719 part 
 - **A large upload needs a cap, and the cap is configuration.** A buffered `PutObject` holds the whole file in the API process, so the ceiling is an env var with a default and a hard clamp (`EXERCISE_VIDEO_MAX_MB`), and the route's own body-parser limit is derived from it. The client mirrors the number only to refuse early; the server is the authority.
 
 Deleting stays one rule for all of a record's media: check **every** media reference before removing an object, because two kinds can point at the same one, and keep the other kind's references in the "keep" set when replacing this one.
+
+**Re-import is the way back (#719 part 3).** Once "removal does not fall back" is the rule, something has to be the way a tenant gets the platform's media *again*, and the cheapest answer is the import path it already has rather than a second "restore" action. Three things make it safe:
+
+- **The import endpoint stops treating "already have it" as nothing to do.** An id the tenant already holds refreshes that copy's media references from the catalogue row's current ones and comes back under `refreshed`; one that already matches them stays `skipped`. The response is three buckets, not two, and the toast is composed from the ones that happened.
+- **It restores; it never clears.** Each media pair moves independently, and a pair the catalogue row does not have leaves the tenant's own upload alone — a routine re-import must not delete work the tenant did, which is the same rule that makes an invalid upload harmless. Deliberate removal is the record's own `DELETE` route.
+- **It refreshes media only, and claims nothing else.** The name, description, defaults and provenance (`cloned_from_id`) of a copy the tenant may have edited are its own: re-importing a row matched only by name restores its media without turning it into a copy of the library's. The stale objects then go through the same ownership-and-still-referenced check a replacement uses, *after* the references are committed.
+
+Pin the decision in one pure function (`domain/exerciseMediaImport.ts`) and mirror it in the SQL flag the picker reads (`media_refreshable`), so the row a UI offers is exactly the row the import would move — and keep the bulk "select all" away from those rows, since a re-import overwrites media the tenant may have uploaded itself.
 
 **The platform's own copy of the same media (#716).** When the platform catalogue a gym imports from needs the same pair, reuse the rules rather than the routes. Three things change and nothing else: the key hangs off `PLATFORM_STORAGE_ROOT` instead of `gyms.storage_folder_prefix` (a `gym_id IS NULL` row has no prefix to hang off), the route sits on the `/platform/*` router behind `requireSuperadmin`, and the ownership test is mirrored — the platform may delete only what is under *its* prefix, never a gym's object. Two rules that look symmetrical are not: the reference check before deleting an object must span **every** tenant, because import copies references and each gym that imported the row points at the platform's own object, and the *validator* is not copied at all (one `validate…Pair()`, two routers), since a second copy of "what is a valid image" is how the two ends drift. Keep each router answering for its own rows — 404 for the other's — so neither can be aimed at the other's folder.
 
