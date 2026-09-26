@@ -1174,6 +1174,39 @@ Rules:
 
 `apps/admin/src/test/view-audit-log-everywhere.test.ts` enumerates every Details view and fails when one is added without the action.
 
+## Read-Only Expanded Row, Editing Behind the Context Menu (#798)
+
+Expanding a list card **reads**; `⋮ → Edit` **writes**. The two are separate interactions on the same card and must never be the same one — a page where expanding a row drops the user into a form (Staff before #798) gives them no way to look at a record without being able to change it, and no way to tell the two apart.
+
+```tsx
+// Two pieces of state, never one. 'new' belongs to the form, never to the expansion.
+const [expandedId, setExpandedId] = useState<number | null>(null);
+const [editingId, setEditingId] = useState<number | 'new' | null>(null);
+
+// Expanding reads. It never seeds the form.
+function openExpand(row: Row) {
+  if (expandedId === row.id) { setExpandedId(null); return; }
+  setEditingId(null);
+  setExpandedId(row.id);
+}
+
+// ⋮ → Edit is the only way in, and it is a write action, so it is gated.
+{ label: t('action_edit'), onClick: () => startEdit(row), disabled: !canWrite, title: readOnlyTitle }
+
+{isEditing ? renderInlineEditor() : isExpanded ? renderReadOnlyProfile(row) : null}
+```
+
+Rules:
+
+- **The expanded content holds no writing control**: no `<input>`, `<select>`, `<textarea>`, checkbox, `<button>`, `onChange`, `onClick`, Save, Cancel — and no Edit affordance either, so the context menu stays the single entry point.
+- **Declare the field set once**, in a module beside the page (`staff/staffProfile.ts`): the keys and their order, their labels, their read-only formatting, and the persisted-row → form-values mapping the Edit action seeds with. The form still renders its own inputs (each needs its own type, placeholder and validation), the row type `extends` the shared one, and a field added to the list reaches both halves. The set is what the form edits and nothing else — a column nobody can edit is not part of it.
+- **Render the row the form is seeded from**, not a second representation and not a new endpoint: the two then cannot show different data, and a saved edit refreshes both through the list's existing reload.
+- **Actions that were living inside the old editor stay there** (Staff's Send/Resend invitation and Revoke access), reached through `⋮ → Edit`. The read-only view shows their *state* — status, role — and never turns it into a control.
+- **Never render `null`/`undefined`**: every value goes through one formatter that answers the admin em dash, and a relation that may legitimately be empty says so in words (`centers_none`) rather than implying a default.
+- **A date column is a calendar date.** `new Date('1990-05-04')` is UTC midnight and prints as *3 May* west of Greenwich; build the `Date` from the split parts.
+
+`apps/admin/src/test/staff-expanded-profile.test.ts` pins all of it — the source scan for writing controls inside the expanded slice, the field set against the form's own `patchForm` calls, en/es/ca label coverage, and the formatters.
+
 ## Read-only access in admin pages (#613)
 
 A role with read-only access to a module (`R` / `R_ASSIGNED`) **sees the page and its data, with every write control disabled** — never hidden, never redirected away. The API rejects the write independently (`requireModuleWrite` / `requireRole`); `api/src/test/read-only-writes.test.ts` pins that per module.
