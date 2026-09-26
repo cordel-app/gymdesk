@@ -12,6 +12,7 @@ import {
   promotionCoversDate,
   selectPersistedBillingEventsInRange,
 } from '../domain/assignedPlanBillingEvents';
+import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
 import { toPlanDuration } from '../domain/planDuration';
 
 describe('addCalendarMonths', () => {
@@ -160,6 +161,7 @@ describe('computeMembershipFeePriceAt', () => {
     const assignment = {
       startsAt: '2026-01-01',
       planDuration: toPlanDuration(1, 12, 2),
+      personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
     };
     // The Plan's free month, then its paid months, then its bonus months.
     expect(computeMembershipFeePriceAt(40, '2026-01-10', [], assignment))
@@ -235,7 +237,11 @@ describe('projectDraftBillingEvents (#511 Q2 — draft preview)', () => {
     const result = projectDraftBillingEvents({
       billingStart: '2026-01-01', endsAt: null, basePrice: 40,
       recurringInterval: 1, recurringUnit: 'month', promotions: [],
-      assignment: { startsAt: '2026-01-01', planDuration: toPlanDuration(2, 12, 0) },
+      assignment: {
+        startsAt: '2026-01-01',
+        planDuration: toPlanDuration(2, 12, 0),
+        personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
+      },
     });
     expect(result.events.map((e) => e.amount)).toEqual([0, 40]);
     expect(result.events.every((e) => !e.promotion_affected)).toBe(true);

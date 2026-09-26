@@ -299,7 +299,8 @@
     "promotions_needs_plan": "Añade un plan de membresía antes de aplicar una promoción.",
     "additional_services_needs_plan": "Añade un plan de membresía antes de añadir un servicio.",
     "event_waived_billing": "Cuota exenta",
-    "billing_simulation_plan_prepaid": "Duración prepagada del plan"
+    "billing_simulation_plan_prepaid": "Duración prepagada del plan",
+    "billing_simulation_benefit_personal": "Beneficio personal"
   },
   "member_payments": {
     "title": "Pagos del socio",
@@ -3211,7 +3212,14 @@
     "promo_action_percentage_discount": "% Descuento",
     "promo_action_fixed_discount": "Descuento fijo",
     "promo_action_fixed_price": "Precio fijo",
-    "label_pay_beforehand_months": "Duración Prepagada (meses)"
+    "label_pay_beforehand_months": "Duración Prepagada (meses)",
+    "section_membership_fee_benefit": "Beneficio de la Cuota de Socio",
+    "label_personal_fee_benefit": "Beneficio Personal de la Cuota de Socio",
+    "label_personal_fee_benefit_percentage": "Descuento (%)",
+    "personal_fee_benefit_no_benefit": "Sin beneficio",
+    "personal_fee_benefit_percentage_discount": "Descuento %",
+    "personal_fee_benefit_percentage_value": "{value}% de descuento",
+    "personal_fee_benefit_hint": "Este beneficio pertenece al Plan Asignado, no a una Promoción: se aplica a todos los periodos de facturación durante toda la vida del plan y no termina cuando termina una Promoción."
   },
   "taxes": {
     "title": "Impuestos",

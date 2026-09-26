@@ -5,6 +5,7 @@ import {
   SimulationPromotion,
   resolveMembershipFee,
 } from '../domain/billingSimulation';
+import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { PlanDurationStatus, toPlanDuration } from '../domain/planDuration';
 import { PromotionTimelineStatus } from '../domain/promotionTimeline';
 
@@ -47,6 +48,7 @@ export const FEE_ASSIGNMENT_COLUMNS = `
   um.id, um.gym_id, um.starts_at, um.next_billing_date,
   um.membership_fee_price, um.membership_plan_id, um.base_price,
   um.discount_reason, um.discount_expires_at,
+  um.personal_fee_benefit_action, um.personal_fee_benefit_value,
   um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
   p.free_months AS plan_free_months,
   p.paid_months AS plan_paid_months,
@@ -89,6 +91,15 @@ export interface FeeAssignmentRow {
    */
   discount_reason: string | null;
   discount_expires_at: Date | string | null;
+  /**
+   * #772 — the assignment's own Personal Membership Fee Benefit. Deliberately
+   * *not* part of `has_billing_snapshot`: it has no catalogue counterpart to
+   * fall back to (it is NOT NULL with a default, so every row has an answer),
+   * and folding it in would flip every assignment to "captured" and freeze the
+   * duration fallback for rows that never captured anything.
+   */
+  personal_fee_benefit_action: string | null;
+  personal_fee_benefit_value: string | number | null;
   /** The assignment's own frozen Billing & Duration (migration 174). */
   free_months: number | null;
   paid_months: number | null;
@@ -223,6 +234,7 @@ async function priceWithApplications(
   const context: MembershipFeeContext = {
     startsAt,
     planDuration: durationForRow(row),
+    personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
     promotions,
   };
 

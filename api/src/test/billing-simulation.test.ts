@@ -13,6 +13,7 @@ import {
   SimulationService,
   computeBillingSimulation,
 } from '../domain/billingSimulation';
+import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
 import { NO_PLAN_DURATION, toPlanDuration } from '../domain/planDuration';
 
 const START = '2026-09-01';
@@ -32,6 +33,9 @@ function assignment(over: Partial<SimulationAssignment> = {}): SimulationAssignm
     // #635 stage 8 — no Billing & Duration configured, which is what every case
     // that predates it assumed.
     planDuration: NO_PLAN_DURATION,
+    // #772 — no Personal Membership Fee Benefit, which is what every case that
+    // predates it assumed.
+    personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
     ...over,
   };
 }

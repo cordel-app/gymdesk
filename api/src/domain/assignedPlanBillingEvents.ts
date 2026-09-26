@@ -24,6 +24,7 @@
 
 import { advanceBillingDate } from './billingDate';
 import { resolveMembershipFee } from './billingSimulation';
+import { NO_PERSONAL_FEE_BENEFIT, PersonalFeeBenefit } from './personalFeeBenefit';
 import { NO_PLAN_DURATION, PlanDuration } from './planDuration';
 import {
   AppliedPromotionForBilling,
@@ -79,6 +80,14 @@ function clampToEndsAt(dateStr: string, endsAt: string | null): string {
 export interface AssignmentDurationContext {
   startsAt: string;
   planDuration: PlanDuration;
+  /**
+   * #772 — the assignment's own Personal Membership Fee Benefit. Unlike the
+   * durations beside it this one is not a *window*, so a caller that has the
+   * assignment must pass it even when nothing else about the contract matters:
+   * it discounts every cycle, including the ones no Promotion and no duration
+   * touches.
+   */
+  personalFeeBenefit: PersonalFeeBenefit;
 }
 
 /**
@@ -110,6 +119,7 @@ export function computeMembershipFeePriceAt(
     // `NO_PLAN_DURATION` classifies every date as `pay_regular`.
     startsAt: assignment?.startsAt ?? atDate,
     planDuration: assignment?.planDuration ?? NO_PLAN_DURATION,
+    personalFeeBenefit: assignment?.personalFeeBenefit ?? NO_PERSONAL_FEE_BENEFIT,
     promotions,
   });
   return {

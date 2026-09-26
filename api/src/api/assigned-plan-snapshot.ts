@@ -1,4 +1,5 @@
 import { db, Tx } from '../infra/db';
+import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import {
   SellableItemBenefitCategory,
   planBenefitTableForCategory,
@@ -90,6 +91,17 @@ export interface AssignedPlanSnapshot extends AssignedPlanBillingSnapshot {
   session_benefits: AssignedPlanBenefitRow[];
   oneoff_benefits: AssignedPlanBenefitRow[];
   periodical_benefits: AssignedPlanBenefitRow[];
+  /**
+   * #772 — the assignment's own Personal Membership Fee Benefit.
+   *
+   * Outside `AssignedPlanBillingSnapshot` on purpose, and not part of
+   * `snapshot_captured` below: it is not captured from the catalogue, it has no
+   * live counterpart to fall back to, and its columns are NOT NULL with a
+   * default — so every assignment carries one, and folding it into the
+   * "did this assignment capture anything?" test would answer yes for every
+   * row in the table.
+   */
+  personal_fee_benefit: PersonalFeeBenefit;
   /**
    * False when nothing was captured at all — an assignment made before
    * migration 174 that the backfill could not fill (no Plan to copy from), or
@@ -246,7 +258,8 @@ export async function loadAssignedPlanSnapshot(
   const [{ rows: umRows }, ...benefitResults] = await Promise.all([
     db.query(
       `SELECT free_months, paid_months, bonus_months, pay_beforehand_months,
-              recurring_billing_interval, recurring_billing_unit, membership_fee_price
+              recurring_billing_interval, recurring_billing_unit, membership_fee_price,
+              personal_fee_benefit_action, personal_fee_benefit_value
        FROM user_memberships WHERE id = ? AND gym_id = ?`,
       [umId, gymId],
     ),
@@ -274,6 +287,8 @@ export async function loadAssignedPlanSnapshot(
     session_benefits: session,
     oneoff_benefits: oneoff,
     periodical_benefits: periodical,
+    personal_fee_benefit: toPersonalFeeBenefit(um.personal_fee_benefit_action, um.personal_fee_benefit_value),
+    // Reads `billing` alone — see the note on `personal_fee_benefit` above.
     snapshot_captured:
       Object.values(billing).some((v) => v != null)
       || session.length > 0 || oneoff.length > 0 || periodical.length > 0,

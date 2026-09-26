@@ -8,9 +8,15 @@ import { join } from 'path';
 // §9: Billing & Duration (Free Period / Paid Duration / Bonus Duration) plus
 // One-off / Session / Period Benefits. §10: each section has its own
 // Edit/Save/Cancel, only the section being edited is unlocked, and no
-// CrudModal is introduced. §6: no Membership Fee *Benefits* section — the
-// assignment's own Membership Fee is part of Billing & Duration, which is a
-// different thing.
+// CrudModal is introduced. §6: no Sellable-Item-keyed Membership Fee *Benefit*
+// section — the assignment's own Membership Fee is part of Billing & Duration,
+// which is a different thing.
+//
+// #772 adds the one Membership Fee benefit the Assigned Plan does carry: the
+// **Personal Membership Fee Benefit**, a `No benefit` / `% discount` pair that
+// belongs to the contract rather than to a Promotion and never expires. It is
+// its own section, with the same Edit/Save/Cancel shape, and it is still not a
+// Charge Benefit: nothing about it is keyed on a Sellable Item.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
 // TL;DR), so — like plans-benefit-sections.test.ts (#635 stage 1) — the
@@ -114,7 +120,7 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
   it('unlocks one section at a time', () => {
     // A single `editing` value names the open section; every other section's
     // Edit button is disabled while it is set.
-    expect(src).toMatch(/const \[editing, setEditing\] = useState<'billing' \| BenefitSection \| null>/);
+    expect(src).toMatch(/const \[editing, setEditing\] = useState<'billing' \| 'fee_benefit' \| BenefitSection \| null>/);
     expect(src).toMatch(/disabled=\{editing !== null\}/);
   });
 
@@ -123,9 +129,27 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
     expect(src).not.toContain('Modal');
   });
 
-  it('adds no Membership Fee Benefits section (§6)', () => {
-    expect(src).not.toContain('membership_fee_benefit');
+  it('adds no Sellable-Item-keyed Membership Fee Benefits section (§6)', () => {
+    // #635 §6's rule, unchanged: the Charge-Benefit vocabulary has no place
+    // here. #772's section is keyed on nothing but the assignment itself.
     expect(src).not.toContain('benefits_membership_fee');
+    expect(src).not.toContain('charge_benefit');
+  });
+
+  it("offers the Personal Membership Fee Benefit's two options and nothing else (#772)", () => {
+    expect(src).toContain('section_membership_fee_benefit');
+    expect(src).toMatch(
+      /const PERSONAL_FEE_BENEFIT_ACTIONS: readonly PersonalFeeBenefitAction\[\] = \['no_benefit', 'percentage_discount'\]/,
+    );
+    // The percentage field only exists for the option that has one.
+    expect(src).toContain("feeBenefitForm.action === 'percentage_discount' && (");
+  });
+
+  it('saves the Personal Membership Fee Benefit to its own endpoint (#772)', () => {
+    expect(src).toContain('/user-memberships/${assignedPlanId}/fee-benefit');
+    // Replace-all: `no_benefit` sends no percentage rather than keeping the
+    // last one around.
+    expect(src).toContain("feeBenefitForm.action === 'percentage_discount' && feeBenefitForm.value !== ''");
   });
 
   it('is rendered by the Assigned Plans expanded row, from the assignment snapshot', () => {
@@ -148,6 +172,11 @@ describe('Assigned Plan configuration: locales', () => {
     'unit_day', 'unit_week', 'unit_month', 'unit_year',
     'frequency_once', 'frequency_per_session', 'frequency_four_weeks',
     'frequency_week', 'frequency_month', 'frequency_year',
+    // #772 — the Personal Membership Fee Benefit section.
+    'section_membership_fee_benefit', 'label_personal_fee_benefit',
+    'label_personal_fee_benefit_percentage', 'personal_fee_benefit_no_benefit',
+    'personal_fee_benefit_percentage_discount', 'personal_fee_benefit_percentage_value',
+    'personal_fee_benefit_hint',
   ];
 
   it('has every new key in every locale (next-intl has no fallback)', () => {

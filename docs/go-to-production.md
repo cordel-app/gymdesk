@@ -287,6 +287,12 @@ Settled in `docs/decisions.md` (payment page / SAQ A) — listed here so they ar
       platform default. Harmless while every gym is still on the default (the state
       on every environment today). Once a gym has been moved to another provider,
       capture `SELECT id, payment_provider_id FROM gyms` before rolling back.
+- [ ] **Migration 192's `down()` is lossy** (#772): dropping the two columns discards
+      every Personal Membership Fee Benefit, which is agreed with a member and cannot
+      be reconstructed from the catalogue. Capture
+      `SELECT id, personal_fee_benefit_action, personal_fee_benefit_value FROM
+      user_memberships WHERE personal_fee_benefit_action <> 'no_benefit'` before
+      rolling back. Harmless while no gym has configured one.
 - [ ] **Migration 176 must run *after* the API build that stops reading the tables**
       (#635 stage 4): it is the first non-additive migration in the #635 chain — it
       `DROP`s `plan_charge_benefits` and `user_membership_charge_benefits`. Every

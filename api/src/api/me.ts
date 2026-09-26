@@ -24,6 +24,7 @@ import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-pl
 import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
 import { resolveMembershipFee } from '../domain/billingSimulation';
+import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration } from '../domain/planDuration';
 import type { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 
@@ -1383,6 +1384,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               um.starts_at, um.ends_at, um.status, um.created_at,
               um.next_billing_date, um.membership_fee_price,
               um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
+              um.personal_fee_benefit_action, um.personal_fee_benefit_value,
               p.free_months AS plan_free_months,
               p.paid_months AS plan_paid_months,
               p.bonus_months AS plan_bonus_months,
@@ -1424,6 +1426,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       planDuration: Number(um.has_billing_snapshot) === 1
         ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
         : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
+      // #772 — the Personal Membership Fee Benefit discounts every cycle this
+      // page shows, including the ones after the Promotion has ended, because
+      // that is what the nightly run will charge.
+      personalFeeBenefit: toPersonalFeeBenefit(um.personal_fee_benefit_action, um.personal_fee_benefit_value),
       promotions: (await loadPromotionApplications(gymId, um.id)).filter((a) => a.status === 'applied'),
     };
     // The regular fee every cycle is priced from: the assignment's own frozen
@@ -1451,6 +1457,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       has_billing_snapshot, membership_fee_price,
       free_months, paid_months, bonus_months, pay_beforehand_months,
       plan_free_months, plan_paid_months, plan_bonus_months, plan_pay_beforehand_months,
+      personal_fee_benefit_action, personal_fee_benefit_value,
       ...membership
     } = um as any;
     res.json({ membership: { ...membership, membership_fee, benefits, upcoming_payments } });

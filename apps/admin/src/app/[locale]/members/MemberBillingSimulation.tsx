@@ -25,8 +25,12 @@ type PeriodStatus = 'free_promotion' | 'pay_promotion' | 'prepaid_promotion' | '
 type PlanPeriodStatus = 'free_plan' | 'prepaid_plan' | 'pay_plan' | 'bonus_plan' | 'pay_regular';
 
 interface SimulationBenefit {
-  /** `membership_plan` = the assignment's own Free Period / Bonus Duration. */
-  source: 'promotion' | 'membership_plan';
+  /**
+   * `membership_plan` = the assignment's own Free Period / Bonus Duration.
+   * `personal` (#772) = its Personal Membership Fee Benefit, which belongs to
+   * the contract rather than to a Promotion and so has no period behind it.
+   */
+  source: 'promotion' | 'membership_plan' | 'personal';
   name: string | null;
   action: BenefitAction;
   value: number | null;
@@ -140,6 +144,10 @@ export function MemberBillingSimulation({ memberId }: { memberId: number }) {
 
   function benefitLabel(benefit: SimulationBenefit): string {
     const parts: string[] = [];
+    // A personal benefit has no period to name — it applies to every cycle —
+    // so the line says whose benefit it is instead, which is what tells it
+    // apart from a Promotion's percentage on the same charge.
+    if (benefit.source === 'personal') parts.push(t('billing_simulation_benefit_personal'));
     if (benefit.period_status && benefit.period_status !== 'pay_regular') {
       parts.push(benefit.source === 'membership_plan'
         ? t(PLAN_PERIOD_STATUS_KEY[benefit.period_status as PlanPeriodStatus])

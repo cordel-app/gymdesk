@@ -40,8 +40,23 @@ export interface AssignedPlanSnapshot {
   session_benefits: AssignedPlanSnapshotBenefit[];
   oneoff_benefits: AssignedPlanSnapshotBenefit[];
   periodical_benefits: AssignedPlanSnapshotBenefit[];
+  /**
+   * #772 — the assignment's own Personal Membership Fee Benefit. Not part of
+   * the frozen snapshot and not part of `snapshot_captured`: it is agreed with
+   * this member rather than captured from the catalogue, and it never expires.
+   */
+  personal_fee_benefit: PersonalFeeBenefit;
   /** False for an assignment that captured nothing — it still resolves live. */
   snapshot_captured: boolean;
+}
+
+/** #772 — the options the Assigned Plan's Membership Fee Benefit section offers. */
+export type PersonalFeeBenefitAction = 'no_benefit' | 'percentage_discount';
+
+export interface PersonalFeeBenefit {
+  action: PersonalFeeBenefitAction;
+  /** The percentage, 0..100. Always null for `no_benefit`. */
+  value: number | null;
 }
 
 /**

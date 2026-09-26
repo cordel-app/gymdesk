@@ -299,7 +299,8 @@
     "promotions_needs_plan": "Add a membership plan before applying a promotion.",
     "additional_services_needs_plan": "Add a membership plan before adding a service.",
     "event_waived_billing": "Fee waived",
-    "billing_simulation_plan_prepaid": "Plan pre-paid duration"
+    "billing_simulation_plan_prepaid": "Plan pre-paid duration",
+    "billing_simulation_benefit_personal": "Personal benefit"
   },
   "member_payments": {
     "title": "Member Payments",
@@ -3225,7 +3226,14 @@
     "promo_action_percentage_discount": "% Discount",
     "promo_action_fixed_discount": "Fixed discount",
     "promo_action_fixed_price": "Fixed Price",
-    "label_pay_beforehand_months": "Pre-paid Duration (months)"
+    "label_pay_beforehand_months": "Pre-paid Duration (months)",
+    "section_membership_fee_benefit": "Membership Fee Benefit",
+    "label_personal_fee_benefit": "Personal Membership Fee Benefit",
+    "label_personal_fee_benefit_percentage": "Discount (%)",
+    "personal_fee_benefit_no_benefit": "No benefit",
+    "personal_fee_benefit_percentage_discount": "% discount",
+    "personal_fee_benefit_percentage_value": "{value}% discount",
+    "personal_fee_benefit_hint": "This benefit belongs to the Assigned Plan, not to a Promotion: it applies to every billing period for the lifetime of the plan and does not end when a Promotion does."
   },
   "taxes": {
     "title": "Taxes",

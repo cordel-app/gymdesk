@@ -33,6 +33,14 @@ import {
   projectDraftBillingEvents,
   selectPersistedBillingEventsInRange,
 } from '../domain/assignedPlanBillingEvents';
+import {
+  NO_PERSONAL_FEE_BENEFIT,
+  PERSONAL_FEE_BENEFIT_ACTIONS,
+  PersonalFeeBenefit,
+  PersonalFeeBenefitAction,
+  isPersonalFeeBenefitAction,
+  toPersonalFeeBenefit,
+} from '../domain/personalFeeBenefit';
 import { NO_PLAN_DURATION, PlanDuration, toPlanDuration } from '../domain/planDuration';
 
 // #511 (stage 1 — Assigned Plans lifecycle): 'draft' and 'awaiting_payment' are
@@ -345,12 +353,13 @@ export async function loadPromotionApplicationsFor(
  * shows a column of zeros for every assignment created through the API.
  */
 async function loadAssignmentFeeContext(gymId: string, umId: number): Promise<{
-  regularFee: number | null; planDuration: PlanDuration;
+  regularFee: number | null; planDuration: PlanDuration; personalFeeBenefit: PersonalFeeBenefit;
 }> {
   const { rows } = await db.query(
     `SELECT um.membership_plan_id, um.membership_fee_price,
             um.base_price, um.starts_at,
             um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
+            um.personal_fee_benefit_action, um.personal_fee_benefit_value,
             p.free_months AS plan_free_months,
             p.paid_months AS plan_paid_months,
             p.bonus_months AS plan_bonus_months,
@@ -365,12 +374,15 @@ async function loadAssignmentFeeContext(gymId: string, umId: number): Promise<{
     [umId, gymId],
   );
   const um = rows[0];
-  if (!um) return { regularFee: null, planDuration: NO_PLAN_DURATION };
+  if (!um) {
+    return { regularFee: null, planDuration: NO_PLAN_DURATION, personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT };
+  }
   return {
     regularFee: await regularMembershipFee(gymId, um, toDateOnly(um.starts_at)),
     planDuration: Number(um.has_billing_snapshot) === 1
       ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
       : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
+    personalFeeBenefit: toPersonalFeeBenefit(um.personal_fee_benefit_action, um.personal_fee_benefit_value),
   };
 }
 
@@ -407,7 +419,11 @@ async function computeBillingEventsView(gymId: string, um: {
       recurringInterval: um.recurring_billing_interval ?? billingPolicy?.recurring_billing_interval ?? null,
       recurringUnit: (um.recurring_billing_unit ?? billingPolicy?.recurring_billing_unit ?? null) as BillingUnit | null,
       promotions: applications.filter((p) => p.status === 'applied'),
-      assignment: { startsAt: billingStart, planDuration: fee.planDuration },
+      assignment: {
+        startsAt: billingStart,
+        planDuration: fee.planDuration,
+        personalFeeBenefit: fee.personalFeeBenefit,
+      },
     });
   }
 
@@ -862,6 +878,15 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       );
       // #635 stage 2 — the superseding assignment gets its own snapshot; the
       // superseded row keeps the one it was created with, untouched.
+      //
+      // #772: the Personal Membership Fee Benefit is deliberately *not*
+      // carried over either. It lasts "the entire lifetime of the Assigned
+      // Membership Plan", and this is a different Assigned Plan — a new
+      // contract on a new Plan, at a price that was renegotiated in this very
+      // request. Copying a percentage agreed against the old Plan's fee onto
+      // the new one would apply a discount nobody agreed to the new number.
+      // The successor starts at the column default (no benefit); staff set one
+      // on it through `PUT /:id/fee-benefit` if that is what was agreed.
       await snapshotAssignedPlan(tx, {
         gymId, userMembershipId: insertId,
         membershipPlanId: Number(membership_plan_id),
@@ -1212,6 +1237,100 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
     if (err instanceof PrepaidBoundError) {
       return res.status(400).json({ error: 'pay_beforehand_months cannot exceed paid_months' });
     }
+    next(err);
+  }
+});
+
+/**
+ * #772 — the Assigned Plan's own **Personal Membership Fee Benefit**.
+ *
+ * `{ action: 'no_benefit' | 'percentage_discount', value: number | null }`,
+ * replace-all: the assignment holds one such benefit or none, so there is
+ * nothing to merge and the payload is the whole configuration.
+ *
+ * Three things make it unlike the Billing & Duration route above.
+ *
+ * It is **not part of the snapshot**, so `materialiseAssignedPlanSnapshot()`
+ * is deliberately not called: the snapshot is what was captured from the
+ * catalogue, its fallback is all-or-nothing, and these columns have no
+ * catalogue counterpart to fall back *to* — every row already carries an
+ * answer. Materialising here would freeze an unrelated assignment's durations
+ * as a side effect of giving its member a discount.
+ *
+ * It **never expires** — there is no `discount_expires_at` beside it and no
+ * Promotion window around it, which is the whole point of the ticket: the
+ * benefit "remains active for the entire lifetime of the Assigned Membership
+ * Plan, unless the Assigned Membership Plan is explicitly edited".
+ *
+ * And it is **not a negotiated price**: `membership_fee_price` is still the
+ * regular fee this contract discounts *from*, so a staff-agreed number and a
+ * personal percentage remain two separate decisions and the percentage keeps
+ * following the fee if the fee is later renegotiated.
+ *
+ * A terminal assignment is read-only for the same reason every other section
+ * is: it bills nothing further, so changing what it was agreed with would only
+ * falsify the record.
+ */
+userMembershipsRouter.put('/:id/fee-benefit', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
+  if (!um) return res.status(404).json({ error: 'Membership not found' });
+  if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
+    return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${um.status}'` });
+  }
+
+  const rawAction = req.body?.action;
+  if (!isPersonalFeeBenefitAction(rawAction)) {
+    return res.status(400).json({ error: `action must be one of: ${PERSONAL_FEE_BENEFIT_ACTIONS.join(', ')}` });
+  }
+  const action: PersonalFeeBenefitAction = rawAction;
+
+  let value: number | null = null;
+  if (action === 'percentage_discount') {
+    const raw = optionalNumber(req.body?.value);
+    if (raw === null || !Number.isFinite(raw) || raw < 0 || raw > 100) {
+      return res.status(400).json({ error: 'value must be a percentage between 0 and 100' });
+    }
+    value = Math.round(raw * 100) / 100;
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      // Re-read under the row lock: the status may have moved to a terminal one
+      // between the check above and here, and the previous values are what the
+      // audit entry records.
+      const { rows: locked } = await tx.query(
+        `SELECT id, status, personal_fee_benefit_action, personal_fee_benefit_value
+         FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE`,
+        [req.params.id, gymId],
+      );
+      if (locked.length === 0) return { kind: 'not_found' } as const;
+      if (!SNAPSHOT_EDITABLE_STATUSES.includes(locked[0].status as Status)) {
+        return { kind: 'not_editable', status: locked[0].status as string } as const;
+      }
+      await tx.query(
+        `UPDATE user_memberships
+            SET personal_fee_benefit_action = ?, personal_fee_benefit_value = ?
+          WHERE id = ? AND gym_id = ?`,
+        [action, value, req.params.id, gymId],
+      );
+      return { kind: 'ok', previous: locked[0] } as const;
+    });
+    if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (result.kind === 'not_editable') {
+      return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${result.status}'` });
+    }
+
+    recordAudit(req, {
+      action: 'update', entityType: 'user_membership', entityId: req.params.id,
+      previous: {
+        personal_fee_benefit_action: result.previous.personal_fee_benefit_action,
+        personal_fee_benefit_value: result.previous.personal_fee_benefit_value,
+      },
+      next: { personal_fee_benefit: { action, value } },
+    });
+    res.json(await loadAssignedPlanSnapshot(gymId, Number(um.id)));
+  } catch (err) {
     next(err);
   }
 });

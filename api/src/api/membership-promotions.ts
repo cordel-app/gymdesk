@@ -4,6 +4,7 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
 import { resolveMembershipFee } from '../domain/billingSimulation';
+import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration } from '../domain/planDuration';
 import {
   AppliedPromotionForBilling,
@@ -377,6 +378,7 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
             p.paid_months AS plan_paid_months,
             p.bonus_months AS plan_bonus_months,
             p.pay_beforehand_months AS plan_pay_beforehand_months,
+            um.personal_fee_benefit_action, um.personal_fee_benefit_value,
             (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
              OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
@@ -394,6 +396,9 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
     planDuration: Number(um.has_billing_snapshot) === 1
       ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
       : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
+    // #772 — an adjustment event must be the difference between two prices the
+    // member would actually be charged, so the personal benefit is on both.
+    personalFeeBenefit: toPersonalFeeBenefit(um.personal_fee_benefit_action, um.personal_fee_benefit_value),
     promotions: await loadStandingApplicationsForPricing(tx, gymId, userMembershipId),
   });
   return { price: Math.round(Math.max(0, charge.amount) * 100) / 100, member_id: um.member_id as number };

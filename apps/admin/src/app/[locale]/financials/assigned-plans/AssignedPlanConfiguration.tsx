@@ -28,7 +28,11 @@ import {
   SellableItemOption,
   toBenefitItems,
 } from '@/components/SellableItemBenefits';
-import type { AssignedPlanSnapshot, AssignedPlanSnapshotBenefit } from './types';
+import type {
+  AssignedPlanSnapshot,
+  AssignedPlanSnapshotBenefit,
+  PersonalFeeBenefitAction,
+} from './types';
 
 // Mirrors SNAPSHOT_EDITABLE_STATUSES in api/src/api/user-memberships.ts: a
 // cancelled or expired assignment is history — it bills nothing further, so its
@@ -41,6 +45,11 @@ const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
 type BenefitSection = 'oneoff' | 'session' | 'periodical';
+
+// #772 — the Assigned Plan's own Membership Fee Benefit offers these two and
+// nothing else. Mirrors PERSONAL_FEE_BENEFIT_ACTIONS in
+// api/src/domain/personalFeeBenefit.ts, which is what the route validates.
+const PERSONAL_FEE_BENEFIT_ACTIONS: readonly PersonalFeeBenefitAction[] = ['no_benefit', 'percentage_discount'];
 
 const BENEFIT_SECTIONS: {
   section: BenefitSection;
@@ -55,6 +64,11 @@ const BENEFIT_SECTIONS: {
   { section: 'session', endpoint: 'session-benefits', titleKey: 'benefits_session', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', snapshotKey: 'session_benefits', showFrequency: false },
   { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'benefits_period', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', snapshotKey: 'periodical_benefits', showFrequency: true },
 ];
+
+interface FeeBenefitForm {
+  action: PersonalFeeBenefitAction;
+  value: string;
+}
 
 interface DurationForm {
   free_months: string;
@@ -109,8 +123,9 @@ export function AssignedPlanConfiguration({
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
 
-  const [editing, setEditing] = useState<'billing' | BenefitSection | null>(null);
+  const [editing, setEditing] = useState<'billing' | 'fee_benefit' | BenefitSection | null>(null);
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
+  const [feeBenefitForm, setFeeBenefitForm] = useState<FeeBenefitForm | null>(null);
   const [benefitDraft, setBenefitDraft] = useState<SellableItemBenefitRow[]>([]);
   const [items, setItems] = useState<SellableItemOption[]>([]);
   const [saving, setSaving] = useState(false);
@@ -150,6 +165,14 @@ export function AssignedPlanConfiguration({
     setEditing('billing');
   }
 
+  function openFeeBenefitEdit() {
+    setFeeBenefitForm({
+      action: snapshot.personal_fee_benefit.action,
+      value: snapshot.personal_fee_benefit.value != null ? String(snapshot.personal_fee_benefit.value) : '',
+    });
+    setEditing('fee_benefit');
+  }
+
   function openBenefitEdit(section: BenefitSection, rows: AssignedPlanSnapshotBenefit[]) {
     setBenefitDraft(rows.map(toDraftRow));
     setEditing(section);
@@ -159,6 +182,7 @@ export function AssignedPlanConfiguration({
   function cancelEdit() {
     setEditing(null);
     setDurationForm(null);
+    setFeeBenefitForm(null);
     setBenefitDraft([]);
   }
 
@@ -181,6 +205,31 @@ export function AssignedPlanConfiguration({
           recurring_billing_unit: durationForm.recurring_billing_unit || null,
           membership_fee_price: durationForm.membership_fee_price === ''
             ? null : Number(durationForm.membership_fee_price),
+        }),
+      });
+      cancelEdit();
+      onChanged();
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveFeeBenefit() {
+    if (!feeBenefitForm) return;
+    setSaving(true);
+    try {
+      // Replace-all: the assignment holds one such benefit or none, so the
+      // whole configuration is sent. `no_benefit` sends no percentage — the
+      // server stores NULL for it rather than remembering the last one.
+      await apiFetch(`/user-memberships/${assignedPlanId}/fee-benefit`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          action: feeBenefitForm.action,
+          value: feeBenefitForm.action === 'percentage_discount' && feeBenefitForm.value !== ''
+            ? Number(feeBenefitForm.value)
+            : null,
         }),
       });
       cancelEdit();
@@ -286,6 +335,58 @@ export function AssignedPlanConfiguration({
               : t('not_configured')}
           />
           <DetailRow label={t('label_membership_fee')} value={fmtMoney(snapshot.membership_fee_price)} />
+        </div>
+      )}
+
+      {/* #772 — the Personal Membership Fee Benefit. Its own section, right
+          under the fee it discounts: it is neither a Promotion benefit (it
+          never expires) nor part of the frozen snapshot (it is agreed with
+          this member, not captured from the catalogue). */}
+      <SectionHeader
+        title={t('section_membership_fee_benefit')}
+        action={editing === 'fee_benefit' ? null : editButton(openFeeBenefitEdit)}
+      />
+      {editing === 'fee_benefit' && feeBenefitForm ? (
+        <div style={{ margin: '6px 0 14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
+            <div>
+              <label style={labelSt}>{t('label_personal_fee_benefit')}</label>
+              <select
+                value={feeBenefitForm.action}
+                onChange={(e) => setFeeBenefitForm({
+                  ...feeBenefitForm,
+                  action: e.target.value as PersonalFeeBenefitAction,
+                })}
+                style={inputSt}
+              >
+                {PERSONAL_FEE_BENEFIT_ACTIONS.map((a) => (
+                  <option key={a} value={a}>{t(`personal_fee_benefit_${a}` as any)}</option>
+                ))}
+              </select>
+            </div>
+            {feeBenefitForm.action === 'percentage_discount' && (
+              <div>
+                <label style={labelSt}>{t('label_personal_fee_benefit_percentage')}</label>
+                <input
+                  type="number" min="0" max="100" step="0.01"
+                  value={feeBenefitForm.value}
+                  onChange={(e) => setFeeBenefitForm({ ...feeBenefitForm, value: e.target.value })}
+                  style={inputSt}
+                />
+              </div>
+            )}
+          </div>
+          <p style={hintSt}>{t('personal_fee_benefit_hint')}</p>
+          <SaveCancel saving={saving} onSave={saveFeeBenefit} onCancel={cancelEdit} t={t} />
+        </div>
+      ) : (
+        <div style={{ marginBottom: 14 }}>
+          <DetailRow
+            label={t('label_personal_fee_benefit')}
+            value={snapshot.personal_fee_benefit.action === 'percentage_discount'
+              ? t('personal_fee_benefit_percentage_value', { value: snapshot.personal_fee_benefit.value ?? 0 })
+              : t('personal_fee_benefit_no_benefit')}
+          />
         </div>
       )}
 
