@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { db } from '../infra/db';
+import { Tx, db } from '../infra/db';
 import { advanceBillingDate } from './billingDate';
 import { recordStatusChange } from '../api/billing-events';
 import { ASSIGNMENT_CADENCE } from '../api/assigned-plan-snapshot';
@@ -147,7 +147,7 @@ async function resolveChargeTypeId(ev: EventContext): Promise<number | null> {
  * membership is still waiting on that very charge (`next_billing_date` today
  * or earlier) — a schedule that already moved on is left alone.
  */
-async function advanceScheduleAfterPayment(ev: EventContext): Promise<void> {
+async function advanceScheduleAfterPayment(tx: Tx, ev: EventContext): Promise<void> {
   if (!ev.user_membership_id || !ev.next_billing_date) return;
   if (!ev.recurring_billing_interval || !ev.recurring_billing_unit) return;
   const today = new Date().toISOString().slice(0, 10);
@@ -157,10 +157,43 @@ async function advanceScheduleAfterPayment(ev: EventContext): Promise<void> {
   if (current > today) return;
 
   const next = advanceBillingDate(current, ev.recurring_billing_interval, ev.recurring_billing_unit);
-  await db.query(
+  await tx.query(
     'UPDATE user_memberships SET last_billed_at = UTC_TIMESTAMP(), next_billing_date = ? WHERE id = ? AND gym_id = ?',
     [next, ev.user_membership_id, ev.gym_id],
   );
+}
+
+/**
+ * #785: money arrived, so the nightly run's dunning state is spent — a member who
+ * was one rejection away from being paused must not stay one rejection away once
+ * they have paid. Both staff actions go through here; the run's own success and
+ * waived branches and the payment webhook write the same two columns inline,
+ * inside the transaction that records the money.
+ *
+ * Separate from `advanceScheduleAfterPayment` on purpose: that one returns early
+ * when the schedule has already moved on, and the counter must be cleared either
+ * way. It is also unconditional on the *count* — a settled payment on an
+ * assignment that had no rejections behind it simply writes zero over zero.
+ */
+async function clearDunningState(tx: Tx, ev: EventContext): Promise<void> {
+  if (!ev.user_membership_id) return;
+  await tx.query(
+    'UPDATE user_memberships SET failed_attempts = 0, last_failed_at = NULL WHERE id = ? AND gym_id = ?',
+    [ev.user_membership_id, ev.gym_id],
+  );
+}
+
+/**
+ * Everything a settled payment does to the assignment, in one transaction: the
+ * schedule moves on and the dunning count clears together. Two bare statements
+ * left a window where a crash between them advanced the cycle while leaving the
+ * old count behind, which the next rejection would then read as consecutive.
+ */
+async function settleCycleAfterPayment(ev: EventContext): Promise<void> {
+  await db.transaction(async (tx) => {
+    await advanceScheduleAfterPayment(tx, ev);
+    await clearDunningState(tx, ev);
+  });
 }
 
 /** Stamps §2's Modified At / Modified By on the parent Billing Event. */
@@ -294,7 +327,7 @@ export async function retryBillingEventPayment(
 
   let membershipPaused = false;
   if (succeeded) {
-    await advanceScheduleAfterPayment(event);
+    await settleCycleAfterPayment(event);
   } else if (event.membership_status === 'active') {
     // Q3: two consecutive rejections pause the assigned plan. The status flip
     // goes through the same append-only ledger row every other transition
@@ -372,7 +405,7 @@ export async function recordManualPayment(
     failureCode: null, failureMessage: null, notes, actorUserId,
   });
 
-  await advanceScheduleAfterPayment(event);
+  await settleCycleAfterPayment(event);
   await stampEventModified(gymId, event.id, actorUserId);
 
   return {

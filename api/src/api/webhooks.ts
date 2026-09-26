@@ -193,6 +193,21 @@ paymentWebhookRouter.post(
             [billingEventId, pr.id],
           );
 
+          // #785: money arrived for this cycle, so the nightly run's dunning
+          // state is spent — a member who was one rejection away from being
+          // paused and then paid the checkout link must not stay one rejection
+          // away. This is the third money-arrival path, beside the run's own
+          // success branch and the two staff actions' `clearDunningState()`;
+          // it is written here, inside this transaction, because the payment and
+          // the reset have to land together. Unconditional on the token branch
+          // below: the cycle is settled whether or not the provider handed us a
+          // reusable token.
+          await tx.query(
+            `UPDATE user_memberships SET failed_attempts = 0, last_failed_at = NULL
+             WHERE id = ? AND gym_id = ?`,
+            [pr.user_membership_id, pr.gym_id],
+          );
+
           if (payload.paymentToken && payload.sequenceId) {
             await tx.query(
               `INSERT INTO payment_methods

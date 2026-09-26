@@ -5,6 +5,8 @@ import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { advanceBillingDate } from '../domain/billingDate';
+import { registerRejection } from '../domain/billingDunning';
+import { recordStatusChange } from './billing-events';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import {
   FEE_ASSIGNMENT_COLUMNS,
@@ -61,6 +63,15 @@ function checkInternalSecret(req: Request, res: Response): boolean {
  *
  * Auth: X-Internal-Secret header (BILLING_INTERNAL_SECRET env var).
  *
+ * #785 — a rejected charge now escalates instead of repeating for ever. The
+ * first rejection records itself and bumps `user_memberships.failed_attempts`;
+ * because `next_billing_date` does not move, the retry is the next run day. The
+ * second consecutive rejection of that same due cycle **pauses** the assignment
+ * (`recordStatusChange`, `active → paused`, `source = 'system'`), which takes it
+ * out of this query's `WHERE status = 'active'`. A settled or waived cycle
+ * clears the counter. Only a provider *rejection* counts — a provider exception
+ * and a missing payment method do not (`domain/billingDunning.ts`).
+ *
  * #780 — the run guard is a calendar rule, not a rolling window:
  *   - a run that already **completed** today (UTC) answers
  *     `200 { skipped_reason: 'already_completed_today', run_date, …zeroed counters }`,
@@ -77,6 +88,12 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
   let succeeded = 0;
   let failed = 0;
   let waived = 0;
+  // #785: how many assignments this run escalated to `paused` after a second
+  // consecutive rejection. Reported beside the other counters (the workflow
+  // reads the four named ones by name, so an extra field is additive) but
+  // deliberately *not* written to `billing_run_log`: the pause is already a
+  // `status_changed` ledger row, which is where it is explicable from.
+  let paused = 0;
 
   // #780: one **completed** run per UTC date, not "23 hours since the last
   // start". The claim is taken before the try/catch's work so that a crash
@@ -102,7 +119,7 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       return res.json({
         skipped_reason: 'already_completed_today',
         run_date: claim.runDate,
-        processed: 0, succeeded: 0, failed: 0, waived: 0,
+        processed: 0, succeeded: 0, failed: 0, waived: 0, paused: 0,
       });
     }
     req.log.warn({ startedAt: claim.startedAt }, 'billing/run: another run is in progress');
@@ -179,8 +196,16 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
              VALUES (?, ?, ?, 'waived_billing', 0, ?, 'system', NULL, ?)`,
             [row.gym_id, row.id, row.member_id, membershipFeeChargeTypeId, priced.periodStatus],
           );
+          // #785: the cycle moved on, so whatever rejections the *previous*
+          // cycle collected are spent — `failed_attempts` counts consecutive
+          // rejections of the cycle `next_billing_date` names, and this is a
+          // different one now. Clearing it here (and not only on a settled
+          // charge) is what stops a rejection in March plus a rejection in
+          // June, with a free month between them, from reading as two in a row.
           await tx.query(
-            'UPDATE user_memberships SET next_billing_date = ? WHERE id = ?',
+            `UPDATE user_memberships
+             SET next_billing_date = ?, failed_attempts = 0, last_failed_at = NULL
+             WHERE id = ?`,
             [nextBillingDate, row.id],
           );
         });
@@ -194,6 +219,10 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
 
       if (!row.payment_token || !row.sequence_id) {
         // No payment method stored — emit a failed_billing event and continue.
+        // #785: this is not a rejection, so it does not move the assignment
+        // towards a pause. Nothing was attempted and there is no decline to
+        // escalate; what it needs is a member who enters a card, which pausing
+        // them does not bring about. See `domain/billingDunning.ts`.
         await db.query(
           `INSERT INTO billing_events
              (gym_id, user_membership_id, member_id, event_type, amount,
@@ -246,9 +275,14 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
               ],
             );
 
+            // #785: a settled charge clears the dunning state — the cycle is
+            // paid and the next one starts from zero rejections, so a decline
+            // last month can never combine with one next month to pause a
+            // member who is paying.
             await tx.query(
               `UPDATE user_memberships
-               SET last_billed_at = UTC_TIMESTAMP(), next_billing_date = ?
+               SET last_billed_at = UTC_TIMESTAMP(), next_billing_date = ?,
+                   failed_attempts = 0, last_failed_at = NULL
                WHERE id = ?`,
               [nextBillingDate, row.id],
             );
@@ -262,44 +296,139 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
         } else {
           // Failed charge — billing event first, then payment_requests.
           const failNote = [result.errorCode, result.errorMessage].filter(Boolean).join(': ');
-          // Same `insertId` fix as the successful branch above: the rejected
-          // charge's `payment_requests` row was being written with an
-          // undefined `billing_event_id`, which threw before it was inserted.
-          const { insertId: billingEventId } = await db.query(
-            `INSERT INTO billing_events
-               (gym_id, user_membership_id, member_id, event_type, amount,
-                charge_type_id, source, actor_user_id, notes)
-             VALUES (?, ?, ?, 'failed_billing', ?, ?, 'system', NULL, ?)`,
-            [row.gym_id, row.id, row.member_id, amount, membershipFeeChargeTypeId, failNote || null],
-          );
 
-          // #640: the rejection reason is stored on the transaction too, not
-          // only in the ledger row's notes, so the Billing Event Details view
-          // can explain a failure at the attempt that produced it.
-          await db.query(
-            `INSERT INTO payment_requests
-               (gym_id, user_membership_id, member_id, amount, currency,
-                charge_type_id, billing_event_id, status, provider,
-                provider_order, provider_ref, source, created_at,
-                failure_code, failure_message)
-             VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'failed', ?, ?, ?,
-                     'billing_run', UTC_TIMESTAMP(), ?, ?)`,
-            [
-              row.gym_id, row.id, row.member_id, amount,
-              membershipFeeChargeTypeId, billingEventId,
-              row.provider, orderId, result.providerRef,
-              result.errorCode ?? null, result.errorMessage?.slice(0, 500) ?? null,
-            ],
-          );
+          // #785: the provider answered, and the answer was no. This is the one
+          // failure kind that escalates — the first rejection only records
+          // itself, the second consecutive one for the same due cycle pauses
+          // the assignment, which is what stops the run re-charging a declined
+          // card (and paying a fee for it) every night for ever. The retry is
+          // the *next run day* by construction: `next_billing_date` does not
+          // move, so the same assignment is selected again tomorrow.
+          //
+          // The decision is taken *inside* the transaction below, off the locked
+          // row — never off `row`, which was read before the provider round
+          // trip. A staff Retry that settled or a Manual payment recorded in
+          // that window clears the pair (`clearDunningState`), and deciding
+          // from the stale count would write it back and pause a member who has
+          // just paid.
+          let dunning = { attempts: 0, pause: false };
+
+          // One transaction for the whole rejection, unlike before: the ledger
+          // row, its transaction, the attempt counter and the pause have to
+          // agree, or a crash between them could pause an assignment with no
+          // second `failed_billing` row explaining why.
+          const pausedThisRow = await db.transaction(async (tx) => {
+            // Same `insertId` fix as the successful branch above: the rejected
+            // charge's `payment_requests` row was being written with an
+            // undefined `billing_event_id`, which threw before it was inserted.
+            const { insertId: billingEventId } = await tx.query(
+              `INSERT INTO billing_events
+                 (gym_id, user_membership_id, member_id, event_type, amount,
+                  charge_type_id, source, actor_user_id, notes)
+               VALUES (?, ?, ?, 'failed_billing', ?, ?, 'system', NULL, ?)`,
+              [row.gym_id, row.id, row.member_id, amount, membershipFeeChargeTypeId, failNote || null],
+            );
+
+            // #640: the rejection reason is stored on the transaction too, not
+            // only in the ledger row's notes, so the Billing Event Details view
+            // can explain a failure at the attempt that produced it.
+            //
+            // `attempt` is deliberately left alone here. It counts attempts
+            // *within one Billing Event* (#640), and this event is new: its only
+            // transaction is its first attempt. The cross-night count that
+            // decides the pause is `user_memberships.failed_attempts` — writing
+            // it here as well would make the Details view of a one-transaction
+            // event claim to be showing attempt 2 of something.
+            await tx.query(
+              `INSERT INTO payment_requests
+                 (gym_id, user_membership_id, member_id, amount, currency,
+                  charge_type_id, billing_event_id, status, provider,
+                  provider_order, provider_ref, source, created_at,
+                  failure_code, failure_message)
+               VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'failed', ?, ?, ?,
+                       'billing_run', UTC_TIMESTAMP(), ?, ?)`,
+              [
+                row.gym_id, row.id, row.member_id, amount,
+                membershipFeeChargeTypeId, billingEventId,
+                row.provider, orderId, result.providerRef,
+                result.errorCode ?? null, result.errorMessage?.slice(0, 500) ?? null,
+              ],
+            );
+
+            // Re-read under a lock: minutes may have passed since the due query
+            // and a staff member may have paused, cancelled or *settled* this
+            // assignment in the meantime. Only an assignment that is still
+            // `active` is ours to escalate, and the count we write has to be the
+            // one this row carries now — see the note above the `dunning` decl.
+            const { rows: locked } = await tx.query<{
+              id: number; member_id: number; status: string;
+              failed_attempts: number | string | null; rejected_today: number | string;
+            }>(
+              `SELECT id, member_id, status, failed_attempts,
+                      (last_failed_at IS NOT NULL AND DATE(last_failed_at) = UTC_DATE()) AS rejected_today
+                 FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE`,
+              [row.id, row.gym_id],
+            );
+            if (locked.length === 0 || locked[0].status !== 'active') return false;
+
+            dunning = registerRejection({
+              previousAttempts: locked[0].failed_attempts,
+              alreadyRejectedToday: Number(locked[0].rejected_today) === 1,
+            });
+
+            await tx.query(
+              'UPDATE user_memberships SET failed_attempts = ?, last_failed_at = UTC_TIMESTAMP() WHERE id = ?',
+              [dunning.attempts, row.id],
+            );
+
+            if (!dunning.pause) return false;
+
+            // The escalation is the status the schema already has: a `paused`
+            // assignment falls outside this run's `WHERE status = 'active'`, so
+            // it is simply not selected again. The flip goes through the same
+            // append-only ledger row every other transition writes, with
+            // `source = 'system'` — nobody asked for it — exactly as the manual
+            // Retry's own two-attempts rule does (#640 Q3).
+            await tx.query(
+              "UPDATE user_memberships SET status = 'paused' WHERE id = ?",
+              [row.id],
+            );
+            await recordStatusChange(tx, {
+              gymId: row.gym_id,
+              userMembershipId: locked[0].id,
+              memberId: locked[0].member_id,
+              previousStatus: locked[0].status,
+              newStatus: 'paused',
+              source: 'system',
+              actorUserId: null,
+            });
+            // Returned rather than assigned to an outer flag: the `paused`
+            // counter must count commits, and a transaction can still fail
+            // after its last statement.
+            return true;
+          });
+
+          if (pausedThisRow) paused++;
 
           req.log.warn(
-            { orderId, memberId: row.member_id, gymId: row.gym_id, errorCode: result.errorCode },
+            {
+              orderId, memberId: row.member_id, gymId: row.gym_id,
+              errorCode: result.errorCode, attempt: dunning.attempts,
+              membershipPaused: pausedThisRow,
+            },
             'billing/run: charge failed',
           );
           failed++;
         }
       } catch (chargeErr) {
         // Provider API error — emit failed_billing event and continue; no payment_requests row.
+        //
+        // #785: a provider exception is **not** a rejection and does not count
+        // towards the pause. The charge's outcome is unknown — it may even have
+        // settled — so escalating on it would pause members for our own outage,
+        // and a night when Monei is unreachable would pause a gym's whole book.
+        // `failed_attempts` is therefore left exactly as it was: neither bumped
+        // nor cleared. See `domain/billingDunning.ts`.
         req.log.error(
           { orderId, memberId: row.member_id, err: (chargeErr as Error).message },
           'billing/run: provider error',
@@ -317,8 +446,8 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
 
     await finishRun(BILLING_RUN_LOG, claim.runId, 'completed', { processed, succeeded, failed, waived });
 
-    req.log.info({ processed, succeeded, failed, waived }, 'billing/run: complete');
-    res.json({ processed, succeeded, failed, waived });
+    req.log.info({ processed, succeeded, failed, waived, paused }, 'billing/run: complete');
+    res.json({ processed, succeeded, failed, waived, paused });
   } catch (err) {
     // Close the run as `failed` with whatever it got through. Without this the
     // row would stay `in_progress` until STALE_RUN_MINUTES retires it, and the
