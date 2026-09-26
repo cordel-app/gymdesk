@@ -1196,3 +1196,59 @@ const menuItems: ContextMenuItem[] = [
 - Use `useModuleAccess`, not `isSuperadmin || canWriteModule(...)`: `isSuperadmin` stays true while impersonating, so the old pattern showed every edit control to a superadmin impersonating a read-only user.
 - Gate the **entry points** (Add button, ⋮ menu write items, in-row action buttons, Save). Inline edit forms that only open from a gated entry point need nothing extra.
 
+
+## Testing a payment-provider call (#773, #791)
+
+Any new code path that charges, tokenises or refunds through `PaymentProvider` is tested
+against a **stubbed provider whose received arguments are asserted**, not merely against the
+route's status code. The two rules that catch the defects this pattern exists for:
+
+```ts
+// api/src/test/<your-router>.test.ts — the shape billing-run.test.ts uses.
+// `vi.hoisted` so the mock factory can close over it; the spread keeps every other
+// export of `../payments` real (the factory replaces the whole module otherwise).
+const providerResult = vi.hoisted(() => ({
+  current: { success: true, providerRef: 'test-provider-ref' } as {
+    success: boolean; providerRef: string; errorCode?: string; errorMessage?: string;
+  },
+  calls: [] as Array<{ orderId: string; amount: number; currency: string }>,
+}));
+
+vi.mock('../payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../payments')>()),
+  getPaymentProvider: () => ({
+    executeRecurring: async (params: { orderId: string; amount: number; currency: string }) => {
+      providerResult.calls.push(params);
+      return providerResult.current;
+    },
+  }),
+}));
+
+beforeEach(() => { providerResult.calls = []; });
+
+// 1. The amount crosses the boundary in MINOR UNITS — assert the number, not the call.
+const call = providerResult.calls.find((c) => c.orderId.includes(`-${umId}-`));
+expect(call).toMatchObject({ amount: 2999, currency: 'EUR' });   // 29.99 €, not 29.99
+expect(Number.isInteger(call!.amount)).toBe(true);
+// …and that our own side still keeps euros:
+expect(Number(event.amount)).toBe(29.99);
+
+// 2. A path that must NOT charge asserts the absence, and that no row was written.
+expect(providerResult.calls).toHaveLength(0);
+```
+
+- **Assert the amount.** `expect(stub).toHaveBeenCalled()` passed for as long as the
+  provider was stubbed while the nightly run and the staff Retry were passing euros — a
+  real renewal of a 29.99 € fee would have charged twenty-nine cents (`toMinorUnits()`,
+  `api/src/payments/money.ts`).
+- **Assert the *absence* of a call** wherever the rule is "this does not move money": a
+  waived cycle, a card verification, a fee that resolves to 0. Pair it with an assertion
+  that no `payment_requests` / `billing_events` row was written, since "nothing was
+  charged" and "nothing was recorded" are two different claims and the bugs have been in
+  the second one.
+- Keep the **pure** rules in `api/src/domain/` and unit-test them with no DB or provider at
+  all — `billingDunning.ts`, `billingEventStatus.ts`, `storedCards.ts`, `runGuard.ts` and
+  `money.ts` all have unit test files, and that is where the interesting cases (a clock
+  boundary, a stale counter, a refused removal) belong.
+
+See `docs/payments.md` for what each path is supposed to write.

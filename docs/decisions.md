@@ -4,6 +4,47 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 17. Amounts cross the payment-provider boundary in minor units (#773, 2026-09-26)
+
+**Decision**: every caller of `createPaymentRequest()` and `executeRecurring()` converts through `toMinorUnits()` (`api/src/payments/money.ts`). Everything on our side of that boundary — `user_memberships.membership_fee_price`, `billing_events.amount`, `payment_requests.amount`, what `resolveMembershipFee()` and `priceMembershipFeeOn()` return — stays a decimal number of euros.
+
+**Why**: Monei's `/payments` takes cents, and the two sides had drifted. The nightly run and the staff Retry passed the euro amount straight through for as long as the provider was stubbed in tests, so a real renewal of a 29.99 € fee would have charged twenty-nine cents. One conversion helper at the one boundary is the only shape in which that cannot recur.
+
+**Consequences**:
+- Do not add a caller that passes euros to the provider, and do not add a provider adapter that expects them.
+- A test of a provider call asserts the `amount` the stub received, not only that a call happened (`api/src/test/payments-money.test.ts`).
+- The boundary is the provider, not the database: no column stores cents.
+
+---
+
+## 16. A failed internal charge is not reported to the member (2026-09-26)
+
+**Decision**: when the nightly run cannot charge a member, the member is told nothing. The failure is a `failed_billing` Billing Event plus, on a rejection, #785's escalation to `paused`; surfacing it is a **staff** concern.
+
+**Why**: the recurring charge is an unattended internal process, and a rejected card is a conversation between the gym and its member, not an automated dunning email from software the member never signed up to hear from. The gym decides what to say and when. It also avoids notifying a member about a `provider_error`, where the charge's outcome is unknown and may in fact have settled.
+
+**Consequences**:
+- No `member_notifications` type exists for a failed charge, and none should be added without a ticket that decides the wording and the trigger.
+- The staff-side indicator is #779 (not built yet), and until it exists the only surfaces are Payments → Billing Events filtered by `failed`, the Members list's `payment_status`, and the red workflow run (#778).
+- A member *can* see it indirectly on their own billing history, because the ledger is theirs to read — that is a read, not a notification.
+
+---
+
+## 15. The nightly runs stay on GitHub Actions (2026-09-26)
+
+**Decision**: `POST /billing/run` and `POST /recurring-bookings/run` keep being triggered by scheduled GitHub Actions workflows. Rather than moving to a cron on the VPS or a hosted scheduler, the API and the workflows are made robust to the scheduler's weaknesses.
+
+**Why**: GitHub Actions already holds the secrets, already has an audit trail per run, and already notifies on failure — a VPS cron has none of that and would be one more thing to deploy and monitor. Its real weakness is that `schedule` triggers are best-effort: they run late under load and are sometimes dropped entirely. That is fixable on our side.
+
+**Consequences** — the hardening this decision commits to:
+- **A red workflow is the notification** (#778): each workflow reads the response body, prints the counters, and exits non-zero on `failed > 0`, on an unreadable body, or on a non-2xx.
+- **The run guard is a calendar rule, not a rolling window** (#780, migration 193): at most one *completed* run per UTC date, so a late cron cannot skip a day and a crash cannot lock one.
+- **A second daily attempt** at 10:00 UTC for the billing run (#781), which is a green no-op on every day the 06:00 run completed. The recurring booking run deliberately keeps one schedule.
+- **A freshness alert is still owed** (#782): no red run can report a day on which nothing reached the API at all, because there was no run.
+- Because the schedule can fire twice, every run endpoint must stay idempotent under a second call on the same date — which is what the guard and `next_billing_date` together provide.
+
+---
+
 ## 14. #503's 9-stage plan is complete, distinct from #360's own still-open stages (#503, 2026-09-18)
 
 **Decision**: stage 9 ("Tests + docs") closes the 9-stage plan agreed on the #503 issue thread (stages 1–8: #568, #570, #572, #575, #576, #579, #580, #583). `calendar_events` is now the single occurrence entity for members and Admin alike: no `kind` discriminator, configurable waitlisting, activity→future-event field propagation, a unified member read model (`status`/`occupancy_status`/`waitlist_status`), local calendar filters, and a member calendar UI/Home/My Bookings that surface all of it.
