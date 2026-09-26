@@ -26,7 +26,7 @@ interface LibraryItem {
   status: 'active' | 'deleted';
   /**
    * Cloudflare URL of this food's image, or null (#715). For a base food the
-   * object behind it always lives in `cordel/Nutrition/`; the column is the same
+   * object behind it lives in `cordel/nutrition/`; the column is the same
    * one gym-owned items use, and the row's ownership is what decides the folder.
    */
   image_url: string | null;

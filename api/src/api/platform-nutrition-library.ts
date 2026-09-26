@@ -37,7 +37,7 @@ export const platformNutritionLibraryRouter = Router();
 /**
  * The columns every item-shaped response returns. `image_url` (#715) is the
  * existing column migration 138 added for gym-owned items, reused rather than
- * doubled: a base food's URL points at `cordel/Nutrition/…`, a gym food's at its
+ * doubled: a base food's URL points at `cordel/nutrition/…`, a gym food's at its
  * own folder, and the ownership of the row is what decides which — see
  * `domain/baseNutritionImages.ts`.
  */
@@ -327,14 +327,14 @@ platformNutritionLibraryRouter.put('/:id/translations', requireSuperadmin, async
 //
 // A Base Nutrition Library food is a `gym_id IS NULL` row and belongs to no gym,
 // so its image cannot hang off `gyms.storage_folder_prefix`. It goes in the
-// platform's own R2 folder, under the deterministic key
-// `cordel/Nutrition/<food_id>-<sanitized name>.png` (#715 §1, §9–§11).
+// platform's own R2 folder, under a fresh key per upload,
+// `cordel/nutrition/<image_uuid>-<sanitized name>.png` (#715 §1, §9–§11).
 //
 // The route takes neither the folder nor the key from the request: the prefix is
 // the `cordel` constant, the food is looked up with `gym_id IS NULL` (so a
-// gym-owned item is simply 404 here, whoever asks) and the key is derived from
-// the row's own id and name. A client cannot reach another food's object, or a
-// gym's folder, by changing anything it sends.
+// gym-owned item is simply 404 here, whoever asks) and the key is built from
+// the row's own name and a UUID the server generates. A client cannot reach
+// another food's object, or a gym's folder, by changing anything it sends.
 //
 // Validation is the file's, not the request's (§8): PNG signature, 512×512 from
 // the IHDR, and an alpha channel. Nothing is uploaded and nothing is written
@@ -388,7 +388,7 @@ platformNutritionLibraryRouter.post(
       if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
       const food = existing[0];
-      const key = buildBaseNutritionImageKey(food.id, food.name);
+      const key = buildBaseNutritionImageKey(food.name);
       const url = buildStorageObjectUrl(key);
 
       try {
@@ -407,12 +407,11 @@ platformNutritionLibraryRouter.post(
         return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
       }
 
-      // The key is deterministic, so a replacement normally overwrites the
-      // object it replaces and there is nothing to orphan. The exception is a
-      // food renamed since its last upload: the derived key moved, so the row's
-      // old object is now unreachable. Removing it is best-effort and happens
-      // *after* the new object is safely stored — a failure here leaves an
-      // orphan to sweep, not a failed save.
+      // Every upload gets a fresh key, so the object the row pointed at before
+      // is unreachable once the row moves. Removing it is best-effort and
+      // happens *after* the new object is safely stored: a failure here leaves
+      // an orphan to sweep, not a failed save. This is also what moves an image
+      // stored under the old `cordel/Nutrition/` folder into `cordel/nutrition/`.
       const staleUrl = food.image_url;
       if (staleUrl && url && staleUrl !== url) {
         const staleKey = storageKeyFromObjectUrl(staleUrl);
