@@ -287,7 +287,27 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
         {error && <p style={{ color: '#c0392b', margin: 0, padding: '10px 22px 0', fontSize: 14 }}>{error}</p>}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '16px 22px 20px' }}>
-          <button onClick={onCancel} disabled={importing} style={btnStyle('#aaa')}>{t('cancel')}</button>
+          {/*
+            * #803 §5: Cancel read as disabled because `#aaa` behind white text is
+            * barely 2.3:1 — the same washed-out grey the Import button wears at
+            * `opacity: 0.45` when nothing is selected. It now uses the `#444` of
+            * ExerciseDetailModal's own Cancel, so the two exercise modals agree and
+            * no new colour enters the page, and it stays enabled however few rows
+            * the filters matched: Cancel never depended on the selection.
+            *
+            * It is still disabled *while an import runs* — that is §6's "import
+            * loading state", unchanged: the request is in flight, closing the modal
+            * would drop the refresh and the toast without stopping the POST, and the
+            * overlay click is guarded the same way. The opacity is what that state
+            * was missing, so the one moment Cancel really is inert now looks it.
+            */}
+          <button
+            onClick={onCancel}
+            disabled={importing}
+            style={{ ...btnStyle('#444'), opacity: importing ? 0.45 : 1, cursor: importing ? 'not-allowed' : 'pointer' }}
+          >
+            {t('cancel')}
+          </button>
           <button
             onClick={handleImport}
             disabled={importing || selected.size === 0}

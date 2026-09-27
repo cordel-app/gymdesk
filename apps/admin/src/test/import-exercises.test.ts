@@ -77,8 +77,8 @@ describe('Exercises: Import Exercises modal (#718)', () => {
     expect(exercisesKey(locales[code], 'imported_with_skipped')).toBeUndefined();
   });
 
-  it('labels the header button Import and opens the modal instead of importing', () => {
-    expect(page).toContain("t('import')");
+  it('opens the modal from the header instead of importing', () => {
+    // #803 renamed the label; the key it now uses is asserted below.
     expect(page).toContain('setImportOpen(true)');
     // §1: nothing on this page seeds a default catalog any more.
     expect(page).not.toContain('import-defaults');
@@ -200,5 +200,79 @@ describe('Exercises: re-import restores System media (#719 §12)', () => {
     expect(body).toContain("t('imported_media_refreshed'");
     expect(body).toContain("t('imported_skipped'");
     expect(body).not.toContain('imported_with_skipped');
+  });
+});
+
+// ─── The header button names what it imports (#803) ───────────────────────────
+
+describe('Exercises: Import System Exercises button and modal Cancel (#803)', () => {
+  it.each(LOCALE_CODES)('has the header button label in %s.json', (code) => {
+    const label = exercisesKey(locales[code], 'import_system_exercises');
+    expect(label, `${code}.json is missing exercises.import_system_exercises`).toBeTruthy();
+    // It has to be its own key: the modal's primary action keeps `import`.
+    expect(label).not.toBe(exercisesKey(locales[code], 'import'));
+  });
+
+  it('labels the header button with the new key', () => {
+    const button = page.slice(page.indexOf('setImportOpen(true)'));
+    const label = button.slice(0, button.indexOf('</button>'));
+    expect(label).toContain("t('import_system_exercises')");
+    // AC1: the header no longer reads just "Import".
+    expect(label).not.toContain("t('import')");
+  });
+
+  it('keeps the header button behind the write gate and still opens the modal (AC2)', () => {
+    const button = page.slice(page.indexOf('setImportOpen(true)'));
+    const end = button.indexOf('</button>');
+    expect(button.slice(0, end)).toContain('disabled={!canWrite}');
+    expect(button.slice(0, end)).toContain('title={readOnlyTitle}');
+    expect(page).toContain('<ImportExercisesModal');
+  });
+
+  it('keeps the modal title and its primary action unchanged (AC3, §7)', () => {
+    expect(modal).toContain("t('import_modal_title')");
+    expect(modal).toContain("importing ? t('import_importing') : t('import')");
+    expect(modal).not.toContain('import_system_exercises');
+    for (const code of LOCALE_CODES) {
+      expect(exercisesKey(locales[code], 'import_modal_title')).toBeTruthy();
+      expect(exercisesKey(locales[code], 'import')).toBeTruthy();
+    }
+  });
+
+  it('gives Cancel an enabled look, not the washed-out grey (AC4)', () => {
+    const footer = modal.slice(modal.indexOf('onClick={onCancel}'));
+    const button = footer.slice(0, footer.indexOf('</button>'));
+    expect(button).toContain("btnStyle('#444')");
+    // `#aaa` behind white text is what read as disabled; no page-local colour either.
+    expect(button).not.toContain("'#aaa'");
+    expect(button).not.toContain("btnStyle('#1e7e40')");
+  });
+
+  it('never ties Cancel to the selection or the row count (AC4, AC6)', () => {
+    const footer = modal.slice(modal.indexOf('onClick={onCancel}'));
+    const button = footer.slice(0, footer.indexOf('</button>'));
+    expect(button).not.toContain('selected.size');
+    expect(button).not.toContain('rows.length');
+    expect(button).not.toContain('importable.length');
+    // The Import button's own gate is untouched and stays its own.
+    expect(modal).toContain('disabled={importing || selected.size === 0}');
+  });
+
+  it('closes the modal without importing (AC5)', () => {
+    const footer = modal.slice(modal.indexOf('onClick={onCancel}'));
+    const button = footer.slice(0, footer.indexOf('</button>'));
+    expect(button).toContain('onClick={onCancel}');
+    expect(button).not.toContain('handleImport');
+    expect(button).toContain("t('cancel')");
+  });
+
+  it('shows the disabled state only while an import is in flight (§6)', () => {
+    const footer = modal.slice(modal.indexOf('onClick={onCancel}'));
+    const button = footer.slice(0, footer.indexOf('</button>'));
+    expect(button).toContain('disabled={importing}');
+    expect(button).toContain('opacity: importing ? 0.45 : 1');
+    expect(button).toContain("cursor: importing ? 'not-allowed' : 'pointer'");
+    // The overlay click is guarded the same way, so the two agree.
+    expect(modal).toContain('!importing) onCancel()');
   });
 });

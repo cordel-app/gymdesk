@@ -1339,6 +1339,7 @@
     "title": "Exercises",
     "add": "+ Add Exercise",
     "import": "Import",
+    "import_system_exercises": "Import System Exercises",
     "imported": "Imported {n} exercises.",
     "imported_skipped": "{n} were already in your catalog.",
     "imported_media_refreshed": "Restored the System media of {n} exercises.",
