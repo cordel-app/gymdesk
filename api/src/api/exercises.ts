@@ -164,6 +164,23 @@ async function nameTaken(gymId: string, name: string, excludeId?: string | numbe
   return rows.length > 0;
 }
 
+/**
+ * The gym's own catalogue, and only that (#804). A Base Exercise
+ * (`gym_id IS NULL`) reaches a gym by being **imported** — `POST
+ * /exercises/import` writes the gym's own copy and records provenance in
+ * `cloned_from_id` — so the copy is the import state and existing in the
+ * platform library is not: a base row the gym never imported has no business
+ * in this list, and adding one to the library must not make it appear in every
+ * gym's Exercises page. Filtering here rather than per-control is what keeps
+ * `?q=` and `?status=` from reaching it either (#804 §10), and it is also what
+ * the write paths already assume — `workout-templates.ts` and
+ * `training-plans.ts` validate an `exercise_id` with `gym_id = ?`, so a base row
+ * this endpoint used to offer the exercise pickers was rejected the moment it
+ * was picked. `GET /exercises/base` is where the library is read (the Import
+ * modal), and `GET /exercises/:id` still answers for a base row — #804 §15
+ * leaves Exercise details alone, and a base row is readable by the gym there
+ * and through the library either way.
+ */
 exercisesRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const status = req.query.status as string | undefined;
@@ -172,7 +189,7 @@ exercisesRouter.get('/', async (req, res) => {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
   const params: any[] = [gymId];
-  let sql = `${SELECT} WHERE (e.gym_id = ? OR e.gym_id IS NULL) AND e.status != 'deleted'`;
+  let sql = `${SELECT} WHERE e.gym_id = ? AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
   if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
   sql += ' ORDER BY e.name ASC';

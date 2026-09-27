@@ -81,16 +81,29 @@ describe('gym-level exercises: base resource visibility', () => {
     baseExerciseIds.push(baseExerciseId);
   });
 
-  it('GET /exercises includes the base exercise in the list', async () => {
+  // #804: import is the visibility boundary. A base exercise the gym has not
+  // imported is not in its Exercises list — it is read through
+  // `GET /exercises/base` (the Import modal) and by id, both below. The rest of
+  // this file's base-resource visibility (workout templates, plan templates) is
+  // unchanged; #804 is about exercises only.
+  it('GET /exercises excludes a base exercise the gym has not imported', async () => {
     const res = await request
       .get('/exercises')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
-    const found = res.body.find((e: any) => e.id === baseExerciseId);
-    expect(found).toBeDefined();
-    expect(found.gym_id).toBeNull();
+    expect(res.body.find((e: any) => e.id === baseExerciseId)).toBeUndefined();
+    for (const row of res.body) expect(row.gym_id).toBe(gymId);
+  });
+
+  it('GET /exercises/base still offers it for import', async () => {
+    const res = await request
+      .get('/exercises/base')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.map((e: any) => e.id)).toContain(baseExerciseId);
   });
 
   it('GET /exercises/:id returns 200 for a base exercise', async () => {

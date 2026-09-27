@@ -636,6 +636,12 @@ export default function ExercisesPage() {
   function renderRow(ex: Exercise) {
     const isEditing = editingId === ex.id;
     const isExpanded = isEditing || expandedId === ex.id;
+    // #804: `GET /exercises` returns the gym's own rows only, so a base row no
+    // longer reaches this list — a System Exercise appears here after it has
+    // been imported, as the gym's own copy carrying `cloned_from_id`. The
+    // `isBase` arms below are kept as the row shape's defence, not as a path a
+    // user can take: nothing in the page filters on it and nothing depends on
+    // it firing.
     const isBase = ex.gym_id === null;
     // #718 §12: two origins, and only two — an exercise the platform provides
     // (the library row itself, or the gym's copy of one) is "System sourced";
