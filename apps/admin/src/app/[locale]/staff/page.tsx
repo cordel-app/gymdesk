@@ -15,38 +15,28 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { PROFILE_ROLE_MAP } from '@/config/permissions';
+import {
+  EMPTY_VALUE,
+  STAFF_PROFILE_SECTIONS,
+  StaffProfile,
+  formatStaffField,
+  toStaffEditFormValues,
+} from './staffProfile';
 
-export interface StaffMember {
+/**
+ * #798: the columns the Edit form manages are declared once, in
+ * `staffProfile.ts`, and the read-only expanded view renders the same list —
+ * the two cannot drift apart. What is left here is what the list row carries
+ * beyond that field set.
+ */
+export interface StaffMember extends StaffProfile {
   id: number;
   gym_id: string;
   /** #592: the gym_memberships row (login) this record owns, if any. */
   gym_membership_id: number | null;
-  first_name: string;
-  last_name: string;
-  email: string;
-  mobile_phone: string | null;
   profile_photo_url: string | null;
-  date_of_birth: string | null;
-  national_id: string | null;
-  profile: string;
-  employment_status: 'active' | 'inactive';
-  current_status: string;
-  hire_date: string;
-  contract_end_date: string | null;
-  termination_date: string | null;
   direct_manager_id: number | null;
   direct_manager_name: string | null;
-  employee_number: string | null;
-  company_email: string | null;
-  company_phone: string | null;
-  personal_phone: string | null;
-  emergency_contact: string | null;
-  emergency_phone: string | null;
-  working_days: string | null;
-  work_start_time: string | null;
-  work_end_time: string | null;
-  break_duration_minutes: number | null;
-  notes: string | null;
   contract_days_remaining: number | null;
   created_at: string;
   updated_at: string;
@@ -198,13 +188,19 @@ export default function StaffPage() {
   const [sortKey, setSortKey] = useState('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  const [expandedId, setExpandedId] = useState<number | 'new' | null>(null);
+  // #798: expanding a card and editing it are two separate interactions.
+  // `expandedId` is the strictly read-only view; `editingId` is the form, which
+  // is reachable only through ⋮ → Edit (or 'new'). Never both at once.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | 'new' | null>(null);
   const [form, setForm] = useState<Partial<StaffMember>>(emptyForm());
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
   const [defaultCenterId, setDefaultCenterId] = useState<number | null>(null);
+  /** #798: the expanded card's own centers, with their names, for the read-only view. */
+  const [expandedCenters, setExpandedCenters] = useState<StaffCenterAssignment[] | null>(null);
 
   const [clerkStatus, setClerkStatus] = useState<ClerkStatus | null>(null);
   const [clerkLoading, setClerkLoading] = useState(false);
@@ -262,7 +258,8 @@ export default function StaffPage() {
 
   function openNew() {
     setForm(emptyForm());
-    setExpandedId('new');
+    setExpandedId(null);
+    setEditingId('new');
     setFormError(null);
     setAssignedCenterIds(centers.length === 1 ? new Set([centers[0].id]) : new Set());
     setDefaultCenterId(centers.length === 1 ? centers[0].id : null);
@@ -278,16 +275,25 @@ export default function StaffPage() {
       .finally(() => setClerkLoading(false));
   }
 
+  /** #798: expanding a card only reads. It never seeds the form and never enables editing. */
   function openExpand(member: StaffMember) {
-    if (expandedId === member.id) { setExpandedId(null); setClerkStatus(null); return; }
-    setForm({
-      ...member,
-      date_of_birth: member.date_of_birth?.slice(0, 10) ?? null,
-      hire_date: member.hire_date?.slice(0, 10) ?? '',
-      contract_end_date: member.contract_end_date?.slice(0, 10) ?? null,
-      termination_date: member.termination_date?.slice(0, 10) ?? null,
-    });
+    if (expandedId === member.id) { setExpandedId(null); setClerkStatus(null); setExpandedCenters(null); return; }
+    setEditingId(null);
+    setFormError(null);
     setExpandedId(member.id);
+    loadClerkStatus(member.id);
+    setExpandedCenters(null);
+    apiFetch<StaffCenterAssignment[]>(`/staff/${member.id}/centers`)
+      .then(setExpandedCenters)
+      .catch(() => setExpandedCenters([]));
+  }
+
+  /** #798: ⋮ → Edit is the only way into the form. */
+  function startEdit(member: StaffMember) {
+    setExpandedId(null);
+    setExpandedCenters(null);
+    setForm(toStaffEditFormValues(member));
+    setEditingId(member.id);
     setFormError(null);
     loadClerkStatus(member.id);
     setAssignedCenterIds(new Set());
@@ -298,10 +304,11 @@ export default function StaffPage() {
         setDefaultCenterId(assignments.find((a) => a.is_default)?.center_id ?? null);
       })
       .catch(() => { setAssignedCenterIds(new Set()); setDefaultCenterId(null); });
+    setTimeout(() => firstNameRef.current?.focus(), 50);
   }
 
   function cancelEdit() {
-    setExpandedId(null);
+    setEditingId(null);
     setFormError(null);
     setClerkStatus(null);
     setAssignedCenterIds(new Set());
@@ -328,7 +335,7 @@ export default function StaffPage() {
     setSaving(true);
     setFormError(null);
     try {
-      if (expandedId === 'new') {
+      if (editingId === 'new') {
         const body: Record<string, unknown> = { ...form };
         if (showCenters) {
           body.center_ids = Array.from(assignedCenterIds);
@@ -346,10 +353,10 @@ export default function StaffPage() {
         }
       } else {
         const updated = await apiFetch<StaffMember & { access?: { status: string; error?: string } }>(
-          `/staff/${expandedId}`, { method: 'PUT', body: JSON.stringify(form) },
+          `/staff/${editingId}`, { method: 'PUT', body: JSON.stringify(form) },
         );
         if (showCenters) {
-          await apiFetch(`/staff/${expandedId}/centers`, {
+          await apiFetch(`/staff/${editingId}/centers`, {
             method: 'PUT',
             body: JSON.stringify({ center_ids: Array.from(assignedCenterIds), default_center_id: defaultCenterId }),
           });
@@ -363,7 +370,7 @@ export default function StaffPage() {
           toast(t('saved'), 'success');
         }
       }
-      setExpandedId(null);
+      setEditingId(null);
       load();
     } catch (err: any) {
       setFormError(err.message ?? t('error_generic'));
@@ -426,7 +433,8 @@ export default function StaffPage() {
     try {
       await apiFetch(`/staff/${member.id}`, { method: 'DELETE' });
       toast(t('deleted'), 'success');
-      if (expandedId === member.id) setExpandedId(null);
+      if (expandedId === member.id) { setExpandedId(null); setExpandedCenters(null); }
+      if (editingId === member.id) setEditingId(null);
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -681,7 +689,7 @@ export default function StaffPage() {
       return <p style={{ fontSize: 14, color: '#888' }}>{t('clerk_loading')}</p>;
     }
     const statusText = clerkStatusLabel(clerkStatus.status);
-    const member = typeof expandedId === 'number' ? rows.find((r) => r.id === expandedId) : undefined;
+    const member = typeof editingId === 'number' ? rows.find((r) => r.id === editingId) : undefined;
     const role = form.profile ? PROFILE_ROLE_MAP[form.profile] : undefined;
     const canInvite = clerkStatus.status === 'not_enrolled' || clerkStatus.status === 'error';
     const canResend = clerkStatus.status === 'invited';
@@ -721,6 +729,108 @@ export default function StaffPage() {
     );
   }
 
+  // ---- Read-only expanded view (#798) ----
+  //
+  // Expanding a card shows the whole Staff record and nothing writable: no
+  // input, select, textarea, checkbox, Save, Cancel or Edit affordance lives
+  // below this comment. Editing is ⋮ → Edit, which renders renderInlineEditor().
+
+  function ReadRow({ label, value, multiline = false }: { label: string; value: string; multiline?: boolean }) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        <div style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>{label}</div>
+        <div style={multiline
+          ? { fontSize: 14, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }
+          : { fontSize: 14, overflowWrap: 'anywhere' }}>{value}</div>
+      </div>
+    );
+  }
+
+  /** Assigned Centers + Default Center. A staff member is allowed zero centers (#440). */
+  function renderReadOnlyCenters() {
+    if (!showCenters) return null;
+    const assignments = expandedCenters;
+    const defaultCenter = assignments?.find((c) => c.is_default) ?? null;
+    return (
+      <div>
+        <p style={subsectionLabelStyle}>{t('subsection_centers')}</p>
+        {assignments === null ? (
+          <p style={{ fontSize: 14, color: '#888', margin: 0 }}>{t('loading')}</p>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+            <ReadRow
+              label={t('label_assigned_centers')}
+              value={assignments.length > 0 ? assignments.map((c) => c.name).join(', ') : t('centers_none')}
+            />
+            <ReadRow label={t('label_default_center')} value={defaultCenter?.name ?? EMPTY_VALUE} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /** App access state only — the invite/resend/revoke actions stay in the Edit form. */
+  function renderReadOnlyClerk(member: StaffMember) {
+    if (clerkLoading || !clerkStatus) {
+      return <p style={{ fontSize: 14, color: '#888', margin: 0 }}>{t('clerk_loading')}</p>;
+    }
+    const role = PROFILE_ROLE_MAP[member.profile];
+    const dot = (
+      <span style={{
+        display: 'inline-block',
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        background: clerkStatusColor(clerkStatus.status),
+        marginRight: 6,
+        verticalAlign: 'middle',
+      }} />
+    );
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>{t('clerk_status_label')}</div>
+          <div style={{ fontSize: 14 }}>{dot}{clerkStatusLabel(clerkStatus.status)}</div>
+        </div>
+        <ReadRow label={t('access_role_label')} value={role ? t(`role_${role}` as any) : EMPTY_VALUE} />
+        <ReadRow label={t('clerk_user_id_label')} value={clerkStatus.userId ?? EMPTY_VALUE} />
+      </div>
+    );
+  }
+
+  function renderReadOnlyProfile(member: StaffMember) {
+    return (
+      <div style={{ borderTop: '1px solid #e8e8ed', padding: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {STAFF_PROFILE_SECTIONS.map((section) => (
+            <div key={section.titleKey}>
+              <p style={subsectionLabelStyle}>{t(section.titleKey as any)}</p>
+              <div style={section.layout === 'grid'
+                ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }
+                : { display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {section.fields.map((field) => (
+                  <ReadRow
+                    key={field.key}
+                    label={t(field.labelKey as any)}
+                    value={formatStaffField(member, field, (key) => t(key as any))}
+                    multiline={field.format === 'multiline'}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {renderReadOnlyCenters()}
+
+          <div>
+            <p style={subsectionLabelStyle}>{t('section_clerk')}</p>
+            {renderReadOnlyClerk(member)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderInlineEditor() {
     return (
       <div style={{ borderTop: '1px solid #e8e8ed', padding: 20 }}>
@@ -745,7 +855,7 @@ export default function StaffPage() {
             {renderNotes()}
           </div>
 
-          {expandedId !== 'new' && (
+          {editingId !== 'new' && (
             <div>
               <p style={subsectionLabelStyle}>{t('section_clerk')}</p>
               {renderClerk()}
@@ -754,7 +864,7 @@ export default function StaffPage() {
         </div>
 
         {/* Error + actions */}
-        {expandedId !== 'new' && clerkStatus?.status === 'not_enrolled' && form.employment_status === 'active' && (
+        {editingId !== 'new' && clerkStatus?.status === 'not_enrolled' && form.employment_status === 'active' && (
           <p style={{ color: '#888', fontSize: 13, marginTop: 16 }}>{t('save_will_invite', { email: form.email ?? '' })}</p>
         )}
         {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
@@ -770,8 +880,12 @@ export default function StaffPage() {
 
   function renderMemberRow(member: StaffMember) {
     const isExpanded = expandedId === member.id;
+    const isEditing = editingId === member.id;
 
+    // #798: Edit lives here and nowhere else — the expanded row adds no Edit
+    // affordance of any kind.
     const menuItems: ContextMenuItem[] = [
+      { label: t('action_edit'), onClick: () => startEdit(member), disabled: !canWrite, title: readOnlyTitle },
       { label: t('action_details'), onClick: () => setDetailsMember(member) },
       { label: t('action_duplicate'), onClick: () => handleDuplicate(member), disabled: !canWrite, title: readOnlyTitle },
     ];
@@ -783,8 +897,8 @@ export default function StaffPage() {
     return (
       <div key={member.id} style={{ ...cardSurfaceStyle, marginBottom: 10, overflow: 'hidden' }}>
         <div
-          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
-          onClick={() => openExpand(member)}
+          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isEditing ? 'default' : 'pointer' }}
+          onClick={() => { if (!isEditing) openExpand(member); }}
         >
           {/* Avatar */}
           {avatar(member)}
@@ -830,7 +944,7 @@ export default function StaffPage() {
           </div>
 
           {/* Expand chevron */}
-          <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded || isEditing ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
 
           {/* Context menu */}
           <div onClick={(e) => e.stopPropagation()}>
@@ -838,7 +952,7 @@ export default function StaffPage() {
           </div>
         </div>
 
-        {isExpanded && renderInlineEditor()}
+        {isEditing ? renderInlineEditor() : isExpanded ? renderReadOnlyProfile(member) : null}
       </div>
     );
   }
@@ -951,7 +1065,7 @@ export default function StaffPage() {
       </div>
 
       {/* New row */}
-      {expandedId === 'new' && renderNewRow()}
+      {editingId === 'new' && renderNewRow()}
 
       {/* Rows */}
       {loading ? (
