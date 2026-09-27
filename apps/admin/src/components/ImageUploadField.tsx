@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { btnSmall } from './ui';
 
 /**
@@ -28,8 +29,11 @@ export function ImageUploadField({ uploadPath, value, onChange, disabled }: Imag
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const notConfigured = activeGym != null && !activeGym.storage_configured;
-  const notInitialized = activeGym != null && activeGym.storage_configured && !activeGym.storage_folder_prefix;
+  // #823: one rule for both storage blocks, shared with every other per-gym
+  // upload control.
+  const storageBlock = gymStorageBlock(activeGym);
+  const notConfigured = storageBlock === 'not_configured';
+  const notInitialized = storageBlock === 'not_initialized';
   const uploadBlocked = disabled || notConfigured || notInitialized;
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {

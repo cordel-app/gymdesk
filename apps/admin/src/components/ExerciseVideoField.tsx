@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { btnSmall } from './ui';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
@@ -88,8 +89,12 @@ export function ExerciseVideoField({
   const [stagedPoster, setStagedPoster] = useState<string | null>(null);
   const [staged, setStaged] = useState(false);
 
-  const notConfigured = requiresGymStorage && activeGym != null && !activeGym.storage_configured;
-  const notInitialized = requiresGymStorage && activeGym != null && activeGym.storage_configured && !activeGym.storage_folder_prefix;
+  // #823: one rule for both storage blocks, shared with the Theme editors —
+  // `requiresGymStorage` is what keeps a Base Exercise (platform folder) out of
+  // the currently selected gym's storage state.
+  const storageBlock = gymStorageBlock(activeGym, requiresGymStorage);
+  const notConfigured = storageBlock === 'not_configured';
+  const notInitialized = storageBlock === 'not_initialized';
   const blocked = disabled || notConfigured || notInitialized;
 
   const preview = stagedPoster ?? posterUrl ?? null;

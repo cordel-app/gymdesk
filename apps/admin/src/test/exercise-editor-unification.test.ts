@@ -198,7 +198,9 @@ describe('AC6 — the Media UI is one implementation, pointed at two routes', ()
     expect(gymPage).not.toContain('requiresGymStorage');
     for (const field of [imageField, videoField]) {
       expect(field).toContain('requiresGymStorage = true');
-      expect(field).toMatch(/const notConfigured = requiresGymStorage && activeGym != null/);
+      // #823 moved the two storage blocks into `gymStorageBlock()`; the flag is
+      // still what decides whether the selected gym's bucket is consulted.
+      expect(field).toMatch(/gymStorageBlock\(activeGym, requiresGymStorage\)/);
     }
   });
 
