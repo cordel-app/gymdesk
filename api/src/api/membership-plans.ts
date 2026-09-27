@@ -8,6 +8,7 @@ import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
 import { computePriceFields, validateTaxRateId } from './sellable-items';
+import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { computeBillingForecast } from '../domain/billingForecast';
 import {
   describeAcceptedPlanCadences,
@@ -185,12 +186,20 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
        ORDER BY gc.is_system DESC, gc.name ASC`,
       [gymId],
     ).then(r => r.rows),
-    plan.tax_rate_id == null
-      ? Promise.resolve([])
-      : db.query<{ name: string; rate_percent: string }>(
-          'SELECT name, rate_percent FROM tax_rates WHERE id = ? AND gym_id = ?',
-          [plan.tax_rate_id, gymId],
-        ).then(r => r.rows),
+    // #413 serves the Plan's own Tax rate; #817 also needs the rate the money is
+    // actually computed at, which for a Plan that never picked one ("Default" in
+    // the Pricing editor) is the gym's system rate — the same row the editor's
+    // own live preview resolves to, and the same one `seedSystemPtPackage()`
+    // picks. One query for both, so the list endpoint's per-plan round trips do
+    // not grow: the Plan's explicit rate is what the card *displays*, the system
+    // rate is the fallback the net/gross split is *derived* from.
+    db.query<{ id: number; name: string; rate_percent: string; is_system: number; deleted_at: Date | null }>(
+      `SELECT id, name, rate_percent, is_system, deleted_at
+         FROM tax_rates
+        WHERE gym_id = ? AND (id = ? OR (is_system = 1 AND deleted_at IS NULL))
+        ORDER BY is_system DESC, id ASC`,
+      [gymId, plan.tax_rate_id],
+    ).then(r => r.rows),
     // #512: promotion count for the Membership Plan Details modal's compact summary.
     db.query(
       `SELECT COUNT(*) AS n
@@ -231,10 +240,15 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       return from !== 0 ? from : b.id - a.id;
     })[0] ?? null;
 
-  const taxRate = taxRateRows[0] ?? null;
+  // #817: `taxRate` is what the card *displays* (`null` ⇒ "Default", unchanged
+  // since #413); `effectiveTaxRate` is what the net/gross split is *derived*
+  // from, which for a Plan on "Default" is the gym's system rate. The rule is
+  // `domain/planTaxRate.ts` — `applied_tax_rate` reports which one was used.
+  const { own: taxRate, effective: effectiveTaxRate } =
+    selectPlanTaxRates(taxRateRows, plan.tax_rate_id);
   const priceFields = computePriceFields({
     amount: currentPrice ? currentPrice.price : null,
-    tax_rate_percent: taxRate ? taxRate.rate_percent : null,
+    tax_rate_percent: effectiveTaxRate ? effectiveTaxRate.rate_percent : null,
     tax_behavior: plan.tax_behavior,
   });
 
