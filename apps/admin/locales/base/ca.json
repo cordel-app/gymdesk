@@ -1325,6 +1325,7 @@
     "title": "Exercicis",
     "add": "+ Afegir exercici",
     "import": "Importar",
+    "import_system_exercises": "Importar exercicis del sistema",
     "imported": "Importats {n} exercicis.",
     "imported_skipped": "{n} ja eren al teu catàleg.",
     "imported_media_refreshed": "Restaurat el contingut del sistema de {n} exercicis.",

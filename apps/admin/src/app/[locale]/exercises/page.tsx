@@ -732,7 +732,10 @@ export default function ExercisesPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import')}</button>
+          {/* #803: the header button names what it imports — the platform's System
+              Exercises. The modal's own primary action stays `import`, so the two
+              deliberately read differently and need two keys. */}
+          <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import_system_exercises')}</button>
           <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setStagedImage(null); setStagedVideo(null); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
         </div>
       </div>

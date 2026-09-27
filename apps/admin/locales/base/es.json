@@ -1325,6 +1325,7 @@
     "title": "Ejercicios",
     "add": "+ Añadir ejercicio",
     "import": "Importar",
+    "import_system_exercises": "Importar ejercicios del sistema",
     "imported": "Importados {n} ejercicios.",
     "imported_skipped": "{n} ya estaban en tu catálogo.",
     "imported_media_refreshed": "Restaurado el contenido del sistema de {n} ejercicios.",
