@@ -109,9 +109,25 @@ describe('#812 no raw translation key can reach the screen', () => {
   it('falls back to the slug for a type with no label', () => {
     expect(treeSrc).toMatch(/\?\s*translate\(`nutrition_plan_templates\.tree_component_type_\$\{slug\}`\)\s*:\s*slug/);
   });
+});
 
-  it('labels the Dietary Restrictions picker instead of printing `undefined`', () => {
-    expect(treeSrc).toContain('o.categories.map((c) => foodTypeLabel(c, t)).join(\', \')');
+describe('#813 the Dietary Restrictions picker shows the food name alone', () => {
+  // #812 made the parenthetical after each option render its Food Type(s)
+  // instead of the empty `()` the dropped `category` column produced. #813
+  // removes it altogether: the picker chooses a food to forbid, so the type is
+  // noise, and an option is the name and nothing else.
+  it('renders the option as the name with nothing appended', () => {
+    expect(treeSrc).toContain('<option key={o.id} value={o.id}>{o.name}</option>');
+  });
+
+  it('no longer builds a parenthetical from the food\'s categories', () => {
+    expect(treeSrc).not.toContain('o.categories.map((c) => foodTypeLabel(c, t))');
+    expect(treeSrc).not.toMatch(/\$\{o\.name\} \(/);
+  });
+
+  it('keeps the option value on the library item id', () => {
+    // The ticket is UI-only: what gets posted to `/restrictions` is unchanged.
+    expect(treeSrc).toContain('nutrition_library_item_id: parseInt(addItemId, 10)');
   });
 });
 

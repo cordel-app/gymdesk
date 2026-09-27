@@ -1127,12 +1127,10 @@ function RestrictionsSection({
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
           <select value={addItemId} onChange={(e) => setAddItemId(e.target.value)} style={selectStyle}>
             <option value="">{t('nutrition_plan_templates.tree_pick_restriction_item')}</option>
+            {/* #813 — the name and nothing else: this picker chooses a food to
+              * forbid, so the food's own type is noise after it. */}
             {(Array.isArray(libraryItems) ? libraryItems : []).map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.categories.length > 0
-                  ? `${o.name} (${o.categories.map((c) => foodTypeLabel(c, t)).join(', ')})`
-                  : o.name}
-              </option>
+              <option key={o.id} value={o.id}>{o.name}</option>
             ))}
           </select>
           <button onClick={addRestriction} disabled={adding} style={btnSmall()}>
