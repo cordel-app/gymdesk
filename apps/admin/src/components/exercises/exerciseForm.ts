@@ -1,12 +1,17 @@
 /**
- * #805: the Exercise form, declared once.
+ * The Exercise form, declared once (#805, #806).
  *
- * Both halves of the Exercises page render from here — the inline creation
- * card the "+ Add Exercise" button opens and the inline editor `⋮ → Edit`
- * opens — so the section order, the field set and the payload cannot drift
- * apart the way a second copy of the JSX would. The module is pure (no React,
- * no i18n runtime), which is what lets the ordering and the payload be
- * asserted directly in a unit test.
+ * Every half of every Exercise editing surface renders from here — the gym
+ * Exercises page's inline creation card and inline editor, and the platform
+ * **Base Exercises** page's two halves — so the section order, the field set
+ * and the payloads cannot drift apart the way a second copy of the JSX would.
+ * #806 is what moved the module up out of `app/[locale]/exercises/`: the two
+ * pages administer the same entity from two places, so the declaration lives
+ * beside the shared editor rather than inside one of its callers (the rule
+ * `components/nutritionLibrary/` already follows).
+ *
+ * The module is pure (no React, no i18n runtime), which is what lets the
+ * ordering and the payloads be asserted directly in a unit test.
  */
 
 export const EXERCISE_STATUSES = ['active', 'inactive'] as const;
@@ -144,16 +149,21 @@ function sharedPayload(form: ExerciseFormValues, { muscles, resultTypeIds }: Pay
   };
 }
 
-/** `POST /exercises` — the creation form is the one place that submits `video_url`. */
+/**
+ * The creation payload — `POST /exercises` for a Gym Exercise, `POST
+ * /platform/exercises` for a Base Exercise (#806 §6: the fields are shared, the
+ * route is the context's). The creation form is the one place that submits
+ * `video_url`.
+ */
 export function toExerciseCreatePayload(form: ExerciseFormValues, extras: PayloadExtras) {
   return { ...sharedPayload(form, extras), video_url: textOrNull(form.video_url) };
 }
 
 /**
- * `PUT /exercises/:id` — deliberately without `video_url` (#717 Q6): the
- * editor has no control for it, and re-sending the value the editor opened
- * with would repoint a reference an upload had since replaced and drop its
- * poster with it.
+ * The update payload — `PUT /exercises/:id` or `PUT /platform/exercises/:id` —
+ * deliberately without `video_url` (#717 Q6): the editor has no control for it,
+ * and re-sending the value the editor opened with would repoint a reference an
+ * upload had since replaced and drop its poster with it.
  */
 export function toExerciseUpdatePayload(form: ExerciseFormValues, extras: PayloadExtras) {
   return sharedPayload(form, extras);

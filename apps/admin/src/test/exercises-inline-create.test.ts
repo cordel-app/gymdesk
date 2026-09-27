@@ -14,7 +14,7 @@ import {
   toExerciseCreatePayload,
   toExerciseUpdatePayload,
   type MuscleRole,
-} from '@/app/[locale]/exercises/exerciseForm';
+} from '@/components/exercises/exerciseForm';
 
 // #805 — "+ Add Exercise" opens an inline creation card instead of a modal,
 // both halves of the page render one declared section order, Media is last
@@ -28,6 +28,9 @@ import {
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const EXERCISES_DIR = join(__dirname, '..', 'app', '[locale]', 'exercises');
+// #806 moved the form body out of the page and into the shared editor both
+// Exercise screens render, so the structural assertions below read it there.
+const EDITOR = join(__dirname, '..', 'components', 'exercises', 'ExerciseEditor.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 function stripComments(src: string): string {
@@ -36,6 +39,9 @@ function stripComments(src: string): string {
 
 const pageSrc = stripComments(readFileSync(join(EXERCISES_DIR, 'page.tsx'), 'utf-8'));
 const detailSrc = stripComments(readFileSync(join(EXERCISES_DIR, 'ExerciseDetailModal.tsx'), 'utf-8'));
+const editorSrc = stripComments(readFileSync(EDITOR, 'utf-8'));
+const hookSrc = stripComments(readFileSync(
+  join(__dirname, '..', 'components', 'exercises', 'useExerciseEditorState.ts'), 'utf-8'));
 
 function exercisesNamespace(code: string): Record<string, string> {
   const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
@@ -45,16 +51,16 @@ function exercisesNamespace(code: string): Record<string, string> {
 const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, exercisesNamespace(c)]));
 
 /** The source between two markers. */
-function slice(from: string, to: string): string {
-  const start = pageSrc.indexOf(from);
-  const end = pageSrc.indexOf(to, start + from.length);
+function slice(from: string, to: string, src: string = pageSrc): string {
+  const start = src.indexOf(from);
+  const end = src.indexOf(to, start + from.length);
   expect(start, `marker not found: ${from}`).toBeGreaterThan(-1);
   expect(end, `marker not found after ${from}: ${to}`).toBeGreaterThan(start);
-  return pageSrc.slice(start, end);
+  return src.slice(start, end);
 }
 
-/** The one form body both the creation card and the editor render. */
-const formSrc = slice('function renderExerciseForm(', 'function renderMediaPair(');
+/** The one form body every Exercise editing surface renders (#806). */
+const formSrc = slice('export function ExerciseEditor(', 'export function ExerciseMediaPair(', editorSrc);
 /** The inline creation card. */
 const newRowSrc = slice('function renderInlineNewRow(', 'function renderEditSection(');
 
@@ -80,8 +86,8 @@ describe('Exercises: inline creation (#805)', () => {
     });
 
     it('the creation card and the editor render the same form body', () => {
-      expect(newRowSrc).toContain('renderExerciseForm({');
-      expect(slice('function renderEditSection(', 'function renderViewSection(')).toContain('renderExerciseForm({');
+      expect(newRowSrc).toContain('<ExerciseEditor');
+      expect(slice('function renderEditSection(', 'function renderViewSection(')).toContain('<ExerciseEditor');
     });
   });
 
@@ -111,8 +117,10 @@ describe('Exercises: inline creation (#805)', () => {
     });
 
     it('the creation card keeps the Video URL field the editor dropped (#717 Q6)', () => {
-      expect(newRowSrc).toContain('showVideoUrl: true');
-      expect(slice('function renderEditSection(', 'function renderViewSection(')).toContain('showVideoUrl: false');
+      expect(newRowSrc).toContain('mode="create"');
+      expect(slice('function renderEditSection(', 'function renderViewSection(')).toContain('mode="edit"');
+      // The one field the two modes differ on, and the only branch on `mode`.
+      expect(editorSrc).toContain("const showVideoUrl = mode === 'create';");
       expect(formSrc).toContain("t('label_video_url')");
     });
 
@@ -159,15 +167,15 @@ describe('Exercises: inline creation (#805)', () => {
 
   describe('AC5 — the result types have a grid layout', () => {
     it('renders a reflowing column grid rather than a wrapping row', () => {
-      expect(pageSrc).toContain('const resultTypeGridSt');
-      expect(pageSrc).toMatch(/resultTypeGridSt[^;]*repeat\(auto-fill, minmax\(180px, 1fr\)\)/);
+      expect(editorSrc).toContain('const resultTypeGridSt');
+      expect(editorSrc).toMatch(/resultTypeGridSt[^;]*repeat\(auto-fill, minmax\(180px, 1fr\)\)/);
       expect(formSrc).toContain('style={resultTypeGridSt}');
     });
 
     it('each option is a real checkbox with an aligned label', () => {
       expect(formSrc).toContain('type="checkbox"');
       expect(formSrc).toContain('style={checkboxRowSt}');
-      expect(pageSrc).toMatch(/checkboxRowSt[^;]*alignItems: 'center'/);
+      expect(editorSrc).toMatch(/checkboxRowSt[^;]*alignItems: 'center'/);
     });
   });
 
@@ -191,8 +199,8 @@ describe('Exercises: inline creation (#805)', () => {
     });
 
     it('the media pair is one responsive grid, Image before Video', () => {
-      expect(pageSrc).toMatch(/mediaGridSt[^;]*repeat\(auto-fit, minmax\(260px, 1fr\)\)/);
-      const pairSrc = slice('function renderMediaPair(', 'function renderInlineNewRow(');
+      expect(editorSrc).toMatch(/mediaGridSt[^;]*repeat\(auto-fit, minmax\(260px, 1fr\)\)/);
+      const pairSrc = slice('export function ExerciseMediaPair(', 'const inlineLabelSt', editorSrc);
       expect(pairSrc).toContain('style={mediaGridSt}');
       expect(pairSrc.indexOf("t('label_image')")).toBeLessThan(pairSrc.indexOf("t('label_video')"));
     });
@@ -215,39 +223,40 @@ describe('Exercises: inline creation (#805)', () => {
 
   describe('AC10/AC11/AC12 — Save, Cancel and validation', () => {
     it('the form renders its own error line, Save/Cancel pair and saving state', () => {
-      expect(formSrc).toContain('{h.error &&');
+      expect(formSrc).toContain('{state.error &&');
       expect(formSrc).toContain("t('cancel')");
-      expect(formSrc).toContain('disabled={h.saving}');
-      expect(formSrc).toContain("{h.saving ? t('saving') : h.saveLabel}");
+      expect(formSrc).toContain('disabled={state.saving}');
+      expect(formSrc).toContain("{state.saving ? t('saving') : primaryLabel}");
     });
 
     it('Cancel calls no API and discards the staged state', () => {
       const cancel = slice('function closeAdd()', 'async function handleAdd()');
       expect(cancel).not.toContain('apiFetch');
       expect(cancel).toContain('setAddOpen(false)');
+      expect(cancel).toContain('addState.reset(null)');
       expect(cancel).toContain('setStagedImage(null)');
       expect(cancel).toContain('setStagedVideo(null)');
     });
 
     it('Save posts to the existing creation endpoint', () => {
       expect(pageSrc).toContain("apiFetch<Exercise>('/exercises', {");
-      expect(pageSrc).toContain('toExerciseCreatePayload(addForm,');
+      expect(pageSrc).toContain('toExerciseCreatePayload(addState.form, addState.extras)');
     });
 
     it('keeps the card open with the input intact when the API rejects it', () => {
+      // #806: `submit()` reports the failure rather than throwing, and the card
+      // is closed only once it has said the save landed.
       const handleAdd = slice('async function handleAdd()', 'function handleImported(');
-      const closeAt = handleAdd.indexOf('closeAdd()');
-      // The staged image and video each have their own inner catch, so the
-      // outer one — the API rejection this asserts about — is the last.
-      const catchAt = handleAdd.lastIndexOf('} catch');
-      expect(closeAt).toBeGreaterThan(-1);
-      expect(closeAt).toBeLessThan(catchAt);
-      expect(handleAdd.slice(catchAt)).toContain('setAddError(');
+      expect(handleAdd).toContain('const saved = await addState.submit(');
+      expect(handleAdd).toMatch(/if \(!saved\) return;\s*\n\s*closeAdd\(\);/);
+      expect(hookSrc).toMatch(/} catch \(err: any\) \{\s*\n\s*setError\(err\?\.message \?\? t\('error_generic'\)\);\s*\n\s*return false;/);
     });
 
     it('requires a name, in both halves', () => {
-      expect(pageSrc).toContain('isExerciseFormValid(addForm)');
-      expect(pageSrc).toContain('isExerciseFormValid(editForm)');
+      // One validation, in the shared hook both halves submit through.
+      expect(hookSrc).toContain("if (!isExerciseFormValid(form)) { setError(t('error_required')); return false; }");
+      expect(pageSrc).toContain('addState.submit(');
+      expect(pageSrc).toContain('editState.submit(');
       expect(isExerciseFormValid(emptyExerciseForm())).toBe(false);
       expect(isExerciseFormValid({ ...emptyExerciseForm(), name: '   ' })).toBe(false);
       expect(isExerciseFormValid({ ...emptyExerciseForm(), name: 'Squat' })).toBe(true);

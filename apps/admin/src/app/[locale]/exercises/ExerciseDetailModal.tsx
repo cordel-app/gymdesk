@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
-import { resultTypeLabel } from './exerciseForm';
+import { resultTypeLabel } from '@/components/exercises/exerciseForm';
 
 interface ExerciseDetail {
   id: number;

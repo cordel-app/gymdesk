@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -8,20 +9,31 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { DataTable, Column } from '@/components/DataTable';
-import { btnStyle, btnSmall, cardSurfaceStyle } from '@/components/ui';
+import { ExerciseImageField } from '@/components/ExerciseImageField';
+import { ExerciseVideoField } from '@/components/ExerciseVideoField';
+import { btnStyle, cardSurfaceStyle } from '@/components/ui';
 import {
   EXERCISE_IMAGE_MASTER_SIZE,
-  EXERCISE_IMAGE_THUMBNAIL_SIZE,
   SAFE_IMAGE_SRC,
-  isPreparedExerciseImage,
-  prepareExerciseImage,
+  type PreparedExerciseImage,
 } from '@/lib/exerciseImageUpload';
+import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
+// #806: one Exercise editor, one form declaration, one form-state hook — the
+// same ones the gym Exercises page renders. What this page supplies is the
+// platform context: the `/platform/exercises` routes and their superadmin
+// permissions, which are untouched (§6, AC4, AC5).
+import { ExerciseEditor, ExerciseMediaPair } from '@/components/exercises/ExerciseEditor';
+import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/useExerciseEditorState';
 import {
-  EXERCISE_VIDEO_POSTER_SIZE,
-  exerciseVideoMaxMb,
-  isPreparedExerciseVideo,
-  prepareExerciseVideo,
-} from '@/lib/exerciseVideoUpload';
+  resultTypeLabel,
+  toExerciseCreatePayload,
+  toExerciseUpdatePayload,
+  type MuscleRole,
+  type ResultTypeRow,
+} from '@/components/exercises/exerciseForm';
+
+/** Where every persistence call on this page goes — the platform's own router. */
+const API_BASE = '/platform/exercises';
 
 interface Exercise {
   id: number;
@@ -45,20 +57,21 @@ interface Exercise {
   video_url: string | null;
   /** Its 512×512 poster — what the card draws, so no MP4 is downloaded (§9). */
   video_thumbnail_url: string | null;
+  /** #806: the configuration defaults the shared editor has always written on a Gym Exercise. */
+  min_reps_default: number | null;
+  max_reps_default: number | null;
+  sets_default: number | null;
+  rest_default_seconds: number | null;
+  notes_default: string | null;
+  muscles: { key: string; role: MuscleRole }[] | null;
+  allowed_result_types: ResultTypeRow[] | null;
   created_at: string;
   modified_at: string | null;
 }
 
-interface EditForm {
-  name: string;
-  description: string;
-}
-
-function emptyEditForm(): EditForm {
-  return { name: '', description: '' };
-}
-
 export default function CordelExercisesPage() {
+  const t = useTranslations('exercises');
+  const tStatus = useTranslations('status');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -66,38 +79,30 @@ export default function CordelExercisesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
+  // #806: the two catalogues the shared editor renders. They come from this
+  // router's own `GET /platform/exercises/lookups` rather than the gym-facing
+  // `/muscles` + `/result-types`, which sit behind a gym's module access and
+  // feature flags — a platform screen must not depend on those.
+  const [muscleKeys, setMuscleKeys] = useState<string[]>([]);
+  const [resultTypes, setResultTypes] = useState<ResultTypeRow[]>([]);
+  const muscleLabel = useMuscleLabel(muscleKeys);
+
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
-  // Inline create / edit (#716 Q4: the card edits in place — no modal).
+  // Inline create / edit (#716 Q4, #806 §9: the card edits in place — no modal).
   const [creating, setCreating] = useState(false);
-  const [newForm, setNewForm] = useState<EditForm>(emptyEditForm());
-  const [newSaving, setNewSaving] = useState(false);
-  const [newError, setNewError] = useState<string | null>(null);
+  const createState = useExerciseEditorState();
+  const newNameRef = useRef<HTMLInputElement>(null);
+  // #719's staging, one folder over: there is no exercise to upload to until the
+  // creation call has returned, so the prepared pair waits here.
+  const [stagedImage, setStagedImage] = useState<PreparedExerciseImage | null>(null);
+  const [stagedVideo, setStagedVideo] = useState<PreparedExerciseVideo | null>(null);
 
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
+  const editState = useExerciseEditorState();
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const [deleting, setDeleting] = useState<Exercise | null>(null);
-  // §7: removing media is destructive, so it goes through the page's existing
-  // confirmation rather than acting on the first click.
-  const [removingVideo, setRemovingVideo] = useState<Exercise | null>(null);
-
-  // Image upload (#716) — one exercise at a time, so a single picker, a single
-  // busy flag and a single error are enough.
-  const [busyImageId, setBusyImageId] = useState<number | null>(null);
-  const [imageAction, setImageAction] = useState<'upload' | 'remove' | null>(null);
-  const [imageError, setImageError] = useState<{ id: number; message: string } | null>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const imageTargetRef = useRef<Exercise | null>(null);
-
-  // Video upload (#717) — the same one-at-a-time shape as the image above.
-  const [busyVideoId, setBusyVideoId] = useState<number | null>(null);
-  const [videoAction, setVideoAction] = useState<'upload' | 'remove' | null>(null);
-  const [videoError, setVideoError] = useState<{ id: number; message: string } | null>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
-  const videoTargetRef = useRef<Exercise | null>(null);
   // Which exercise has a <video> mounted. Nothing is mounted until the
   // administrator asks to play one, so opening a card never downloads an MP4
   // (§9) — and only one plays at a time.
@@ -107,11 +112,21 @@ export default function CordelExercisesPage() {
     setLoading(true);
     try {
       const qs = search ? `?q=${encodeURIComponent(search)}` : '';
-      setRows(await apiFetch<Exercise[]>(`/platform/exercises${qs}`));
+      setRows(await apiFetch<Exercise[]>(`${API_BASE}${qs}`));
     } catch { /* ignore */ } finally { setLoading(false); }
   }, [apiFetch, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const lookups = await apiFetch<{ muscles: { key: string }[]; result_types: ResultTypeRow[] }>(`${API_BASE}/lookups`);
+        setMuscleKeys(lookups.muscles.map((m) => m.key));
+        setResultTypes(lookups.result_types);
+      } catch { /* non-critical */ }
+    })();
+  }, [apiFetch]);
 
   function toggleExpand(id: number) {
     if (editingId === id) return;
@@ -122,70 +137,92 @@ export default function CordelExercisesPage() {
     });
   }
 
-  // ─── Inline create / edit ────────────────────────────────────────────────
+  /** The exercise as the media routes returned it, applied in place (#719). */
+  function applyExerciseUpdate(updated: Exercise) {
+    if (!updated?.id) return;
+    setRows((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+  }
+
+  // ─── Inline create (#806 §10) ────────────────────────────────────────────
 
   function openInlineNew() {
-    setNewForm(emptyEditForm());
-    setNewError(null);
+    createState.reset(null);
+    setStagedImage(null);
+    setStagedVideo(null);
     setCreating(true);
+    setTimeout(() => newNameRef.current?.focus(), 60);
+  }
+
+  /** Cancel discards the unsaved form state and calls no API. */
+  function closeInlineNew() {
+    setCreating(false);
+    createState.reset(null);
+    setStagedImage(null);
+    setStagedVideo(null);
   }
 
   async function saveInlineNew() {
-    if (!newForm.name.trim()) { setNewError('Name is required.'); return; }
-    setNewSaving(true);
-    setNewError(null);
-    try {
-      await apiFetch('/platform/exercises', {
+    const saved = await createState.submit(async () => {
+      const created = await apiFetch<Exercise>(API_BASE, {
         method: 'POST',
-        body: JSON.stringify({
-          name: newForm.name.trim(),
-          description: newForm.description.trim() || null,
-        }),
+        body: JSON.stringify(toExerciseCreatePayload(createState.form, createState.extras)),
       });
-      setCreating(false);
-      toast('Exercise created', 'success');
-      load();
-    } catch (e: any) {
-      setNewError(e.message ?? 'Error');
-    } finally { setNewSaving(false); }
+      // A failed media upload leaves the exercise created and says so, rather
+      // than discarding an exercise that already exists (#719's rule).
+      if (stagedImage) {
+        try {
+          await apiFetch(`${API_BASE}/${created.id}/image`, { method: 'POST', body: JSON.stringify(stagedImage) });
+        } catch (err: any) {
+          toast(err.message ?? t('image_error_upload_failed'));
+        }
+      }
+      if (stagedVideo) {
+        try {
+          await apiFetch(`${API_BASE}/${created.id}/video`, { method: 'POST', body: JSON.stringify(stagedVideo) });
+        } catch (err: any) {
+          toast(err.message ?? t('video_error_upload_failed'));
+        }
+      }
+    });
+    if (!saved) return;
+    closeInlineNew();
+    toast('Exercise created', 'success');
+    load();
   }
+
+  // ─── Inline edit ─────────────────────────────────────────────────────────
 
   function openInlineEdit(exercise: Exercise) {
     setEditingId(exercise.id);
-    setEditForm({ name: exercise.name, description: exercise.description ?? '' });
-    setEditError(null);
+    editState.reset(exercise);
     setExpanded((prev) => new Set(prev).add(exercise.id));
+    setTimeout(() => nameInputRef.current?.focus(), 60);
   }
 
   function cancelEdit() {
     setEditingId(null);
-    setEditError(null);
+    editState.setError(null);
   }
 
   async function saveInlineEdit(exercise: Exercise) {
-    if (!editForm.name.trim()) { setEditError('Name is required.'); return; }
-    setEditSaving(true);
-    setEditError(null);
-    try {
-      await apiFetch(`/platform/exercises/${exercise.id}`, {
+    const saved = await editState.submit(async () => {
+      // #717 Q6: `toExerciseUpdatePayload` omits `video_url` — the editor's
+      // upload control writes the reference and its poster together.
+      await apiFetch(`${API_BASE}/${exercise.id}`, {
         method: 'PUT',
-        body: JSON.stringify({
-          name: editForm.name.trim(),
-          description: editForm.description.trim() || null,
-        }),
+        body: JSON.stringify(toExerciseUpdatePayload(editState.form, editState.extras)),
       });
-      setEditingId(null);
-      toast('Exercise updated', 'success');
-      load();
-    } catch (e: any) {
-      setEditError(e.message ?? 'Error');
-    } finally { setEditSaving(false); }
+    });
+    if (!saved) return;
+    setEditingId(null);
+    toast('Exercise updated', 'success');
+    load();
   }
 
   async function handleDelete() {
     if (!deleting) return;
     try {
-      await apiFetch(`/platform/exercises/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`${API_BASE}/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
       toast('Exercise deleted', 'success');
       load();
@@ -194,191 +231,60 @@ export default function CordelExercisesPage() {
     }
   }
 
-  // ─── Image upload / removal (#716 §11, §12) ──────────────────────────────
-  //
-  // The picker is opened from the expanded card. `prepareExerciseImage()` — the
-  // same helper the gym-side control uses (#719) — checks what a browser can
-  // check (a PNG, exactly 2048×2048), draws the 512×512 thumbnail from the
-  // master, and returns both as base64. If it cannot produce the thumbnail
-  // nothing is sent at all, so the image already on the exercise is never
-  // replaced by a master with no companion. The server repeats every check from
-  // the files' own bytes, so this pass exists to give a clear error *before* an
-  // upload, never instead of one.
-
-  function openImagePicker(exercise: Exercise) {
-    imageTargetRef.current = exercise;
-    setImageError(null);
-    if (imageInputRef.current) {
-      // Cleared so picking the same file twice still fires `onChange`.
-      imageInputRef.current.value = '';
-      imageInputRef.current.click();
-    }
-  }
-
-  async function handleImageSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    const exercise = imageTargetRef.current;
-    if (!file || !exercise) return;
-
-    setBusyImageId(exercise.id);
-    setImageAction('upload');
-    setImageError(null);
-    try {
-      const prepared = await prepareExerciseImage(file);
-      if (!isPreparedExerciseImage(prepared)) {
-        // Nothing is sent, so the existing image stays exactly as it is (§11).
-        setImageError({ id: exercise.id, message: IMAGE_PROBLEM_MESSAGES[prepared] });
-        return;
-      }
-      await apiFetch(`/platform/exercises/${exercise.id}/image`, {
-        method: 'POST',
-        body: JSON.stringify(prepared),
-      });
-      toast('Image updated', 'success');
-      await load();
-    } catch (err: any) {
-      setImageError({ id: exercise.id, message: err.message ?? 'Image upload failed' });
-    } finally {
-      setBusyImageId(null);
-      setImageAction(null);
-    }
-  }
-
-  async function handleImageRemove(exercise: Exercise) {
-    setBusyImageId(exercise.id);
-    setImageAction('remove');
-    setImageError(null);
-    try {
-      await apiFetch(`/platform/exercises/${exercise.id}/image`, { method: 'DELETE' });
-      toast('Image removed', 'success');
-      await load();
-    } catch (err: any) {
-      setImageError({ id: exercise.id, message: err.message ?? 'Image removal failed' });
-    } finally {
-      setBusyImageId(null);
-      setImageAction(null);
-    }
-  }
-
-  // ─── Video upload / removal (#717 §4–§7) ─────────────────────────────────
-  //
-  // The same shape as the image control above, one folder over.
-  // `prepareExerciseVideo()` — the helper the gym-side control uses (#719 part
-  // 2) — checks what a browser can check (an MP4, within the configured cap),
-  // captures one frame into a 512 × 512 PNG poster and returns both as base64.
-  // If the poster cannot be captured nothing is sent at all (§6: a failed
-  // upload keeps the existing video), and the server repeats every check from
-  // the files' own bytes, so this pass exists to give a clear error *before* a
-  // multi-megabyte upload rather than instead of one.
-
-  function openVideoPicker(exercise: Exercise) {
-    videoTargetRef.current = exercise;
-    setVideoError(null);
-    if (videoInputRef.current) {
-      // Cleared so picking the same file twice still fires `onChange`.
-      videoInputRef.current.value = '';
-      videoInputRef.current.click();
-    }
-  }
-
-  async function handleVideoSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    const exercise = videoTargetRef.current;
-    if (!file || !exercise) return;
-
-    setBusyVideoId(exercise.id);
-    setVideoAction('upload');
-    setVideoError(null);
-    try {
-      const prepared = await prepareExerciseVideo(file);
-      if (!isPreparedExerciseVideo(prepared)) {
-        // Nothing is sent, so the existing video stays exactly as it is (§6).
-        setVideoError({ id: exercise.id, message: VIDEO_PROBLEM_MESSAGES[prepared] });
-        return;
-      }
-      await apiFetch(`/platform/exercises/${exercise.id}/video`, {
-        method: 'POST',
-        body: JSON.stringify(prepared),
-      });
-      // A replacement reuses the same key, so a player left open would keep
-      // showing the old bytes from cache.
-      setPlayingId(null);
-      toast('Video updated', 'success');
-      await load();
-    } catch (err: any) {
-      setVideoError({ id: exercise.id, message: err.message ?? 'Video upload failed' });
-    } finally {
-      setBusyVideoId(null);
-      setVideoAction(null);
-    }
-  }
-
-  async function handleVideoRemove(exercise: Exercise) {
-    setBusyVideoId(exercise.id);
-    setVideoAction('remove');
-    setVideoError(null);
-    try {
-      await apiFetch(`/platform/exercises/${exercise.id}/video`, { method: 'DELETE' });
-      setPlayingId(null);
-      toast('Video removed', 'success');
-      await load();
-    } catch (err: any) {
-      setVideoError({ id: exercise.id, message: err.message ?? 'Video removal failed' });
-    } finally {
-      setBusyVideoId(null);
-      setVideoAction(null);
-    }
-  }
-
   // ─── Rendering ──────────────────────────────────────────────────────────
 
-  function renderInlineForm(
-    form: EditForm,
-    setForm: (f: EditForm) => void,
-    error: string | null,
-    saving: boolean,
-    onCancel: () => void,
-    onSave: () => void,
-    saveLabel: string,
-  ) {
+  /**
+   * The Media section of the editor (#806 §7): the same two controls the gym
+   * Exercises page renders, pointed at this router.
+   *
+   * `requiresGymStorage={false}` because a Base Exercise's objects go to the
+   * platform's own folder (`cordel/Exercises/…`) — the superadmin's currently
+   * selected gym and its bucket have nothing to do with them.
+   *
+   * With no exercise (the creation card) both controls stage their prepared pair
+   * for `saveInlineNew()` to upload; with one they act on it directly, so
+   * cancelling the editor neither undoes an upload nor re-applies a removal.
+   */
+  function renderEditorMedia(exercise: Exercise | null) {
     return (
-      <div style={{ padding: '16px 20px' }}>
-        <div style={{ marginBottom: 12 }}>
-          <label style={inlineLabelStyle}>Name *</label>
-          <input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="e.g. Bench Press"
-            style={inlineInputStyle}
-            autoFocus
-          />
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={inlineLabelStyle}>Description</label>
-          <input
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            style={inlineInputStyle}
-          />
-        </div>
-        {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{error}</p>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} style={btnSmall('#888')}>Cancel</button>
-          <button onClick={onSave} disabled={saving} style={btnSmall()}>{saving ? 'Saving…' : saveLabel}</button>
-        </div>
-      </div>
+      <ExerciseMediaPair
+        image={<ExerciseImageField
+          basePath={API_BASE}
+          requiresGymStorage={false}
+          exerciseId={exercise?.id ?? null}
+          imageUrl={exercise?.image_url ?? null}
+          thumbnailUrl={exercise?.image_thumbnail_url ?? null}
+          onChanged={exercise ? (updated) => applyExerciseUpdate(updated as Exercise) : undefined}
+          onStaged={exercise ? undefined : setStagedImage}
+        />}
+        video={<ExerciseVideoField
+          basePath={API_BASE}
+          requiresGymStorage={false}
+          exerciseId={exercise?.id ?? null}
+          videoUrl={exercise?.video_url ?? null}
+          posterUrl={exercise?.video_thumbnail_url ?? null}
+          onChanged={exercise ? (updated) => {
+            // A replacement reuses the same key, so a player left open would
+            // keep showing the old bytes from cache.
+            setPlayingId(null);
+            applyExerciseUpdate(updated as Exercise);
+          } : undefined}
+          onStaged={exercise ? undefined : setStagedVideo}
+        />}
+      />
     );
   }
 
   /**
-   * The image block of an expanded card (§9, §10, §11).
+   * The image of an expanded card, read-only (#806 §11, and #797's rule that an
+   * expanded card reads while `⋮ → Edit` writes).
    *
    * The frame draws the **thumbnail** — the 2048×2048 master has no business
-   * being downloaded for a 160px card (§4), so it is only ever fetched by
+   * being downloaded for a 160px card (#716 §4), so it is only ever fetched by
    * following `View full size`, which opens it in a new tab. Only a reference
    * with a drawable scheme reaches the DOM: `image_url` is a column a `PUT` can
    * set to any string, so it is not this page's to trust (CodeQL
-   * `js/xss-through-dom`, the same inline guard the gym-side control applies).
+   * `js/xss-through-dom`, the same inline guard the upload control applies).
    */
   function renderImageSection(exercise: Exercise) {
     const version = encodeURIComponent(exercise.modified_at ?? exercise.created_at);
@@ -388,12 +294,12 @@ export default function CordelExercisesPage() {
     const drawable = thumbnail != null && SAFE_IMAGE_SRC.test(thumbnail);
     const master = exercise.image_url;
     const masterOpenable = master != null && SAFE_IMAGE_SRC.test(master);
-    const busy = busyImageId === exercise.id;
 
     return (
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={imageFrameStyle}>
           {drawable ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={`${thumbnail}?v=${version}`}
               alt={exercise.name}
@@ -401,58 +307,38 @@ export default function CordelExercisesPage() {
               style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
             />
           ) : (
-            <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>No image yet</span>
+            <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>{t('image_none')}</span>
           )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 260 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => openImagePicker(exercise)} disabled={busy} style={btnSmall()}>
-              {busy && imageAction === 'upload' ? 'Uploading…' : drawable ? 'Replace Image' : 'Upload Image'}
-            </button>
-            {drawable && (
-              <button onClick={() => handleImageRemove(exercise)} disabled={busy} style={btnSmall('#888')}>
-                {busy && imageAction === 'remove' ? 'Removing…' : 'Remove'}
-              </button>
-            )}
-          </div>
-          <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
-            Upload a {EXERCISE_IMAGE_MASTER_SIZE}×{EXERCISE_IMAGE_MASTER_SIZE} PNG image with a transparent
-            background. Its {EXERCISE_IMAGE_THUMBNAIL_SIZE}×{EXERCISE_IMAGE_THUMBNAIL_SIZE} thumbnail is made
-            from it automatically.
-          </p>
-          {masterOpenable && (
-            <a
-              href={`${master}?v=${version}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: 12.5, color: '#4b45c6' }}
-            >
-              View full size ({EXERCISE_IMAGE_MASTER_SIZE}×{EXERCISE_IMAGE_MASTER_SIZE})
-            </a>
-          )}
-          {imageError?.id === exercise.id && (
-            <p style={{ margin: 0, fontSize: 12.5, color: '#c0392b' }}>{imageError.message}</p>
-          )}
-        </div>
+        {masterOpenable && (
+          <a
+            href={`${master}?v=${version}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ fontSize: 12.5, color: '#4b45c6' }}
+          >
+            View full size ({EXERCISE_IMAGE_MASTER_SIZE}×{EXERCISE_IMAGE_MASTER_SIZE})
+          </a>
+        )}
       </div>
     );
   }
 
   /**
-   * The video block of an expanded card (§4, §8, §9).
+   * The video of an expanded card, read-only.
    *
    * What the card draws is the **poster**, never the clip: no `<video>` is
    * mounted until the administrator asks to play one, so expanding a card — or
-   * loading the page — never pulls an MP4 down (§9). Asking for the player
-   * mounts one with `controls` and `preload="metadata"` and nothing else — it
-   * loads the metadata and waits for its own play control, because §8 is
-   * explicit that nothing starts playing on its own.
+   * loading the page — never pulls an MP4 down (#717 §9). Asking for the player
+   * mounts one with `controls` and `preload="metadata"` and nothing else, because
+   * §8 is explicit that nothing starts playing on its own. Playing is a *read*,
+   * which is why it stays on the expanded card while every upload and removal
+   * control moved into the editor (#806 §11).
    *
    * Only a reference with a drawable scheme reaches the DOM. `video_url` is a
    * column a `PUT` can set to any string, and on a row that was never uploaded
    * to it is typically a YouTube link — which is a reference this page links to
-   * rather than tries to play (CodeQL `js/xss-through-dom`, the same inline
-   * guard the image block applies).
+   * rather than tries to play (CodeQL `js/xss-through-dom`).
    */
   function renderVideoSection(exercise: Exercise) {
     const version = encodeURIComponent(exercise.modified_at ?? exercise.created_at);
@@ -463,11 +349,10 @@ export default function CordelExercisesPage() {
     // An uploaded object is an `.mp4` this deployment stored; anything else the
     // column holds is a link, and a `<video>` would only fail to decode it.
     const playable = video != null && PLAYABLE_VIDEO_SRC.test(video);
-    const busy = busyVideoId === exercise.id;
     const playing = playingId === exercise.id && playable;
 
     return (
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={videoFrameStyle}>
           {playing ? (
             // eslint-disable-next-line jsx-a11y/media-has-caption
@@ -503,57 +388,90 @@ export default function CordelExercisesPage() {
             </button>
           ) : (
             <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>
-              {hasVideo ? 'No preview' : 'No video yet'}
+              {hasVideo ? t('video_no_poster') : t('video_none')}
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 260 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => openVideoPicker(exercise)} disabled={busy} style={btnSmall()}>
-              {busy && videoAction === 'upload' ? 'Uploading…' : hasVideo ? 'Replace Video' : 'Upload Video'}
-            </button>
-            {hasVideo && (
-              <button onClick={() => setRemovingVideo(exercise)} disabled={busy} style={btnSmall('#888')}>
-                {busy && videoAction === 'remove' ? 'Removing…' : 'Remove'}
-              </button>
-            )}
-          </div>
-          <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
-            Upload an MP4 video (H.264), up to {exerciseVideoMaxMb()} MB. Its {EXERCISE_VIDEO_POSTER_SIZE}×
-            {EXERCISE_VIDEO_POSTER_SIZE} preview image is captured from the video and uploaded with it.
-          </p>
-          {hasVideo && !playable && SAFE_IMAGE_SRC.test(video!) && (
-            // An external link the exercise carries — shown as what it is rather
-            // than played, since nothing here can vouch for what is behind it.
-            <a href={video!} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: '#4b45c6', wordBreak: 'break-all' }}>
-              {video}
-            </a>
-          )}
-          {videoError?.id === exercise.id && (
-            <p style={{ margin: 0, fontSize: 12.5, color: '#c0392b' }}>{videoError.message}</p>
-          )}
+        {hasVideo && !playable && SAFE_IMAGE_SRC.test(video!) && (
+          // An external link the exercise carries — shown as what it is rather
+          // than played, since nothing here can vouch for what is behind it.
+          <a href={video!} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: '#4b45c6', wordBreak: 'break-all' }}>
+            {video}
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  /**
+   * The read-only body of an expanded card: the fields the editor writes, as
+   * text. It reads the same list row the editor is seeded from — never a second
+   * fetch and never a second field list (#797's rule).
+   */
+  function renderReadOnly(exercise: Exercise) {
+    const principal = (exercise.muscles ?? []).filter((m) => m.role === 'principal');
+    const secondary = (exercise.muscles ?? []).filter((m) => m.role === 'secondary');
+    const rts = exercise.allowed_result_types ?? [];
+    const defaults = [
+      exercise.min_reps_default != null ? `${t('label_min_reps_default')}: ${exercise.min_reps_default}` : null,
+      exercise.max_reps_default != null ? `${t('label_max_reps_default')}: ${exercise.max_reps_default}` : null,
+      exercise.sets_default != null ? `${t('label_sets_default')}: ${exercise.sets_default}` : null,
+      exercise.rest_default_seconds != null ? `${t('label_rest_default_seconds')}: ${exercise.rest_default_seconds}s` : null,
+    ].filter((part): part is string => part !== null);
+
+    return (
+      <div style={{ padding: '12px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {/* #717 Q6: one **Media** section holding both kinds of media, shown only
+            on the expanded card — the collapsed row keeps its compact
+            presentation (#716 §9). Since #806 it *shows* the media and nothing
+            else: uploading and removing moved into the editor behind
+            `⋮ → Edit`, which is where every other write on this page lives. */}
+        <p style={sectionLabelStyle}>{t('section_media')}</p>
+        {renderImageSection(exercise)}
+        {renderVideoSection(exercise)}
+        <DetailRow label={t('label_description')} value={exercise.description ?? '—'} />
+        <DetailRow label={t('label_status')} value={tStatus(exercise.status)} />
+        <DetailRow
+          label={t('label_result_types')}
+          value={rts.length > 0 ? rts.map((rt) => resultTypeLabel(rt, (key) => t(key as any))).join(', ') : '—'}
+        />
+        <DetailRow label={t('section_configuration')} value={defaults.length > 0 ? defaults.join(' · ') : '—'} />
+        <DetailRow label={t('label_notes_default')} value={exercise.notes_default ?? '—'} />
+        <DetailRow
+          label={t('role_principal')}
+          value={principal.length > 0 ? principal.map((m) => muscleLabel(m.key)).join(', ') : '—'}
+        />
+        <DetailRow
+          label={t('role_secondary')}
+          value={secondary.length > 0 ? secondary.map((m) => muscleLabel(m.key)).join(', ') : '—'}
+        />
+        <DetailRow label={t('col_created_at')} value={new Date(exercise.created_at).toLocaleString()} />
+        <DetailRow label={t('detail_modified_at')} value={exercise.modified_at ? new Date(exercise.modified_at).toLocaleString() : '—'} />
+        {/* #675: the same deep link every Details view offers — filtered to this exercise. */}
+        <div style={{ marginTop: 6 }}>
+          <ViewAuditLogButton entityType="exercise" entityId={exercise.id} scope="platform" size="small" />
         </div>
       </div>
     );
   }
 
   const columns: Column<Exercise>[] = [
-    { header: 'Name', render: (row) => <strong>{row.name}</strong> },
+    { header: t('col_name'), render: (row) => <strong>{row.name}</strong> },
     {
-      header: 'Description',
+      header: t('col_description'),
       render: (row) => row.description
         ? <span style={{ color: '#666' }}>{row.description}</span>
         : <span style={{ color: 'var(--text-muted, #9ca3af)' }}>—</span>,
     },
-    { header: 'Status', width: 100, render: (row) => <StatusBadge status={row.status} label={row.status} /> },
-    { header: 'Created', width: 120, render: (row) => <span style={{ color: '#888' }}>{row.created_at?.slice(0, 10)}</span> },
+    { header: t('col_status'), width: 100, render: (row) => <StatusBadge status={row.status} label={tStatus(row.status)} /> },
+    { header: t('col_created_at'), width: 120, render: (row) => <span style={{ color: '#888' }}>{row.created_at?.slice(0, 10)}</span> },
     {
       header: '', width: 40,
       render: (row) => (
         <ContextMenu items={[
-          { label: 'Details', onClick: () => toggleExpand(row.id) },
-          { label: 'Edit', onClick: () => openInlineEdit(row) },
-          { label: 'Delete', danger: true, onClick: () => setDeleting(row) },
+          { label: t('details'), onClick: () => toggleExpand(row.id) },
+          { label: t('edit'), onClick: () => openInlineEdit(row) },
+          { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
         ]} />
       ),
     },
@@ -568,7 +486,7 @@ export default function CordelExercisesPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search…"
+            placeholder={t('search_placeholder')}
             style={searchInputStyle}
           />
           <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>+ New Exercise</button>
@@ -577,7 +495,21 @@ export default function CordelExercisesPage() {
 
       {creating && (
         <div style={cardStyle}>
-          {renderInlineForm(newForm, setNewForm, newError, newSaving, () => setCreating(false), saveInlineNew, 'Create')}
+          <div style={{ padding: '16px 20px' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 600 }}>{t('new_exercise')}</p>
+            <ExerciseEditor
+              mode="create"
+              idPrefix="base-exercise-new"
+              state={createState}
+              muscleKeys={muscleKeys}
+              muscleLabel={muscleLabel}
+              resultTypes={resultTypes}
+              nameRef={newNameRef}
+              media={renderEditorMedia(null)}
+              onCancel={closeInlineNew}
+              onSave={saveInlineNew}
+            />
+          </div>
         </div>
       )}
 
@@ -586,108 +518,54 @@ export default function CordelExercisesPage() {
         rows={rows}
         rowKey={(row) => row.id}
         loading={loading}
-        loadingText="Loading…"
+        loadingText={t('loading')}
         emptyText="No base exercises yet."
         renderExpanded={(row) => (
           editingId === row.id ? (
-            renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => saveInlineEdit(row), 'Save')
-          ) : (
-            <div style={{ padding: '12px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {/* #717 Q6: one **Media** section holding both kinds of media,
-                  shown only on the expanded card — the collapsed row keeps its
-                  compact presentation (#716 §9). Nothing the card showed before
-                  is hidden or moved: the detail rows below are unchanged. */}
-              <p style={sectionLabelStyle}>Media</p>
-              {/* #716 — the exercise's image. */}
-              {renderImageSection(row)}
-              {/* #717 — its demonstration video, drawn from the stored poster. */}
-              {renderVideoSection(row)}
-              <DetailRow label="Description" value={row.description ?? '—'} />
-              <DetailRow label="Status" value={row.status} />
-              <DetailRow label="Created At" value={new Date(row.created_at).toLocaleString()} />
-              <DetailRow label="Modified At" value={row.modified_at ? new Date(row.modified_at).toLocaleString() : '—'} />
-              {/* #675: the same deep link every Details view offers — filtered to this exercise. */}
-              <div style={{ marginTop: 6 }}>
-                <ViewAuditLogButton entityType="exercise" entityId={row.id} scope="platform" size="small" />
-              </div>
+            <div style={{ padding: '16px 20px' }}>
+              <ExerciseEditor
+                mode="edit"
+                idPrefix={`base-exercise-${row.id}`}
+                state={editState}
+                muscleKeys={muscleKeys}
+                muscleLabel={muscleLabel}
+                resultTypes={resultTypes}
+                nameRef={nameInputRef}
+                media={renderEditorMedia(row)}
+                onCancel={cancelEdit}
+                onSave={() => saveInlineEdit(row)}
+              />
             </div>
-          )
+          ) : renderReadOnly(row)
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(row) => toggleExpand(row.id)}
       />
 
-      {/* One picker for the page: `openImagePicker()` points it at an exercise. */}
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/png"
-        onChange={handleImageSelected}
-        style={{ display: 'none' }}
-      />
-
-      {/* The same, for videos: `openVideoPicker()` points it at an exercise. */}
-      <input
-        ref={videoInputRef}
-        type="file"
-        accept="video/mp4"
-        onChange={handleVideoSelected}
-        style={{ display: 'none' }}
-      />
-
       <ConfirmDialog
         open={deleting !== null}
         message={`Delete base exercise "${deleting?.name}"?`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        confirmLabel={t('delete')}
+        cancelLabel={t('cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
-      />
-
-      <ConfirmDialog
-        open={removingVideo !== null}
-        message={`Remove the video from "${removingVideo?.name}"? The exercise keeps everything else.`}
-        confirmLabel="Remove"
-        cancelLabel="Cancel"
-        onConfirm={() => {
-          const target = removingVideo;
-          setRemovingVideo(null);
-          if (target) handleVideoRemove(target);
-        }}
-        onCancel={() => setRemovingVideo(null)}
       />
     </div>
   );
 }
 
-/** What each `prepareExerciseVideo()` refusal reads as on this page (#717 §5). */
-const VIDEO_PROBLEM_MESSAGES: Record<string, string> = {
-  not_an_mp4: 'Video must be an MP4 file.',
-  too_large: 'That video is larger than this deployment accepts.',
-  unreadable: 'That file could not be read as a video.',
-  poster_failed: 'The preview image could not be captured, so nothing was uploaded and the current video is unchanged.',
-};
-
 /**
  * Which references this page will hand to a `<video src>`: an `http(s)` URL
  * whose path ends in `.mp4`, which is what an upload produces. A YouTube watch
  * page is a link, not a clip, and a `<video>` pointed at one only fails to
- * decode — so it is rendered as a link instead (§8).
+ * decode — so it is rendered as a link instead (#717 §8).
  */
 const PLAYABLE_VIDEO_SRC = /^https?:\/\/[^?#]+\.mp4(?:[?#]|$)/i;
-
-/** What each `prepareExerciseImage()` refusal reads as on this page. */
-const IMAGE_PROBLEM_MESSAGES: Record<string, string> = {
-  not_a_png: 'Image must be a PNG file.',
-  unreadable: 'That file could not be read as an image.',
-  wrong_size: `Image must be exactly ${EXERCISE_IMAGE_MASTER_SIZE}×${EXERCISE_IMAGE_MASTER_SIZE} pixels.`,
-  thumbnail_failed: 'The thumbnail could not be generated from that image, so nothing was uploaded.',
-};
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', gap: 10 }}>
-      <span style={{ width: 120, flexShrink: 0, color: '#888' }}>{label}</span>
+      <span style={{ width: 160, flexShrink: 0, color: '#888' }}>{label}</span>
       <span>{value}</span>
     </div>
   );
@@ -777,13 +655,4 @@ const cardStyle: React.CSSProperties = {
   border: '1.5px solid #4b45c6',
   overflow: 'hidden',
   marginBottom: 12,
-};
-
-const inlineLabelStyle: React.CSSProperties = {
-  display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4,
-};
-
-const inlineInputStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
-  fontSize: 14, boxSizing: 'border-box', background: '#fff',
 };

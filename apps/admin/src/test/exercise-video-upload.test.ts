@@ -117,8 +117,11 @@ describe('prepareExerciseVideo (source)', () => {
 
 describe('ExerciseVideoField', () => {
   it('uploads the pair to the exercise’s own endpoint', () => {
-    expect(componentSrc).toMatch(/\/exercises\/\$\{exerciseId\}\/video`, \{\s*\n\s*method: 'POST'/);
-    expect(componentSrc).toMatch(/\/exercises\/\$\{exerciseId\}\/video`, \{ method: 'DELETE' \}/);
+    // #806: as for the image control — the context supplies the route root, and
+    // it defaults to the gym's.
+    expect(componentSrc).toContain("basePath = '/exercises'");
+    expect(componentSrc).toMatch(/\$\{basePath\}\/\$\{exerciseId\}\/video`, \{\s*\n\s*method: 'POST'/);
+    expect(componentSrc).toMatch(/\$\{basePath\}\/\$\{exerciseId\}\/video`, \{ method: 'DELETE' \}/);
   });
 
   it('sends nothing when preparation failed, so existing media survives (§9)', () => {

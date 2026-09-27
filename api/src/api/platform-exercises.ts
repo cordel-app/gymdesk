@@ -4,7 +4,7 @@ import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import { logger } from '../lib/logger';
-import { normalizeMuscleKey } from '../domain/muscles';
+import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
   EXERCISE_IMAGE_MIME,
@@ -97,6 +97,32 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   try {
     const { rows } = await db.query(sql, params);
     res.json(rows);
+  } catch (err) { next(err); }
+});
+
+/* ── Catalogues the Base Exercise editor needs (#806) ─────────────────────── */
+//
+// The shared Exercise editor (`components/exercises/ExerciseEditor.tsx`) renders
+// Muscles and Allowed Result Types on both screens, so the Base Exercises page
+// needs the same two catalogues the gym-facing page reads from `/muscles` and
+// `/result-types`. Those two sit behind `tenantContext` +
+// `requireModuleAccess('TRAINING')` + `requireFeatureEnabled('training.exercises')`
+// (app.ts), which is right for a gym screen and wrong here: a platform screen
+// must not stop working because the superadmin's *currently selected* gym has the
+// exercises feature switched off, and a base exercise belongs to no gym at all.
+//
+// Neither catalogue is gym-scoped — `MUSCLE_KEYS` is a fixed list in
+// `domain/muscles.ts` and `result_types` is the seeded, gym-less table of
+// migration 073 — so this is the same data, read under this router's own
+// `requireSuperadmin`. No endpoint is merged (#806 §6): the gym-facing routes are
+// untouched and keep answering for gym screens.
+//
+// Registered **before** `/:id`, or Express would match `lookups` as an exercise id.
+
+platformExercisesRouter.get('/lookups', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const { rows } = await db.query('SELECT id, name, slug FROM result_types ORDER BY id ASC');
+    res.json({ muscles: MUSCLE_KEYS.map((key) => ({ key })), result_types: rows });
   } catch (err) { next(err); }
 });
 
