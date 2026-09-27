@@ -954,7 +954,7 @@ Notes:
 
 ## CI/CD Configuration (GitHub Actions)
 
-Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows declare `environment: dev` and read them via `secrets.*` / `vars.*`. When PRO arrives, create a `production` environment with the same names and point its workflows at it — no workflow rewrites needed.
+Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows read them via `secrets.*` / `vars.*`. `ci.yml`, `deploy-alloy.yml` and `debug-vps.yml` declare `environment: dev`; the billing run, the recurring booking run and the four deploy workflows declare `environment: ${{ inputs.environment || 'dev' }}`, with a `workflow_dispatch` choice input (`dev` | `production`, default `dev`) (#784). When PRO arrives, create a `production` environment with the same names and flip the scheduled workflows' fallback to `'production'` — the owner steps are in `docs/go-to-production.md` §1.
 
 ### Environment-scoped (per env: `dev` today, `production` later)
 
@@ -967,6 +967,7 @@ Config is split by scope. **Environment-dependent** values live in GitHub *Envir
 | `CLERK_WEBHOOK_SIGNING_SECRET` | secret | `deploy.yml` → API `/webhooks/clerk`. **Must equal the Signing Secret of the Clerk webhook endpoint** (`https://api.vdicube.com/webhooks/clerk`), which must be **enabled** and subscribed to `user.created` and `user.deleted` (#709). A mismatch makes every event fail with `400 Invalid signature` — the dev endpoint sat disabled that way from 2026-09-08 to 2026-09-23. Changing the secret needs a redeploy (`gh workflow run deploy.yml --ref main`); missed events can be resent from the endpoint's *Replay → Replay missing messages*. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | secret | Frontend builds (baked as build arg) |
 | `CORDEL_FITNESS_MEMBERS_URL`, `CORDEL_FITNESS_ADMIN_URL` | variables | App URLs for invite emails |
+| `API_BASE_URL` | variable | #784 — the API origin `billing-run.yml` and `recurring-booking-run.yml` call (`https://api.vdicube.com` on `dev`). A variable, not a secret; no hardcoded fallback, so a run in an environment without it goes red at its first step. |
 | `TRUST_PROXY_HOPS`, `PUBLIC_REGISTRATION_IP_LIMIT_PER_HOUR`, `PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY`, `API_PUBLIC_URL` | optional, not set today | #599 — all have code defaults (`1`, `60`, `200`, and the origin of `PAYMENT_NOTIFICATION_URL`), so `deploy.yml` does not pass them. Add them there only to override. |
 | `CLOUDFLARE_R2_ENDPOINT`, `CLOUDFLARE_R2_BUCKET` | variables | R2 storage (#417) — platform-wide bucket config |
 | `CLOUDFLARE_R2_PUBLIC_URL` | variable | The bucket's public origin (r2.dev Public Development URL, or a custom domain in production), with no trailing slash and no bucket name. `buildStorageObjectUrl()` builds every media URL on it. `CLOUDFLARE_R2_ENDPOINT` is the S3 API the API uploads through and answers a browser's GET with `400 Authorization`, so without this variable the URLs fall back to that private composition and render broken. Dev: `https://pub-bfe67b11c1114125bba78a43cf826252.r2.dev` (bucket `cordel-patform-dev`, enabled 2026-09-27). |
