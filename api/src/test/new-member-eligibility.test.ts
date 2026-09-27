@@ -49,7 +49,7 @@ describe('countsAsRecentMembership', () => {
     expect(countsAsRecentMembership(assignment({ id: 1, status: 'active' }), CUTOFF)).toBe(true);
   });
 
-  it.each(['draft', 'awaiting_payment', 'active', 'paused'])('counts a %s plan', (status) => {
+  it.each(['active', 'paused'])('counts a %s plan', (status) => {
     expect(countsAsRecentMembership(assignment({ id: 1, status }), CUTOFF)).toBe(true);
   });
 

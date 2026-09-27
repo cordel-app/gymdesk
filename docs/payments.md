@@ -64,8 +64,8 @@ a `payment_methods` row. So an assignment is `active` — bookable, per
 `api/src/api/activity-eligibility.ts`'s `um.status = 'active'` gate — from the moment it is
 created, and the nightly run skips it silently until a card is on file.
 
-`draft` and `awaiting_payment` exist in the status vocabulary and **no code path creates
-them** — see [Assigned Plan status model](#assigned-plan-status-model) and #786.
+There is no pre-activation status: #786 retired `draft` and `awaiting_payment` — see
+[Assigned Plan status model](#assigned-plan-status-model).
 
 ### A3. A payment request is raised
 
@@ -498,21 +498,40 @@ nightly run (automatically, per settled charge).
 
 ### Assigned Plan status model
 
-`STATUSES` and `ALLOWED_TRANSITIONS` in `api/src/api/user-memberships.ts:49-63`:
+`STATUSES` and `ALLOWED_TRANSITIONS` in `api/src/api/user-memberships.ts`, and the
+`user_memberships_status_check` CHECK (current definition: migration 198):
 
 ```
-draft ──► awaiting_payment ──► active ◄──► paused
-  └──────────┴──────────────────┴──────────┴──► cancelled
-                                          expired (assign-new-plan only)
+active ◄──► paused
+  └───────────┴──► cancelled
+expired (assign-new-plan only)
 ```
 
-**Which are live today:** `active`, `paused`, `cancelled`, `expired`. `draft` and
-`awaiting_payment` are **unreachable** — all three insert paths hardcode `'active'`, and no
-path moves `awaiting_payment → active` (the webhook writes `next_billing_date`, never
-`um.status`). `POST /user-memberships/:id/submit` and the **Submit** action it backs
-(`apps/admin/src/app/[locale]/financials/assigned-plans/AssignedPlanExpandedRow.tsx:191`,
-gated on `detail.status === 'draft'`) are therefore unreachable.
-#786 decides whether to wire the pre-activation states to the first payment or retire them.
+An assignment is **`active` from creation** — all three insert paths (`POST /user-memberships`,
+`POST /user-memberships/:id/assign-new-plan`, `POST /membership-plans/:id/assign`) write
+`'active'` — and its first payment is collected afterwards (A3–A6). Nothing about the first
+payment moves `um.status`: the webhook's `completed` branch stamps `next_billing_date`, and
+the nightly run skips the assignment until a card is on file.
+
+#511 stage 1 (migration 148) had added two pre-activation statuses, `draft` and
+`awaiting_payment`, with a **Submit** action (`POST /user-memberships/:id/submit`,
+`draft → awaiting_payment`) — but no insert path produced them and no payment path moved a
+row on to `active`, so they were unreachable, and an `awaiting_payment` row written by hand
+would have been configurable and closeable but never activatable or payable. #786 retired
+them: the route, the Submit menu item, the dates-and-discount Edit form that only those two
+statuses could open, the `draft` Billing Events projection, and every status list that named
+them are gone, and migration 198 narrowed the CHECK back to the four values above. That
+migration **refuses to run** while any row still holds a retired status, rather than guess
+what the row should become.
+
+> **Decisions (2026-09-27, #786)** — change them here if they turn out wrong:
+> - Retired rather than wired: an assignment is `active` from creation and the first payment
+>   is collected afterwards. Plan-gated booking (`activity-eligibility.ts`, `um.status =
+>   'active'`) is therefore available before the first payment clears, as it always was.
+> - No pre-activation step replaces **Submit**: there is no "prepare, then activate" flow.
+> - Re-introducing a payment gate before activation later is a schema widening (the CHECK,
+>   `STATUSES`, `ALLOWED_TRANSITIONS`) plus an activation write in the webhook and manual
+>   payment paths — its own ticket, not a revert of this one.
 
 `expired` is reached only by `assign-new-plan`'s supersede logic, never by request.
 
@@ -782,7 +801,7 @@ differently.
 | [#783](https://github.com/cordel-app/gymdesk/issues/783) | The `/billing/` GitHub Actions IP allowlist decays by hand; `/recurring-bookings/` has none |
 | [#784](https://github.com/cordel-app/gymdesk/issues/784) | No `production` GitHub environment; `API_BASE_URL` is a literal in the workflow |
 | [#785](https://github.com/cordel-app/gymdesk/issues/785) | ✅ done — a rejection escalates to a pause |
-| [#786](https://github.com/cordel-app/gymdesk/issues/786) | `draft`/`awaiting_payment` are unreachable statuses, and `POST /:id/submit` is dead code |
+| [#786](https://github.com/cordel-app/gymdesk/issues/786) | ✅ done — `draft`/`awaiting_payment` and `POST /:id/submit` retired; an assignment is `active` from creation |
 | [#787](https://github.com/cordel-app/gymdesk/issues/787) | ✅ done — the run allocates receipt numbers |
 | [#788](https://github.com/cordel-app/gymdesk/issues/788) | ✅ done — replacing a card charges nothing |
 | [#789](https://github.com/cordel-app/gymdesk/issues/789) | ✅ done — cleanup keeps an opened request `pending`, so a member's payment is not lost |

@@ -49,7 +49,7 @@ import {
 
 // Statuses whose charges are still ahead of the Member. `cancelled`/`expired`
 // assignments bill nothing further, so they contribute no future charges.
-const SIMULATED_STATUSES = ['draft', 'awaiting_payment', 'active', 'paused'] as const;
+const SIMULATED_STATUSES = ['active', 'paused'] as const;
 
 // mysql2 may return DATE/DATETIME columns as Date objects rather than strings
 // depending on the connection's timezone config (same note as
