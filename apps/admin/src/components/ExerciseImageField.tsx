@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { btnSmall } from './ui';
 import { ConfirmDialog } from './ConfirmDialog';
 import {
@@ -87,8 +88,12 @@ export function ExerciseImageField({
   // out of the file input reaches the DOM (CodeQL `js/xss-through-dom`).
   const [stagedPreview, setStagedPreview] = useState<string | null>(null);
 
-  const notConfigured = requiresGymStorage && activeGym != null && !activeGym.storage_configured;
-  const notInitialized = requiresGymStorage && activeGym != null && activeGym.storage_configured && !activeGym.storage_folder_prefix;
+  // #823: one rule for both storage blocks, shared with the Theme editors —
+  // `requiresGymStorage` is what keeps a Base Exercise (platform folder) out of
+  // the currently selected gym's storage state.
+  const storageBlock = gymStorageBlock(activeGym, requiresGymStorage);
+  const notConfigured = storageBlock === 'not_configured';
+  const notInitialized = storageBlock === 'not_initialized';
   const blocked = disabled || notConfigured || notInitialized;
 
   // The thumbnail is what this control draws when there is one — the master is

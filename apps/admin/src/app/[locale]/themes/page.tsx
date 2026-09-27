@@ -17,6 +17,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
+import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import {
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_SLOTS,
@@ -91,6 +92,13 @@ export default function GymThemesPage() {
   const { centers, activeCenterId, refreshCenters } = useCenter();
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { toast } = useToast();
+  // #823: a Custom Theme's logo and Members App images are objects in *this
+  // gym's* Cloudflare folder, so both upload controls are unusable until the
+  // deployment has R2 credentials and this gym's bucket folders have been
+  // initialized. One decision, taken here and handed to the two editors — the
+  // API refuses the same two cases with 503/409, and the point of the gating is
+  // that the admin is told before picking a file rather than after.
+  const storageBlock = gymStorageBlock(activeGym);
 
   const [themes, setThemes] = useState<Theme[]>([]);
   const [loading, setLoading] = useState(true);
@@ -307,6 +315,10 @@ export default function GymThemesPage() {
   }
 
   function pickMembersImage(slot: MemberImageSlot, file: File) {
+    // #823: the control is disabled while storage is unavailable, so this cannot
+    // normally be reached — but a blocked pick must not become a staged file that
+    // Save would then try to upload.
+    if (storageBlock) { setEditError(t(`members_image_upload_${storageBlock}`)); return; }
     if (!file.type.startsWith('image/')) { setEditError(t('members_image_error_type')); return; }
     if (file.size > MEMBER_IMAGE_MAX_BYTES) { setEditError(t('members_image_error_size')); return; }
     setEditError(null);
@@ -404,6 +416,9 @@ export default function GymThemesPage() {
   }
 
   function handleLogoPick(file: File) {
+    // #823 — as in `pickMembersImage`: nothing may be staged for an upload the
+    // gym's storage cannot accept.
+    if (storageBlock) { setEditError(t(`logo_upload_${storageBlock}`)); return; }
     setEditLogoFile(file);
     setLogoRemovePending(false);
     const reader = new FileReader();
@@ -555,6 +570,7 @@ export default function GymThemesPage() {
               onLogoPick={handleLogoPick}
               onLogoRemove={queueLogoRemove}
               readOnly={isBase}
+              storageBlock={storageBlock}
             />
           ))}
 
@@ -565,6 +581,7 @@ export default function GymThemesPage() {
               onRemove={queueMembersImageRemove}
               t={t}
               readOnly={isBase}
+              storageBlock={storageBlock}
             />
           ))}
 

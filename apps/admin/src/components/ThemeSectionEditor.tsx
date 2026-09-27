@@ -2,7 +2,8 @@
 
 import { useRef } from 'react';
 import { FormLabel, FormInput } from '@/components/CrudModal';
-import { btnSmall } from '@/components/ui';
+import { btnSmall, readOnlyStyle } from '@/components/ui';
+import type { GymStorageBlock } from '@/lib/gymStorageReadiness';
 
 // Shared expanded-card editor chrome for the two Theme screens (#678):
 // Custom Themes (`[locale]/themes`) and Base Themes (`[locale]/system/themes`).
@@ -60,6 +61,18 @@ interface ThemeBrandingEditorProps {
   showLogo?: boolean;
   /** A Base Theme viewed from a gym: every control is disabled, nothing saves. */
   readOnly?: boolean;
+  /**
+   * #823: why an upload into this gym's Cloudflare folder is unavailable, or
+   * `null` when it is available. The **page** decides it (this component stays
+   * presentational), so the Base Themes screen leaves it `null` — a Base Theme's
+   * logo is a blob on the row and belongs to no gym's bucket.
+   *
+   * When set, `Upload logo` is disabled, the file input is disabled with it (so
+   * the picker cannot be opened at all, and no upload request is ever attempted),
+   * and the reason is stated above the buttons. Everything else in the section —
+   * the current logo, `Logo contains name of the gym?`, `Clear` — is untouched.
+   */
+  storageBlock?: GymStorageBlock;
   autoFocusName?: boolean;
   /** Extra controls rendered under Name — the Base editor's Status select. */
   children?: React.ReactNode;
@@ -75,6 +88,7 @@ export function ThemeBrandingEditor({
   onLogoRemove,
   showLogo = true,
   readOnly = false,
+  storageBlock = null,
   autoFocusName = false,
   children,
 }: ThemeBrandingEditorProps) {
@@ -121,13 +135,26 @@ export function ThemeBrandingEditor({
           )}
           {!readOnly && (
             <>
+              {storageBlock && (
+                <p style={{ margin: '0 0 8px', fontSize: 12, color: '#c0392b' }}>
+                  {t(`logo_upload_${storageBlock}`)}
+                </p>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => fileInputRef.current?.click()} style={btnSmall('#444')}>{t('logo_upload')}</button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={storageBlock !== null}
+                  title={storageBlock ? t(`logo_upload_${storageBlock}`) : undefined}
+                  style={readOnlyStyle(btnSmall('#444'), storageBlock !== null)}
+                >
+                  {t('logo_upload')}
+                </button>
                 {logoPreview && (
                   <button type="button" onClick={onLogoRemove} style={btnSmall('#c0392b')}>{t('logo_clear')}</button>
                 )}
               </div>
-              <input ref={fileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} onChange={handleFileChange} />
+              <input ref={fileInputRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" style={{ display: 'none' }} disabled={storageBlock !== null} onChange={handleFileChange} />
             </>
           )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, cursor: readOnly ? 'default' : 'pointer' }}>

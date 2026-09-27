@@ -937,9 +937,25 @@ storageRouter.post(
 
 `handleImageUpload()` already handles mime/size validation, the `isStorageConfigured()` 503, the per-gym `storage_folder_prefix` lookup + 409 ("not initialized for this gym") and the `uploadGymImage()` call — a new target only needs its own route + folder name (must match one of the folders `initializeGymBucket()` creates, see the Gyms row in `docs/architecture.md`).
 
-2. **Frontend** — use `<ImageUploadField uploadPath="/storage/uploads/widget-image" value={form.image_url} onChange={(url) => setForm({ ...form, image_url: url ?? '' })} />` (`apps/admin/src/components/ImageUploadField.tsx`) in place of a plain URL `<input>`, in both the add and edit forms. It reads `activeGym.storage_configured`/`storage_folder_prefix` from `GymContext` to show the not-configured/not-initialized warning without a round-trip, and posts the raw `File` to `uploadPath` on selection.
+2. **Frontend** — use `<ImageUploadField uploadPath="/storage/uploads/widget-image" value={form.image_url} onChange={(url) => setForm({ ...form, image_url: url ?? '' })} />` (`apps/admin/src/components/ImageUploadField.tsx`) in place of a plain URL `<input>`, in both the add and edit forms. It asks `gymStorageBlock(activeGym)` (see *An upload control says why it is unavailable* below) for the not-configured/not-initialized warning without a round-trip, and posts the raw `File` to `uploadPath` on selection.
 
 3. **Read-only views** — render the stored URL as an `<img>` thumbnail (`maxWidth: 160, maxHeight: 120, objectFit: 'contain'`), not as text — see `ExerciseDetailModal.tsx` / the exercises expanded-row view.
+
+---
+
+## An upload control says why it is unavailable (#823)
+
+Every per-gym upload writes into the gym's own R2 folder, and two things can make that impossible. The API already refuses both — `503` when the *deployment* has no `CLOUDFLARE_R2_*` credentials, `409` when *this gym* has no `storage_folder_prefix` because Gym Bucket Initialization never ran. Neither is a reason to let the admin pick a file first and read a toast afterwards.
+
+1. **One rule, not one per control.** `gymStorageBlock(gym, requiresGymStorage = true)` (`apps/admin/src/lib/gymStorageReadiness.ts`) answers `'not_configured' | 'not_initialized' | null` from `GymContext`'s `activeGym`, and it is the only place either column is named. A new upload control calls it; it does not re-derive the pair. Two of its answers are load-bearing: a `null` gym (the list has not loaded) is **not** blocked — a control is not declared unavailable on the strength of a state nobody has read yet — and `requiresGymStorage: false` skips the gym entirely, which is what keeps a platform-owned object (`cordel/…`: a Base Exercise's media, a Base Theme's slots) out of whichever gym the superadmin happens to have selected.
+
+2. **Disable the file input, not just the button.** A disabled button with a live `<input type="file">` behind it is still reachable through `inputRef.current?.click()` from anywhere else in the component. Both carry the same `disabled`, so no picker opens and no request is attempted.
+
+3. **Say which of the two it is.** One locale key per block value (`logo_upload_not_configured` / `…_not_initialized`), interpolated from the value — so a new block reason needs a key in the same commit, since next-intl prints a missing key verbatim. The message goes in the section, and the button repeats it as its `title`.
+
+4. **Refuse the pick in the page's handler as well.** Where the editor *stages* a file and uploads it on Save (the Fixed Slots pattern below), a pick that slipped through would be uploaded later by a Save the admin does not associate with it. The handler returns early and sets the same message.
+
+5. **Gate the upload and nothing else.** The current image, `Remove`, the accepted formats and the size limits stay exactly as they were — removing a Theme slot deletes its row rather than an object (#725), and clearing a logo reference works with or without a bucket.
 
 ---
 
