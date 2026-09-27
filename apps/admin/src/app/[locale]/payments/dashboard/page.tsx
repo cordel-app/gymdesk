@@ -19,6 +19,8 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { cardSurfaceStyle } from '@/components/ui';
+import Link from 'next/link';
+import { failedPaymentsQueueHref } from '@/lib/failedPaymentsAttention';
 
 interface PaymentsDashboardSummary {
   current_month_start: string;
@@ -29,6 +31,8 @@ interface PaymentsDashboardSummary {
   total_last_month: number;
   failed_last_month: number;
   successful_last_month: number;
+  awaiting_action_count: number;
+  awaiting_action_oldest_at: string | null;
 }
 
 export default function PaymentsDashboard() {
@@ -79,12 +83,25 @@ export default function PaymentsDashboard() {
     return (isoDate: string | undefined) => (isoDate ? fmt.format(new Date(`${isoDate}T00:00:00Z`)) : '');
   }, [locale]);
 
+  // #779: the one card that is a to-do rather than a monthly statistic — its
+  // period line is the age of the oldest unresolved failure, and it opens the
+  // failed list oldest first, like the sidebar badge.
+  const oldestLabel = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' });
+    return (iso: string | null) => (iso ? t('awaiting_action_oldest', { date: fmt.format(new Date(iso)) }) : t('awaiting_action_none'));
+  }, [locale, t]);
+
   const cards = summary ? [
     { key: 'scheduled_this_month', value: summary.scheduled_this_month, period: monthLabel(summary.current_month_start) },
     { key: 'total_last_month', value: summary.total_last_month, period: monthLabel(summary.previous_month_start) },
     { key: 'failed_last_month', value: summary.failed_last_month, period: monthLabel(summary.previous_month_start) },
     { key: 'successful_last_month', value: summary.successful_last_month, period: monthLabel(summary.previous_month_start) },
-  ] : [];
+    {
+      key: 'awaiting_action', value: summary.awaiting_action_count,
+      period: oldestLabel(summary.awaiting_action_oldest_at),
+      href: failedPaymentsQueueHref(locale), unit: t('awaiting_action_unit'),
+    },
+  ] as { key: string; value: number; period: string; href?: string; unit?: string }[] : [];
 
   return (
     <div>
@@ -99,20 +116,25 @@ export default function PaymentsDashboard() {
         <p style={{ color: 'var(--gd-text-muted, #6b7280)', fontSize: 14 }}>{t('empty')}</p>
       ) : (
         <div style={gridStyle}>
-          {cards.map((card) => (
-            <div key={card.key} style={cardStyle}>
+          {cards.map((card) => {
+            const body = (<>
               <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--gd-text, #1a1a2e)', wordBreak: 'break-word' }}>
                 {t(`card_${card.key}`)}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)', marginTop: 6, textTransform: 'capitalize' }}>
+              <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)', marginTop: 6, textTransform: card.href ? 'none' : 'capitalize' }}>
                 {card.period}
               </div>
               <div style={{ fontSize: 36, fontWeight: 700, color: 'var(--gd-text, #1a1a2e)', marginTop: 16, lineHeight: 1.1 }}>
                 {card.value}
               </div>
-              <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)', marginTop: 4 }}>{t('billing_events_unit')}</div>
-            </div>
-          ))}
+              <div style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)', marginTop: 4 }}>{card.unit ?? t('billing_events_unit')}</div>
+            </>);
+            return card.href ? (
+              <Link key={card.key} href={card.href} style={{ ...cardStyle, display: 'block', textDecoration: 'none' }}>{body}</Link>
+            ) : (
+              <div key={card.key} style={cardStyle}>{body}</div>
+            );
+          })}
         </div>
       )}
     </div>
