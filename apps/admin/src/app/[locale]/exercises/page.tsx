@@ -7,7 +7,6 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
-import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DependencyDialog, ReferenceReport } from '@/components/DependencyDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -18,14 +17,25 @@ import { ExerciseVideoField } from '@/components/ExerciseVideoField';
 import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
 import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import {
+  EXERCISE_STATUSES,
+  emptyExerciseForm,
+  exerciseFormFromRow,
+  isExerciseFormValid,
+  resultTypeLabel,
+  toExerciseCreatePayload,
+  toExerciseUpdatePayload,
+  type ExerciseFormValues,
+  type MuscleRole,
+  type ResultTypeRow,
+} from './exerciseForm';
 import { ExerciseDetailModal } from './ExerciseDetailModal';
 import { ImportExercisesModal } from './ImportExercisesModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type MuscleRole = 'principal' | 'secondary';
 interface ExerciseMuscle { key: string; role: MuscleRole }
-interface ResultType { id: number; name: string; slug: string }
+type ResultType = ResultTypeRow;
 interface Exercise {
   id: number; name: string; description: string | null;
   /** #719: the video reference, and its stored poster when the gym uploaded one. */
@@ -44,31 +54,8 @@ interface Exercise {
   allowed_result_types: ResultType[] | null;
 }
 
-const STATUSES = ['active', 'inactive'] as const;
+const STATUSES = EXERCISE_STATUSES;
 const truncate = (s: string | null, n = 55) => s ? (s.length > n ? s.slice(0, n) + '…' : s) : '—';
-
-function emptyAddForm() {
-  return {
-    name: '', description: '', video_url: '',
-    min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '', notes_default: '',
-    status: 'active',
-  };
-}
-type AddForm = ReturnType<typeof emptyAddForm>;
-
-function emptyEditForm(e: Exercise): AddForm {
-  return {
-    name: e.name,
-    description: e.description ?? '',
-    video_url: e.video_url ?? '',
-    min_reps_default: e.min_reps_default != null ? String(e.min_reps_default) : '',
-    max_reps_default: e.max_reps_default != null ? String(e.max_reps_default) : '',
-    sets_default: e.sets_default != null ? String(e.sets_default) : '',
-    rest_default_seconds: e.rest_default_seconds != null ? String(e.rest_default_seconds) : '',
-    notes_default: e.notes_default ?? '',
-    status: e.status,
-  };
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -96,21 +83,22 @@ export default function ExercisesPage() {
   // Expanded/edit state
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<AddForm>(emptyAddForm());
+  const [editForm, setEditForm] = useState<ExerciseFormValues>(emptyExerciseForm());
   const [editMuscles, setEditMuscles] = useState<Map<string, MuscleRole>>(new Map());
   const [editResultTypeIds, setEditResultTypeIds] = useState<Set<number>>(new Set());
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
-  // Add modal (creation flow unchanged)
-  const [addModalOpen, setAddModalOpen] = useState(false);
-  const [addForm, setAddForm] = useState<AddForm>(emptyAddForm());
+  // #805: the inline creation card, opened by "+ Add Exercise". No modal.
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState<ExerciseFormValues>(emptyExerciseForm());
   const [addMuscles, setAddMuscles] = useState<Map<string, MuscleRole>>(new Map());
   const [addResultTypeIds, setAddResultTypeIds] = useState<Set<number>>(new Set());
   const [addSaving, setAddSaving] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
-  // #719: the image picked in the Add modal, uploaded once the exercise exists.
+  const newNameRef = useRef<HTMLInputElement>(null);
+  // #719: the image picked in the creation card, uploaded once the exercise exists.
   const [stagedImage, setStagedImage] = useState<PreparedExerciseImage | null>(null);
   // #719 part 2: and the video picked there, uploaded the same way.
   const [stagedVideo, setStagedVideo] = useState<PreparedExerciseVideo | null>(null);
@@ -185,7 +173,7 @@ export default function ExercisesPage() {
   function enterEdit(ex: Exercise) {
     setExpandedId(ex.id);
     setEditingId(ex.id);
-    setEditForm(emptyEditForm(ex));
+    setEditForm(exerciseFormFromRow(ex));
     const map = new Map<string, MuscleRole>();
     for (const m of (ex.muscles ?? [])) map.set(m.key, m.role);
     setEditMuscles(map);
@@ -236,28 +224,15 @@ export default function ExercisesPage() {
   // ─── Save inline edit ─────────────────────────────────────────────────────
 
   async function handleSave(id: number) {
-    if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
+    if (!isExerciseFormValid(editForm)) { setEditError(t('error_required')); return; }
     setEditSaving(true);
     setEditError(null);
     try {
+      // #717 Q6: `toExerciseUpdatePayload` deliberately omits `video_url` —
+      // see the shared module.
       await apiFetch(`/exercises/${id}`, {
         method: 'PUT',
-        body: JSON.stringify({
-          name: editForm.name.trim(),
-          description: editForm.description.trim() || null,
-          // #717 Q6: the editor no longer offers `video_url`, so it no longer
-          // submits it. Leaving it in would also re-send a value captured when
-          // the editor opened — which, after a video was uploaded in the same
-          // session, would repoint the reference and drop the poster with it.
-          min_reps_default: editForm.min_reps_default ? parseInt(editForm.min_reps_default, 10) : null,
-          max_reps_default: editForm.max_reps_default ? parseInt(editForm.max_reps_default, 10) : null,
-          sets_default: editForm.sets_default ? parseInt(editForm.sets_default, 10) : null,
-          rest_default_seconds: editForm.rest_default_seconds ? parseInt(editForm.rest_default_seconds, 10) : null,
-          notes_default: editForm.notes_default.trim() || null,
-          status: editForm.status,
-          muscles: Array.from(editMuscles.entries()).map(([key, role]) => ({ key, role })),
-          allowed_result_type_ids: Array.from(editResultTypeIds),
-        }),
+        body: JSON.stringify(toExerciseUpdatePayload(editForm, { muscles: editMuscles, resultTypeIds: editResultTypeIds })),
       });
       setEditingId(null);
       setExpandedId(null);
@@ -335,28 +310,38 @@ export default function ExercisesPage() {
     }
   }
 
-  // ─── Add (creation modal unchanged) ──────────────────────────────────────
+  // ─── Add (inline creation card, #805) ────────────────────────────────────
+
+  function openAdd() {
+    setAddForm(emptyExerciseForm());
+    setAddMuscles(new Map());
+    setAddResultTypeIds(new Set());
+    setStagedImage(null);
+    setStagedVideo(null);
+    setAddError(null);
+    setAddOpen(true);
+    setTimeout(() => newNameRef.current?.focus(), 60);
+  }
+
+  /** Cancel discards the unsaved form state and calls no API (#805 §14). */
+  function closeAdd() {
+    setAddOpen(false);
+    setAddForm(emptyExerciseForm());
+    setAddMuscles(new Map());
+    setAddResultTypeIds(new Set());
+    setStagedImage(null);
+    setStagedVideo(null);
+    setAddError(null);
+  }
 
   async function handleAdd() {
-    if (!addForm.name.trim()) { setAddError(t('error_required')); return; }
+    if (!isExerciseFormValid(addForm)) { setAddError(t('error_required')); return; }
     setAddSaving(true);
     setAddError(null);
     try {
       const created = await apiFetch<Exercise>('/exercises', {
         method: 'POST',
-        body: JSON.stringify({
-          name: addForm.name.trim(),
-          description: addForm.description.trim() || null,
-          video_url: addForm.video_url.trim() || null,
-          min_reps_default: addForm.min_reps_default ? parseInt(addForm.min_reps_default, 10) : null,
-          max_reps_default: addForm.max_reps_default ? parseInt(addForm.max_reps_default, 10) : null,
-          sets_default: addForm.sets_default ? parseInt(addForm.sets_default, 10) : null,
-          rest_default_seconds: addForm.rest_default_seconds ? parseInt(addForm.rest_default_seconds, 10) : null,
-          notes_default: addForm.notes_default.trim() || null,
-          status: addForm.status,
-          muscles: Array.from(addMuscles.entries()).map(([key, role]) => ({ key, role })),
-          allowed_result_type_ids: Array.from(addResultTypeIds),
-        }),
+        body: JSON.stringify(toExerciseCreatePayload(addForm, { muscles: addMuscles, resultTypeIds: addResultTypeIds })),
       });
       // #719: the image the modal staged, now that there is an exercise to
       // attach it to. A failure here leaves the exercise created and imageless
@@ -375,12 +360,7 @@ export default function ExercisesPage() {
           toast(err.message ?? t('video_error_upload_failed'));
         }
       }
-      setAddModalOpen(false);
-      setAddForm(emptyAddForm());
-      setAddMuscles(new Map());
-      setAddResultTypeIds(new Set());
-      setStagedImage(null);
-      setStagedVideo(null);
+      closeAdd();
       load();
     } catch (err: any) {
       setAddError(err.message ?? t('error_generic'));
@@ -413,48 +393,55 @@ export default function ExercisesPage() {
 
   if (gymLoading || !canRead) return null;
 
-  // Muscle picker keys: static catalog + any legacy keys on the exercise being edited
-  const pickerKeys = [...muscleKeys, ...Array.from(editMuscles.keys()).filter((k) => !muscleKeys.includes(k))];
-  const addPickerKeys = [...muscleKeys, ...Array.from(addMuscles.keys()).filter((k) => !muscleKeys.includes(k))];
-
   // ─── Render helpers ──────────────────────────────────────────────────────
 
-  function renderEditSection(ex: Exercise) {
-    return (
-      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+  /**
+   * #805: the whole form body, rendered once for both halves of the page —
+   * the inline creation card and the inline editor. The section order is the
+   * declaration's (`EXERCISE_FORM_SECTIONS`): General, Configuration, Allowed
+   * Result Types, Muscles, and Media last with nothing after it but the
+   * actions.
+   */
+  function renderExerciseForm(h: {
+    idPrefix: string;
+    form: ExerciseFormValues;
+    setForm: (next: ExerciseFormValues) => void;
+    muscles: Map<string, MuscleRole>;
+    setMuscles: (next: Map<string, MuscleRole>) => void;
+    resultTypeIds: Set<number>;
+    setResultTypeIds: (next: Set<number>) => void;
+    nameRef?: React.RefObject<HTMLInputElement>;
+    /** #805 §13 / #717 Q6: the creation form owns `video_url`; the editor does not. */
+    showVideoUrl: boolean;
+    media: React.ReactNode;
+    error: string | null;
+    saving: boolean;
+    saveLabel: string;
+    onCancel: () => void;
+    onSave: () => void;
+  }) {
+    const { idPrefix, form, setForm } = h;
+    const id = (field: string) => `${idPrefix}-${field}`;
+    // The static catalog plus any legacy key already on the exercise being edited.
+    const pickerKeys = [...muscleKeys, ...Array.from(h.muscles.keys()).filter((k) => !muscleKeys.includes(k))];
 
+    return (
+      <>
         <p style={sectionLabelSt}>{t('section_general')}</p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={inlineLabelSt}>{t('label_name')} *</label>
-            <input ref={nameInputRef} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} style={inlineInputSt} />
+            <label htmlFor={id('name')} style={inlineLabelSt}>{t('label_name')} *</label>
+            <input id={id('name')} ref={h.nameRef} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inlineInputSt} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={inlineLabelSt}>{t('label_description')}</label>
-            <input value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} style={inlineInputSt} />
+            <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
+            <input id={id('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={inlineInputSt} />
           </div>
           <div>
-            <label style={inlineLabelSt}>{t('label_status')}</label>
-            <select value={editForm.status} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} style={inlineSelectSt}>
-              {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+            <label htmlFor={id('status')} style={inlineLabelSt}>{t('label_status')}</label>
+            <select id={id('status')} value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={inlineSelectSt}>
+              {STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
             </select>
-          </div>
-        </div>
-
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('label_result_types')}</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {resultTypes.map((rt) => (
-              <label key={rt.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
-                <input type="checkbox" checked={editResultTypeIds.has(rt.id)}
-                  onChange={(ev) => {
-                    const next = new Set(editResultTypeIds);
-                    if (ev.target.checked) next.add(rt.id); else next.delete(rt.id);
-                    setEditResultTypeIds(next);
-                  }} />
-                {rt.name}
-              </label>
-            ))}
           </div>
         </div>
 
@@ -462,44 +449,65 @@ export default function ExercisesPage() {
           <p style={sectionLabelSt}>{t('section_configuration')}</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
             <div>
-              <label style={inlineLabelSt}>{t('label_min_reps_default')}</label>
-              <input type="number" min="0" value={editForm.min_reps_default} onChange={(e) => setEditForm({ ...editForm, min_reps_default: e.target.value })} style={inlineInputSt} />
+              <label htmlFor={id('min_reps')} style={inlineLabelSt}>{t('label_min_reps_default')}</label>
+              <input id={id('min_reps')} type="number" min="0" value={form.min_reps_default} onChange={(e) => setForm({ ...form, min_reps_default: e.target.value })} style={inlineInputSt} />
             </div>
             <div>
-              <label style={inlineLabelSt}>{t('label_max_reps_default')}</label>
-              <input type="number" min="0" value={editForm.max_reps_default} onChange={(e) => setEditForm({ ...editForm, max_reps_default: e.target.value })} style={inlineInputSt} />
+              <label htmlFor={id('max_reps')} style={inlineLabelSt}>{t('label_max_reps_default')}</label>
+              <input id={id('max_reps')} type="number" min="0" value={form.max_reps_default} onChange={(e) => setForm({ ...form, max_reps_default: e.target.value })} style={inlineInputSt} />
             </div>
             <div>
-              <label style={inlineLabelSt}>{t('label_sets_default')}</label>
-              <input type="number" min="0" value={editForm.sets_default} onChange={(e) => setEditForm({ ...editForm, sets_default: e.target.value })} style={inlineInputSt} />
+              <label htmlFor={id('sets')} style={inlineLabelSt}>{t('label_sets_default')}</label>
+              <input id={id('sets')} type="number" min="0" value={form.sets_default} onChange={(e) => setForm({ ...form, sets_default: e.target.value })} style={inlineInputSt} />
             </div>
             <div>
-              <label style={inlineLabelSt}>{t('label_rest_default_seconds')}</label>
-              <input type="number" min="0" value={editForm.rest_default_seconds} onChange={(e) => setEditForm({ ...editForm, rest_default_seconds: e.target.value })} style={inlineInputSt} />
+              <label htmlFor={id('rest')} style={inlineLabelSt}>{t('label_rest_default_seconds')}</label>
+              <input id={id('rest')} type="number" min="0" value={form.rest_default_seconds} onChange={(e) => setForm({ ...form, rest_default_seconds: e.target.value })} style={inlineInputSt} />
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={inlineLabelSt}>{t('label_notes_default')}</label>
-              <input value={editForm.notes_default} onChange={(e) => setEditForm({ ...editForm, notes_default: e.target.value })} style={inlineInputSt} />
+              <label htmlFor={id('notes')} style={inlineLabelSt}>{t('label_notes_default')}</label>
+              <input id={id('notes')} value={form.notes_default} onChange={(e) => setForm({ ...form, notes_default: e.target.value })} style={inlineInputSt} />
             </div>
           </div>
         </div>
 
         <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('label_result_types')}</p>
+          {/* #805 §7: a responsive column grid rather than a wrapping row, so
+              the checkboxes line up and each option keeps a comfortable
+              clickable area. The label is the translated one — never the
+              `exercises.result_type_*` key the flat list used to show. */}
+          <div style={resultTypeGridSt}>
+            {resultTypes.map((rt) => (
+              <label key={rt.id} style={checkboxRowSt}>
+                <input type="checkbox" checked={h.resultTypeIds.has(rt.id)}
+                  onChange={(ev) => {
+                    const next = new Set(h.resultTypeIds);
+                    if (ev.target.checked) next.add(rt.id); else next.delete(rt.id);
+                    h.setResultTypeIds(next);
+                  }} />
+                <span>{resultTypeLabel(rt, (key) => t(key as any))}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_muscles')}</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {pickerKeys.map((key) => {
-              const role = editMuscles.get(key);
+              const role = h.muscles.get(key);
               return (
                 <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
                   <input type="checkbox" checked={!!role}
                     onChange={(ev) => {
-                      const next = new Map(editMuscles);
+                      const next = new Map(h.muscles);
                       if (ev.target.checked) next.set(key, 'principal'); else next.delete(key);
-                      setEditMuscles(next);
+                      h.setMuscles(next);
                     }} />
                   <span style={{ flex: 1 }}>{muscleLabel(key)}</span>
                   {role && (
-                    <select value={role} onChange={(ev) => { const next = new Map(editMuscles); next.set(key, ev.target.value as MuscleRole); setEditMuscles(next); }} style={{ fontSize: 12, padding: '2px 4px' }}>
+                    <select value={role} onChange={(ev) => { const next = new Map(h.muscles); next.set(key, ev.target.value as MuscleRole); h.setMuscles(next); }} style={{ fontSize: 12, padding: '2px 4px' }}>
                       <option value="principal">{t('role_principal')}</option>
                       <option value="secondary">{t('role_secondary')}</option>
                     </select>
@@ -510,53 +518,129 @@ export default function ExercisesPage() {
           </div>
         </div>
 
+        {/* #805 §9: MEDIA is the last section — nothing but the actions follows it. */}
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_media')}</p>
-          {/* #717 Q6: `video_url` is no longer a directly editable field —
-              video management goes through the control below, which writes the
-              reference and its poster together. The column itself is unchanged
-              and a row that carries an external link keeps it (the view section
-              still shows it); the editor simply no longer offers a text box
-              that could repoint it at anything and silently drop the poster. */}
-          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-            <div>
-              <label style={inlineLabelSt}>{t('label_image')}</label>
-              {/* #719: the image is not part of this form. Uploading or removing
-                  acts on the exercise straight away, so cancelling the editor
-                  neither undoes it nor re-applies an image that was removed. */}
-              <ExerciseImageField
-                exerciseId={ex.id}
-                imageUrl={ex.image_url}
-                thumbnailUrl={ex.image_thumbnail_url}
-                onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
-                disabled={!canWrite}
-                disabledTitle={readOnlyTitle}
-              />
+          {h.showVideoUrl && (
+            <div style={{ marginBottom: 12 }}>
+              <label htmlFor={id('video_url')} style={inlineLabelSt}>{t('label_video_url')}</label>
+              <input id={id('video_url')} type="url" value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} style={inlineInputSt} />
             </div>
-            <div>
-              <label style={inlineLabelSt}>{t('label_video')}</label>
-              {/* #719 part 2: the uploaded video, likewise acted on directly.
-                  #717 Q6 removed the URL text box that used to sit above: the
-                  video is managed here and nowhere else. */}
-              <ExerciseVideoField
-                exerciseId={ex.id}
-                videoUrl={ex.video_url}
-                posterUrl={ex.video_thumbnail_url}
-                onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
-                disabled={!canWrite}
-                disabledTitle={readOnlyTitle}
-              />
-            </div>
-          </div>
+          )}
+          {h.media}
         </div>
 
-        {editError && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
+        {h.error && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c0392b' }}>{h.error}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={() => handleSave(ex.id)} disabled={editSaving} style={btnSmall('#6c63ff')}>
-            {editSaving ? t('saving') : t('save_changes')}
+          <button onClick={h.onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={h.onSave} disabled={h.saving} style={btnSmall('#6c63ff')}>
+            {h.saving ? t('saving') : h.saveLabel}
           </button>
         </div>
+      </>
+    );
+  }
+
+  /**
+   * #805 §10: Image and Video side by side on a wide card, stacked on a narrow
+   * one. `auto-fit` + a min track does that without a media query, which
+   * inline styles cannot carry.
+   */
+  function renderMediaPair(image: React.ReactNode, video: React.ReactNode) {
+    return (
+      <div style={mediaGridSt}>
+        <div>
+          <p style={inlineLabelSt}>{t('label_image')}</p>
+          {image}
+        </div>
+        <div>
+          <p style={inlineLabelSt}>{t('label_video')}</p>
+          {video}
+        </div>
+      </div>
+    );
+  }
+
+  /** The inline creation card (#805): the "+ Add Exercise" button's only surface — there is no modal. */
+  function renderInlineNewRow() {
+    if (!addOpen) return null;
+    return (
+      <div style={cardSt}>
+        <div style={{ padding: '16px 20px' }}>
+          <p style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 600 }}>{t('new_exercise')}</p>
+          {renderExerciseForm({
+            idPrefix: 'exercise-new',
+            form: addForm,
+            setForm: setAddForm,
+            muscles: addMuscles,
+            setMuscles: setAddMuscles,
+            resultTypeIds: addResultTypeIds,
+            setResultTypeIds: setAddResultTypeIds,
+            nameRef: newNameRef,
+            showVideoUrl: true,
+            media: renderMediaPair(
+              // #719: there is no exercise to upload to yet, so the prepared
+              // pair is held here and posted to `POST /exercises/:id/image` the
+              // moment the exercise exists.
+              <ExerciseImageField exerciseId={null} imageUrl={null} onStaged={setStagedImage} />,
+              // #719 part 2: same staging for the video and its poster.
+              <ExerciseVideoField exerciseId={null} videoUrl={null} onStaged={setStagedVideo} />,
+            ),
+            error: addError,
+            saving: addSaving,
+            saveLabel: t('save'),
+            onCancel: closeAdd,
+            onSave: handleAdd,
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderEditSection(ex: Exercise) {
+    return (
+      <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+        {renderExerciseForm({
+          idPrefix: `exercise-${ex.id}`,
+          form: editForm,
+          setForm: setEditForm,
+          muscles: editMuscles,
+          setMuscles: setEditMuscles,
+          resultTypeIds: editResultTypeIds,
+          setResultTypeIds: setEditResultTypeIds,
+          nameRef: nameInputRef,
+          // #717 Q6: the editor no longer offers `video_url` — video management
+          // goes through the control below, which writes the reference and its
+          // poster together. A row carrying an external link keeps it; the
+          // editor simply has no text box that could repoint it.
+          showVideoUrl: false,
+          media: renderMediaPair(
+            // #719: the image is not part of this form. Uploading or removing
+            // acts on the exercise straight away, so cancelling the editor
+            // neither undoes it nor re-applies an image that was removed.
+            <ExerciseImageField
+              exerciseId={ex.id}
+              imageUrl={ex.image_url}
+              thumbnailUrl={ex.image_thumbnail_url}
+              onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
+            />,
+            <ExerciseVideoField
+              exerciseId={ex.id}
+              videoUrl={ex.video_url}
+              posterUrl={ex.video_thumbnail_url}
+              onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
+            />,
+          ),
+          error: editError,
+          saving: editSaving,
+          saveLabel: t('save_changes'),
+          onCancel: cancelEdit,
+          onSave: () => handleSave(ex.id),
+        })}
       </div>
     );
   }
@@ -572,7 +656,7 @@ export default function ExercisesPage() {
         {rts.length > 0 && (
           <div style={subSectionSt}>
             <p style={sectionLabelSt}>{t('label_result_types')}</p>
-            <p style={{ margin: 0, fontSize: 13, color: '#444' }}>{rts.map((rt) => rt.name).join(', ')}</p>
+            <p style={{ margin: 0, fontSize: 13, color: '#444' }}>{rts.map((rt) => resultTypeLabel(rt, (key) => t(key as any))).join(', ')}</p>
           </div>
         )}
 
@@ -718,8 +802,6 @@ export default function ExercisesPage() {
     );
   }
 
-  const selectSt: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' };
-
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
@@ -742,106 +824,23 @@ export default function ExercisesPage() {
               Exercises. The modal's own primary action stays `import`, so the two
               deliberately read differently and need two keys. */}
           <button onClick={() => setImportOpen(true)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#1e7e40'), !canWrite)}>{t('import_system_exercises')}</button>
-          <button onClick={() => { setAddForm(emptyAddForm()); setAddMuscles(new Map()); setAddResultTypeIds(new Set()); setStagedImage(null); setStagedVideo(null); setAddError(null); setAddModalOpen(true); }} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
+          {/* #805: opens the inline creation card at the top of the list, never a modal. */}
+          <button onClick={openAdd} disabled={!canWrite || addOpen} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
         </div>
       </div>
+
+      {renderInlineNewRow()}
 
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : (
         <>
           {rows.length > 0 && renderHeader()}
-          {rows.length === 0 && <p style={{ color: '#888' }}>{t('empty')}</p>}
+          {rows.length === 0 && !addOpen && <p style={{ color: '#888' }}>{t('empty')}</p>}
           {rows.map(renderRow)}
         </>
       )}
 
-      {/* ── Add modal (creation flow unchanged) ── */}
-      <CrudModal
-        open={addModalOpen}
-        title={t('modal_add')}
-        error={addError}
-        saving={addSaving}
-        cancelLabel={t('cancel')}
-        saveLabel={addSaving ? t('saving') : t('modal_add')}
-        onCancel={() => { setAddModalOpen(false); setStagedImage(null); setStagedVideo(null); setAddError(null); }}
-        onSave={handleAdd}
-      >
-        <FormLabel>{t('label_name')} *</FormLabel>
-        <FormInput value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} autoFocus />
-        <FormLabel>{t('label_description')}</FormLabel>
-        <FormInput value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
-        <FormLabel>{t('label_video_url')}</FormLabel>
-        <FormInput type="url" value={addForm.video_url} onChange={(e) => setAddForm({ ...addForm, video_url: e.target.value })} />
-        <FormLabel>{t('label_image')}</FormLabel>
-        {/* #719: there is no exercise to upload to yet, so the prepared pair is
-            held here and posted to `POST /exercises/:id/image` the moment the
-            exercise exists. */}
-        <ExerciseImageField
-          exerciseId={null}
-          imageUrl={null}
-          onStaged={setStagedImage}
-        />
-        <FormLabel>{t('label_video')}</FormLabel>
-        {/* #719 part 2: same staging as the image — the pair is posted to
-            `POST /exercises/:id/video` the moment the exercise exists. */}
-        <ExerciseVideoField
-          exerciseId={null}
-          videoUrl={null}
-          onStaged={setStagedVideo}
-        />
-        <FormLabel>{t('label_min_reps_default')}</FormLabel>
-        <FormInput type="number" min="0" value={addForm.min_reps_default} onChange={(e) => setAddForm({ ...addForm, min_reps_default: e.target.value })} />
-        <FormLabel>{t('label_max_reps_default')}</FormLabel>
-        <FormInput type="number" min="0" value={addForm.max_reps_default} onChange={(e) => setAddForm({ ...addForm, max_reps_default: e.target.value })} />
-        <FormLabel>{t('label_sets_default')}</FormLabel>
-        <FormInput type="number" min="0" value={addForm.sets_default} onChange={(e) => setAddForm({ ...addForm, sets_default: e.target.value })} />
-        <FormLabel>{t('label_rest_default_seconds')}</FormLabel>
-        <FormInput type="number" min="0" value={addForm.rest_default_seconds} onChange={(e) => setAddForm({ ...addForm, rest_default_seconds: e.target.value })} />
-        <FormLabel>{t('label_notes_default')}</FormLabel>
-        <FormInput value={addForm.notes_default} onChange={(e) => setAddForm({ ...addForm, notes_default: e.target.value })} />
-        <FormLabel>{t('label_status')}</FormLabel>
-        <select value={addForm.status} onChange={(e) => setAddForm({ ...addForm, status: e.target.value })} style={selectSt}>
-          {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
-        </select>
-        <FormLabel>{t('label_result_types')}</FormLabel>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
-          {resultTypes.map((rt) => (
-            <label key={rt.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 14, cursor: 'pointer' }}>
-              <input type="checkbox" checked={addResultTypeIds.has(rt.id)}
-                onChange={(e) => {
-                  const next = new Set(addResultTypeIds);
-                  if (e.target.checked) next.add(rt.id); else next.delete(rt.id);
-                  setAddResultTypeIds(next);
-                }} />
-              {t(`result_type_${rt.slug}` as any) ?? rt.name}
-            </label>
-          ))}
-        </div>
-        <FormLabel>{t('label_muscles')}</FormLabel>
-        <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {addPickerKeys.map((key) => {
-            const role = addMuscles.get(key);
-            return (
-              <div key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14 }}>
-                <input type="checkbox" checked={!!role}
-                  onChange={(e) => {
-                    const next = new Map(addMuscles);
-                    if (e.target.checked) next.set(key, 'principal'); else next.delete(key);
-                    setAddMuscles(next);
-                  }} />
-                <span style={{ flex: 1 }}>{muscleLabel(key)}</span>
-                {role && (
-                  <select value={role} onChange={(e) => { const next = new Map(addMuscles); next.set(key, e.target.value as MuscleRole); setAddMuscles(next); }} style={{ fontSize: 12, padding: '2px 4px' }}>
-                    <option value="principal">{t('role_principal')}</option>
-                    <option value="secondary">{t('role_secondary')}</option>
-                  </select>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </CrudModal>
 
       <ConfirmDialog
         open={deleting !== null}
@@ -895,4 +894,10 @@ const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fon
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
 const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
+// #805 §7: the Allowed Result Types grid — columns that reflow with the card
+// width, one comfortable click target per option.
+const resultTypeGridSt: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '4px 16px' };
+const checkboxRowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', padding: '4px 0' };
+// #805 §10/§18: Image and Video side by side while both fit, stacked below that.
+const mediaGridSt: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 24, alignItems: 'start' };
 const sectionLabelSt: React.CSSProperties = { margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };

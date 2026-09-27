@@ -550,6 +550,52 @@ Reference implementation: `[locale]/centers/page.tsx` +
 `[locale]/centers/centerProfile.ts`. Regression test:
 `apps/admin/src/test/centers-inline-edit.test.ts`.
 
+### When Add was a modal (#805)
+
+Exercises is the mirror image: the row already edited inline, and
+`+ Add Exercise` still opened a **CrudModal** with a second, drifted copy of
+the same form. Converting it follows the Inline row CRUD shape above — an
+inline creation card rendered above the list header (`addOpen` + a
+`renderInlineNewRow()` that returns `null` when closed) — plus three rules the
+Centers conversion does not cover.
+
+**One form body, not two.** The creation card and the inline editor render the
+same function (`renderExerciseForm()`), parameterised by the handful of things
+that genuinely differ: the form state and its setters, the id prefix for the
+`htmlFor` labels, the Save label, and the media slot. The section order then
+lives in the shared module (`exercises/exerciseForm.ts`'s
+`EXERCISE_FORM_SECTIONS`) rather than in either JSX, which is what a test can
+assert — the two copies is how the modal came to show fields in a different
+order from the editor in the first place.
+
+**A field only one half may submit is a parameter, not a divergence.** The
+editor deliberately omits `video_url` (#717 Q6 — re-sending it would repoint a
+reference an upload had since replaced), the creation form must keep it
+(nothing to repoint yet). So the module exports *two* payload builders over one
+shared body, `toExerciseCreatePayload()` / `toExerciseUpdatePayload()`, and the
+form takes a `showVideoUrl` flag. A test asserts the `PUT` payload has no
+`video_url` and that the two agree on everything else.
+
+**A translated label needs a key that exists.** The modal rendered
+`` t(`result_type_${rt.slug}`) ?? rt.name `` against keys no locale file had, so
+next-intl fell through to printing `exercises.result_type_repetitions` on
+screen — the `??` never fires, because a missing key resolves to the key. When
+a catalogue table's rows are a fixed seeded set (migration 073's nine result
+types), add a `result_type_<slug>` label per locale and resolve it through a
+pure helper that falls back to the row's own `name` for a slug added after the
+locale files, so a later catalogue insert degrades to English rather than to a
+raw key. Rows a gym authors are the other case entirely — those are translated
+*data*, see "Translated Catalog Content".
+
+Inline styles cannot carry a media query, so responsive two-up sections
+(Media's Image/Video pair) use `repeat(auto-fit, minmax(260px, 1fr))` and
+checkbox grids use `repeat(auto-fill, minmax(180px, 1fr))`: side by side while
+both fit, stacked below that, with no breakpoint to maintain.
+
+Reference implementation: `[locale]/exercises/page.tsx` +
+`[locale]/exercises/exerciseForm.ts`. Regression test:
+`apps/admin/src/test/exercises-inline-create.test.ts`.
+
 ---
 
 ## Section-Scoped Inline Editing (#627)
