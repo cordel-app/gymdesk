@@ -125,7 +125,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(11);
+    expect(sendMock).toHaveBeenCalledTimes(7);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -134,15 +134,83 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/Exercises/',
       'gym_123-GymName/Exercises/Images/',
       'gym_123-GymName/Exercises/Videos/',
-      'gym_123-GymName/Branding/',
-      'gym_123-GymName/Branding/Logo/',
-      'gym_123-GymName/Branding/Images/',
-      'gym_123-GymName/Members/',
       'gym_123-GymName/Themes/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
     }
+  });
+
+  // ─── #826: exactly three first-level folders under the gym root ────────────
+  //
+  // The ticket is scoped to what sits *directly* under
+  // `gyms/<gym_id>-<gym_name>/`: `Nutrition/`, `Exercises/` and `Themes/`, and
+  // nothing else. The leaves below them (§6) and the `<gym_id>-<name>` naming
+  // (§5) are unchanged, which the tests above and below pin.
+
+  /** The single path segment each marker key adds directly under `prefix`. */
+  function firstLevelFolders(prefix: string): string[] {
+    const segments = sendMock.mock.calls
+      .map((call) => call[0].input.Key as string)
+      .filter((key) => key !== `${prefix}/`)
+      .map((key) => key.slice(`${prefix}/`.length).split('/')[0]);
+    return [...new Set(segments)];
+  }
+
+  it('creates Nutrition/, Exercises/ and Themes/ as the only first-level folders', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName')).toEqual(['Nutrition', 'Exercises', 'Themes']);
+  });
+
+  // §4 + the acceptance list: the three folders nothing has written to since
+  // #824 (theme logo → `Themes/<theme_id>-<name>/Logo/`) and #725 (Members App
+  // slots → `Themes/<theme_id>-<name>/Members/`) are no longer created at all.
+  it('creates no Members/, Branding/ or Branding/Logo/ markers', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys).not.toContain('gyms/gym_123-GymName/Members/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/Branding/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/Branding/Logo/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/Branding/Images/');
+    for (const key of keys) expect(key).not.toContain('Branding');
+  });
+
+  // §6: the tree *below* the three roots is untouched by this ticket, so the
+  // upload targets every key builder writes into still have their markers.
+  it('keeps the leaf folders below the three roots', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys).toContain('gyms/gym_123-GymName/Nutrition/Images/');
+    expect(keys).toContain('gyms/gym_123-GymName/Exercises/Images/');
+    expect(keys).toContain('gyms/gym_123-GymName/Exercises/Videos/');
+  });
+
+  // A marker whose case disagreed with the key builders would show up in the R2
+  // browser as a *fourth* first-level folder next to the one uploads populate,
+  // not as a rename of it — so the two have to stay spelled the same way.
+  it('spells each first-level folder the way the key builders write it', async () => {
+    setConfigured();
+    const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
+    const { buildGymExerciseImageKey } = await import('../domain/exerciseImages');
+    const { buildGymExerciseVideoKey } = await import('../domain/exerciseVideos');
+    const { buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
+    const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
+    await initializeGymBucket(prefix);
+
+    const markers = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    const folderOf = (key: string) => `${key.slice(0, key.indexOf('/', prefix.length + 1))}/`;
+    expect(markers).toContain(folderOf(buildGymExerciseImageKey(prefix, 'ex_1', 'Squat')));
+    expect(markers).toContain(folderOf(buildGymExerciseVideoKey(prefix, 'ex_1', 'Squat')));
+    expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));
   });
 
   // ─── #735: the gym-level Themes/ folder ────────────────────────────────────
@@ -214,7 +282,7 @@ describe('initializeGymBucket()', () => {
 
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys[0]).toBe('gyms/gym_123-GymName/');
-    expect(keys).toContain('gyms/gym_123-GymName/Branding/Logo/');
+    expect(keys).toContain('gyms/gym_123-GymName/Exercises/Videos/');
     for (const key of keys) expect(key.startsWith('gyms/gym_123-GymName/')).toBe(true);
   });
 });
