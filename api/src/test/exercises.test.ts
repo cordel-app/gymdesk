@@ -936,3 +936,118 @@ describe('POST /exercises/import', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ─── GET /exercises: import is the visibility boundary (#804) ─────────────────
+//
+// A Base Exercise existing in the platform library is not the same thing as the
+// gym having imported it. The main list is the gym's own catalogue, so a base
+// row reaches it only as the copy `POST /exercises/import` writes — and no
+// list control (`?q=`, `?status=`, ordering) may reach around that.
+
+describe('GET /exercises: non-imported base exercises are not listed (#804)', () => {
+  let gymId: string;
+  let activeBaseId: number;
+  let inactiveBaseId: number;
+  let customId: number;
+  const baseIds: number[] = [];
+
+  async function createBaseExercise(name: string, status = 'active'): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (NULL, ?, ?)`,
+      [name, status],
+    );
+    baseIds.push(insertId);
+    return insertId;
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Exercises Visibility Gym');
+    await createTestMembership(gymId, 'admin');
+
+    activeBaseId = await createBaseExercise('Zz804 Overhead Press');
+    inactiveBaseId = await createBaseExercise('Zz804 Retired Press', 'inactive');
+
+    const { insertId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, status) VALUES (?, 'Zz804 Gym Written Exercise', 'active')`,
+      [gymId],
+    );
+    customId = insertId;
+  });
+
+  // Base rows are platform rows (gym_id IS NULL); cleanupTestGyms deletes by
+  // gym_id and cannot reach them. The imported copy goes with them.
+  afterAll(async () => {
+    if (baseIds.length === 0) return;
+    const marks = baseIds.map(() => '?').join(',');
+    await db.query(`DELETE FROM exercise_muscles WHERE exercise_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE cloned_from_id IN (${marks})`, baseIds);
+    await db.query(`DELETE FROM exercises WHERE id IN (${marks})`, baseIds);
+  });
+
+  function get(path: string) {
+    return request.get(path).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+  }
+
+  it('omits a base exercise the gym has not imported', async () => {
+    const res = await get('/exercises');
+    expect(res.status).toBe(200);
+    expect(res.body.map((e: any) => e.id)).not.toContain(activeBaseId);
+  });
+
+  it('returns only rows the gym owns, so nothing else can arrive through ordering or counts', async () => {
+    const res = await get('/exercises');
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    for (const row of res.body) expect(row.gym_id).toBe(gymId);
+  });
+
+  it("keeps the gym's own exercise visible", async () => {
+    const res = await get('/exercises');
+    expect(res.body.map((e: any) => e.id)).toContain(customId);
+  });
+
+  it('does not expose a non-imported base exercise through the name search', async () => {
+    const res = await get('/exercises?q=Zz804%20Overhead');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('does not expose a non-imported base exercise through the status filter', async () => {
+    const active = await get('/exercises?status=active');
+    expect(active.body.map((e: any) => e.id)).not.toContain(activeBaseId);
+    const inactive = await get('/exercises?status=inactive');
+    expect(inactive.body.map((e: any) => e.id)).not.toContain(inactiveBaseId);
+  });
+
+  it('still answers for a base exercise by id, which is what the library reads', async () => {
+    const res = await get(`/exercises/${activeBaseId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.gym_id).toBeNull();
+  });
+
+  it('still offers the non-imported base exercise for import', async () => {
+    const res = await get('/exercises/base');
+    expect(res.status).toBe(200);
+    const row = res.body.find((e: any) => e.id === activeBaseId);
+    expect(row).toBeDefined();
+    expect(row.imported_exercise_id).toBeNull();
+  });
+
+  it('lists the exercise once it has been imported, as the gym\'s own System-sourced copy', async () => {
+    const imported = await request
+      .post('/exercises/import')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ baseExerciseIds: [activeBaseId] });
+    expect(imported.status).toBe(201);
+    expect(imported.body.imported).toHaveLength(1);
+
+    const res = await get('/exercises');
+    const copy = res.body.find((e: any) => e.cloned_from_id === activeBaseId);
+    expect(copy).toBeDefined();
+    expect(copy.gym_id).toBe(gymId);
+    expect(copy.name).toBe('Zz804 Overhead Press');
+    // The base row itself is still absent — the copy is what became visible.
+    expect(res.body.map((e: any) => e.id)).not.toContain(activeBaseId);
+  });
+});
