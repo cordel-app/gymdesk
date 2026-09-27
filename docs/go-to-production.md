@@ -364,8 +364,10 @@ hardening:
       4. Alert rule: fire after **2 consecutive failed executions** of the check (e.g.
          `max_over_time(probe_success{job="gymdesk-run-freshness"}[30m]) == 0`), routed to
          that contact point.
-      5. Prove it: set `RUN_FRESHNESS_THRESHOLD_HOURS=1` in the deploy environment, confirm
-         the alert fires within ~30 min, then remove it.
+      5. Prove it: flip one assertion to `$.billing.stale` equals `true`, confirm the alert
+         fires within ~30 min, then set it back (`deploy.yml` does not forward
+         `RUN_FRESHNESS_THRESHOLD_HOURS`, so changing it in GitHub proves nothing).
+      Instructions sent to Oscar on Slack on 2026-09-27.
       Full rationale in `docs/payments.md` → Observability today.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. Two things

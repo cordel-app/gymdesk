@@ -358,8 +358,9 @@ const nextBillingDate = advanceBillingDate(row.next_billing_date, interval, unit
 `priceMembershipFeeOn()` (`api/src/api/membership-fee-pricing.ts`) delegates to
 `resolveMembershipFee()` (`api/src/domain/billingSimulation.ts`) — the **one**
 implementation of "what does the Membership Fee cost on this date", shared with the Billing
-Simulation, the Billing Events projection, `GET /me/membership` and every staff screen. So
-what the run charges cannot drift from what the member was shown.
+Simulation, `GET /me/membership`, the Promotion apply/revoke adjustment and every staff
+screen (through `currentMembershipFee()` / `currentMembershipFees()`). So what the run
+charges cannot drift from what the member was shown.
 
 Since #635 stage 15 (migration 191) this is unconditional: there is no
 `billing.date_aware_membership_fee` flag, no stored `user_memberships.final_price`, and no
@@ -560,10 +561,11 @@ each pricing every projected date through the same resolver the run uses:
 | `GET /payments/dashboard/summary` — `scheduled_this_month` | `api/src/api/payments-dashboard.ts` |
 | `GET /me/membership` — `upcoming_payments` | `api/src/api/me.ts:1453` |
 
-Two further projections are scoped to one record rather than the gym:
-`api/src/domain/assignedPlanBillingEvents.ts` serves an Assigned Plan's own Billing Events
-view (#511 stage 3), and `api/src/domain/billingForecast.ts` projects a *Membership Plan's*
-events (#485, deliberately promotion-free). Both are pure and unit-tested.
+One further projection is scoped to one record rather than the gym:
+`api/src/domain/billingForecast.ts` projects a *Membership Plan's* events (#485, deliberately
+promotion-free). An Assigned Plan's own Billing Events view
+(`api/src/domain/assignedPlanBillingEvents.ts`, #511 stage 3) is not one: since #854 it only
+tags and filters the persisted `billing_events` ledger. Both are pure and unit-tested.
 
 **`billing_run_log`** / **`recurring_booking_run_log`** (migration 193) — **histories**,
 one row per run: `run_date DATE`, `status`, `started_at`, `finished_at`, and each job's own
@@ -615,8 +617,9 @@ the nightly run skips the assignment until a card is on file.
 row on to `active`, so they were unreachable, and an `awaiting_payment` row written by hand
 would have been configurable and closeable but never activatable or payable. #786 retired
 them: the route, the Submit menu item, the dates-and-discount Edit form that only those two
-statuses could open, the `draft` Billing Events projection, and every status list that named
-them are gone, and migration 198 narrowed the CHECK back to the four values above. That
+statuses could open, the `draft` Billing Events projection (its pure
+`projectDraftBillingEvents()` / `computeMembershipFeePriceAt()` followed in #854), and every
+status list that named them are gone, and migration 198 narrowed the CHECK back to the four values above. That
 migration **refuses to run** while any row still holds a retired status, rather than guess
 what the row should become.
 
@@ -774,9 +777,10 @@ absence into something a prober outside GitHub can see:
    alert rule on `probe_success{job="gymdesk-run-freshness"}`): fire when the check has
    **failed on 2 consecutive executions** (i.e. `max_over_time(probe_success[30m]) == 0`,
    pending period 0), routed to that contact point, labelled `severity=critical`.
-6. Verify: temporarily set `RUN_FRESHNESS_THRESHOLD_HOURS=1` in the deploy environment (or
-   wait out a day with the workflow disabled) and confirm the alert fires within ~30 min; set
-   it back.
+6. Verify: temporarily flip one assertion to `$.billing.stale` equals `true`, confirm the
+   alert fires within ~30 min, then set it back to `false`. (Setting
+   `RUN_FRESHNESS_THRESHOLD_HOURS` in the GitHub environment does nothing: `deploy.yml` does
+   not forward it, so the API always runs on the 26 h default.)
 
 > **Decisions (2026-09-27, #782)** — change them here if they turn out wrong:
 > - Option (b): a DB-backed freshness endpoint probed by a Grafana Cloud synthetic check —

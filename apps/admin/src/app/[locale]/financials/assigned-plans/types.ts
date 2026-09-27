@@ -143,7 +143,6 @@ export interface BillingEventItem {
   date: string;
   amount: string | number | null;
   promotion_affected: boolean;
-  projected: boolean;
   event_type?: string;
   notes?: string | null;
 }
@@ -151,7 +150,6 @@ export interface BillingEventItem {
 export interface BillingEventsView {
   available: boolean;
   reason: string | null;
-  projected: boolean;
   range_start: string | null;
   range_end: string | null;
   events: BillingEventItem[];

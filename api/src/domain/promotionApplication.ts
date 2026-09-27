@@ -11,10 +11,10 @@
 // answered different numbers (#635 stage 12's table).
 //
 // Moving them here inverts that dependency: `billingSimulation.ts` (which owns
-// `resolveMembershipFee`, *the* rule) imports this module instead, so
-// `assignedPlanBillingEvents.ts` can import the rule from it without a cycle.
-// Both old modules re-export what they used to declare, so existing importers
-// are unaffected.
+// `resolveMembershipFee`, *the* rule) imports this module instead, which let
+// the projection delegate to that rule without a cycle until #786 retired the
+// projection itself. Both old modules re-export what they used to declare, so
+// existing importers are unaffected.
 
 import { PromotionBenefitAction } from './promotionBenefits';
 

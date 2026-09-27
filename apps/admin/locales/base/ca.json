@@ -3179,7 +3179,6 @@
     "no_promotions": "No s'ha aplicat cap promoció.",
     "section_billing_events": "Esdeveniments de Facturació",
     "no_billing_events": "No hi ha propers esdeveniments de facturació.",
-    "billing_event_projected": "Projectat",
     "billing_event_promotion_affected": "Promoció",
     "confirm_close": "Segur que vols cancel·lar aquest Pla Assignat? Aquesta acció no es pot desfer.",
     "confirm_close_with_warnings": "Cancel·lar aquest Pla Assignat eliminarà l'accés a: {warnings}. Aquesta acció no es pot desfer.",
