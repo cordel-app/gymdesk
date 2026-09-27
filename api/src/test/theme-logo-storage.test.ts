@@ -1,6 +1,8 @@
-// #713: a Custom Theme logo is stored in the gym's Cloudflare R2 folder under
-// `<storage_folder_prefix>/Branding/Logo/logo.<ext>` instead of in
-// `themes.logo_bytes`. Covers the gym-admin upload/remove routes
+// #713: a Custom Theme logo is stored in the gym's Cloudflare R2 folder instead
+// of in `themes.logo_bytes`. #824 moved the key into the theme's own folder —
+// `<storage_folder_prefix>/Themes/<theme_id>-<name>/Logo/logo.<ext>` — so each
+// theme carries its own logo and nothing writes to the obsolete `Branding/`
+// any more. Covers the gym-admin upload/remove routes
 // (`/system/themes/:id/logo`) and the public read (`GET /themes/:id/logo`),
 // which now serves either storage mode.
 //
@@ -59,6 +61,29 @@ let otherFolderPrefix: string;
 let themeId: string;
 let otherThemeId: string;
 
+const THEME_NAME = 'Theme Logo Storage Custom';
+const OTHER_THEME_NAME = 'Theme Logo Storage Other Custom';
+
+/**
+ * #824: `<prefix>/Themes/<theme_id>-<sanitized name>/Logo/logo.<ext>`. Built
+ * here from the same parts the route builds it from rather than imported, so a
+ * change to the shape has to be stated in the test too.
+ */
+function logoKey(prefix: string, id: string, themeName: string, ext: string): string {
+  return `${prefix}/Themes/${id}-${themeName.replace(/\s+/g, '')}/Logo/logo.${ext}`;
+}
+
+/** The two folder markers the upload writes before the object itself. */
+function folderMarkers(prefix: string, id: string, themeName: string): string[] {
+  const folder = `${prefix}/Themes/${id}-${themeName.replace(/\s+/g, '')}`;
+  return [`${folder}/`, `${folder}/Logo/`];
+}
+
+/** Keys of the PUTs that are objects rather than zero-byte folder markers. */
+function putObjectKeys(): string[] {
+  return sentCommands('put').map((c: any) => c.input.Key).filter((k: string) => !k.endsWith('/'));
+}
+
 /** Commands of one kind the mocked S3 client was asked to send. */
 function sentCommands(type: 'put' | 'get' | 'delete') {
   return sendMock.mock.calls.map(([command]) => command).filter((c: any) => c?.__type === type);
@@ -97,8 +122,8 @@ beforeAll(async () => {
   await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [folderPrefix, gymId]);
   await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [otherFolderPrefix, otherGymId]);
 
-  themeId = await createCustomTheme(gymId, 'Theme Logo Storage Custom');
-  otherThemeId = await createCustomTheme(otherGymId, 'Theme Logo Storage Other Custom');
+  themeId = await createCustomTheme(gymId, THEME_NAME);
+  otherThemeId = await createCustomTheme(otherGymId, OTHER_THEME_NAME);
 });
 
 afterAll(async () => {
@@ -150,28 +175,30 @@ describe('POST /system/themes/:id/logo', () => {
     expect(sentCommands('put')).toHaveLength(0);
   });
 
-  it('stores the file at <prefix>/Branding/Logo/logo.<ext> and keeps only the key on the row', async () => {
+  it("stores the file in the theme's own Logo folder and keeps only the key on the row", async () => {
     const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(200);
+    const key = logoKey(folderPrefix, themeId, THEME_NAME, 'png');
 
-    const puts = sentCommands('put');
-    expect(puts).toHaveLength(1);
-    expect(puts[0].input).toMatchObject({
+    const objects = sentCommands('put').filter((c: any) => !c.input.Key.endsWith('/'));
+    expect(objects).toHaveLength(1);
+    expect(objects[0].input).toMatchObject({
       Bucket: R2_BUCKET,
-      Key: `${folderPrefix}/Branding/Logo/logo.png`,
+      Key: key,
       ContentType: 'image/png',
     });
+    expect(key).not.toContain('Branding');
 
     const { rows } = await db.query<{ logo_object_key: string | null; logo_bytes: Buffer | null; logo_mime: string | null }>(
       'SELECT logo_object_key, logo_bytes, logo_mime FROM themes WHERE id = ?',
       [themeId],
     );
-    expect(rows[0].logo_object_key).toBe(`${folderPrefix}/Branding/Logo/logo.png`);
+    expect(rows[0].logo_object_key).toBe(key);
     expect(rows[0].logo_bytes).toBeNull();
     expect(rows[0].logo_mime).toBe('image/png');
 
     expect(res.body.has_logo).toBe(true);
-    expect(res.body.logo_url).toContain(`${R2_ENDPOINT}/${R2_BUCKET}/${folderPrefix}/Branding/Logo/logo.png`);
+    expect(res.body.logo_url).toContain(`${R2_ENDPOINT}/${R2_BUCKET}/${key}`);
     // The binary never comes back on a theme-shaped response.
     expect(res.body.logo_bytes).toBeUndefined();
     expect(res.body.logo_object_key).toBeUndefined();
@@ -186,7 +213,32 @@ describe('POST /system/themes/:id/logo', () => {
       .set('Content-Disposition', 'attachment; filename="../../evil.php"')
       .send(SVG_BYTES);
     expect(res.status).toBe(200);
-    expect(sentCommands('put')[0].input.Key).toBe(`${folderPrefix}/Branding/Logo/logo.svg`);
+    expect(putObjectKeys()).toEqual([logoKey(folderPrefix, themeId, THEME_NAME, 'svg')]);
+  });
+
+  // §"The theme folder is automatically created when missing" / "The Logo folder
+  // is automatically created when missing" — and the gym-level `Themes/` root is
+  // not, because Gym Bucket Initialization owns it (#735) and #823 keeps the
+  // control disabled until it exists.
+  it('creates the theme folder and its Logo leaf, but never the Themes root', async () => {
+    expect((await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES)).status).toBe(200);
+
+    const markerKeys = sentCommands('put').map((c: any) => c.input.Key).filter((k: string) => k.endsWith('/'));
+    expect(markerKeys).toEqual(folderMarkers(folderPrefix, themeId, THEME_NAME));
+    expect(markerKeys).not.toContain(`${folderPrefix}/Themes/`);
+    expect(markerKeys.some((k: string) => k.includes('Branding'))).toBe(false);
+  });
+
+  it('returns 502 naming the folder stage when the marker write fails, and stores nothing', async () => {
+    sendMock.mockRejectedValue(Object.assign(new Error('AccessDenied'), { name: 'AccessDenied' }));
+    const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
+    expect(res.status).toBe(502);
+    expect(res.body.stage).toBe('create_theme_folder');
+    expect(res.body.path).toBe(`${folderPrefix}/Themes/${themeId}-${THEME_NAME.replace(/\s+/g, '')}/`);
+    expect(res.body.details.operation).toBe('ensureStorageFolders');
+
+    const { rows } = await db.query<{ logo_object_key: string | null }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
+    expect(rows[0].logo_object_key).toBeNull();
   });
 
   it('replaces a logo of a different type and removes the previous object', async () => {
@@ -195,12 +247,13 @@ describe('POST /system/themes/:id/logo', () => {
 
     const res = await uploadLogo(themeId, gymId, 'image/svg+xml', SVG_BYTES);
     expect(res.status).toBe(200);
-    expect(sentCommands('put')[0].input.Key).toBe(`${folderPrefix}/Branding/Logo/logo.svg`);
+    expect(putObjectKeys()).toEqual([logoKey(folderPrefix, themeId, THEME_NAME, 'svg')]);
     // The old extension must not survive as an orphan.
-    expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([`${folderPrefix}/Branding/Logo/logo.png`]);
+    expect(sentCommands('delete').map((c: any) => c.input.Key))
+      .toEqual([logoKey(folderPrefix, themeId, THEME_NAME, 'png')]);
 
     const { rows } = await db.query<{ logo_object_key: string }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
-    expect(rows[0].logo_object_key).toBe(`${folderPrefix}/Branding/Logo/logo.svg`);
+    expect(rows[0].logo_object_key).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'svg'));
   });
 
   it('overwrites in place — no delete — when the type is unchanged', async () => {
@@ -209,7 +262,7 @@ describe('POST /system/themes/:id/logo', () => {
 
     const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(200);
-    expect(sentCommands('put')[0].input.Key).toBe(`${folderPrefix}/Branding/Logo/logo.png`);
+    expect(putObjectKeys()).toEqual([logoKey(folderPrefix, themeId, THEME_NAME, 'png')]);
     expect(sentCommands('delete')).toHaveLength(0);
   });
 
@@ -222,35 +275,40 @@ describe('POST /system/themes/:id/logo', () => {
     const res = await uploadLogo(themeId, gymId, 'image/webp', PNG_BYTES);
     expect(res.status).toBe(200);
     const { rows } = await db.query<{ logo_object_key: string }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
-    expect(rows[0].logo_object_key).toBe(`${folderPrefix}/Branding/Logo/logo.webp`);
+    expect(rows[0].logo_object_key).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'webp'));
   });
 
-  // The key names the gym, not the theme, so a gym holds one branding logo at a
-  // time and the upload has to hand the slot over — otherwise a sibling theme
-  // would keep pointing at a file this upload replaced or removed.
-  it('takes the branding slot from the gym\'s other themes', async () => {
-    const siblingId = await createCustomTheme(gymId, 'Theme Logo Storage Sibling');
+  // #824: the key names the *theme*, so each theme of a gym keeps its own logo
+  // and an upload takes nothing away from its siblings — the hand-over #713
+  // needed for one gym-wide key is gone with the key that required it (§6:
+  // existing logos are not deleted or moved).
+  it("leaves the gym's other themes' logos exactly where they are", async () => {
+    const siblingName = 'Theme Logo Storage Sibling';
+    const siblingId = await createCustomTheme(gymId, siblingName);
     expect((await uploadLogo(siblingId, gymId, 'image/png', PNG_BYTES)).status).toBe(200);
     sendMock.mockClear();
 
     const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(200);
     expect(res.body.has_logo).toBe(true);
+    // Nothing of the sibling's is deleted.
+    expect(sentCommands('delete')).toHaveLength(0);
 
     const { rows } = await db.query<{ id: string; logo_object_key: string | null; logo_mime: string | null }>(
       'SELECT id, logo_object_key, logo_mime FROM themes WHERE gym_id = ? ORDER BY name',
       [gymId],
     );
     const sibling = rows.find((r) => r.id === siblingId)!;
-    expect(sibling.logo_object_key).toBeNull();
-    expect(sibling.logo_mime).toBeNull();
-    // Exactly one theme of the gym claims the branding logo.
-    expect(rows.filter((r) => r.logo_object_key !== null)).toHaveLength(1);
+    expect(sibling.logo_object_key).toBe(logoKey(folderPrefix, siblingId, siblingName, 'png'));
+    expect(sibling.logo_mime).toBe('image/png');
+    // Two themes, two logos, two distinct objects.
+    expect(rows.filter((r) => r.logo_object_key !== null)).toHaveLength(2);
+    expect(sibling.logo_object_key).not.toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
 
     await db.query('DELETE FROM themes WHERE id = ?', [siblingId]);
   });
 
-  it('does not touch another gym\'s logo when taking its own branding slot', async () => {
+  it("does not touch another gym's logo", async () => {
     expect((await uploadLogo(otherThemeId, otherGymId, 'image/png', PNG_BYTES)).status).toBe(200);
     expect((await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES)).status).toBe(200);
 
@@ -258,7 +316,26 @@ describe('POST /system/themes/:id/logo', () => {
       'SELECT logo_object_key FROM themes WHERE id = ?',
       [otherThemeId],
     );
-    expect(rows[0].logo_object_key).toBe(`${otherFolderPrefix}/Branding/Logo/logo.png`);
+    expect(rows[0].logo_object_key).toBe(logoKey(otherFolderPrefix, otherThemeId, OTHER_THEME_NAME, 'png'));
+  });
+
+  // §6: a row written before #824 keeps its `Branding/Logo/` key and still
+  // renders; replacing the logo is what moves it into the theme's folder, and
+  // the object it left behind is swept.
+  it('moves a legacy Branding/Logo key into the theme folder on the next upload', async () => {
+    const legacyKey = `${folderPrefix}/Branding/Logo/logo.png`;
+    await db.query(
+      "UPDATE themes SET logo_object_key = ?, logo_mime = 'image/png', logo_updated_at = UTC_TIMESTAMP() WHERE id = ?",
+      [legacyKey, themeId],
+    );
+
+    const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
+    expect(res.status).toBe(200);
+    expect(putObjectKeys()).toEqual([logoKey(folderPrefix, themeId, THEME_NAME, 'png')]);
+    expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([legacyKey]);
+
+    const { rows } = await db.query<{ logo_object_key: string }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
+    expect(rows[0].logo_object_key).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
   });
 
   it('uploads into the calling gym\'s own folder and 404s on another gym\'s theme', async () => {
@@ -269,7 +346,7 @@ describe('POST /system/themes/:id/logo', () => {
     // …and the owner's own upload lands under the owner's prefix, never the caller's.
     const owned = await uploadLogo(otherThemeId, otherGymId, 'image/png', PNG_BYTES);
     expect(owned.status).toBe(200);
-    expect(sentCommands('put')[0].input.Key).toBe(`${otherFolderPrefix}/Branding/Logo/logo.png`);
+    expect(putObjectKeys()).toEqual([logoKey(otherFolderPrefix, otherThemeId, OTHER_THEME_NAME, 'png')]);
   });
 
   it('returns 409 when the gym has no storage folder yet, and stores nothing', async () => {
@@ -277,6 +354,7 @@ describe('POST /system/themes/:id/logo', () => {
     const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.');
+    expect(res.body.stage).toBe('resolve_path');
     expect(sentCommands('put')).toHaveLength(0);
 
     const { rows } = await db.query<{ logo_object_key: string | null }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
@@ -288,14 +366,22 @@ describe('POST /system/themes/:id/logo', () => {
     const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(503);
     expect(res.body.missingConfig).toEqual([...R2_ENV_KEYS]);
+    expect(res.body.stage).toBe('resolve_path');
     expect(sentCommands('put')).toHaveLength(0);
   });
 
   it('returns 502 and leaves the row untouched when the R2 upload fails', async () => {
-    sendMock.mockRejectedValue(Object.assign(new Error('NoSuchBucket'), { name: 'NoSuchBucket' }));
+    // The folder markers succeed; only the object PUT is rejected, so the
+    // failure is reported at the upload stage rather than the folder one.
+    sendMock.mockImplementation((command: any) => (command.input.Key.endsWith('/')
+      ? Promise.resolve({})
+      : Promise.reject(Object.assign(new Error('NoSuchBucket'), { name: 'NoSuchBucket' }))));
     const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(502);
     expect(res.body.details.operation).toBe('uploadStorageObject');
+    // #824: the diagnostic the admin is shown is built from these two.
+    expect(res.body.stage).toBe('upload_logo');
+    expect(res.body.path).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
     // Gym-facing route: structured details, but never the platform config snapshot.
     expect(res.body.diagnostics).toBeUndefined();
 
@@ -332,7 +418,8 @@ describe('DELETE /system/themes/:id/logo', () => {
     expect(res.status).toBe(200);
     expect(res.body.has_logo).toBe(false);
     expect(res.body.logo_url).toBeNull();
-    expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([`${folderPrefix}/Branding/Logo/logo.png`]);
+    expect(sentCommands('delete').map((c: any) => c.input.Key))
+      .toEqual([logoKey(folderPrefix, themeId, THEME_NAME, 'png')]);
 
     const { rows } = await db.query<{ logo_object_key: string | null; logo_mime: string | null }>(
       'SELECT logo_object_key, logo_mime FROM themes WHERE id = ?',
@@ -349,9 +436,11 @@ describe('DELETE /system/themes/:id/logo', () => {
 
     const res = await removeLogo(themeId, gymId);
     expect(res.status).toBe(502);
+    expect(res.body.stage).toBe('remove_logo');
+    expect(res.body.path).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
 
     const { rows } = await db.query<{ logo_object_key: string | null }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
-    expect(rows[0].logo_object_key).toBe(`${folderPrefix}/Branding/Logo/logo.png`);
+    expect(rows[0].logo_object_key).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
   });
 
   it('still clears a legacy blob logo without calling storage', async () => {
@@ -390,7 +479,7 @@ describe('GET /themes/:id/logo', () => {
     expect(Buffer.from(res.body).equals(PNG_BYTES)).toBe(true);
     expect(sentCommands('get')[0].input).toMatchObject({
       Bucket: R2_BUCKET,
-      Key: `${folderPrefix}/Branding/Logo/logo.png`,
+      Key: logoKey(folderPrefix, themeId, THEME_NAME, 'png'),
     });
   });
 

@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
-import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
+import { formatStorageError, type StorageErrorLike } from '@/lib/storageErrorMessage';
 import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
@@ -136,8 +136,7 @@ export default function ThemesPage() {
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
-  const { getToken } = useAuth();
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const { activeGym, isSuperadmin, loading: gymLoading } = useGym();
   const { centers, activeCenterId } = useCenter();
   const { toast } = useToast();
@@ -200,36 +199,44 @@ export default function ThemesPage() {
     return `/api/proxy/themes/${theme.id}/logo${theme.logo_updated_at ? `?v=${encodeURIComponent(theme.logo_updated_at)}` : ''}`;
   }
 
+  /**
+   * #824: every step of Save reports which operation failed, on what path and
+   * with what the storage layer said, rather than the bare message the API
+   * returned. `fallbackStage` names the step for a failure that never reached
+   * the storage code and so carries no `stage` of its own.
+   */
+  function storageErrorMessage(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
+    const stage = err.body?.stage ?? fallbackStage;
+    return formatStorageError(err, {
+      title: t(titleKey),
+      operation: t('storage_error_operation'),
+      path: t('storage_error_path'),
+      error: t('storage_error_error'),
+      details: t('storage_error_details'),
+      operationName: t(`storage_stage_${stage}`),
+    });
+  }
+
   async function uploadLogo(themeId: string) {
     if (!editLogoFile) return;
-    const token = await getToken();
-    const res = await fetch(`/api/proxy/platform/themes/${themeId}/logo`, {
-      method: 'POST',
-      headers: { 'Content-Type': editLogoFile.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: editLogoFile,
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      throw new Error(json.error ?? 'Logo upload failed');
+    try {
+      await uploadFetch(`/platform/themes/${themeId}/logo`, editLogoFile);
+    } catch (err: any) {
+      throw new Error(storageErrorMessage(err, 'storage_error_title_logo', 'upload_logo'));
     }
   }
 
   /**
    * #732: raw image bytes to `POST /platform/themes/:id/members-images/:slot`.
-   * `fetch` rather than `apiFetch` for the same reason the logo upload uses it
-   * — the body is the file itself, not JSON, and the `Content-Type` is what the
-   * server validates the signature against.
+   * `uploadFetch` rather than `apiFetch` because the body is the file itself,
+   * not JSON, and the `Content-Type` is what the server validates the signature
+   * against (#824 moved the header assembly into the shared client).
    */
   async function uploadMembersImage(themeId: string, slot: MemberImageSlot, file: File) {
-    const token = await getToken();
-    const res = await fetch(`/api/proxy/platform/themes/${themeId}/members-images/${slot}`, {
-      method: 'POST',
-      headers: { 'Content-Type': file.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: file,
-    });
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      throw new Error(json.error ?? t('members_image_error_upload'));
+    try {
+      await uploadFetch(`/platform/themes/${themeId}/members-images/${slot}`, file);
+    } catch (err: any) {
+      throw new Error(storageErrorMessage(err, 'storage_error_title_members_image', 'upload_members_image'));
     }
   }
 
@@ -533,7 +540,11 @@ export default function ThemesPage() {
   function renderEditForm(id: string, isNew: boolean) {
     return (
       <div style={{ padding: '0 24px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
-        {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
+        {editError && (
+          // #824: `pre-line` because a storage failure is a diagnostic block
+          // (operation, path, error, details), not a single sentence.
+          <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b', whiteSpace: 'pre-line' }}>{editError}</p>
+        )}
 
         <div style={{ marginTop: 12 }}>
           {renderSection('branding', t('section_branding'), (

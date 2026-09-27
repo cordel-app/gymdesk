@@ -959,17 +959,37 @@ Every per-gym upload writes into the gym's own R2 folder, and two things can mak
 
 ---
 
-## Singleton Asset at a Fixed Object Key (#713)
+## Singleton Asset at a Fixed Object Key (#713, #824)
 
-The Image Upload Field above stores every file under a generated UUID key, so uploads never collide. A *singleton* asset — a gym's branding logo — is the opposite: the key is part of the contract (`<gyms.storage_folder_prefix>/Branding/Logo/logo.<ext>`), which buys a predictable location and costs three things a UUID key gives for free.
+The Image Upload Field above stores every file under a generated UUID key, so uploads never collide. A *singleton* asset — a theme's logo — is the opposite: the key is part of the contract (`<gyms.storage_folder_prefix>/Themes/<theme_id>-<name>/Logo/logo.<ext>`), which buys a predictable location and costs three things a UUID key gives for free.
 
-1. **The extension is derived server-side from the validated MIME type** (`extensionForMime()`), never from the uploaded file name — which must not reach the key at all. `buildGymLogoKey()` is the only place the key is composed.
+1. **The extension is derived server-side from the validated MIME type** (`extensionForMime()`), never from the uploaded file name — which must not reach the key at all. `buildThemeLogoKey()` is the only place the key is composed.
 
 2. **A type change is not an overwrite.** `logo.png` and `logo.svg` are different objects, so the upload deletes the key(s) it replaces *after* the new object is safely stored — best-effort, logged as a warning: the upload already succeeded and is what the user asked for, so a failed cleanup is an orphan to sweep, not a failed save. Removal is the mirror image: delete the object first and report a failure (502) instead of clearing the reference, because a dropped reference strands the file forever.
 
-3. **A fixed key is shared state, so the row that references it needs a rule the DB can hold.** The key names the gym; the reference lives on `themes`, of which a gym may have several. The upload therefore hands the slot over in one transaction — the uploading row takes the key, every sibling of the same gym stops claiming the asset — so exactly one row ever points at the object. Where two storage modes coexist during a migration (R2 key vs. legacy blob), a named `CHECK` keeps them mutually exclusive rather than trusting the two routers that write them.
+3. **Scope the key to the row that owns the asset, or the rows have to share one.** #713 keyed the logo on the *gym* (`Branding/Logo/logo.<ext>`), and because a gym has several themes, the upload had to hand the slot over in one transaction — the uploading row took the key, every sibling stopped claiming the asset — so exactly one row ever pointed at the object. #824 put the theme in the key instead, and that whole mechanism went with it: a per-owner key means an upload deletes only what *its own* row pointed at and touches no sibling. Reach for the hand-over only when a key genuinely names something above the row; prefer the key that names the row. Where two storage modes coexist during a migration (R2 key vs. legacy blob), a named `CHECK` keeps them mutually exclusive rather than trusting the two routers that write them.
+
+4. **A key that embeds a mutable name moves when the name does.** Rows written under the old key are not rewritten — they still resolve, because the URL is derived from the *stored* key — and the next upload writes the new one and sweeps the old. The same holds for a key changed by a ticket: a pre-#824 `Branding/Logo/` row keeps working until its logo is replaced.
+
+5. **Create the branch you own, not the root.** A key several folders deep needs its markers written before the object (`ensureStorageFolders()`, idempotent because every marker key ends in `/`). Write only the folders the asset owns — a theme's own folder and its `Logo/` leaf — and leave the shared root (`Themes/`) to whatever provisions the tenant, so "the gym's bucket is not initialized" stays a real, reportable state rather than being papered over at upload time.
 
 Derive the public URL from the key at read time (`buildStorageObjectUrl()` + a `?v=<updated_at>` stamp, since the key itself never changes) instead of storing a URL: the public origin (`CLOUDFLARE_R2_PUBLIC_URL`) is an env var, and a stored URL goes stale the day it moves. That already happened once: rows written before the variable existed hold the private S3 endpoint and had to be rewritten (`npm run storage:rewrite-urls`). Where a column does store a URL (the exercise and nutrition media columns), never compare two of them as strings: the same object can be stored in both the public and the legacy form, so compare `storageKeyFromObjectUrl()` keys and match every form (`storageObjectUrlForms()`, or `mediaReferenceClause()` for the exercise media columns). Keep the existing same-origin API route as the fallback reader for both modes — and serve the bytes there rather than redirecting when a consumer loads it under a `img-src 'self'` CSP, which matches a redirect's host too.
+
+---
+
+## A binary upload goes through the API client, and says what broke (#824)
+
+A JSON call uses `apiFetch`, which assembles the bearer token, `x-gym-id`, `x-center-id`, `x-impersonate-as` and `x-locale`. A raw-bytes upload cannot reuse it (the body is the file and the `Content-Type` is what the server validates against), and every page that hand-rolled the `fetch` sent only the token — so the Next proxy, which forwards `x-gym-id` but cannot invent it, handed `tenantContext` a request with no gym and every theme logo upload came back as a bare `401 Unauthorized`.
+
+1. **One `uploadFetch` in `lib/apiClient.ts`, never a `fetch` in a page.** Same headers as `apiFetch` plus the file's own `Content-Type`, and the rejection carries `{ status, body }` so the caller can render what the API said. A page that assembles an upload request itself will drop a header again; `theme-upload-diagnostics.test.ts` fails the build if one reappears.
+
+2. **A storage failure names its stage.** An upload is a short pipeline — resolve the tenant's folder, create the owner's folder, create the leaf, PUT the object, save the row — and "it failed" is useless without which step. Every failure response from those routes carries `stage` (`domain/storageFailureStage.ts`) and, once known, the `path` it was working on, beside `describeStorageError()`'s structured `details`.
+
+3. **The page names the stage for what never reached storage.** A 401 or a validation refusal carries no `stage`, so the caller passes the step it was performing as a fallback: `err.body?.stage ?? fallbackStage`. The API's own answer always wins — only it knows whether it broke resolving the path or writing a marker.
+
+4. **Render it as a block, not a sentence.** `formatStorageError()` (`lib/storageErrorMessage.ts`) is pure and returns `Operation` / `Path` / `Error` / `Details` lines; the error element needs `whiteSpace: 'pre-line'` or it collapses to one line. Every stage gets its own locale key (`storage_stage_<value>`), because the key is interpolated from the wire value and next-intl prints a missing key verbatim.
+
+Nothing secret crosses: `describeStorageError()` returns the S3 error name, code, HTTP status, request id, bucket and key — never a credential.
 
 ---
 

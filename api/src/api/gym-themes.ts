@@ -5,7 +5,8 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { validateTokens } from '../domain/themeTokens';
-import { themeLogoUrl } from '../domain/themeLogo';
+import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
+import { folderStageForKey } from '../domain/storageFailureStage';
 import {
   bytesMatchImageMime,
   buildThemeMemberImageKey,
@@ -19,7 +20,6 @@ import {
 } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
 import {
-  buildGymLogoKey,
   deleteStorageObject,
   describeStorageError,
   ensureStorageFolders,
@@ -254,25 +254,32 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
 
 // ─── Logo upload (customer themes only) ───────────────────────────────────────
 //
-// #713: the file goes into the gym's own R2 folder under the fixed key
-// `<storage_folder_prefix>/Branding/Logo/logo.<ext>`, and the row keeps the key
-// instead of the bytes. The folder prefix is read from the *tenant's* `gyms` row
-// — never from the request — so a caller cannot aim an upload at another gym's
-// storage, and the theme lookup already restricts the row to `gym_id = gymId`.
+// #824: the file goes into the theme's *own* folder inside the gym's R2 tree,
+// under `<storage_folder_prefix>/Themes/<theme_id>-<name>/Logo/logo.<ext>`. The
+// folder prefix is read from the *tenant's* `gyms` row — never from the request
+// — so a caller cannot aim an upload at another gym's storage, and the theme
+// lookup already restricts the row to `gym_id = gymId`.
 //
-// That key names the *gym*, not the theme, which #713 is explicit about: there is
-// one branding logo per gym and `Branding/Logo/` is its canonical location. A gym
-// can hold several Custom Themes, so the upload also hands the branding slot over:
-// every other theme of the gym that pointed at it stops claiming a logo (it falls
-// back to the gym name, exactly as a theme that never had one). Without that
-// hand-over the sibling rows would keep a reference to a file someone else has
-// replaced — they would silently render the new gym's logo, and removing it from
-// the theme that uploaded it would leave them pointing at nothing.
+// The key names the *theme*, so each theme of a gym holds its own logo and an
+// upload takes nothing away from its siblings. That replaces #713's gym-wide
+// `Branding/Logo/logo.<ext>` and the hand-over that came with it: `Branding/` is
+// obsolete and nothing writes there any more. Rows written before this are left
+// exactly as they are (§6 of the ticket) — they still render from their stored
+// key, and move to the theme folder the next time the logo is replaced.
+//
+// The theme's own folder and its `Logo/` leaf are created on demand
+// (`themeLogoFolderKeys`), the same way #725 creates `Members/`. The gym-level
+// `Themes/` root is deliberately *not*: it belongs to Gym Bucket Initialization
+// (#735), and until it exists the control is disabled in the admin (#823) and
+// this route answers 409.
 //
 // The three storage failure modes reuse #417's conventions verbatim: 503 when
 // the deployment has no R2 configured, 409 when this gym's folder was never
 // initialized, 502 when the R2 call itself fails (structured `details`, no
 // platform `diagnostics` — this route is gym-staff-facing; see storage.ts).
+// Every one of them names the `stage` it failed at and, once known, the `path`
+// it was working on, so the admin sees which step broke rather than a bare
+// message (#824).
 
 /** The tenant's R2 folder prefix, or a response explaining why there isn't one. */
 async function resolveGymFolderPrefix(gymId: string, res: express.Response): Promise<string | null> {
@@ -280,6 +287,7 @@ async function resolveGymFolderPrefix(gymId: string, res: express.Response): Pro
     const missingConfig = getMissingStorageConfigKeys();
     res.status(503).json({
       error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+      stage: 'resolve_path',
       missingConfig,
     });
     return null;
@@ -290,7 +298,10 @@ async function resolveGymFolderPrefix(gymId: string, res: express.Response): Pro
   );
   const folderPrefix: string | null = rows[0]?.storage_folder_prefix ?? null;
   if (!folderPrefix) {
-    res.status(409).json({ error: 'Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.' });
+    res.status(409).json({
+      error: 'Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.',
+      stage: 'resolve_path',
+    });
     return null;
   }
   return folderPrefix;
@@ -313,24 +324,43 @@ gymThemesRouter.post(
         if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
         if (body.length > LOGO_MAX_BYTES) return res.status(413).json({ error: 'Logo exceeds 512 KB limit' });
 
-        const { rows: existing } = await db.query(
-          'SELECT id FROM themes WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+        // The theme's `name` is part of its folder, so it is read here rather
+        // than assumed: a renamed theme writes to its new folder and the key it
+        // held before is cleaned up below, exactly as a type change is.
+        const { rows: existing } = await db.query<{ id: string; name: string; logo_object_key: string | null }>(
+          'SELECT id, name, logo_object_key FROM themes WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
           [req.params.id, gymId],
         );
         if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+        const theme = existing[0];
 
         const folderPrefix = await resolveGymFolderPrefix(gymId, res);
         if (!folderPrefix) return;
 
-        // Every key any of this gym's themes points at — all of them live in the
-        // gym's own `Branding/Logo/`, since that is the only key this route ever
-        // writes. Read before the upload so the set is the pre-upload state.
-        const { rows: heldKeys } = await db.query<{ logo_object_key: string }>(
-          'SELECT DISTINCT logo_object_key FROM themes WHERE gym_id = ? AND logo_object_key IS NOT NULL',
-          [gymId],
-        );
+        const key = buildThemeLogoKey(folderPrefix, theme.id, theme.name, mime);
 
-        const key = buildGymLogoKey(folderPrefix, mime);
+        // `Themes/<theme_id>-<name>/` and its `Logo/` leaf, created on demand.
+        // Idempotent: every key ends in `/`, so what it overwrites is always
+        // another zero-byte marker and never a file.
+        const logoFolderKeys = themeLogoFolderKeys(folderPrefix, theme.id, theme.name);
+        try {
+          await ensureStorageFolders(logoFolderKeys);
+        } catch (err: any) {
+          const details = err instanceof StorageOperationError
+            ? err.details
+            : describeStorageError(err, { operation: 'ensureStorageFolders', key });
+          logger.error(
+            { err, details, diagnostics: getStorageDiagnostics(), gymId, themeId: theme.id },
+            'Cloudflare R2 theme logo folder creation failed',
+          );
+          return res.status(502).json({
+            error: `Failed to create the theme logo folder: ${details.message}`,
+            stage: folderStageForKey(details.key, logoFolderKeys, 'create_logo_folder'),
+            path: details.key ?? key,
+            details,
+          });
+        }
+
         try {
           await uploadStorageObject(key, mime, body);
         } catch (err: any) {
@@ -338,18 +368,26 @@ gymThemesRouter.post(
             ? err.details
             : describeStorageError(err, { operation: 'uploadStorageObject', key });
           logger.error(
-            { err, details, diagnostics: getStorageDiagnostics(), gymId, themeId: req.params.id },
+            { err, details, diagnostics: getStorageDiagnostics(), gymId, themeId: theme.id },
             'Cloudflare R2 theme logo upload failed',
           );
-          return res.status(502).json({ error: `Failed to upload logo: ${details.message}`, details });
+          return res.status(502).json({
+            error: `Failed to upload logo: ${details.message}`,
+            stage: 'upload_logo',
+            path: key,
+            details,
+          });
         }
 
-        // Only one logo may exist in the gym's `Branding/Logo/`, and `logo.png`
-        // and `logo.svg` are different keys — so a type change has to remove the
-        // file it replaces. Best-effort *after* the new logo is safely stored:
-        // the upload has already succeeded and is what the gym asked for, so a
-        // failure here is an orphaned old file to clean up, not a failed save.
-        for (const previousKey of heldKeys.map((r) => r.logo_object_key).filter((k) => k !== key)) {
+        // One logo per theme: `logo.png` and `logo.svg` are different keys, and
+        // so are two folders of a renamed theme, so whatever this theme pointed
+        // at before — including a pre-#824 `Branding/Logo/` key — is removed.
+        // Best-effort *after* the new logo is safely stored: the upload has
+        // already succeeded and is what the gym asked for, so a failure here is
+        // an orphaned old file to clean up, not a failed save. No other theme's
+        // logo is touched (§6: existing logos are not deleted or moved).
+        const previousKey = theme.logo_object_key;
+        if (previousKey && previousKey !== key) {
           try {
             await deleteStorageObject(previousKey);
           } catch (err: any) {
@@ -357,27 +395,18 @@ gymThemesRouter.post(
               ? err.details
               : describeStorageError(err, { operation: 'deleteStorageObject', key: previousKey });
             logger.warn(
-              { err, details, gymId, themeId: req.params.id },
+              { err, details, gymId, themeId: theme.id },
               'Replaced theme logo left an orphaned object in Cloudflare R2',
             );
           }
         }
 
-        // One transaction so the gym can never be left with two themes claiming
-        // the same object — see the hand-over note above. `logo_bytes = NULL`:
-        // R2 is now the source of the binary, and leaving the old blob behind
-        // would be a second copy the readers could prefer.
-        await db.transaction(async (tx) => {
-          await tx.query(
-            `UPDATE themes SET logo_object_key = NULL, logo_mime = NULL, logo_updated_at = NULL
-             WHERE gym_id = ? AND id <> ? AND logo_object_key IS NOT NULL`,
-            [gymId, req.params.id],
-          );
-          await tx.query(
-            'UPDATE themes SET logo_bytes = NULL, logo_object_key = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP() WHERE id = ?',
-            [key, mime, req.params.id],
-          );
-        });
+        // `logo_bytes = NULL`: R2 is now the source of the binary, and leaving
+        // the old blob behind would be a second copy the readers could prefer.
+        await db.query(
+          'UPDATE themes SET logo_bytes = NULL, logo_object_key = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP() WHERE id = ?',
+          [key, mime, theme.id],
+        );
         const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
         res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, req.params.id)));
       });
@@ -413,19 +442,24 @@ gymThemesRouter.delete('/:id/logo', async (req, res, next) => {
             { err, details, diagnostics: getStorageDiagnostics(), gymId, themeId: req.params.id },
             'Cloudflare R2 theme logo delete failed',
           );
-          return res.status(502).json({ error: `Failed to remove logo: ${details.message}`, details });
+          return res.status(502).json({
+            error: `Failed to remove logo: ${details.message}`,
+            stage: 'remove_logo',
+            path: key,
+            details,
+          });
         }
       }
 
-      // `logo_object_key = ?` rather than `id = ?`: the object is the gym's one
-      // branding logo, so once it is gone no theme of this gym may keep claiming
-      // it — including a soft-deleted one, which is why this is not scoped to
-      // `deleted_at IS NULL`. Normally that is just this row (the upload hands
-      // the slot over, so only one theme holds it at a time).
+      // #824: the key names this theme's own folder, so removing it concerns
+      // this row alone — a sibling theme's logo is a different object and stays
+      // where it is. (Before #824 one gym-wide key could be claimed by several
+      // rows; the upload's hand-over kept that to one, so scoping the clear to
+      // this row leaves no legacy row stranded either.)
       await db.query(
         `UPDATE themes SET logo_bytes = NULL, logo_object_key = NULL, logo_mime = NULL, logo_updated_at = NULL
-         WHERE id = ? OR (gym_id = ? AND logo_object_key = ?)`,
-        [req.params.id, gymId, key],
+         WHERE id = ?`,
+        [req.params.id],
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
       res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, req.params.id)));
@@ -523,8 +557,9 @@ gymThemesRouter.post(
           [gymId, theme.id, slot],
         );
 
+        const memberFolderKeys = themeMemberFolderKeys(folderPrefix, theme.id, theme.name);
         try {
-          await ensureStorageFolders(themeMemberFolderKeys(folderPrefix, theme.id, theme.name));
+          await ensureStorageFolders(memberFolderKeys);
           await uploadStorageObject(key, mime, body);
         } catch (err: any) {
           const details = err instanceof StorageOperationError
@@ -534,7 +569,16 @@ gymThemesRouter.post(
             { err, details, diagnostics: getStorageDiagnostics(), gymId, themeId: theme.id, slot },
             'Cloudflare R2 theme Members image upload failed',
           );
-          return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
+          return res.status(502).json({
+            error: `Failed to upload image: ${details.message}`,
+            // Two calls share this handler, so the stage is read off the one
+            // that actually threw rather than assumed to be the upload.
+            stage: details.operation === 'ensureStorageFolders'
+              ? folderStageForKey(details.key, memberFolderKeys, 'create_members_folder')
+              : 'upload_members_image',
+            path: details.key ?? key,
+            details,
+          });
         }
 
         // The key is deterministic, so a replacement normally overwrites the
