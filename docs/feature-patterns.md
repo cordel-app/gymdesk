@@ -471,6 +471,39 @@ render functions out of the source and asserts no writing control inside them,
 checks every field key against the form's own `patchForm({ <key>:` call, and
 exercises the mapping and formatters directly.
 
+
+### When Edit was a modal (#800)
+
+Centers is the third shape: the row already expanded read-only, and
+`⋮ → Edit` opened an **Edit Center** modal beside it. Converting the modal
+into the inline form is mostly deletion, but three things are easy to lose.
+
+**The payload is not the form.** A modal that has drifted may carry a field it
+never renders — the Center modal seeded and submitted `code` with no control
+for it. Moving the form must not quietly change what `PUT` receives, so put the
+payload in the shared module (`toCenterUpdatePayload()`) next to the row →
+form mapping, and give such a field `editable: false` rather than dropping it
+from the form values. The read-only half then shows it, the form does not, and
+a test asserts no `patchForm({ code:` exists.
+
+**Both halves render one section list.** The read-only view maps the whole
+`CENTER_PROFILE_SECTIONS`; the form maps the same sections with
+`.filter((f) => f.editable)`. Flattening the editable fields is the form's
+field order, so the ticket's order is a property of the declaration rather than
+of the JSX — which is what a test can assert.
+
+**The modal's affordances have to reappear.** A `CrudModal` gives you the
+error line, the Save/Cancel pair and the disabled-while-saving state for free;
+an inline form has to render all three itself, keep the form open on an API
+error with the user's input intact, and label its controls (`htmlFor`) now that
+there is no dialog to caption them. Cancel is the one control that must not
+call the API. A converted page should also stop importing `FormLabel`/
+`FormInput`, and keep `CrudModal` only for the Details view it still has.
+
+Reference implementation: `[locale]/centers/page.tsx` +
+`[locale]/centers/centerProfile.ts`. Regression test:
+`apps/admin/src/test/centers-inline-edit.test.ts`.
+
 ---
 
 ## Section-Scoped Inline Editing (#627)
