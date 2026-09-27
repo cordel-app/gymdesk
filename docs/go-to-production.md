@@ -26,11 +26,11 @@ Tick items off in the PR that completes them.
          `BILLING_INTERNAL_SECRET`, `RECURRING_BOOKINGS_INTERNAL_SECRET` and every secret
          the four deploy workflows read, the variable `API_BASE_URL` (the production API's
          origin) plus the other variables the deploy workflows read, **required reviewers**
-         for deployments, and a deployment branch rule allowing **`main` only**. Note that
-         `deploy.yml` still carries literal `*.vdicube.com` payment URLs
-         (`PAYMENT_PAGE_URL`, `PAYMENT_NOTIFICATION_URL`, `PAYMENT_OK_URL`,
-         `PAYMENT_KO_URL`) — they must become environment variables before a production
-         deploy, or production points its payment flow at the dev hosts.
+         for deployments, and a deployment branch rule allowing **`main` only**. That
+         includes the payment URL variables `PAYMENT_PAGE_URL`, `PAYMENT_NOTIFICATION_URL`,
+         `PAYMENT_OK_URL` and `PAYMENT_KO_URL` with the **production** hosts — `deploy.yml`
+         reads them per environment (they were `*.vdicube.com` literals until 2026-09-27) and
+         refuses to deploy while any is empty.
   3. [ ] In `billing-run.yml` and `recurring-booking-run.yml`, change the one line marked
          `# #784: switch to 'production' once the environment exists` from
          `${{ inputs.environment || 'dev' }}` to `${{ inputs.environment || 'production' }}`.
