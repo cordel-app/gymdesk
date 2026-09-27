@@ -372,6 +372,59 @@ Rules of thumb:
 
 ---
 
+## Read-Only Expanded Row, Editing Behind the Context Menu (#797)
+
+The counterpart to the pattern below: a list row whose expanded card is for
+**reading** an entity, with `⋮ → Edit` the only way to change it. Expanding
+is the cheap, exploratory gesture — it must never put data at risk — so the
+expanded card shows every persisted field and not one control that writes.
+
+1. **One definition of the field set, shared by both halves.** Put the fields
+   in a module beside the page (`memberProfile.ts`:
+   `MEMBER_PROFILE_FIELDS` = `{ key, labelKey, kind? }`, the row type, the
+   empty form, the persisted-row → form-values mapping, the formatters). The
+   read-only section maps over it; the Edit form imports the types and the
+   mapping and renders its own inputs, because each input needs its own type,
+   placeholder and validation. A field added to the list reaches both; a field
+   added to only one is what the pattern exists to prevent.
+2. **The read-only label is not always the form's label.** A form marks its
+   required fields (`label_name` is "Name \*"), which is nonsense beside a
+   value nobody can change — so `labelKey` points at the plain key
+   (`col_name`). Reuse an existing key before adding one.
+3. **Render from the row the form is seeded from**, not from a second read. The
+   list row already carries the entity's own columns, so the section and the
+   form cannot disagree, and a saved edit refreshes both through the list's
+   existing reload.
+4. **A related read the row does not carry gets a version counter, not a
+   remount.** Anything fetched separately (a Member's centers) goes stale when
+   an edit saves. Bumping a `profileVersion` prop re-runs that one read;
+   remounting the card would re-fetch every other section with it.
+5. **Every value falls back to the screens' em dash** — never `null`,
+   `undefined` or a formatted epoch. Free text that may be long (Notes) wraps
+   with `white-space: pre-wrap` inside the existing label/value row rather
+   than getting a second visual pattern.
+6. **A date-only column is formatted field by field.** `new Date('1990-05-04')`
+   is UTC midnight and prints as 3 May west of Greenwich — wrong for a birth
+   date. Split on `-` and build a local `Date`.
+7. **Where the read needs a rule, the rule goes in the API, once.** The
+   Member's centers have a sole-active-center fallback; it belongs on
+   `GET /members/:memberId/centers` (which both the read-only section and the
+   Edit form call), not restated in either caller. Guard the resource's
+   ownership before the fallback, or an id from another tenant reads back the
+   caller's own sole center.
+
+Reference implementation: the `PROFILE` section of
+`[locale]/members/MemberExpandedRow.tsx` +
+`[locale]/members/memberProfile.ts`. Regression test (source-scan style, since
+`apps/admin` has no component-test infra):
+`apps/admin/src/test/member-expanded-profile.test.ts` — it slices the
+`PROFILE` `<Section>` out of the source and asserts no `<input`, `<select`,
+`<textarea`, `<button`, `onChange` or `onClick` inside it, rather than over the
+whole card, which has had its own editing controls since long before the
+ticket.
+
+---
+
 ## Section-Scoped Inline Editing (#627)
 
 An expandable-row editor whose card has grown several independent

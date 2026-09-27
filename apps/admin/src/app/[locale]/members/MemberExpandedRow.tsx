@@ -14,6 +14,7 @@ import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { MemberPromotions } from './MemberPromotions';
 import { MemberAdditionalServices } from './MemberAdditionalServices';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
+import { MEMBER_PROFILE_FIELDS, formatProfileDate, type MemberProfile } from './memberProfile';
 
 interface Plan {
   id: number;
@@ -45,6 +46,13 @@ interface SessionPackage {
   status: 'active' | 'consumed' | 'expired' | 'cancelled';
 }
 
+/** `GET /members/:memberId/centers` — the sole-active-center fallback included (#797). */
+interface MemberCenter {
+  center_id: number;
+  name: string;
+  is_default: boolean | number;
+}
+
 interface BillingEvent {
   id: number;
   event_type: string;
@@ -60,12 +68,22 @@ interface BillingEvent {
 
 export function MemberExpandedRow({
   memberId,
+  member,
+  profileVersion,
   canManageTraining,
   canManagePackages,
   isAdmin,
   plans,
 }: {
   memberId: number;
+  /**
+   * #797: the Member's persisted Profile, as the Members list read it. The
+   * PROFILE section renders it read-only; it is deliberately the same row the
+   * `⋮ → Edit` form is seeded from, so the two can never show different data.
+   */
+  member: MemberProfile;
+  /** Bumped by the page when an edit was saved, so the centers below are re-read. */
+  profileVersion: number;
   canManageTraining: boolean;
   canManagePackages: boolean;
   isAdmin: boolean;
@@ -90,6 +108,7 @@ export function MemberExpandedRow({
   // so remounting it is how a change in any of the three sections above re-runs it.
   const [simulationKey, setSimulationKey] = useState(0);
 
+  const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [clerkStatus, setClerkStatus] = useState<{ status: string } | null>(null);
   const [trainingPlans, setTrainingPlans] = useState<TrainingPlanAssignment[]>([]);
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>([]);
@@ -107,11 +126,18 @@ export function MemberExpandedRow({
     loadAll();
   }, []);
 
+  // #797: an edit saved on this row may have reassigned the Member's centers.
+  // Only that read is repeated — remounting would re-fetch every other section.
+  useEffect(() => {
+    if (profileVersion === 0) return;
+    loadCenters();
+  }, [profileVersion]);
+
   async function loadAll() {
     setLoading(true);
     setError(null);
     try {
-      const [config, memberTrainingPlans, nutrition, events, clerk, packages] = await Promise.all([
+      const [config, memberTrainingPlans, nutrition, events, clerk, packages, memberCenters] = await Promise.all([
         apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`)
           .catch(() => EMPTY_CONFIGURATION),
         canManageTraining
@@ -121,6 +147,7 @@ export function MemberExpandedRow({
         apiFetch<{ items: BillingEvent[] }>(`/billing-events/member/${memberId}?limit=50`).catch(() => ({ items: [] })),
         apiFetch<{ status: string }>(`/members/${memberId}/clerk-status`).catch(() => null),
         apiFetch<SessionPackage[]>(`/members/${memberId}/class-packages`).catch(() => []),
+        apiFetch<MemberCenter[]>(`/members/${memberId}/centers`).catch(() => []),
       ]);
 
       setConfiguration(config);
@@ -129,10 +156,20 @@ export function MemberExpandedRow({
       setNutritionPlans(nutrition);
       setBillingEvents(events.items ?? []);
       setSessionPackages(packages);
+      setCenters(memberCenters);
     } catch {
       setError(t('members.expanded_error'));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadCenters() {
+    try {
+      setCenters(await apiFetch<MemberCenter[]>(`/members/${memberId}/centers`));
+    } catch {
+      // Leave the last known assignment on screen: an empty list would read as
+      // "no centers", which is a different statement from "could not load".
     }
   }
 
@@ -219,8 +256,27 @@ export function MemberExpandedRow({
   const activePlans = trainingPlans.filter((p) => p.status === 'active');
   const inactivePlans = trainingPlans.filter((p) => p.status !== 'active');
 
+  const defaultCenter = centers.find((c) => !!c.is_default);
+
   return (
     <div style={panel}>
+      {/* #797 — PROFILE: the complete persisted Member Profile, read-only.
+          Expanding a Member is for reading it; editing stays behind ⋮ → Edit,
+          so this section carries no input, no toggle and no Edit affordance. */}
+      <Section label={t('members.section_profile')}>
+        <div style={card}>
+          {MEMBER_PROFILE_FIELDS.map((f) => (
+            <Field key={f.key} label={t(`members.${f.labelKey}`)} multiline={f.kind === 'multiline'}>
+              {(f.kind === 'date' ? formatProfileDate(member[f.key]) : member[f.key]?.trim()) || EMPTY_VALUE}
+            </Field>
+          ))}
+          <Field label={t('members.assigned_centers')}>
+            {centers.length === 0 ? EMPTY_VALUE : centers.map((c) => c.name).join(', ')}
+          </Field>
+          <Field label={t('members.default_center')}>{defaultCenter?.name ?? EMPTY_VALUE}</Field>
+        </div>
+      </Section>
+
       {/* Account (Clerk status) */}
       {clerkStatus && (
         <Section label={t('members.section_account')}>
@@ -516,11 +572,15 @@ function Section({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, multiline }: { label: string; children: React.ReactNode; multiline?: boolean }) {
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginBottom: 4 }}>
-      <span style={{ color: '#888', minWidth: 120, fontSize: 13 }}>{label}</span>
-      <span>{children}</span>
+    <div style={{ display: 'flex', gap: 8, alignItems: multiline ? 'flex-start' : 'center', fontSize: 14, marginBottom: 4 }}>
+      <span style={{ color: '#888', minWidth: 120, fontSize: 13, flexShrink: 0 }}>{label}</span>
+      {/* #797: Notes is free text of any length — it wraps and keeps the author's
+          line breaks instead of stretching the expanded card sideways. */}
+      <span style={multiline ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', minWidth: 0 } : undefined}>
+        {children}
+      </span>
     </div>
   );
 }
@@ -576,6 +636,9 @@ function eventTypeLabel(type: string, t: ReturnType<typeof useTranslations>): st
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
+/** #797: the empty-value convention of the Members screens (see the list columns). */
+const EMPTY_VALUE = '\u2014';
 
 const panel: React.CSSProperties = { padding: '16px 24px' };
 const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
