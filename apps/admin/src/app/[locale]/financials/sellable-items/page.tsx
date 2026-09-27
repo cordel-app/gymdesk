@@ -15,18 +15,17 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { Frequency, frequencyOptions, isLegacyFrequency } from './sellableItemFrequency';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 const TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const STATUSES = ['active', 'inactive'] as const;
 const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
-const FREQUENCIES = ['once', 'per_session', 'four_weeks', 'week', 'month', 'year'] as const;
 
 type ItemType = typeof TYPES[number];
 type ItemStatus = typeof STATUSES[number];
 type EnrollmentStatus = typeof ENROLLMENT_STATUSES[number];
-type Frequency = typeof FREQUENCIES[number];
 
 // #546: Professional Services only apply to Session-type ('sessions') items.
 const SESSION_TYPE: ItemType = 'sessions';
@@ -518,13 +517,17 @@ export default function SellableItemsPage() {
             </div>
             <div>
               <label style={inlineLabelStyle}>{t('label_frequency')}</label>
+              {/* #821: five choices, and 'week' is not one of them. A new item
+                  never holds a legacy value, so this list is always the five. */}
               <select
                 value={inlineNew.billing_frequency}
                 onChange={(e) => setInlineNew({ ...inlineNew, billing_frequency: e.target.value })}
                 style={inlineSelectStyle}
               >
                 <option value="">—</option>
-                {FREQUENCIES.map((f) => <option key={f} value={f}>{t(`frequency_${f}`)}</option>)}
+                {frequencyOptions(inlineNew.billing_frequency).map((o) => (
+                  <option key={o.value} value={o.value} disabled={o.disabled}>{t(o.labelKey as any)}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -716,14 +719,24 @@ export default function SellableItemsPage() {
               </div>
               <div>
                 <label style={inlineLabelStyle}>{t('label_frequency')}</label>
+                {/* #821: an item stored on the retired 'week' frequency still
+                    shows it — disabled, so it reads truthfully and submits back
+                    unchanged, but cannot be re-chosen once the user moves off it. */}
                 <select
                   value={editForm.billing_frequency}
                   onChange={(e) => setEditForm({ ...editForm, billing_frequency: e.target.value })}
                   style={inlineSelectStyle}
                 >
                   <option value="">—</option>
-                  {FREQUENCIES.map((f) => <option key={f} value={f}>{t(`frequency_${f}`)}</option>)}
+                  {frequencyOptions(editForm.billing_frequency).map((o) => (
+                    <option key={o.value} value={o.value} disabled={o.disabled}>{t(o.labelKey as any)}</option>
+                  ))}
                 </select>
+                {isLegacyFrequency(editForm.billing_frequency) && (
+                  <div style={{ fontSize: 11, color: '#8a6d1f', marginTop: 4 }}>
+                    {t('frequency_legacy_notice')}
+                  </div>
+                )}
               </div>
               {!isSystem && (
                 <div>
