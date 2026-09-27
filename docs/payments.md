@@ -368,9 +368,33 @@ Event is the charge, a `payment_requests` row is an attempt to settle it. That i
 `failed_billing` later settled this way reads as `paid` and becomes receipt-able without a
 special case.
 
-Nothing notifies the member of a failed internal charge, and nothing notifies the staff
-in-app either — #779 is the staff alert, and `failed_last_month` on the Payments dashboard
-is a monthly statistic, not a to-do.
+Nothing notifies the member of a failed internal charge (decided on #779: staff-only,
+in-app only — no email, no Slack).
+
+#### Failed payments awaiting action (#779)
+
+The staff's to-do list is the Billing Events list filtered by `failed`. A Billing Event is
+**awaiting action** while `deriveBillingEventStatus()` says `failed` (`isAwaitingAction()`
+in `domain/billingEventStatus.ts`), and one of the two actions above clears it by appending
+a `completed` transaction. There is no status column.
+
+| Surface | What it shows |
+|---|---|
+| `GET /payments/billing-events/attention` | `{ count, oldest_created_at }` (`loadFailedPaymentsAttention()` in `api/src/api/payments.ts`) |
+| Sidebar | A red count badge next to **Payments** and **Billing Events**, hidden at zero, polled every 60 s while that entry is visible |
+| Payments dashboard | A *Failed Payments Awaiting Action* card with the oldest failure's date (`awaiting_action_count` / `awaiting_action_oldest_at` on the summary) — all-time, unlike the monthly cards |
+| Both link to | `payments/billing-events?status=failed&order=asc`: the list is the queue, oldest first |
+
+> **Decisions (2026-09-27, #779)** — change them here if they turn out wrong:
+> - **Count events, not memberships.** The badge then matches the row count of the list it
+>   opens. Since #785 one assignment contributes at most two before the run pauses it.
+> - **Recurring charges only.** A rejected or expired *first* payment writes no Billing
+>   Event (A5 inserts `payment_recorded` only on `completed`), so it is not counted, and
+>   the member usually retries it themselves. Surfacing failed checkouts would be its own
+>   ticket.
+> - **No extra role gate.** PAYMENTS read access sees the count, and the actions stay behind
+>   `requireModuleWrite('PAYMENTS')`.
+> - **Poll every 60 s.** The number changes about once a night.
 
 ### B8. `POST /billing/cleanup`
 
@@ -775,7 +799,7 @@ differently.
 | # | Gap |
 |---|---|
 | [#778](https://github.com/cordel-app/gymdesk/issues/778) | ✅ done — the workflow reports the run's outcome |
-| [#779](https://github.com/cordel-app/gymdesk/issues/779) | No in-app staff indicator of failed payments awaiting action |
+| [#779](https://github.com/cordel-app/gymdesk/issues/779) | ✅ done — sidebar badge + dashboard card for failed payments awaiting action (B7) |
 | [#780](https://github.com/cordel-app/gymdesk/issues/780) | ✅ done — one completed run per UTC date |
 | [#781](https://github.com/cordel-app/gymdesk/issues/781) | ✅ done — a second daily attempt |
 | [#782](https://github.com/cordel-app/gymdesk/issues/782) | No freshness alert: a day on which *nothing* reached the API is invisible |
