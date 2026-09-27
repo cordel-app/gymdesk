@@ -2822,7 +2822,21 @@
     "ownership_gym": "Gym-owned",
     "col_status": "Status",
     "status_active": "Active",
-    "status_deleted": "Deleted"
+    "status_deleted": "Deleted",
+    "label_description": "Description",
+    "label_translations": "Translations",
+    "label_media": "Media",
+    "no_image": "No image",
+    "section_audit": "Audit",
+    "created_by": "Created By",
+    "modified_by": "Modified By",
+    "deleted_at": "Deleted At",
+    "deleted_by": "Deleted By",
+    "close": "Close",
+    "locale_en": "English",
+    "locale_es": "Spanish",
+    "locale_ca": "Catalan",
+    "description_placeholder": "Optional notes about this food"
   },
   "impersonation": {
     "impersonating_label": "You are impersonating:",

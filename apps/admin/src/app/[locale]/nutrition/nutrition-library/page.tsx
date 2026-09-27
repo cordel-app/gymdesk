@@ -7,29 +7,28 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
-import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
 import { ImageUploadField } from '@/components/ImageUploadField';
+import { NutritionItemReadOnlyView } from '@/components/nutritionLibrary/NutritionItemReadOnlyView';
+import { NutritionItemDetailsModal } from '@/components/nutritionLibrary/NutritionItemDetailsModal';
+import {
+  NutritionItemFormValues,
+  NutritionLibraryItemRow,
+  emptyNutritionItemForm,
+  toNutritionItemFormValues,
+} from '@/components/nutritionLibrary/nutritionItemProfile';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
 
-interface LibraryItem {
-  id: number;
-  gym_id: string | null;
-  /** Base (English) name — what the edit form submits back. */
-  name: string;
-  /** `name` in the viewer's locale; equals `name` for gym-owned items (#643). */
-  display_name: string;
-  status: 'active' | 'deleted';
-  image_url: string | null;
-  created_at: string;
-  modified_at: string | null;
-  categories: Category[];
-  qualities: NutritionalQuality[];
-}
+/**
+ * A row as `GET /nutrition-library` returns it. The field set — including
+ * `description` and the audit snapshot the Details modal shows — is declared once
+ * in `nutritionItemProfile.ts` and shared with the Base library page (#799 §26).
+ */
+type LibraryItem = NutritionLibraryItemRow;
 
 interface ListResponse {
   items: LibraryItem[];
@@ -38,16 +37,10 @@ interface ListResponse {
   offset: number;
 }
 
-interface EditForm {
-  name: string;
-  categoryIds: number[];
-  qualityIds: number[];
-  imageUrl: string | null;
-}
+/** What `⋮ → Edit` manages — the shared declaration, not a second field list. */
+type EditForm = NutritionItemFormValues;
 
-function emptyEditForm(): EditForm {
-  return { name: '', categoryIds: [], qualityIds: [], imageUrl: null };
-}
+const emptyEditForm = emptyNutritionItemForm;
 
 const LIMIT = 20;
 
@@ -73,6 +66,10 @@ export default function NutritionLibraryPage() {
   const [qualityFilter, setQualityFilter] = useState<string[]>([]);
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  // `⋮ → Details` — the read-only modal (#799 §9). It renders the list row it is
+  // given, so nothing is fetched and nothing can disagree with the expanded card.
+  const [detailItem, setDetailItem] = useState<LibraryItem | null>(null);
 
   // Inline edit
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -170,6 +167,7 @@ export default function NutritionLibraryPage() {
         method: 'POST',
         body: JSON.stringify({
           name: newForm.name.trim(),
+          description: newForm.description.trim(),
           category_ids: newForm.categoryIds,
           quality_ids: newForm.qualityIds,
           image_url: newForm.imageUrl,
@@ -186,13 +184,10 @@ export default function NutritionLibraryPage() {
 
   function openInlineEdit(item: LibraryItem) {
     setEditingId(item.id);
-    setEditForm({
-      // Gym-owned items are never translated, so this is also what is displayed.
-      name: item.name,
-      categoryIds: item.categories.map((c) => c.id),
-      qualityIds: item.qualities.map((q) => q.id),
-      imageUrl: item.image_url,
-    });
+    // The one persisted-row → form-values mapping, shared with the read-only
+    // view's field set (#799 §26). It seeds `name` (the base value), never
+    // `display_name` — editing in Spanish must not overwrite the English original.
+    setEditForm(toNutritionItemFormValues(item));
     setEditError(null);
   }
 
@@ -210,6 +205,7 @@ export default function NutritionLibraryPage() {
         method: 'PUT',
         body: JSON.stringify({
           name: editForm.name.trim(),
+          description: editForm.description.trim(),
           category_ids: editForm.categoryIds,
           quality_ids: editForm.qualityIds,
           image_url: editForm.imageUrl,
@@ -286,13 +282,25 @@ export default function NutritionLibraryPage() {
             />
           </div>
           <div>
-            <label style={inlineLabelStyle}>{t('nutrition_library.label_image')}</label>
+            <label style={inlineLabelStyle}>{t('nutrition_library.label_media')}</label>
+            {/* #799 §17: uploading, replacing and removing the image happens here
+                and nowhere else — the expanded card shows it read-only. */}
             <ImageUploadField
               uploadPath="/storage/uploads/nutrition-image"
               value={form.imageUrl}
               onChange={(url) => setForm({ ...form, imageUrl: url })}
             />
           </div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={inlineLabelStyle}>{t('nutrition_library.label_description')}</label>
+          <textarea
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder={t('nutrition_library.description_placeholder')}
+            rows={3}
+            style={{ ...inlineInputStyle, resize: 'vertical' }}
+          />
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('nutrition_library.label_categories')} *</label>
@@ -343,7 +351,9 @@ export default function NutritionLibraryPage() {
         const isGymItem = item.gym_id !== null;
         return (
           <ContextMenu items={[
-            { label: t('nutrition_library.details'), onClick: () => toggleExpand(item.id) },
+            // #799 §8: Details is the read-only modal (audit information), Edit the
+            // form. Expanding the row is a third, separate interaction.
+            { label: t('nutrition_library.details'), onClick: () => setDetailItem(item) },
             ...(isGymItem ? [{ label: t('nutrition_library.edit'), onClick: () => openInlineEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
           ]} />
         );
@@ -402,31 +412,22 @@ export default function NutritionLibraryPage() {
           editingId === item.id ? (
             renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), t('nutrition_library.save'))
           ) : (
-            <div style={{ padding: '12px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <DetailRow
-                label={t('nutrition_library.label_categories')}
-                value={item.categories.length > 0 ? item.categories.map((c) => categoryLabel(c.slug)).join(', ') : '—'}
-              />
-              <DetailRow
-                label={t('nutrition_library.nutritional_qualities_label')}
-                value={item.qualities.length > 0 ? item.qualities.map((q) => qualityLabel(q.slug)).join(', ') : t('nutrition_library.no_qualities')}
-              />
-              <DetailRow label={t('nutrition_library.col_status')} value={t(`nutrition_library.status_${item.status}`)} />
-              <DetailRow label={t('nutrition_library.ownership')} value={item.gym_id === null ? t('nutrition_library.ownership_base') : t('nutrition_library.ownership_gym')} />
-              <DetailRow label={t('nutrition_library.created_at')} value={new Date(item.created_at).toLocaleString()} />
-              <DetailRow label={t('nutrition_library.modified_at')} value={item.modified_at ? new Date(item.modified_at).toLocaleString() : '—'} />
-              {item.image_url && (
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <span style={{ width: 120, flexShrink: 0, color: '#888' }}>{t('nutrition_library.label_image')}</span>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.image_url} alt="" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
+            /* #799 §1–§7: expanding reads. The complete item, strictly read-only,
+               with no image control and no Edit affordance — `⋮ → Edit` is the only
+               way in. Audit information lives in `⋮ → Details`, not here. */
+            <NutritionItemReadOnlyView
+              item={item}
+              allCategories={allCategories}
+              allQualities={allQualities}
+              extraRows={
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #888)' }}>
+                    {t('nutrition_library.ownership')}
+                  </span>
+                  <span>{item.gym_id === null ? t('nutrition_library.ownership_base') : t('nutrition_library.ownership_gym')}</span>
                 </div>
-              )}
-              {/* #675: same deep link every Details view offers — filtered to this item. */}
-              <div style={{ marginTop: 6 }}>
-                <ViewAuditLogButton entityType="nutrition_library_item" entityId={item.id} size="small" />
-              </div>
-            </div>
+              }
+            />
           )
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
@@ -440,15 +441,10 @@ export default function NutritionLibraryPage() {
           <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={btnStyle('#888')}>›</button>
         </div>
       )}
-    </div>
-  );
-}
 
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', gap: 10 }}>
-      <span style={{ width: 120, flexShrink: 0, color: '#888' }}>{label}</span>
-      <span>{value}</span>
+      {detailItem && (
+        <NutritionItemDetailsModal item={detailItem} onClose={() => setDetailItem(null)} />
+      )}
     </div>
   );
 }

@@ -2808,7 +2808,21 @@
     "ownership_gym": "Propiedad del gimnasio",
     "col_status": "Estado",
     "status_active": "Activo",
-    "status_deleted": "Eliminado"
+    "status_deleted": "Eliminado",
+    "label_description": "Descripción",
+    "label_translations": "Traducciones",
+    "label_media": "Multimedia",
+    "no_image": "Sin imagen",
+    "section_audit": "Auditoría",
+    "created_by": "Creado por",
+    "modified_by": "Modificado por",
+    "deleted_at": "Eliminado el",
+    "deleted_by": "Eliminado por",
+    "close": "Cerrar",
+    "locale_en": "Inglés",
+    "locale_es": "Español",
+    "locale_ca": "Catalán",
+    "description_placeholder": "Notas opcionales sobre este alimento"
   },
   "impersonation": {
     "impersonating_label": "Estás suplantando a:",

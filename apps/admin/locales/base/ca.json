@@ -2835,7 +2835,21 @@
     "ownership_gym": "Propietat del gimnàs",
     "col_status": "Estat",
     "status_active": "Actiu",
-    "status_deleted": "Eliminat"
+    "status_deleted": "Eliminat",
+    "label_description": "Descripció",
+    "label_translations": "Traduccions",
+    "label_media": "Multimèdia",
+    "no_image": "Sense imatge",
+    "section_audit": "Auditoria",
+    "created_by": "Creat per",
+    "modified_by": "Modificat per",
+    "deleted_at": "Eliminat el",
+    "deleted_by": "Eliminat per",
+    "close": "Tanca",
+    "locale_en": "Anglès",
+    "locale_es": "Espanyol",
+    "locale_ca": "Català",
+    "description_placeholder": "Notes opcionals sobre aquest aliment"
   },
   "impersonation": {
     "impersonating_label": "Esteu suplantant:",

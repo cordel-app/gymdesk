@@ -8,6 +8,7 @@ import {
   loadQualitiesMap, replaceQualities, validateQualityIds,
   loadTranslationsMap, replaceTranslations, validateTranslations, localizedNameSql,
   buildListWhere, clampLimit, clampOffset,
+  actorSnapshot, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
 import {
   BASE_NUTRITION_IMAGE_MAX_BYTES,
@@ -41,7 +42,17 @@ export const platformNutritionLibraryRouter = Router();
  * own folder, and the ownership of the row is what decides which — see
  * `domain/baseNutritionImages.ts`.
  */
-const ITEM_COLUMNS = `nli.id, nli.name, nli.status, nli.image_url, nli.created_at, nli.modified_at`;
+const ITEM_COLUMNS = `nli.id, nli.name, nli.status, nli.image_url, nli.created_at, nli.modified_at,
+  ${itemDetailColumnsSql('nli')}`;
+
+/**
+ * Every write on this router is a superadmin's, by `requireSuperadmin` — so the
+ * actor snapshot's type is fixed and only the name comes from the request
+ * (#799 §13, migration 196).
+ */
+function platformActor(req: { superadminName?: string | null }) {
+  return actorSnapshot({ name: req.superadminName, isSuperadmin: true });
+}
 
 /* ── Categories catalogue (read-only for now) ────────────────────────────── */
 
@@ -129,6 +140,8 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
 platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, next) => {
   const { name, category_ids, quality_ids, translations } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
+  const description = normalizeDescription(req.body.description);
+  if ('error' in description) return res.status(400).json({ error: description.error });
   const catErr = await validateCategoryIds(category_ids);
   if (catErr) return res.status(400).json(catErr);
   if (quality_ids !== undefined) {
@@ -146,9 +159,12 @@ platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, nex
     );
     if (existing.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
 
+    const actor = platformActor(req);
     const { insertId } = await db.query(
-      "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (NULL, ?, 'active')",
-      [name.trim()],
+      `INSERT INTO nutrition_library_items
+         (gym_id, name, description, status, created_by_name, created_by_type)
+       VALUES (NULL, ?, ?, 'active', ?, ?)`,
+      [name.trim(), description.value ?? null, actor.name, actor.type],
     );
 
     await replaceCategories(insertId, category_ids);
@@ -196,9 +212,11 @@ platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, n
     const err = validateTranslations(translations);
     if (err) return res.status(400).json(err);
   }
+  const description = normalizeDescription(req.body.description);
+  if ('error' in description) return res.status(400).json({ error: description.error });
   try {
     const { rows: existing } = await db.query(
-      "SELECT id, name, status FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL",
+      "SELECT id, name, description, status FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL",
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -212,9 +230,18 @@ platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, n
       if (conflict.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
     }
 
-    const updates: string[] = ['modified_at = UTC_TIMESTAMP()'];
-    const params: any[] = [];
+    // The actor pair moves with every edit, so `modified_by_name` always names
+    // whoever `modified_at` refers to (#799 §13).
+    const actor = platformActor(req);
+    const updates: string[] = [
+      'modified_at = UTC_TIMESTAMP()',
+      'modified_by_name = ?',
+      'modified_by_type = ?',
+    ];
+    const params: any[] = [actor.name, actor.type];
     if (name?.trim())  { updates.push('name = ?');     params.push(name.trim()); }
+    // Absent from the body means "leave it alone"; an empty string means "clear it".
+    if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
 
     params.push(id);
     await db.query(`UPDATE nutrition_library_items SET ${updates.join(', ')} WHERE id = ?`, params);
@@ -430,9 +457,12 @@ platformNutritionLibraryRouter.post(
         }
       }
 
+      const actor = platformActor(req);
       await db.query(
-        'UPDATE nutrition_library_items SET image_url = ?, modified_at = UTC_TIMESTAMP() WHERE id = ?',
-        [url, food.id],
+        `UPDATE nutrition_library_items
+         SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+         WHERE id = ?`,
+        [url, actor.name, actor.type, food.id],
       );
 
       const { rows } = await db.query(
@@ -473,9 +503,16 @@ platformNutritionLibraryRouter.delete('/:id', requireSuperadmin, async (req, res
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is already deleted' });
 
+    // `status = 'deleted'` stays the flag every query filters on; `deleted_at`
+    // and the actor pair record when and by whom, which the Details modal shows
+    // (#799 §13, migration 196).
+    const actor = platformActor(req);
     await db.query(
-      "UPDATE nutrition_library_items SET status = 'deleted', modified_at = UTC_TIMESTAMP() WHERE id = ?",
-      [id],
+      `UPDATE nutrition_library_items
+       SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, deleted_by_type = ?,
+           modified_at = UTC_TIMESTAMP()
+       WHERE id = ?`,
+      [actor.name, actor.type, id],
     );
     recordAudit(req, { action: 'delete', entityType: 'nutrition_library_item', entityId: id });
     res.status(204).send();
