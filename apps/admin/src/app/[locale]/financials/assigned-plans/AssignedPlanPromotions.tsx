@@ -41,9 +41,14 @@ const GRANT_SECTIONS: {
   emptyKey: string;
   showFrequency: boolean;
 }[] = [
-  { key: 'oneoff_grants', titleKey: 'benefits_oneoff', emptyKey: 'no_oneoff_benefits', showFrequency: false },
-  { key: 'session_grants', titleKey: 'benefits_session', emptyKey: 'no_session_benefits', showFrequency: false },
-  { key: 'periodical_grants', titleKey: 'benefits_period', emptyKey: 'no_period_benefits', showFrequency: true },
+  // #815 — these headers name the *Promotion*'s granted Sellable Items, so they
+  // read "One-off / Session / Periodical Promotion". The assignment's own
+  // benefit sections (AssignedPlanConfiguration) come from the Membership Plan
+  // and keep the Plan's terminology, which is why the keys are promotion-scoped
+  // rather than shared with that component.
+  { key: 'oneoff_grants', titleKey: 'promo_benefits_oneoff', emptyKey: 'promo_no_oneoff_benefits', showFrequency: false },
+  { key: 'session_grants', titleKey: 'promo_benefits_session', emptyKey: 'promo_no_session_benefits', showFrequency: false },
+  { key: 'periodical_grants', titleKey: 'promo_benefits_period', emptyKey: 'promo_no_period_benefits', showFrequency: true },
 ];
 
 const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;

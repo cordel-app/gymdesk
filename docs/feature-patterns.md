@@ -1340,6 +1340,36 @@ Reference implementation: `api/src/domain/nutritionComponentTypes.ts` +
 `apps/admin/src/app/[locale]/nutrition/nutrition-plan-templates/NutritionPlanTree.tsx`
 + `apps/admin/src/test/nutrition-food-type-selector.test.ts`.
 
+### Renaming a label two entities share (#815)
+
+A label-only rename is only label-only while the key it changes belongs to one
+entity. `Session Benefits` / `One-off Benefits` / `Period Benefits` existed three
+times over — on a Membership Plan, on a Promotion, and on an Assigned Plan, where
+the configuration card renders the assignment's *snapshot of the Plan* and the
+promotions card renders an *applied Promotion's* grants. #815 renames only the
+Promotion's, because #816 requires the Plan's to stay ("Keep the existing section
+name exactly as: ONE-OFF BENEFITS").
+
+- **Find every namespace that carries the label before touching one.** Walk
+  `apps/*/locales/base/en.json` for the string, not for the key: the same wording
+  sits under `plans`, `promotions` and `assigned_plans_page`, and the member app
+  has its own copy of it (`membership.benefit_group.*`, which groups the
+  assignment's benefits and is therefore *not* a Promotion label).
+- **A key two components share is forked, not renamed.** `AssignedPlanPromotions`
+  and `AssignedPlanConfiguration` both read `benefits_oneoff`/`…_session`/`…_period`.
+  Renaming the value would have renamed the Plan's sections too, so the promotion
+  card got `promo_benefits_*` + `promo_no_*_benefits` of its own and the shared
+  keys kept their wording.
+- **Keep the keys, the endpoint slugs and the enum values.** `section_session_benefits`,
+  `POST …/session-benefits` and `action: 'no_benefit'` are not user-facing; moving
+  them turns a copy change into an API change for no gain.
+- **Pin the split in a test.** `promotion-section-labels.test.ts` asserts the four
+  English labels, that no locale's promotion copy still says *benefit* (in any of
+  the three languages — Spanish `promociones` drops the accent, so match on
+  `promoci`, not `promoción`), **and** that the Plan's and the assignment's own
+  sections still do. Without that last half the next "consistency" pass renames
+  them all.
+
 ---
 
 ## Audited Action over an Append-Only Ledger (#640)
