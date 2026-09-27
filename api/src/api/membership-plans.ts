@@ -11,6 +11,10 @@ import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { computeBillingForecast } from '../domain/billingForecast';
 import {
+  describeAcceptedPlanCadences,
+  isAcceptedPlanCadence,
+} from '../domain/planBillingFrequency';
+import {
   classifySellableItem,
   planBenefitTableForCategory,
   SellableItemBenefitCategory,
@@ -113,7 +117,11 @@ export const membershipPlansRouter = Router();
 const VALID_MEMBER_LIMIT = ['1', '2', 'family'];
 const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'];
 // The `billing_policies.recurring_billing_unit` ENUM (migration 060) — the one
-// cadence a Plan still carries after stage 13 (migration 189).
+// cadence a Plan still carries after stage 13 (migration 189). #820 narrows
+// which *pairs* of it a Plan may be configured with (see
+// `domain/planBillingFrequency.ts`); the ENUM itself is unchanged, because an
+// assignment's frozen snapshot and every row written before the rule still use
+// it.
 const BILLING_UNITS = ['day', 'week', 'month', 'year'];
 
 // #635 §7: Billing & Duration, with the Promotion's semantics (migration 102) —
@@ -801,6 +809,16 @@ membershipPlansRouter.put('/:id/billing-policy', requireRole('admin'), async (re
   }
   if (!BILLING_UNITS.includes(recurring_billing_unit)) {
     return res.status(400).json({ error: `recurring_billing_unit must be one of: ${BILLING_UNITS.join(', ')}` });
+  }
+  // #820: the Billing frequency is a choice of two — Month (1 month) or 4 Weeks
+  // (4 week). The pair stays the wire format and the stored shape, so nothing
+  // downstream changes; this is the one place that decides a Plan may not be
+  // configured with a cadence nobody sells, which is what keeps the single
+  // dropdown from being a frontend-only rule.
+  if (!isAcceptedPlanCadence(interval, recurring_billing_unit)) {
+    return res.status(400).json({
+      error: `recurring_billing_interval/recurring_billing_unit must be one of: ${describeAcceptedPlanCadences()}`,
+    });
   }
   try {
     await db.query(

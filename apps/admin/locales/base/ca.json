@@ -1025,7 +1025,10 @@
     "frequency_four_weeks": "4 setmanes",
     "frequency_year": "Any(s)",
     "label_pay_beforehand_months": "Durada prepagada",
-    "label_billing_frequency": "Freqüència de facturació"
+    "label_billing_frequency": "Freqüència de facturació",
+    "billing_frequency_month": "Mes",
+    "billing_frequency_four_weeks": "4 setmanes",
+    "billing_frequency_legacy_notice": "Aquest pla es factura actualment {current}. En desar aquesta secció es canviarà a la freqüència seleccionada a dalt."
   },
   "prices": {
     "title": "Preus",

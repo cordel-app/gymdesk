@@ -24,19 +24,26 @@ import {
   toBenefitItems,
 } from '@/components/SellableItemBenefits';
 import {
+  DEFAULT_PLAN_BILLING_FREQUENCY,
   EMPTY_PLAN_GENERAL_FORM,
   ENROLLMENT_STATUSES,
   LIFECYCLE_STATUSES,
   MEMBER_LIMITS,
+  PLAN_BILLING_FREQUENCIES,
+  PLAN_BILLING_FREQUENCY_OPTIONS,
   PLAN_GENERAL_EDITABLE_FIELDS,
   PLAN_GENERAL_FIELDS,
+  PlanBillingFrequency,
   PlanGeneralField,
   PlanGeneralFormValues,
   PlanGeneralRow,
   formatPlanCurrentPrice,
   formatPlanGeneralField,
   isPlanGeneralFormValid,
+  legacyBillingFrequencyText,
   memberLimitChipStyle,
+  planBillingFrequencyOf,
+  planBillingPolicyBody,
   toPlanGeneralFormValues,
   toPlanGeneralUpdatePayload,
 } from './planProfile';
@@ -122,15 +129,10 @@ interface Plan extends PlanGeneralRow {
   billing_forecast: BillingForecast;
 }
 
-const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
-
 // Applied automatically to every new plan; staff can adjust it afterwards in
-// the Billing & Duration section.
-const DEFAULT_BILLING_POLICY = {
-  recurring_billing_interval: 1,
-  recurring_billing_unit: 'month',
-  auto_renew: true,
-};
+// the Billing & Duration section. #820: the cadence comes from the Billing
+// frequency declaration rather than being spelled out again here.
+const DEFAULT_BILLING_POLICY = planBillingPolicyBody(DEFAULT_PLAN_BILLING_FREQUENCY, true);
 
 // #635 §7 + stage 13: Billing & Duration — the Promotion's four fields, in the
 // Promotion's own order. Pre-paid Duration is a slice of the Paid Duration, so
@@ -140,16 +142,22 @@ type DurationField = typeof DURATION_FIELDS[number];
 
 // The section's draft: the four durations, plus the cadence and Auto-renew it
 // absorbed from the retired Billing Policy section.
+//
+// #820: the cadence is one choice — `billing_frequency` — not a number and a
+// unit. `legacy_cadence` carries the text of a stored cadence that is neither
+// option (a Plan configured before #820) so the editor can say what saving will
+// change it to instead of silently relabelling it; it is seeded on open and
+// never edited.
 type DurationForm = Record<DurationField, string> & {
-  recurring_billing_interval: string;
-  recurring_billing_unit: string;
+  billing_frequency: PlanBillingFrequency;
+  legacy_cadence: string | null;
   auto_renew: boolean;
 };
 
 const EMPTY_DURATION_FORM: DurationForm = {
   free_months: '', paid_months: '', pay_beforehand_months: '', bonus_months: '',
-  recurring_billing_interval: String(DEFAULT_BILLING_POLICY.recurring_billing_interval),
-  recurring_billing_unit: DEFAULT_BILLING_POLICY.recurring_billing_unit,
+  billing_frequency: DEFAULT_PLAN_BILLING_FREQUENCY,
+  legacy_cadence: null,
   auto_renew: DEFAULT_BILLING_POLICY.auto_renew,
 };
 
@@ -197,11 +205,6 @@ function emptyInlineNew(): InlineNew {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtBillingInterval(interval: number, unit: string) {
-  if (interval === 1) return unit;
-  return `${interval} ${unit}s`;
-}
-
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
@@ -215,6 +218,16 @@ export default function PlansPage() {
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
+
+  // #820: how a stored cadence reads on screen — "Month" / "4 Weeks" for the two
+  // configurable ones, and the plain "Every 2 months" form for a Plan configured
+  // before the rule, which still bills on it and must still say so.
+  const billingFrequencyText = (interval: number, unit: string): string => {
+    const freq = planBillingFrequencyOf(interval, unit);
+    return freq
+      ? t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey}` as any)
+      : legacyBillingFrequencyText(interval, unit);
+  };
 
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -567,8 +580,15 @@ export default function PlansPage() {
       paid_months: plan.paid_months != null ? String(plan.paid_months) : '',
       pay_beforehand_months: plan.pay_beforehand_months != null ? String(plan.pay_beforehand_months) : '',
       bonus_months: plan.bonus_months != null ? String(plan.bonus_months) : '',
-      recurring_billing_interval: String(bp ? bp.recurring_billing_interval : DEFAULT_BILLING_POLICY.recurring_billing_interval),
-      recurring_billing_unit: bp ? bp.recurring_billing_unit : DEFAULT_BILLING_POLICY.recurring_billing_unit,
+      // #820: the stored pair maps onto one of the two options, or onto none —
+      // a Plan configured before the rule. It is not coerced silently: the
+      // dropdown falls back to the default and the notice below it names the
+      // cadence the Plan is on today.
+      billing_frequency: (bp && planBillingFrequencyOf(bp.recurring_billing_interval, bp.recurring_billing_unit))
+        || DEFAULT_PLAN_BILLING_FREQUENCY,
+      legacy_cadence: bp && !planBillingFrequencyOf(bp.recurring_billing_interval, bp.recurring_billing_unit)
+        ? legacyBillingFrequencyText(bp.recurring_billing_interval, bp.recurring_billing_unit)
+        : null,
       auto_renew: bp ? !!bp.auto_renew : DEFAULT_BILLING_POLICY.auto_renew,
     });
     setDurationEditForPlanId(plan.id);
@@ -595,11 +615,10 @@ export default function PlansPage() {
       // about, and a rejected one must not leave a changed cadence behind.
       await apiFetch(`/membership-plans/${planId}/billing-policy`, {
         method: 'PUT',
-        body: JSON.stringify({
-          recurring_billing_interval: Number(durationForm.recurring_billing_interval) || 1,
-          recurring_billing_unit: durationForm.recurring_billing_unit,
-          auto_renew: durationForm.auto_renew,
-        }),
+        // #820: still the `(interval, unit)` pair the API and every assignment
+        // snapshot use — the single dropdown only decides which of the two
+        // pairs it is.
+        body: JSON.stringify(planBillingPolicyBody(durationForm.billing_frequency, durationForm.auto_renew)),
       });
       setDurationEditForPlanId(null);
       load();
@@ -792,7 +811,7 @@ export default function PlansPage() {
           </p>
           <p style={{ ...fieldDescStyle, margin: '0 0 12px' }}>
             {t('plans.default_billing_notice', {
-              billing: fmtBillingInterval(DEFAULT_BILLING_POLICY.recurring_billing_interval, DEFAULT_BILLING_POLICY.recurring_billing_unit),
+              billing: t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[DEFAULT_PLAN_BILLING_FREQUENCY].labelKey}` as any),
             })}
           </p>
           {inlineNew.error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{inlineNew.error}</p>}
@@ -1084,26 +1103,33 @@ export default function PlansPage() {
                         </div>
                         <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.desc_billing_duration')}</p>
                         {/* The cadence: how often the member is charged, which
-                            the durations do not say (stage 13). */}
+                            the durations do not say (stage 13). #820: one
+                            dropdown of the two cadences a gym bills on — the
+                            number box and the unit list are gone, and the pair
+                            they used to spell out is derived on save. */}
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                          <label htmlFor={`plan-${plan.id}-billing-interval`} style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t('plans.label_billing_frequency')}</label>
-                          <input
-                            id={`plan-${plan.id}-billing-interval`}
-                            type="number" min="1"
-                            value={durationForm.recurring_billing_interval}
-                            onChange={(e) => setDurationForm({ ...durationForm, recurring_billing_interval: e.target.value })}
-                            style={{ ...inlineInputStyle, width: 70 }}
-                          />
+                          <label htmlFor={`plan-${plan.id}-billing-frequency`} style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t('plans.label_billing_frequency')}</label>
                           <select
-                            aria-label={t('plans.label_billing_frequency')}
-                            value={durationForm.recurring_billing_unit}
-                            onChange={(e) => setDurationForm({ ...durationForm, recurring_billing_unit: e.target.value })}
+                            id={`plan-${plan.id}-billing-frequency`}
+                            value={durationForm.billing_frequency}
+                            onChange={(e) => setDurationForm({ ...durationForm, billing_frequency: e.target.value as PlanBillingFrequency })}
                             style={{ ...inlineSelectStyle, flex: 1 }}
                           >
-                            {BILLING_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                            {PLAN_BILLING_FREQUENCIES.map((freq) => (
+                              <option key={freq} value={freq}>{t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey}` as any)}</option>
+                            ))}
                           </select>
                         </div>
                         <div style={{ ...fieldDescStyle, marginLeft: 168, marginBottom: 10 }}>{t('plans.desc_recurring_billing')}</div>
+                        {/* A Plan configured before #820 may sit on a cadence
+                            neither option names. Saving this section moves it to
+                            the selected one, so it is said out loud rather than
+                            happening quietly behind an unchanged-looking form. */}
+                        {durationForm.legacy_cadence && (
+                          <div style={{ ...fieldDescStyle, marginLeft: 168, marginTop: -6, marginBottom: 10, color: '#8a6d1f' }}>
+                            {t('plans.billing_frequency_legacy_notice', { current: durationForm.legacy_cadence })}
+                          </div>
+                        )}
                         <div style={{ marginBottom: 10 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <input
@@ -1136,7 +1162,7 @@ export default function PlansPage() {
                           <>
                             <DetailRow
                               label={t('plans.label_billing_frequency')}
-                              value={`Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`}
+                              value={billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}
                               description={t('plans.desc_recurring_billing')}
                             />
                             <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} description={t('plans.desc_auto_renew')} />

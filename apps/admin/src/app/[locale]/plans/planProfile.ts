@@ -241,3 +241,78 @@ export const memberLimitChipStyle: CSSProperties = {
   background: '#eef0ff',
   color: '#4b45c6',
 };
+
+// ─── Billing frequency (#820) ─────────────────────────────────────────────────
+//
+// The Billing & Duration section used to configure the cadence with a number box
+// plus the whole `recurring_billing_unit` ENUM ("every 3 days", "every 2 years").
+// #820 replaces both controls with a single dropdown of the two cadences a gym
+// bills on — Month and 4 Weeks.
+//
+// What is stored does not change: the pair still goes to
+// `PUT /membership-plans/:id/billing-policy` as `recurring_billing_interval` +
+// `recurring_billing_unit`, which is what every assignment snapshots and what
+// `advanceBillingDate()` steps. The API is the enforcer
+// (`api/src/domain/planBillingFrequency.ts` — the same two pairs, rejected with
+// a 400 otherwise); this declaration is what the dropdown offers and how a
+// stored pair is read back, kept here rather than in the JSX so the option list,
+// the mapping and the labels are one testable thing.
+
+export const PLAN_BILLING_FREQUENCIES = ['month', 'four_weeks'] as const;
+
+export type PlanBillingFrequency = (typeof PLAN_BILLING_FREQUENCIES)[number];
+
+/** What each option stores, and the `plans.*` key that labels it. */
+export const PLAN_BILLING_FREQUENCY_OPTIONS: Record<
+  PlanBillingFrequency,
+  { interval: number; unit: string; labelKey: string }
+> = {
+  month: { interval: 1, unit: 'month', labelKey: 'billing_frequency_month' },
+  four_weeks: { interval: 4, unit: 'week', labelKey: 'billing_frequency_four_weeks' },
+};
+
+/** A new Plan is created monthly (`DEFAULT_BILLING_POLICY`). */
+export const DEFAULT_PLAN_BILLING_FREQUENCY: PlanBillingFrequency = 'month';
+
+/**
+ * Which option a stored pair is, or `null` for a cadence outside the two: a
+ * Plan configured before #820, or a row written straight into the database.
+ * `null` is deliberately not coerced to an option — the read-only row keeps
+ * showing what the Plan is really billed on ("Every 2 months"), and the editor
+ * says so instead of relabelling it.
+ */
+export function planBillingFrequencyOf(interval: unknown, unit: unknown): PlanBillingFrequency | null {
+  const n = Number(interval);
+  if (!Number.isInteger(n)) return null;
+  for (const freq of PLAN_BILLING_FREQUENCIES) {
+    const opt = PLAN_BILLING_FREQUENCY_OPTIONS[freq];
+    if (opt.interval === n && opt.unit === unit) return freq;
+  }
+  return null;
+}
+
+/** `{ interval, unit }` — what the choice stores. */
+export function planBillingFrequencyCadence(freq: PlanBillingFrequency): { interval: number; unit: string } {
+  const { interval, unit } = PLAN_BILLING_FREQUENCY_OPTIONS[freq];
+  return { interval, unit };
+}
+
+/**
+ * The `PUT /membership-plans/:id/billing-policy` body, built here rather than in
+ * the JSX so the section's Save and the default policy a new Plan is created
+ * with cannot spell the pair out differently (#800's rule: the payload belongs
+ * beside the form mapping).
+ */
+export function planBillingPolicyBody(freq: PlanBillingFrequency, autoRenew: boolean) {
+  const { interval, unit } = planBillingFrequencyCadence(freq);
+  return { recurring_billing_interval: interval, recurring_billing_unit: unit, auto_renew: autoRenew };
+}
+
+/**
+ * `Every 2 months` — the pre-#820 rendering, kept for a legacy cadence that no
+ * option matches. A matched pair is labelled by its option's key instead, so
+ * "Month" and "4 Weeks" read the same in the dropdown and in the read-only row.
+ */
+export function legacyBillingFrequencyText(interval: number, unit: string): string {
+  return `Every ${interval === 1 ? unit : `${interval} ${unit}s`}`;
+}
