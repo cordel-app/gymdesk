@@ -832,3 +832,101 @@ describe('translations', () => {
     expect(second[0].modified_at).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// #799: description + the audit actor snapshot the Details modal reads
+// ---------------------------------------------------------------------------
+
+describe('description and audit snapshot (#799)', () => {
+  async function createFood(body: Record<string, unknown>) {
+    const res = await request
+      .post('/platform/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ category_ids: [mainDishId], ...body });
+    if (res.status === 201) createdItemIds.push(res.body.id);
+    return res;
+  }
+
+  it('round-trips a description on create and update, trimmed', async () => {
+    const created = await createFood({ name: `Base described ${Date.now()}`, description: '  Lean red meat  ' });
+    expect(created.status).toBe(201);
+    expect(created.body.description).toBe('Lean red meat');
+
+    const updated = await request
+      .put(`/platform/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ description: 'Grass fed' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.description).toBe('Grass fed');
+  });
+
+  it('leaves the description alone when a PUT does not mention it, and clears it on an empty string', async () => {
+    const created = await createFood({ name: `Base keep desc ${Date.now()}`, description: 'Keep me' });
+    expect(created.status).toBe(201);
+
+    const renamed = await request
+      .put(`/platform/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: `Base keep desc renamed ${Date.now()}` });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.description).toBe('Keep me');
+
+    const cleared = await request
+      .put(`/platform/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ description: '   ' });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.description).toBeNull();
+  });
+
+  it('rejects a description longer than the column', async () => {
+    const res = await createFood({ name: `Base too long ${Date.now()}`, description: 'x'.repeat(1001) });
+    expect(res.status).toBe(400);
+  });
+
+  it('snapshots the superadmin who created the food, and the one who edits it', async () => {
+    const created = await createFood({ name: `Base actor ${Date.now()}` });
+    expect(created.status).toBe(201);
+    expect(created.body.created_by_name).toBe('Super Admin');
+    // A base food is administered outside any gym, so the actor is always a
+    // superadmin — there is no gym_memberships row to join to (migration 196).
+    expect(created.body.created_by_type).toBe('superadmin');
+    expect(created.body.modified_by_name).toBeNull();
+
+    const updated = await request
+      .put(`/platform/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ description: 'Edited' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.modified_by_name).toBe('Super Admin');
+    expect(updated.body.modified_by_type).toBe('superadmin');
+  });
+
+  it('records when and by whom a food was deleted', async () => {
+    const created = await createFood({ name: `Base deleted ${Date.now()}` });
+    expect(created.status).toBe(201);
+
+    const deleted = await request
+      .delete(`/platform/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(deleted.status).toBe(204);
+
+    // `status` stays the flag every query filters on; `deleted_at` records when.
+    const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by_name: string | null; deleted_by_type: string | null }>(
+      'SELECT status, deleted_at, deleted_by_name, deleted_by_type FROM nutrition_library_items WHERE id = ?',
+      [created.body.id],
+    );
+    expect(rows[0].status).toBe('deleted');
+    expect(rows[0].deleted_at).not.toBeNull();
+    expect(rows[0].deleted_by_name).toBe('Super Admin');
+    expect(rows[0].deleted_by_type).toBe('superadmin');
+
+    const list = await request
+      .get('/platform/nutrition-library?status=deleted&limit=100')
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(list.status).toBe(200);
+    const row = list.body.items.find((i: any) => i.id === created.body.id);
+    expect(row).toBeTruthy();
+    expect(row.deleted_by_name).toBe('Super Admin');
+  });
+});

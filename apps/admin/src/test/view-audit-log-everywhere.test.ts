@@ -21,16 +21,33 @@ const PAGES_DIR = join(SRC_DIR, 'app', '[locale]');
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
-function read(relative: string): string {
-  return readFileSync(join(PAGES_DIR, relative), 'utf-8');
+function read(relative: string, root: EntryRoot = 'pages'): string {
+  return readFileSync(join(root === 'pages' ? PAGES_DIR : SRC_DIR, relative), 'utf-8');
 }
+
+/**
+ * Where an entry's path is rooted: at `app/[locale]` for a page or a page-local
+ * modal, or at `src` for a Details view shared by more than one page.
+ */
+type EntryRoot = 'pages' | 'src';
 
 /**
  * Every Details view in the admin app, with the canonical audit entity type it
  * must deep-link by. Keep this list in step with the Details actions in the
  * context menus — a new entity with a Details view belongs here too.
  */
-const DETAILS_VIEWS: { file: string; entityType: string; platform?: true }[] = [
+const DETAILS_VIEWS: {
+  file: string;
+  entityType: string;
+  platform?: true;
+  root?: EntryRoot;
+  /**
+   * A Details view shared by a gym page and a platform one takes its scope as a
+   * prop, so the literal lives at the call site. The scope wiring of those pages
+   * is asserted separately — see 'the shared Nutrition Library Details modal …'.
+   */
+  scopeFromProp?: true;
+}[] = [
   { file: 'members/MemberDetailModal.tsx',                                entityType: 'member' },
   { file: 'plans/PlanDetailModal.tsx',                                    entityType: 'membership_plan' },
   { file: 'promotions/PromotionDetailModal.tsx',                          entityType: 'promotion' },
@@ -50,16 +67,17 @@ const DETAILS_VIEWS: { file: string; entityType: string; platform?: true }[] = [
   { file: 'payments/billing-events/page.tsx',                             entityType: 'billing_event' },
   { file: 'nutrition/nutrition-plans/page.tsx',                           entityType: 'member_nutrition_plan' },
   { file: 'nutrition/nutrition-plan-templates/page.tsx',                  entityType: 'nutrition_plan_template' },
-  { file: 'nutrition/nutrition-library/page.tsx',                         entityType: 'nutrition_library_item' },
   { file: 'system/gyms/page.tsx',                                         entityType: 'gym',                    platform: true },
   { file: 'cordel/payment-providers/page.tsx',                            entityType: 'payment_provider',       platform: true },
   { file: 'system/themes/page.tsx',                                       entityType: 'theme',                  platform: true },
-  { file: 'cordel/nutrition-library/page.tsx',                            entityType: 'nutrition_library_item', platform: true },
+  // #799: both Nutrition Libraries — the gym's and Cordel's Base one — open the
+  // same Details modal, which takes its Audit Log scope as a prop.
+  { file: 'components/nutritionLibrary/NutritionItemDetailsModal.tsx',     entityType: 'nutrition_library_item', root: 'src', scopeFromProp: true },
 ];
 
 describe('View Audit Log on every Details view (#675)', () => {
-  it.each(DETAILS_VIEWS)('$file offers View Audit Log for entity type "$entityType"', ({ file, entityType, platform }) => {
-    const src = read(file);
+  it.each(DETAILS_VIEWS)('$file offers View Audit Log for entity type "$entityType"', ({ file, entityType, platform, root, scopeFromProp }) => {
+    const src = read(file, root);
 
     expect(src, `${file} must import the shared component`)
       .toContain("from '@/components/ViewAuditLogButton'");
@@ -75,7 +93,10 @@ describe('View Audit Log on every Details view (#675)', () => {
     expect(usage!, `${file} must pass the record's own id as entityId`).toMatch(/entityId=\{[^}]*[Ii]d\b[^}]*\}/);
     expect(usage!, `${file} must not filter the Audit Log by name`).not.toMatch(/entityId=\{[^}]*[Nn]ame\b/);
 
-    if (platform) {
+    if (scopeFromProp) {
+      expect(usage!, `${file} is shared by a gym page and a platform one, so its scope is a prop`)
+        .toMatch(/scope=\{\w+\}/);
+    } else if (platform) {
       expect(usage!, `${file} administers a platform-level entity and must link to Cordel → Audit Log`)
         .toContain('scope="platform"');
     } else {
@@ -105,9 +126,25 @@ describe('View Audit Log on every Details view (#675)', () => {
     expect(component).toContain('cordel/audit');
 
     // No other Details view may hand-roll the deep link.
-    for (const { file } of DETAILS_VIEWS) {
-      expect(read(file), `${file} must not build the audit deep link itself`).not.toContain('entity_type=');
+    for (const { file, root } of DETAILS_VIEWS) {
+      expect(read(file, root), `${file} must not build the audit deep link itself`).not.toContain('entity_type=');
     }
+  });
+
+  it('the shared Nutrition Library Details modal is opened with the right scope by each library', () => {
+    // The modal is one implementation; which Audit Log it opens is the pages'
+    // decision, and getting it wrong would send a gym admin to a superadmin page.
+    const gym = read('nutrition/nutrition-library/page.tsx');
+    const cordel = read('cordel/nutrition-library/page.tsx');
+
+    for (const [name, src] of [['gym', gym], ['Cordel', cordel]] as const) {
+      expect(src, `the ${name} library must open the shared Details modal`)
+        .toContain('<NutritionItemDetailsModal');
+    }
+    expect(cordel, 'Cordel → Base Nutrition Library administers platform rows')
+      .toMatch(/<NutritionItemDetailsModal[^>]*scope="platform"/);
+    expect(gym, "a gym's library must not open the platform Audit Log")
+      .not.toMatch(/<NutritionItemDetailsModal[^>]*scope="platform"/);
   });
 
   it.each(LOCALE_CODES)('resolves the "View Audit Log" label in %s.json', (code) => {

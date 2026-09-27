@@ -35,6 +35,11 @@ const memberProxy = read(join(MEMBER_SRC, 'app', 'api', 'proxy', '[...path]', 'r
 const cordelPage = read(join(SRC, 'app', '[locale]', 'cordel', 'nutrition-library', 'page.tsx'));
 const gymPage = read(join(SRC, 'app', '[locale]', 'nutrition', 'nutrition-library', 'page.tsx'));
 const planTree = read(join(SRC, 'app', '[locale]', 'nutrition', 'nutrition-plan-templates', 'NutritionPlanTree.tsx'));
+// #799 moved the persisted-row → form-values mapping out of both pages and into
+// one shared module, so the "edit the base name" rule is asserted where it now
+// lives — and the pages are asserted to use it rather than seeding a form of
+// their own.
+const itemProfile = read(join(SRC, 'components', 'nutritionLibrary', 'nutritionItemProfile.ts'));
 
 describe('x-locale plumbing', () => {
   it('both API clients read the active locale and send it as x-locale', () => {
@@ -59,10 +64,14 @@ describe('x-locale plumbing', () => {
 });
 
 describe('base name vs. displayed name', () => {
-  it('the Cordel page edits the base name, never the localized one', () => {
-    // openInlineEdit must seed the form from `item.name`.
-    expect(cordelPage).toMatch(/setEditForm\(\{[\s\S]{0,200}name:\s*item\.name/);
-    expect(cordelPage).not.toMatch(/setEditForm\(\{[\s\S]{0,200}name:\s*item\.display_name/);
+  it('the shared mapping edits the base name, never the localized one', () => {
+    expect(itemProfile).toMatch(/toNutritionItemFormValues[\s\S]{0,400}name: item\.name/);
+    expect(itemProfile).not.toMatch(/toNutritionItemFormValues[\s\S]{0,400}name: item\.display_name/);
+  });
+
+  it('the Cordel page seeds its edit form through that mapping', () => {
+    expect(cordelPage).toContain('setEditForm(toNutritionItemFormValues(item))');
+    expect(cordelPage).not.toMatch(/setEditForm\(\{[\s\S]{0,200}name:\s*item\./);
   });
 
   it('the Cordel page submits a translations object on create and update', () => {
@@ -85,7 +94,8 @@ describe('base name vs. displayed name', () => {
   });
 
   it('the gym-facing edit form still round-trips the base name', () => {
-    expect(gymPage).toMatch(/setEditForm\(\{[\s\S]{0,260}name:\s*item\.name/);
+    expect(gymPage).toContain('setEditForm(toNutritionItemFormValues(item))');
+    expect(gymPage).not.toMatch(/setEditForm\(\{[\s\S]{0,260}name:\s*item\./);
   });
 
   it('the food pickers in the plan tree show the localized name', () => {

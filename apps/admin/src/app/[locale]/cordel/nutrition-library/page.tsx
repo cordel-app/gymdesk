@@ -6,35 +6,32 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
+import { NutritionItemReadOnlyView } from '@/components/nutritionLibrary/NutritionItemReadOnlyView';
+import { NutritionItemDetailsModal } from '@/components/nutritionLibrary/NutritionItemDetailsModal';
+import {
+  NutritionItemFormValues,
+  NutritionLibraryItemRow,
+  emptyNutritionItemForm,
+  toNutritionItemFormValues,
+} from '@/components/nutritionLibrary/nutritionItemProfile';
 import { btnStyle, btnSmall, cardSurfaceStyle } from '@/components/ui';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
 
-interface LibraryItem {
-  id: number;
-  /** Base (English) name — what this page authors and what uniqueness applies to. */
-  name: string;
-  /** `name` resolved into the viewer's locale; equals `name` when untranslated. */
-  display_name: string;
-  /** Per-locale names, keyed by locale (#643). Absent locales fall back to `name`. */
-  translations: Record<string, string>;
-  status: 'active' | 'deleted';
-  /**
-   * Cloudflare URL of this food's image, or null (#715). For a base food the
-   * object behind it lives in `cordel/nutrition/`; the column is the same
-   * one gym-owned items use, and the row's ownership is what decides the folder.
-   */
-  image_url: string | null;
-  created_at: string;
-  modified_at: string | null;
-  categories: Category[];
-  qualities: NutritionalQuality[];
-}
+/**
+ * A row as `GET /platform/nutrition-library` returns it. The field set — the
+ * description and the audit snapshot included — is declared once in
+ * `nutritionItemProfile.ts` and shared with the gym-facing library (#799 §26).
+ *
+ * `image_url` is the Cloudflare URL of this food's image, or null (#715): for a
+ * base food the object behind it lives in `cordel/nutrition/`, the column is the
+ * same one gym-owned items use, and the row's ownership decides the folder.
+ */
+type LibraryItem = NutritionLibraryItemRow;
 
 interface ListResponse {
   items: LibraryItem[];
@@ -49,16 +46,10 @@ interface LocalesResponse {
   translatable: string[];
 }
 
-interface EditForm {
-  name: string;
-  categoryIds: number[];
-  qualityIds: number[];
-  translations: Record<string, string>;
-}
+/** What `⋮ → Edit` manages — the shared declaration, not a second field list. */
+type EditForm = NutritionItemFormValues;
 
-function emptyEditForm(): EditForm {
-  return { name: '', categoryIds: [], qualityIds: [], translations: {} };
-}
+const emptyEditForm = emptyNutritionItemForm;
 
 const LOCALE_LABELS: Record<string, string> = {
   en: 'English',
@@ -117,6 +108,10 @@ export default function CordelNutritionLibraryPage() {
   const [qualityFilter, setQualityFilter] = useState<string[]>([]);
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  // `⋮ → Details` — the read-only modal (#799 §9). It renders the list row it is
+  // given, so nothing is fetched and nothing can disagree with the expanded card.
+  const [detailItem, setDetailItem] = useState<LibraryItem | null>(null);
 
   // Inline edit
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -213,6 +208,7 @@ export default function CordelNutritionLibraryPage() {
         method: 'POST',
         body: JSON.stringify({
           name: newForm.name.trim(),
+          description: newForm.description.trim(),
           category_ids: newForm.categoryIds,
           quality_ids: newForm.qualityIds,
           translations: trimmedTranslations(newForm.translations),
@@ -230,14 +226,11 @@ export default function CordelNutritionLibraryPage() {
 
   function openInlineEdit(item: LibraryItem) {
     setEditingId(item.id);
-    setEditForm({
-      // The base name, never `display_name` — editing in Spanish must not
-      // overwrite the English value the translations hang off (#643).
-      name: item.name,
-      categoryIds: item.categories.map((c) => c.id),
-      qualityIds: item.qualities.map((q) => q.id),
-      translations: { ...item.translations },
-    });
+    // The one persisted-row → form-values mapping, shared with the read-only
+    // view's field set (#799 §26). It seeds the base name, never `display_name` —
+    // editing in Spanish must not overwrite the English value the translations
+    // hang off (#643).
+    setEditForm(toNutritionItemFormValues(item));
     setEditError(null);
   }
 
@@ -255,6 +248,7 @@ export default function CordelNutritionLibraryPage() {
         method: 'PUT',
         body: JSON.stringify({
           name: editForm.name.trim(),
+          description: editForm.description.trim(),
           category_ids: editForm.categoryIds,
           quality_ids: editForm.qualityIds,
           translations: trimmedTranslations(editForm.translations),
@@ -376,6 +370,12 @@ export default function CordelNutritionLibraryPage() {
     onSave: () => void,
     saveLabel: string,
     autoFocusRef?: React.RefObject<HTMLInputElement>,
+    /**
+     * The food being edited, or null while creating one. The Media section needs
+     * it: `POST /platform/nutrition-library/:id/image` uploads against an existing
+     * row, so a food that does not exist yet has nothing to upload to.
+     */
+    item?: LibraryItem | null,
   ) {
     return (
       <div style={{ padding: '16px 20px' }}>
@@ -388,6 +388,16 @@ export default function CordelNutritionLibraryPage() {
             placeholder="e.g. Chicken"
             style={inlineInputStyle}
             autoFocus={!autoFocusRef}
+          />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={inlineLabelStyle}>Description</label>
+          <textarea
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Optional notes about this food"
+            rows={3}
+            style={{ ...inlineInputStyle, resize: 'vertical' }}
           />
         </div>
         {translatableLocales.length > 0 && (
@@ -419,6 +429,50 @@ export default function CordelNutritionLibraryPage() {
           <label style={inlineLabelStyle}>Nutritional Qualities</label>
           {renderCheckboxes(allQualities, form.qualityIds, (ids) => setForm({ ...form, qualityIds: ids }), qualityLabel)}
         </div>
+        {/* #799 §17: the image is uploaded and replaced here — the expanded card
+            shows it read-only. The upload posts against an existing row, so while
+            creating a food there is only the hint. */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={inlineLabelStyle}>Media</label>
+          {item ? (
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={imageFrameStyle}>
+                {item.image_url ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    // The key is deterministic, so a replacement reuses the
+                    // URL — `modified_at` busts the browser's cache.
+                    src={`${item.image_url}?v=${encodeURIComponent(item.modified_at ?? item.created_at)}`}
+                    alt={item.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                  />
+                ) : (
+                  <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>No image yet</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 220 }}>
+                <button
+                  type="button"
+                  onClick={() => openImagePicker(item)}
+                  disabled={uploadingId === item.id}
+                  style={btnSmall()}
+                >
+                  {uploadingId === item.id ? 'Uploading…' : 'Upload Image'}
+                </button>
+                <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
+                  Upload a {IMAGE_SIZE}×{IMAGE_SIZE} PNG image with a transparent background.
+                </p>
+                {imageError?.id === item.id && (
+                  <p style={{ margin: 0, fontSize: 12.5, color: '#c0392b' }}>{imageError.message}</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
+              Create the food first, then upload its {IMAGE_SIZE}×{IMAGE_SIZE} PNG image from Edit.
+            </p>
+          )}
+        </div>
         {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{error}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} style={btnSmall('#888')}>Cancel</button>
@@ -449,13 +503,21 @@ export default function CordelNutritionLibraryPage() {
     { header: 'Status', width: 100, render: (item) => <StatusBadge status={item.status} label={item.status} /> },
     {
       header: '', width: 40,
-      render: (item) => item.status !== 'deleted' ? (
+      // #799 §8: Details is the read-only modal (audit information), Edit the form.
+      // Expanding the row is a third, separate interaction.
+      //
+      // A deleted food keeps Details — that is where Deleted At / Deleted By are
+      // shown (§13), and it is the one item whose deletion there is something to
+      // read. Edit and Delete stay hidden for it, as they were.
+      render: (item) => (
         <ContextMenu items={[
-          { label: 'Details', onClick: () => toggleExpand(item.id) },
-          { label: 'Edit', onClick: () => openInlineEdit(item) },
-          { label: 'Delete', danger: true, onClick: () => setDeleting(item) },
+          { label: 'Details', onClick: () => setDetailItem(item) },
+          ...(item.status !== 'deleted' ? [
+            { label: 'Edit', onClick: () => openInlineEdit(item) },
+            { label: 'Delete', danger: true, onClick: () => setDeleting(item) },
+          ] : []),
         ]} />
-      ) : null,
+      ),
     },
   ];
 
@@ -509,54 +571,17 @@ export default function CordelNutritionLibraryPage() {
         emptyText="No food items match your filters."
         renderExpanded={(item) => (
           editingId === item.id ? (
-            renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), 'Save')
+            renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), 'Save', undefined, item)
           ) : (
-            <div style={{ padding: '12px 20px', fontSize: 13.5, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {/* #715 — the food's image, shown only on the expanded card. The
-                  collapsed row keeps its compact presentation. */}
-              <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 6, flexWrap: 'wrap' }}>
-                <div style={imageFrameStyle}>
-                  {item.image_url ? (
-                    <img
-                      // The key is deterministic, so a replacement reuses the
-                      // URL — `modified_at` busts the browser's cache.
-                      src={`${item.image_url}?v=${encodeURIComponent(item.modified_at ?? item.created_at)}`}
-                      alt={item.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-                    />
-                  ) : (
-                    <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>No image yet</span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 220 }}>
-                  <button
-                    onClick={() => openImagePicker(item)}
-                    disabled={uploadingId === item.id}
-                    style={btnSmall()}
-                  >
-                    {uploadingId === item.id ? 'Uploading…' : 'Upload Image'}
-                  </button>
-                  <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
-                    Upload a {IMAGE_SIZE}×{IMAGE_SIZE} PNG image with a transparent background.
-                  </p>
-                  {imageError?.id === item.id && (
-                    <p style={{ margin: 0, fontSize: 12.5, color: '#c0392b' }}>{imageError.message}</p>
-                  )}
-                </div>
-              </div>
-              {translatableLocales.map((loc) => (
-                <DetailRow key={loc} label={localeLabel(loc)} value={item.translations[loc] ?? `${item.name} (untranslated)`} />
-              ))}
-              <DetailRow label="Categories" value={item.categories.length > 0 ? item.categories.map((c) => categoryLabel(c.slug)).join(', ') : '—'} />
-              <DetailRow label="Qualities" value={item.qualities.length > 0 ? item.qualities.map((q) => qualityLabel(q.slug)).join(', ') : 'None'} />
-              <DetailRow label="Status" value={item.status} />
-              <DetailRow label="Created At" value={new Date(item.created_at).toLocaleString()} />
-              <DetailRow label="Modified At" value={item.modified_at ? new Date(item.modified_at).toLocaleString() : '—'} />
-              {/* #675: same deep link every Details view offers — filtered to this item. */}
-              <div style={{ marginTop: 6 }}>
-                <ViewAuditLogButton entityType="nutrition_library_item" entityId={item.id} scope="platform" size="small" />
-              </div>
-            </div>
+            /* #799 §1–§7: expanding reads. The complete food, strictly read-only,
+               with no image control and no Edit affordance — `⋮ → Edit` is the only
+               way in. Audit information lives in `⋮ → Details`, not here. */
+            <NutritionItemReadOnlyView
+              item={item}
+              allCategories={allCategories}
+              allQualities={allQualities}
+              locales={translatableLocales}
+            />
           )
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
@@ -579,6 +604,10 @@ export default function CordelNutritionLibraryPage() {
         onChange={handleImageSelected}
         style={{ display: 'none' }}
       />
+
+      {detailItem && (
+        <NutritionItemDetailsModal item={detailItem} scope="platform" onClose={() => setDetailItem(null)} />
+      )}
 
       <ConfirmDialog
         open={deleting !== null}
@@ -630,15 +659,6 @@ async function readImageDimensions(file: File): Promise<{ width: number; height:
   } finally {
     URL.revokeObjectURL(url);
   }
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', gap: 10 }}>
-      <span style={{ width: 120, flexShrink: 0, color: '#888' }}>{label}</span>
-      <span>{value}</span>
-    </div>
-  );
 }
 
 /**

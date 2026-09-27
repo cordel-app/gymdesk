@@ -333,3 +333,85 @@ export function buildListWhere(
 
   return { where: where.join(' AND '), params };
 }
+
+/* ── Description + actor snapshot (#799) ─────────────────────────────────── */
+
+/** The actor pairs migration 196 added, in the order responses carry them. */
+const ACTOR_COLUMNS = [
+  'created_by_name', 'created_by_type',
+  'modified_by_name', 'modified_by_type',
+  'deleted_by_name', 'deleted_by_type',
+];
+
+/**
+ * The columns every item-shaped response carries beyond `id/name/status/
+ * image_url/created_at/modified_at`, declared once so the gym and platform
+ * routers cannot answer with different shapes (#799 §26). `description`,
+ * `deleted_at` and the three actor pairs come from migration 196.
+ *
+ * `maskPlatformActors` nulls the actor names on the **system** rows
+ * (`gym_id IS NULL`) the gym-facing list returns alongside a gym's own. Those
+ * rows are administered from Cordel, so their actor is a Cordel employee: the
+ * catalogue is deliberately shared, their name is not. The column is still
+ * present and still keyed the same way, so the Details modal renders its em dash
+ * and needs no rule of its own (`created_at` is not masked — a date names nobody).
+ *
+ * @param alias table alias of `nutrition_library_items` in the enclosing query
+ */
+export function itemDetailColumnsSql(
+  alias: string,
+  { maskPlatformActors = false }: { maskPlatformActors?: boolean } = {},
+): string {
+  const actors = ACTOR_COLUMNS.map((column) => (
+    maskPlatformActors
+      ? `CASE WHEN ${alias}.gym_id IS NULL THEN NULL ELSE ${alias}.${column} END AS ${column}`
+      : `${alias}.${column}`
+  ));
+  return [`${alias}.description`, ...actors.slice(0, 4), `${alias}.deleted_at`, ...actors.slice(4)].join(', ');
+}
+
+/** `nutrition_library_items.description` is VARCHAR(1000) (migration 196). */
+export const DESCRIPTION_MAX_LENGTH = 1000;
+
+/**
+ * The value to store for a submitted `description`, or an error.
+ *
+ * `undefined` means the request did not mention the field, so the column is left
+ * alone — that is what lets `PUT` stay a partial update. An empty or
+ * whitespace-only string means "no description" and is stored as NULL rather
+ * than `''`, so a read never has to distinguish the two.
+ */
+export function normalizeDescription(
+  input: unknown,
+): { value: string | null | undefined } | { error: string } {
+  if (input === undefined) return { value: undefined };
+  if (input === null) return { value: null };
+  if (typeof input !== 'string') return { error: 'description must be a string' };
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return { value: null };
+  if (trimmed.length > DESCRIPTION_MAX_LENGTH) {
+    return { error: `description must be at most ${DESCRIPTION_MAX_LENGTH} characters` };
+  }
+  return { value: trimmed };
+}
+
+/** What `*_by_type` may hold — the CHECKs migration 196 adds. */
+export type ActorType = 'staff' | 'superadmin';
+
+export interface ActorSnapshot {
+  name: string | null;
+  type: ActorType;
+}
+
+/**
+ * The actor pair to write on a create / update / delete.
+ *
+ * The name is snapshotted rather than joined because the actor who administers a
+ * base food is a superadmin, who has no `gym_memberships` row to point at — the
+ * same reason `tax_rates.created_by_name` (migration 126) exists. An empty name
+ * is stored as NULL so a read renders the em dash rather than `''`.
+ */
+export function actorSnapshot(actor: { name?: string | null; isSuperadmin: boolean }): ActorSnapshot {
+  const name = actor.name?.trim();
+  return { name: name ? name : null, type: actor.isSuperadmin ? 'superadmin' : 'staff' };
+}
