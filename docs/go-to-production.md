@@ -174,6 +174,14 @@ Tick items off in the PR that completes them.
       `Themes/<theme_id>-<name>/Members/` since #725. Before deleting `Branding/Logo/logo.*` on a
       gym, check no `themes.logo_object_key` still points at it — a row written before #824 keeps
       its legacy key and renders from it until its logo is replaced.
+- [ ] **Initialize the folders of Themes that predate #827** (#828). Creating a Custom Theme has written its
+      `Themes/<theme_id>-<name>/` folder with its `Logo/` and `Members/` leaves only since #827, and a Theme
+      renamed since then has its markers under the old name. `⋮ → Initialize bucket` on the Themes page (and on
+      Cordel → Base Themes for a Base Theme) writes them for one Theme, idempotently and without touching a
+      file or the Theme row. Nothing breaks without it — an upload creates the parents it needs — so this is
+      the same "the R2 browser shows the same tree for every Theme" housekeeping as the gym-level item above.
+      It does not initialize the gym bucket: a gym with no `storage_folder_prefix` answers 409 and needs
+      **Initialize Cloudflare Bucket** on Cordel → Gyms first.
 - [ ] **Sweep the Members image objects of themes that were renamed or deleted** (#725). Remove clears the
       row and deliberately leaves the object (the ticket requires it), and a theme renamed between two
       uploads leaves its old folder behind — the next upload sweeps that one object best-effort, nothing

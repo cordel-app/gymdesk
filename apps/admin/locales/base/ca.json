@@ -814,7 +814,10 @@
     "storage_stage_remove_logo": "Eliminar el logotip",
     "storage_stage_upload_members_image": "Pujar la imatge de Members",
     "storage_stage_remove_members_image": "Eliminar la imatge de Members",
-    "storage_stage_save_settings": "Desar la configuració del tema"
+    "storage_stage_save_settings": "Desar la configuració del tema",
+    "action_initialize_bucket": "Inicialitzar bucket",
+    "toast_bucket_initialized": "Bucket inicialitzat correctament.",
+    "storage_error_title_initialize_bucket": "No s’ha pogut inicialitzar el bucket del tema."
   },
   "orphaned_accounts": {
     "title": "Comptes orfes",
@@ -2396,7 +2399,12 @@
     "storage_stage_remove_logo": "Eliminar el logotip",
     "storage_stage_upload_members_image": "Pujar la imatge de Members",
     "storage_stage_remove_members_image": "Eliminar la imatge de Members",
-    "storage_stage_save_settings": "Desar la configuració del tema"
+    "storage_stage_save_settings": "Desar la configuració del tema",
+    "action_initialize_bucket": "Inicialitzar bucket",
+    "toast_bucket_initialized": "Bucket inicialitzat correctament.",
+    "storage_error_title_initialize_bucket": "No s’ha pogut inicialitzar el bucket del tema.",
+    "initialize_bucket_not_configured": "L’emmagatzematge de Cloudflare no està configurat en aquesta instal·lació, per tant no es poden crear les carpetes del tema.",
+    "initialize_bucket_not_initialized": "L’emmagatzematge de Cloudflare no s’ha inicialitzat per a aquest gimnàs. Inicialitza el bucket de Cloudflare abans d’inicialitzar les carpetes d’un tema."
   },
   "weekday": {
     "0": "Diumenge",

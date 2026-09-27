@@ -16,6 +16,8 @@ import {
   themeMemberFolderKeys,
   type MemberImageRow,
 } from '../domain/themeMemberImages';
+import { themeStorageFolderKeys } from '../domain/themeFolders';
+import { themeFolderStageForKey } from '../domain/storageFailureStage';
 import { loadPlatformMemberImagesByTheme } from './theme-member-images';
 import {
   deleteStorageObject,
@@ -484,6 +486,72 @@ themesRouter.delete('/:id/members-images/:slot', requireSuperadmin, async (req, 
     [theme.id],
   );
   res.json(shapeTheme(rows[0], await loadThemeMemberImages(theme.id)));
+});
+
+// ─── Initialize a Base Theme's Cloudflare storage structure (#828) ────────────
+
+/**
+ * Creates (or re-creates) the folders a Base Theme's own assets live in:
+ * `cordel/Themes/<theme_id>-<sanitized name>/` with its `Logo/` and `Members/`
+ * leaves. The same three markers a Custom Theme gets (#827), off
+ * `PLATFORM_STORAGE_ROOT` rather than a gym's prefix, because a Base Theme is a
+ * `gym_id IS NULL` row with no `storage_folder_prefix` to hang off.
+ *
+ * There is no `409` counterpart to the Custom Theme route's: the platform folder
+ * is a constant, not a per-gym row, so no gym's bucket gates it and nothing has
+ * to have been initialized first. A `503` for a deployment with no R2 is still
+ * possible, and an R2 failure is a `502` naming the marker that broke.
+ *
+ * Idempotent (§3), and creation-time initialization deliberately has no
+ * counterpart here: `POST /platform/themes` writes no folders (a Base Theme is
+ * governed by no gym's bucket), so this manual action is the only way its tree
+ * exists before the first upload — which creates its own leaf on demand either
+ * way. Nothing here deletes or overwrites an object, and nothing writes to
+ * `themes`.
+ */
+themesRouter.post('/:id/storage/initialize', requireSuperadmin, async (req, res) => {
+  if (!isStorageConfigured()) {
+    const missingConfig = getMissingStorageConfigKeys();
+    return res.status(503).json({
+      error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+      stage: 'resolve_path',
+      missingConfig,
+      diagnostics: getStorageDiagnostics(),
+    });
+  }
+
+  // A Custom Theme is simply 404 here, whoever asks: its objects live in its
+  // gym's own folder and are initialized by
+  // `POST /system/themes/:id/storage/initialize`.
+  const theme = await resolveWritableBaseTheme(req.params.id as string, res);
+  if (!theme) return;
+
+  const folders = themeStorageFolderKeys(PLATFORM_STORAGE_ROOT, theme.id, theme.name);
+  try {
+    await ensureStorageFolders(folders);
+  } catch (err: any) {
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'ensureStorageFolders', key: folders[0] });
+    logger.error(
+      { err, details, diagnostics: getStorageDiagnostics(), themeId: theme.id },
+      'Cloudflare R2 base theme folder creation failed',
+    );
+    return res.status(502).json({
+      error: `Failed to create the theme storage folders: ${details.message}`,
+      stage: themeFolderStageForKey(details.key, folders),
+      path: details.key ?? folders[0],
+      details,
+    });
+  }
+
+  recordAudit(req, {
+    action: 'initialize_storage',
+    entityType: 'theme',
+    entityId: theme.id,
+    next: { folders },
+  });
+  res.json({ initialized: true, folders });
 });
 
 // ─── Clone a base theme into a new base theme ────────────────────────────────

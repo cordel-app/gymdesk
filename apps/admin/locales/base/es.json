@@ -813,7 +813,10 @@
     "storage_stage_remove_logo": "Eliminar el logotipo",
     "storage_stage_upload_members_image": "Subir la imagen de Members",
     "storage_stage_remove_members_image": "Eliminar la imagen de Members",
-    "storage_stage_save_settings": "Guardar la configuración del tema"
+    "storage_stage_save_settings": "Guardar la configuración del tema",
+    "action_initialize_bucket": "Inicializar bucket",
+    "toast_bucket_initialized": "Bucket inicializado correctamente.",
+    "storage_error_title_initialize_bucket": "No se ha podido inicializar el bucket del tema."
   },
   "orphaned_accounts": {
     "title": "Cuentas huérfanas",
@@ -2369,7 +2372,12 @@
     "storage_stage_remove_logo": "Eliminar el logotipo",
     "storage_stage_upload_members_image": "Subir la imagen de Members",
     "storage_stage_remove_members_image": "Eliminar la imagen de Members",
-    "storage_stage_save_settings": "Guardar la configuración del tema"
+    "storage_stage_save_settings": "Guardar la configuración del tema",
+    "action_initialize_bucket": "Inicializar bucket",
+    "toast_bucket_initialized": "Bucket inicializado correctamente.",
+    "storage_error_title_initialize_bucket": "No se ha podido inicializar el bucket del tema.",
+    "initialize_bucket_not_configured": "El almacenamiento de Cloudflare no está configurado en esta instalación, por lo que no se pueden crear las carpetas del tema.",
+    "initialize_bucket_not_initialized": "El almacenamiento de Cloudflare no se ha inicializado para este gimnasio. Inicializa el bucket de Cloudflare antes de inicializar las carpetas de un tema."
   },
   "weekday": {
     "0": "Domingo",

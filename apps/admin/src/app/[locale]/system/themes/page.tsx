@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
-import { formatStorageError, type StorageErrorLike } from '@/lib/storageErrorMessage';
+import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
 import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
@@ -169,6 +169,9 @@ export default function ThemesPage() {
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   const [deleting, setDeleting] = useState<Theme | null>(null);
+  // #828: the Theme whose bucket initialization is in flight, so the menu item
+  // cannot be fired twice while R2 is being written to.
+  const [initializingBucketId, setInitializingBucketId] = useState<string | null>(null);
   const [detailsTheme, setDetailsTheme] = useState<ThemeDetail | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
@@ -215,6 +218,44 @@ export default function ThemesPage() {
       details: t('storage_error_details'),
       operationName: t(`storage_stage_${stage}`),
     });
+  }
+
+  /** The same diagnostic on one line, for a failure reported as a toast (#828). */
+  function storageErrorLine(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
+    const stage = err.body?.stage ?? fallbackStage;
+    return formatStorageErrorLine(err, {
+      title: t(titleKey),
+      operation: t('storage_error_operation'),
+      path: t('storage_error_path'),
+      error: t('storage_error_error'),
+      details: t('storage_error_details'),
+      operationName: t(`storage_stage_${stage}`),
+    });
+  }
+
+  // ─── Initialize bucket (#828) ──────────────────────────────────────────────
+
+  /**
+   * Writes this Base Theme's own folder tree — `cordel/Themes/<id>-<name>/` with
+   * its `Logo/` and `Members/` leaves — into the platform's Cloudflare folder.
+   * Explicitly repeatable: the markers are zero-byte objects, so a second run
+   * only ensures the structure exists and touches no file and no Theme field.
+   *
+   * No storage gating on this screen: a Base Theme's objects live under the
+   * platform root, which no gym's bucket settings govern (#823), so the only
+   * failure the admin can meet is the deployment having no R2 at all — which the
+   * route answers with the 503 the toast then names.
+   */
+  async function handleInitializeBucket(theme: Theme) {
+    setInitializingBucketId(theme.id);
+    try {
+      await apiFetch(`/platform/themes/${theme.id}/storage/initialize`, { method: 'POST' });
+      toast(t('toast_bucket_initialized'), 'success');
+    } catch (err: any) {
+      toast(storageErrorLine(err, 'storage_error_title_initialize_bucket', 'create_theme_folder'));
+    } finally {
+      setInitializingBucketId(null);
+    }
   }
 
   async function uploadLogo(themeId: string) {
@@ -703,6 +744,13 @@ export default function ThemesPage() {
           items.push({ label: t('action_set_system_default'), onClick: () => handleSetSystemDefault(th) });
         }
         if (th.status !== 'deleted') {
+          // #828: the Base Theme's own storage structure, manually and
+          // repeatably — `cordel/Themes/<id>-<name>/` with its two leaves.
+          items.push({
+            label: t('action_initialize_bucket'),
+            onClick: () => handleInitializeBucket(th),
+            disabled: initializingBucketId === th.id,
+          });
           items.push({ label: t('delete'), onClick: () => setDeleting(th), danger: true });
         }
         return <ContextMenu items={items} ariaLabel={t('col_actions')} />;
