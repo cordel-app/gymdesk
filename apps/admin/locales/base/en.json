@@ -2081,6 +2081,7 @@
     "section_contact": "Contact Information",
     "section_location": "Location",
     "section_theme": "Theme",
+    "section_settings": "Settings",
     "theme_inherited_suffix": "(Inherited)",
     "theme_none": "— No theme —",
     "restore_inheritance": "Restore inheritance",
