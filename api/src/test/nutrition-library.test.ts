@@ -475,3 +475,129 @@ describe('nutritional qualities of the system library (#644)', () => {
     expect(item.qualities.map((q: any) => q.slug)).toContain('fat');
   });
 });
+
+// ---------------------------------------------------------------------------
+// #799: description + the audit actor snapshot the Details modal reads
+// ---------------------------------------------------------------------------
+
+describe('description and audit snapshot (#799)', () => {
+  it('round-trips a description on create, and returns it on the list row', async () => {
+    const name = `Described ${Date.now()}`;
+    const created = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name, description: '  Lean red meat  ', category_ids: [mainDishId] });
+    expect(created.status).toBe(201);
+    // Stored trimmed, so a read never has to.
+    expect(created.body.description).toBe('Lean red meat');
+
+    const list = await request
+      .get(`/nutrition-library?search=${encodeURIComponent(name)}&limit=10`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    const row = list.body.items.find((i: any) => i.name === name);
+    expect(row.description).toBe('Lean red meat');
+  });
+
+  it('stores a blank description as null rather than an empty string', async () => {
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Blank desc ${Date.now()}`, description: '   ', category_ids: [sideId] });
+    expect(res.status).toBe(201);
+    expect(res.body.description).toBeNull();
+  });
+
+  it('leaves the description untouched when a PUT does not mention it', async () => {
+    const created = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Keep desc ${Date.now()}`, description: 'Keep me', category_ids: [sideId] });
+    expect(created.status).toBe(201);
+
+    const renamed = await request
+      .put(`/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Keep desc renamed ${Date.now()}`, category_ids: [sideId] });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.description).toBe('Keep me');
+  });
+
+  it('clears the description when an empty string is submitted', async () => {
+    const created = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Clear desc ${Date.now()}`, description: 'Temporary', category_ids: [sideId] });
+    expect(created.status).toBe(201);
+
+    const cleared = await request
+      .put(`/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ description: '' });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.description).toBeNull();
+  });
+
+  it('rejects a description longer than the column, and a non-string one', async () => {
+    const tooLong = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Too long ${Date.now()}`, description: 'x'.repeat(1001), category_ids: [sideId] });
+    expect(tooLong.status).toBe(400);
+
+    const notAString = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Not a string ${Date.now()}`, description: { nope: true }, category_ids: [sideId] });
+    expect(notAString.status).toBe(400);
+  });
+
+  it('snapshots the creating actor, and the modifying one on the next edit', async () => {
+    const created = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Actor ${Date.now()}`, category_ids: [sideId] });
+    expect(created.status).toBe(201);
+    // The name is snapshotted, not joined: a superadmin acting directly has no
+    // gym_memberships row to point at (migration 196).
+    expect(created.body.created_by_name).toBe('Test User');
+    expect(created.body.created_by_type).toBe('staff');
+    expect(created.body.modified_by_name).toBeNull();
+    expect(created.body.deleted_at).toBeNull();
+    expect(created.body.deleted_by_name).toBeNull();
+
+    const updated = await request
+      .put(`/nutrition-library/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ description: 'Edited' });
+    expect(updated.status).toBe(200);
+    expect(updated.body.created_by_name).toBe('Test User');
+    expect(updated.body.modified_by_name).toBe('Test User');
+    expect(updated.body.modified_by_type).toBe('staff');
+    expect(updated.body.modified_at).not.toBeNull();
+  });
+
+  it('serves the audit columns for a system item too, so both libraries read the same shape', async () => {
+    const res = await request
+      .get(`/nutrition-library?search=${encodeURIComponent('NL Test Chicken')}&limit=10`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const row = res.body.items.find((i: any) => i.name === 'NL Test Chicken');
+    expect(row).toBeTruthy();
+    for (const key of ['description', 'created_by_name', 'created_by_type', 'modified_by_name', 'modified_by_type', 'deleted_at', 'deleted_by_name', 'deleted_by_type']) {
+      expect(row, `the list row must carry ${key}`).toHaveProperty(key);
+    }
+  });
+});

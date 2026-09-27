@@ -333,3 +333,68 @@ export function buildListWhere(
 
   return { where: where.join(' AND '), params };
 }
+
+/* ── Description + actor snapshot (#799) ─────────────────────────────────── */
+
+/**
+ * The columns every item-shaped response carries beyond `id/name/status/
+ * image_url/created_at/modified_at`, declared once so the gym and platform
+ * routers cannot answer with different shapes (#799 §26). `description` and the
+ * three actor pairs come from migration 196.
+ *
+ * @param alias table alias of `nutrition_library_items` in the enclosing query
+ */
+export function itemDetailColumnsSql(alias: string): string {
+  return [
+    'description',
+    'created_by_name', 'created_by_type',
+    'modified_by_name', 'modified_by_type',
+    'deleted_at', 'deleted_by_name', 'deleted_by_type',
+  ].map((column) => `${alias}.${column}`).join(', ');
+}
+
+/** `nutrition_library_items.description` is VARCHAR(1000) (migration 196). */
+export const DESCRIPTION_MAX_LENGTH = 1000;
+
+/**
+ * The value to store for a submitted `description`, or an error.
+ *
+ * `undefined` means the request did not mention the field, so the column is left
+ * alone — that is what lets `PUT` stay a partial update. An empty or
+ * whitespace-only string means "no description" and is stored as NULL rather
+ * than `''`, so a read never has to distinguish the two.
+ */
+export function normalizeDescription(
+  input: unknown,
+): { value: string | null | undefined } | { error: string } {
+  if (input === undefined) return { value: undefined };
+  if (input === null) return { value: null };
+  if (typeof input !== 'string') return { error: 'description must be a string' };
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return { value: null };
+  if (trimmed.length > DESCRIPTION_MAX_LENGTH) {
+    return { error: `description must be at most ${DESCRIPTION_MAX_LENGTH} characters` };
+  }
+  return { value: trimmed };
+}
+
+/** What `*_by_type` may hold — the CHECKs migration 196 adds. */
+export type ActorType = 'staff' | 'superadmin';
+
+export interface ActorSnapshot {
+  name: string | null;
+  type: ActorType;
+}
+
+/**
+ * The actor pair to write on a create / update / delete.
+ *
+ * The name is snapshotted rather than joined because the actor who administers a
+ * base food is a superadmin, who has no `gym_memberships` row to point at — the
+ * same reason `tax_rates.created_by_name` (migration 126) exists. An empty name
+ * is stored as NULL so a read renders the em dash rather than `''`.
+ */
+export function actorSnapshot(actor: { name?: string | null; isSuperadmin: boolean }): ActorSnapshot {
+  const name = actor.name?.trim();
+  return { name: name ? name : null, type: actor.isSuperadmin ? 'superadmin' : 'staff' };
+}

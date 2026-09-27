@@ -423,6 +423,43 @@ Reference implementation: the `PROFILE` section of
 whole card, which has had its own editing controls since long before the
 ticket.
 
+**When the same entity is administered from two pages (#799).** The Nutrition
+Library exists twice — a gym's (`[locale]/nutrition/nutrition-library/`) and
+Cordel's Base one (`[locale]/cordel/nutrition-library/`) — and both got this
+pattern at once. Four additions:
+
+8. **The shared declaration moves up, not sideways.** With two pages the field
+   module and the read-only view live in
+   `components/nutritionLibrary/` rather than beside one of them
+   (`nutritionItemProfile.ts` + `NutritionItemReadOnlyView.tsx` +
+   `NutritionItemDetailsModal.tsx`). Each page keeps its own Edit form — the
+   platform one authors translations, the gym one uploads through
+   `ImageUploadField` — but neither restates the row's columns: both write
+   `type LibraryItem = NutritionLibraryItemRow`.
+9. **A shared Details modal takes the Audit Log `scope` as a prop**, and the
+   page supplies it (`scope="platform"` from Cordel). `ViewAuditLogButton` is
+   still rendered once, inside the modal, so `view-audit-log-everywhere.test.ts`
+   registers the modal rather than the two pages and asserts the scope wiring
+   separately.
+10. **`⋮ → Details` carries the audit information; the expanded row carries the
+    entity.** The deep link and the Created/Modified/Deleted By pairs belong in
+    the modal — not in the expanded card, and never in the Edit form. A
+    soft-deleted row keeps its `Details` entry even when Edit and Delete are
+    hidden, because that is the one row whose deletion there is something to
+    read.
+11. **A "show the whole catalogue, assigned ones highlighted" section is a span,
+    not a disabled checkbox.** The read-only view reuses the Edit form's
+    selected colours through one exported style helper
+    (`taxonomyChipStyle(assigned)`), so the two screens read as the same
+    control while only one of them can be clicked. A disabled `<input>` would
+    both fail the "no writing control" rule and look like something broken.
+
+Displaying an actor ("Created By") needs a column to read: see
+`docs/architecture.md`'s Nutrition Library row and migration 196 for the
+snapshot-at-write-time convention (`*_by_name` + `*_by_type`), which is what
+tables with no actor FK use — a superadmin has no `gym_memberships` row to join
+to.
+
 ---
 
 ## Section-Scoped Inline Editing (#627)

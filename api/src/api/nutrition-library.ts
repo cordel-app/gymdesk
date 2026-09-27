@@ -7,10 +7,20 @@ import {
   loadQualitiesMap, replaceQualities, validateQualityIds,
   loadTranslationsMap, localizedNameSql,
   buildListWhere, clampLimit, clampOffset,
+  actorSnapshot, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
 import { getRequestLocale } from '../infra/locale';
 
 export const nutritionLibraryRouter = Router();
+
+/**
+ * The columns every item-shaped response returns. `description` and the actor /
+ * deletion snapshot (#799, migration 196) are part of it: the Details modal is
+ * fed by the list row rather than by a second endpoint, so what it shows has to
+ * come back here (#799 §25).
+ */
+const ITEM_COLUMNS = `nli.id, nli.gym_id, nli.name, nli.status, nli.image_url,
+  nli.created_at, nli.modified_at, ${itemDetailColumnsSql('nli')}`;
 
 /* ── Categories catalogue (read-only) ────────────────────────────────────── */
 
@@ -61,8 +71,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
     // and what uniqueness is enforced on. `display_name` is the same item in the
     // caller's locale, and is what every UI renders (#643).
     const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; display_name: string; status: string; image_url: string | null; created_at: string; modified_at: string | null }>(
-      `SELECT nli.id, nli.gym_id, nli.name, ${localizedNameSql('nli', locale)} AS display_name,
-              nli.status, nli.image_url, nli.created_at, nli.modified_at
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', locale)} AS display_name
        FROM nutrition_library_items nli
        WHERE ${where}
        ORDER BY display_name ASC
@@ -91,7 +100,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
 /* ── Create (gym-owned items only) ───────────────────────────────────────── */
 
 nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
   const { name, category_ids, quality_ids, image_url } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   const catErr = await validateCategoryIds(category_ids);
@@ -100,6 +109,9 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     const err = await validateQualityIds(quality_ids);
     if (err) return res.status(400).json(err);
   }
+  const description = normalizeDescription(req.body.description);
+  if ('error' in description) return res.status(400).json({ error: description.error });
+  const actor = actorSnapshot({ name: actorName, isSuperadmin });
   try {
     const { rows: existing } = await db.query(
       "SELECT id FROM nutrition_library_items WHERE gym_id = ? AND name = ? AND status != 'deleted'",
@@ -108,8 +120,10 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     if (existing.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
 
     const { insertId } = await db.query(
-      "INSERT INTO nutrition_library_items (gym_id, name, image_url, status) VALUES (?, ?, ?, 'active')",
-      [gymId, name.trim(), image_url ?? null],
+      `INSERT INTO nutrition_library_items
+         (gym_id, name, description, image_url, status, created_by_name, created_by_type)
+       VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+      [gymId, name.trim(), description.value ?? null, image_url ?? null, actor.name, actor.type],
     );
 
     await replaceCategories(insertId, category_ids);
@@ -118,8 +132,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     }
 
     const { rows } = await db.query(
-      `SELECT nli.id, nli.gym_id, nli.name, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name,
-              nli.status, nli.image_url, nli.created_at, nli.modified_at
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name
        FROM nutrition_library_items nli WHERE nli.id = ?`,
       [insertId],
     );
@@ -135,7 +148,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
 /* ── Update (gym-owned items only — system items are read-only here) ─────── */
 
 nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
   const { id } = req.params;
   const { name, category_ids, quality_ids, image_url } = req.body;
 
@@ -147,9 +160,12 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
     const err = await validateQualityIds(quality_ids);
     if (err) return res.status(400).json(err);
   }
+  const description = normalizeDescription(req.body.description);
+  if ('error' in description) return res.status(400).json({ error: description.error });
+  const actor = actorSnapshot({ name: actorName, isSuperadmin });
   try {
     const { rows: existing } = await db.query(
-      'SELECT id, gym_id, name, status FROM nutrition_library_items WHERE id = ?',
+      'SELECT id, gym_id, name, description, status FROM nutrition_library_items WHERE id = ?',
       [id],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
@@ -165,10 +181,18 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
       if (conflict.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
     }
 
-    const updates: string[] = ['modified_at = UTC_TIMESTAMP()'];
-    const params: any[] = [];
+    // The actor pair moves with every edit, so `modified_by_name` always names
+    // whoever `modified_at` refers to (#799 §13).
+    const updates: string[] = [
+      'modified_at = UTC_TIMESTAMP()',
+      'modified_by_name = ?',
+      'modified_by_type = ?',
+    ];
+    const params: any[] = [actor.name, actor.type];
     if (name?.trim())            { updates.push('name = ?');       params.push(name.trim()); }
     if ('image_url' in req.body) { updates.push('image_url = ?'); params.push(image_url ?? null); }
+    // Absent from the body means "leave it alone"; an empty string means "clear it".
+    if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
 
     params.push(id);
     await db.query(`UPDATE nutrition_library_items SET ${updates.join(', ')} WHERE id = ?`, params);
@@ -181,8 +205,7 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
     }
 
     const { rows } = await db.query(
-      `SELECT nli.id, nli.gym_id, nli.name, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name,
-              nli.status, nli.image_url, nli.created_at, nli.modified_at
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name
        FROM nutrition_library_items nli WHERE nli.id = ?`,
       [id],
     );
