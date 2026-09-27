@@ -47,6 +47,25 @@ Tick items off in the PR that completes them.
       window silently stops advancing rather than failing loudly. Deliberately a
       separate secret from `BILLING_INTERNAL_SECRET`: the two jobs have different
       blast radii, and rotating one should not disarm the other.
+- [ ] **Rotate `BILLING_INTERNAL_SECRET` and `RECURRING_BOOKINGS_INTERNAL_SECRET`** (#783).
+      Until #783 the billing secret was only reachable from GitHub Actions' IP ranges; with
+      the allowlist gone both endpoints answer the whole internet, so launch on values
+      nobody has seen. Per secret: generate a fresh value (`openssl rand -hex 32`), set it
+      **in both places in one sitting** — the GitHub environment secret the workflow sends
+      (Settings → Environments → `dev`/`production` → `BILLING_INTERNAL_SECRET`, read by
+      `billing-run.yml`; `RECURRING_BOOKINGS_INTERNAL_SECRET`, read by
+      `recurring-booking-run.yml`) and the API's runtime env — then redeploy the API
+      (`deploy.yml`, which regenerates the quadlet's `Environment=` lines from GitHub and
+      restarts `fitness-api`) and trigger each run workflow by hand (`workflow_dispatch`)
+      to confirm a green run, not a 401. Rotate outside the 03:00/06:00/10:00 UTC run
+      windows, since a half-rotated pair 401s the nightly run. **Verified 2026-09-27:
+      `deploy.yml` does not forward either secret today** — neither is in its `env:` /
+      `envs:` list nor its `Environment=` heredoc, and the script deletes every
+      `Environment=` line it did not write, so the API-side half of this step needs both
+      variables added to `deploy.yml` first (see the "Runtime env stays GitHub-sourced"
+      item above). Unless the unit sets them some other way the repository cannot show
+      (a `Secret=` line, say), the API on the VPS has neither secret and answers every
+      internal run with 401 — check that before rotating.
 - [ ] **Run migration 170 in the same maintenance window as 168** (#647 stage 4).
       `ALTER TABLE member_notifications ADD CONSTRAINT chk_member_notifications_type`
       accepts neither ALGORITHM=INPLACE nor LOCK=NONE (errno 1845 then 1846, verified
@@ -235,9 +254,10 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 ## 4. API surface
 
 - [ ] Every route mounted in `api/src/app.ts` goes through `requireAuth()` unless it is
-      deliberately public: `/health`, `/docs`, `/public`, `/payment-page`, `/billing`
-      (IP-restricted by nginx, `infra/nginx/corback.conf`), `/themes`, and the two
-      `/webhooks/*` routes (signature-verified). Re-audit this list before launch.
+      deliberately public: `/health`, `/docs`, `/public`, `/payment-page`, `/billing` and
+      `/recurring-bookings` (`X-Internal-Secret` + the per-route internal-run limiter, #783
+      — no IP restriction), `/themes`, and the two `/webhooks/*` routes
+      (signature-verified). Re-audit this list before launch.
 - [ ] Decide whether `/docs` (Swagger UI) should be exposed in production.
 - [ ] **Close out `js/missing-rate-limiting`** (#767): `/sellable-items` and `/taxes`
       carried `// lgtm[js/missing-rate-limiting]` comments that suppressed nothing (inline
@@ -249,9 +269,15 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       open alerts, dismiss them with that reasoning rather than bolting a second limiter
       onto two routes; if it has none, nothing is owed. Worth deciding before launch either
       way, since 500/15 min is a *global* default nobody has tuned per route.
-- [ ] nginx on the production host matches `infra/nginx/corback.conf`, including the
-      `/billing/` GitHub Actions IP allowlist (refresh with
-      `infra/nginx/update-github-actions-allowlist.sh`).
+- [ ] nginx on the production host matches `infra/nginx/corback.conf`. **No workflow ships
+      that file** — `deploy.yml` only pulls the API image, migrates, rewrites the quadlet
+      and restarts `fitness-api`; it never copies `corback.conf` or reloads nginx — so a
+      change to it reaches a server only when someone installs it by hand
+      (`nginx -t && systemctl reload nginx`). In particular #783 removed the
+      `location /billing/` GitHub Actions IP allowlist from the file, but **until the conf is
+      deployed by hand the old allowlist stays live on the server** (and, once GitHub's
+      ranges drift, keeps refusing the nightly run). Deploy it, then delete
+      `/etc/nginx/github-actions-allowlist.conf`, which nothing references any more.
 - [ ] Re-point every live website integration at the `{gymId}-{gym-name}` registration
       endpoint (#645) and decide whether to keep accepting the legacy `{gym-slug}` form.
       The fallback exists only so sites configured before #645 keep working; each gym's
@@ -299,8 +325,10 @@ hardening:
 - [ ] **A freshness alert** when no run has completed in 26 hours (#782) — the only signal
       that covers "nothing reached the API at all", which no red workflow can report
       because there is no run.
-- [ ] **Decide the `/billing/` GitHub Actions IP allowlist**: automate its refresh or
-      remove it (#783). See the nginx item in §4.
+- [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
+      automated — replaced by a per-route limiter on the internal run routes. Two things
+      are still owed before launch: installing the new `corback.conf` on the server (the
+      nginx item in §4) and rotating both internal secrets (§1).
 - [ ] **A `production` GitHub environment** for the scheduled and deploy workflows (#784).
       See §1.
 - [ ] **Bounded automatic retry, then pause** on a rejected recurring charge (#785). See

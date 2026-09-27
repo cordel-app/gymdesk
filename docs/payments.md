@@ -228,12 +228,31 @@ charge step went red).
 
 - Auth is `checkInternalSecret()`: the `X-Internal-Secret` header against
   `BILLING_INTERNAL_SECRET`.
-- `infra/nginx/corback.conf:22` additionally restricts `location /billing/` to GitHub
-  Actions IPs, from a file refreshed by hand
-  (`infra/nginx/update-github-actions-allowlist.sh`). `/recurring-bookings/` has **no**
-  `location` block at all and is therefore not restricted. #783 decides whether to automate
-  the refresh or drop the allowlist.
+- There is **no** network-layer restriction: `/billing/*` and `/recurring-bookings/*` both
+  fall through `location /` in `infra/nginx/corback.conf` (#783). What stands in for one is
+  a per-route rate limiter mounted in `api/src/app.ts` ahead of both internal routers
+  (`internalRunLimiter`, config in `api/src/domain/internalRunRateLimit.ts`): per client IP,
+  `INTERNAL_RUN_RATE_LIMIT_MAX` (default 10) failed attempts per
+  `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` (default 15), one budget shared by
+  `/billing/run`, `/billing/cleanup` and `/recurring-bookings/run`. **Only a 401 spends it**,
+  so a caller holding the secret — both of #781's daily attempts, and a run the guard
+  answers `429 in_progress` or `200 already_completed_today` — never does. Once spent,
+  every call from that address is `429` until the window ends, the right secret included.
 - `environment: dev` — there is no `production` GitHub environment yet (#784).
+
+> **Decisions (2026-09-27, #783)** — change them here if they turn out wrong:
+> - Option B: the GitHub Actions IP allowlist on `location /billing/` is **removed rather
+>   than automated**. It guarded nothing the secret does not, covered only one of the two
+>   internal endpoints (`/recurring-bookings/` never had it) and decayed by hand, since
+>   GitHub's ranges move and the refresh was a manual `scp`.
+> - It is replaced by a per-route limiter so the secret cannot be ground at the global
+>   500/15 min budget. Only failed-secret (401) responses count, so the legitimate
+>   workflow can never lock itself out.
+> - `BILLING_INTERNAL_SECRET` and `RECURRING_BOOKINGS_INTERNAL_SECRET` are rotated at
+>   launch (`docs/go-to-production.md` §1), since the old value was only ever reachable from
+>   GitHub's ranges and is now reachable from anywhere.
+> - A PCI/QSA argument for restricting these routes at the network layer, if one ever
+>   arises, reopens this.
 
 ### B2. The run guard
 
@@ -542,6 +561,7 @@ gated on `detail.status === 'draft'`) are therefore unreachable.
 | `BILLING_INTERNAL_SECRET` | `/billing/run`, `/billing/cleanup` |
 | `PAYMENT_REQUEST_ABANDONED_HOURS` | optional (default 24, floored at 1) — `abandonedRequestHours()`, §B8 |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | `/recurring-bookings/run` |
+| `INTERNAL_RUN_RATE_LIMIT_MAX`, `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` | optional (default 10 per 15 min, values below 1 ignored) — failed-secret budget per IP on the three internal run routes, §B1 (#783) |
 
 The `payment_providers` catalogue (#636, `api/src/api/payment-providers.ts`) names **which**
 adapter a gym uses (`gyms.payment_provider_id` → `provider_key`), never how to authenticate
@@ -779,7 +799,7 @@ differently.
 | [#780](https://github.com/cordel-app/gymdesk/issues/780) | ✅ done — one completed run per UTC date |
 | [#781](https://github.com/cordel-app/gymdesk/issues/781) | ✅ done — a second daily attempt |
 | [#782](https://github.com/cordel-app/gymdesk/issues/782) | No freshness alert: a day on which *nothing* reached the API is invisible |
-| [#783](https://github.com/cordel-app/gymdesk/issues/783) | The `/billing/` GitHub Actions IP allowlist decays by hand; `/recurring-bookings/` has none |
+| [#783](https://github.com/cordel-app/gymdesk/issues/783) | ✅ done — allowlist removed; per-route limiter; secret rotation pending (go-to-production) |
 | [#784](https://github.com/cordel-app/gymdesk/issues/784) | No `production` GitHub environment; `API_BASE_URL` is a literal in the workflow |
 | [#785](https://github.com/cordel-app/gymdesk/issues/785) | ✅ done — a rejection escalates to a pause |
 | [#786](https://github.com/cordel-app/gymdesk/issues/786) | `draft`/`awaiting_payment` are unreachable statuses, and `POST /:id/submit` is dead code |

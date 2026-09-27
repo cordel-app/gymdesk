@@ -58,7 +58,7 @@ jobs:
           printf 'POST /billing/run -> %s\n' "$body"
 
           if [ "$rc" -ne 0 ]; then
-            echo "::error title=Billing run did not execute::POST /billing/run failed (curl exit $rc) — no membership was charged. Check the API, the X-Internal-Secret pair, the nginx GitHub Actions allowlist, and whether a run is still in progress (#780: a completed run for today answers 200, not a failure)."
+            echo "::error title=Billing run did not execute::POST /billing/run failed (curl exit $rc) — no membership was charged. Check the API, the X-Internal-Secret pair, the internal-run rate limit (#783: 429 after repeated 401s from one IP), and whether a run is still in progress (#780: a completed run for today answers 200, not a failure)."
             exit 1
           fi
 
