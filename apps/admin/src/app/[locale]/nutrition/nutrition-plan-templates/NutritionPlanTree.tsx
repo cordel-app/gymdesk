@@ -17,15 +17,24 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 
-interface LibraryItem { id: number; name: string; category: string; quality_slugs: string[] }
+/**
+ * A Nutrition Library food as the food pickers need it. `categories` is a list
+ * because a food can belong to several (#501): migration 142 replaced the scalar
+ * `category` column with the `nutrition_library_categories` catalogue and an M2M
+ * junction, and `GET /nutrition-library` has returned `categories: [{id, slug}]`
+ * ever since. Reading the dropped scalar here is what made the Food Type selector
+ * render `nutrition_plan_templates.tree_component_type_undefined` (#812).
+ */
+interface LibraryItem { id: number; name: string; categories: string[]; quality_slugs: string[] }
 
 interface LibraryQuality { id: number; slug: string }
+interface LibraryCategory { id: number; slug: string }
 interface LibraryItemRow {
   id: number;
   name: string;
   /** `name` resolved into the viewer's locale (#643); absent on older payloads. */
   display_name?: string;
-  category: string;
+  categories?: LibraryCategory[];
   qualities?: LibraryQuality[];
   quality_slugs?: string[];
 }
@@ -47,13 +56,42 @@ function normalizeLibraryItems(data: LibraryListResponse | LibraryItemRow[] | un
     id: item.id,
     // The food pickers show what the viewer reads; the API already resolved it.
     name: item.display_name ?? item.name,
-    category: item.category,
+    categories: Array.isArray(item.categories) ? item.categories.map((c) => c.slug) : [],
     quality_slugs: Array.isArray(item.quality_slugs)
       ? item.quality_slugs
       : Array.isArray(item.qualities)
         ? item.qualities.map((q) => q.slug)
         : [],
   }));
+}
+
+/**
+ * The Food Type options this surface accepts, from
+ * `GET <apiBase>/component-types` — the same constant the write routes validate
+ * against (`api/src/domain/nutritionComponentTypes.ts`), so the selector can
+ * never offer a value the CHECK would refuse. An assigned plan's set is narrower
+ * than a template's, which is exactly why the list is not hardcoded here.
+ */
+interface ComponentTypesResponse { component_types: string[] }
+
+/**
+ * The label for a Food Type — a meal item's `component_type` or a Nutrition
+ * Library food's own category, which the product calls the same thing and which
+ * share one set of keys. Every slug either surface accepts has a
+ * `tree_component_type_<slug>` entry in `locales/base/*.json`; a value from
+ * outside that set falls back to the slug itself, because next-intl prints a
+ * missing key verbatim (it has no `defaultValue` option — passing one is what
+ * put `nutrition_plan_templates.tree_component_type_undefined` on screen rather
+ * than a fallback, #812).
+ */
+const FOOD_TYPE_LABEL_SLUGS = [
+  'main_dish', 'side', 'sauce', 'drink', 'dessert', 'other', 'additional',
+] as const;
+
+function foodTypeLabel(slug: string, translate: (key: string) => string): string {
+  return (FOOD_TYPE_LABEL_SLUGS as readonly string[]).includes(slug)
+    ? translate(`nutrition_plan_templates.tree_component_type_${slug}`)
+    : slug;
 }
 
 export interface MealItem {
@@ -156,6 +194,16 @@ export function NutritionPlanTree({
       .catch(() => setLibraryItems([]));
   }, [apiFetch]);
 
+  // The Food Type options this surface accepts (#812). An assigned Nutrition
+  // Plan's meal items take a narrower set than a template's, so the list comes
+  // from the router serving this tree rather than being hardcoded here.
+  const [componentTypes, setComponentTypes] = useState<string[]>([]);
+  useEffect(() => {
+    apiFetch<ComponentTypesResponse>(`${apiBase}/component-types`)
+      .then((data) => setComponentTypes(Array.isArray(data?.component_types) ? data.component_types : []))
+      .catch(() => setComponentTypes([]));
+  }, [apiFetch, apiBase]);
+
   const [addingDay, setAddingDay] = useState(false);
   const [addDayWeekday, setAddDayWeekday] = useState('');
   const [removingDay, setRemovingDay] = useState<HierDay | null>(null);
@@ -239,6 +287,7 @@ export function NutritionPlanTree({
                 apiBase={apiBase}
                 canWrite={canWrite}
                 libraryItems={libraryItems}
+                componentTypes={componentTypes}
                 onRemoveDay={() => setRemovingDay(day)}
                 onChanged={onChanged}
               />
@@ -279,13 +328,14 @@ export function NutritionPlanTree({
 /* ---- DayRow ---- */
 
 function DayRow({
-  day, templateId, apiBase, canWrite, libraryItems, onRemoveDay, onChanged,
+  day, templateId, apiBase, canWrite, libraryItems, componentTypes, onRemoveDay, onChanged,
 }: {
   day: HierDay;
   templateId: number;
   apiBase: string;
   canWrite: boolean;
   libraryItems: LibraryItem[];
+  componentTypes: string[];
   onRemoveDay: () => void;
   onChanged: () => Promise<void> | void;
 }) {
@@ -393,6 +443,7 @@ function DayRow({
                 dayId={day.id}
                 canWrite={canWrite}
                 libraryItems={libraryItems}
+                componentTypes={componentTypes}
                 onRemove={() => setRemovingMeal(meal)}
                 onChanged={onChanged}
               />
@@ -434,7 +485,7 @@ function DayRow({
 /* ---- MealRow ---- */
 
 function MealRow({
-  meal, templateId, apiBase, dayId, canWrite, libraryItems, onRemove, onChanged,
+  meal, templateId, apiBase, dayId, canWrite, libraryItems, componentTypes, onRemove, onChanged,
 }: {
   meal: HierMeal;
   templateId: number;
@@ -442,6 +493,7 @@ function MealRow({
   dayId: number;
   canWrite: boolean;
   libraryItems: LibraryItem[];
+  componentTypes: string[];
   onRemove: () => void;
   onChanged: () => Promise<void> | void;
 }) {
@@ -600,6 +652,7 @@ function MealRow({
             mealId={meal.id}
             items={meal.items}
             libraryItems={libraryItems}
+            componentTypes={componentTypes}
             canWrite={canWrite}
             onChanged={onChanged}
           />
@@ -644,7 +697,7 @@ function ItemsReadView({
               ))}
               <span style={{ flex: 1 }} />
               <span style={{ fontSize: 11.5, color: '#9ca3af' }}>
-                {t(`nutrition_plan_templates.tree_component_type_${item.component_type}`, { defaultValue: item.component_type })}
+                {foodTypeLabel(item.component_type, t)}
               </span>
               {item.quantity != null && (
                 <span style={{ fontSize: 12.5, color: '#6b7280' }}>{item.quantity}{item.unit ?? ''}</span>
@@ -668,7 +721,7 @@ interface ItemEditState {
 }
 
 function MealItemsEditor({
-  templateId, apiBase, dayId, mealId, items, libraryItems, canWrite, onChanged,
+  templateId, apiBase, dayId, mealId, items, libraryItems, componentTypes, canWrite, onChanged,
 }: {
   templateId: number;
   apiBase: string;
@@ -676,6 +729,7 @@ function MealItemsEditor({
   mealId: number;
   items: MealItem[];
   libraryItems: LibraryItem[];
+  componentTypes: string[];
   canWrite: boolean;
   onChanged: () => Promise<void> | void;
 }) {
@@ -683,9 +737,21 @@ function MealItemsEditor({
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
-  // Derive available food types from library items
   const foods = Array.isArray(libraryItems) ? libraryItems : [];
-  const availableFoodTypes = [...new Set(foods.map((i) => i.category))].sort();
+
+  /**
+   * The Food Type options, in the order the API declares them (product order,
+   * not alphabetical). A type is offered when this surface accepts it and at
+   * least one food carries it — so picking one always yields a Food to choose,
+   * and saving it always passes the meal-item CHECK. A type already stored on an
+   * item of this meal is offered too, even if no food carries it any more, so
+   * editing that item cannot silently change its Food Type.
+   */
+  const foodCategories = new Set(foods.flatMap((i) => i.categories));
+  const storedTypes = new Set(items.map((i) => i.component_type));
+  const availableFoodTypes = componentTypes.filter(
+    (ct) => foodCategories.has(ct) || storedTypes.has(ct),
+  );
 
   // Add form
   const [addFoodType, setAddFoodType] = useState('');
@@ -703,11 +769,11 @@ function MealItemsEditor({
   const base = `${apiBase}/${templateId}/days/${dayId}/meals/${mealId}/items`;
 
   // Filtered foods for add form
-  const addFilteredItems = addFoodType ? foods.filter((i) => i.category === addFoodType) : [];
+  const addFilteredItems = addFoodType ? foods.filter((i) => i.categories.includes(addFoodType)) : [];
   const selectedAddItem = addFilteredItems.find((i) => i.id === Number(addItemId));
 
   // Filtered foods for edit form
-  const editFilteredItems = editState ? foods.filter((i) => i.category === editState.foodType) : [];
+  const editFilteredItems = editState ? foods.filter((i) => i.categories.includes(editState.foodType)) : [];
   const selectedEditItem = editState ? editFilteredItems.find((i) => i.id === Number(editState.itemId)) : undefined;
 
   function handleAddFoodTypeChange(newType: string) {
@@ -722,9 +788,16 @@ function MealItemsEditor({
 
   function startEdit(item: MealItem) {
     const libItem = foods.find((l) => l.id === item.nutrition_library_item_id);
+    // The stored `component_type` is the Food Type that was chosen for this item,
+    // so it is what the selector reopens on. It only falls back when the food no
+    // longer carries that type — otherwise the Food dropdown, which filters on the
+    // selected type, would come up empty — and then only to a category this
+    // surface also accepts, so the fallback is a value the selector really offers.
+    const storedIsStillACategory = libItem ? libItem.categories.includes(item.component_type) : true;
+    const fallbackType = libItem?.categories.find((c) => componentTypes.includes(c));
     setEditState({
       id: item.id,
-      foodType: libItem?.category ?? item.component_type,
+      foodType: storedIsStillACategory ? item.component_type : (fallbackType ?? item.component_type),
       itemId: String(item.nutrition_library_item_id),
       qty: item.quantity != null ? String(item.quantity) : '',
       unit: item.unit ?? 'g',
@@ -830,7 +903,7 @@ function MealItemsEditor({
                       <option value="">—</option>
                       {availableFoodTypes.map((cat) => (
                         <option key={cat} value={cat}>
-                          {t(`nutrition_plan_templates.tree_component_type_${cat}`, { defaultValue: cat })}
+                          {foodTypeLabel(cat, t)}
                         </option>
                       ))}
                     </select>
@@ -887,7 +960,7 @@ function MealItemsEditor({
                   <QualityBadge key={slug} slug={slug} t={t as any} />
                 ))}
                 <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 4 }}>
-                  {t(`nutrition_plan_templates.tree_component_type_${item.component_type}`, { defaultValue: item.component_type })}
+                  {foodTypeLabel(item.component_type, t)}
                 </span>
                 <span style={{ flex: 1 }} />
                 {item.quantity != null && (
@@ -924,7 +997,7 @@ function MealItemsEditor({
                 <option value="">—</option>
                 {availableFoodTypes.map((cat) => (
                   <option key={cat} value={cat}>
-                    {t(`nutrition_plan_templates.tree_component_type_${cat}`, { defaultValue: cat })}
+                    {foodTypeLabel(cat, t)}
                   </option>
                 ))}
               </select>
@@ -1055,7 +1128,11 @@ function RestrictionsSection({
           <select value={addItemId} onChange={(e) => setAddItemId(e.target.value)} style={selectStyle}>
             <option value="">{t('nutrition_plan_templates.tree_pick_restriction_item')}</option>
             {(Array.isArray(libraryItems) ? libraryItems : []).map((o) => (
-              <option key={o.id} value={o.id}>{o.name} ({o.category})</option>
+              <option key={o.id} value={o.id}>
+                {o.categories.length > 0
+                  ? `${o.name} (${o.categories.map((c) => foodTypeLabel(c, t)).join(', ')})`
+                  : o.name}
+              </option>
             ))}
           </select>
           <button onClick={addRestriction} disabled={adding} style={btnSmall()}>

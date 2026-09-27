@@ -1190,3 +1190,75 @@ describe('assign', () => {
     expect(assignRes.body.name).toBe(customName);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Food Type options (#812)
+// ---------------------------------------------------------------------------
+
+describe('GET /nutrition-plan-templates/component-types', () => {
+  it('returns the seven types a template meal item accepts', async () => {
+    const res = await request
+      .get('/nutrition-plan-templates/component-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.component_types).toEqual([
+      'main_dish', 'side', 'sauce', 'drink', 'dessert', 'other', 'additional',
+    ]);
+  });
+
+  it('requires auth', async () => {
+    const res = await request.get('/nutrition-plan-templates/component-types');
+    expect(res.status).toBe(401);
+  });
+
+  it('is not shadowed by GET /:id — `component-types` is not read as an id', async () => {
+    // Registered before `/:id`; if that order is ever lost this returns the
+    // 400/404 of an id lookup instead of the options.
+    const res = await request
+      .get('/nutrition-plan-templates/component-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.component_types)).toBe(true);
+  });
+
+  it('every returned type is accepted by POST …/items', async () => {
+    // The point of serving the list: an option the selector offers must not 400.
+    const optionsRes = await request
+      .get('/nutrition-plan-templates/component-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+
+    const tplRes = await request
+      .post('/nutrition-plan-templates')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `NPT CT ${Date.now()}` });
+    expect(tplRes.status).toBe(201);
+    const templateId = tplRes.body.id;
+
+    const dayRes = await request
+      .post(`/nutrition-plan-templates/${templateId}/days`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ weekday: 1 });
+    expect(dayRes.status).toBe(201);
+
+    const mealRes = await request
+      .post(`/nutrition-plan-templates/${templateId}/days/${dayRes.body.id}/meals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ display_name: 'Meal', meal_type: 'lunch' });
+    expect(mealRes.status).toBe(201);
+
+    for (const componentType of optionsRes.body.component_types) {
+      const res = await request
+        .post(`/nutrition-plan-templates/${templateId}/days/${dayRes.body.id}/meals/${mealRes.body.id}/items`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ nutrition_library_item_id: libraryItemId, component_type: componentType });
+      expect(res.status, `component_type ${componentType}`).toBe(201);
+    }
+  });
+});

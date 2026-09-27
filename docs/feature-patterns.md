@@ -1301,6 +1301,47 @@ translation helpers in `api/src/domain/nutritionLibrary.ts` +
 
 ---
 
+## A CHECK-Constrained Option Set Comes from the Backend (#812)
+
+When a dropdown's options are the values a CHECK constraint accepts, the list is
+business logic and belongs on the API. Hardcoding it in the page puts a second
+copy of the constraint in the frontend, and the two drift silently: the UI
+offers a value the database refuses, or hides one it would accept.
+
+- **One declaration per surface, beside the CHECK it mirrors.** `api/src/domain/nutritionComponentTypes.ts` holds `TEMPLATE_COMPONENT_TYPES` (seven, `chk_nptmi_component_type`) and `MEMBER_PLAN_COMPONENT_TYPES` (four, `chk_mnpmi_comp`) with the migration named in the comment. Adding a value takes **two** places, like every other CHECK-backed set in `CLAUDE.md`.
+- **Validate and advertise from the same constant.** The write routes call `isComponentType(SET, value)` and `GET …/component-types` returns `SET`, so what a caller may send and what the UI is offered cannot disagree.
+- **Register the collection route before `/:id`.** Express reads `component-types` as an id otherwise — the same trap as `GET /platform/exercises/lookups` (#806). Pin it with a test that asserts a 200 and not an id lookup's 400/404.
+- **Two surfaces over one component means the component asks.** `NutritionPlanTree` serves templates and assigned plans, whose sets differ, so it fetches `${apiBase}/component-types` rather than branching on which page mounted it. The prop that already distinguishes them is the one to key off.
+- **Offer only what will succeed.** The options are the accepted set intersected with the values that are actually selectable (here: a category some food carries), plus any value already stored on a row being edited — otherwise reopening that row silently changes it.
+- **Assert the set against the migration, not against itself.** `nutrition-component-types.unit.test.ts` parses the `CHECK (… IN (…))` out of the migration file and compares, so widening one without the other fails in CI rather than at INSERT time.
+
+### Never `t(key, { defaultValue })`
+
+next-intl's `t()` takes interpolation values, not options — there is no
+`defaultValue`, and a missing key is printed **verbatim**. `t(`x_${v}`, { defaultValue: v })`
+therefore renders `section.x_undefined` on screen, which is exactly how #812
+shipped. Put the fallback in a helper that decides before calling `t()`:
+
+```ts
+const LABEL_SLUGS = ['main_dish', 'side', /* … */] as const;
+
+function foodTypeLabel(slug: string, translate: (key: string) => string): string {
+  return (LABEL_SLUGS as readonly string[]).includes(slug)
+    ? translate(`nutrition_plan_templates.tree_component_type_${slug}`)
+    : slug;
+}
+```
+
+Route every call site through it, and assert in a test that the key is built in
+exactly one place. Same rule as `resultTypeLabel()` (#805) and the `??`-fallback
+warning in `CLAUDE.md`.
+
+Reference implementation: `api/src/domain/nutritionComponentTypes.ts` +
+`apps/admin/src/app/[locale]/nutrition/nutrition-plan-templates/NutritionPlanTree.tsx`
++ `apps/admin/src/test/nutrition-food-type-selector.test.ts`.
+
+---
+
 ## Audited Action over an Append-Only Ledger (#640)
 
 A row that must never be rewritten (a `billing_events` charge) still needs
