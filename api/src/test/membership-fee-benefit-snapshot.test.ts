@@ -9,11 +9,23 @@
 import { describe, expect, it } from 'vitest';
 import { membershipFeeBenefitsFromSnapshot } from '../api/membership-promotions';
 
+// #814: what a snapshot written today carries — enabled + action + value +
+// duration_months, the four fields the fee resolution actually reads.
 const NEW_SHAPE = {
   name: 'Summer',
   membership_fee_benefits: [{
-    quantity: 1, frequency_interval: 1, frequency_unit: 'month',
     enabled: true, action: 'fixed_price', value: 29.99, duration_months: 3,
+  }],
+};
+
+// A snapshot written between #635 stage 5 and #814, when the benefit still
+// carried the Period Benefit recurrence triplet. Those keys were never read by
+// any pricing path, so such an application must read back untouched.
+const PRE_814_SHAPE = {
+  name: 'Winter',
+  membership_fee_benefits: [{
+    quantity: 2, frequency_interval: 3, frequency_unit: 'week',
+    enabled: true, action: 'percentage_discount', value: 50, duration_months: 3,
   }],
 };
 
@@ -27,6 +39,16 @@ describe('membershipFeeBenefitsFromSnapshot', () => {
     expect(membershipFeeBenefitsFromSnapshot(NEW_SHAPE)).toEqual(NEW_SHAPE.membership_fee_benefits);
   });
 
+  it('passes a pre-#814 snapshot through untouched, recurrence keys and all', () => {
+    const result = membershipFeeBenefitsFromSnapshot(PRE_814_SHAPE);
+    expect(result).toEqual(PRE_814_SHAPE.membership_fee_benefits);
+    // The four fields the fee resolution reads are exactly what they were, so
+    // the application prices as it did before the columns were dropped.
+    expect(result[0]).toMatchObject({
+      enabled: true, action: 'percentage_discount', value: 50, duration_months: 3,
+    });
+  });
+
   it('reads a legacy Period Benefit on the membership fee', () => {
     const legacy = {
       charge_benefits: [],
@@ -38,7 +60,6 @@ describe('membershipFeeBenefitsFromSnapshot', () => {
       included_benefits: [],
     };
     expect(membershipFeeBenefitsFromSnapshot(legacy)).toEqual([{
-      quantity: 1, frequency_interval: 1, frequency_unit: 'month',
       enabled: true, action: 'percentage_discount', value: 25, duration_months: 6,
     }]);
   });
@@ -52,7 +73,6 @@ describe('membershipFeeBenefitsFromSnapshot', () => {
       period_benefits: [],
     };
     expect(membershipFeeBenefitsFromSnapshot(legacy)).toEqual([{
-      quantity: 1, frequency_interval: 1, frequency_unit: 'month',
       enabled: true, action: 'waive', value: null, duration_months: null,
     }]);
   });

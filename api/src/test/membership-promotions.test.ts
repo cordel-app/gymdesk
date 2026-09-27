@@ -106,8 +106,8 @@ async function setMembershipFeeBenefit(
   const { durationMonths = null, enabled = true } = opts;
   await db.query(
     `INSERT INTO promotion_membership_fee_benefits
-       (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
-     VALUES (?, ?, 1, 1, 'month', ?, ?, ?, ?)`,
+       (gym_id, promotion_id, duration_months, enabled, action, value)
+     VALUES (?, ?, ?, ?, ?, ?)`,
     [gymId, promoId, durationMonths, enabled ? 1 : 0, action, value],
   );
 }

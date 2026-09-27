@@ -106,8 +106,10 @@ export interface AppliedPromotion {
   // stage, when the same benefit could also be configured as a Charge
   // Benefit. The `charge_benefits` / `period_benefits` arrays it replaces are
   // gone, along with the tables behind them (migration 179).
+  // #814: the benefit is these four fields; the recurrence triplet it used to
+  // carry (quantity / frequency_interval / frequency_unit) is gone with
+  // migration 199. This card never displayed them.
   membership_fee_benefits: Array<{
-    quantity: number; frequency_interval: number; frequency_unit: string;
     enabled: boolean; action: string | null; value: number | null; duration_months: number | null;
   }>;
   // #635 stage 7 — the Sellable Items the application granted, read from its

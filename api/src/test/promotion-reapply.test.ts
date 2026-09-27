@@ -85,8 +85,8 @@ async function targetPlan(gymId: string, promotionId: number, planId: number) {
 async function setMembershipFeeBenefit(gymId: string, promotionId: number, action: string, value: number) {
   await db.query(
     `INSERT INTO promotion_membership_fee_benefits
-       (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
-     VALUES (?, ?, 1, 1, 'month', NULL, 1, ?, ?)
+       (gym_id, promotion_id, duration_months, enabled, action, value)
+     VALUES (?, ?, NULL, 1, ?, ?)
      ON DUPLICATE KEY UPDATE action = VALUES(action), value = VALUES(value)`,
     [gymId, promotionId, action, value],
   );

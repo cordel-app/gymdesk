@@ -70,11 +70,14 @@ interface ChargeType { id: number; code: string; name: string; is_gym_charge: nu
 // `charge_type_*` triplet: there is exactly one per Promotion and the item is
 // always the membership fee, which is why the section labels the row with
 // `membershipFeeName` rather than a field off the payload.
+// #814: Duration, Action, Value and Enabled are the whole benefit. The
+// Quantity / Every / Unit triplet this section used to render came from the
+// Period Benefit shape it was built on ("2 sessions every 3 months") and said
+// nothing about a membership fee, whose cadence is the Assigned Plan's own
+// Billing frequency; migration 199 dropped the columns. Do not add a
+// recurrence back.
 interface MembershipFeeBenefit {
   id: number;
-  quantity: number;
-  frequency_interval: number;
-  frequency_unit: 'week' | 'month';
   duration_months: number | null;
   enabled: number;
   action: string | null;
@@ -131,7 +134,6 @@ const SELLABLE_BENEFIT_SECTIONS: {
 const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'] as const;
 const VALUED_CHARGE_ACTIONS = ['percentage_discount', 'fixed_discount', 'fixed_price'];
-const FREQ_UNITS = ['week', 'month'] as const;
 const NEW_ID = 0;
 
 const iso = (v: string) => (v ? v.slice(0, 10) : '');
@@ -174,9 +176,6 @@ const toBenefitItems = (draft: SellableItemBenefit[]) =>
 function membershipFeeBody(mf: MembershipFeeBenefit, durationMonths: number | null) {
   const action = mf.action || 'no_benefit';
   return {
-    quantity: mf.quantity,
-    frequency_interval: mf.frequency_interval,
-    frequency_unit: mf.frequency_unit,
     duration_months: durationMonths,
     enabled: mf.enabled,
     action,
@@ -294,7 +293,7 @@ export default function PromotionsPage() {
 
   function defaultMfDraft(): MembershipFeeBenefit {
     return {
-      id: -1, quantity: 1, frequency_interval: 1, frequency_unit: 'month', duration_months: null, enabled: 1,
+      id: -1, duration_months: null, enabled: 1,
       action: 'no_benefit', value: null,
     };
   }
@@ -1174,9 +1173,10 @@ export default function PromotionsPage() {
     );
   }
 
-  // Membership Fee Benefits (#551) — reuses the Period Benefits fields/
-  // validation/behaviour exactly; the item is hardcoded, never selectable.
+  // Membership Fee Benefits (#551) — the item is hardcoded, never selectable.
   // #627: controls only; the section shell owns the title and Edit/Save/Cancel.
+  // #814: Duration, Action, Value, Enabled — the Quantity / Every / Unit
+  // columns it inherited from the Period Benefits shape are gone.
   function renderMembershipFeeEditor(promoId: number) {
     // #625: the Membership Fee Benefit can never outlast the Promotion, so its
     // duration is capped at the total Promotion duration
@@ -1186,11 +1186,8 @@ export default function PromotionsPage() {
     return (
       <>
       {mfDraft && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 55px 55px 75px 70px 120px 80px 55px', gap: '3px 8px', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 70px 120px 80px 55px', gap: '3px 8px', alignItems: 'center' }}>
           <span style={colHeaderSt}>{t('col_benefit_type')}</span>
-          <span style={colHeaderSt}>{t('col_quantity')}</span>
-          <span style={colHeaderSt}>{t('label_frequency_interval')}</span>
-          <span style={colHeaderSt}>{t('label_frequency_unit')}</span>
           <span style={colHeaderSt}>{t('col_duration_months')}</span>
           <span style={colHeaderSt}>{t('col_action')}</span>
           <span style={colHeaderSt}>{t('col_value')}</span>
@@ -1201,11 +1198,6 @@ export default function PromotionsPage() {
             return (
               <div style={{ display: 'contents' }}>
                 <span style={{ fontSize: 13 }}>{membershipFeeName}</span>
-                <input type="number" min="1" value={mfDraft.quantity} onChange={(e) => updateMfDraft({ quantity: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                <input type="number" min="1" value={mfDraft.frequency_interval} onChange={(e) => updateMfDraft({ frequency_interval: parseInt(e.target.value, 10) || 1 })} style={{ ...inlineSelectSt, width: '100%' }} />
-                <select value={mfDraft.frequency_unit} onChange={(e) => updateMfDraft({ frequency_unit: e.target.value as 'week' | 'month' })} style={inlineSelectSt}>
-                  {FREQ_UNITS.map((u) => <option key={u} value={u}>{t(`frequency_${u}` as any)}</option>)}
-                </select>
                 <input
                   type="number" min="1"
                   max={maxDuration > 0 ? maxDuration : undefined}
@@ -1262,8 +1254,6 @@ export default function PromotionsPage() {
         <thead>
           <tr>
             <th style={thSt}>{t('col_benefit_type')}</th>
-            <th style={thSt}>{t('col_quantity')}</th>
-            <th style={thSt}>{t('col_frequency')}</th>
             <th style={thSt}>{t('col_duration_months')}</th>
             <th style={thSt}>{t('col_action')}</th>
             <th style={thSt}>{t('col_value')}</th>
@@ -1273,8 +1263,6 @@ export default function PromotionsPage() {
         <tbody>
           <tr style={{ opacity: mf.enabled ? 1 : 0.45 }}>
             <td style={tdSt}>{membershipFeeName}</td>
-            <td style={tdSt}>{mf.quantity}</td>
-            <td style={tdSt}>{mf.frequency_interval} {t(`frequency_${mf.frequency_unit}` as any)}</td>
             <td style={tdSt}>{mf.duration_months ?? '—'}</td>
             <td style={tdSt}>{t(`cb_action_${mf.action}` as any)}</td>
             <td style={tdSt}>{mf.value ?? '—'}</td>

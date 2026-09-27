@@ -352,17 +352,20 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       // (migration 179) — the copy that used to walk `promotion_charge_benefits`
       // and `promotion_period_benefits`, both dropped by that migration, is
       // this one insert.
+      // #814 (migration 199): the benefit is `duration_months` + `enabled` +
+      // `action`/`value` and nothing else — the recurrence triplet it used to
+      // copy alongside them is gone.
       const { rows: mfs } = await tx.query(
-        'SELECT * FROM promotion_membership_fee_benefits WHERE promotion_id = ? AND gym_id = ?',
+        `SELECT duration_months, enabled, action, value
+         FROM promotion_membership_fee_benefits WHERE promotion_id = ? AND gym_id = ?`,
         [src.id, gymId],
       );
       for (const mf of mfs) {
         await tx.query(
           `INSERT INTO promotion_membership_fee_benefits
-             (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [gymId, newId, mf.quantity, mf.frequency_interval, mf.frequency_unit,
-           mf.duration_months, mf.enabled, mf.action, mf.value],
+             (gym_id, promotion_id, duration_months, enabled, action, value)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [gymId, newId, mf.duration_months, mf.enabled, mf.action, mf.value],
         );
       }
 
