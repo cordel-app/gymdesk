@@ -265,14 +265,20 @@ export default function ProfessionalServicesPage() {
     const isExpanded = expanded.has(item.id);
     const isEditing = editingId === item.id;
 
+    // #802: Professional Services orders its own menu — Duplicate first,
+    // Deactivate second and carrying the destructive style, Details always last.
+    // Activate is the same slot but is not destructive, so it stays unstyled.
+    // Edit and Delete keep their behaviour and sit between the two fixed ends;
+    // a System service hides both, which leaves exactly Duplicate / Deactivate /
+    // Details — the menu the ticket describes.
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => setDetails(item) },
-      ...(!isSystem ? [{ label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
-      item.status === 'active'
-        ? { label: t('deactivate'), onClick: () => handleDeactivate(item), disabled: !canWrite, title: readOnlyTitle }
-        : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle },
       { label: t('duplicate'), onClick: () => handleDuplicate(item), disabled: !canWrite, title: readOnlyTitle },
+      item.status === 'active'
+        ? { label: t('deactivate'), onClick: () => handleDeactivate(item), danger: true, disabled: !canWrite, title: readOnlyTitle }
+        : { label: t('activate'), onClick: () => handleActivate(item), disabled: !canWrite, title: readOnlyTitle },
+      ...(!isSystem ? [{ label: t('edit'), onClick: () => openEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
       ...(!isSystem ? [{ label: t('delete'), onClick: () => setDeleting(item), danger: true, disabled: !canWrite, title: readOnlyTitle }] : []),
+      { label: t('details'), onClick: () => setDetails(item) },
     ];
 
     return (

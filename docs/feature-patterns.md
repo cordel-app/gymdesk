@@ -1376,6 +1376,34 @@ const menuItems: ContextMenuItem[] = [
 - Use `useModuleAccess`, not `isSuperadmin || canWriteModule(...)`: `isSuperadmin` stays true while impersonating, so the old pattern showed every edit control to a superadmin impersonating a read-only user.
 - Gate the **entry points** (Add button, ⋮ menu write items, in-row action buttons, Save). Inline edit forms that only open from a gated entry point need nothing extra.
 
+### ⋮ menu order and the destructive style (#802)
+
+The snippet above orders its two items to show the *gating*, not the order. Most list pages
+put `Details` first because that is simply how they were written; **a page whose order a ticket
+fixes keeps it**, and the only page with a decided order today is Professional Services (#802):
+
+```text
+Duplicate            ← first
+Deactivate  (red)    ← second; Activate takes the same slot, unstyled
+Edit*                ← the remaining write actions sit between the two fixed ends
+Delete* (red)
+Details              ← always last
+                       * hidden for a system row, which leaves exactly
+                         Duplicate / Deactivate / Details
+```
+
+Two rules come with it:
+
+- **Red is `ContextMenu`'s own `danger: true` flag**, never a colour in the page — that is where
+  `#c0392b`, the disabled opacity and the hover state live, so one flag covers §4's text, icon
+  and hover/focus requirements at once. Mark only the genuinely destructive item: `Deactivate`
+  and `Delete` are, **`Activate` is not**.
+- **Order is presentation.** Reordering the array must not move a handler, a `disabled: !canWrite`
+  gate, a `title: readOnlyTitle`, or which items a conditional hides — `Details` stays last among
+  whatever remains *visible*. `apps/admin/src/test/professional-services-context-menu.test.ts`
+  pins the order, the two `danger` flags and every handler/gate pairing together, so a later
+  alignment sweep cannot quietly restore "Details first" or drop a gate while reordering.
+
 
 ## Testing a payment-provider call (#773, #791)
 
