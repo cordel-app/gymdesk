@@ -248,7 +248,10 @@ A boundary *equal* to today would be charged by tonight's run for the same reaso
 so cleanup runs even when the charge step went red, but not when there is no API to call).
 
 - Auth is `checkInternalSecret()`: the `X-Internal-Secret` header against
-  `BILLING_INTERNAL_SECRET`.
+  `BILLING_INTERNAL_SECRET`. Both halves come from the same GitHub environment: the
+  workflow sends its secret, and `deploy.yml` writes the same secret into the API's
+  quadlet (it refuses to deploy while it is empty). Until 2026-09-27 neither side had it,
+  so every scheduled run answered `401` and no recurring charge ran on `dev`.
 - There is **no** network-layer restriction: `/billing/*` and `/recurring-bookings/*` both
   fall through `location /` in `infra/nginx/corback.conf` (#783). What stands in for one is
   a per-route rate limiter mounted in `api/src/app.ts` ahead of both internal routers
