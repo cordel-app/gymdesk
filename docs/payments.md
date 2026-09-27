@@ -171,7 +171,7 @@ Then, by branch:
 | `failed` / `expired` | `payment_requests.status` and `provider_ref` only — and only on a row still `pending`, since a terminal row is never revived by a non-`completed` payload |
 | `pending` | **nothing** — an intermediate status must not flip the row, or the guard above would strand it before the real outcome arrives |
 
-The `completed` transaction (`webhooks.ts:235-319`):
+The `completed` transaction (`webhooks.ts`, the `completed` branch):
 
 1. `payment_requests` → `status = 'completed'`, `provider_ref`, `completed_at`;
 2. a `payment_recorded` Billing Event (`source = 'provider'`, `actor_user_id` NULL) carrying
@@ -183,23 +183,44 @@ The `completed` transaction (`webhooks.ts:235-319`):
    spent, unconditionally, because the cycle is settled whether or not a token came back;
 5. **only when `paymentToken` *and* `sequenceId` are present**: the `payment_methods`
    upsert (`ON DUPLICATE KEY UPDATE` on `(gym_id, member_id, provider)`, stamping
-   `updated_at`), and the **first `next_billing_date`**:
+   `updated_at`), and the **first `next_billing_date`** through
+   `stampFirstNextBillingDate()` (`api/src/domain/nextBillingDateStamp.ts`): the **first
+   cycle boundary strictly after UTC today** — `starts_at + n·cadence` for the smallest
+   `n ≥ 1` whose date is later than `UTC_DATE()` (#790).
 
-```sql
-SET um.next_billing_date = DATE_ADD(um.starts_at, INTERVAL <cadence>)
-WHERE um.id = ? AND um.next_billing_date IS NULL
-```
+The boundary is computed by `firstBillingDateAfter()` (`api/src/domain/billingDate.ts`),
+which steps with `advanceBillingDate()` — the same step the nightly run takes — so it is
+always a date the run would itself reach from `starts_at` (31 Jan steps to 3 Mar, then
+3 Apr). The schedule stays anchored to `starts_at`, so `classifyPlanDurationPeriod()`'s
+Free/Paid/Bonus arithmetic is untouched; only the *first charge date* moves, and only
+forward past today. For an assignment starting today or later that is exactly
+`starts_at + 1 cadence`, as before. The cadence is `ASSIGNMENT_CADENCE`
+(`api/src/api/assigned-plan-snapshot.ts`) — the assignment's frozen pair, its Plan's live
+`billing_policies` row only as a fallback, hence the **LEFT** JOIN — and every date,
+`UTC_DATE()` included, is read as a `YYYY-MM-DD` string from SQL, so none crosses a
+timezone conversion. `WHERE next_billing_date IS NULL` means only the *first* payment
+stamps it.
 
-The cadence is `ASSIGNMENT_CADENCE` (`api/src/api/assigned-plan-snapshot.ts`) — the
-assignment's frozen pair, its Plan's live `billing_policies` row only as a fallback, hence
-the **LEFT** JOIN. `WHERE next_billing_date IS NULL` means only the *first* payment stamps
-it.
+Why "strictly after today": the first payment is priced by `currentMembershipFee()` on
+`currentCycleDate()`, which for a back-dated assignment with no `next_billing_date` is
+**today**. Stamping `starts_at + cadence` (the pre-#790 SQL) put the next charge in the
+past, so the run charged one elapsed cycle per night — and the last of them was the very
+cycle the first payment had just been priced on, a double charge nothing could deduplicate.
+A boundary *equal* to today would be charged by tonight's run for the same reason.
 
-> ⚠️ A known defect lives in this step. **#790**: `starts_at` is whatever the staff
-> typed, so a back-dated assignment gets a `next_billing_date` in the past and is charged
-> one catch-up cycle per night.
->
-> The other one that lived here is closed. **#789**: `POST /billing/cleanup` used to expire
+> **Decisions (2026-09-27, #790)** — change them here if they turn out wrong:
+> - **(a1) write-off.** The first payment covers every cycle that elapsed between a
+>   back-dated `starts_at` and today. Those cycles are written off: nothing further is
+>   owed, no catch-up charge, and no `adjustment` Billing Event records them.
+> - **No confirm flag.** Back-dating `starts_at` stays allowed on all three insert paths,
+>   with no "are you sure" step (#790 option (c) is out of scope) — the fix is in what the
+>   webhook derives from `starts_at`, not in `starts_at` itself.
+> - **A pause is not a debt.** Any transition back to `active` (Reactivate, or a status
+>   flip through `PUT /user-memberships/:id`) whose `next_billing_date <= UTC_DATE()` walks
+>   it forward, along its own schedule, to the first boundary strictly after today — the
+>   cycles missed while paused are not collected (see "Assigned Plan status model").
+
+> The other defect that lived in this step is closed too. **#789**: `POST /billing/cleanup` used to expire
 > a request the member was still paying through, after which the guard above skipped the
 > completed webhook as "already processed" and the charge was lost. Cleanup now keeps an
 > opened request `pending` for hours — §B8.
@@ -395,7 +416,8 @@ The rule is pure and unit-tested in `api/src/domain/billingDunning.ts`
   branches, the webhook's `completed` branch, both staff actions via `clearDunningState()`
   (`api/src/domain/billingEventPayments.ts`), and any transition back to `active`.
 - Reactivation stays **explicit**. Clearing the count never flips `paused → active`; staff
-  use `POST /user-memberships/:id/reactivate`.
+  use `POST /user-memberships/:id/reactivate`, which also walks a past `next_billing_date`
+  forward to the first boundary after today (#790 — a pause is not a debt).
 
 ### B7. Failure handling by the staff (#640)
 
@@ -608,6 +630,18 @@ what the row should become.
 >   payment paths — its own ticket, not a revert of this one.
 
 `expired` is reached only by `assign-new-plan`'s supersede logic, never by request.
+
+**Back to `active` (#790).** Both paths that move an existing assignment to `active` —
+`POST /user-memberships/:id/reactivate` (`transitionMembership()`) and a `status` flip
+through `PUT /user-memberships/:id` — do two things in the transaction that flips the
+status: clear #785's dunning pair, and call `rollStaleNextBillingDateForward()`
+(`api/src/domain/nextBillingDateStamp.ts`). If `next_billing_date <= UTC_DATE()` it is
+walked forward along its own schedule, with the same `firstBillingDateAfter()` the first
+payment uses, to the first boundary strictly after today. **A pause is not a debt**: the
+cycles that went by while the assignment was off the run are not collected, one per night
+or otherwise. A date still in the future is left alone, and a NULL one stays NULL — an
+assignment that never paid has no schedule until its first payment stamps one. Pausing
+never touches the date.
 
 ### Provider layer
 
@@ -822,10 +856,10 @@ SELECT next_billing_date FROM user_memberships WHERE id = <um>;
 
 Expect `completed`; a `payment_recorded` event with `source = 'provider'` carrying the same
 amount, back-linked both ways; a `payment_methods` row; and `next_billing_date` =
-`starts_at + cadence`.
+`starts_at + cadence` for a `starts_at` of today or later.
 
-⚠️ If `starts_at` is in the past, `next_billing_date` will be too — that is **#790**, not a
-setup mistake. Use a `starts_at` of today for a clean run.
+With a back-dated `starts_at`, expect instead the first `starts_at + n·cadence` **after**
+today (#790) — never a date in the past — and the next run to charge nothing for it.
 
 **6. Declined first payment.** Repeat 3–4 with a Monei test card that **declines**. Expect
 the request to end `failed` and — correctly — **no** `billing_events` row at all, which is
@@ -947,7 +981,7 @@ differently.
 | [#787](https://github.com/cordel-app/gymdesk/issues/787) | ✅ done — the run allocates receipt numbers |
 | [#788](https://github.com/cordel-app/gymdesk/issues/788) | ✅ done — replacing a card charges nothing |
 | [#789](https://github.com/cordel-app/gymdesk/issues/789) | ✅ done — cleanup keeps an opened request `pending`, so a member's payment is not lost |
-| [#790](https://github.com/cordel-app/gymdesk/issues/790) | A back-dated `starts_at` yields a past first `next_billing_date`, charged one catch-up cycle per night |
+| [#790](https://github.com/cordel-app/gymdesk/issues/790) | ✅ done — the first `next_billing_date` (and a reactivated one) is the first boundary after today; elapsed and paused cycles are written off |
 | — | No reconciliation job against the provider. `POST /payments` (the staff ledger write) records a charge or a cash payment; nothing reads the provider back to confirm our rows agree with it. |
 
 Production-readiness items (live credentials, Monei AoC, SRI for `monei.js`, the dedicated

@@ -369,7 +369,7 @@ describe('POST /webhooks/payment — what a completed CIT charge writes', () => 
   });
 
   /** A fresh member + plan + assignment per case, so one test's card cannot be another's. */
-  async function fixture(startsAt = '2026-01-15', interval = 1, unit = 'month') {
+  async function fixture(startsAt = '2099-01-15', interval = 1, unit = 'month') {
     const memberId = await createMember(gymId);
     const planId = await createPlanWithPolicy(gymId, interval, unit);
     const userMembershipId = await createMembershipStartingOn(gymId, memberId, planId, startsAt);
@@ -423,8 +423,12 @@ describe('POST /webhooks/payment — what a completed CIT charge writes', () => 
     expect(stored[0].card_brand).toBe('mastercard');
   });
 
+  // Future `starts_at` throughout this file: since #790 a back-dated one stamps
+  // the first boundary after *today*, so a fixed past date here would make the
+  // expected value depend on the day the suite runs. The back-dated and
+  // starts-today cases live in `backdated-first-charge.test.ts`.
   it('stamps the first next_billing_date as starts_at + the assignment cadence', async () => {
-    const { memberId, userMembershipId } = await fixture('2026-01-15', 1, 'month');
+    const { memberId, userMembershipId } = await fixture('2099-01-15', 1, 'month');
     expect(await readNextBillingDate(userMembershipId)).toBeNull();
 
     const orderId = crypto.randomUUID();
@@ -435,11 +439,11 @@ describe('POST /webhooks/payment — what a completed CIT charge writes', () => 
         .status,
     ).toBe(200);
 
-    expect(await readNextBillingDate(userMembershipId)).toBe('2026-02-15');
+    expect(await readNextBillingDate(userMembershipId)).toBe('2099-02-15');
   });
 
   it('takes the cadence from the assignment snapshot, not the Plan, when it has one', async () => {
-    const { memberId, userMembershipId } = await fixture('2026-03-01', 1, 'month');
+    const { memberId, userMembershipId } = await fixture('2099-03-01', 1, 'month');
     // #635 stage 3: ASSIGNMENT_CADENCE is COALESCE(um.*, bp.*) — a frozen
     // cadence outranks the Plan's live policy.
     await db.query(
@@ -456,7 +460,7 @@ describe('POST /webhooks/payment — what a completed CIT charge writes', () => 
         .status,
     ).toBe(200);
 
-    expect(await readNextBillingDate(userMembershipId)).toBe('2026-06-01');
+    expect(await readNextBillingDate(userMembershipId)).toBe('2099-06-01');
   });
 
   it('leaves next_billing_date alone when it is already set', async () => {
@@ -532,7 +536,7 @@ describe('POST /webhooks/payment — cleanup must not lose a payment that was ma
        VALUES (?, ?, 1, 'month')`,
       [gymId, planId],
     );
-    const userMembershipId = await createMembershipStartingOn(gymId, memberId, planId, '2026-01-15');
+    const userMembershipId = await createMembershipStartingOn(gymId, memberId, planId, '2099-01-15');
     return { memberId, userMembershipId };
   }
 
@@ -595,7 +599,7 @@ describe('POST /webhooks/payment — cleanup must not lose a payment that was ma
     expect(stored).toHaveLength(1);
     expect(stored[0].payment_token).toBe(card.paymentToken);
 
-    expect(await readNextBillingDate(userMembershipId)).toBe('2026-02-15');
+    expect(await readNextBillingDate(userMembershipId)).toBe('2099-02-15');
   });
 
   // The second half of the fix, and the safety net for every other way a row can
@@ -618,7 +622,7 @@ describe('POST /webhooks/payment — cleanup must not lose a payment that was ma
     expect(pr.status).toBe('completed');
     expect(pr.billing_event_id).not.toBeNull();
     expect((await readStoredCard(gymId, memberId))[0].payment_token).toBe(card.paymentToken);
-    expect(await readNextBillingDate(userMembershipId)).toBe('2026-02-15');
+    expect(await readNextBillingDate(userMembershipId)).toBe('2099-02-15');
   });
 
   it('does not revive an expired request on a failed webhook — only money reopens one', async () => {
