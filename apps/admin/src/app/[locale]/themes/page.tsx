@@ -469,6 +469,12 @@ export default function GymThemesPage() {
   async function handleClone() {
     if (!cloning) return;
     if (!cloneName.trim()) { setCloneError(t('error_required')); return; }
+    // #827: a theme cannot be created before the gym's bucket is — the API
+    // answers 503/409 and creates nothing, and this is the same decision taken
+    // one step earlier so the admin reads the reason instead of a raw failure.
+    // The menu item is disabled for the same reason; this covers a modal that
+    // was already open when the gym's storage state changed.
+    if (storageBlock) { setCloneError(t(`clone_${storageBlock}`)); return; }
     setCloneSaving(true);
     setCloneError(null);
     try {
@@ -476,7 +482,13 @@ export default function GymThemesPage() {
       setCloning(null);
       load();
     } catch (err: any) {
-      setCloneError(err.message ?? t('error_generic'));
+      // The clone has a storage half now, so a storage failure gets the same
+      // `stage`/`path` diagnostic every other storage-backed save does (#824) —
+      // but only one that reached storage: a duplicate name is a 409 with no
+      // `stage`, and naming a folder step for it would misdescribe it.
+      setCloneError(err.body?.stage
+        ? storageErrorMessage(err, 'storage_error_title_clone', 'create_theme_folder')
+        : (err.message ?? t('error_generic')));
     } finally {
       setCloneSaving(false);
     }
@@ -641,7 +653,15 @@ export default function GymThemesPage() {
     const colors = theme.tokens?.colors;
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('clone'), onClick: () => openClone(theme) },
+      {
+        label: t('clone'),
+        onClick: () => openClone(theme),
+        // #827: creating a theme writes its folder tree into the gym's own
+        // Cloudflare folder, so the action is unavailable — with the reason — for
+        // as long as that folder cannot be written to.
+        disabled: !!storageBlock,
+        title: storageBlock ? t(`clone_${storageBlock}`) : undefined,
+      },
     ];
     if (!isDeleted && !theme.is_base) {
       if (theme.status === 'draft' || theme.status === 'inactive') {

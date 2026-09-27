@@ -6,7 +6,8 @@ import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { validateTokens } from '../domain/themeTokens';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
-import { folderStageForKey } from '../domain/storageFailureStage';
+import { themeStorageFolderKeys } from '../domain/themeFolders';
+import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
 import {
   bytesMatchImageMime,
   buildThemeMemberImageKey,
@@ -157,6 +158,46 @@ gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
       if (nameConflict.length > 0) return res.status(409).json({ error: 'A theme with this name already exists' });
 
       const id = randomUUID();
+
+      // #827: a Custom Theme cannot exist without somewhere to keep its assets,
+      // so the gym's bucket is checked *before* the row is written — a
+      // deployment with no R2 answers 503 and a gym whose folder tree was never
+      // initialized answers 409, and in both cases no theme is created. Cloning
+      // is the only way a Custom Theme comes into existence (there is no
+      // gym-side `POST /system/themes`), so this one check covers both the
+      // Create and the Clone flow of the ticket.
+      const folderPrefix = await resolveGymFolderPrefix(
+        gymId,
+        res,
+        'Cloudflare storage has not been initialized for this gym, therefore a theme cannot be created.',
+      );
+      if (!folderPrefix) return;
+
+      // The new theme's own folder and its `Logo/` and `Members/` leaves. Written
+      // before the INSERT rather than after it, which is what makes the failure
+      // mode the ticket forbids impossible: a storage error leaves no theme
+      // behind to be half-created, and the markers a later retry re-writes are
+      // zero-byte objects whose keys end in `/`, so re-creating them is
+      // idempotent (§8) and can never overwrite a real object.
+      const themeFolderKeys = themeStorageFolderKeys(folderPrefix, id, baseName);
+      try {
+        await ensureStorageFolders(themeFolderKeys);
+      } catch (err: any) {
+        const details = err instanceof StorageOperationError
+          ? err.details
+          : describeStorageError(err, { operation: 'ensureStorageFolders', key: themeFolderKeys[0] });
+        logger.error(
+          { err, details, diagnostics: getStorageDiagnostics(), gymId, sourceThemeId: src.id },
+          'Cloudflare R2 theme folder creation failed',
+        );
+        return res.status(502).json({
+          error: `Failed to create the theme storage folders: ${details.message}`,
+          stage: themeFolderStageForKey(details.key, themeFolderKeys),
+          path: details.key ?? themeFolderKeys[0],
+          details,
+        });
+      }
+
       const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
       // Cloning is the only way a customer theme comes into existence, so this
       // is where the creator snapshot is captured (#712).
@@ -281,8 +322,18 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
 // it was working on, so the admin sees which step broke rather than a bare
 // message (#824).
 
-/** The tenant's R2 folder prefix, or a response explaining why there isn't one. */
-async function resolveGymFolderPrefix(gymId: string, res: express.Response): Promise<string | null> {
+/**
+ * The tenant's R2 folder prefix, or a response explaining why there isn't one.
+ *
+ * `notInitialized` is the 409's wording: the uploads say images cannot be
+ * uploaded, while Theme creation (#827) says a Theme cannot be created — the
+ * same missing folder tree, two different things the admin was trying to do.
+ */
+async function resolveGymFolderPrefix(
+  gymId: string,
+  res: express.Response,
+  notInitialized = 'Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.',
+): Promise<string | null> {
   if (!isStorageConfigured()) {
     const missingConfig = getMissingStorageConfigKeys();
     res.status(503).json({
@@ -298,10 +349,7 @@ async function resolveGymFolderPrefix(gymId: string, res: express.Response): Pro
   );
   const folderPrefix: string | null = rows[0]?.storage_folder_prefix ?? null;
   if (!folderPrefix) {
-    res.status(409).json({
-      error: 'Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.',
-      stage: 'resolve_path',
-    });
+    res.status(409).json({ error: notInitialized, stage: 'resolve_path' });
     return null;
   }
   return folderPrefix;

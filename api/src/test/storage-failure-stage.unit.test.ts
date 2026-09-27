@@ -6,9 +6,10 @@
 // missing key verbatim. `theme-upload-diagnostics.test.ts` asserts that half.
 
 import { describe, expect, it } from 'vitest';
-import { folderStageForKey, STORAGE_FAILURE_STAGES } from '../domain/storageFailureStage';
+import { folderStageForKey, STORAGE_FAILURE_STAGES, themeFolderStageForKey } from '../domain/storageFailureStage';
 import { themeLogoFolderKeys } from '../domain/themeLogo';
 import { themeMemberFolderKeys } from '../domain/themeMemberImages';
+import { themeStorageFolderKeys } from '../domain/themeFolders';
 
 const PREFIX = 'gyms/123-QSport';
 
@@ -57,5 +58,30 @@ describe('folderStageForKey()', () => {
     // The gym root and the gym-level `Themes/` marker are not the theme's leaf.
     expect(folderStageForKey(keys[0], keys, 'create_members_folder')).toBe('create_theme_folder');
     expect(folderStageForKey(keys[1], keys, 'create_members_folder')).toBe('create_theme_folder');
+  });
+});
+
+// #827: Theme creation writes three markers at once, so the stage comes from the
+// position in `themeStorageFolderKeys()` rather than from a single leaf.
+describe('themeFolderStageForKey (#827)', () => {
+  const keys = themeStorageFolderKeys(PREFIX, '456', 'Crimson Base');
+
+  it('names the marker that failed', () => {
+    expect(themeFolderStageForKey(keys[0], keys)).toBe('create_theme_folder');
+    expect(themeFolderStageForKey(keys[1], keys)).toBe('create_logo_folder');
+    expect(themeFolderStageForKey(keys[2], keys)).toBe('create_members_folder');
+  });
+
+  it('falls back to the outermost stage when the key is unknown or missing', () => {
+    expect(themeFolderStageForKey(null, keys)).toBe('create_theme_folder');
+    expect(themeFolderStageForKey(undefined, keys)).toBe('create_theme_folder');
+    expect(themeFolderStageForKey('gyms/other/Themes/1-X/Logo/', keys)).toBe('create_theme_folder');
+  });
+
+  it('reads the list rather than the key, so a theme named "Logo" is not mistaken for its own leaf', () => {
+    const named = themeStorageFolderKeys(PREFIX, '5', 'Logo');
+    expect(named[0]).toBe(`${PREFIX}/Themes/5-Logo/`);
+    expect(themeFolderStageForKey(named[0], named)).toBe('create_theme_folder');
+    expect(themeFolderStageForKey(named[1], named)).toBe('create_logo_folder');
   });
 });

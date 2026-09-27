@@ -50,3 +50,34 @@ export function folderStageForKey(
 ): StorageFailureStage {
   return key && key === folderKeys[folderKeys.length - 1] ? leafStage : 'create_theme_folder';
 }
+
+/**
+ * The stages of `themeStorageFolderKeys()`, in that function's order (#827).
+ *
+ * Index-aligned rather than pattern-matched for `folderStageForKey()`'s reason:
+ * a theme *named* "Logo" has a folder called `…/Themes/5-Logo/`, and a regex on
+ * the key would report creating it as the leaf.
+ */
+const THEME_FOLDER_STAGES: readonly StorageFailureStage[] = [
+  'create_theme_folder',
+  'create_logo_folder',
+  'create_members_folder',
+];
+
+/**
+ * Which of a Theme's three initialization markers (#827) was being written when
+ * `ensureStorageFolders()` failed — the theme's own folder, its `Logo/` leaf or
+ * its `Members/` leaf.
+ *
+ * `folderKeys` are the keys the caller passed, i.e. exactly what
+ * `themeStorageFolderKeys()` returned; anything else (a key from another
+ * operation, or none at all) falls back to the outermost stage, which is the
+ * step that must have been reached first.
+ */
+export function themeFolderStageForKey(
+  key: string | null | undefined,
+  folderKeys: readonly string[],
+): StorageFailureStage {
+  const index = key ? folderKeys.indexOf(key) : -1;
+  return THEME_FOLDER_STAGES[index] ?? 'create_theme_folder';
+}
