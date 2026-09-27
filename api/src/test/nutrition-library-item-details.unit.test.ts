@@ -97,6 +97,28 @@ describe('itemDetailColumnsSql', () => {
     }
   });
 
+  it('masks only the actor names on the shared system rows, and keeps the keys', () => {
+    const masked = itemDetailColumnsSql('nli', { maskPlatformActors: true });
+    for (const column of ['created_by_name', 'created_by_type', 'modified_by_name', 'modified_by_type', 'deleted_by_name', 'deleted_by_type']) {
+      // Still projected under the same key, so a reader needs no rule of its own.
+      expect(masked).toContain(`END AS ${column}`);
+      expect(masked).toContain(`CASE WHEN nli.gym_id IS NULL THEN NULL ELSE nli.${column} END`);
+    }
+    // A date names nobody, and the description is the food's, not an actor's.
+    expect(masked).toContain('nli.description');
+    expect(masked).toContain('nli.deleted_at');
+    expect(masked).not.toContain('THEN NULL ELSE nli.deleted_at');
+    expect(masked).not.toContain('THEN NULL ELSE nli.description');
+  });
+
+  it('projects the same keys masked or not', () => {
+    const keyOf = (fragment: string) => fragment.replace(/^.* AS /, '').replace('nli.', '').trim();
+    const plain = itemDetailColumnsSql('nli').split(', ').map(keyOf);
+    // The CASE expressions contain no top-level comma, so splitting is safe.
+    const masked = itemDetailColumnsSql('nli', { maskPlatformActors: true }).split(', ').map(keyOf);
+    expect(masked).toEqual(plain);
+  });
+
   it('is the same set whichever alias asks for it', () => {
     const withAlias = itemDetailColumnsSql('x').split(', ').map((c) => c.replace('x.', ''));
     const withOther = itemDetailColumnsSql('nli').split(', ').map((c) => c.replace('nli.', ''));

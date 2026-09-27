@@ -336,21 +336,38 @@ export function buildListWhere(
 
 /* ── Description + actor snapshot (#799) ─────────────────────────────────── */
 
+/** The actor pairs migration 196 added, in the order responses carry them. */
+const ACTOR_COLUMNS = [
+  'created_by_name', 'created_by_type',
+  'modified_by_name', 'modified_by_type',
+  'deleted_by_name', 'deleted_by_type',
+];
+
 /**
  * The columns every item-shaped response carries beyond `id/name/status/
  * image_url/created_at/modified_at`, declared once so the gym and platform
- * routers cannot answer with different shapes (#799 §26). `description` and the
- * three actor pairs come from migration 196.
+ * routers cannot answer with different shapes (#799 §26). `description`,
+ * `deleted_at` and the three actor pairs come from migration 196.
+ *
+ * `maskPlatformActors` nulls the actor names on the **system** rows
+ * (`gym_id IS NULL`) the gym-facing list returns alongside a gym's own. Those
+ * rows are administered from Cordel, so their actor is a Cordel employee: the
+ * catalogue is deliberately shared, their name is not. The column is still
+ * present and still keyed the same way, so the Details modal renders its em dash
+ * and needs no rule of its own (`created_at` is not masked — a date names nobody).
  *
  * @param alias table alias of `nutrition_library_items` in the enclosing query
  */
-export function itemDetailColumnsSql(alias: string): string {
-  return [
-    'description',
-    'created_by_name', 'created_by_type',
-    'modified_by_name', 'modified_by_type',
-    'deleted_at', 'deleted_by_name', 'deleted_by_type',
-  ].map((column) => `${alias}.${column}`).join(', ');
+export function itemDetailColumnsSql(
+  alias: string,
+  { maskPlatformActors = false }: { maskPlatformActors?: boolean } = {},
+): string {
+  const actors = ACTOR_COLUMNS.map((column) => (
+    maskPlatformActors
+      ? `CASE WHEN ${alias}.gym_id IS NULL THEN NULL ELSE ${alias}.${column} END AS ${column}`
+      : `${alias}.${column}`
+  ));
+  return [`${alias}.description`, ...actors.slice(0, 4), `${alias}.deleted_at`, ...actors.slice(4)].join(', ');
 }
 
 /** `nutrition_library_items.description` is VARCHAR(1000) (migration 196). */

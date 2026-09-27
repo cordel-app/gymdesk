@@ -600,4 +600,37 @@ describe('description and audit snapshot (#799)', () => {
       expect(row, `the list row must carry ${key}`).toHaveProperty(key);
     }
   });
+
+  it('does not publish a system item\'s Cordel actor names to a gym', async () => {
+    // A system row is administered from Cordel, so its actor is a Cordel
+    // employee: the catalogue is shared, the name is not.
+    await db.query(
+      `UPDATE nutrition_library_items
+       SET created_by_name = 'Cordel Staffer', created_by_type = 'superadmin',
+           modified_by_name = 'Cordel Staffer', modified_by_type = 'superadmin'
+       WHERE id = ?`,
+      [libraryItemId],
+    );
+
+    const res = await request
+      .get(`/nutrition-library?search=${encodeURIComponent('NL Test Chicken')}&limit=10`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const row = res.body.items.find((i: any) => i.id === libraryItemId);
+    expect(row.created_by_name).toBeNull();
+    expect(row.created_by_type).toBeNull();
+    expect(row.modified_by_name).toBeNull();
+    // The dates are not masked — they name nobody.
+    expect(row.created_at).toBeTruthy();
+
+    // A gym's own item still carries its own actor.
+    const own = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `Own actor ${Date.now()}`, category_ids: [sideId] });
+    expect(own.status).toBe(201);
+    expect(own.body.created_by_name).toBe('Test User');
+  });
 });

@@ -6,8 +6,11 @@
  *  1. **A description.** `nutrition_library_items` has never had one — the row is
  *     `id, gym_id, name, status, image_url, created_at, modified_at` (+ the
  *     junction tables) — and §12 asks for it to be added across the domain rather
- *     than rendered as a UI-only field. Nullable, 1000 chars, same shape as
- *     `tax_rates.description` (migration 126).
+ *     than rendered as a UI-only field. Nullable, VARCHAR(1000) — the same
+ *     immutable-snapshot-free plain column `tax_rates.description` (migration 126)
+ *     is, at the width `DESCRIPTION_MAX_LENGTH` in
+ *     `api/src/domain/nutritionLibrary.ts` declares (126's own is 500; do not read
+ *     either as a house width).
  *
  *  2. **Who created / modified / deleted the item.** §9 and §13 ask the Details
  *     modal to show Created At / By, Modified At / By and Deleted At / By, using
@@ -31,7 +34,10 @@
  * (`PUT /:id`, the qualities/categories/translations sub-resources, the image
  * upload) answers 409 for an item that is already deleted — so no later write can
  * have moved `modified_at` past the deletion. Scoped to `deleted_at IS NULL` so it
- * is safe to re-run and never overwrites a value the application wrote.
+ * is safe to re-run and never overwrites a value the application wrote. A deleted
+ * row whose `modified_at` is somehow NULL is left alone rather than given an
+ * invented date: the em dash the Details modal renders is the honest answer, and
+ * only direct SQL (the test suite does it) can produce that state.
  *
  * The actor columns are **not** backfilled. The obvious source would be
  * `audit_logs`, but the platform router's `recordAudit()` calls are no-ops:
@@ -63,6 +69,12 @@ async function constraintExists(knex, name) {
 /** The three actor pairs, each `<prefix>_by_name` + `<prefix>_by_type`. */
 const ACTOR_PREFIXES = ['created', 'modified', 'deleted'];
 
+/** Those pairs flattened, so each column is added and dropped under its own guard. */
+const ACTOR_COLUMNS = ACTOR_PREFIXES.flatMap((prefix) => [
+  { column: `${prefix}_by_name`, length: 255 },
+  { column: `${prefix}_by_type`, length: 20 },
+]);
+
 exports.up = async (knex) => {
   if (!(await knex.schema.hasColumn(TABLE, 'description'))) {
     await knex.schema.alterTable(TABLE, (t) => {
@@ -70,12 +82,13 @@ exports.up = async (knex) => {
     });
   }
 
-  for (const prefix of ACTOR_PREFIXES) {
-    if (!(await knex.schema.hasColumn(TABLE, `${prefix}_by_name`))) {
-      await knex.schema.alterTable(TABLE, (t) => {
-        t.string(`${prefix}_by_name`, 255).nullable();
-        t.string(`${prefix}_by_type`, 20).nullable();
-      });
+  // Guarded per column, not per pair: knex's mysql2 dialect batches ADDs into one
+  // ALTER but emits a separate ALTER per DROP, so a pair-level guard keyed on
+  // `_by_name` would skip a half-dropped pair forever and make a later `up()` fail
+  // with ER_DUP_FIELDNAME on the surviving column.
+  for (const { column, length } of ACTOR_COLUMNS) {
+    if (!(await knex.schema.hasColumn(TABLE, column))) {
+      await knex.schema.alterTable(TABLE, (t) => { t.string(column, length).nullable(); });
     }
   }
 
@@ -85,14 +98,21 @@ exports.up = async (knex) => {
     });
   }
 
+  // `ADD CONSTRAINT` rebuilds the table under ALGORITHM=COPY, so the three go in
+  // one statement rather than three — while still being individually guarded, so a
+  // resumed run adds only what is missing.
+  const missingChecks = [];
   for (const prefix of ACTOR_PREFIXES) {
     const name = `chk_nli_${prefix}_by_type`;
     if (!(await constraintExists(knex, name))) {
-      await knex.raw(
-        `ALTER TABLE ${TABLE} ADD CONSTRAINT ${name} ` +
+      missingChecks.push(
+        `ADD CONSTRAINT ${name} ` +
         `CHECK (${prefix}_by_type IS NULL OR ${prefix}_by_type IN ('staff','superadmin'))`,
       );
     }
+  }
+  if (missingChecks.length > 0) {
+    await knex.raw(`ALTER TABLE ${TABLE} ${missingChecks.join(', ')}`);
   }
 
   // See the header: `modified_at` on a deleted row *is* the deletion time.
@@ -112,12 +132,9 @@ exports.down = async (knex) => {
   if (await knex.schema.hasColumn(TABLE, 'deleted_at')) {
     await knex.schema.alterTable(TABLE, (t) => t.dropColumn('deleted_at'));
   }
-  for (const prefix of ACTOR_PREFIXES) {
-    if (await knex.schema.hasColumn(TABLE, `${prefix}_by_name`)) {
-      await knex.schema.alterTable(TABLE, (t) => {
-        t.dropColumn(`${prefix}_by_name`);
-        t.dropColumn(`${prefix}_by_type`);
-      });
+  for (const { column } of [...ACTOR_COLUMNS].reverse()) {
+    if (await knex.schema.hasColumn(TABLE, column)) {
+      await knex.schema.alterTable(TABLE, (t) => t.dropColumn(column));
     }
   }
   if (await knex.schema.hasColumn(TABLE, 'description')) {

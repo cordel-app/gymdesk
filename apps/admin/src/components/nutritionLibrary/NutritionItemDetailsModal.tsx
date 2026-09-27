@@ -20,6 +20,12 @@ import { NutritionLibraryItemRow, displayValue, formatTimestamp } from './nutrit
  * row — see migration 196. Rows written before it carry no name and render the
  * em dash; the Audit Log link is what covers their history.
  *
+ * Two values are legitimately empty here rather than missing. A system food read
+ * from a gym has its actor names masked by `GET /nutrition-library` (they are
+ * Cordel employees'), and a gym-owned food has no delete route at all, so its
+ * Deleted At / Deleted By are always the em dash on that side — the modal serves
+ * both libraries and states the same fields for each.
+ *
  * One component serves both libraries; `scope` is what decides which Audit Log
  * it opens ('platform' for Cordel → Base Nutrition Library).
  */

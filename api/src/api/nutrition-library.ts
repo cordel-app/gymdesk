@@ -18,9 +18,14 @@ export const nutritionLibraryRouter = Router();
  * deletion snapshot (#799, migration 196) are part of it: the Details modal is
  * fed by the list row rather than by a second endpoint, so what it shows has to
  * come back here (#799 §25).
+ *
+ * `maskPlatformActors`: this router also returns the shared system rows
+ * (`gym_id IS NULL`), which are administered from Cordel — so their actor names
+ * are Cordel employees' and are not published to every tenant. A gym's own rows
+ * carry theirs, and `created_at`/`modified_at` are returned either way.
  */
 const ITEM_COLUMNS = `nli.id, nli.gym_id, nli.name, nli.status, nli.image_url,
-  nli.created_at, nli.modified_at, ${itemDetailColumnsSql('nli')}`;
+  nli.created_at, nli.modified_at, ${itemDetailColumnsSql('nli', { maskPlatformActors: true })}`;
 
 /* ── Categories catalogue (read-only) ────────────────────────────────────── */
 
