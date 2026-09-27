@@ -2,6 +2,7 @@
 
 import { useLocale } from 'next-intl';
 import { useRouter, usePathname } from 'next/navigation';
+import { headerOptionStyle } from './headerChrome';
 
 const languages = [
   { code: 'es', label: 'Español' },
@@ -35,7 +36,11 @@ export function LanguagePicker() {
       }}
     >
       {languages.map(({ code, label }) => (
-        <option key={code} value={code}>
+        // #808: the dropdown the browser opens is painted outside the header,
+        // from the UA's defaults — white text (inherited from the header) on a
+        // white popup. Each option carries the header's own pair instead, so
+        // the list reads as a continuation of the band it drops out of.
+        <option key={code} value={code} style={headerOptionStyle}>
           {label}
         </option>
       ))}
