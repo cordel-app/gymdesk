@@ -2560,7 +2560,6 @@
     "col_created_by": "Creado por",
     "section_general": "General",
     "section_availability": "Disponibilidad",
-    "section_activity_types": "Actividades",
     "section_notes": "Notas",
     "label_name": "Nombre *",
     "label_description": "Descripción",
@@ -2596,7 +2595,6 @@
     "placeholder_center": "Selecciona un centro",
     "search_placeholder": "Buscar por nombre, descripción o centro…",
     "filter_center": "Todos los centros",
-    "no_activity_types": "Aún no hay actividades definidas.",
     "notes_placeholder": "Notas internas visibles solo para administradores…",
     "availability_hint": "Los horarios de disponibilidad son opcionales y solo de referencia."
   },

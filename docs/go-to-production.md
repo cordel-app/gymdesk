@@ -501,6 +501,25 @@ runbook is how.
       table has had no editor since migration 006 created it), so this should be a no-op
       everywhere; confirm with `SELECT COUNT(*) FROM membership_plan_benefits` before the
       deploy and capture the rows if any environment turns out to have some.
+- [ ] **Migration 197 must run *after* the API build that stops reading
+      `space_activity_types`** (#801): it `DROP`s the table, whose only readers were
+      `GET`/`PUT /spaces/:id/activity-types` and the assignment copy inside
+      `POST /spaces/:id/duplicate`. Run it first and the previous build 500s with
+      `ER_NO_SUCH_TABLE` on the Spaces page's expanded card, on every Space save and on
+      every Space duplicate — and `deploy.yml` runs `knex migrate:latest` before it
+      restarts the API container, so this needs the API deployed on its own first (it
+      runs fine against the old schema — nothing reads the table any more), then the
+      migration. The same ordering as 176, 177, 179 and 184.
+- [ ] **Migration 197 drops rows with no archive, and `down()` only restores the shape**
+      (#801 §11): `down()` recreates `space_activity_types` empty, so rolling the API back
+      to a build that still serves those two routes reads "this Space hosts no
+      Activities" — the same answer the removed UI gave for an unconfigured Space, so the
+      rollback is degraded rather than broken. Nothing else ever read the table (not the
+      calendar, not `class_sessions`, which carries its own `space_id`, not booking
+      eligibility, not billing), and the surviving direction is the Activity Type's own
+      `default_space_id`, which this migration does not touch. Capture
+      `SELECT * FROM space_activity_types` before the deploy if any gym's assignments are
+      worth keeping for reference.
 - [ ] **Check who loses a session cap before migrating 177** (#635 stage 4, part 2):
       `activity_type_eligible_plans` grants access without a per-window limit, so a plan
       with `allowance_type = 'session_count'` silently becomes unlimited for that
