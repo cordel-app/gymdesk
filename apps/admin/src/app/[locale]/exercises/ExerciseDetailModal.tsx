@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { resultTypeLabel } from './exerciseForm';
 
 interface ExerciseDetail {
   id: number;
@@ -56,7 +57,9 @@ export function ExerciseDetailModal({ exerciseId, exerciseName, onClose }: {
 
   const principalMuscles = (detail?.muscles ?? []).filter((m) => m.role === 'principal').map((m) => m.key).join(', ') || '—';
   const secondaryMuscles = (detail?.muscles ?? []).filter((m) => m.role === 'secondary').map((m) => m.key).join(', ') || '—';
-  const resultTypes = (detail?.allowed_result_types ?? []).map((rt) => rt.name).join(', ') || '—';
+  // #805 AC4: the translated label, never the `exercises.result_type_*` key.
+  const resultTypes = (detail?.allowed_result_types ?? [])
+    .map((rt) => resultTypeLabel(rt, (key) => t(key as any))).join(', ') || '—';
 
   return (
     <div style={overlayStyle} onClick={onClose}>
