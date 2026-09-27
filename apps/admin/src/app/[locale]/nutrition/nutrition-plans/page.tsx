@@ -401,16 +401,18 @@ function PlanCard({
         >
           <span style={{ fontSize: 12, color: '#aaa', userSelect: 'none', flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
           <span style={nameCellStyle}>{plan.name}</span>
-          <span style={{ fontSize: 13, color: '#666', flexShrink: 0, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {plan.member_name}
-          </span>
-          <StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />
-          <span style={{ fontSize: 13, color: '#888', whiteSpace: 'nowrap' }}>
+          {/* #810: the assigned member reads at the plan name's own size and weight. */}
+          <span style={memberCellStyle}>{plan.member_name}</span>
+          <span style={metaCellStyle}>
             {t('nutrition_plans.day_count', { count: plan.day_count })}
           </span>
-          <span style={{ fontSize: 13, color: '#888', whiteSpace: 'nowrap' }}>
+          <span style={metaCellStyle}>
             {formatDate(plan.created_at, locale)}
           </span>
+          <span style={{ ...metaCellStyle, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {plan.created_by_name ?? '—'}
+          </span>
+          <StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />
           <span onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('nutrition_plans.col_actions')} items={menuItems} />
           </span>
@@ -514,9 +516,21 @@ const cardStyle = (editing: boolean): React.CSSProperties => ({
 const headerRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', cursor: 'pointer', userSelect: 'none',
 };
+// #810: the plan name and the member it is assigned to share one typography
+// declaration, so the two halves of the header title cannot drift apart.
+const headerTitleStyle: React.CSSProperties = { fontWeight: 600, fontSize: 15 };
 const nameCellStyle: React.CSSProperties = {
-  flex: 1, minWidth: 0, fontWeight: 600, fontSize: 15,
+  ...headerTitleStyle,
+  flex: 1, minWidth: 0,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+const memberCellStyle: React.CSSProperties = {
+  ...headerTitleStyle,
+  flexShrink: 0, maxWidth: 200,
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+const metaCellStyle: React.CSSProperties = {
+  fontSize: 13, color: '#888', whiteSpace: 'nowrap', flexShrink: 0,
 };
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
 const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
