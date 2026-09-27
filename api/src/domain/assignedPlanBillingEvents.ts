@@ -11,8 +11,8 @@
 //     start date.
 //   - Query the actual persisted `billing_events` rows within that
 //     calculated range. #511 also projected a non-persisted view for a
-//     `draft` plan, which had no ledger yet; #786 retired that status, and
-//     the projection went with it.
+//     `draft` plan, which had no ledger yet, flagged by a `projected` field;
+//     #786 retired that status, and #854 removed the projection and the flag.
 //   - Ordered chronologically, scoped to this plan, no duplicates, no
 //     fabricated placeholders, fewer events if the plan ends early.
 //
@@ -74,7 +74,6 @@ export function computeRangeEnd(
 export interface BillingEventsView<E> {
   available: boolean;
   reason: string | null;
-  projected: boolean;
   range_start: string | null;
   range_end: string | null;
   events: E[];
@@ -101,12 +100,11 @@ export interface PersistedRangeInput<T extends PersistedBillingEventLike> {
  */
 export function selectPersistedBillingEventsInRange<T extends PersistedBillingEventLike>(
   input: PersistedRangeInput<T>,
-): BillingEventsView<T & { promotion_affected: boolean; projected: false }> {
+): BillingEventsView<T & { promotion_affected: boolean }> {
   const { billingStart, endsAt, promotionWindows, events } = input;
   const tagged = events.map((e) => ({
     ...e,
     promotion_affected: promotionWindows.some((w) => promotionCoversDate(w, e.date)),
-    projected: false as const,
   }));
   const affectedDates = tagged.filter((e) => e.promotion_affected).map((e) => e.date);
   const rangeEnd = computeRangeEnd(affectedDates, billingStart, endsAt);
@@ -114,7 +112,7 @@ export function selectPersistedBillingEventsInRange<T extends PersistedBillingEv
     .filter((e) => e.date >= billingStart && e.date <= rangeEnd)
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return {
-    available: true, reason: null, projected: false,
+    available: true, reason: null,
     range_start: billingStart, range_end: rangeEnd,
     events: inRange,
   };

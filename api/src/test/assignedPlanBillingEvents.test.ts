@@ -68,7 +68,7 @@ describe('selectPersistedBillingEventsInRange (#511 Q2)', () => {
         { id: 2, date: '2026-02-10' },
       ],
     });
-    expect(result.projected).toBe(false);
+    expect(result).not.toHaveProperty('projected');
     expect(result.events.map((e) => e.id)).toEqual([1, 2, 3]);
     expect(result.events.find((e) => e.id === 2)!.promotion_affected).toBe(true);
     expect(result.events.find((e) => e.id === 1)!.promotion_affected).toBe(false);
