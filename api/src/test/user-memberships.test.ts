@@ -2249,7 +2249,7 @@ describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
     expect(Array.isArray(res.body.promotions)).toBe(true);
 
     expect(res.body.billing_events).toBeDefined();
-    expect(res.body.billing_events.projected).toBe(false);
+    expect(res.body.billing_events).not.toHaveProperty('projected');
   });
 
   it('returns 404 for a non-existent membership', async () => {
@@ -2320,7 +2320,8 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.projected).toBe(false);
+    expect(res.body).not.toHaveProperty('projected');
+    expect(res.body.events.every((e: any) => !('projected' in e))).toBe(true);
     expect(res.body.range_start).toBe('2026-01-01');
     expect(res.body.range_end).toBe('2026-03-01');
     expect(res.body.events.map((e: any) => e.event_type)).toEqual(['status_changed', 'recurring_payment']);

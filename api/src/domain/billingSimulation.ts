@@ -100,7 +100,7 @@ export const SECTION_ORDER: readonly SimulationSection[] = [
 // How far the projection will ever run, as a safety net: a promotion that
 // grants an indefinite Membership Fee benefit and is never revoked has no
 // natural end, so "continue to the first regular milestone" (#629 §6) would
-// otherwise never terminate. Mirrors assignedPlanBillingEvents.ts's own cap.
+// otherwise never terminate.
 const MAX_SIMULATION_MONTHS = 36;
 
 // Upper bound on the scan that locates an occurrence index — a weekly cadence
@@ -493,10 +493,10 @@ function withPersonalFeeBenefit(resolved: ResolvedCharge, benefit: PersonalFeeBe
  * caps the benefit at free + paid + bonus = 0.
  *
  * Since stage 12 this is the *only* implementation of that rule: the Billing
- * Events projection (`computeMembershipFeePriceAt`), `priceMembershipFeeOn()`, the
- * nightly run and the Member's own My Membership page all resolve a date
- * through here, so none of them can answer a different price for the same
- * cycle.
+ * Simulation, `priceMembershipFeeOn()` (and through it the nightly run), the
+ * Promotion apply/revoke adjustment and the Member's own My Membership page all
+ * resolve a date through here, so none of them can answer a different price for
+ * the same cycle.
  */
 function resolvePromotionMembershipFee(regular: number, date: string, promotions: AppliedPromotionForBilling[]): ResolvedCharge {
   let amount = regular;
