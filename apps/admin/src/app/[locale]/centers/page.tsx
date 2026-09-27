@@ -13,19 +13,32 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
+import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import {
+  CENTER_PROFILE_SECTIONS,
+  CENTER_STATUSES,
+  CenterEditFormValues,
+  CenterProfile,
+  CenterStatus,
+  EMPTY_VALUE,
+  formatCenterField,
+  formatCenterTheme,
+  isCenterFormValid,
+  toCenterEditFormValues,
+  toCenterUpdatePayload,
+} from './centerProfile';
 
-interface Center {
+/**
+ * #800 — the Center row expands into a read-only view of the Center and
+ * `⋮ → Edit` expands it into the inline form instead. There is no Edit Center
+ * modal any more. The field set both halves render is declared once, in
+ * `centerProfile.ts`.
+ */
+interface Center extends CenterProfile {
   id: number;
-  name: string;
   code: string | null;
-  address: string | null;
-  phone: string | null;
-  email: string | null;
-  status: 'active' | 'inactive';
-  theme_id: string | null;
   theme_name: string | null;
   gym_theme_name: string | null;
   active_member_count: number;
@@ -39,21 +52,35 @@ interface Center {
 
 interface Theme { id: string; name: string }
 
-const STATUSES = ['active', 'inactive'] as const;
-
-const selectStyle: React.CSSProperties = {
+const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: 6,
   border: '1px solid #ddd', fontSize: 14, boxSizing: 'border-box',
-  background: '#fff', cursor: 'pointer',
+};
+
+const selectStyle: React.CSSProperties = { ...inputStyle, background: '#fff', cursor: 'pointer' };
+
+const subsectionLabelStyle: React.CSSProperties = {
+  margin: '0 0 12px 0',
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  color: '#aaa',
+};
+
+const fieldGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+  gap: 16,
 };
 
 function formatDate(locale: string, iso: string | null | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return EMPTY_VALUE;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 }
 
 function formatDateShort(locale: string, iso: string | null | undefined): string {
-  if (!iso) return '—';
+  if (!iso) return EMPTY_VALUE;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
 }
 
@@ -63,25 +90,23 @@ export default function CentersPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
-  const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  const { activeGymId, loading: gymLoading } = useGym();
   const { refreshCenters } = useCenter();
   const { toast } = useToast();
 
-  const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('ORGANIZATION');
 
   const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [themes, setThemes] = useState<Theme[]>([]);
 
-  // Edit modal
-  const [editCenter, setEditCenter] = useState<Center | null>(null);
-  const [editForm, setEditForm] = useState({
-    name: '', code: '', address: '', phone: '', email: '',
-    status: 'active' as 'active' | 'inactive', theme_id: '',
-  });
+  // #800: expanding a card and editing it are two separate interactions.
+  // `expandedId` is the strictly read-only view; `editingId` is the inline
+  // form, which is reachable only through ⋮ → Edit. Never both at once.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState<CenterEditFormValues | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -124,48 +149,53 @@ export default function CentersPage() {
       });
       await load();
       refreshCenters();
-      openEdit(row);
+      // The new Center is created empty; drop straight into its inline form.
+      startEdit(row);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     }
   }
 
-  function openEdit(center: Center) {
-    setEditCenter(center);
-    setEditForm({
-      name: center.name,
-      code: center.code ?? '',
-      address: center.address ?? '',
-      phone: center.phone ?? '',
-      email: center.email ?? '',
-      status: center.status,
-      theme_id: center.theme_id ?? '',
-    });
+  /** #800: expanding a card only reads. It never seeds the form and never starts an edit. */
+  function openExpand(center: Center) {
+    if (expandedId === center.id) { setExpandedId(null); return; }
+    setEditingId(null);
+    setForm(null);
+    setFormError(null);
+    setExpandedId(center.id);
+  }
+
+  /** #800: ⋮ → Edit is the only way into the form, and it expands the row itself. */
+  function startEdit(center: Center) {
+    setExpandedId(null);
+    setForm(toCenterEditFormValues(center));
+    setEditingId(center.id);
+    setFormError(null);
+  }
+
+  /** Cancel discards the draft without touching the API; the row keeps its persisted values. */
+  function cancelEdit() {
+    setEditingId(null);
+    setForm(null);
     setFormError(null);
   }
 
   async function handleSaveEdit() {
-    if (!editCenter) return;
-    if (!editForm.name.trim()) { setFormError(t('error_generic')); return; }
+    if (editingId === null || !form) return;
+    if (!isCenterFormValid(form)) { setFormError(t('error_generic')); return; }
     setSaving(true);
     setFormError(null);
     try {
-      await apiFetch(`/centers/${editCenter.id}`, {
+      await apiFetch(`/centers/${editingId}`, {
         method: 'PUT',
-        body: JSON.stringify({
-          name: editForm.name.trim(),
-          code: editForm.code.trim() || null,
-          address: editForm.address.trim() || null,
-          phone: editForm.phone.trim() || null,
-          email: editForm.email.trim() || null,
-          status: editForm.status,
-          theme_id: editForm.theme_id || null,
-        }),
+        body: JSON.stringify(toCenterUpdatePayload(form)),
       });
-      setEditCenter(null);
+      setEditingId(null);
+      setForm(null);
       load();
       refreshCenters();
     } catch (err: any) {
+      // The form stays open with the user's input so the problem can be fixed.
       setFormError(err.message ?? t('error_generic'));
     } finally {
       setSaving(false);
@@ -177,6 +207,7 @@ export default function CentersPage() {
     try {
       await apiFetch(`/centers/${deleting.id}`, { method: 'DELETE' });
       if (expandedId === deleting.id) setExpandedId(null);
+      if (editingId === deleting.id) cancelEdit();
       setDeleting(null);
       load();
       refreshCenters();
@@ -187,38 +218,179 @@ export default function CentersPage() {
   }
 
   function themeLabel(center: Center): string {
-    if (center.theme_id && center.theme_name) return center.theme_name;
-    return `${center.gym_theme_name ?? '—'} ${t('theme_inherited_suffix')}`;
+    return formatCenterTheme(center, t('theme_inherited_suffix'));
   }
 
-  function renderExpanded(center: Center) {
-    if (expandedId !== center.id) return null;
+  function patchForm(patch: Partial<CenterEditFormValues>) {
+    setForm((current) => (current ? { ...current, ...patch } : current));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Read-only expanded card (#800). Nothing between here and renderInlineEditor
+  // writes: no input, select, textarea, checkbox, Save, Cancel or Edit
+  // affordance. Editing is ⋮ → Edit, which renders renderInlineEditor().
+  // ---------------------------------------------------------------------------
+
+  function ReadRow({ label, value }: { label: string; value: string }) {
     return (
-      <div style={{ padding: '16px 24px 20px', borderTop: '1px solid #eee', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px 32px' }}>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#aaa', marginBottom: 6 }}>{t('section_contact')}</div>
-          <DetailItem label={t('label_email')} value={center.email} />
-          <DetailItem label={t('label_phone')} value={center.phone} />
-          <DetailItem label={t('label_address')} value={center.address} />
-        </div>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#aaa', marginBottom: 6 }}>{t('section_theme')}</div>
-          <DetailItem label={t('label_theme')} value={themeLabel(center)} />
-        </div>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#aaa', marginBottom: 6 }}>{t('section_general')}</div>
-          <DetailItem label={t('label_code')} value={center.code} />
-          <DetailItem label={t('col_created_by')} value={center.created_by_name} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+        <div style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>{label}</div>
+        <div style={{ fontSize: 14, overflowWrap: 'anywhere' }}>{value}</div>
+      </div>
+    );
+  }
+
+  function renderReadOnlyProfile(center: Center) {
+    return (
+      <div style={{ borderTop: '1px solid #eee', padding: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {CENTER_PROFILE_SECTIONS.map((section) => (
+            <div key={section.titleKey}>
+              <p style={subsectionLabelStyle}>{t(section.titleKey as any)}</p>
+              <div style={fieldGridStyle}>
+                {section.fields.map((field) => (
+                  <ReadRow
+                    key={field.key}
+                    label={t(field.labelKey as any)}
+                    value={formatCenterField(center, field, (key) => tStatus(key as any), t('theme_inherited_suffix'))}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Inline Edit form (#800) — what the Edit Center modal used to render.
+  // ---------------------------------------------------------------------------
+
+  function renderInlineEditor(center: Center) {
+    if (!form) return null;
+    return (
+      <div style={{ borderTop: '1px solid #eee', padding: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          {CENTER_PROFILE_SECTIONS.map((section) => {
+            const fields = section.fields.filter((f) => f.editable);
+            if (fields.length === 0) return null;
+            return (
+              <div key={section.titleKey}>
+                <p style={subsectionLabelStyle}>{t(section.titleKey as any)}</p>
+                <div style={fieldGridStyle}>
+                  {fields.map((field) => (
+                    <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                      <label htmlFor={`center-${center.id}-${field.key}`} style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>
+                        {t(field.labelKey as any)}
+                      </label>
+                      {renderFieldControl(center, field.key)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button
+            onClick={handleSaveEdit}
+            disabled={!canWrite || saving}
+            title={readOnlyTitle}
+            style={readOnlyStyle(btnStyle(), !canWrite)}
+          >
+            {saving ? t('saving') : t('save_changes')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderFieldControl(center: Center, key: string) {
+    if (!form) return null;
+    const id = `center-${center.id}-${key}`;
+    switch (key) {
+      case 'name':
+        return (
+          <input
+            id={id}
+            style={inputStyle}
+            value={form.name}
+            autoFocus
+            onChange={(e) => patchForm({ name: e.target.value })}
+          />
+        );
+      case 'email':
+        return (
+          <input
+            id={id}
+            type="email"
+            style={inputStyle}
+            value={form.email}
+            onChange={(e) => patchForm({ email: e.target.value })}
+          />
+        );
+      case 'phone':
+        return (
+          <input
+            id={id}
+            style={inputStyle}
+            value={form.phone}
+            onChange={(e) => patchForm({ phone: e.target.value })}
+          />
+        );
+      case 'address':
+        return (
+          <input
+            id={id}
+            style={inputStyle}
+            value={form.address}
+            onChange={(e) => patchForm({ address: e.target.value })}
+          />
+        );
+      case 'status':
+        return (
+          <select
+            id={id}
+            style={selectStyle}
+            value={form.status}
+            onChange={(e) => patchForm({ status: e.target.value as CenterStatus })}
+          >
+            {CENTER_STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+          </select>
+        );
+      case 'theme_id':
+        return (
+          <select
+            id={id}
+            style={selectStyle}
+            value={form.theme_id}
+            onChange={(e) => patchForm({ theme_id: e.target.value })}
+          >
+            <option value="">
+              {center.gym_theme_name ? `${center.gym_theme_name} ${t('theme_inherited_suffix')}` : t('theme_none')}
+            </option>
+            {themes.map((th) => <option key={th.id} value={th.id}>{th.name}</option>)}
+          </select>
+        );
+      default:
+        return null;
+    }
+  }
+
   function renderRow(center: Center) {
     const isExpanded = expandedId === center.id;
+    const isEditing = editingId === center.id;
+
+    // #800: Edit lives here and nowhere else — the expanded card adds no Edit
+    // affordance of any kind, and the item stays gated like every write action.
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetailsCenter(center) },
-      { label: t('edit'), onClick: () => openEdit(center), disabled: !canWrite, title: readOnlyTitle },
+      { label: t('edit'), onClick: () => startEdit(center), disabled: !canWrite, title: readOnlyTitle },
       {
         label: t('view_members'),
         onClick: () => router.push(`/${locale}/members?centerId=${center.id}`),
@@ -229,10 +401,10 @@ export default function CentersPage() {
     return (
       <div key={center.id} style={{ ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' }}>
         <div
-          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: 'pointer' }}
-          onClick={() => setExpandedId(isExpanded ? null : center.id)}
+          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isEditing ? 'default' : 'pointer' }}
+          onClick={() => { if (!isEditing) openExpand(center); }}
         >
-          <span style={{ fontSize: 13, color: '#aaa', marginRight: 2, transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0 }}>▶</span>
+          <span style={{ fontSize: 13, color: '#aaa', marginRight: 2, transform: isExpanded || isEditing ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0 }}>▶</span>
 
           {/* Name */}
           <div style={{ flex: 2, minWidth: 0 }}>
@@ -240,11 +412,11 @@ export default function CentersPage() {
           </div>
 
           {/* Description */}
-          <div style={{ flex: 2, minWidth: 0, fontSize: 13, color: '#aaa' }}>—</div>
+          <div style={{ flex: 2, minWidth: 0, fontSize: 13, color: '#aaa' }}>{EMPTY_VALUE}</div>
 
           {/* Created By */}
           <div style={{ flex: 2, minWidth: 0, fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {center.created_by_name ?? '—'}
+            {center.created_by_name ?? EMPTY_VALUE}
           </div>
 
           {/* Created At */}
@@ -263,7 +435,7 @@ export default function CentersPage() {
           </div>
         </div>
 
-        {isExpanded && renderExpanded(center)}
+        {isEditing ? renderInlineEditor(center) : isExpanded ? renderReadOnlyProfile(center) : null}
       </div>
     );
   }
@@ -278,7 +450,7 @@ export default function CentersPage() {
           <StatusFilter
             value={statusFilter}
             onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
+            options={CENTER_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
           <button onClick={handleAdd} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>{t('add')}</button>
@@ -301,65 +473,6 @@ export default function CentersPage() {
         <p style={{ color: '#aaa', padding: 16 }}>{t('empty')}</p>
       ) : (
         centers.map(renderRow)
-      )}
-
-      {/* Edit modal */}
-      {editCenter && (
-        <CrudModal
-          open
-          title={t('modal_edit')}
-          error={formError}
-          saving={saving}
-          cancelLabel={t('cancel')}
-          saveLabel={saving ? t('saving') : t('save_changes')}
-          onCancel={() => setEditCenter(null)}
-          onSave={handleSaveEdit}
-        >
-          <FormLabel>{t('label_name')}</FormLabel>
-          <FormInput
-            value={editForm.name}
-            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-            autoFocus
-          />
-
-          <FormLabel>{t('label_email')}</FormLabel>
-          <FormInput
-            type="email"
-            value={editForm.email}
-            onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-          />
-
-          <FormLabel>{t('label_phone')}</FormLabel>
-          <FormInput
-            value={editForm.phone}
-            onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-          />
-
-          <FormLabel>{t('label_address')}</FormLabel>
-          <FormInput
-            value={editForm.address}
-            onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-          />
-
-          <FormLabel>{t('label_status')}</FormLabel>
-          <select
-            value={editForm.status}
-            onChange={(e) => setEditForm({ ...editForm, status: e.target.value as 'active' | 'inactive' })}
-            style={selectStyle}
-          >
-            {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
-          </select>
-
-          <FormLabel>{t('label_theme')}</FormLabel>
-          <select
-            value={editForm.theme_id}
-            onChange={(e) => setEditForm({ ...editForm, theme_id: e.target.value })}
-            style={selectStyle}
-          >
-            <option value="">{editCenter.gym_theme_name ? `${editCenter.gym_theme_name} ${t('theme_inherited_suffix')}` : t('theme_none')}</option>
-            {themes.map((th) => <option key={th.id} value={th.id}>{th.name}</option>)}
-          </select>
-        </CrudModal>
       )}
 
       {/* Details modal */}
@@ -406,20 +519,11 @@ export default function CentersPage() {
   );
 }
 
-function DetailItem({ label, value }: { label: string; value: string | null | undefined }) {
-  return (
-    <div style={{ marginBottom: 8, fontSize: 13 }}>
-      <span style={{ color: '#aaa', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: 2 }}>{label}</span>
-      <span style={{ color: '#333' }}>{value ?? '—'}</span>
-    </div>
-  );
-}
-
 function DetailRow({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div style={{ display: 'flex', gap: 12, marginBottom: 6, fontSize: 14 }}>
       <span style={{ minWidth: 120, color: '#888', fontWeight: 500, flexShrink: 0 }}>{label}</span>
-      <span style={{ color: '#333' }}>{value ?? '—'}</span>
+      <span style={{ color: '#333' }}>{value ?? EMPTY_VALUE}</span>
     </div>
   );
 }
