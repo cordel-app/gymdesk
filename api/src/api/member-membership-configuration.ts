@@ -34,7 +34,7 @@ import { currentMembershipFees } from './membership-fee-pricing';
 // (SIMULATED_STATUSES in billing-simulation.ts), so the three configuration
 // sections and the simulation below them can never disagree about which plans
 // count.
-const LIVE_STATUSES = ['draft', 'awaiting_payment', 'active', 'paused'] as const;
+const LIVE_STATUSES = ['active', 'paused'] as const;
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
 // on the connection's timezone config (same note as user-memberships.ts and

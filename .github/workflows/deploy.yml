@@ -7,6 +7,14 @@ on:
       - 'api/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
+    # #784: a manual run picks its GitHub environment; a push to main (no
+    # input) deploys to `dev`, exactly as before.
+    inputs:
+      environment:
+        description: GitHub environment to deploy to
+        type: choice
+        options: [dev, production]
+        default: dev
 
 env:
   REGISTRY: ghcr.io
@@ -16,12 +24,32 @@ jobs:
   build-and-deploy:
     name: Build & Deploy
     runs-on: ubuntu-24.04-arm
-    environment: dev
+    environment: ${{ inputs.environment || 'dev' }}
     permissions:
       contents: read
       packages: write
 
     steps:
+      # The payment flow's public URLs are per-environment configuration, not
+      # code: a literal here would send a production deploy's checkout pages,
+      # webhooks and success/error redirects to the dev hosts. Checked before
+      # anything is built so a missing variable fails fast and deploys nothing.
+      - name: Check environment configuration
+        env:
+          PAYMENT_PAGE_URL: ${{ vars.PAYMENT_PAGE_URL }}
+          PAYMENT_NOTIFICATION_URL: ${{ vars.PAYMENT_NOTIFICATION_URL }}
+          PAYMENT_OK_URL: ${{ vars.PAYMENT_OK_URL }}
+          PAYMENT_KO_URL: ${{ vars.PAYMENT_KO_URL }}
+        run: |
+          missing=""
+          for name in PAYMENT_PAGE_URL PAYMENT_NOTIFICATION_URL PAYMENT_OK_URL PAYMENT_KO_URL; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Missing environment variables::The GitHub environment this job runs in is missing:$missing. Add them under Settings -> Environments -> <this job's environment> -> Environment variables. Nothing was deployed."
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
 
       - name: Log in to GitHub Container Registry
@@ -49,7 +77,7 @@ jobs:
         # Runtime env is the SINGLE SOURCE OF TRUTH in GitHub: these secrets/vars
         # are written as inline Environment= lines in the fitness-api.container
         # quadlet unit on the VPS, regenerated on every deploy (see script).
-        # To change a value, edit it in GitHub → Settings → Environments → dev.
+        # To change a value, edit it in GitHub → Settings → Environments → <env>.
         # Never hand-edit env on the VPS.
         env:
           APP_NODE_ENV: production
@@ -69,10 +97,10 @@ jobs:
           CLOUDFLARE_R2_BUCKET: ${{ vars.CLOUDFLARE_R2_BUCKET }}
           CLOUDFLARE_R2_PUBLIC_URL: ${{ vars.CLOUDFLARE_R2_PUBLIC_URL }}
           PAYMENT_PROVIDER: monei
-          PAYMENT_PAGE_URL: https://pay.vdicube.com
-          PAYMENT_NOTIFICATION_URL: https://api.vdicube.com/webhooks/payment
-          PAYMENT_OK_URL: https://members.vdicube.com/es/payment/success
-          PAYMENT_KO_URL: https://members.vdicube.com/es/payment/error
+          PAYMENT_PAGE_URL: ${{ vars.PAYMENT_PAGE_URL }}
+          PAYMENT_NOTIFICATION_URL: ${{ vars.PAYMENT_NOTIFICATION_URL }}
+          PAYMENT_OK_URL: ${{ vars.PAYMENT_OK_URL }}
+          PAYMENT_KO_URL: ${{ vars.PAYMENT_KO_URL }}
           MONEI_API_KEY: ${{ secrets.MONEI_API_KEY }}
           MONEI_WEBHOOK_SECRET: ${{ secrets.MONEI_WEBHOOK_SECRET }}
           MONEI_ACCOUNT_ID: ${{ vars.MONEI_ACCOUNT_ID }}

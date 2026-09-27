@@ -51,14 +51,13 @@ async function createMember(gymId: string, name = 'UM Test Member'): Promise<num
 // Direct-insert fixture: creates a user_memberships row plus its owner row in
 // user_membership_members, mirroring what POST /user-memberships does — used
 // whenever a test needs an existing Membership without exercising POST itself.
-// #511 stage 1: 'draft' and 'awaiting_payment' added to the status union so
-// fixtures can seed a membership at any point in the new pre-activation
-// lifecycle, without touching any of this function's existing call sites.
+// The status union is the stored CHECK's four values: #786 (migration 198)
+// retired #511's 'draft' and 'awaiting_payment', so a fixture cannot seed them.
 async function createUserMembershipDirect(
   gymId: string,
   memberId: number,
   planId: number,
-  status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
+  status: 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
@@ -209,7 +208,7 @@ async function createUsageBooking(gymId: string, centerId: number, memberId: num
 // controllable enough for deterministic Billing Events range assertions.
 async function createUserMembershipWithPrice(
   gymId: string, memberId: number, planId: number,
-  status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired',
+  status: 'active' | 'paused' | 'cancelled' | 'expired',
   basePrice: number, startsAt: string, endsAt: string | null = null,
 ): Promise<number> {
   const { insertId } = await db.query(
@@ -1619,9 +1618,9 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
 });
 
 // ─── PUT /user-memberships/:id — status transitions (#511 §10) ───────────────
-// ALLOWED_TRANSITIONS: draft -> awaiting_payment|cancelled; awaiting_payment ->
-// active|cancelled; active -> paused|cancelled; paused -> active|cancelled;
+// ALLOWED_TRANSITIONS: active -> paused|cancelled; paused -> active|cancelled;
 // cancelled/expired -> (none). Validated for any direct `status` set via PUT.
+// #786 retired 'draft' and 'awaiting_payment': a PUT naming either is a 400.
 
 describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
   let gymId: string;
@@ -1643,16 +1642,10 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
     return { res, umId };
   }
 
-  it('allows draft -> awaiting_payment', async () => {
-    const { res } = await seedAndPut('draft', 'awaiting_payment');
+  it('allows active -> paused', async () => {
+    const { res } = await seedAndPut('active', 'paused');
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('awaiting_payment');
-  });
-
-  it('allows awaiting_payment -> active', async () => {
-    const { res } = await seedAndPut('awaiting_payment', 'active');
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('active');
+    expect(res.body.status).toBe('paused');
   });
 
   it('allows paused -> active', async () => {
@@ -1661,16 +1654,19 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
     expect(res.body.status).toBe('active');
   });
 
-  it('rejects awaiting_payment -> paused with a 400 and an explanatory message', async () => {
-    const { res } = await seedAndPut('awaiting_payment', 'paused');
+  it.each(['draft', 'awaiting_payment'])('rejects a PUT to the retired status %s with a 400 (#786)', async (retired) => {
+    const { res, umId } = await seedAndPut('active', retired);
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/awaiting_payment/);
-    expect(res.body.error).toMatch(/paused/);
+    expect(res.body.error).toMatch(/status must be one of/);
+    expect(res.body.error).not.toMatch(new RegExp(retired));
+    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('active');
   });
 
-  it('rejects draft -> active (must go through awaiting_payment)', async () => {
-    const { res } = await seedAndPut('draft', 'active');
+  it('rejects cancelled -> paused with a 400 and an explanatory message', async () => {
+    const { res } = await seedAndPut('cancelled', 'paused');
     expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/cancelled/);
   });
 
   it('rejects any transition out of cancelled', async () => {
@@ -1684,66 +1680,27 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
   });
 
   it('leaves the stored status unchanged after a rejected transition', async () => {
-    const { res, umId } = await seedAndPut('awaiting_payment', 'paused');
+    const { res, umId } = await seedAndPut('expired', 'paused');
     expect(res.status).toBe(400);
     const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
-    expect(rows[0].status).toBe('awaiting_payment');
+    expect(rows[0].status).toBe('expired');
   });
 });
 
-// ─── POST /user-memberships/:id/submit (#511) ─────────────────────────────────
+// ─── Retired pre-activation statuses (#786) ───────────────────────────────────
+// #511 stage 1 added 'draft' and 'awaiting_payment' plus a Submit action
+// (draft -> awaiting_payment) that no insert or payment path ever wired. #786
+// retired all three: the route is gone and migration 198 narrowed the CHECK.
 
-describe('POST /user-memberships/:id/submit', () => {
+describe('retired pre-activation statuses (#786)', () => {
   let gymId: string;
 
   beforeAll(async () => {
-    gymId = await createTestGym('UM Submit Gym');
+    gymId = await createTestGym('UM Retired Statuses Gym');
     await createTestMembership(gymId, 'admin');
   });
 
-  it('returns 401 without an Authorization header', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'draft');
-    const res = await request.post(`/user-memberships/${umId}/submit`).set('x-gym-id', gymId);
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 403 when a read-only role (accountant) attempts to submit', async () => {
-    const gymRO = await createTestGym('UM Submit RO Gym');
-    await createTestMembership(gymRO, 'accountant');
-    const memberId = await createMember(gymRO);
-    const planId = await createPlan(gymRO);
-    const umId = await createUserMembershipDirect(gymRO, memberId, planId, 'draft');
-    const res = await request
-      .post(`/user-memberships/${umId}/submit`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymRO);
-    expect(res.status).toBe(403);
-  });
-
-  it('returns 404 when submitting a gym B membership with gym A credentials', async () => {
-    const gymOther = await createTestGym('UM Submit Other Gym');
-    await createTestMembership(gymOther, 'admin', 'other-clerk-user-id');
-    const memberId = await createMember(gymOther);
-    const planId = await createPlan(gymOther);
-    const otherUmId = await createUserMembershipDirect(gymOther, memberId, planId, 'draft');
-    const res = await request
-      .post(`/user-memberships/${otherUmId}/submit`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(404);
-  });
-
-  it('returns 404 for a non-existent membership', async () => {
-    const res = await request
-      .post('/user-memberships/9999999/submit')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(404);
-  });
-
-  it('returns 400 when submitting from any status other than draft', async () => {
+  it('POST /user-memberships/:id/submit no longer exists (404) and leaves the assignment untouched', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
@@ -1751,28 +1708,27 @@ describe('POST /user-memberships/:id/submit', () => {
       .post(`/user-memberships/${umId}/submit`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/active/);
+    expect(res.status).toBe(404);
+    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('active');
   });
 
-  it('transitions draft -> awaiting_payment, recording a billing_events row and an audit log', async () => {
+  it.each(['draft', 'awaiting_payment'])('the status CHECK refuses a row inserted as %s', async (retired) => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'draft');
+    await expect(db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, ?, CURDATE(), 29.99)`,
+      [gymId, memberId, planId, retired],
+    )).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
+  });
+
+  it.each(['draft', 'awaiting_payment'])('the list filter rejects the retired lifecycle_status %s', async (retired) => {
     const res = await request
-      .post(`/user-memberships/${umId}/submit`)
+      .get(`/user-memberships?lifecycle_status=${retired}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('awaiting_payment');
-
-    const event = await latestStatusChangeEvent(gymId, umId);
-    expect(event).not.toBeNull();
-    expect(event.previous_status).toBe('draft');
-    expect(event.new_status).toBe('awaiting_payment');
-
-    const auditRow = await waitForAuditLog(gymId, 'user_membership', umId, 'submit');
-    expect(auditRow).not.toBeNull();
+    expect(res.status).toBe(400);
   });
 });
 
@@ -1831,13 +1787,13 @@ describe('POST /user-memberships/:id/pause', () => {
   it('returns 400 when pausing from any status other than active', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'draft');
+    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'cancelled');
     const res = await request
       .post(`/user-memberships/${umId}/pause`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/draft/);
+    expect(res.body.error).toMatch(/cancelled/);
   });
 
   it('transitions active -> paused, recording a billing_events row and an audit log', async () => {
@@ -1948,7 +1904,7 @@ describe('POST /user-memberships/:id/reactivate', () => {
 
 // ─── POST /user-memberships/:id/close (#511 §7) ───────────────────────────────
 // Admin-only, mirroring DELETE's cancel restriction. Closeable from
-// awaiting_payment/active/paused; warns (409) + requires `confirm: true` when
+// active/paused; warns (409) + requires `confirm: true` when
 // next_billing_date is today or in the future; closes immediately otherwise.
 
 describe('POST /user-memberships/:id/close', () => {
@@ -2009,7 +1965,7 @@ describe('POST /user-memberships/:id/close', () => {
     expect(res.status).toBe(404);
   });
 
-  it.each(['draft', 'cancelled', 'expired'] as const)(
+  it.each(['cancelled', 'expired'] as const)(
     'returns 400 when closing from status %s',
     async (status) => {
       const memberId = await createMember(gymId);
@@ -2296,23 +2252,6 @@ describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
     expect(res.body.billing_events.projected).toBe(false);
   });
 
-  it('reports a draft plan Billing Events view as a projection (projected: true)', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    await setBillingPolicy(gymId, planId, 1, 'month');
-    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
-
-    const res = await request
-      .get(`/user-memberships/${umId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body.billing_events.available).toBe(true);
-    expect(res.body.billing_events.projected).toBe(true);
-    expect(res.body.billing_events.events.length).toBeGreaterThan(0);
-    expect(res.body.billing_events.events.every((e: any) => e.projected === true)).toBe(true);
-  });
-
   it('returns 404 for a non-existent membership', async () => {
     const res = await request
       .get('/user-memberships/9999999')
@@ -2326,8 +2265,8 @@ describe('GET /user-memberships/:id — expanded detail (#511 stage 3)', () => {
 // Range rule: all events affected by an applied promotion, plus the events
 // covering the following two calendar months after the last one; with no
 // applicable promotion, the next two calendar months from the billing start
-// date. Drafts (never persisted to billing_events) get a computed
-// projection instead of a query.
+// date. Every assignment reads its persisted ledger: the computed projection
+// #511 gave a `draft` went with that status (#786).
 
 describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
   let gymId: string;
@@ -2366,76 +2305,7 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('reports unavailable for a draft plan with no billing policy configured', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
-    const res = await request
-      .get(`/user-memberships/${umId}/billing-events`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body.available).toBe(false);
-    expect(res.body.events).toEqual([]);
-  });
-
-  it('projects the next 2 calendar months for a draft plan with no applicable promotions', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    await setBillingPolicy(gymId, planId, 1, 'month');
-    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
-
-    const res = await request
-      .get(`/user-memberships/${umId}/billing-events`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body.projected).toBe(true);
-    expect(res.body.range_start).toBe('2026-01-01');
-    expect(res.body.range_end).toBe('2026-03-01');
-    expect(res.body.events.map((e: any) => e.date)).toEqual(['2026-02-01', '2026-03-01']);
-    expect(res.body.events.every((e: any) => Number(e.amount) === 40 && !e.promotion_affected)).toBe(true);
-  });
-
-  it('extends a draft plan projection 2 months past the last event affected by an applied promotion', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    await setBillingPolicy(gymId, planId, 1, 'month');
-    const promoId = await createPromotion(gymId, planId, `Draft-Promo-${Date.now()}`);
-    // #635 stage 12: a Membership Fee Benefit applies only inside the Promotion's
-    // own Free/Paid/Bonus timeline, so the Promotion needs one for the benefit to
-    // reach any cycle at all. A year of Paid Duration puts every projected cycle
-    // below inside it, leaving the benefit's own 2-month duration as what bounds it.
-    await db.query('UPDATE promotions SET paid_months = 12 WHERE id = ?', [promoId]);
-    await setPromotionMembershipFeeBenefit(gymId, promoId, 'fixed_discount', 10, 2);
-    const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'draft', 40, '2026-01-01');
-    const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
-    expect(applyRes.status).toBe(201);
-    // The promotion's duration_months window is counted from its applied_at —
-    // pin it to the plan's billing start so the projected cycle dates line
-    // up deterministically with the assertions below.
-    await db.query(
-      'UPDATE user_membership_promotions SET applied_at = ? WHERE user_membership_id = ? AND promotion_id = ?',
-      ['2026-01-01', umId, promoId],
-    );
-
-    const res = await request
-      .get(`/user-memberships/${umId}/billing-events`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body.projected).toBe(true);
-    // Promotion covers 2026-02-01 (< 2026-01-01 + 2 months expiry) only.
-    expect(res.body.range_end).toBe('2026-04-01');
-    expect(res.body.events.map((e: any) => e.date)).toEqual(['2026-02-01', '2026-03-01', '2026-04-01']);
-    const first = res.body.events[0];
-    expect(first.promotion_affected).toBe(true);
-    expect(Number(first.amount)).toBe(30);
-    expect(res.body.events[1].promotion_affected).toBe(false);
-    expect(res.body.events[2].promotion_affected).toBe(false);
-  });
-
-  it('queries the persisted ledger for a submitted plan and covers the next 2 calendar months with no promotions', async () => {
+  it('queries the persisted ledger for an active plan and covers the next 2 calendar months with no promotions', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
@@ -2808,7 +2678,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     await setBillingPolicy(gymId, planA, 1, 'month');
     await setBillingPolicy(gymId, planB, 1, 'month');
     await createUserMembershipWithPrice(gymId, memberId, planA, 'active', 75, '2026-03-01');
-    await createUserMembershipWithPrice(gymId, memberId, planB, 'draft', 100, '2026-03-01');
+    await createUserMembershipWithPrice(gymId, memberId, planB, 'paused', 100, '2026-03-01');
 
     const res = await getSimulation(gymId, memberId);
     const monthly = sectionOf(res.body, 'month');

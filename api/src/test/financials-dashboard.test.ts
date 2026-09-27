@@ -51,7 +51,7 @@ async function assignPlan(
   gym: string,
   memberId: number,
   planId: number,
-  status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
+  status: 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
   endsAt: string | null = null,
   startsAt: string | null = null,
 ): Promise<number> {
@@ -235,17 +235,17 @@ describe('GET /financials/dashboard/membership-plans — assignment counting', (
     expect(list[0].assigned_members).toBe(3);
   });
 
-  it('counts assignments that are not yet paid, and paused ones', async () => {
+  it('counts active and paused assignments', async () => {
     const gym = await createTestGym('Counting Gym 2');
     await createTestMembership(gym, 'admin');
     const planId = await createPlan(gym, 'Lifecycle');
-    for (const status of ['draft', 'awaiting_payment', 'active', 'paused'] as const) {
+    for (const status of ['active', 'paused'] as const) {
       await assignPlan(gym, await createMember(gym), planId, status);
     }
 
     const list = await cards(gym);
     expect(list).toHaveLength(1);
-    expect(list[0].assigned_members).toBe(4);
+    expect(list[0].assigned_members).toBe(2);
   });
 
   // The Assigned Plans list projects a future `starts_at` as `pending`, not as

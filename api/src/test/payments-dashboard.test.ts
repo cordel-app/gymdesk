@@ -92,7 +92,7 @@ async function createUserMembership(
   memberId: number,
   planId: number,
   nextBillingDate: string | null = null,
-  status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
+  status: 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
