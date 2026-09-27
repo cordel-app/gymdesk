@@ -32,7 +32,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // A service can be attached while the plan still has billing ahead of it.
 // 'cancelled'/'expired' assignments bill nothing further, so attaching a
 // service to one would be a no-op the user could not see the effect of.
-const ATTACHABLE_STATUSES = ['draft', 'awaiting_payment', 'active', 'paused'];
+const ATTACHABLE_STATUSES = ['active', 'paused'];
 
 const DUPLICATE_ERROR = 'This service is already attached to the Assigned Plan for that period';
 

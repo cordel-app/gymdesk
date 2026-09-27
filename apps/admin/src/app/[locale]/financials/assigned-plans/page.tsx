@@ -12,7 +12,7 @@ import { AssignedPlanExpandedRow } from './AssignedPlanExpandedRow';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LifecycleStatus = 'draft' | 'awaiting_payment' | 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
+type LifecycleStatus = 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
 
 interface AssignedPlan {
   id: number;
@@ -26,7 +26,7 @@ interface AssignedPlan {
 
 interface MemberHit { id: number; name: string; email: string }
 
-const LIFECYCLE_STATUSES: LifecycleStatus[] = ['draft', 'awaiting_payment', 'pending', 'active', 'paused', 'expired', 'cancelled'];
+const LIFECYCLE_STATUSES: LifecycleStatus[] = ['pending', 'active', 'paused', 'expired', 'cancelled'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

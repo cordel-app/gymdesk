@@ -26,11 +26,11 @@ Tick items off in the PR that completes them.
          `BILLING_INTERNAL_SECRET`, `RECURRING_BOOKINGS_INTERNAL_SECRET` and every secret
          the four deploy workflows read, the variable `API_BASE_URL` (the production API's
          origin) plus the other variables the deploy workflows read, **required reviewers**
-         for deployments, and a deployment branch rule allowing **`main` only**. Note that
-         `deploy.yml` still carries literal `*.vdicube.com` payment URLs
-         (`PAYMENT_PAGE_URL`, `PAYMENT_NOTIFICATION_URL`, `PAYMENT_OK_URL`,
-         `PAYMENT_KO_URL`) — they must become environment variables before a production
-         deploy, or production points its payment flow at the dev hosts.
+         for deployments, and a deployment branch rule allowing **`main` only**. That
+         includes the payment URL variables `PAYMENT_PAGE_URL`, `PAYMENT_NOTIFICATION_URL`,
+         `PAYMENT_OK_URL` and `PAYMENT_KO_URL` with the **production** hosts — `deploy.yml`
+         reads them per environment (they were `*.vdicube.com` literals until 2026-09-27) and
+         refuses to deploy while any is empty.
   3. [ ] In `billing-run.yml` and `recurring-booking-run.yml`, change the one line marked
          `# #784: switch to 'production' once the environment exists` from
          `${{ inputs.environment || 'dev' }}` to `${{ inputs.environment || 'production' }}`.
@@ -321,7 +321,24 @@ hardening:
       green and charges nobody, and that a manually skipped 06:00 run is charged at 10:00.
 - [ ] **A freshness alert** when no run has completed in 26 hours (#782) — the only signal
       that covers "nothing reached the API at all", which no red workflow can report
-      because there is no run.
+      because there is no run. The repo half is done: `GET /health/runs` (unauthenticated,
+      outside `/billing/`, served by nginx's unrestricted `location /`) answers
+      `{ billing, recurring_bookings }` with `{ last_completed_at, age_hours, stale }` each
+      (threshold `RUN_FRESHNESS_THRESHOLD_HOURS`, default 26). Still to do, by hand in
+      Grafana Cloud — nothing in the repo provisions Grafana:
+      1. *Synthetics → Add new check → HTTP*: job `gymdesk-run-freshness`, `GET
+         https://api.vdicube.com/health/runs`, no auth, every **15 min**, timeout 10 s,
+         2–3 probe locations.
+      2. Validation: status `200`, plus JSON path assertions `$.billing.stale` equals
+         `false` and `$.recurring_bookings.stale` equals `false`.
+      3. Confirm a contact point already reaches the owner (email/Slack); add one only if
+         none does.
+      4. Alert rule: fire after **2 consecutive failed executions** of the check (e.g.
+         `max_over_time(probe_success{job="gymdesk-run-freshness"}[30m]) == 0`), routed to
+         that contact point.
+      5. Prove it: set `RUN_FRESHNESS_THRESHOLD_HOURS=1` in the deploy environment, confirm
+         the alert fires within ~30 min, then remove it.
+      Full rationale in `docs/payments.md` → Observability today.
 - [ ] **Decide the `/billing/` GitHub Actions IP allowlist**: automate its refresh or
       remove it (#783). See the nginx item in §4.
 - [ ] **A `production` GitHub environment** for the scheduled and deploy workflows (#784).
