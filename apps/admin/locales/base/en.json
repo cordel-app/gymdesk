@@ -1039,7 +1039,10 @@
     "frequency_four_weeks": "4 Weeks",
     "frequency_year": "Year(s)",
     "label_pay_beforehand_months": "Pre-paid Duration",
-    "label_billing_frequency": "Billing Frequency"
+    "label_billing_frequency": "Billing Frequency",
+    "billing_frequency_month": "Month",
+    "billing_frequency_four_weeks": "4 Weeks",
+    "billing_frequency_legacy_notice": "This plan is currently billed {current}. Saving this section changes it to the frequency selected above."
   },
   "prices": {
     "title": "Prices",

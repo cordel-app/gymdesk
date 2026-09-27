@@ -1856,3 +1856,93 @@ describe('Membership Plan Pricing (#547)', () => {
     expect(Number(copies[0].tax_rate_percent)).toBeCloseTo(10, 2);
   });
 });
+
+// #820 — the Billing frequency is a choice of two.
+//
+// The dropdown is the UI half; this is the rule. `PUT
+// /membership-plans/:id/billing-policy` is the only route that configures a
+// Plan's cadence, and it now accepts Month (1 month) and 4 Weeks (4 week) only,
+// so the single dropdown cannot be worked around by a caller and a cadence
+// nobody sells can never reach an assignment's snapshot.
+describe('PUT /membership-plans/:id/billing-policy — the two accepted cadences (#820)', () => {
+  let gymId: string;
+  let planId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Billing Frequency Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, { name: 'Billing Frequency Plan' });
+  });
+
+  const put = (body: Record<string, unknown>) =>
+    request
+      .put(`/membership-plans/${planId}/billing-policy`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send(body);
+
+  it('accepts Month — 1 month', async () => {
+    const res = await put({ recurring_billing_interval: 1, recurring_billing_unit: 'month', auto_renew: true });
+    expect(res.status).toBe(200);
+    expect(Number(res.body.recurring_billing_interval)).toBe(1);
+    expect(res.body.recurring_billing_unit).toBe('month');
+  });
+
+  it('accepts 4 Weeks — 4 week', async () => {
+    const res = await put({ recurring_billing_interval: 4, recurring_billing_unit: 'week', auto_renew: true });
+    expect(res.status).toBe(200);
+    expect(Number(res.body.recurring_billing_interval)).toBe(4);
+    expect(res.body.recurring_billing_unit).toBe('week');
+  });
+
+  it.each([
+    [2, 'month'],
+    [1, 'week'],
+    [3, 'day'],
+    [1, 'year'],
+  ])('rejects %i %s with 400', async (interval, unit) => {
+    const res = await put({ recurring_billing_interval: interval, recurring_billing_unit: unit, auto_renew: true });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('1 month, 4 week');
+  });
+
+  it('keeps the cadence it had when a rejected pair is sent', async () => {
+    await put({ recurring_billing_interval: 4, recurring_billing_unit: 'week', auto_renew: true });
+    const rejected = await put({ recurring_billing_interval: 2, recurring_billing_unit: 'month', auto_renew: true });
+    expect(rejected.status).toBe(400);
+    const { rows } = await db.query<{ recurring_billing_interval: number; recurring_billing_unit: string }>(
+      'SELECT recurring_billing_interval, recurring_billing_unit FROM billing_policies WHERE membership_plan_id = ? AND gym_id = ?',
+      [planId, gymId],
+    );
+    expect(Number(rows[0].recurring_billing_interval)).toBe(4);
+    expect(rows[0].recurring_billing_unit).toBe('week');
+  });
+
+  it('still rejects a malformed pair before it reaches the cadence rule', async () => {
+    const noInterval = await put({ recurring_billing_unit: 'month', auto_renew: true });
+    expect(noInterval.status).toBe(400);
+    expect(noInterval.body.error).toContain('recurring_billing_interval must be a positive integer');
+
+    const badUnit = await put({ recurring_billing_interval: 1, recurring_billing_unit: 'fortnight', auto_renew: true });
+    expect(badUnit.status).toBe(400);
+    expect(badUnit.body.error).toContain('recurring_billing_unit must be one of');
+  });
+
+  it('leaves a legacy cadence readable — it is only writing one that is refused', async () => {
+    // A Plan configured before #820. Nothing rewrites it, and the card must
+    // keep showing what it bills on, so the read path never filters it.
+    const legacyPlanId = await createPlan(gymId, { name: 'Legacy Cadence Plan' });
+    await db.query(
+      `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit, auto_renew)
+       VALUES (?, ?, 2, 'month', 1)`,
+      [gymId, legacyPlanId],
+    );
+    const res = await request
+      .get(`/membership-plans/${legacyPlanId}/billing-policy`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(Number(res.body.recurring_billing_interval)).toBe(2);
+    expect(res.body.recurring_billing_unit).toBe('month');
+  });
+});

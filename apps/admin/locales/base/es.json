@@ -1025,7 +1025,10 @@
     "frequency_four_weeks": "4 semanas",
     "frequency_year": "Año(s)",
     "label_pay_beforehand_months": "Duración prepagada",
-    "label_billing_frequency": "Frecuencia de facturación"
+    "label_billing_frequency": "Frecuencia de facturación",
+    "billing_frequency_month": "Mes",
+    "billing_frequency_four_weeks": "4 semanas",
+    "billing_frequency_legacy_notice": "Este plan se factura actualmente {current}. Al guardar esta sección se cambiará a la frecuencia seleccionada arriba."
   },
   "prices": {
     "title": "Precios",

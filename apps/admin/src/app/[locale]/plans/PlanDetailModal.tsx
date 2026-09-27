@@ -3,6 +3,11 @@
 import { useTranslations } from 'next-intl';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import {
+  PLAN_BILLING_FREQUENCY_OPTIONS,
+  legacyBillingFrequencyText,
+  planBillingFrequencyOf,
+} from './planProfile';
 
 interface BillingPolicySummary {
   recurring_billing_interval: number;
@@ -35,11 +40,6 @@ interface PlanSummary {
   modified_by_name: string | null;
 }
 
-function fmtBillingInterval(interval: number, unit: string) {
-  if (interval === 1) return unit;
-  return `${interval} ${unit}s`;
-}
-
 // #512: read-only Details modal, following the Promotion Details modal pattern
 // (see PromotionDetailModal.tsx). Independent from the row's inline expand/collapse.
 export function PlanDetailModal({ plan, onClose }: {
@@ -64,9 +64,17 @@ export function PlanDetailModal({ plan, onClose }: {
 
   const priceLabel = plan.current_price != null ? `€${parseFloat(plan.current_price).toFixed(2)}` : null;
 
-  const billingLabel = plan.billing_policy
-    ? `Every ${fmtBillingInterval(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}`
+  // #820: the same two labels the Billing frequency dropdown offers, so the
+  // Details view and the card cannot name the same cadence differently. A Plan
+  // configured before the rule still reads as the cadence it bills on.
+  const billingFrequency = plan.billing_policy
+    ? planBillingFrequencyOf(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)
     : null;
+  const billingLabel = !plan.billing_policy
+    ? null
+    : billingFrequency
+      ? t(PLAN_BILLING_FREQUENCY_OPTIONS[billingFrequency].labelKey as any)
+      : legacyBillingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit);
   const enrollmentLabel = tStatus(plan.enrollment_status);
 
   const benefitCount = (plan.session_benefits ?? []).length
