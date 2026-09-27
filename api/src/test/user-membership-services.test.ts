@@ -64,7 +64,7 @@ async function createMember(gymId: string, name = 'UMS Member'): Promise<number>
 async function createAssignedPlan(
   gymId: string,
   opts: {
-    status?: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired';
+    status?: 'active' | 'paused' | 'cancelled' | 'expired';
     startsAt?: string;
     endsAt?: string | null;
   } = {},
@@ -379,7 +379,7 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
 
   it('defaults starts_at to the Assigned Plan\'s start date when the plan has not started yet', async () => {
     const futureStart = dayOffset(10);
-    const umId = await createAssignedPlan(gymId, { status: 'draft', startsAt: futureStart });
+    const umId = await createAssignedPlan(gymId, { startsAt: futureStart });
     const itemId = await createSellableItem(gymId);
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(201);
@@ -546,8 +546,8 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     }
   });
 
-  it('allows attaching to a draft, awaiting_payment or paused Assigned Plan', async () => {
-    for (const status of ['draft', 'awaiting_payment', 'paused'] as const) {
+  it('allows attaching to an active or paused Assigned Plan', async () => {
+    for (const status of ['active', 'paused'] as const) {
       const target = await createAssignedPlan(gymId, { status });
       const itemId = await createSellableItem(gymId);
       const res = await addService(gymId, target, { gym_charge_id: itemId });

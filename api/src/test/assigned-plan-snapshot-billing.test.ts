@@ -447,48 +447,6 @@ describe('POST /billing/run — charges on the assignment\'s own cadence', () =>
   });
 });
 
-// ─── The Assigned Plan's own Billing Events projection ───────────────────────
-
-describe('GET /user-memberships/:id/billing-events — projects on the frozen cadence', () => {
-  let gymId: string;
-  let planId: number;
-  let umId: number;
-
-  beforeAll(async () => {
-    gymId = await createTestGym('APSB Billing Events Gym');
-    await createTestMembership(gymId, 'admin');
-    const memberId = await createMember(gymId);
-    planId = await createPlan(gymId);
-    await setPlanPrice(gymId, planId, 90);
-    await setBillingPolicy(gymId, planId, 1, 'month');
-    const res = await assign(gymId, {
-      member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-01',
-    });
-    expect(res.status).toBe(201);
-    umId = res.body.id;
-    // The draft path is the one that projects (a submitted plan reads the
-    // persisted ledger instead), so pin the status rather than depend on what
-    // POST defaults to.
-    await db.query("UPDATE user_memberships SET status = 'draft' WHERE id = ?", [umId]);
-  });
-
-  it('keeps the monthly projection after the Plan is switched to yearly', async () => {
-    const before = await request.get(`/user-memberships/${umId}/billing-events`)
-      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
-    expect(before.status).toBe(200);
-    expect(before.body.events[0].date).toBe('2026-02-01');
-
-    await db.query(
-      "UPDATE billing_policies SET recurring_billing_interval = 1, recurring_billing_unit = 'year' WHERE membership_plan_id = ?",
-      [planId],
-    );
-    const after = await request.get(`/user-memberships/${umId}/billing-events`)
-      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
-    expect(after.body.events[0].date).toBe('2026-02-01');
-    expect(after.body).toEqual(before.body);
-  });
-});
-
 // ─── Tenant isolation ────────────────────────────────────────────────────────
 
 describe('tenant isolation', () => {

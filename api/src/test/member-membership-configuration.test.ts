@@ -72,7 +72,7 @@ async function createPlan(gymId: string, name: string): Promise<number> {
 }
 
 type AssignmentStatus =
-  | 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired';
+  | 'active' | 'paused' | 'cancelled' | 'expired';
 
 async function createAssignment(
   gymId: string,
@@ -458,9 +458,9 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
     await createTestMembership(gymId, 'admin');
   });
 
-  it('marks draft, awaiting_payment, active and paused assignments as live', async () => {
+  it('marks active and paused assignments as live', async () => {
     const memberId = await createMember(gymId);
-    const statuses: AssignmentStatus[] = ['draft', 'awaiting_payment', 'active', 'paused'];
+    const statuses: AssignmentStatus[] = ['active', 'paused'];
     const ids: number[] = [];
     for (const [i, status] of statuses.entries()) {
       const planId = await createPlan(gymId, `Live ${status} ${uniq()}`);
@@ -471,7 +471,7 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(res.body.plans).toHaveLength(4);
+    expect(res.body.plans).toHaveLength(2);
     expect(res.body.plans.every((p: any) => p.is_live === true)).toBe(true);
     expect(res.body.plans.map((p: any) => p.id).sort(byNumber)).toEqual([...ids].sort(byNumber));
   });

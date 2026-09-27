@@ -15,7 +15,7 @@
  * them inside the gym during the trailing 12 months. An Assigned Plan counts
  * against the Member when any of these holds:
  *
- *   - it is still live (draft / awaiting_payment / active / paused) — they
+ *   - it is still live (active / paused) — they
  *     hold it right now, however long ago it started;
  *   - it started on or after the cutoff — they booked a plan inside the window;
  *   - it ended on or after the cutoff — they were still a member inside it.
@@ -34,7 +34,7 @@ export const NEW_MEMBER_WINDOW_MONTHS = 12;
  * `SIMULATED_STATUSES` in billing-simulation.ts — an assignment that still has
  * billing ahead of it is, by definition, a current membership.
  */
-const LIVE_STATUSES = new Set(['draft', 'awaiting_payment', 'active', 'paused']);
+const LIVE_STATUSES = new Set(['active', 'paused']);
 
 export interface NewMemberAssignment {
   id: number;
