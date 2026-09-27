@@ -2573,7 +2573,6 @@
     "col_created_by": "Created By",
     "section_general": "General",
     "section_availability": "Availability",
-    "section_activity_types": "Activities",
     "section_notes": "Notes",
     "label_name": "Name *",
     "label_description": "Description",
@@ -2609,7 +2608,6 @@
     "placeholder_center": "Select a center",
     "search_placeholder": "Search by name, description or center…",
     "filter_center": "All Centers",
-    "no_activity_types": "No activities defined yet.",
     "notes_placeholder": "Internal notes visible only to administrators…",
     "availability_hint": "Availability hours are optional and for reference only."
   },

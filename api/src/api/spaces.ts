@@ -19,6 +19,11 @@ const SELECT = `
   LEFT JOIN gym_memberships gm_d ON gm_d.id = s.deleted_by_membership_id
 `;
 
+// #801: a Space carries no Activity Types. `GET`/`PUT /spaces/:id/activity-types`
+// and the `space_activity_types` table they served (migration 067 §5, dropped by
+// migration 197) are gone — the relation lives on the Activity Type alone, as
+// `activity_types.default_space_id`, which the Activity Types router owns. Do
+// not reintroduce a Space-side Activity relation here.
 export const spacesRouter = Router();
 
 spacesRouter.get('/', async (req, res) => {
@@ -63,21 +68,6 @@ spacesRouter.get('/:id', async (req, res) => {
   );
   if (!rows[0]) return res.status(404).json({ error: 'Space not found' });
   res.json(rows[0]);
-});
-
-spacesRouter.get('/:id/activity-types', async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const space = await gymFetchOne('spaces', req.params.id, gymId, { softDelete: true });
-  if (!space) return res.status(404).json({ error: 'Space not found' });
-  const { rows } = await db.query(
-    `SELECT at.id, at.name, at.status
-     FROM space_activity_types sat
-     JOIN activity_types at ON at.id = sat.activity_type_id
-     WHERE sat.space_id = ? AND sat.gym_id = ?
-     ORDER BY at.name ASC`,
-    [req.params.id, gymId],
-  );
-  res.json(rows);
 });
 
 spacesRouter.post('/', requireRole('admin'), async (req, res, next) => {
@@ -158,23 +148,6 @@ spacesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   }
 });
 
-spacesRouter.put('/:id/activity-types', requireRole('admin'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
-  const spaceId = String(req.params.id);
-  const space = await gymFetchOne('spaces', spaceId, gymId, { softDelete: true });
-  if (!space) return res.status(404).json({ error: 'Space not found' });
-
-  const ids: number[] = Array.isArray(req.body.activity_type_ids) ? req.body.activity_type_ids : [];
-
-  await db.query('DELETE FROM space_activity_types WHERE space_id = ? AND gym_id = ?', [spaceId, gymId]);
-  if (ids.length > 0) {
-    const values = ids.map(() => '(?, ?, ?)').join(', ');
-    const params = ids.flatMap((id) => [spaceId, id, gymId]);
-    await db.query(`INSERT INTO space_activity_types (space_id, activity_type_id, gym_id) VALUES ${values}`, params);
-  }
-  res.status(204).send();
-});
-
 spacesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const spaceId = String(req.params.id);
@@ -196,17 +169,6 @@ spacesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next)
       `${SELECT} WHERE s.id = ?`,
       (id) => [id],
     );
-
-    // Copy activity type assignments
-    const { rows: ats } = await db.query(
-      'SELECT activity_type_id FROM space_activity_types WHERE space_id = ? AND gym_id = ?',
-      [req.params.id, gymId],
-    );
-    if (ats.length > 0) {
-      const values = ats.map(() => '(?, ?, ?)').join(', ');
-      const params = ats.flatMap((a: any) => [row.id, a.activity_type_id, gymId]);
-      await db.query(`INSERT INTO space_activity_types (space_id, activity_type_id, gym_id) VALUES ${values}`, params);
-    }
 
     recordAudit(req, { action: 'create', entityType: 'space', entityId: String(row.id) });
     res.status(201).json(row);
