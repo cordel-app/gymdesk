@@ -2,13 +2,13 @@
 // a theme-shaped response: `gym-themes.ts`, `gyms.ts` and `me.ts`.
 
 import { buildStorageObjectUrl, extensionForMime } from '../infra/storage';
-import { buildThemeFolderPrefix } from './themeFolders';
+import { buildThemeFolderPrefix, THEME_LOGO_FOLDER } from './themeFolders';
 
-/**
- * `Logo` — the leaf folder of a theme's own folder that holds its logo (#824).
- * The sibling of `Members/`; both hang off `buildThemeFolderPrefix()`.
- */
-export const THEME_LOGO_FOLDER = 'Logo';
+// `Logo` — the leaf folder of a theme's own folder that holds its logo (#824),
+// the sibling of `Members/`. Both names moved to `themeFolders.ts` with #827,
+// which creates the pair when the Theme is created; re-exported here so every
+// importer of this module keeps working and the string has one spelling.
+export { THEME_LOGO_FOLDER };
 
 /**
  * #824: the one key a theme's logo is stored under —

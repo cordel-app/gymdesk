@@ -6,7 +6,7 @@
 // both are decided in one place and can be unit-tested without a database.
 
 import { buildStorageObjectUrl } from '../infra/storage';
-import { buildThemeFolderPrefix, THEME_STORAGE_FOLDER } from './themeFolders';
+import { buildThemeFolderPrefix, THEME_MEMBERS_FOLDER, THEME_STORAGE_FOLDER } from './themeFolders';
 
 /**
  * #725: six fixed slots, each mapped to one Members section, and nothing else —
@@ -21,13 +21,12 @@ export function isMemberImageSlot(value: unknown): value is MemberImageSlot {
   return typeof value === 'string' && (MEMBER_IMAGE_SLOTS as readonly string[]).includes(value);
 }
 
-/** `Members` — the leaf folder of a theme's own folder that holds these six. */
-export const THEME_MEMBERS_FOLDER = 'Members';
-
 // #824: a theme's own folder is `themeFolders.ts`' now that both the Members
 // backgrounds and the logo hang off it. Re-exported so every existing importer
 // of this module keeps working and the tree still has one definition.
-export { buildThemeFolderPrefix, THEME_STORAGE_FOLDER };
+// `Members` — the leaf of a theme's own folder that holds these six — moved
+// there too with #827, which creates it when the Theme is created.
+export { buildThemeFolderPrefix, THEME_MEMBERS_FOLDER, THEME_STORAGE_FOLDER };
 
 /**
  * The one key a slot's image is stored under:

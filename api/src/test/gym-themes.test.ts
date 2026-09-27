@@ -244,21 +244,9 @@ describe('Calendar color tokens (#559)', () => {
     expect(res.body.tokens.colors.calendarBackground).toBeUndefined();
   });
 
-  it('copies calendar tokens when cloning a theme (clone-on-create, unchanged Base/Custom relationship)', async () => {
-    await request
-      .put(`/system/themes/${customThemeId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ tokens: { ...defaultTokensFixture(), colors: { ...defaultTokensFixture().colors, ...calendarColors } } });
-
-    const res = await request
-      .post(`/system/themes/clone/${customThemeId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Calendar Clone Test' });
-    expect(res.status).toBe(201);
-    expect(res.body.tokens.colors).toMatchObject(calendarColors);
-  });
+  // Cloning a theme now requires the gym's initialized bucket (#827), so every
+  // clone case — including "a clone copies the source's calendar tokens" — lives
+  // in theme-storage-init.test.ts, which mocks the R2 client.
 });
 
 // ─── GET /system/themes ────────────────────────────────────────────────────────
@@ -276,20 +264,6 @@ describe('GET /system/themes', () => {
   });
 });
 
-// ─── POST /system/themes/clone/:sourceId ──────────────────────────────────────
-
-describe('POST /system/themes/clone/:sourceId', () => {
-  it('inherits logo_contains_gym_name from the source theme', async () => {
-    const res = await request
-      .post(`/system/themes/clone/${customThemeId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Custom Theme Clone' });
-    expect(res.status).toBe(201);
-    expect(res.body.logo_contains_gym_name).toBe(true);
-  });
-});
-
 // ─── Header metadata: creator, creation date, gym theme (#712) ────────────────
 
 describe('Theme header metadata (#712)', () => {
@@ -297,25 +271,6 @@ describe('Theme header metadata (#712)', () => {
     // gyms.theme_id is what is_gym_theme is derived from — leave it as found so
     // the other blocks (and cleanup) aren't affected by what a case assigned.
     await db.query('UPDATE gyms SET theme_id = NULL WHERE id IN (?, ?)', [gymId, otherGymId]);
-  });
-
-  it('snapshots the creating actor on clone and returns it on the theme', async () => {
-    const res = await request
-      .post(`/system/themes/clone/${customThemeId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ name: 'Creator Snapshot Clone' });
-    expect(res.status).toBe(201);
-    expect(res.body.created_by_name).toBe('Test User');
-    expect(res.body.created_by_type).toBe('staff');
-    expect(typeof res.body.created_at).toBe('string');
-
-    const { rows } = await db.query<{ created_by_name: string | null; created_by_type: string | null }>(
-      'SELECT created_by_name, created_by_type FROM themes WHERE id = ?',
-      [res.body.id],
-    );
-    expect(rows[0].created_by_name).toBe('Test User');
-    expect(rows[0].created_by_type).toBe('staff');
   });
 
   it('exposes created_by_name and created_at on every theme in the list', async () => {
