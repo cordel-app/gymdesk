@@ -28,20 +28,41 @@ on:
     # (#780), so a second schedule can be added here later without any other
     # change if a dropped night ever turns out to matter.
     - cron: '0 3 * * *'
-  workflow_dispatch: # manual trigger for testing
-
-env:
-  # #784 will move this to an environment variable so a production run can
-  # target a different API; until then the host stays a literal, in one place.
-  API_BASE_URL: https://api.vdicube.com
+  workflow_dispatch:
+    # #784: a manual run picks its GitHub environment (and therefore the API it
+    # calls and the secret it sends). It defaults to `dev`.
+    inputs:
+      environment:
+        description: GitHub environment to run against
+        type: choice
+        options: [dev, production]
+        default: dev
 
 jobs:
   recurring-booking-run:
     name: Rolling 2-month PT booking window
     runs-on: ubuntu-latest
-    environment: dev
+    # #784: a manual run uses the environment it was dispatched with; a
+    # scheduled run has no inputs and falls back to the literal below.
+    # #784: switch to 'production' once the environment exists
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      # #784: the host is the selected environment's `API_BASE_URL` variable
+      # (a variable, not a secret: a hostname is not a credential).
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
 
     steps:
+      - name: Check environment configuration
+        run: |
+          set -euo pipefail
+          # No hardcoded fallback — see billing-run.yml. The environment's name
+          # is not repeated here: the `environment:` line above decides it.
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the recurring booking run cannot know which API to call — the rolling 2-month window did not advance. Add it under Settings -> Environments -> <this job's environment> -> Environment variables (#784)."
+            exit 1
+          fi
+          echo "Calling $API_BASE_URL"
+
       - name: POST /recurring-bookings/run
         env:
           RECURRING_BOOKINGS_INTERNAL_SECRET: ${{ secrets.RECURRING_BOOKINGS_INTERNAL_SECRET }}

@@ -7,7 +7,8 @@ import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { navigationGroups, filterNavGroups, NavItem as NavItemType } from '@/config/navigationGroups';
-import { NavGroup } from './NavGroup';
+import { NavGroup, NavBadge } from './NavGroup';
+import { failedPaymentsQueueHref, useFailedPaymentsAttention } from '@/lib/failedPaymentsAttention';
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useTranslations();
@@ -74,6 +75,20 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     items: group.items.map(translateItem),
   }));
 
+  // #779: failed payments awaiting action, beside Payments → Billing Events.
+  // Polled only when that entry is visible — the same module + flag gates that
+  // decide whether the list itself can be opened.
+  const billingEventsHref = `/${locale}/payments/billing-events`;
+  const canSeeBillingEvents = translatedGroups.some((g) =>
+    g.id === 'payments' && g.items.some((i) => i.href === billingEventsHref));
+  const attention = useFailedPaymentsAttention(canSeeBillingEvents);
+  const paymentsBadge: NavBadge | null = attention && attention.count > 0 ? {
+    count: attention.count,
+    href: failedPaymentsQueueHref(locale),
+    itemHref: billingEventsHref,
+    label: t('nav.failed_payments_badge', { count: attention.count }),
+  } : null;
+
   function toggleGroup(groupId: string) {
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -112,6 +127,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               onToggle={() => toggleGroup(group.id)}
               onNavigate={onNavigate}
               isAnyChildActive={isAnyChildActive}
+              badge={group.id === 'payments' ? paymentsBadge : null}
             />
           );
         })}

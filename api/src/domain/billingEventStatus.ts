@@ -70,6 +70,24 @@ export function isPaymentActionable(status: BillingEventStatus): boolean {
 }
 
 /**
+ * #779: a Billing Event is **awaiting action** when its derived status is
+ * `failed` — the charge was rejected (or expired) and neither a successful
+ * Retry Payment nor a Manual payment has settled it since. Both resolutions
+ * append a `completed` transaction to the same event, which makes it derive to
+ * `paid` and drops it out of the count without the ledger row being touched.
+ *
+ * The staff's work queue is therefore exactly the Billing Events list filtered
+ * by `status=failed`: the sidebar badge and the dashboard card count what that
+ * list shows, never a second definition of it.
+ */
+export function isAwaitingAction(
+  eventType: string,
+  latestTransactionStatus: string | null | undefined,
+): boolean {
+  return deriveBillingEventStatus(eventType, latestTransactionStatus) === 'failed';
+}
+
+/**
  * #787: which Billing Events may carry a receipt ("factura simplificada").
  *
  * The rule is *money actually received*, not the shape of the ledger row. A

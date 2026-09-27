@@ -189,7 +189,7 @@ async function createAssignedPlan(
   gymId: string,
   memberId: number,
   planId: number,
-  status: 'draft' | 'awaiting_payment' | 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
+  status: 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
@@ -655,7 +655,7 @@ describe('Promotion Session benefits', () => {
   });
 
   it('ignores a Session benefit on a non-active assignment', async () => {
-    for (const status of ['paused', 'cancelled', 'expired', 'draft'] as const) {
+    for (const status of ['paused', 'cancelled', 'expired'] as const) {
       const memberId = await createMember(gymId, `MPS Promo ${status} Member`);
       const planId = await createPlan(gymId);
       const umId = await createAssignedPlan(gymId, memberId, planId, status);

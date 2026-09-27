@@ -19,8 +19,7 @@ export interface MemberPlanRow {
   ends_at: string | null;
   next_billing_date: string | null;
   /**
-   * The plan still has billing ahead of it (draft/awaiting_payment/active/
-   * paused), so it is part of the Member's current configuration. Terminal
+   * The plan still has billing ahead of it (active/paused), so it is part of the Member's current configuration. Terminal
    * plans stay listed as history — #412's full plan history is unchanged by
    * #634 — but nothing can be attached to them.
    */

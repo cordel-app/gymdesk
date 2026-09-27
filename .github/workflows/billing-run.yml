@@ -14,7 +14,16 @@ on:
     # no-op. Only the day the 06:00 run never completed does this become the
     # real run, judged by #778's rules like any other.
     - cron: '0 10 * * *'
-  workflow_dispatch: # manual trigger for testing
+  workflow_dispatch:
+    # #784: a manual run picks its GitHub environment (and therefore the API it
+    # calls and the secret it sends). It defaults to `dev`, so a dispatch nobody
+    # thought about never charges real members.
+    inputs:
+      environment:
+        description: GitHub environment to run against
+        type: choice
+        options: [dev, production]
+        default: dev
 
 # #778: this workflow is the alerting channel for the nightly run, not only its
 # trigger. `curl -sf` alone fails on a non-2xx status, and `POST /billing/run`
@@ -25,18 +34,35 @@ on:
 # non-zero when the run did not do its job: a red run is the notification, and
 # it reaches whoever GitHub notifies for this environment.
 
-env:
-  # #784 will move this to an environment variable so a production run can
-  # target a different API; until then the host stays a literal, in one place.
-  API_BASE_URL: https://api.vdicube.com
-
 jobs:
   billing-run:
     name: MIT billing run
     runs-on: ubuntu-latest
-    environment: dev
+    # #784: a manual run uses the environment it was dispatched with; a
+    # scheduled run has no inputs and falls back to the literal below.
+    # #784: switch to 'production' once the environment exists
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      # #784: the host is the selected environment's `API_BASE_URL` variable
+      # (a variable, not a secret: a hostname is not a credential, and seeing it
+      # in the log is how a run that hit the wrong API gets diagnosed).
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
 
     steps:
+      - name: Check environment configuration
+        id: config
+        run: |
+          set -euo pipefail
+          # No hardcoded fallback: a run that would silently call some default
+          # host is worse than one that goes red and says what is missing. (The
+          # environment's name is deliberately not repeated here — the `environment:`
+          # line above is the one place that decides it; the job header shows it.)
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the billing run cannot know which API to call — no membership was charged. Add it under Settings -> Environments -> <this job's environment> -> Environment variables (#784)."
+            exit 1
+          fi
+          echo "Calling $API_BASE_URL"
+
       - name: POST /billing/run
         env:
           BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
@@ -109,8 +135,9 @@ jobs:
 
       - name: POST /billing/cleanup
         # Expiring stale pending payment requests is unrelated to the charge
-        # outcome, so it must still run when the step above went red.
-        if: ${{ !cancelled() }}
+        # outcome, so it must still run when the step above went red — but not
+        # when there is no API to call (#784: the configuration check failed).
+        if: ${{ !cancelled() && steps.config.outcome == 'success' }}
         env:
           BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
         run: |

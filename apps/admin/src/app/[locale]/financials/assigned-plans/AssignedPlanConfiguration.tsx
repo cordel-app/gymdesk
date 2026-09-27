@@ -37,7 +37,7 @@ import type {
 // Mirrors SNAPSHOT_EDITABLE_STATUSES in api/src/api/user-memberships.ts: a
 // cancelled or expired assignment is history — it bills nothing further, so its
 // configuration is read-only.
-const EDITABLE_STATUSES = ['draft', 'awaiting_payment', 'active', 'paused'];
+const EDITABLE_STATUSES = ['active', 'paused'];
 
 // Stage 13: Pre-paid Duration beside the Paid Duration it is a slice of —
 // the same four fields, in the same order, as the Plan's own section.

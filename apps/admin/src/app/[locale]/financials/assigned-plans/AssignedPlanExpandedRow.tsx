@@ -14,8 +14,12 @@ import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import type { AssignedPlanDetail } from './types';
 
-const EDITABLE_STATUSES = ['draft', 'awaiting_payment'];
-const CLOSEABLE_STATUSES = ['awaiting_payment', 'active', 'paused'];
+// #786: an assignment is `active` from creation, so there is no pre-activation
+// status left to Submit from or to Edit in. The dates-and-discount Edit form
+// that only a `draft`/`awaiting_payment` assignment could open went with them;
+// the assignment's commercial configuration is edited section by section in
+// `AssignedPlanConfiguration` below.
+const CLOSEABLE_STATUSES = ['active', 'paused'];
 
 function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
@@ -23,17 +27,6 @@ function fmtDate(iso: string | null) {
 
 function fmtMoney(v: string | number | null) {
   return v != null ? `€${parseFloat(String(v)).toFixed(2)}` : '—';
-}
-
-// #635 stage 15: no price here. An assignment's Membership Fee is part of its own
-// snapshot and is edited in the BILLING & DURATION section below
-// (`AssignedPlanConfiguration`), which materialises an uncaptured snapshot before
-// writing — the stored price this form used to edit is gone.
-interface EditForm {
-  starts_at: string;
-  ends_at: string;
-  discount_reason: string;
-  discount_expires_at: string;
 }
 
 export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
@@ -51,10 +44,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
@@ -82,50 +71,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
     }
   }
 
-  function startEdit() {
-    if (!detail) return;
-    setEditForm({
-      starts_at: detail.starts_at.slice(0, 10),
-      ends_at: detail.ends_at ? detail.ends_at.slice(0, 10) : '',
-      discount_reason: detail.discount_reason ?? '',
-      discount_expires_at: detail.discount_expires_at ? detail.discount_expires_at.slice(0, 10) : '',
-    });
-    setSaveError(null);
-    setEditing(true);
-  }
-
-  function cancelEdit() {
-    setEditing(false);
-    setEditForm(null);
-    setSaveError(null);
-  }
-
-  async function saveEdit() {
-    if (!editForm) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await apiFetch(`/user-memberships/${assignedPlanId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          starts_at: editForm.starts_at,
-          ends_at: editForm.ends_at || null,
-          discount_reason: editForm.discount_reason || null,
-          discount_expires_at: editForm.discount_expires_at || null,
-        }),
-      });
-      setEditing(false);
-      setEditForm(null);
-      await loadDetail();
-      onChanged();
-    } catch (err: any) {
-      setSaveError(err.message ?? t('error_generic'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function runAction(action: 'submit' | 'pause' | 'reactivate') {
+  async function runAction(action: 'pause' | 'reactivate') {
     setActionBusy(true);
     try {
       await apiFetch(`/user-memberships/${assignedPlanId}/${action}`, { method: 'POST' });
@@ -187,8 +133,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
     );
   }
 
-  const canEdit = EDITABLE_STATUSES.includes(detail.status);
-  const canSubmit = detail.status === 'draft';
   const canPause = detail.status === 'active';
   const canReactivate = detail.status === 'paused';
   const canClose = CLOSEABLE_STATUSES.includes(detail.status);
@@ -197,8 +141,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
 
   const menuItems = [
     { label: t('action_details'), onClick: () => setShowDetails(true) },
-    ...(canEdit && !editing ? [{ label: t('action_edit'), onClick: startEdit, ...write }] : []),
-    ...(canSubmit ? [{ label: t('action_submit'), onClick: () => runAction('submit'), ...write }] : []),
     ...(canPause ? [{ label: t('action_pause'), onClick: () => runAction('pause'), ...write }] : []),
     ...(canReactivate ? [{ label: t('action_reactivate'), onClick: () => runAction('reactivate'), ...write }] : []),
     ...(canClose ? [{ label: t('action_close'), onClick: () => setCloseStep('confirm'), danger: true, ...adminOnly }] : []),
@@ -215,32 +157,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         </div>
         <ContextMenu ariaLabel={t('actions_for', { plan: detail.plan_name ?? '' })} items={menuItems} />
       </div>
-
-      {editing && editForm ? (
-        <Section label={t('section_edit')}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            <LabeledInput label={t('label_start_date')}>
-              <input type="date" value={editForm.starts_at} onChange={(e) => setEditForm({ ...editForm, starts_at: e.target.value })} style={inputStyle} />
-            </LabeledInput>
-            <LabeledInput label={t('label_end_date')}>
-              <input type="date" value={editForm.ends_at} onChange={(e) => setEditForm({ ...editForm, ends_at: e.target.value })} style={inputStyle} />
-            </LabeledInput>
-            <LabeledInput label={t('label_discount_reason')}>
-              <input type="text" value={editForm.discount_reason} onChange={(e) => setEditForm({ ...editForm, discount_reason: e.target.value })} style={inputStyle} />
-            </LabeledInput>
-            <LabeledInput label={t('label_discount_expires_at')}>
-              <input type="date" value={editForm.discount_expires_at} onChange={(e) => setEditForm({ ...editForm, discount_expires_at: e.target.value })} style={inputStyle} />
-            </LabeledInput>
-          </div>
-          {saveError && <p style={{ color: '#c0392b', fontSize: 12, margin: '8px 0 0' }}>{saveError}</p>}
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={cancelEdit} disabled={saving} style={editBtnStyle}>{t('cancel')}</button>
-            <button onClick={saveEdit} disabled={saving} style={{ ...editBtnStyle, background: '#111', color: '#fff', borderColor: '#111' }}>
-              {saving ? t('saving') : t('save_changes')}
-            </button>
-          </div>
-        </Section>
-      ) : null}
 
       <Section label={t('section_members')}>
         {detail.members.map((m) => (
@@ -382,25 +298,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function LabeledInput({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{label}</div>
-      {children}
-    </div>
-  );
-}
-
 const panel: React.CSSProperties = { padding: '16px 24px' };
 const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
 const sectionLabelStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
   letterSpacing: '0.07em', marginBottom: 8,
-};
-const inputStyle: React.CSSProperties = { padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, minWidth: 140 };
-const editBtnStyle: React.CSSProperties = {
-  background: 'none', border: '1px solid #d0d0d0', borderRadius: 4,
-  padding: '6px 14px', fontSize: 13, cursor: 'pointer', color: '#444',
 };
 const retryBtn: React.CSSProperties = {
   background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer',
