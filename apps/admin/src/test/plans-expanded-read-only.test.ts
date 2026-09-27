@@ -9,6 +9,7 @@ import {
   PLAN_GENERAL_SECTION,
   PLAN_SECTION_ORDER,
   PlanGeneralRow,
+  formatPlanCurrentPrice,
   formatPlanGeneralField,
   isPlanGeneralFormValid,
   toPlanGeneralFormValues,
@@ -213,12 +214,22 @@ describe('Plans: PRICING in the expanded card (#816 §4)', () => {
     expect(expandedSrc).toContain("label={t('plans.label_tax_rate')}");
     expect(expandedSrc).toContain("label={t('plans.label_current_price')}");
     // Still the plan's own columns — never a second fetch or a recomputed price.
-    expect(expandedSrc).toContain('plan.amount_incl_tax.toFixed(2)');
+    // #817 moved the formatting into planProfile.ts's `formatPlanCurrentPrice`,
+    // which is handed the plan row itself and does no arithmetic of its own
+    // (asserted directly in plans-price-history-collapsible.test.ts).
+    expect(expandedSrc).toContain('formatPlanCurrentPrice(');
+    expect(expandedSrc).toContain('plans.tax_included_suffix');
     expect(pageSrc).not.toContain('/pricing/preview');
   });
 
   it('falls back to the em dash when no price is configured yet', () => {
-    expect(expandedSrc).toContain(': EMPTY_VALUE}');
+    expect(
+      formatPlanCurrentPrice(
+        { current_price: null, amount_excl_tax: null, amount_incl_tax: null },
+        'VAT included',
+        (excl, incl) => `net €${excl} + tax = €${incl}`,
+      ),
+    ).toBe(EMPTY_VALUE);
   });
 
   it('keeps Pricing editable through the existing PUT', () => {

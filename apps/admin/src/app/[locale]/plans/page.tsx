@@ -25,7 +25,6 @@ import {
 } from '@/components/SellableItemBenefits';
 import {
   EMPTY_PLAN_GENERAL_FORM,
-  EMPTY_VALUE,
   ENROLLMENT_STATUSES,
   LIFECYCLE_STATUSES,
   MEMBER_LIMITS,
@@ -34,6 +33,7 @@ import {
   PlanGeneralField,
   PlanGeneralFormValues,
   PlanGeneralRow,
+  formatPlanCurrentPrice,
   formatPlanGeneralField,
   isPlanGeneralFormValid,
   memberLimitChipStyle,
@@ -277,6 +277,12 @@ export default function PlansPage() {
   // Tax rates (#413)
   const [taxRates, setTaxRates] = useState<TaxRate[]>([]);
 
+  // #817: Price History is a collapsible card, collapsed every time the plan is
+  // expanded. Membership plan ids whose Price History the user has opened —
+  // absent means collapsed, which is why the default needs no seeding, and
+  // `toggleExpand` drops the id again so re-expanding a plan starts collapsed.
+  const [priceHistoryOpen, setPriceHistoryOpen] = useState<Set<number>>(new Set());
+
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('FINANCIALS');
   // Assigning a plan creates a user membership — a PAYMENTS write (front desk: RW), not FINANCIALS.
@@ -326,6 +332,22 @@ export default function PlansPage() {
   function toggleExpand(id: number) {
     if (editingId === id) return; // don't collapse while editing
     setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    // #817: collapsing the plan forgets that its Price History was open, so the
+    // next expand shows the header alone again.
+    setPriceHistoryOpen((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
+  function togglePriceHistory(id: number) {
+    setPriceHistoryOpen((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
@@ -832,6 +854,8 @@ export default function PlansPage() {
           {plans.map((plan) => {
             const isEditing = editingId === plan.id;
             const isExpanded = isEditing || expanded.has(plan.id);
+            // #817 §1: collapsed by default — an id only lands in the set by clicking.
+            const isPriceHistoryOpen = priceHistoryOpen.has(plan.id);
             const descText = plan.description
               ? plan.description.length > 60 ? plan.description.slice(0, 60) + '…' : plan.description
               : '—';
@@ -1004,9 +1028,11 @@ export default function PlansPage() {
                         />
                         <DetailRow
                           label={t('plans.label_current_price')}
-                          value={plan.current_price != null && plan.amount_excl_tax != null && plan.amount_incl_tax != null
-                            ? `€${plan.amount_incl_tax.toFixed(2)} ${t('plans.tax_included_suffix')} (${t('plans.price_preview', { excl: plan.amount_excl_tax.toFixed(2), incl: plan.amount_incl_tax.toFixed(2) })})`
-                            : EMPTY_VALUE}
+                          value={formatPlanCurrentPrice(
+                            plan,
+                            t('plans.tax_included_suffix'),
+                            (excl, incl) => t('plans.price_preview', { excl, incl }),
+                          )}
                         />
                         {/* Pushing the price onto the plan's Assigned Plans changes what
                             existing members pay — a write, so it belongs to Edit mode. */}
@@ -1235,10 +1261,18 @@ export default function PlansPage() {
                       </p>
                     )}
 
-                    {/* PRICE HISTORY (§11) — after the numbered sections, with its
-                        existing behaviour: a superseded price is never rewritten. */}
-                    <SectionHeader title={t('plans.section_prices')} />
-                    {(plan.price_history ?? []).length === 0 ? (
+                    {/* PRICE HISTORY (§11, #817 §1) — after the numbered sections,
+                        with its existing behaviour: a superseded price is never
+                        rewritten. #817 frames it as a collapsible card that starts
+                        collapsed, so a plan with a long price history no longer
+                        buries the sections above it — only the framing changes,
+                        the rows inside it are untouched. */}
+                    <CollapsibleSectionHeader
+                      title={t('plans.section_prices')}
+                      open={isPriceHistoryOpen}
+                      onToggle={() => togglePriceHistory(plan.id)}
+                    />
+                    {isPriceHistoryOpen && ((plan.price_history ?? []).length === 0 ? (
                       <p style={hintSt}>{t('plans.no_prices')}</p>
                     ) : (
                       // Newest first — the plan's current price heads its own history.
@@ -1261,7 +1295,7 @@ export default function PlansPage() {
                             </span>
                           </div>
                         ))
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
@@ -1325,6 +1359,44 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
     <div style={{ ...subSectionSt, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
       <span style={sectionLabelSt}>{title}</span>
       {action}
+    </div>
+  );
+}
+
+/**
+ * #817 §1 — a section header that opens and closes its own body. The whole
+ * header is the control (a real `<button>` carrying `aria-expanded`, the
+ * treatment #632 established for the Theme Colors groups), so the label, the
+ * chevron and the keyboard focus target are one thing rather than three.
+ *
+ * It is deliberately separate from `SectionHeader`'s `action` slot: an action is
+ * a second control *beside* a static label, and mixing the two would make the
+ * label both a button and not a button depending on a prop.
+ */
+function CollapsibleSectionHeader({ title, open, onToggle }: { title: string; open: boolean; onToggle: () => void }) {
+  return (
+    <div style={{ ...subSectionSt, marginBottom: 8 }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          width: '100%', padding: 0, background: 'none', border: 'none', cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span style={sectionLabelSt}>{title}</span>
+        <span
+          aria-hidden="true"
+          style={{
+            fontSize: 13, color: '#aaa', display: 'inline-block',
+            transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
+          }}
+        >
+          ▾
+        </span>
+      </button>
     </div>
   );
 }
