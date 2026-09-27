@@ -63,8 +63,10 @@ Tick items off in the PR that completes them.
       ALGORITHM=COPY and blocks concurrent DML for the duration. Harmless on the
       dev/CI datasets it has been run against; on a large production
       `calendar_events` it is the one statement in the file worth timing first.
-- [ ] **Set `RECURRING_BOOKINGS_INTERNAL_SECRET`** in the API's environment and as the
-      GitHub secret of the same name (#647 stage 4). `POST /recurring-bookings/run`
+- [x] **Set `RECURRING_BOOKINGS_INTERNAL_SECRET`** in the API's environment and as the
+      GitHub secret of the same name (#647 stage 4). Done for `dev` on 2026-09-27 (with
+      `BILLING_INTERNAL_SECRET`, both freshly generated; `deploy.yml` forwards them); the
+      `production` environment gets its own values when it is created (§1, #784). `POST /recurring-bookings/run`
       returns 401 to everyone while it is unset — including the nightly
       `.github/workflows/recurring-booking-run.yml` — so the rolling 2-month booking
       window silently stops advancing rather than failing loudly. Deliberately a
@@ -81,14 +83,14 @@ Tick items off in the PR that completes them.
       (`deploy.yml`, which regenerates the quadlet's `Environment=` lines from GitHub and
       restarts `fitness-api`) and trigger each run workflow by hand (`workflow_dispatch`)
       to confirm a green run, not a 401. Rotate outside the 03:00/06:00/10:00 UTC run
-      windows, since a half-rotated pair 401s the nightly run. **Verified 2026-09-27:
-      `deploy.yml` does not forward either secret today** — neither is in its `env:` /
-      `envs:` list nor its `Environment=` heredoc, and the script deletes every
-      `Environment=` line it did not write, so the API-side half of this step needs both
-      variables added to `deploy.yml` first (see the "Runtime env stays GitHub-sourced"
-      item above). Unless the unit sets them some other way the repository cannot show
-      (a `Secret=` line, say), the API on the VPS has neither secret and answers every
-      internal run with 401 — check that before rotating.
+      windows, since a half-rotated pair 401s the nightly run. Since 2026-09-27 `deploy.yml`
+      forwards both secrets from the job's GitHub environment into the quadlet's
+      `Environment=` lines and refuses to deploy while either is empty, so "the API's
+      runtime env" *is* the GitHub secret — updating it and redeploying is the whole API
+      side. Before that date neither secret existed on either side and every nightly run
+      answered 401 (no MIT charge ran on `dev`). The `dev` values were generated fresh on
+      2026-09-27 and have never been displayed; what remains for launch is giving
+      `production` its own.
 - [ ] **Run migration 170 in the same maintenance window as 168** (#647 stage 4).
       `ALTER TABLE member_notifications ADD CONSTRAINT chk_member_notifications_type`
       accepts neither ALGORITHM=INPLACE nor LOCK=NONE (errno 1845 then 1846, verified
