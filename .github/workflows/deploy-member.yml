@@ -7,6 +7,14 @@ on:
       - 'apps/member/**'
       - '.github/workflows/deploy-member.yml'
   workflow_dispatch:
+    # #784: a manual run picks its GitHub environment; a push to main (no
+    # input) deploys to `dev`, exactly as before.
+    inputs:
+      environment:
+        description: GitHub environment to deploy to
+        type: choice
+        options: [dev, production]
+        default: dev
 
 env:
   REGISTRY: ghcr.io
@@ -16,7 +24,7 @@ jobs:
   build-and-deploy:
     name: Build & Deploy
     runs-on: ubuntu-24.04-arm
-    environment: dev
+    environment: ${{ inputs.environment || 'dev' }}
     permissions:
       contents: read
       packages: write

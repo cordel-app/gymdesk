@@ -223,8 +223,8 @@ it.
 
 `.github/workflows/billing-run.yml` fires `POST /billing/run` twice a day — `0 6 * * *` and
 `0 10 * * *` UTC, the second being #781's safety net for a schedule GitHub dropped — then
-`POST /billing/cleanup` (with `if: ${{ !cancelled() }}`, so cleanup runs even when the
-charge step went red).
+`POST /billing/cleanup` (with `if: ${{ !cancelled() && steps.config.outcome == 'success' }}`,
+so cleanup runs even when the charge step went red, but not when there is no API to call).
 
 - Auth is `checkInternalSecret()`: the `X-Internal-Secret` header against
   `BILLING_INTERNAL_SECRET`.
@@ -233,7 +233,35 @@ charge step went red).
   (`infra/nginx/update-github-actions-allowlist.sh`). `/recurring-bookings/` has **no**
   `location` block at all and is therefore not restricted. #783 decides whether to automate
   the refresh or drop the allowlist.
-- `environment: dev` — there is no `production` GitHub environment yet (#784).
+- **Which environment** (#784). The job runs in `${{ inputs.environment || 'dev' }}`: a
+  manual `workflow_dispatch` picks `dev` or `production` (default `dev`), and a scheduled
+  run, which has no inputs, takes the literal on that line — `dev` until the `production`
+  GitHub environment exists, then `production`. That line, marked
+  `# #784: switch to 'production' once the environment exists`, is the only thing that
+  changes, in `billing-run.yml` and `recurring-booking-run.yml` alike. The environment
+  supplies both halves of the call: the secret (`BILLING_INTERNAL_SECRET`,
+  `RECURRING_BOOKINGS_INTERNAL_SECRET`) and the host, the environment **variable**
+  `vars.API_BASE_URL`. A first step checks the host is set and goes red with an explicit
+  error if not; there is no hardcoded fallback. The deploy workflows take the same input
+  (a push to `main` deploys to `dev`); the owner's steps are in
+  [go-to-production.md §1](go-to-production.md#1-environment-and-secrets).
+
+> **Decisions (2026-09-27, #784)** — change them here if they turn out wrong:
+> - The workflow changes land first, against `dev`, with nothing changing behaviour; the
+>   switch to `production` is one line per scheduled workflow, made after the environment
+>   exists with its secrets (a workflow pointed at a missing environment runs with empty
+>   secrets and answers `401`).
+> - Once `production` exists the schedules target **`production` only**, and `dev` keeps
+>   manual dispatch. A nightly charge against Monei test keys proves nothing a manual run
+>   doesn't, and a red `dev` run at night trains people to ignore the email that means a
+>   member wasn't charged (#778).
+> - `ci.yml`, `deploy-alloy.yml` and `debug-vps.yml` stay on `dev`: CI needs no production
+>   secret, and the other two are infrastructure/debugging tools.
+> - `API_BASE_URL` is an environment **variable**, not a secret: a hostname is not a
+>   credential, and seeing it in the run log is how a run that hit the wrong API is
+>   diagnosed.
+> - A manual run defaults to `dev`, so a dispatch nobody thought about never charges real
+>   members.
 
 ### B2. The run guard
 
@@ -847,7 +875,7 @@ differently.
 | [#781](https://github.com/cordel-app/gymdesk/issues/781) | ✅ done — a second daily attempt |
 | [#782](https://github.com/cordel-app/gymdesk/issues/782) | partly done — endpoint shipped; Grafana check/alert pending (go-to-production) |
 | [#783](https://github.com/cordel-app/gymdesk/issues/783) | The `/billing/` GitHub Actions IP allowlist decays by hand; `/recurring-bookings/` has none |
-| [#784](https://github.com/cordel-app/gymdesk/issues/784) | No `production` GitHub environment; `API_BASE_URL` is a literal in the workflow |
+| [#784](https://github.com/cordel-app/gymdesk/issues/784) | partly done — workflows parametrised; production environment pending (go-to-production) |
 | [#785](https://github.com/cordel-app/gymdesk/issues/785) | ✅ done — a rejection escalates to a pause |
 | [#786](https://github.com/cordel-app/gymdesk/issues/786) | `draft`/`awaiting_payment` are unreachable statuses, and `POST /:id/submit` is dead code |
 | [#787](https://github.com/cordel-app/gymdesk/issues/787) | ✅ done — the run allocates receipt numbers |
