@@ -915,7 +915,7 @@
     "label_lifecycle_status": "Estat del cicle de vida",
     "label_enrollment_status": "Estat d'inscripció",
     "confirm_archive": "Arxivar aquesta quota? Ja no acceptarà nous socis.",
-    "section_status": "Estat",
+    "section_general": "General",
     "section_centers": "Centres",
     "section_services": "Serveis inclosos",
     "section_prices": "Historial de preus",

@@ -644,6 +644,51 @@ registered before `/:id` so Express does not read `lookups` as an id).
 Reference implementation: `components/exercises/` + both pages. Regression test:
 `apps/admin/src/test/exercise-editor-unification.test.ts`.
 
+### When the card's sections have their own editors (#816)
+
+Membership Plans is the fifth shape, and the one the rule above does not
+obviously cover: the expanded card holds several independent sub-resources, each
+with its own endpoint and its own section-level **Edit** (the Section-Scoped
+Inline Editing pattern below, #627). Reading that as "so the card cannot be
+read-only" is what the page did — the section editors lived in the *view* body,
+and `⋮ → Edit` swapped the whole card for a General form that showed neither
+Pricing nor the durations. Three rules reconcile the two patterns.
+
+**Edit mode is a mode of the card, not a different card.** There is one expanded
+body, rendered whenever the row is expanded; `isEditing` decides per section
+which half it shows, and gates every section's `Edit` button and every
+section-level editor. So the read-only reader sees the complete plan, the editor
+sees the same sections with their controls back, and there is no second body to
+keep in sync — which is how Pricing came to be invisible to one of the two
+halves in the first place. A test can then assert the guard rather than the
+layout: every `action={` in the expanded body mentions `isEditing`, and so does
+every sub-form's condition.
+
+**An action that changes other rows is a control, not a read.** "Apply new price
+to assigned plans" changes what existing members pay, so it belongs to Edit mode
+even though it renders beside read-only values and opens a confirmation of its
+own. The same test that forbids `<button` in the read-only field list is what
+catches it.
+
+**`⋮ → Edit` expands the card it opens.** Otherwise Cancel collapses a row the
+staff member was reading, and the Edit action taken from a collapsed row has
+nowhere to render. Leaving Edit mode closes every section editor with it
+(`closeSectionForms()`), because a half-typed Pricing draft must not survive into
+a view that no longer shows a Save button.
+
+The General field set follows #800 unchanged — declared once in
+`[locale]/plans/planProfile.ts` (`PLAN_GENERAL_SECTION`, the row → form mapping,
+`toPlanGeneralUpdatePayload()`), with the row type extending it. The section
+*order* lives there too, as `PLAN_SECTION_ORDER`, so a moved section is a failing
+test rather than a review comment. Price, VAT, the durations, the cadence, the
+three Benefit sections and the Centers are not part of that declaration: each is
+its own resource with its own endpoint, and this ticket changes where its editor
+is reachable from, never what it submits.
+
+Reference implementation: `[locale]/plans/page.tsx` +
+`[locale]/plans/planProfile.ts`. Regression test:
+`apps/admin/src/test/plans-expanded-read-only.test.ts`.
+
 ---
 
 ## Section-Scoped Inline Editing (#627)

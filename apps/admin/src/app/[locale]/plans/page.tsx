@@ -23,6 +23,23 @@ import {
   SellableItemOption,
   toBenefitItems,
 } from '@/components/SellableItemBenefits';
+import {
+  EMPTY_PLAN_GENERAL_FORM,
+  EMPTY_VALUE,
+  ENROLLMENT_STATUSES,
+  LIFECYCLE_STATUSES,
+  MEMBER_LIMITS,
+  PLAN_GENERAL_EDITABLE_FIELDS,
+  PLAN_GENERAL_FIELDS,
+  PlanGeneralField,
+  PlanGeneralFormValues,
+  PlanGeneralRow,
+  formatPlanGeneralField,
+  isPlanGeneralFormValid,
+  memberLimitChipStyle,
+  toPlanGeneralFormValues,
+  toPlanGeneralUpdatePayload,
+} from './planProfile';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -70,15 +87,12 @@ interface ForecastLine {
 interface ForecastEvent { date: string; description: string; total: number; lines: ForecastLine[]; }
 interface BillingForecast { available: boolean; reason: string | null; currency: string; events: ForecastEvent[]; }
 
-interface Plan {
+// #816: the plan's own General columns are declared once, in `planProfile.ts`,
+// and the row type extends that declaration — the expanded card's read-only
+// GENERAL section and the inline Edit form render the same field list from it.
+interface Plan extends PlanGeneralRow {
   id: number;
-  name: string;
-  description: string | null;
-  lifecycle_status: 'draft' | 'active' | 'paused' | 'inactive';
-  enrollment_status: 'public' | 'staff_only';
-  member_limit: '1' | '2' | 'family';
   current_price: string | null;
-  member_count: number;
   promotion_count: number;
   billing_policy: BillingPolicy | null;
   centers: Center[];
@@ -108,9 +122,6 @@ interface Plan {
   billing_forecast: BillingForecast;
 }
 
-const LIFECYCLE_STATUSES = ['draft', 'active', 'paused', 'inactive'] as const;
-const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
-const MEMBER_LIMITS = ['1', '2', 'family'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
 // Applied automatically to every new plan; staff can adjust it afterwards in
@@ -166,14 +177,6 @@ function savedBenefits(plan: Plan, section: BenefitSection): SellableItemBenefit
   return plan.periodical_benefits ?? [];
 }
 
-const emptyEditForm = {
-  name: '',
-  description: '',
-  lifecycle_status: 'draft' as Plan['lifecycle_status'],
-  enrollment_status: 'staff_only' as Plan['enrollment_status'],
-  member_limit: '1' as Plan['member_limit'],
-};
-
 type InlineNew = {
   name: string;
   description: string;
@@ -225,7 +228,7 @@ export default function PlansPage() {
 
   // Inline edit
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState(emptyEditForm);
+  const [editForm, setEditForm] = useState<PlanGeneralFormValues>(EMPTY_PLAN_GENERAL_FORM);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -331,38 +334,44 @@ export default function PlansPage() {
 
   // ─── Inline edit ────────────────────────────────────────────────────────────
 
+  // #816: `⋮ → Edit` is the only entry point into every editor this card has,
+  // so it also expands the card — leaving Edit then reveals the read-only view
+  // rather than collapsing the row the staff member was reading.
   function openInlineEdit(plan: Plan) {
+    closeSectionForms();
     setEditingId(plan.id);
-    setEditForm({
-      name: plan.name,
-      description: plan.description ?? '',
-      lifecycle_status: plan.lifecycle_status,
-      enrollment_status: plan.enrollment_status,
-      member_limit: plan.member_limit,
-    });
+    setExpanded((prev) => new Set(prev).add(plan.id));
+    setEditForm(toPlanGeneralFormValues(plan));
     setEditError(null);
+  }
+
+  // The section-level editors are only reachable from Edit mode, so leaving it
+  // closes any one of them that is still open with a half-typed draft.
+  function closeSectionForms() {
+    setPricingForPlanId(null);
+    setPricingForm({ price: '', tax_rate_id: '' });
+    setCentersForPlanId(null);
+    setDurationEditForPlanId(null);
+    setBenefitEditFor(null);
+    setBenefitDraft([]);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setEditError(null);
+    closeSectionForms();
   }
 
   async function handleInlineSave(plan: Plan) {
-    if (!editForm.name.trim()) { setEditError(t('plans.error_required')); return; }
+    if (!isPlanGeneralFormValid(editForm)) { setEditError(t('plans.error_required')); return; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/membership-plans/${plan.id}`, {
         method: 'PUT',
-        body: JSON.stringify({
-          name: editForm.name.trim(),
-          description: editForm.description.trim() || null,
-          lifecycle_status: editForm.lifecycle_status,
-          enrollment_status: editForm.enrollment_status,
-          member_limit: editForm.member_limit,
-        }),
+        body: JSON.stringify(toPlanGeneralUpdatePayload(editForm)),
       });
       setEditingId(null);
+      closeSectionForms();
       load();
     } catch (err: any) {
       setEditError(err.message ?? t('plans.error_generic'));
@@ -621,6 +630,80 @@ export default function PlansPage() {
 
   // ─── Render helpers ─────────────────────────────────────────────────────────
 
+  // #816 GENERAL: one field list, two renderings. `generalValue()` is the
+  // read-only one (and the only place the em dash convention is applied);
+  // `renderGeneralControl()` is the Edit form's, because every control needs its
+  // own type, options and validation. A field added to PLAN_GENERAL_FIELDS
+  // reaches the read-only view; making it `editable` is what asks for a control.
+  function generalValue(plan: Plan, field: PlanGeneralField): string {
+    return formatPlanGeneralField(
+      plan,
+      field,
+      (key) => t(`status.${key}`),
+      (value) => t(`plans.member_limit_${value}`),
+    );
+  }
+
+  function renderGeneralControl(plan: Plan, field: PlanGeneralField) {
+    const id = `plan-${plan.id}-${field.key}`;
+    switch (field.key) {
+      case 'name':
+        return (
+          <input
+            id={id}
+            value={editForm.name}
+            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            autoFocus
+            style={inlineInputStyle}
+          />
+        );
+      case 'description':
+        return (
+          <input
+            id={id}
+            value={editForm.description}
+            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+            style={inlineInputStyle}
+          />
+        );
+      case 'lifecycle_status':
+        return (
+          <select
+            id={id}
+            value={editForm.lifecycle_status}
+            onChange={(e) => setEditForm({ ...editForm, lifecycle_status: e.target.value as PlanGeneralFormValues['lifecycle_status'] })}
+            style={inlineSelectStyle}
+          >
+            {LIFECYCLE_STATUSES.map((st) => <option key={st} value={st}>{t(`status.${st}`)}</option>)}
+          </select>
+        );
+      case 'enrollment_status':
+        return (
+          <select
+            id={id}
+            value={editForm.enrollment_status}
+            onChange={(e) => setEditForm({ ...editForm, enrollment_status: e.target.value as PlanGeneralFormValues['enrollment_status'] })}
+            style={inlineSelectStyle}
+          >
+            {ENROLLMENT_STATUSES.map((st) => <option key={st} value={st}>{t(`status.${st}`)}</option>)}
+          </select>
+        );
+      case 'member_limit':
+        return (
+          <select
+            id={id}
+            value={editForm.member_limit}
+            onChange={(e) => setEditForm({ ...editForm, member_limit: e.target.value as PlanGeneralFormValues['member_limit'] })}
+            style={inlineSelectStyle}
+          >
+            {MEMBER_LIMITS.map((m) => <option key={m} value={m}>{t(`plans.member_limit_${m}`)}</option>)}
+          </select>
+        );
+      default:
+        return null;
+    }
+  }
+
   function renderInlineNewRow() {
     if (!inlineNew) return null;
     return (
@@ -792,115 +875,178 @@ export default function PlansPage() {
                   </div>
                 </div>
 
-                {/* Inline edit form */}
-                {isEditing && (
+                {/* #816: expanding a Membership Plan reads it — the complete
+                    plan, in PLAN_SECTION_ORDER's order, with no control that
+                    writes. `⋮ → Edit` is the single entry point into the General
+                    form *and* into the section-level editors, which is why every
+                    section's `Edit` button is rendered only while `isEditing`. */}
+                {isExpanded && (
                   <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('plans.label_name')} *</label>
-                        <input
-                          value={editForm.name}
-                          onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                          autoFocus
-                          style={inlineInputStyle}
+                    {/* GENERAL (§3) — the plan's own columns, declared once in planProfile.ts */}
+                    <SectionHeader title={t('plans.section_general')} />
+                    {isEditing ? (
+                      <div style={{ margin: '6px 0 10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                          {PLAN_GENERAL_EDITABLE_FIELDS.map((field) => (
+                            <div key={field.key}>
+                              <label htmlFor={`plan-${plan.id}-${field.key}`} style={inlineLabelStyle}>
+                                {t(`plans.${field.labelKey}`)}
+                              </label>
+                              {renderGeneralControl(plan, field)}
+                            </div>
+                          ))}
+                        </div>
+                        {/* #547: price and VAT are edited in the Pricing section below —
+                            changing them there is what opens a new price and files the old
+                            one in the history, so they are deliberately not repeated here. */}
+                        <p style={{ ...fieldDescStyle, margin: '8px 0' }}>{t('plans.tax_rate_moved_hint')}</p>
+                        {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+                          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={() => handleInlineSave(plan)} disabled={editSaving} style={btnSmall()}>
+                            {editSaving ? t('plans.saving') : t('plans.save_changes')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      PLAN_GENERAL_FIELDS.map((field) => (
+                        <DetailRow
+                          key={field.key}
+                          label={t(`plans.${field.labelKey}`)}
+                          value={
+                            field.format === 'member_limit'
+                              ? <span style={memberLimitChipStyle}>{generalValue(plan, field)}</span>
+                              : generalValue(plan, field)
+                          }
                         />
-                      </div>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('plans.label_description')}</label>
-                        <input
-                          value={editForm.description}
-                          onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                          style={inlineInputStyle}
-                        />
-                      </div>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('plans.label_lifecycle_status')}</label>
-                        <select
-                          value={editForm.lifecycle_status}
-                          onChange={(e) => setEditForm({ ...editForm, lifecycle_status: e.target.value as Plan['lifecycle_status'] })}
-                          style={inlineSelectStyle}
-                        >
-                          {LIFECYCLE_STATUSES.map((s) => (
-                            <option key={s} value={s}>{t(`status.${s}`)}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('plans.label_enrollment_status')}</label>
-                        <select
-                          value={editForm.enrollment_status}
-                          onChange={(e) => setEditForm({ ...editForm, enrollment_status: e.target.value as Plan['enrollment_status'] })}
-                          style={inlineSelectStyle}
-                        >
-                          {ENROLLMENT_STATUSES.map((s) => (
-                            <option key={s} value={s}>{t(`status.${s}`)}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={inlineLabelStyle}>{t('plans.label_member_limit')}</label>
-                        <select
-                          value={editForm.member_limit}
-                          onChange={(e) => setEditForm({ ...editForm, member_limit: e.target.value as Plan['member_limit'] })}
-                          style={inlineSelectStyle}
-                        >
-                          {MEMBER_LIMITS.map((m) => (
-                            <option key={m} value={m}>{t(`plans.member_limit_${m}`)}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    {/* #547: price and VAT are edited together in the Pricing section below —
-                        changing them there is what opens a new price and files the old one in
-                        the history, so they are deliberately not repeated in this form. */}
-                    <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.tax_rate_moved_hint')}</p>
-                    {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
-                    <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-                      <button onClick={cancelEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                      <button onClick={() => handleInlineSave(plan)} disabled={editSaving} style={btnSmall()}>
-                        {editSaving ? t('plans.saving') : t('plans.save_changes')}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                      ))
+                    )}
 
-                {/* Accordion detail sections (view mode only) */}
-                {isExpanded && !isEditing && (
-                  <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
-                    <SectionHeader title={t('plans.section_status')} />
-                    <DetailRow label={t('plans.label_lifecycle_status')} value={t(`status.${plan.lifecycle_status}`)} />
-                    <DetailRow label={t('plans.label_enrollment_status')} value={t(`status.${plan.enrollment_status}`)} />
-                    <DetailRow
-                      label={t('plans.label_member_limit')}
-                      value={
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: '#eef0ff', color: '#4b45c6' }}>
-                          {t(`plans.member_limit_${plan.member_limit}`)}
-                        </span>
-                      }
+                    {/* PRICING (§4) — immediately after GENERAL, and read-only
+                        unless the card is in Edit mode. One price per plan, always
+                        VAT-inclusive (#547): the same resource as before, reached
+                        from a different place. */}
+                    <SectionHeader
+                      title={t('plans.section_pricing')}
+                      action={isEditing && pricingForPlanId !== plan.id ? (
+                        <button onClick={() => openPricing(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
+                          {t('plans.edit_pricing')}
+                        </button>
+                      ) : null}
                     />
-                    <DetailRow label={t('plans.members_using_plan')} value={String(plan.member_count)} />
+                    {isEditing && pricingForPlanId === plan.id ? (
+                      <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                          <div>
+                            <label htmlFor={`plan-${plan.id}-price`} style={inlineLabelStyle}>{t('plans.label_price_incl_tax')}</label>
+                            <input
+                              id={`plan-${plan.id}-price`}
+                              type="number" min="0" step="0.01"
+                              value={pricingForm.price}
+                              onChange={(e) => setPricingForm({ ...pricingForm, price: e.target.value })}
+                              placeholder="0.00"
+                              style={inlineInputStyle}
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor={`plan-${plan.id}-tax-rate`} style={inlineLabelStyle}>{t('plans.label_tax_rate')}</label>
+                            <select
+                              id={`plan-${plan.id}-tax-rate`}
+                              value={pricingForm.tax_rate_id}
+                              onChange={(e) => setPricingForm({ ...pricingForm, tax_rate_id: e.target.value })}
+                              style={inlineSelectStyle}
+                            >
+                              <option value="">{t('plans.tax_rate_default')}</option>
+                              {taxRateOptions(pricingForm.tax_rate_id).map((tr) => (
+                                <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        {(() => {
+                          // Req. 6/7/11/12: the entered price is always the final VAT-inclusive
+                          // customer price — the net is derived from it live, and picking another
+                          // VAT re-splits the same gross rather than stacking tax on top of it.
+                          const selected = pricingForm.tax_rate_id !== ''
+                            ? taxRates.find((tr) => String(tr.id) === pricingForm.tax_rate_id)
+                            : taxRates.find((tr) => tr.is_system);
+                          const ratePercent = selected ? parseFloat(selected.rate_percent) : null;
+                          if (ratePercent == null || isNaN(ratePercent)) return null;
+                          const priceNum = parseFloat(pricingForm.price);
+                          const preview = !isNaN(priceNum) && priceNum >= 0
+                            ? computeVatPreview(priceNum, ratePercent, 'inclusive')
+                            : null;
+                          return (
+                            <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>
+                              {t('plans.price_hint_inclusive', { rate: ratePercent })}
+                              {preview && (
+                                <> — {t('plans.price_preview', {
+                                  excl: preview.amount_excl_tax.toFixed(2),
+                                  incl: preview.amount_incl_tax.toFixed(2),
+                                })}</>
+                              )}
+                            </p>
+                          );
+                        })()}
+                        <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.pricing_save_hint')}</p>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                          <button onClick={closePricingForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+                          <button onClick={() => handleSavePricing(plan.id)} disabled={pricingSaving} style={btnSmall()}>
+                            {pricingSaving ? t('plans.saving') : t('plans.save')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <DetailRow
+                          label={t('plans.label_tax_rate')}
+                          value={plan.tax_rate_name ? `${plan.tax_rate_name} (${parseFloat(plan.tax_rate_percent ?? '0')}%)` : t('plans.tax_rate_default')}
+                        />
+                        <DetailRow
+                          label={t('plans.label_current_price')}
+                          value={plan.current_price != null && plan.amount_excl_tax != null && plan.amount_incl_tax != null
+                            ? `€${plan.amount_incl_tax.toFixed(2)} ${t('plans.tax_included_suffix')} (${t('plans.price_preview', { excl: plan.amount_excl_tax.toFixed(2), incl: plan.amount_incl_tax.toFixed(2) })})`
+                            : EMPTY_VALUE}
+                        />
+                        {/* Pushing the price onto the plan's Assigned Plans changes what
+                            existing members pay — a write, so it belongs to Edit mode. */}
+                        {isEditing && plan.current_price != null && (
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '6px 0 10px' }}>
+                            <button
+                              onClick={() => setApplyPricingFor(plan)}
+                              disabled={!canWrite}
+                              title={readOnlyTitle}
+                              style={readOnlyStyle(btnSmall(), !canWrite)}
+                            >
+                              {t('plans.apply_price_to_assigned')}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
 
                     {/* #635 §7 + stage 13: Billing & Duration — the Promotion's
                         Free Period / Paid Duration / Pre-paid Duration / Bonus
                         Duration, on the Plan itself, plus the Billing frequency
                         and Auto-renew that used to be a "Billing Policy" section
                         of their own. It is the Plan's only billing section now,
-                        with its own Edit/Save/Cancel (§10). */}
+                        with its own Save/Cancel (§10) behind `⋮ → Edit`. */}
                     <SectionHeader
                       title={t('plans.section_billing_duration')}
-                      action={durationEditForPlanId === plan.id ? null : (
+                      action={isEditing && durationEditForPlanId !== plan.id ? (
                         <button onClick={() => openDurationEdit(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
                           {t('plans.edit')}
                         </button>
-                      )}
+                      ) : null}
                     />
-                    {durationEditForPlanId === plan.id ? (
+                    {isEditing && durationEditForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
                           {DURATION_FIELDS.map((field) => (
                             <div key={field}>
-                              <label style={inlineLabelStyle}>{t(`plans.label_${field}`)}</label>
+                              <label htmlFor={`plan-${plan.id}-${field}`} style={inlineLabelStyle}>{t(`plans.label_${field}`)}</label>
                               <input
+                                id={`plan-${plan.id}-${field}`}
                                 type="number" min="0"
                                 value={durationForm[field]}
                                 onChange={(e) => setDurationForm({ ...durationForm, [field]: e.target.value })}
@@ -914,14 +1060,16 @@ export default function PlansPage() {
                         {/* The cadence: how often the member is charged, which
                             the durations do not say (stage 13). */}
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-                          <div style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t('plans.label_billing_frequency')}</div>
+                          <label htmlFor={`plan-${plan.id}-billing-interval`} style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#555' }}>{t('plans.label_billing_frequency')}</label>
                           <input
+                            id={`plan-${plan.id}-billing-interval`}
                             type="number" min="1"
                             value={durationForm.recurring_billing_interval}
                             onChange={(e) => setDurationForm({ ...durationForm, recurring_billing_interval: e.target.value })}
                             style={{ ...inlineInputStyle, width: 70 }}
                           />
                           <select
+                            aria-label={t('plans.label_billing_frequency')}
                             value={durationForm.recurring_billing_unit}
                             onChange={(e) => setDurationForm({ ...durationForm, recurring_billing_unit: e.target.value })}
                             style={{ ...inlineSelectStyle, flex: 1 }}
@@ -975,18 +1123,20 @@ export default function PlansPage() {
 
                     {/* #635 §3–§5: One-off / Session / Period Benefits, the same
                         three Sellable-Item-keyed sections a Promotion has, each with
-                        its own independent Edit/Save/Cancel (§10) and no modal (§15). */}
+                        its own independent Save/Cancel (§10) and no modal (§15).
+                        #816 §6–§8: the Plan keeps these names — never the
+                        Promotion's, which #815 renamed. */}
                     {BENEFIT_SECTIONS.map(({ section, endpoint, titleKey, emptyKey, addKey, showFrequency }) => (
                       <div key={section}>
                         <SectionHeader
                           title={t(`plans.${titleKey}`)}
-                          action={isEditingBenefit(plan.id, section) ? null : (
+                          action={isEditing && !isEditingBenefit(plan.id, section) ? (
                             <button onClick={() => openBenefitEdit(plan, section)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
                               {t('plans.edit')}
                             </button>
-                          )}
+                          ) : null}
                         />
-                        {isEditingBenefit(plan.id, section) ? (
+                        {isEditing && isEditingBenefit(plan.id, section) ? (
                           <div style={{ margin: '6px 0 10px' }}>
                             <SellableItemBenefitEditor
                               t={(key, values) => t(`plans.${key}` as any, values as any)}
@@ -1014,11 +1164,16 @@ export default function PlansPage() {
                       </div>
                     ))}
 
+                    {/* CENTERS (§9) */}
                     <SectionHeader
                       title={t('plans.section_centers')}
-                      action={centersForPlanId === plan.id ? null : <button onClick={() => openCenters(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>{t('plans.edit')}</button>}
+                      action={isEditing && centersForPlanId !== plan.id ? (
+                        <button onClick={() => openCenters(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
+                          {t('plans.edit')}
+                        </button>
+                      ) : null}
                     />
-                    {centersForPlanId === plan.id ? (
+                    {isEditing && centersForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
                         {allCenters.map((c) => (
                           <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
@@ -1046,127 +1201,8 @@ export default function PlansPage() {
                       (plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)
                     )}
 
-                    <SectionHeader
-                      title={t('plans.section_pricing')}
-                      action={pricingForPlanId === plan.id ? null : (
-                        <button onClick={() => openPricing(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
-                          {t('plans.edit_pricing')}
-                        </button>
-                      )}
-                    />
-                    {pricingForPlanId === plan.id ? (
-                      <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                          <div>
-                            <label style={inlineLabelStyle}>{t('plans.label_price_incl_tax')}</label>
-                            <input
-                              type="number" min="0" step="0.01"
-                              value={pricingForm.price}
-                              onChange={(e) => setPricingForm({ ...pricingForm, price: e.target.value })}
-                              placeholder="0.00"
-                              style={inlineInputStyle}
-                            />
-                          </div>
-                          <div>
-                            <label style={inlineLabelStyle}>{t('plans.label_tax_rate')}</label>
-                            <select
-                              value={pricingForm.tax_rate_id}
-                              onChange={(e) => setPricingForm({ ...pricingForm, tax_rate_id: e.target.value })}
-                              style={inlineSelectStyle}
-                            >
-                              <option value="">{t('plans.tax_rate_default')}</option>
-                              {taxRateOptions(pricingForm.tax_rate_id).map((tr) => (
-                                <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                        {(() => {
-                          // Req. 6/7/11/12: the entered price is always the final VAT-inclusive
-                          // customer price — the net is derived from it live, and picking another
-                          // VAT re-splits the same gross rather than stacking tax on top of it.
-                          const selected = pricingForm.tax_rate_id !== ''
-                            ? taxRates.find((tr) => String(tr.id) === pricingForm.tax_rate_id)
-                            : taxRates.find((tr) => tr.is_system);
-                          const ratePercent = selected ? parseFloat(selected.rate_percent) : null;
-                          if (ratePercent == null || isNaN(ratePercent)) return null;
-                          const priceNum = parseFloat(pricingForm.price);
-                          const preview = !isNaN(priceNum) && priceNum >= 0
-                            ? computeVatPreview(priceNum, ratePercent, 'inclusive')
-                            : null;
-                          return (
-                            <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>
-                              {t('plans.price_hint_inclusive', { rate: ratePercent })}
-                              {preview && (
-                                <> — {t('plans.price_preview', {
-                                  excl: preview.amount_excl_tax.toFixed(2),
-                                  incl: preview.amount_incl_tax.toFixed(2),
-                                })}</>
-                              )}
-                            </p>
-                          );
-                        })()}
-                        <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.pricing_save_hint')}</p>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={closePricingForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={() => handleSavePricing(plan.id)} disabled={pricingSaving} style={btnSmall()}>
-                            {pricingSaving ? t('plans.saving') : t('plans.save')}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <DetailRow
-                          label={t('plans.label_tax_rate')}
-                          value={plan.tax_rate_name ? `${plan.tax_rate_name} (${parseFloat(plan.tax_rate_percent ?? '0')}%)` : t('plans.tax_rate_default')}
-                        />
-                        {plan.current_price != null && plan.amount_excl_tax != null && plan.amount_incl_tax != null && (
-                          <DetailRow
-                            label={t('plans.label_current_price')}
-                            value={`€${plan.amount_incl_tax.toFixed(2)} ${t('plans.tax_included_suffix')} (${t('plans.price_preview', { excl: plan.amount_excl_tax.toFixed(2), incl: plan.amount_incl_tax.toFixed(2) })})`}
-                          />
-                        )}
-                        {plan.current_price != null && (
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '6px 0 10px' }}>
-                            <button
-                              onClick={() => setApplyPricingFor(plan)}
-                              disabled={!canWrite}
-                              title={readOnlyTitle}
-                              style={readOnlyStyle(btnSmall(), !canWrite)}
-                            >
-                              {t('plans.apply_price_to_assigned')}
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-
-                    <SectionHeader title={t('plans.section_prices')} />
-                    {(plan.price_history ?? []).length === 0 ? (
-                      <p style={hintSt}>{t('plans.no_prices')}</p>
-                    ) : (
-                      // Newest first — the plan's current price heads its own history.
-                      [...(plan.price_history ?? [])]
-                        .sort((a, b) =>
-                          Number(a.status === 'inactive') - Number(b.status === 'inactive')
-                          || String(b.valid_from).localeCompare(String(a.valid_from))
-                          || b.id - a.id)
-                        .map((row) => (
-                          <div key={row.id} style={benefitRowStyle}>
-                            <span style={benefitNameStyle}>
-                              {String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}
-                            </span>
-                            <span style={benefitValueStyle}>
-                              €{parseFloat(row.price).toFixed(2)}
-                              {row.tax_rate_percent != null && ` (${t('plans.price_hint_inclusive', { rate: parseFloat(row.tax_rate_percent) })})`}
-                            </span>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: row.status === 'inactive' ? '#888' : '#1e7e34' }}>
-                              {t(`plans.price_status_${row.status}`)}
-                            </span>
-                          </div>
-                        ))
-                    )}
-
+                    {/* BILLING EVENTS FORECAST (§10) — read-only by nature: it is
+                        computed server-side and never persisted (#485). */}
                     <SectionHeader title={t('plans.section_billing_forecast')} />
                     {plan.billing_forecast?.available ? (
                       <>
@@ -1197,6 +1233,34 @@ export default function PlansPage() {
                       <p style={hintSt}>
                         {plan.billing_forecast?.reason ?? t('plans.billing_forecast_unavailable')}
                       </p>
+                    )}
+
+                    {/* PRICE HISTORY (§11) — after the numbered sections, with its
+                        existing behaviour: a superseded price is never rewritten. */}
+                    <SectionHeader title={t('plans.section_prices')} />
+                    {(plan.price_history ?? []).length === 0 ? (
+                      <p style={hintSt}>{t('plans.no_prices')}</p>
+                    ) : (
+                      // Newest first — the plan's current price heads its own history.
+                      [...(plan.price_history ?? [])]
+                        .sort((a, b) =>
+                          Number(a.status === 'inactive') - Number(b.status === 'inactive')
+                          || String(b.valid_from).localeCompare(String(a.valid_from))
+                          || b.id - a.id)
+                        .map((row) => (
+                          <div key={row.id} style={benefitRowStyle}>
+                            <span style={benefitNameStyle}>
+                              {String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}
+                            </span>
+                            <span style={benefitValueStyle}>
+                              €{parseFloat(row.price).toFixed(2)}
+                              {row.tax_rate_percent != null && ` (${t('plans.price_hint_inclusive', { rate: parseFloat(row.tax_rate_percent) })})`}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: row.status === 'inactive' ? '#888' : '#1e7e34' }}>
+                              {t(`plans.price_status_${row.status}`)}
+                            </span>
+                          </div>
+                        ))
                     )}
                   </div>
                 )}
