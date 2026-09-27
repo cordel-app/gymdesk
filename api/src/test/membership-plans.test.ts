@@ -1088,6 +1088,92 @@ describe('Applicable tax on membership plans', () => {
     expect(res.body.amount_incl_tax).toBeCloseTo(120, 2);
   });
 
+  // #817 §2: the Current price is shown as the tax-inclusive total *and* the net,
+  // so a Plan that never picked a Tax rate of its own — "Default" in the Pricing
+  // editor, which bills at the gym's system rate — must still come back with a
+  // split. Before #817 it came back as nulls and the card read "—" for a Plan
+  // with a perfectly good price.
+  //
+  // `createTestGym()` inserts the gym row directly and does not seed the system
+  // rate `POST /gyms` would, so these three use a gym of their own that has one.
+  describe('the split falls back to the gym system tax rate (#817)', () => {
+    let defaultGymId: string;
+    let systemRateId: number;
+
+    async function priceOf(planId: number) {
+      const res = await request
+        .get(`/membership-plans/${planId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', defaultGymId);
+      expect(res.status).toBe(200);
+      return res.body;
+    }
+
+    async function setPrice(planId: number, price: number) {
+      const res = await request
+        .post(`/membership-plans/${planId}/prices`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', defaultGymId)
+        .send({ price, valid_from: '2020-01-01', valid_to: null });
+      expect(res.status).toBe(201);
+    }
+
+    beforeAll(async () => {
+      defaultGymId = await createTestGym('Plans Default Tax Rate Gym');
+      await createTestMembership(defaultGymId, 'admin');
+      const { insertId } = await db.query(
+        `INSERT INTO tax_rates (gym_id, name, rate_percent, is_system, status)
+         VALUES (?, 'Standard VAT', 21.00, 1, 'active')`,
+        [defaultGymId],
+      );
+      systemRateId = insertId;
+    });
+
+    it('splits at the system rate when the plan has no tax_rate_id of its own', async () => {
+      const planId = await createPlan(defaultGymId, { name: 'Default Tax Rate Plan' });
+      await setPrice(planId, 60.5);
+      const body = await priceOf(planId);
+      expect(body.tax_rate_id).toBeNull();
+      // The Tax rate row still reads "Default" — the Plan's own columns are untouched.
+      expect(body.tax_rate_name).toBeNull();
+      expect(body.tax_rate_percent).toBeNull();
+      // ...but the money is split, at the system rate, and says which one it used.
+      expect(body.applied_tax_rate).toBeCloseTo(21, 2);
+      expect(body.amount_incl_tax).toBeCloseTo(60.5, 2);
+      expect(body.amount_excl_tax).toBeCloseTo(50, 2);
+    });
+
+    it("prefers the plan's own tax rate over the system rate", async () => {
+      const { insertId: ownRateId } = await db.query(
+        `INSERT INTO tax_rates (gym_id, name, rate_percent, is_system, status)
+         VALUES (?, 'Reduced', 4.00, 0, 'active')`,
+        [defaultGymId],
+      );
+      const planId = await createPlan(defaultGymId, { name: 'Own Tax Rate Wins Plan' });
+      await request
+        .put(`/membership-plans/${planId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', defaultGymId)
+        .send({ tax_rate_id: ownRateId });
+      await setPrice(planId, 104);
+      const body = await priceOf(planId);
+      expect(body.tax_rate_id).toBe(ownRateId);
+      expect(body.tax_rate_percent).not.toBeNull();
+      expect(body.applied_tax_rate).toBeCloseTo(4, 2);
+      expect(body.amount_incl_tax).toBeCloseTo(104, 2);
+      expect(body.amount_excl_tax).toBeCloseTo(100, 2);
+      expect(systemRateId).not.toBe(ownRateId);
+    });
+
+    it('leaves the split null for a plan with no price at all', async () => {
+      const planId = await createPlan(defaultGymId, { name: 'No Price Plan' });
+      const body = await priceOf(planId);
+      expect(body.current_price).toBeNull();
+      expect(body.amount_excl_tax).toBeNull();
+      expect(body.amount_incl_tax).toBeNull();
+    });
+  });
+
   it('carries tax_rate_id and tax_behavior over to the duplicated plan', async () => {
     const taxRateId = await createTaxRate(gymId, 8);
     const planId = await createPlan(gymId, { name: 'Tax Duplicate Source Plan' });

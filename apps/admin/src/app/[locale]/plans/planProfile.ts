@@ -119,6 +119,44 @@ export const PLAN_GENERAL_EDITABLE_FIELDS: PlanGeneralField[] = PLAN_GENERAL_FIE
 /** The admin empty-value convention — never `null`, never `undefined`. */
 export const EMPTY_VALUE = '—';
 
+/** What PRICING reads for the Current price: the stored gross plus the server's split. */
+export interface PlanCurrentPriceRow {
+  current_price: string | null;
+  amount_excl_tax: number | null;
+  amount_incl_tax: number | null;
+}
+
+/**
+ * #817 §2 — the Current price reads as the customer price *and* its net, e.g.
+ *
+ *     €60.00 VAT included (net €49.59 + tax = €60.00)
+ *
+ * Both numbers come from the server (`amount_incl_tax` / `amount_excl_tax`,
+ * `computePriceFields()` over the rate the Plan actually bills at — its own, or
+ * the gym's system rate when it is on "Default"), so the split shown here cannot
+ * drift from the one the Pricing editor previews or the one Sellable Items
+ * report. Nothing is recomputed in the frontend.
+ *
+ * A Plan whose gym has no tax rate at all has no split to show: it falls back to
+ * the gross alone rather than to `—`, because the price *is* configured. No
+ * price at all is the only `—`.
+ */
+export function formatPlanCurrentPrice(
+  row: PlanCurrentPriceRow,
+  /** `plans.tax_included_suffix` — "VAT included". */
+  taxIncludedSuffix: string,
+  /** `plans.price_preview` — "net €{excl} + tax = €{incl}", already interpolated. */
+  formatSplit: (excl: string, incl: string) => string,
+): string {
+  if (row.current_price == null) return EMPTY_VALUE;
+  if (row.amount_incl_tax == null || row.amount_excl_tax == null) {
+    const gross = parseFloat(row.current_price);
+    return Number.isFinite(gross) ? `€${gross.toFixed(2)}` : EMPTY_VALUE;
+  }
+  const incl = row.amount_incl_tax.toFixed(2);
+  return `€${incl} ${taxIncludedSuffix} (${formatSplit(row.amount_excl_tax.toFixed(2), incl)})`;
+}
+
 /**
  * The read-only rendering of one GENERAL field. `translateStatus` is the page's
  * `status.*` lookup and `translateMemberLimit` its `plans.member_limit_*` one,
