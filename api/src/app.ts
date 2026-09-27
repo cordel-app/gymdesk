@@ -90,6 +90,7 @@ import { paymentMethodsRouter } from './api/payment-methods';
 import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
 import { recurringBookingsRouter } from './api/recurring-bookings';
+import { healthRouter } from './api/health';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
 import { publicRegistrationsRouter } from './api/public-registrations';
@@ -165,6 +166,11 @@ function requireAuth() {
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
+
+// #782: nightly-run freshness for an external prober (Grafana Cloud synthetic).
+// Unauthenticated and deliberately outside /billing/, whose nginx location is
+// restricted to GitHub Actions IPs — see api/health.ts.
+app.use('/health', healthRouter);
 
 app.use('/docs', swaggerUi.serve as any);
 app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }) as any);
