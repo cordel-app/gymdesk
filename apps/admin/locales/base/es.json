@@ -915,7 +915,7 @@
     "label_lifecycle_status": "Estado del ciclo de vida",
     "label_enrollment_status": "Estado de inscripción",
     "confirm_archive": "¿Archivar esta cuota? Ya no aceptará nuevos socios.",
-    "section_status": "Estado",
+    "section_general": "General",
     "section_centers": "Centros",
     "section_services": "Servicios incluidos",
     "section_prices": "Historial de precios",
