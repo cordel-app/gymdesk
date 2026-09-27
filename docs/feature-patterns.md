@@ -687,7 +687,7 @@ The Image Upload Field above stores every file under a generated UUID key, so up
 
 3. **A fixed key is shared state, so the row that references it needs a rule the DB can hold.** The key names the gym; the reference lives on `themes`, of which a gym may have several. The upload therefore hands the slot over in one transaction — the uploading row takes the key, every sibling of the same gym stops claiming the asset — so exactly one row ever points at the object. Where two storage modes coexist during a migration (R2 key vs. legacy blob), a named `CHECK` keeps them mutually exclusive rather than trusting the two routers that write them.
 
-Derive the public URL from the key at read time (`buildStorageObjectUrl()` + a `?v=<updated_at>` stamp, since the key itself never changes) instead of storing a URL: the endpoint and bucket are env vars, and a stored URL goes stale the day either moves. Keep the existing same-origin API route as the fallback reader for both modes — and serve the bytes there rather than redirecting when a consumer loads it under a `img-src 'self'` CSP, which matches a redirect's host too.
+Derive the public URL from the key at read time (`buildStorageObjectUrl()` + a `?v=<updated_at>` stamp, since the key itself never changes) instead of storing a URL: the public origin (`CLOUDFLARE_R2_PUBLIC_URL`) is an env var, and a stored URL goes stale the day it moves. That already happened once: rows written before the variable existed hold the private S3 endpoint and had to be rewritten (`npm run storage:rewrite-urls`). Where a column does store a URL (the exercise and nutrition media columns), never compare two of them as strings: the same object can be stored in both the public and the legacy form, so compare `storageKeyFromObjectUrl()` keys and match every form (`storageObjectUrlForms()`, or `mediaReferenceClause()` for the exercise media columns). Keep the existing same-origin API route as the fallback reader for both modes — and serve the bytes there rather than redirecting when a consumer loads it under a `img-src 'self'` CSP, which matches a redirect's host too.
 
 ---
 
@@ -1249,3 +1249,59 @@ const menuItems: ContextMenuItem[] = [
 - Use `useModuleAccess`, not `isSuperadmin || canWriteModule(...)`: `isSuperadmin` stays true while impersonating, so the old pattern showed every edit control to a superadmin impersonating a read-only user.
 - Gate the **entry points** (Add button, ⋮ menu write items, in-row action buttons, Save). Inline edit forms that only open from a gated entry point need nothing extra.
 
+
+## Testing a payment-provider call (#773, #791)
+
+Any new code path that charges, tokenises or refunds through `PaymentProvider` is tested
+against a **stubbed provider whose received arguments are asserted**, not merely against the
+route's status code. The two rules that catch the defects this pattern exists for:
+
+```ts
+// api/src/test/<your-router>.test.ts — the shape billing-run.test.ts uses.
+// `vi.hoisted` so the mock factory can close over it; the spread keeps every other
+// export of `../payments` real (the factory replaces the whole module otherwise).
+const providerResult = vi.hoisted(() => ({
+  current: { success: true, providerRef: 'test-provider-ref' } as {
+    success: boolean; providerRef: string; errorCode?: string; errorMessage?: string;
+  },
+  calls: [] as Array<{ orderId: string; amount: number; currency: string }>,
+}));
+
+vi.mock('../payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../payments')>()),
+  getPaymentProvider: () => ({
+    executeRecurring: async (params: { orderId: string; amount: number; currency: string }) => {
+      providerResult.calls.push(params);
+      return providerResult.current;
+    },
+  }),
+}));
+
+beforeEach(() => { providerResult.calls = []; });
+
+// 1. The amount crosses the boundary in MINOR UNITS — assert the number, not the call.
+const call = providerResult.calls.find((c) => c.orderId.includes(`-${umId}-`));
+expect(call).toMatchObject({ amount: 2999, currency: 'EUR' });   // 29.99 €, not 29.99
+expect(Number.isInteger(call!.amount)).toBe(true);
+// …and that our own side still keeps euros:
+expect(Number(event.amount)).toBe(29.99);
+
+// 2. A path that must NOT charge asserts the absence, and that no row was written.
+expect(providerResult.calls).toHaveLength(0);
+```
+
+- **Assert the amount.** `expect(stub).toHaveBeenCalled()` passed for as long as the
+  provider was stubbed while the nightly run and the staff Retry were passing euros — a
+  real renewal of a 29.99 € fee would have charged twenty-nine cents (`toMinorUnits()`,
+  `api/src/payments/money.ts`).
+- **Assert the *absence* of a call** wherever the rule is "this does not move money": a
+  waived cycle, a card verification, a fee that resolves to 0. Pair it with an assertion
+  that no `payment_requests` / `billing_events` row was written, since "nothing was
+  charged" and "nothing was recorded" are two different claims and the bugs have been in
+  the second one.
+- Keep the **pure** rules in `api/src/domain/` and unit-test them with no DB or provider at
+  all — `billingDunning.ts`, `billingEventStatus.ts`, `storedCards.ts`, `runGuard.ts` and
+  `money.ts` all have unit test files, and that is where the interesting cases (a clock
+  boundary, a stale counter, a refused removal) belong.
+
+See `docs/payments.md` for what each path is supposed to write.

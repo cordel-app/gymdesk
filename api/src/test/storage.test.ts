@@ -18,6 +18,10 @@ const ENV_KEYS = [
   'CLOUDFLARE_R2_BUCKET',
 ] as const;
 
+// Optional, so not in ENV_KEYS (the required set). Cleared so a developer's own
+// public origin can't change the endpoint + bucket composition expected here.
+delete process.env.CLOUDFLARE_R2_PUBLIC_URL;
+
 function setConfigured() {
   process.env.CLOUDFLARE_R2_ENDPOINT = 'https://example.r2.cloudflarestorage.com';
   process.env.CLOUDFLARE_R2_ACCESS_KEY_ID = 'test-key-id';
@@ -27,6 +31,7 @@ function setConfigured() {
 
 afterEach(() => {
   for (const key of ENV_KEYS) delete process.env[key];
+  delete process.env.CLOUDFLARE_R2_PUBLIC_URL;
   sendMock.mockClear();
   vi.resetModules();
 });

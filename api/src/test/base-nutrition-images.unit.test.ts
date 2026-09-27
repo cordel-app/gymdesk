@@ -87,20 +87,31 @@ function subjectExtent(png: Buffer, size: number) {
 }
 
 describe('Base Nutrition Library image keys (#715 §1, §10, §11)', () => {
-  it('stores every base food under cordel/Nutrition/', () => {
-    expect(PLATFORM_NUTRITION_PREFIX).toBe('cordel/Nutrition');
-    expect(buildBaseNutritionImageKey(123, 'Chicken Breast')).toBe('cordel/Nutrition/123-Chicken-Breast.png');
+  const IMAGE_ID = '3f2c1a9e-8b7d-4c6e-9f10-2a3b4c5d6e7f';
+  const UUID_KEY = /^cordel\/nutrition\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-Chicken-Breast\.png$/;
+
+  it('stores every base food under the lowercase cordel/nutrition/', () => {
+    expect(PLATFORM_NUTRITION_PREFIX).toBe('cordel/nutrition');
+    expect(buildBaseNutritionImageKey('Chicken Breast', IMAGE_ID)).toBe(`cordel/nutrition/${IMAGE_ID}-Chicken-Breast.png`);
+  });
+
+  it('names the image <image_uuid>-<sanitized name>, with a fresh UUID per upload', () => {
+    const first = buildBaseNutritionImageKey('Chicken Breast');
+    const second = buildBaseNutritionImageKey('Chicken Breast');
+    expect(first).toMatch(UUID_KEY);
+    expect(second).toMatch(UUID_KEY);
+    expect(first).not.toBe(second);
   });
 
   it('never uses a gym storage prefix', () => {
-    const key = buildBaseNutritionImageKey(1, 'Apple');
+    const key = buildBaseNutritionImageKey('Apple');
     expect(key.startsWith('cordel/')).toBe(true);
     expect(key).not.toContain('gyms/');
   });
 
-  it('includes the food id and ends in .png', () => {
-    expect(buildBaseNutritionImageKey(456, 'Greek Yogurt')).toBe('cordel/Nutrition/456-Greek-Yogurt.png');
-    expect(buildBaseNutritionImageKey(789, 'Brown Rice').endsWith('.png')).toBe(true);
+  it('ends in .png', () => {
+    expect(buildBaseNutritionImageKey('Greek Yogurt', IMAGE_ID)).toBe(`cordel/nutrition/${IMAGE_ID}-Greek-Yogurt.png`);
+    expect(buildBaseNutritionImageKey('Brown Rice').endsWith('.png')).toBe(true);
   });
 
   it('sanitizes the food name exactly as §10 spells it', () => {
@@ -118,11 +129,11 @@ describe('Base Nutrition Library image keys (#715 §1, §10, §11)', () => {
 
   it('falls back to `food` rather than producing an empty name', () => {
     expect(sanitizeNutritionImageName('!!!')).toBe('food');
-    expect(buildBaseNutritionImageKey(7, '???')).toBe('cordel/Nutrition/7-food.png');
+    expect(buildBaseNutritionImageKey('???', IMAGE_ID)).toBe(`cordel/nutrition/${IMAGE_ID}-food.png`);
   });
 
   it('creates only the platform folder markers', () => {
-    expect(baseNutritionFolderKeys()).toEqual(['cordel/', 'cordel/Nutrition/']);
+    expect(baseNutritionFolderKeys()).toEqual(['cordel/', 'cordel/nutrition/']);
   });
 });
 

@@ -176,12 +176,21 @@ describe('POST /platform/nutrition-library/:id/image — auth', () => {
 
 // ─── Happy path ───────────────────────────────────────────────────────────────
 
+const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+/** `cordel/nutrition/<image_uuid>-<name>.png`, matched whole. */
+const keyPattern = (name: string) => new RegExp(`^cordel/nutrition/${UUID}-${name}\\.png$`);
+const lastPutKey = () => {
+  const puts = sentCommands('put').filter((c: any) => !c.input.Key.endsWith('/'));
+  return puts[puts.length - 1]?.input.Key as string;
+};
+
 describe('POST /platform/nutrition-library/:id/image', () => {
-  it('stores the image at cordel/Nutrition/<id>-<Name>.png and persists the URL', async () => {
+  it('stores the image at cordel/nutrition/<image_uuid>-<Name>.png and persists the URL', async () => {
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
 
-    const key = `cordel/Nutrition/${foodId}-Test-Base-Image-Chicken-Breast.png`;
+    const key = lastPutKey();
+    expect(key).toMatch(keyPattern('Test-Base-Image-Chicken-Breast'));
     const puts = sentCommands('put');
     expect(puts[puts.length - 1].input).toMatchObject({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/png' });
     expect(key.startsWith('cordel/')).toBe(true);
@@ -195,42 +204,53 @@ describe('POST /platform/nutrition-library/:id/image', () => {
   it('sanitizes the food name in the key', async () => {
     const res = await upload(secondFoodId, validPng());
     expect(res.status).toBe(200);
-    const puts = sentCommands('put');
-    expect(puts[puts.length - 1].input.Key).toBe(`cordel/Nutrition/${secondFoodId}-Test-Base-Image-Salmon-Atlantic.png`);
+    expect(lastPutKey()).toMatch(keyPattern('Test-Base-Image-Salmon-Atlantic'));
   });
 
-  it('writes the cordel/Nutrition/ folder markers', async () => {
+  it('writes the cordel/nutrition/ folder markers', async () => {
     await upload(foodId, validPng());
     const keys = sentCommands('put').map((c: any) => c.input.Key);
     expect(keys).toContain('cordel/');
-    expect(keys).toContain('cordel/Nutrition/');
+    expect(keys).toContain('cordel/nutrition/');
   });
 
-  it('replaces an image at the same key, leaving nothing orphaned', async () => {
+  it('stores a replacement under a new key and deletes the one it replaced', async () => {
     await upload(foodId, validPng());
-    const firstUrl = await imageUrlOf(foodId);
+    const firstKey = lastPutKey();
     sendMock.mockClear();
 
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
-    expect(await imageUrlOf(foodId)).toBe(firstUrl);
-    // Same deterministic key, so the object is overwritten — nothing to delete.
-    expect(sentCommands('delete')).toHaveLength(0);
+    const secondKey = lastPutKey();
+    expect(secondKey).toMatch(keyPattern('Test-Base-Image-Chicken-Breast'));
+    expect(secondKey).not.toBe(firstKey);
+    expect(await imageUrlOf(foodId)).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/${secondKey}`);
+    expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([firstKey]);
   });
 
-  it('deletes the object a rename left behind', async () => {
+  it('names the new object after the food\'s current name and deletes the old one', async () => {
     await upload(foodId, validPng());
-    const staleKey = `cordel/Nutrition/${foodId}-Test-Base-Image-Chicken-Breast.png`;
+    const staleKey = lastPutKey();
 
     await db.query('UPDATE nutrition_library_items SET name = ? WHERE id = ?', ['Test Base Image Renamed Food', foodId]);
     sendMock.mockClear();
 
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
-    const newKey = `cordel/Nutrition/${foodId}-Test-Base-Image-Renamed-Food.png`;
-    expect(sentCommands('put').map((c: any) => c.input.Key)).toContain(newKey);
+    const newKey = lastPutKey();
+    expect(newKey).toMatch(keyPattern('Test-Base-Image-Renamed-Food'));
     expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([staleKey]);
     expect(await imageUrlOf(foodId)).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/${newKey}`);
+  });
+
+  it('moves an image stored under the old cordel/Nutrition/ folder', async () => {
+    const legacyKey = `cordel/Nutrition/${foodId}-Test-Base-Image-Chicken-Breast.png`;
+    await db.query('UPDATE nutrition_library_items SET image_url = ? WHERE id = ?', [`${R2_ENDPOINT}/${R2_BUCKET}/${legacyKey}`, foodId]);
+
+    const res = await upload(foodId, validPng());
+    expect(res.status).toBe(200);
+    expect(lastPutKey()).toMatch(keyPattern('Test-Base-Image-Chicken-Breast'));
+    expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([legacyKey]);
   });
 
   it('still saves the new image when sweeping the renamed food\'s old object fails', async () => {
@@ -342,7 +362,7 @@ describe('GET /platform/nutrition-library', () => {
 
     const withImage = res.body.items.find((i: any) => i.id === foodId);
     const withoutImage = res.body.items.find((i: any) => i.id === secondFoodId);
-    expect(withImage.image_url).toContain(`cordel/Nutrition/${foodId}-`);
+    expect(withImage.image_url).toMatch(new RegExp(`/cordel/nutrition/${UUID}-Test-Base-Image-Chicken-Breast\\.png$`));
     expect(withoutImage).toBeDefined();
     expect(withoutImage.image_url).toBeNull();
   });
@@ -378,8 +398,8 @@ describe('backfillBaseNutritionImages()', () => {
     expect(counters.discovered).toBe(2);
     expect(counters.generated).toBe(2);
     expect(counters.failed).toEqual([]);
-    expect(await imageUrlOf(foodId)).toContain(`cordel/Nutrition/${foodId}-Test-Base-Image-Chicken-Breast.png`);
-    expect(await imageUrlOf(secondFoodId)).toContain(`cordel/Nutrition/${secondFoodId}-`);
+    expect(await imageUrlOf(foodId)).toMatch(new RegExp(`/cordel/nutrition/${UUID}-Test-Base-Image-Chicken-Breast\\.png$`));
+    expect(await imageUrlOf(secondFoodId)).toMatch(new RegExp(`/cordel/nutrition/${UUID}-Test-Base-Image-Salmon-Atlantic\\.png$`));
   });
 
   it('never touches a gym-owned food', async () => {
@@ -401,11 +421,14 @@ describe('backfillBaseNutritionImages()', () => {
     expect(await imageUrlOf(foodId)).toBe(firstUrl);
   });
 
-  it('regenerates when --force is passed', async () => {
+  it('regenerates when --force is passed, and deletes the objects it replaced', async () => {
     await run();
+    const previousKeys = [await imageUrlOf(foodId), await imageUrlOf(secondFoodId)]
+      .map((u) => (u as string).slice(`${R2_ENDPOINT}/${R2_BUCKET}/`.length));
     sendMock.mockClear();
     const forced = await run({ force: true });
     expect(forced.uploaded).toBe(forced.discovered);
+    expect(sentCommands('delete').map((c: any) => c.input.Key).sort()).toEqual(previousKeys.sort());
   });
 
   it('uploads nothing in a dry run', async () => {
@@ -448,7 +471,7 @@ describe('backfillBaseNutritionImages()', () => {
       const counters = await run({ fromDir: dir });
       expect(counters.supplied).toBe(1);
 
-      const put = sentCommands('put').find((c: any) => String(c.input.Key).includes(`${foodId}-Test-Base-Image`));
+      const put = sentCommands('put').find((c: any) => String(c.input.Key).endsWith('-Test-Base-Image-Chicken-Breast.png'));
       expect(Buffer.from(put.input.Body).equals(supplied)).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });

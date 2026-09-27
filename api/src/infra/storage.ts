@@ -66,6 +66,7 @@ function getConfig() {
     accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
     secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
     bucket: process.env.CLOUDFLARE_R2_BUCKET,
+    publicUrl: process.env.CLOUDFLARE_R2_PUBLIC_URL,
   };
 }
 
@@ -375,21 +376,73 @@ export function buildGymLogoKey(folderPrefix: string, mime: string): string {
 }
 
 /**
- * Public URL of a stored object: endpoint + bucket + key, the composition
- * `uploadGymImage()` has returned since #417 stage 2 (no presigned/CDN URL).
- * Null for a missing key, and null when the deployment has no R2
- * endpoint/bucket configured — so a caller can't hand out a half-built URL.
+ * The origin a browser reads the bucket from, with no trailing slash.
+ *
+ * `CLOUDFLARE_R2_ENDPOINT` is the **S3 API** endpoint the client uploads
+ * through, and it answers every unauthenticated GET with `400 Authorization`,
+ * so a URL built on it renders as a broken image. Reading needs the bucket's
+ * public origin instead: its r2.dev Public Development URL or a custom domain
+ * connected to it. That is `CLOUDFLARE_R2_PUBLIC_URL`, and it serves the bucket
+ * *root*, so the bucket name is not part of the path.
+ *
+ * Without it the origin falls back to the private composition
+ * (`endpoint + bucket`) every URL used before, so a deployment that has not set
+ * it behaves exactly as it did. Null when neither can be built.
+ */
+function publicStorageBase(): string | null {
+  const { bucket, endpoint, publicUrl } = getConfig();
+  const configured = publicUrl?.trim().replace(/\/+$/, '');
+  if (configured) return configured;
+  if (!endpoint || !bucket) return null;
+  return legacyStorageBase(endpoint, bucket);
+}
+
+/**
+ * `endpoint + bucket`: the private S3-API composition every stored URL used
+ * before `CLOUDFLARE_R2_PUBLIC_URL` existed. Rows written then still hold it,
+ * so it stays a URL this deployment built.
+ */
+function legacyStorageBase(endpoint: string, bucket: string): string {
+  // Byte-for-byte the old composition, trailing slash and all: the rows that
+  // hold it were written by exactly this concatenation.
+  return `${endpoint}/${bucket}`;
+}
+
+/**
+ * Every base a URL this deployment built can start with: the public origin
+ * first, then the legacy private composition when that is a different string.
+ */
+function storageBases(): string[] {
+  const { bucket, endpoint } = getConfig();
+  const bases: string[] = [];
+  const current = publicStorageBase();
+  if (current) bases.push(current);
+  if (endpoint && bucket) {
+    const legacy = legacyStorageBase(endpoint, bucket);
+    if (!bases.includes(legacy)) bases.push(legacy);
+  }
+  return bases;
+}
+
+/**
+ * Public URL of a stored object: {@link publicStorageBase} + key. Null for a
+ * missing key, and null when the deployment has no R2 configured, so a caller
+ * can't hand out a half-built URL.
  */
 export function buildStorageObjectUrl(key: string | null | undefined): string | null {
-  const { bucket, endpoint } = getConfig();
-  if (!key || !endpoint || !bucket) return null;
-  return `${endpoint}/${bucket}/${key}`;
+  const base = publicStorageBase();
+  if (!key || !base) return null;
+  return `${base}/${key}`;
 }
 
 /**
  * The inverse of {@link buildStorageObjectUrl}: the object key inside a URL this
- * deployment built, or null for anything else — a URL from a different
+ * deployment built, or null for anything else: a URL from a different
  * endpoint/bucket, a hand-written one, or a key-less prefix.
+ *
+ * "Built by this deployment" covers both forms: the public origin, and the
+ * private `endpoint + bucket` composition that rows written before
+ * `CLOUDFLARE_R2_PUBLIC_URL` still hold. Both name the same object.
  *
  * Null means "not ours", which is the only safe answer for a caller that is
  * about to *delete* the object it names (#715: cleaning up the object a renamed
@@ -397,12 +450,25 @@ export function buildStorageObjectUrl(key: string | null | undefined): string | 
  * produce.
  */
 export function storageKeyFromObjectUrl(url: string | null | undefined): string | null {
-  const { bucket, endpoint } = getConfig();
-  if (!url || !endpoint || !bucket) return null;
-  const prefix = `${endpoint}/${bucket}/`;
-  if (!url.startsWith(prefix)) return null;
-  const key = url.slice(prefix.length);
-  return key.length > 0 ? key : null;
+  if (!url) return null;
+  for (const base of storageBases()) {
+    const prefix = `${base}/`;
+    if (!url.startsWith(prefix)) continue;
+    const key = url.slice(prefix.length);
+    return key.length > 0 ? key : null;
+  }
+  return null;
+}
+
+/**
+ * Every URL form a stored row may hold for `key`: the public URL and the legacy
+ * private one. A caller asking "does any row still point at this object?" must
+ * match all of them, because rows written before `CLOUDFLARE_R2_PUBLIC_URL`
+ * keep the old form until they are rewritten. A string comparison against the
+ * new form alone would miss them and delete an object still in use.
+ */
+export function storageObjectUrlForms(key: string): string[] {
+  return storageBases().map((base) => `${base}/${key}`);
 }
 
 /**
@@ -410,7 +476,7 @@ export function storageKeyFromObjectUrl(url: string | null | undefined): string 
  * is part of the contract rather than generated — the Custom Theme logo (#713).
  */
 export async function uploadStorageObject(key: string, mime: string, body: Buffer): Promise<string> {
-  const { bucket, endpoint } = getConfig();
+  const { bucket } = getConfig();
   const client = getClient();
   try {
     await client.send(new PutObjectCommand({
@@ -425,7 +491,7 @@ export async function uploadStorageObject(key: string, mime: string, body: Buffe
       err,
     );
   }
-  return `${endpoint}/${bucket}/${key}`;
+  return buildStorageObjectUrl(key) as string;
 }
 
 /**

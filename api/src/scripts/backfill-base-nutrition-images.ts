@@ -9,7 +9,7 @@
  * gym_id IS NULL`) — there is no seed list in the repo and none is wanted — then
  * for each one that has no image yet:
  *
- *   1. computes `cordel/Nutrition/<food_id>-<sanitized name>.png`,
+ *   1. computes `cordel/nutrition/<image_uuid>-<sanitized name>.png`,
  *   2. takes the artwork from `--from <dir>` when a matching file is there, and
  *      otherwise renders it with `domain/nutritionImageArt.ts`,
  *   3. uploads it, and
@@ -45,9 +45,11 @@ import {
 import { renderNutritionImage } from '../domain/nutritionImageArt';
 import {
   buildStorageObjectUrl,
+  deleteStorageObject,
   ensureStorageFolders,
   getMissingStorageConfigKeys,
   isStorageConfigured,
+  storageKeyFromObjectUrl,
   uploadStorageObject,
 } from '../infra/storage';
 
@@ -218,7 +220,7 @@ export async function backfillBaseNutritionImages(
   }
 
   for (const food of pending) {
-    const key = buildBaseNutritionImageKey(food.id, food.name);
+    const key = buildBaseNutritionImageKey(food.name);
     try {
       const supplied = options.fromDir ? findSuppliedImage(options.fromDir, food) : null;
       const png = supplied ?? renderNutritionImage({
@@ -245,6 +247,15 @@ export async function backfillBaseNutritionImages(
       );
       counters.uploaded += 1;
       log(`uploaded ${food.id} ${food.name} → ${key}`);
+      // Every run writes a fresh key, so under --force the object the row
+      // pointed at before is now unreachable. Best-effort, after the row moved,
+      // exactly as the upload route does.
+      const staleKey = storageKeyFromObjectUrl(food.image_url);
+      if (staleKey && staleKey !== key) {
+        await deleteStorageObject(staleKey).catch((err: any) => {
+          log(`  could not delete the replaced object ${staleKey}: ${err?.message ?? err}`);
+        });
+      }
     } catch (err: any) {
       // §4: one food's failure never stops the rest.
       counters.failed.push({ id: food.id, name: food.name, error: err?.message ?? String(err) });

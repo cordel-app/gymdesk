@@ -6,20 +6,25 @@
 // file owns *where an image goes* and *what is accepted*, so both are decided in
 // one place and can be unit-tested without a database or a bucket.
 
+import { randomUUID } from 'node:crypto';
 import { PLATFORM_STORAGE_ROOT, sanitizeStorageObjectName } from '../infra/storage';
 import { readPngMetadata, pngSupportsTransparency } from './pngImage';
 
 /**
- * `Nutrition` — the branch of the platform root that holds Base Nutrition
- * Library images. Base foods are `gym_id IS NULL` rows and belong to no gym, so
- * they cannot hang off `gyms.storage_folder_prefix`; their prefix is
+ * `nutrition`: the branch of the platform root that holds Base Nutrition
+ * Library images, lowercase. Base foods are `gym_id IS NULL` rows and belong to
+ * no gym, so they cannot hang off `gyms.storage_folder_prefix`; their prefix is
  * {@link PLATFORM_STORAGE_ROOT} (`cordel`), the sibling of the `gyms/` root that
  * #732 already uses for Base Theme assets. A gym's *own* nutrition images keep
  * using `<gym prefix>/Nutrition/Images/` and are untouched by this.
+ *
+ * It was `Nutrition` until 2026-09-27. Objects stored under `cordel/Nutrition/`
+ * still resolve through their row's URL, and the next upload of that food moves
+ * it here and deletes the old object.
  */
-export const PLATFORM_NUTRITION_FOLDER = 'Nutrition';
+export const PLATFORM_NUTRITION_FOLDER = 'nutrition';
 
-/** `cordel/Nutrition` — the one folder every base food's image is stored in. */
+/** `cordel/nutrition`: the one folder every base food's image is stored in. */
 export const PLATFORM_NUTRITION_PREFIX = `${PLATFORM_STORAGE_ROOT}/${PLATFORM_NUTRITION_FOLDER}`;
 
 /**
@@ -35,10 +40,10 @@ export const PLATFORM_NUTRITION_PREFIX = `${PLATFORM_STORAGE_ROOT}/${PLATFORM_NU
  *     to be escaped in a URL.
  *  2. Runs of separators collapse to a single `-`, and leading/trailing ones go.
  *  3. Empty result (a name of nothing but punctuation) falls back to `food`, so
- *     the key can never end up as `cordel/Nutrition/12-.png`.
+ *     the key can never end up as `cordel/nutrition/<uuid>-.png`.
  *
- * Deterministic and case-preserving: the same name always yields the same key,
- * which is what makes a re-upload overwrite rather than orphan.
+ * Deterministic and case-preserving: the same name always yields the same
+ * name part of the key.
  *
  * The rule itself is {@link sanitizeStorageObjectName} (#719 gave it a second
  * caller, Gym Exercise images); only the fallback word is this feature's.
@@ -48,20 +53,25 @@ export function sanitizeNutritionImageName(name: string): string {
 }
 
 /**
- * `cordel/Nutrition/<food_id>-<sanitized name>.png` — the one key a base food's
- * image is stored under (#715 §1).
+ * `cordel/nutrition/<image_uuid>-<sanitized name>.png`: the key one upload of a
+ * base food's image is stored under.
  *
- * The id leads, so two foods that sanitize to the same name never share an
- * object, and the `.png` is part of the fixed name rather than a claim about the
+ * The UUID names the *image*, not the food, the same `<id>-<name>` shape the
+ * rest of the bucket uses (gym roots, theme folders, gym uploads' `<uuid>`).
+ * Every upload therefore gets a fresh key: nothing is overwritten in place, and
+ * the caller deletes the object the row pointed at before once the new one is
+ * stored. The `.png` is part of the fixed name rather than a claim about the
  * bytes: only PNG is accepted, so the two can't disagree. The uploaded file's
  * own name plays no part in the key (#713's rule).
+ *
+ * `imageId` is a parameter so tests can pin it; callers leave it to default.
  */
-export function buildBaseNutritionImageKey(foodId: number, foodName: string): string {
-  return `${PLATFORM_NUTRITION_PREFIX}/${foodId}-${sanitizeNutritionImageName(foodName)}.png`;
+export function buildBaseNutritionImageKey(foodName: string, imageId: string = randomUUID()): string {
+  return `${PLATFORM_NUTRITION_PREFIX}/${imageId}-${sanitizeNutritionImageName(foodName)}.png`;
 }
 
 /**
- * Every folder marker between the bucket root and `cordel/Nutrition/`, outermost
+ * Every folder marker between the bucket root and `cordel/nutrition/`, outermost
  * first. R2 has no directories, so these are the zero-byte `…/` objects
  * `ensureStorageFolders()` writes; the platform root is not created by Gym
  * Bucket Initialization (that only writes a gym's tree), so the first upload
