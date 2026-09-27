@@ -9,6 +9,7 @@ import {
   validateProfessionalServiceIds,
 } from '../domain/sellableItemProfessionalServices';
 import { classifySellableItem } from '../domain/sellableItemClassification';
+import { sellableItemFrequencyWriteError } from '../domain/sellableItemFrequency';
 
 export const sellableItemsRouter = Router();
 
@@ -58,7 +59,9 @@ const SELECT = `
 const VALID_TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const VALID_STATUSES = ['active', 'inactive'] as const;
 const VALID_ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
-const VALID_FREQUENCIES = ['once', 'per_session', 'four_weeks', 'week', 'month', 'year'] as const;
+// #821: the accepted set is no longer a list here — `domain/sellableItemFrequency.ts`
+// owns it, because "what may be configured" and "what may be stored" are now two
+// different answers ('week' is read and billed but never selectable).
 const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
 
 function validateUnits(units: any): string | null {
@@ -183,9 +186,10 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (!type || !VALID_TYPES.includes(type)) return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
-  if (billing_frequency && !VALID_FREQUENCIES.includes(billing_frequency)) {
-    return res.status(400).json({ error: `billing_frequency must be one of: ${VALID_FREQUENCIES.join(', ')}` });
-  }
+  // #821: a new item has no stored frequency to carry through, so a legacy
+  // value ('week') is refused here as flatly as an unknown one.
+  const freqErr = sellableItemFrequencyWriteError(billing_frequency, null);
+  if (freqErr) return res.status(400).json({ error: freqErr });
   if (enrollment_status && !VALID_ENROLLMENT_STATUSES.includes(enrollment_status)) {
     return res.status(400).json({ error: `enrollment_status must be one of: ${VALID_ENROLLMENT_STATUSES.join(', ')}` });
   }
@@ -295,6 +299,10 @@ sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
           orig.description,
           orig.amount,
           orig.currency,
+          // #821: a faithful copy, legacy 'week' included. Duplicate is not the
+          // dropdown — nulling or re-mapping the frequency here would change a
+          // price's period behind the staff user's back, which is the one thing
+          // the ticket asks not to happen to existing weekly items.
           orig.billing_frequency,
           orig.status,
           orig.enrollment_status,
@@ -336,9 +344,6 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
   } = req.body;
 
-  if (billing_frequency && !VALID_FREQUENCIES.includes(billing_frequency)) {
-    return res.status(400).json({ error: `billing_frequency must be one of: ${VALID_FREQUENCIES.join(', ')}` });
-  }
   if (type && !VALID_TYPES.includes(type)) {
     return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
   }
@@ -359,10 +364,17 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     if (taxRateErr) return res.status(400).json({ error: taxRateErr });
 
     const { rows: existing } = await db.query(
-      'SELECT id, is_system, name AS current_name, type AS current_type FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      `SELECT id, is_system, name AS current_name, type AS current_type,
+              billing_frequency AS current_billing_frequency
+         FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [req.params.id, gymId],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
+    // #821: checked against the row rather than a bare list, because an item
+    // stored as 'week' must stay editable — its form submits that value back
+    // untouched — while nothing may be moved onto it.
+    const freqErr = sellableItemFrequencyWriteError(billing_frequency, existing[0].current_billing_frequency);
+    if (freqErr) return res.status(400).json({ error: freqErr });
     const isSystem = existing[0].is_system;
     // System items can never change type (the UPDATE below no-ops `type` when
     // isSystem), so their effective type after this write is always the

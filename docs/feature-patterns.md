@@ -1387,6 +1387,41 @@ Reference implementation: `api/src/domain/nutritionComponentTypes.ts` +
 `apps/admin/src/app/[locale]/nutrition/nutrition-plan-templates/NutritionPlanTree.tsx`
 + `apps/admin/src/test/nutrition-food-type-selector.test.ts`.
 
+### Retiring one option from such a set (#821)
+
+Dropping a value from a dropdown is not dropping it from the column. Rows already
+store it, and for a *price* — a Sellable Item billed weekly — there is no safe
+coercion: neither `month` nor `four_weeks` is the same period, so a backfill
+would change what a gym charges. The pattern is to split one set into two.
+
+- **Offered vs stored.** `api/src/domain/sellableItemFrequency.ts` declares
+  `OFFERED_…` (what a write may *configure*, in dropdown order) and `LEGACY_…`
+  (what the column may still *hold*). The CHECK is **not** narrowed — migration
+  123 keeps permitting all six — so every existing row stays valid and no
+  migration ships.
+- **One write rule, taking the row's current value.** `sellableItemFrequencyWriteError(next, current)`
+  returns the 400 message or `null`: `POST` passes `current = null` so a retired
+  value is refused outright, `PUT` passes the stored value so the same value may
+  be carried through **unchanged** and nothing may be moved onto it. Without that
+  second argument, editing any other field of a legacy row either 400s or
+  silently rewrites the retired value — both are the corruption the ticket
+  forbids.
+- **Everything downstream keeps reading it.** The classifier, the billing
+  simulation and every projection treat the legacy value exactly as before
+  (`isRecurringFrequency()` still counts `week`), because the row is unchanged.
+- **The form shows it, disabled, only while it holds it.** `frequencyOptions(current)`
+  appends the row's own legacy value as a `disabled` option, so the select reads
+  truthfully, submits the value back untouched, and loses the option the moment
+  the user picks another — plus a one-line notice saying that choosing another
+  replaces it. Never a selectable option, never a silent `—`.
+- **A copy is a copy.** `POST /:id/duplicate` copies the stored value verbatim:
+  Duplicate is not the dropdown, and re-mapping there changes a price's period
+  behind the user's back.
+
+Reference implementation: `api/src/domain/sellableItemFrequency.ts` +
+`apps/admin/src/app/[locale]/financials/sellable-items/sellableItemFrequency.ts`
++ `api/src/test/sellable-item-frequency.unit.test.ts`.
+
 ### Renaming a label two entities share (#815)
 
 A label-only rename is only label-only while the key it changes belongs to one

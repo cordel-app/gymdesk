@@ -3063,6 +3063,7 @@
     "frequency_week": "Week",
     "frequency_month": "Month",
     "frequency_year": "Year",
+    "frequency_legacy_notice": "This item is billed weekly, a frequency that is no longer offered. Choosing another one replaces it; it cannot be selected again.",
     "system_badge": "System",
     "section_general": "General",
     "section_billing": "Billing Configuration",

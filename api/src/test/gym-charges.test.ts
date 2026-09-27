@@ -578,6 +578,131 @@ describe('POST /sellable-items', () => {
       .send({ name: 'Bad Frequency', type: 'fee', amount: 10, billing_frequency: 'fortnight' });
     expect(res.status).toBe(400);
   });
+
+  // #821: 'week' left the product surface. It is still a value the column may
+  // hold (migration 123's CHECK is untouched, so rows written before the ticket
+  // stay valid), but no new item may be created on it.
+  it('returns 400 for billing_frequency = week and writes nothing', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Weekly Locker', type: 'service', amount: 5, billing_frequency: 'week' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('no longer offered');
+    const { rows } = await db.query(
+      'SELECT id FROM gym_charges WHERE gym_id = ? AND name = ?',
+      [gymId, 'Weekly Locker'],
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it('creates an item on each offered billing_frequency', async () => {
+    for (const freq of ['once', 'per_session', 'four_weeks', 'month', 'year']) {
+      const res = await request
+        .post('/sellable-items')
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ name: `Offered ${freq}`, type: 'service', amount: 10, billing_frequency: freq });
+      expect(res.status).toBe(201);
+      expect(res.body.billing_frequency).toBe(freq);
+    }
+  });
+});
+
+// ─── #821 — a Sellable Item stored on the retired 'week' frequency ──────────────
+
+describe('#821 legacy week frequency', () => {
+  let gymId: string;
+  let weeklyId: number;
+  let monthlyId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym();
+    await createTestMembership(gymId, 'admin');
+    // Written directly, the way a pre-#821 item exists in a real gym: the API
+    // refuses to create one now, which is the point of the ticket.
+    const weekly = await db.query(
+      `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
+       VALUES (?, 'Legacy Weekly Locker', 'service', 5.00, 'EUR', 'week', 'active', 'public', 0)`,
+      [gymId],
+    );
+    weeklyId = weekly.insertId as number;
+    const monthly = await db.query(
+      `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
+       VALUES (?, 'Monthly Locker', 'service', 20.00, 'EUR', 'month', 'active', 'public', 0)`,
+      [gymId],
+    );
+    monthlyId = monthly.insertId as number;
+  });
+
+  const put = (id: number, body: Record<string, unknown>) => request
+    .put(`/sellable-items/${id}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send(body);
+
+  it('still reads the stored frequency back', async () => {
+    const res = await request
+      .get(`/sellable-items/${weeklyId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.billing_frequency).toBe('week');
+  });
+
+  it('still classifies it as a periodical benefit', async () => {
+    const res = await request
+      .get(`/sellable-items/${weeklyId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.body.benefit_category).toBe('periodical');
+  });
+
+  it('lets another field be edited with the frequency submitted back unchanged', async () => {
+    const res = await put(weeklyId, { name: 'Legacy Weekly Locker', amount: 6.5, billing_frequency: 'week' });
+    expect(res.status).toBe(200);
+    expect(res.body.billing_frequency).toBe('week');
+    expect(parseFloat(res.body.amount)).toBeCloseTo(6.5, 2);
+  });
+
+  it('lets it move onto an offered frequency', async () => {
+    const res = await put(weeklyId, { name: 'Legacy Weekly Locker', billing_frequency: 'four_weeks' });
+    expect(res.status).toBe(200);
+    expect(res.body.billing_frequency).toBe('four_weeks');
+    // …and cannot come back once it has moved.
+    const back = await put(weeklyId, { name: 'Legacy Weekly Locker', billing_frequency: 'week' });
+    expect(back.status).toBe(400);
+    expect(back.body.error).toContain('no longer offered');
+    const { rows } = await db.query(
+      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [weeklyId],
+    );
+    expect(rows[0].billing_frequency).toBe('four_weeks');
+  });
+
+  it('refuses to move an item that never was weekly onto week', async () => {
+    const res = await put(monthlyId, { name: 'Monthly Locker', billing_frequency: 'week' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('no longer offered');
+    const { rows } = await db.query(
+      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [monthlyId],
+    );
+    expect(rows[0].billing_frequency).toBe('month');
+  });
+
+  it('duplicates a weekly item faithfully, frequency included', async () => {
+    const legacy = await db.query(
+      `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
+       VALUES (?, 'Weekly To Duplicate', 'service', 7.00, 'EUR', 'week', 'active', 'public', 0)`,
+      [gymId],
+    );
+    const res = await request
+      .post(`/sellable-items/${legacy.insertId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(201);
+    expect(res.body.billing_frequency).toBe('week');
+  });
 });
 
 // ─── DELETE /sellable-items/:id — soft-delete custom items ──────────────────────
