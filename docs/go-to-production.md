@@ -165,6 +165,15 @@ Tick items off in the PR that completes them.
       Re-running is idempotent and non-destructive — it rewrites the same zero-byte markers under the
       prefix already captured — and nothing breaks without it: an upload into a Custom Theme's own folder
       creates the missing parents itself. This is so the R2 browser shows the same tree for every gym.
+- [ ] **Sweep the obsolete `Branding/` and `Members/` folder markers from every gym bucket** (#826).
+      Initialization no longer creates them, but a gym provisioned before #826 still has the five
+      zero-byte markers (`Branding/`, `Branding/Logo/`, `Branding/Images/`, `Members/`, and on gyms
+      initialized before #735 nothing under `Themes/`) — re-running **Initialize Bucket** does not
+      remove them, because it only writes. Nothing reads them: the theme logo moved to
+      `Themes/<theme_id>-<name>/Logo/` in #824 and a theme's Members App slots have been under
+      `Themes/<theme_id>-<name>/Members/` since #725. Before deleting `Branding/Logo/logo.*` on a
+      gym, check no `themes.logo_object_key` still points at it — a row written before #824 keeps
+      its legacy key and renders from it until its logo is replaced.
 - [ ] **Sweep the Members image objects of themes that were renamed or deleted** (#725). Remove clears the
       row and deliberately leaves the object (the ticket requires it), and a theme renamed between two
       uploads leaves its old folder behind — the next upload sweeps that one object best-effort, nothing

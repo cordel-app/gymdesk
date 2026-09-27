@@ -40,16 +40,28 @@ export const THEMES_FOLDER = 'Themes';
 
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
+//
+// #826: the gym root carries exactly **three** first-level folders — `Nutrition/`,
+// `Exercises/` and `Themes/`. `Branding/` (with its `Logo/` and `Images/` leaves)
+// and `Members/` were dropped: nothing has written to either since #824 moved the
+// theme logo into the theme's own folder (`Themes/<theme_id>-<name>/Logo/`) and
+// #725 put a theme's Members App slots under `Themes/<theme_id>-<name>/Members/`.
+// Initialization is what stops creating them; the markers an earlier run already
+// wrote are left alone, since removing objects from a gym's bucket is not this
+// ticket's business (see `docs/go-to-production.md`).
+//
+// The leaves below the three roots are unchanged (§6 — this ticket is only about
+// what sits directly under the gym root), and the existing spelling of each name
+// is kept: the folder names here are the same strings the key builders in
+// `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`, `domain/themeFolders.ts`
+// and the nutrition upload route write into, so a marker that disagreed with them
+// in case alone would add a *fourth* first-level folder rather than rename one.
 const GYM_FOLDERS = [
   'Nutrition/',
   'Nutrition/Images/',
   'Exercises/',
   'Exercises/Images/',
   'Exercises/Videos/',
-  'Branding/',
-  'Branding/Logo/',
-  'Branding/Images/',
-  'Members/',
   // #735: the gym-level `Themes/` root only. A Custom Theme's own
   // `Themes/<theme_id>-<name>/Members/` branch is deliberately *not* created
   // here — it cannot exist before the theme does, and `ensureStorageFolders()`
