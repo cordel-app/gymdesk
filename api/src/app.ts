@@ -90,12 +90,14 @@ import { paymentMethodsRouter } from './api/payment-methods';
 import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
 import { recurringBookingsRouter } from './api/recurring-bookings';
+import { healthRouter } from './api/health';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
 import { publicRegistrationsRouter } from './api/public-registrations';
 import { websiteIntegrationRouter } from './api/website-integration';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
+import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
 
 export const app = express();
 
@@ -114,6 +116,21 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use(apiLimiter as any);
+
+// #783: the internal run routes are authenticated by X-Internal-Secret alone —
+// no nginx allowlist sits in front of them any more — so they get a budget of
+// their own, far below the global one, that only a failed secret (401) spends.
+// See domain/internalRunRateLimit.ts for why a caller holding the secret, and
+// #781's two daily attempts with it, never consume it.
+const internalRunRateLimit = internalRunRateLimitConfig();
+const internalRunLimiter = rateLimit({
+  windowMs: internalRunRateLimit.windowMs,
+  limit: internalRunRateLimit.limit,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: (_req, res) => !spendsInternalRunBudget(res.statusCode),
+});
 
 // Clerk webhooks must be mounted BEFORE express.json(): signature verification
 // needs the exact raw request bytes, so this route parses its own raw body.
@@ -166,6 +183,11 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
+// #782: nightly-run freshness for an external prober (Grafana Cloud synthetic).
+// Unauthenticated and deliberately outside /billing/, whose nginx location is
+// restricted to GitHub Actions IPs — see api/health.ts.
+app.use('/health', healthRouter);
+
 app.use('/docs', swaggerUi.serve as any);
 app.get('/docs', swaggerUi.setup(swaggerSpec, { customSiteTitle: 'Gymdesk API' }) as any);
 
@@ -179,11 +201,11 @@ app.use('/public', publicRouter);
 app.use('/payment-page', paymentPageRouter);
 
 // Internal billing runner — authenticated by X-Internal-Secret header
-app.use('/billing', billingRouter);
+app.use('/billing', internalRunLimiter as any, billingRouter);
 
 // #647 stage 4: internal nightly runner that maintains the rolling 2-month
 // Personal Training booking window — same X-Internal-Secret pattern as /billing.
-app.use('/recurring-bookings', recurringBookingsRouter);
+app.use('/recurring-bookings', internalRunLimiter as any, recurringBookingsRouter);
 
 // Theme logo — no auth (img tags in both apps need this)
 app.use('/themes', themesPublicRouter);

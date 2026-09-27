@@ -565,6 +565,9 @@ export default function BillingEventsPage() {
   const [status, setStatus] = useState<string[]>(
     (searchParams.get('status') ?? '').split(',').filter(Boolean),
   );
+  // #779: `order=asc` is how the sidebar badge opens the failed list as a work
+  // queue, oldest first. Carried through the URL like the filters, no control.
+  const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
   const [offset, setOffset] = useState(0);
 
   const [items, setItems] = useState<BillingEvent[]>([]);
@@ -588,6 +591,7 @@ export default function BillingEventsPage() {
     if (f) p.set('from', f);
     if (t2) p.set('to', t2);
     if (s.length > 0) p.set('status', s.join(','));
+    if (order === 'asc') p.set('order', 'asc');
     router.replace(`/${locale}/payments/billing-events${p.toString() ? '?' + p.toString() : ''}`, { scroll: false });
   }
 
@@ -601,6 +605,7 @@ export default function BillingEventsPage() {
       if (from) p.set('from', from);
       if (to) p.set('to', to);
       for (const s of status) p.append('status', s);
+      if (order === 'asc') p.set('order', 'asc');
       const data = await apiFetch<PageResult>(`/payments/billing-events?${p}`);
       setItems(data.items);
       setTotal(data.total);
@@ -613,7 +618,7 @@ export default function BillingEventsPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGymId, memberId, from, to, status]);
+  }, [activeGymId, memberId, from, to, status, order]);
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
