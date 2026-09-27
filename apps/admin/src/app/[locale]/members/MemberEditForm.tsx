@@ -5,17 +5,11 @@ import { useTranslations } from 'next-intl';
 import { btnStyle } from '@/components/ui';
 import type { CenterOption } from '@/context/CenterContext';
 import { validateDocumentId } from '@/lib/documentId';
+import type { MemberEditFormValues } from './memberProfile';
 
-export interface MemberEditFormValues {
-  name: string;
-  phone: string;
-  date_of_birth: string;
-  gender: string;
-  address: string;
-  emergency_contact: string;
-  notes: string;
-  nif_nie_passport: string;
-}
+// #797: the field set itself lives in memberProfile.ts, shared with the
+// read-only PROFILE section of the expanded row so the two cannot drift apart.
+export type { MemberEditFormValues };
 
 export function MemberEditForm({
   form, error, saving,

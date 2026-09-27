@@ -15,7 +15,13 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MemberExpandedRow } from './MemberExpandedRow';
 import { MemberDetailModal } from './MemberDetailModal';
-import { MemberEditForm, MemberEditFormValues } from './MemberEditForm';
+import { MemberEditForm } from './MemberEditForm';
+import {
+  emptyMemberEditForm,
+  toMemberEditFormValues,
+  type MemberEditFormValues,
+  type MemberProfile,
+} from './memberProfile';
 import { validateDocumentId } from '@/lib/documentId';
 
 interface Plan {
@@ -24,17 +30,11 @@ interface Plan {
   base_price: string;
 }
 
-interface Member {
+// #797: the Profile half of the row is MemberProfile, the one definition the
+// read-only PROFILE section and the Edit form both build on.
+interface Member extends MemberProfile {
   id: number;
-  name: string;
   email: string;
-  phone: string | null;
-  date_of_birth: string | null;
-  gender: string | null;
-  address: string | null;
-  emergency_contact: string | null;
-  notes: string | null;
-  nif_nie_passport: string | null;
   fare_id: number | null;
   fare_name: string | null;
   clerk_user_id: string | null;
@@ -49,17 +49,6 @@ const emptyForm = {
   email: '',
   phone: '',
   fare_id: '',
-  nif_nie_passport: '',
-};
-
-const emptyEditForm: MemberEditFormValues = {
-  name: '',
-  phone: '',
-  date_of_birth: '',
-  gender: '',
-  address: '',
-  emergency_contact: '',
-  notes: '',
   nif_nie_passport: '',
 };
 
@@ -96,12 +85,19 @@ export default function MembersPage() {
 
   // Inline editing (Member is edited on the expanded row, not in a modal — #365)
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<MemberEditFormValues>(emptyEditForm);
+  const [editForm, setEditForm] = useState<MemberEditFormValues>(emptyMemberEditForm);
   const [editError, setEditError] = useState<string | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [editAssignedCenterIds, setEditAssignedCenterIds] = useState<Set<number>>(new Set());
   const [editDefaultCenterId, setEditDefaultCenterId] = useState<number | null>(null);
+  // #797: a saved edit may have changed the Member's centers, and the read-only
+  // PROFILE section below reads those from the API rather than from this row.
+  // Bumping this is how that section re-reads them without remounting (and
+  // re-fetching) every other section of the expanded row. It is page-wide, so
+  // any other row left expanded repeats its own one-row centers read too —
+  // cheaper than threading the edited id through every render.
+  const [profileVersion, setProfileVersion] = useState(0);
 
   useEffect(() => {
     if (editingId === null) return;
@@ -258,16 +254,7 @@ export default function MembersPage() {
 
   async function startEdit(m: Member) {
     setEditingId(m.id);
-    setEditForm({
-      name: m.name,
-      phone: m.phone ?? '',
-      date_of_birth: m.date_of_birth?.slice(0, 10) ?? '',
-      gender: m.gender ?? '',
-      address: m.address ?? '',
-      emergency_contact: m.emergency_contact ?? '',
-      notes: m.notes ?? '',
-      nif_nie_passport: m.nif_nie_passport ?? '',
-    });
+    setEditForm(toMemberEditFormValues(m));
     setEditError(null);
     setExpandedMemberIds((prev) => {
       const next = new Set(prev);
@@ -288,7 +275,7 @@ export default function MembersPage() {
 
   function cancelEdit() {
     setEditingId(null);
-    setEditForm(emptyEditForm);
+    setEditForm(emptyMemberEditForm);
     setEditError(null);
     setEditAssignedCenterIds(new Set());
     setEditDefaultCenterId(null);
@@ -334,6 +321,7 @@ export default function MembersPage() {
         });
       }
       setEditingId(null);
+      setProfileVersion((v) => v + 1);
       load();
     } catch (err: any) {
       setEditError(err.message ?? t('members.error_generic'));
@@ -545,7 +533,15 @@ export default function MembersPage() {
                 onCancel={cancelEdit}
               />
             )}
-            <MemberExpandedRow memberId={m.id} canManageTraining={canManageTraining} canManagePackages={canManagePackages} isAdmin={isAdmin} plans={plans} />
+            <MemberExpandedRow
+              memberId={m.id}
+              member={m}
+              profileVersion={profileVersion}
+              canManageTraining={canManageTraining}
+              canManagePackages={canManagePackages}
+              isAdmin={isAdmin}
+              plans={plans}
+            />
           </>
         )}
       />

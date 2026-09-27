@@ -1,14 +1,35 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
+import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 
 /** Mounted at /members/:memberId/centers (mergeParams: true), like training-plans.ts. */
 export const memberCentersRouter = Router({ mergeParams: true });
 
+/**
+ * #797: this route is the one place a Member's centers are resolved for reading
+ * — both the Edit form and the read-only PROFILE section of the expanded Member
+ * row read it — so the sole-active-center fallback lives here rather than in
+ * either caller. An empty `member_centers` list does not mean "no center": when
+ * the gym has exactly one active center, that center is the Member's, which is
+ * the same rule `resolveMemberCenters()` applies on creation (members.ts) and
+ * `centerContext` applies to a member's own visibility. A gym with several
+ * active centers has no fallback — there the assignment is explicit, and an
+ * empty list really is empty.
+ */
 memberCentersRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { memberId } = req.params as { memberId: string };
+
+  // Checked before the fallback: without it an id from another gym (or none at
+  // all) would read back the sole center of a single-center gym.
+  const { rows: memberRows } = await db.query(
+    'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [memberId, gymId],
+  );
+  if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
   const { rows } = await db.query(
     `SELECT c.id AS center_id, c.name, c.status, mc.is_default, mc.assigned_at
      FROM member_centers mc
@@ -17,7 +38,17 @@ memberCentersRouter.get('/', async (req, res) => {
      ORDER BY mc.is_default DESC, c.name ASC`,
     [memberId, gymId],
   );
-  res.json(rows);
+  if (rows.length > 0) return res.json(rows);
+
+  const soleId = await soleActiveCenterId(gymId);
+  if (soleId == null) return res.json([]);
+  const { rows: implied } = await db.query(
+    `SELECT c.id AS center_id, c.name, c.status, 1 AS is_default, NULL AS assigned_at
+     FROM centers c
+     WHERE c.id = ? AND c.gym_id = ? AND c.deleted_at IS NULL`,
+    [soleId, gymId],
+  );
+  res.json(implied);
 });
 
 memberCentersRouter.put('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {

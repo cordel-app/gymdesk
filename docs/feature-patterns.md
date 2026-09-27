@@ -372,6 +372,107 @@ Rules of thumb:
 
 ---
 
+## Read-Only Expanded Row, Editing Behind the Context Menu (#797, #798)
+
+The counterpart to the pattern below: a list row whose expanded card is for
+**reading** an entity, with `⋮ → Edit` the only way to change it. Expanding
+is the cheap, exploratory gesture — it must never put data at risk — so the
+expanded card shows every persisted field and not one control that writes.
+
+1. **One definition of the field set, shared by both halves.** Put the fields
+   in a module beside the page (`memberProfile.ts`:
+   `MEMBER_PROFILE_FIELDS` = `{ key, labelKey, kind? }`, the row type, the
+   empty form, the persisted-row → form-values mapping, the formatters). The
+   read-only section maps over it; the Edit form imports the types and the
+   mapping and renders its own inputs, because each input needs its own type,
+   placeholder and validation. A field added to the list reaches both; a field
+   added to only one is what the pattern exists to prevent.
+2. **The read-only label is not always the form's label.** A form marks its
+   required fields (`label_name` is "Name \*"), which is nonsense beside a
+   value nobody can change — so `labelKey` points at the plain key
+   (`col_name`). Reuse an existing key before adding one.
+3. **Render from the row the form is seeded from**, not from a second read. The
+   list row already carries the entity's own columns, so the section and the
+   form cannot disagree, and a saved edit refreshes both through the list's
+   existing reload.
+4. **A related read the row does not carry gets a version counter, not a
+   remount.** Anything fetched separately (a Member's centers) goes stale when
+   an edit saves. Bumping a `profileVersion` prop re-runs that one read;
+   remounting the card would re-fetch every other section with it.
+5. **Every value falls back to the screens' em dash** — never `null`,
+   `undefined` or a formatted epoch. Free text that may be long (Notes) wraps
+   with `white-space: pre-wrap` inside the existing label/value row rather
+   than getting a second visual pattern.
+6. **A date-only column is formatted field by field.** `new Date('1990-05-04')`
+   is UTC midnight and prints as 3 May west of Greenwich — wrong for a birth
+   date. Split on `-` and build a local `Date`.
+7. **Where the read needs a rule, the rule goes in the API, once.** The
+   Member's centers have a sole-active-center fallback; it belongs on
+   `GET /members/:memberId/centers` (which both the read-only section and the
+   Edit form call), not restated in either caller. Guard the resource's
+   ownership before the fallback, or an id from another tenant reads back the
+   caller's own sole center.
+8. **A relation that may legitimately be empty says so in words.** The
+   fallback above is Members'; a Staff member is allowed zero centers (#440),
+   so its section reads "No centers assigned" and leaves Default Center at the
+   em dash. Never imply a default the entity does not have.
+
+Reference implementation: the `PROFILE` section of
+`[locale]/members/MemberExpandedRow.tsx` +
+`[locale]/members/memberProfile.ts`. Regression test (source-scan style, since
+`apps/admin` has no component-test infra):
+`apps/admin/src/test/member-expanded-profile.test.ts` — it slices the
+`PROFILE` `<Section>` out of the source and asserts no `<input`, `<select`,
+`<textarea`, `<button`, `onChange` or `onClick` inside it, rather than over the
+whole card, which has had its own editing controls since long before the
+ticket.
+
+
+### When expanding *was* the editor (#798)
+
+Staff had no read-only view at all: expanding a card seeded the form and
+rendered the inline editor, and the context menu had no Edit item to keep. Two
+extra rules apply when splitting a page of that shape.
+
+**Track the expansion and the form separately, and keep `'new'` out of the
+expansion.** One piece of state is what made the two the same interaction:
+
+```tsx
+const [expandedId, setExpandedId] = useState<number | null>(null);
+const [editingId, setEditingId] = useState<number | 'new' | null>(null);
+
+// Expanding reads. It never seeds the form.
+function openExpand(row: Row) {
+  if (expandedId === row.id) { setExpandedId(null); return; }
+  setEditingId(null);
+  setExpandedId(row.id);
+}
+
+// ⋮ → Edit is the only way in, and it is a write action, so it is gated (#613).
+{ label: t('action_edit'), onClick: () => startEdit(row), disabled: !canWrite, title: readOnlyTitle }
+
+{isEditing ? renderInlineEditor() : isExpanded ? renderReadOnlyProfile(row) : null}
+```
+
+Only one mode is open per card, so the header click does nothing while that
+card is being edited — the form has its own Cancel, and silently discarding a
+half-typed edit is worse than ignoring the click.
+
+**Actions that lived inside the old editor stay there.** Staff's Send/Resend
+invitation and Revoke access are part of the form, now reached through
+`⋮ → Edit`; the read-only view shows their *state* (status, derived role) and
+never turns it into a control. Promoting them to menu items would change access
+management, which a presentation ticket has no business doing.
+
+Reference implementation: `[locale]/staff/page.tsx`'s `renderReadOnlyProfile`
++ `[locale]/staff/staffProfile.ts`. Regression test:
+`apps/admin/src/test/staff-expanded-profile.test.ts` — it slices the read-only
+render functions out of the source and asserts no writing control inside them,
+checks every field key against the form's own `patchForm({ <key>:` call, and
+exercises the mapping and formatters directly.
+
+---
+
 ## Section-Scoped Inline Editing (#627)
 
 An expandable-row editor whose card has grown several independent
@@ -1173,39 +1274,6 @@ Rules:
 - The label is `common.action_view_audit_log` — already present in en/es/ca, so a new Details view adds no translation key.
 
 `apps/admin/src/test/view-audit-log-everywhere.test.ts` enumerates every Details view and fails when one is added without the action.
-
-## Read-Only Expanded Row, Editing Behind the Context Menu (#798)
-
-Expanding a list card **reads**; `⋮ → Edit` **writes**. The two are separate interactions on the same card and must never be the same one — a page where expanding a row drops the user into a form (Staff before #798) gives them no way to look at a record without being able to change it, and no way to tell the two apart.
-
-```tsx
-// Two pieces of state, never one. 'new' belongs to the form, never to the expansion.
-const [expandedId, setExpandedId] = useState<number | null>(null);
-const [editingId, setEditingId] = useState<number | 'new' | null>(null);
-
-// Expanding reads. It never seeds the form.
-function openExpand(row: Row) {
-  if (expandedId === row.id) { setExpandedId(null); return; }
-  setEditingId(null);
-  setExpandedId(row.id);
-}
-
-// ⋮ → Edit is the only way in, and it is a write action, so it is gated.
-{ label: t('action_edit'), onClick: () => startEdit(row), disabled: !canWrite, title: readOnlyTitle }
-
-{isEditing ? renderInlineEditor() : isExpanded ? renderReadOnlyProfile(row) : null}
-```
-
-Rules:
-
-- **The expanded content holds no writing control**: no `<input>`, `<select>`, `<textarea>`, checkbox, `<button>`, `onChange`, `onClick`, Save, Cancel — and no Edit affordance either, so the context menu stays the single entry point.
-- **Declare the field set once**, in a module beside the page (`staff/staffProfile.ts`): the keys and their order, their labels, their read-only formatting, and the persisted-row → form-values mapping the Edit action seeds with. The form still renders its own inputs (each needs its own type, placeholder and validation), the row type `extends` the shared one, and a field added to the list reaches both halves. The set is what the form edits and nothing else — a column nobody can edit is not part of it.
-- **Render the row the form is seeded from**, not a second representation and not a new endpoint: the two then cannot show different data, and a saved edit refreshes both through the list's existing reload.
-- **Actions that were living inside the old editor stay there** (Staff's Send/Resend invitation and Revoke access), reached through `⋮ → Edit`. The read-only view shows their *state* — status, role — and never turns it into a control.
-- **Never render `null`/`undefined`**: every value goes through one formatter that answers the admin em dash, and a relation that may legitimately be empty says so in words (`centers_none`) rather than implying a default.
-- **A date column is a calendar date.** `new Date('1990-05-04')` is UTC midnight and prints as *3 May* west of Greenwich; build the `Date` from the split parts.
-
-`apps/admin/src/test/staff-expanded-profile.test.ts` pins all of it — the source scan for writing controls inside the expanded slice, the field set against the form's own `patchForm` calls, en/es/ca label coverage, and the formatters.
 
 ## Read-only access in admin pages (#613)
 
