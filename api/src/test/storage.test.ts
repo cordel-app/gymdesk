@@ -294,20 +294,65 @@ describe('extensionForMime()', () => {
   });
 });
 
-describe('buildGymLogoKey()', () => {
-  it('always names the object logo.<ext> inside the gym\'s Branding/Logo folder', async () => {
-    const { buildGymLogoKey, buildGymFolderPrefix } = await import('../infra/storage');
-    const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
-    expect(buildGymLogoKey(prefix, 'image/png')).toBe('gyms/gym_123-GymName/Branding/Logo/logo.png');
-    expect(buildGymLogoKey(prefix, 'image/svg+xml')).toBe('gyms/gym_123-GymName/Branding/Logo/logo.svg');
+describe('buildThemeLogoKey() (#824)', () => {
+  it("puts logo.<ext> in the theme's own folder, not the gym's Branding folder", async () => {
+    const { buildGymFolderPrefix } = await import('../infra/storage');
+    const { buildThemeLogoKey } = await import('../domain/themeLogo');
+    const prefix = buildGymFolderPrefix('123', 'Q-Sport');
+    expect(buildThemeLogoKey(prefix, '456', 'Crimson Base', 'image/png'))
+      .toBe('gyms/123-Q-Sport/Themes/456-CrimsonBase/Logo/logo.png');
+    expect(buildThemeLogoKey(prefix, '456', 'Crimson Base', 'image/svg+xml'))
+      .toBe('gyms/123-Q-Sport/Themes/456-CrimsonBase/Logo/logo.svg');
+  });
+
+  it('never writes into Branding/, which is obsolete', async () => {
+    const { buildThemeLogoKey } = await import('../domain/themeLogo');
+    expect(buildThemeLogoKey('gyms/g-Name', 't1', 'Dark', 'image/png')).not.toContain('Branding');
+  });
+
+  // The logo and the Members backgrounds are siblings inside one theme folder;
+  // two definitions of that folder would give a theme two folders.
+  it("hangs off the same theme folder the Members images do", async () => {
+    const { buildThemeLogoKey } = await import('../domain/themeLogo');
+    const { buildThemeMemberImageKey, buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
+    const folder = buildThemeFolderPrefix('gyms/g-Name', 't1', 'Dark Modern');
+    expect(buildThemeLogoKey('gyms/g-Name', 't1', 'Dark Modern', 'image/png')).toBe(`${folder}/Logo/logo.png`);
+    expect(buildThemeMemberImageKey('gyms/g-Name', 't1', 'Dark Modern', 'training')).toBe(`${folder}/Members/training.png`);
   });
 
   it('only the extension varies between types — which is why a replacement must delete the old key', async () => {
-    const { buildGymLogoKey } = await import('../infra/storage');
-    const png = buildGymLogoKey('gyms/g-Name', 'image/png');
-    const jpg = buildGymLogoKey('gyms/g-Name', 'image/jpeg');
+    const { buildThemeLogoKey } = await import('../domain/themeLogo');
+    const png = buildThemeLogoKey('gyms/g-Name', 't1', 'Dark', 'image/png');
+    const jpg = buildThemeLogoKey('gyms/g-Name', 't1', 'Dark', 'image/jpeg');
     expect(png).not.toBe(jpg);
     expect(png.replace(/\.png$/, '')).toBe(jpg.replace(/\.jpg$/, ''));
+  });
+});
+
+describe('themeLogoFolderKeys() (#824)', () => {
+  it("creates the theme folder and its Logo leaf, outermost first", async () => {
+    const { themeLogoFolderKeys } = await import('../domain/themeLogo');
+    expect(themeLogoFolderKeys('gyms/123-QSport', '456', 'Crimson Base')).toEqual([
+      'gyms/123-QSport/Themes/456-CrimsonBase/',
+      'gyms/123-QSport/Themes/456-CrimsonBase/Logo/',
+    ]);
+  });
+
+  // §"The Themes folder must already exist before the user can upload a logo":
+  // the gym-level root belongs to Gym Bucket Initialization (#735), and the
+  // upload control is disabled until it is there (#823).
+  it('never creates the gym-level Themes/ root, nor Branding/', async () => {
+    const { themeLogoFolderKeys } = await import('../domain/themeLogo');
+    const keys = themeLogoFolderKeys('gyms/123-QSport', '456', 'Crimson');
+    expect(keys).not.toContain('gyms/123-QSport/Themes/');
+    expect(keys.some((k) => k.includes('Branding'))).toBe(false);
+  });
+
+  it('every key is a folder marker, so it can only ever overwrite another marker', async () => {
+    const { themeLogoFolderKeys } = await import('../domain/themeLogo');
+    for (const key of themeLogoFolderKeys('gyms/123-QSport', '456', 'Crimson')) {
+      expect(key.endsWith('/')).toBe(true);
+    }
   });
 });
 

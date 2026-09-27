@@ -362,19 +362,6 @@ export function extensionForMime(mime: string): string {
   return MIME_EXTENSIONS[mime] ?? 'bin';
 }
 
-/** `Branding/Logo` — the gym folder (#417) a Custom Theme logo belongs in (#713). */
-export const BRANDING_LOGO_FOLDER = 'Branding/Logo';
-
-/**
- * #713: the one key a gym's Custom Theme logo is stored under —
- * `<folderPrefix>/Branding/Logo/logo.<ext>`. The name is fixed, so a gym holds
- * one branding logo at a time; only the extension varies, which is why
- * replacing a logo has to delete the previous key when the type changed.
- */
-export function buildGymLogoKey(folderPrefix: string, mime: string): string {
-  return `${folderPrefix}/${BRANDING_LOGO_FOLDER}/logo.${extensionForMime(mime)}`;
-}
-
 /**
  * The origin a browser reads the bucket from, with no trailing slash.
  *

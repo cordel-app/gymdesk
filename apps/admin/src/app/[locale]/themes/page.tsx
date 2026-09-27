@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
-import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
@@ -18,6 +17,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
+import { formatStorageError, type StorageErrorLike } from '@/lib/storageErrorMessage';
 import {
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_SLOTS,
@@ -86,8 +86,7 @@ export default function GymThemesPage() {
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
-  const { getToken } = useAuth();
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const { activeGym, isSuperadmin, loading: gymLoading, refreshGyms } = useGym();
   const { centers, activeCenterId, refreshCenters } = useCenter();
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
@@ -342,33 +341,56 @@ export default function GymThemesPage() {
     applyTokens(next);
   }
 
+  /**
+   * #824: every step of Save gets a diagnostic instead of the bare message the
+   * API returned — which for a tenant-scoped upload used to be `Unauthorized`
+   * and nothing else. `fallbackStage` names the step for a failure that never
+   * reached the storage code (an auth or validation refusal carries no
+   * `stage`); when the API did name one, that wins, because it knows whether it
+   * broke while resolving the path, creating a folder or uploading.
+   */
+  function storageErrorMessage(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
+    const stage = err.body?.stage ?? fallbackStage;
+    return formatStorageError(err, {
+      title: t(titleKey),
+      operation: t('storage_error_operation'),
+      path: t('storage_error_path'),
+      error: t('storage_error_error'),
+      details: t('storage_error_details'),
+      operationName: t(`storage_stage_${stage}`),
+    });
+  }
+
   async function handleSaveAll(theme: Theme) {
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
     setSaving(true);
     setEditError(null);
     try {
-      await apiFetch(`/system/themes/${theme.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          name: editForm.name.trim(),
-          description: editForm.description.trim() || null,
-          logo_contains_gym_name: editForm.logoContainsGymName,
-          tokens: editForm.tokens,
-        }),
-      });
-      if (editLogoFile) {
-        const token = await getToken();
-        const res = await fetch(`/api/proxy/system/themes/${theme.id}/logo`, {
-          method: 'POST',
-          headers: { 'Content-Type': editLogoFile.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: editLogoFile,
+      try {
+        await apiFetch(`/system/themes/${theme.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            name: editForm.name.trim(),
+            description: editForm.description.trim() || null,
+            logo_contains_gym_name: editForm.logoContainsGymName,
+            tokens: editForm.tokens,
+          }),
         });
-        if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          throw new Error(json.error ?? 'Logo upload failed');
+      } catch (err: any) {
+        throw new Error(storageErrorMessage(err, 'storage_error_title_settings', 'save_settings'));
+      }
+      if (editLogoFile) {
+        try {
+          await uploadFetch(`/system/themes/${theme.id}/logo`, editLogoFile);
+        } catch (err: any) {
+          throw new Error(storageErrorMessage(err, 'storage_error_title_logo', 'upload_logo'));
         }
       } else if (logoRemovePending) {
-        await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
+        try {
+          await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
+        } catch (err: any) {
+          throw new Error(storageErrorMessage(err, 'storage_error_title_logo_remove', 'remove_logo'));
+        }
       }
       // #725 — one call per slot the admin actually touched. A picked file wins
       // over a queued removal for the same slot (picking clears the removal),
@@ -376,18 +398,17 @@ export default function GymThemesPage() {
       for (const slot of MEMBER_IMAGE_SLOTS) {
         const file = membersImageFiles[slot];
         if (file) {
-          const token = await getToken();
-          const res = await fetch(`/api/proxy/system/themes/${theme.id}/members-images/${slot}`, {
-            method: 'POST',
-            headers: { 'Content-Type': file.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-            body: file,
-          });
-          if (!res.ok) {
-            const json = await res.json().catch(() => ({}));
-            throw new Error(json.error ?? t('members_image_error_upload'));
+          try {
+            await uploadFetch(`/system/themes/${theme.id}/members-images/${slot}`, file);
+          } catch (err: any) {
+            throw new Error(storageErrorMessage(err, 'storage_error_title_members_image', 'upload_members_image'));
           }
         } else if (membersImageRemovals[slot]) {
-          await apiFetch(`/system/themes/${theme.id}/members-images/${slot}`, { method: 'DELETE' });
+          try {
+            await apiFetch(`/system/themes/${theme.id}/members-images/${slot}`, { method: 'DELETE' });
+          } catch (err: any) {
+            throw new Error(storageErrorMessage(err, 'storage_error_title_members_image_remove', 'remove_members_image'));
+          }
         }
       }
       origFormRef.current = { ...editForm, name: editForm.name.trim(), description: editForm.description.trim() };
@@ -556,7 +577,11 @@ export default function GymThemesPage() {
     return (
       <div style={{ padding: '0 24px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
         {isBase && <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888', fontStyle: 'italic' }}>{t('read_only_hint')}</p>}
-        {editError && <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
+        {editError && (
+          // #824: `pre-line` because a storage failure is a diagnostic block
+          // (operation, path, error, details), not a single sentence.
+          <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b', whiteSpace: 'pre-line' }}>{editError}</p>
+        )}
 
         <div style={{ marginTop: 12 }}>
           {renderSection(t('section_assignments'), 'assignments', renderAssignmentsContent(theme))}

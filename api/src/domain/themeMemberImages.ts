@@ -5,7 +5,8 @@
 // checks — this file owns *where an image goes* and *what a client is told*, so
 // both are decided in one place and can be unit-tested without a database.
 
-import { buildStorageObjectUrl, sanitizeStorageFolderName, THEMES_FOLDER } from '../infra/storage';
+import { buildStorageObjectUrl } from '../infra/storage';
+import { buildThemeFolderPrefix, THEME_STORAGE_FOLDER } from './themeFolders';
 
 /**
  * #725: six fixed slots, each mapped to one Members section, and nothing else —
@@ -23,25 +24,10 @@ export function isMemberImageSlot(value: unknown): value is MemberImageSlot {
 /** `Members` — the leaf folder of a theme's own folder that holds these six. */
 export const THEME_MEMBERS_FOLDER = 'Members';
 
-/**
- * `Themes` — the gym-folder branch every Custom Theme's folder hangs off. The
- * same folder Gym Bucket Initialization now creates as a top-level gym folder
- * (#735), so it is defined once in `infra/storage` and re-exported here rather
- * than spelled a second time.
- */
-export const THEME_STORAGE_FOLDER = THEMES_FOLDER;
-
-/**
- * `<folderPrefix>/Themes/<theme_id>-<sanitized theme name>` — the folder that
- * belongs to one Custom Theme. The id leads, so two themes of the same gym can
- * share a name (they cannot, but a renamed one can collide with a deleted one)
- * without ever sharing a folder, and `sanitizeStorageFolderName()` is the same
- * sanitizer the gym folder itself is built with, so one rule governs the whole
- * tree.
- */
-export function buildThemeFolderPrefix(folderPrefix: string, themeId: string, themeName: string): string {
-  return `${folderPrefix}/${THEME_STORAGE_FOLDER}/${themeId}-${sanitizeStorageFolderName(themeName)}`;
-}
+// #824: a theme's own folder is `themeFolders.ts`' now that both the Members
+// backgrounds and the logo hang off it. Re-exported so every existing importer
+// of this module keeps working and the tree still has one definition.
+export { buildThemeFolderPrefix, THEME_STORAGE_FOLDER };
 
 /**
  * The one key a slot's image is stored under:

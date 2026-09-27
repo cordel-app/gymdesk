@@ -47,6 +47,43 @@ export function useApiClient() {
   ) as <T>(path: string, options?: RequestInit) => Promise<T>;
 
   /**
+   * #824: the same request, for an endpoint that takes raw image bytes rather
+   * than JSON.
+   *
+   * It exists because the theme logo and Members background uploads used to
+   * call `fetch('/api/proxy/…')` by hand with only the bearer token, and the
+   * proxy forwards `x-gym-id` but cannot invent it: every tenant-scoped upload
+   * therefore reached `tenantContext` with no gym and came back as a bare
+   * `401 Unauthorized`, with nothing in it to say why. Assembling the headers
+   * in one place is what stops the next binary upload from repeating it.
+   *
+   * The `Content-Type` is the file's own — it is what the API validates the
+   * bytes against and what the object is stored with — and the error carries
+   * the parsed body, so a caller can render the `stage`, `path` and `details`
+   * the storage routes return.
+   */
+  const uploadFetch = useCallback(
+    async (path: string, file: Blob): Promise<unknown> => {
+      const token = await getToken();
+      const headers: Record<string, string> = { 'Content-Type': file.type };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (activeGymId) headers['x-gym-id'] = activeGymId;
+      if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
+      if (impersonationSession) headers['x-impersonate-as'] = impersonationSession.effectiveUserId;
+      if (locale) headers['x-locale'] = locale;
+
+      const res = await fetch(`/api/proxy${path}`, { method: 'POST', headers, body: file });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), { status: res.status, body });
+      }
+      if (res.status === 204) return undefined;
+      return res.json().catch(() => undefined);
+    },
+    [getToken, activeGymId, activeCenterId, impersonationSession, locale],
+  );
+
+  /**
    * #787: the same request, for an endpoint that answers a PDF rather than
    * JSON. Receipts are the only such endpoint today, and two screens now offer
    * them (the member's Payments modal and Billing Events), so the headers —
@@ -73,5 +110,5 @@ export function useApiClient() {
     [getToken, activeGymId, activeCenterId, impersonationSession, locale],
   );
 
-  return { apiFetch, pdfFetch };
+  return { apiFetch, pdfFetch, uploadFetch };
 }

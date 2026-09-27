@@ -63,7 +63,9 @@ describe('Base Themes: Members App images (#732)', () => {
   });
 
   it('uploads and clears through the platform routes, one call per touched slot', () => {
-    expect(pageSrc).toContain('`/api/proxy/platform/themes/${themeId}/members-images/${slot}`');
+    // #824: the upload goes through `uploadFetch`, which prepends `/api/proxy`
+    // and adds the tenant headers, so the page names the API path only.
+    expect(pageSrc).toContain('uploadFetch(`/platform/themes/${themeId}/members-images/${slot}`');
     expect(pageSrc).toContain('`/platform/themes/${id}/members-images/${slot}`');
     // Only inside the Save handler — a pick must not call the API.
     const saveBody = pageSrc.match(/async function handleSave\(id: string\)[\s\S]*?\n {2}}/)?.[0] ?? '';
