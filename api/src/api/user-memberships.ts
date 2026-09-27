@@ -5,6 +5,7 @@ import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
+import { rollStaleNextBillingDateForward } from '../domain/nextBillingDateStamp';
 import {
   applyPromotionToMembership,
   fetchAppliedPromotions,
@@ -727,6 +728,11 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           req.params.id, gymId,
         ],
       );
+      // #790: a pause is not a debt — a `next_billing_date` that went by while
+      // the assignment was off the run moves to the first boundary after today.
+      if (resetDunning) {
+        await rollStaleNextBillingDateForward(tx, current[0].id, gymId);
+      }
       if (status && status !== current[0].status) {
         await recordStatusChange(tx, {
           gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
@@ -957,6 +963,12 @@ async function transitionMembership(
       `UPDATE user_memberships SET status = ?${resetDunning} WHERE id = ? AND gym_id = ?`,
       [targetStatus, prev.id, gymId],
     );
+    // #790: and "again" means from the next boundary after today — a pause is
+    // not a debt, so the cycles that went by while it was paused are not
+    // charged one per night when it comes back.
+    if (targetStatus === 'active') {
+      await rollStaleNextBillingDateForward(tx, prev.id, gymId);
+    }
     await recordStatusChange(tx, {
       gymId, userMembershipId: prev.id, memberId: prev.member_id,
       previousStatus: prev.status, newStatus: targetStatus,

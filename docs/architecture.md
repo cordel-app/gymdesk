@@ -298,7 +298,7 @@ Invited rows use a placeholder `user_id` of the form `invited_<timestamp>` until
 ### `user_memberships` — billing columns (migration 111)
 
 Two nullable columns added for recurring MIT billing:
-- `next_billing_date DATE NULL` — set by the payment webhook on the first successful charge (DATE_ADD(starts_at, INTERVAL bp.recurring_billing_interval bp.recurring_billing_unit)); advanced by the billing run after each subsequent charge.
+- `next_billing_date DATE NULL` — set by the payment webhook on the first successful charge to the first `starts_at + n·cadence` strictly after UTC today (#790, `stampFirstNextBillingDate()` in `domain/nextBillingDateStamp.ts` — so a back-dated assignment is never charged the cycles that elapsed before it paid); advanced by the billing run after each subsequent charge; walked forward the same way when a transition back to `active` finds it in the past (`rollStaleNextBillingDateForward()` — a pause is not a debt).
 - `last_billed_at DATETIME NULL` — stamped by the billing run on success.
 
 **Dunning state (#785, migration 194)** — two more columns the nightly run owns:

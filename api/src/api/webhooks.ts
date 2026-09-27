@@ -6,7 +6,7 @@ import { unlinkClerkAccount } from '../infra/clerk-account-links';
 import { recordPlatformAudit } from '../infra/audit';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
-import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
+import { stampFirstNextBillingDate } from '../domain/nextBillingDateStamp';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 
 /**
@@ -286,24 +286,17 @@ paymentWebhookRouter.post(
               [pr.gym_id, pr.member_id, payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
             );
 
-            // Stamp next_billing_date on the membership (only if not yet set),
-            // relative to starts_at. #635 stage 3: the cadence is the one
-            // frozen onto the assignment, falling back to its Plan's live
-            // `billing_policies` row only for an assignment that has none —
-            // hence the LEFT JOIN, which also keeps a Plan whose policy was
-            // deleted from stranding its assignments without a due date.
-            await tx.query(
-              `UPDATE user_memberships um
-               LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
-               SET um.next_billing_date = CASE ${ASSIGNMENT_CADENCE.unit()}
-                 WHEN 'day'   THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} DAY)
-                 WHEN 'week'  THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} WEEK)
-                 WHEN 'month' THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} MONTH)
-                 WHEN 'year'  THEN DATE_ADD(um.starts_at, INTERVAL ${ASSIGNMENT_CADENCE.interval()} YEAR)
-               END
-               WHERE um.id = ? AND um.next_billing_date IS NULL`,
-              [pr.user_membership_id],
-            );
+            // Stamp next_billing_date on the membership (only if not yet set).
+            // #790: the first cycle boundary of the `starts_at`-anchored
+            // schedule *strictly after today*, never `starts_at + cadence`
+            // unconditionally — on a back-dated assignment that date is in the
+            // past, and the nightly run then charged one elapsed cycle per
+            // night, the last of them the very cycle this payment was priced on.
+            // The elapsed cycles are written off. The cadence is the
+            // assignment's own via ASSIGNMENT_CADENCE (LEFT JOIN, #635 stage 3).
+            if (pr.user_membership_id != null) {
+              await stampFirstNextBillingDate(tx, pr.user_membership_id, pr.gym_id);
+            }
           }
         });
 
