@@ -372,7 +372,7 @@ Rules of thumb:
 
 ---
 
-## Read-Only Expanded Row, Editing Behind the Context Menu (#797)
+## Read-Only Expanded Row, Editing Behind the Context Menu (#797, #798)
 
 The counterpart to the pattern below: a list row whose expanded card is for
 **reading** an entity, with `⋮ → Edit` the only way to change it. Expanding
@@ -412,6 +412,10 @@ expanded card shows every persisted field and not one control that writes.
    Edit form call), not restated in either caller. Guard the resource's
    ownership before the fallback, or an id from another tenant reads back the
    caller's own sole center.
+8. **A relation that may legitimately be empty says so in words.** The
+   fallback above is Members'; a Staff member is allowed zero centers (#440),
+   so its section reads "No centers assigned" and leaves Default Center at the
+   em dash. Never imply a default the entity does not have.
 
 Reference implementation: the `PROFILE` section of
 `[locale]/members/MemberExpandedRow.tsx` +
@@ -423,9 +427,54 @@ Reference implementation: the `PROFILE` section of
 whole card, which has had its own editing controls since long before the
 ticket.
 
-**When the same entity is administered from two pages (#799).** The Nutrition
-Library exists twice — a gym's (`[locale]/nutrition/nutrition-library/`) and
-Cordel's Base one (`[locale]/cordel/nutrition-library/`) — and both got this
+
+### When expanding *was* the editor (#798)
+
+Staff had no read-only view at all: expanding a card seeded the form and
+rendered the inline editor, and the context menu had no Edit item to keep. Two
+extra rules apply when splitting a page of that shape.
+
+**Track the expansion and the form separately, and keep `'new'` out of the
+expansion.** One piece of state is what made the two the same interaction:
+
+```tsx
+const [expandedId, setExpandedId] = useState<number | null>(null);
+const [editingId, setEditingId] = useState<number | 'new' | null>(null);
+
+// Expanding reads. It never seeds the form.
+function openExpand(row: Row) {
+  if (expandedId === row.id) { setExpandedId(null); return; }
+  setEditingId(null);
+  setExpandedId(row.id);
+}
+
+// ⋮ → Edit is the only way in, and it is a write action, so it is gated (#613).
+{ label: t('action_edit'), onClick: () => startEdit(row), disabled: !canWrite, title: readOnlyTitle }
+
+{isEditing ? renderInlineEditor() : isExpanded ? renderReadOnlyProfile(row) : null}
+```
+
+Only one mode is open per card, so the header click does nothing while that
+card is being edited — the form has its own Cancel, and silently discarding a
+half-typed edit is worse than ignoring the click.
+
+**Actions that lived inside the old editor stay there.** Staff's Send/Resend
+invitation and Revoke access are part of the form, now reached through
+`⋮ → Edit`; the read-only view shows their *state* (status, derived role) and
+never turns it into a control. Promoting them to menu items would change access
+management, which a presentation ticket has no business doing.
+
+Reference implementation: `[locale]/staff/page.tsx`'s `renderReadOnlyProfile`
++ `[locale]/staff/staffProfile.ts`. Regression test:
+`apps/admin/src/test/staff-expanded-profile.test.ts` — it slices the read-only
+render functions out of the source and asserts no writing control inside them,
+checks every field key against the form's own `patchForm({ <key>:` call, and
+exercises the mapping and formatters directly.
+
+### When the same entity is administered from two pages (#799)
+
+The Nutrition Library exists twice — a gym's (`[locale]/nutrition/nutrition-library/`)
+and Cordel's Base one (`[locale]/cordel/nutrition-library/`) — and both got this
 pattern at once. Four additions:
 
 8. **The shared declaration moves up, not sideways.** With two pages the field
@@ -458,7 +507,15 @@ Displaying an actor ("Created By") needs a column to read: see
 `docs/architecture.md`'s Nutrition Library row and migration 196 for the
 snapshot-at-write-time convention (`*_by_name` + `*_by_type`), which is what
 tables with no actor FK use — a superadmin has no `gym_memberships` row to join
-to.
+to. A shared catalogue's rows are not the reading gym's to attribute, so the
+gym-facing projection masks the platform actor's name while keeping the key
+(`itemDetailColumnsSql`'s `maskPlatformActors`), and the modal renders its usual
+em dash with no rule of its own.
+
+Reference implementation: `components/nutritionLibrary/` +
+`[locale]/nutrition/nutrition-library/page.tsx` +
+`[locale]/cordel/nutrition-library/page.tsx`. Regression test:
+`apps/admin/src/test/nutrition-library-read-only-expansion.test.ts`.
 
 ---
 
