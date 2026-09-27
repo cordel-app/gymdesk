@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { btnSmall } from './ui';
+import { ConfirmDialog } from './ConfirmDialog';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import {
   ExerciseVideoProblem,
@@ -15,13 +16,15 @@ import {
 } from '@/lib/exerciseVideoUpload';
 
 /**
- * The Video control on a Gym Exercise (#719 §21): the poster of the video it
- * currently has, `Upload Video` / `Replace`, and `Remove`.
+ * The Video control on an Exercise (#719 §21): the poster of the video it
+ * currently has, `Upload Video` / `Replace`, and `Remove`. Since #806 both
+ * editing surfaces render it — a Gym Exercise and a Base Exercise — with
+ * `basePath` naming the context's own route (AC2, AC6).
  *
  * The sibling of `ExerciseImageField` (part 1), with the same two modes:
  *
  *  - **Bound** (`exerciseId` given) — uploading and removing act on the server
- *    straight away (`POST`/`DELETE /exercises/:id/video`) and the row comes back
+ *    straight away (`POST`/`DELETE <basePath>/:id/video`) and the row comes back
  *    updated. The video is not a form field: it is never part of the surrounding
  *    PUT, so saving or cancelling the editor cannot undo or re-apply it.
  *  - **Staged** (`exerciseId` null) — used while *creating* an exercise, which
@@ -46,12 +49,27 @@ interface ExerciseVideoFieldProps {
   onChanged?: (exercise: unknown) => void;
   /** Staged mode: the pair to upload after creation, or null when it was cleared. */
   onStaged?: (prepared: PreparedExerciseVideo | null) => void;
+  /**
+   * Where the upload goes (#806 §6/§7): `/exercises` for a Gym Exercise,
+   * `/platform/exercises` for a Base Exercise. The **context** supplies it, so
+   * this control never asks which kind of exercise it is holding — the API
+   * contracts and permissions stay where they were.
+   */
+  basePath?: string;
+  /**
+   * Whether the *gym's* own bucket has to be ready. A Base Exercise's objects
+   * live in the platform's folder (`cordel/…`), which no gym's storage settings
+   * gate, so the Base Exercises page passes `false` — otherwise the control
+   * would refuse an upload because the superadmin's currently selected gym has
+   * no bucket of its own.
+   */
+  requiresGymStorage?: boolean;
   disabled?: boolean;
   disabledTitle?: string;
 }
 
 export function ExerciseVideoField({
-  exerciseId, videoUrl, posterUrl, onChanged, onStaged, disabled, disabledTitle,
+  exerciseId, videoUrl, posterUrl, onChanged, onStaged, basePath = '/exercises', requiresGymStorage = true, disabled, disabledTitle,
 }: ExerciseVideoFieldProps) {
   const t = useTranslations('exercises');
   const { apiFetch } = useApiClient();
@@ -59,6 +77,10 @@ export function ExerciseVideoField({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<'upload' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // #717 §7, generalised by #806: removing media is destructive, so it asks
+  // first rather than acting on the click. Both editing surfaces render this
+  // control, so the rule now holds for a Gym Exercise as well as a Base one.
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   // Staged mode only: the captured poster, as its own `data:image/png` bytes —
   // exactly what the upload will carry. Not an object URL minted from the picked
   // file, so no string the page read out of the file input reaches the DOM
@@ -66,8 +88,8 @@ export function ExerciseVideoField({
   const [stagedPoster, setStagedPoster] = useState<string | null>(null);
   const [staged, setStaged] = useState(false);
 
-  const notConfigured = activeGym != null && !activeGym.storage_configured;
-  const notInitialized = activeGym != null && activeGym.storage_configured && !activeGym.storage_folder_prefix;
+  const notConfigured = requiresGymStorage && activeGym != null && !activeGym.storage_configured;
+  const notInitialized = requiresGymStorage && activeGym != null && activeGym.storage_configured && !activeGym.storage_folder_prefix;
   const blocked = disabled || notConfigured || notInitialized;
 
   const preview = stagedPoster ?? posterUrl ?? null;
@@ -102,7 +124,7 @@ export function ExerciseVideoField({
         onStaged?.(prepared);
         return;
       }
-      const updated = await apiFetch(`/exercises/${exerciseId}/video`, {
+      const updated = await apiFetch(`${basePath}/${exerciseId}/video`, {
         method: 'POST',
         body: JSON.stringify(prepared),
       });
@@ -124,7 +146,7 @@ export function ExerciseVideoField({
     }
     setBusy('remove');
     try {
-      const updated = await apiFetch(`/exercises/${exerciseId}/video`, { method: 'DELETE' });
+      const updated = await apiFetch(`${basePath}/${exerciseId}/video`, { method: 'DELETE' });
       onChanged?.(updated);
     } catch (err: any) {
       setError(err.message ?? t('video_error_remove_failed'));
@@ -181,7 +203,7 @@ export function ExerciseVideoField({
         {hasVideo && (
           <button
             type="button"
-            onClick={handleRemove}
+            onClick={() => (exerciseId == null ? handleRemove() : setConfirmingRemove(true))}
             disabled={blocked || busy !== null}
             title={disabled ? disabledTitle : undefined}
             style={btnSmall('#888')}
@@ -191,6 +213,16 @@ export function ExerciseVideoField({
         )}
       </div>
       {error && <p style={{ margin: '6px 0 0', fontSize: 12, color: '#c0392b' }}>{error}</p>}
+
+      <ConfirmDialog
+        open={confirmingRemove}
+        message={t('video_confirm_remove')}
+        confirmLabel={t('video_remove')}
+        cancelLabel={t('cancel')}
+        busy={busy === 'remove'}
+        onConfirm={() => { setConfirmingRemove(false); handleRemove(); }}
+        onCancel={() => setConfirmingRemove(false)}
+      />
     </div>
   );
 }

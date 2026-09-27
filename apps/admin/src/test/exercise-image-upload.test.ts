@@ -124,8 +124,12 @@ describe('prepareExerciseImage (source)', () => {
 
 describe('ExerciseImageField', () => {
   it('uploads the pair to the exercise’s own endpoint', () => {
-    expect(componentSrc).toMatch(/\/exercises\/\$\{exerciseId\}\/image`, \{\s*\n\s*method: 'POST'/);
-    expect(componentSrc).toMatch(/\/exercises\/\$\{exerciseId\}\/image`, \{ method: 'DELETE' \}/);
+    // #806: the route root is the context's — `/exercises` for a Gym Exercise,
+    // `/platform/exercises` for a Base Exercise — and it defaults to the gym's,
+    // so the control is never pointed anywhere by accident.
+    expect(componentSrc).toContain("basePath = '/exercises'");
+    expect(componentSrc).toMatch(/\$\{basePath\}\/\$\{exerciseId\}\/image`, \{\s*\n\s*method: 'POST'/);
+    expect(componentSrc).toMatch(/\$\{basePath\}\/\$\{exerciseId\}\/image`, \{ method: 'DELETE' \}/);
     // Not the generic #417 upload route, which stores a single image with no
     // thumbnail and no ownership rules.
     expect(componentSrc).not.toContain('/storage/uploads/exercise-image');

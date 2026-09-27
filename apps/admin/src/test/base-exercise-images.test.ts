@@ -7,21 +7,30 @@ import { join } from 'path';
 // This repo has no component-test infra for apps/admin (docs/architecture.md's
 // TL;DR), so — like base-nutrition-images.test.ts (#715) and
 // exercise-image-upload.test.ts (#719) — it pins the structure down by scanning
-// the page source: that the image, `Upload Image` and the zoom live on the
-// *expanded* card and nowhere else, that the card draws the thumbnail rather
-// than the master, that the required format is stated, and that the upload goes
-// to the platform route rather than a gym one.
+// the source: that the image and the zoom live on the *expanded* card and
+// nowhere else, that the card draws the thumbnail rather than the master, that
+// the required format is stated, and that the upload goes to the platform route
+// rather than a gym one.
+//
+// #806 moved the *upload control* into `ExerciseImageField`, the one control both
+// Exercise editing surfaces render, and with it out of the read-only expanded
+// card and behind `⋮ → Edit`. So the assertions below split: what the card shows
+// is still this page's, what an upload does is the shared control's.
 
 const PAGE_PATH = join(__dirname, '..', 'app', '[locale]', 'cordel', 'exercises', 'page.tsx');
+const FIELD_PATH = join(__dirname, '..', 'components', 'ExerciseImageField.tsx');
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 }
 
 const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
+const fieldSrc = stripComments(readFileSync(FIELD_PATH, 'utf-8'));
 
 const expandedStart = pageSrc.indexOf('renderExpanded={(row)');
 const columnsStart = pageSrc.indexOf('const columns: Column<Exercise>[]');
+/** The read-only body of an expanded card. */
+const readOnlyStart = pageSrc.indexOf('function renderReadOnly(');
 
 describe('Base Exercises images (#716)', () => {
   it('reads both references the API returns', () => {
@@ -29,17 +38,30 @@ describe('Base Exercises images (#716)', () => {
     expect(pageSrc).toMatch(/image_thumbnail_url: string \| null;/);
   });
 
-  it('shows the image, its buttons and the zoom on the expanded card only (§9)', () => {
+  it('shows the image and the zoom on the expanded card only (§9)', () => {
     expect(expandedStart).toBeGreaterThan(-1);
-    const expandedBlock = pageSrc.slice(expandedStart);
-    expect(expandedBlock).toContain('renderImageSection(row)');
+    expect(readOnlyStart).toBeGreaterThan(-1);
+    expect(pageSrc.slice(readOnlyStart)).toContain('renderImageSection(exercise)');
+    expect(pageSrc.slice(expandedStart)).toContain('renderReadOnly(row)');
 
     // The collapsed row is the `columns` array, which must mention none of it.
     const columnsBlock = pageSrc.slice(columnsStart, expandedStart);
     expect(columnsBlock).not.toContain('image_url');
     expect(columnsBlock).not.toContain('image_thumbnail_url');
-    expect(columnsBlock).not.toContain('Upload Image');
     expect(columnsBlock).not.toContain('View full size');
+  });
+
+  it('keeps every write out of that card — the editor owns them (#806 §11)', () => {
+    const readOnlyBlock = pageSrc.slice(readOnlyStart, pageSrc.indexOf('const columns: Column<Exercise>[]'));
+    for (const affordance of ['<input', '<button', 'onChange', 'onClick={() => openInlineEdit']) {
+      expect(readOnlyBlock, affordance).not.toContain(affordance);
+    }
+    // No file picker is left on the page at all: it belongs to the shared control.
+    expect(pageSrc).not.toContain('accept="image/png"');
+    expect(pageSrc).not.toContain('prepareExerciseImage');
+    // The editor is where the upload control is rendered, behind ⋮ → Edit.
+    expect(pageSrc).toContain('<ExerciseImageField');
+    expect(pageSrc).toMatch(/media=\{renderEditorMedia\(row\)\}/);
   });
 
   it('draws the thumbnail, never the master, for normal rendering (§4)', () => {
@@ -73,42 +95,55 @@ describe('Base Exercises images (#716)', () => {
   });
 
   it('tells the administrator the required format (§11)', () => {
-    expect(pageSrc).toMatch(
-      /Upload a \{EXERCISE_IMAGE_MASTER_SIZE\}×\{EXERCISE_IMAGE_MASTER_SIZE\} PNG image with a transparent/,
-    );
-    expect(pageSrc).toContain('accept="image/png"');
+    // Stated by the shared control, in the translated string both screens show.
+    expect(fieldSrc).toContain("t('image_requirements', { size: EXERCISE_IMAGE_MASTER_SIZE })");
+    expect(fieldSrc).toContain('accept="image/png"');
   });
 
   it('prepares the pair in the browser, and sends nothing when it cannot (§12)', () => {
-    // The 512×512 thumbnail is the browser's (#719 Q2) — the same helper the
-    // gym-side control uses, so the two cannot drift.
-    expect(pageSrc).toContain("from '@/lib/exerciseImageUpload'");
-    expect(pageSrc).toContain('prepareExerciseImage(file)');
-    expect(pageSrc).toMatch(/if \(!isPreparedExerciseImage\(prepared\)\) \{[\s\S]*?return;\s*\n\s*\}/);
-    expect(pageSrc).toContain('thumbnail_failed');
+    // The 512×512 thumbnail is the browser's (#719 Q2) — one helper, in the one
+    // control both screens render, so the two cannot drift.
+    expect(fieldSrc).toContain("from '@/lib/exerciseImageUpload'");
+    expect(fieldSrc).toContain('prepareExerciseImage(file)');
+    expect(fieldSrc).toMatch(/if \(!isPreparedExerciseImage\(prepared\)\) \{[\s\S]*?return;\s*\n\s*\}/);
   });
 
   it('uploads and removes through the platform routes only (§15)', () => {
-    expect(pageSrc).toContain('`/platform/exercises/${exercise.id}/image`');
-    expect(pageSrc).toMatch(/method: 'POST',\s*\n\s*body: JSON\.stringify\(prepared\)/);
-    expect(pageSrc).toMatch(/\{ method: 'DELETE' \}/);
+    // The route root is this page's to supply (#806 §6); the control takes it.
+    expect(pageSrc).toContain("const API_BASE = '/platform/exercises'");
+    expect(pageSrc).toMatch(/<ExerciseImageField\s*\n\s*basePath=\{API_BASE\}/);
+    // And the creation card's staged upload goes to the same root.
+    expect(pageSrc).toContain('`${API_BASE}/${created.id}/image`');
     expect(pageSrc).not.toContain('/storage/uploads/exercise-image');
     expect(pageSrc).not.toMatch(/`\/exercises\/\$\{/);
   });
 
-  it('surfaces an upload error on the card it belongs to, without touching the image', () => {
-    expect(pageSrc).toMatch(/imageError\?\.id === exercise\.id/);
-    expect(pageSrc).toContain("message: err.message ?? 'Image upload failed'");
+  it("does not gate a platform upload on a gym's bucket (#806)", () => {
+    // A Base Exercise's objects live in `cordel/Exercises/…`, which no gym's
+    // storage settings reach.
+    expect(pageSrc).toMatch(/requiresGymStorage=\{false\}/);
+    expect(fieldSrc).toContain('requiresGymStorage = true');
   });
 
-  it('edits inline rather than in a modal (#716 Q4)', () => {
-    expect(pageSrc).toContain('renderInlineForm');
+  it('surfaces an upload error on the control it belongs to, without touching the image', () => {
+    expect(fieldSrc).toContain("setError(err.message ?? t('image_error_upload_failed'))");
+    expect(fieldSrc).toMatch(/\{error && <p/);
+  });
+
+  it('asks before removing the image (#717 §7, generalised by #806)', () => {
+    expect(fieldSrc).toContain("message={t('image_confirm_remove')}");
+    expect(fieldSrc).toContain('open={confirmingRemove}');
+  });
+
+  it('edits inline rather than in a modal (#716 Q4, #806 §9)', () => {
+    expect(pageSrc).toContain('<ExerciseEditor');
+    expect(pageSrc).toContain('mode="edit"');
     expect(pageSrc).not.toContain('CrudModal');
-    // The only dialog left is the delete confirmation.
+    // The only dialog left on the page is the delete confirmation.
     expect(pageSrc).toContain('ConfirmDialog');
   });
 
   it('offers View Audit Log from the Details view (#675)', () => {
-    expect(pageSrc).toMatch(/ViewAuditLogButton entityType="exercise" entityId=\{row\.id\} scope="platform"/);
+    expect(pageSrc).toMatch(/ViewAuditLogButton entityType="exercise" entityId=\{exercise\.id\} scope="platform"/);
   });
 });

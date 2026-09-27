@@ -103,7 +103,7 @@ describe('Exercises: Activate/Deactivate in the context menu (#673)', () => {
   it('keeps an open inline editor in sync so saving it cannot revert the toggle', () => {
     const start = source.indexOf('async function handleToggleStatus');
     const fn = source.slice(start, source.indexOf('\n  }', start));
-    expect(fn).toContain('if (editingId === ex.id) setEditForm');
+    expect(fn).toContain('if (editingId === ex.id) editState.setForm');
     expect(fn).toContain('status: next');
   });
 

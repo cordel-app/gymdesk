@@ -560,21 +560,23 @@ inline creation card rendered above the list header (`addOpen` + a
 Centers conversion does not cover.
 
 **One form body, not two.** The creation card and the inline editor render the
-same function (`renderExerciseForm()`), parameterised by the handful of things
-that genuinely differ: the form state and its setters, the id prefix for the
-`htmlFor` labels, the Save label, and the media slot. The section order then
-lives in the shared module (`exercises/exerciseForm.ts`'s
-`EXERCISE_FORM_SECTIONS`) rather than in either JSX, which is what a test can
-assert — the two copies is how the modal came to show fields in a different
-order from the editor in the first place.
+same component (`<ExerciseEditor>` — #805 introduced it as a page-local
+`renderExerciseForm()`, #806 moved it to
+`components/exercises/ExerciseEditor.tsx`), parameterised by the handful of
+things that genuinely differ: the form state, the id prefix for the `htmlFor`
+labels, the mode, and the media slot. The section order then lives in the shared
+module (`components/exercises/exerciseForm.ts`'s `EXERCISE_FORM_SECTIONS`)
+rather than in either JSX, which is what a test can assert — the two copies is
+how the modal came to show fields in a different order from the editor in the
+first place.
 
 **A field only one half may submit is a parameter, not a divergence.** The
 editor deliberately omits `video_url` (#717 Q6 — re-sending it would repoint a
 reference an upload had since replaced), the creation form must keep it
 (nothing to repoint yet). So the module exports *two* payload builders over one
 shared body, `toExerciseCreatePayload()` / `toExerciseUpdatePayload()`, and the
-form takes a `showVideoUrl` flag. A test asserts the `PUT` payload has no
-`video_url` and that the two agree on everything else.
+editor offers the field in `create` mode only. A test asserts the `PUT` payload
+has no `video_url` and that the two agree on everything else.
 
 **A translated label needs a key that exists.** The modal rendered
 `` t(`result_type_${rt.slug}`) ?? rt.name `` against keys no locale file had, so
@@ -593,8 +595,52 @@ checkbox grids use `repeat(auto-fill, minmax(180px, 1fr))`: side by side while
 both fit, stacked below that, with no breakpoint to maintain.
 
 Reference implementation: `[locale]/exercises/page.tsx` +
-`[locale]/exercises/exerciseForm.ts`. Regression test:
+`components/exercises/`. Regression test:
 `apps/admin/src/test/exercises-inline-create.test.ts`.
+
+### When two pages edit the same entity (#806)
+
+Exercises are administered from two screens: a gym's `[locale]/exercises` and
+the platform's `[locale]/cordel/exercises` (Base Exercises). Each had grown its
+own form — the gym's carried the whole entity, the platform's carried Name and
+Description — so every improvement to one had to be made twice, and was not.
+
+**Move the form up, not sideways.** The editor becomes a component beside the
+declaration it renders (`components/exercises/ExerciseEditor.tsx` +
+`exerciseForm.ts` + `useExerciseEditorState.ts`), and both pages import it —
+the same rule `components/nutritionLibrary/` follows for a row shape (#799).
+Splitting it three ways is deliberate: the **declaration** is pure, so ordering
+and payloads are asserted directly; the **hook** owns the form values, the
+muscle roles, the selected result types, the validation, the error line and the
+`saving` flag, so neither page restates them; the **component** is the JSX.
+
+**The context supplies persistence, the editor supplies the form.** The editor
+names no endpoint at all — `onSave` does, and the page builds it. That is what
+keeps two genuinely different API contracts (`/exercises` under a gym's module
+permissions, `/platform/exercises` under `requireSuperadmin`) out of the shared
+UI, so there is no `if (base) … else …` in it. Have `submit()` *report* failure
+rather than throw, so each page's save reads `if (!saved) return;` and the form
+stays open with the user's input on a rejection.
+
+**A shared control takes its route root as a prop.** `ExerciseImageField` /
+`ExerciseVideoField` gained `basePath` (defaulting to the gym's `/exercises`) and
+`requiresGymStorage` — a Base Exercise's objects live under
+`PLATFORM_STORAGE_ROOT`, which no gym's bucket settings gate. Two props, both
+decided by the parent; the control never asks which kind of row it is holding.
+
+**Unifying forces a choice on every difference — pick the safer side.** Where
+the two behaved differently, the shared version keeps the stricter behaviour:
+removing media asked for confirmation on the platform page only, so the
+confirmation moved into the shared control and now covers both. And where a
+platform screen needs a catalogue a gym route already serves, give the platform
+router its own read rather than reusing the gym-facing one: `/muscles` and
+`/result-types` sit behind `tenantContext` + module access + a feature flag, so
+a Base Exercises page hanging off them would break when the superadmin's
+selected gym had exercises switched off (`GET /platform/exercises/lookups`,
+registered before `/:id` so Express does not read `lookups` as an id).
+
+Reference implementation: `components/exercises/` + both pages. Regression test:
+`apps/admin/src/test/exercise-editor-unification.test.ts`.
 
 ---
 
