@@ -3141,7 +3141,6 @@
     "no_promotions": "No se han aplicado promociones.",
     "section_billing_events": "Eventos de Facturación",
     "no_billing_events": "No hay próximos eventos de facturación.",
-    "billing_event_projected": "Proyectado",
     "billing_event_promotion_affected": "Promoción",
     "confirm_close": "¿Seguro que quieres cancelar este Plan Asignado? Esta acción no se puede deshacer.",
     "confirm_close_with_warnings": "Cancelar este Plan Asignado eliminará el acceso a: {warnings}. Esta acción no se puede deshacer.",

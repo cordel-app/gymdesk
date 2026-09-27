@@ -241,7 +241,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
                 <span>
                   {fmtDate(ev.date)}
-                  {ev.projected && <span style={{ marginLeft: 8, color: '#888', fontSize: 11 }}>({t('billing_event_projected')})</span>}
                   {ev.promotion_affected && <span style={{ marginLeft: 8, color: '#6c63ff', fontSize: 11 }}>({t('billing_event_promotion_affected')})</span>}
                 </span>
                 <span>{fmtMoney(ev.amount)}</span>

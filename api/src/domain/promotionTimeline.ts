@@ -5,8 +5,8 @@
 //
 // #552: the Billing column additionally reflects the promotion's Membership
 // Fee Benefit (action/value/enabled/durationMonths — the same shape #551's
-// membership-fee-benefit endpoint persists and `assignedPlanBillingEvents.ts`
-// already applies to real billing), so a paid promotional period shows what
+// membership-fee-benefit endpoint persists and `resolveMembershipFee()`
+// (`billingSimulation.ts`) applies to real billing), so a paid promotional period shows what
 // it would actually bill instead of a generic "promotional price" label.
 
 import { PromotionBenefitAction, effectiveBenefitDurationMonths } from './promotionBenefits';
@@ -26,7 +26,7 @@ export interface PromotionTimelineConfig {
   // Membership Fee Benefit — optional; a period-benefit-shaped action applied
   // to every pay_promotion/prepaid_promotion period, gated by `enabled` and,
   // if set, expiring `durationMonths` after the timeline's own anchor date
-  // (mirrors `computeMembershipFeePriceAt`'s duration gate).
+  // (mirrors `resolveMembershipFee()`'s duration gate).
   membershipFeeAction?: PromotionBenefitAction;
   membershipFeeValue?: number | null;
   membershipFeeEnabled?: boolean;

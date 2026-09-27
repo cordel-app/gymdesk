@@ -6,7 +6,6 @@ import {
 } from '../domain/billingSimulation';
 import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
 import { toPlanDuration } from '../domain/planDuration';
-import { computeMembershipFeePriceAt } from '../domain/assignedPlanBillingEvents';
 import { promotionTimelineEndsOn } from '../domain/promotionTimeline';
 import { computeUpcomingPayments } from '../api/me';
 
@@ -148,6 +147,40 @@ describe('resolveMembershipFee — an applied Promotion outranks the Plan', () =
     expect(charge.benefits).toEqual([]);
   });
 
+  // Ported from the Billing Events projection's own cases when #786 retired it
+  // (#854): the rules held for it only because it delegated here.
+  it('expires a benefit after its own Duration, inside the Promotion\'s months', () => {
+    const at = (date: string) => resolveMembershipFee(REGULAR, date, context({
+      promotions: [promotion({
+        paidMonths: 12,
+        membershipFeeBenefits: [{ action: 'fixed_discount', value: 10, enabled: true, durationMonths: 3 }],
+      })],
+    }));
+    expect(at('2026-03-01').amount).toBe(30);
+    expect(at('2026-04-01').amount).toBe(REGULAR);
+    expect(at('2026-04-01').benefits).toEqual([]);
+  });
+
+  it('ignores a disabled benefit', () => {
+    const charge = resolveMembershipFee(REGULAR, '2026-02-01', context({
+      promotions: [promotion({
+        paidMonths: 12,
+        membershipFeeBenefits: [{ action: 'waive', value: null, enabled: false, durationMonths: null }],
+      })],
+    }));
+    expect(charge.amount).toBe(REGULAR);
+    expect(charge.benefits).toEqual([]);
+  });
+
+  it('stacks the benefits of several applied Promotions', () => {
+    const fixed = (value: number) => promotion({
+      paidMonths: 12,
+      membershipFeeBenefits: [{ action: 'fixed_discount', value, enabled: true, durationMonths: null }],
+    });
+    const charge = resolveMembershipFee(REGULAR, '2026-02-01', context({ promotions: [fixed(5), fixed(3)] }));
+    expect(charge.amount).toBe(32);
+  });
+
   it('ignores a Promotion for a date outside its application window', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-06-01', context({
       promotions: [promotion({
@@ -221,19 +254,7 @@ describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its 
     }, '2026-01-01')).toBe(null);
   });
 
-  it('prices every cycle identically in the simulation, the Billing Events projection and My Membership', () => {
-    const ctx = context({
-      planDuration: toPlanDuration(1, 12, 1),
-      promotions: [boundedTo3Months],
-    });
-    const dates = ['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01', '2026-12-01', '2027-02-01'];
-
-    const simulated = dates.map((d) => resolveMembershipFee(REGULAR, d, ctx).amount);
-    const projected = dates.map((d) => computeMembershipFeePriceAt(REGULAR, d, ctx.promotions, {
-      startsAt: ctx.startsAt, planDuration: ctx.planDuration,
-    }).price);
-    expect(projected).toEqual(simulated);
-
+  it('prices every cycle identically in the Billing Simulation and My Membership', () => {
     // My Membership's next two charges, resolved on their own dates: the last
     // promotional cycle and then the first regular one. `computeUpcomingPayments`
     // only ever reports dates in the future, so this leg anchors far enough ahead
@@ -251,11 +272,9 @@ describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its 
       (date) => resolveMembershipFee(REGULAR, date, future).amount,
     );
     expect(upcoming.map((p) => `${p.date}:${p.amount}`)).toEqual(['2099-02-01:32.00', '2099-03-01:40.00']);
-    // …and the same numbers the other two paths give for those dates.
+    // …and the same numbers the Billing Simulation gives for those dates.
     expect(upcoming.map((p) => Number(p.amount))).toEqual(
-      ['2099-02-01', '2099-03-01'].map((d) => computeMembershipFeePriceAt(REGULAR, d, future.promotions, {
-        startsAt: future.startsAt, planDuration: future.planDuration,
-      }).price),
+      ['2099-02-01', '2099-03-01'].map((d) => resolveMembershipFee(REGULAR, d, future).amount),
     );
   });
 
@@ -270,8 +289,6 @@ describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its 
     const charge = resolveMembershipFee(REGULAR, '2026-01-20', ctx);
     expect(charge.amount).toBe(0);
     expect(charge.benefits[0]).toMatchObject({ source: 'membership_plan', period_status: 'free_plan' });
-    expect(computeMembershipFeePriceAt(REGULAR, '2026-01-20', ctx.promotions, {
-      startsAt: ctx.startsAt, planDuration: ctx.planDuration,
-    })).toEqual({ price: 0, promotionAffected: false });
+    expect(charge.benefits.some((b) => b.source === 'promotion')).toBe(false);
   });
 });
