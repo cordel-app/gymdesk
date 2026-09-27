@@ -188,41 +188,81 @@ describe('PUT /spaces/:id', () => {
   });
 });
 
-describe('PUT /spaces/:id/activity-types', () => {
-  it('assigns and replaces activity types', async () => {
+// #801 — a Space carries no Activity Types. The two routes the removed
+// `ACTIVITIES` section drove are gone, `space_activity_types` is dropped
+// (migration 197), and the relation that survives is the Activity Type's own
+// `default_space_id` (§4, §9), which nothing here may disturb.
+describe('#801 — Activities removed from Spaces', () => {
+  it('no longer serves GET or PUT /spaces/:id/activity-types', async () => {
     const create = await request
       .post('/spaces')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ name: 'AT Space', capacity: 15 });
+      .send({ name: 'No ATs Space', capacity: 15 });
     const id = create.body.id;
 
-    await request
+    const read = await request
+      .get(`/spaces/${id}/activity-types`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(read.status).toBe(404);
+
+    const write = await request
       .put(`/spaces/${id}/activity-types`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ activity_type_ids: [activityTypeId] });
+    expect(write.status).toBe(404);
+  });
 
-    const list = await request
-      .get(`/spaces/${id}/activity-types`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(list.status).toBe(200);
-    expect(list.body.length).toBe(1);
-    expect(list.body[0].id).toBe(activityTypeId);
+  it('the space_activity_types table is gone', async () => {
+    const { rows } = await db.query<{ cnt: number }>(
+      `SELECT COUNT(*) AS cnt FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'space_activity_types'`,
+    );
+    expect(Number(rows[0].cnt)).toBe(0);
+  });
 
-    // Replace with empty
-    await request
-      .put(`/spaces/${id}/activity-types`)
+  it('PUT /spaces/:id leaves the Activity Type default space untouched (AC6, AC8)', async () => {
+    const create = await request
+      .post('/spaces')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ activity_type_ids: [] });
+      .send({ name: 'Default Space Host', capacity: 12 });
+    const id = create.body.id;
 
-    const list2 = await request
-      .get(`/spaces/${id}/activity-types`)
+    await db.query('UPDATE activity_types SET default_space_id = ? WHERE id = ? AND gym_id = ?', [
+      id, activityTypeId, gymId,
+    ]);
+
+    const res = await request
+      .put(`/spaces/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Default Space Host (renamed)', capacity: 14, activity_type_ids: [] });
+    expect(res.status).toBe(200);
+
+    const { rows } = await db.query<{ default_space_id: number | null }>(
+      'SELECT default_space_id FROM activity_types WHERE id = ? AND gym_id = ?',
+      [activityTypeId, gymId],
+    );
+    expect(rows[0].default_space_id).toBe(id);
+  });
+
+  it('a duplicated Space copies its own fields and no Activity data (AC5, AC6)', async () => {
+    const create = await request
+      .post('/spaces')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Dup Without ATs', capacity: 9, notes: 'keep me' });
+
+    const res = await request
+      .post(`/spaces/${create.body.id}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(list2.body.length).toBe(0);
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('Dup Without ATs (Copy)');
+    expect(res.body.notes).toBe('keep me');
   });
 });
 

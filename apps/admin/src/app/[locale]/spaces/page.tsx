@@ -16,6 +16,13 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 
+// #801: a Space has no ACTIVITIES section. The Space form used to carry a
+// checkbox list writing `PUT /spaces/:id/activity-types`; both the section and
+// that route are gone (migration 197 dropped the join table). Which Space an
+// activity runs in is configured on the **Activity Type** — its own
+// `default_space_id`, edited on the Activity Types page — and this page must not
+// grow a second, Space-side copy of that relation.
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Space {
@@ -42,7 +49,6 @@ interface Space {
 }
 
 interface Center { id: number; name: string }
-interface ActivityType { id: number; name: string; status: string }
 
 const STATUSES = ['active', 'inactive', 'under_maintenance'] as const;
 
@@ -89,7 +95,6 @@ export default function SpacesPage() {
   const [centerFilter, setCenterFilter] = useState('');
   const [centers, setCenters] = useState<Center[]>([]);
   const [centersError, setCentersError] = useState(false);
-  const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
 
   // Accordion: which rows are expanded (read-only view)
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -99,7 +104,6 @@ export default function SpacesPage() {
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [editSelectedATs, setEditSelectedATs] = useState<Set<number>>(new Set());
 
   // Inline new space
   const [inlineNew, setInlineNew] = useState<InlineNew | null>(null);
@@ -115,7 +119,6 @@ export default function SpacesPage() {
     if (gymLoading) return;
     if (!canRead) { router.replace(`/${locale}`); return; }
     loadCenters();
-    loadActivityTypes();
   }, [gymLoading, canRead]);
 
   useEffect(() => { if (!gymLoading && canRead) load(); }, [activeGymId, gymLoading, statusFilter, centerFilter]);
@@ -143,17 +146,6 @@ export default function SpacesPage() {
     } catch {
       setCentersError(true);
     }
-  }
-
-  async function loadActivityTypes() {
-    try { setActivityTypes(await apiFetch<ActivityType[]>('/activity-types')); } catch { /* non-fatal */ }
-  }
-
-  async function loadSpaceATs(spaceId: number): Promise<Set<number>> {
-    try {
-      const ats = await apiFetch<ActivityType[]>(`/spaces/${spaceId}/activity-types`);
-      return new Set(ats.map((a) => a.id));
-    } catch { return new Set(); }
   }
 
   // ─── Accordion ──────────────────────────────────────────────────────────────
@@ -214,8 +206,7 @@ export default function SpacesPage() {
 
   // ─── Edit ────────────────────────────────────────────────────────────────────
 
-  async function openEdit(space: Space) {
-    const ats = await loadSpaceATs(space.id);
+  function openEdit(space: Space) {
     setEditingId(space.id);
     setEditForm({
       name: space.name,
@@ -227,7 +218,6 @@ export default function SpacesPage() {
       opening_time: space.opening_time ?? '',
       closing_time: space.closing_time ?? '',
     });
-    setEditSelectedATs(ats);
     setEditError(null);
     setExpanded((prev) => new Set([...prev, space.id]));
   }
@@ -255,10 +245,6 @@ export default function SpacesPage() {
           opening_time: editForm.opening_time || null,
           closing_time: editForm.closing_time || null,
         }),
-      });
-      await apiFetch(`/spaces/${space.id}/activity-types`, {
-        method: 'PUT',
-        body: JSON.stringify({ activity_type_ids: Array.from(editSelectedATs) }),
       });
       setEditingId(null);
       load();
@@ -490,31 +476,6 @@ export default function SpacesPage() {
               </div>
             </div>
 
-            {/* Activity Types */}
-            <SectionHeader title={t('section_activity_types')} />
-            {activityTypes.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#888', margin: '0 0 12px' }}>{t('no_activity_types')}</p>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-                {activityTypes.map((at) => (
-                  <label key={at.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
-                    <input
-                      type="checkbox"
-                      checked={editSelectedATs.has(at.id)}
-                      onChange={(e) => {
-                        const next = new Set(editSelectedATs);
-                        if (e.target.checked) next.add(at.id); else next.delete(at.id);
-                        setEditSelectedATs(next);
-                      }}
-                      style={{ width: 15, height: 15 }}
-                    />
-                    {at.name}
-                    {at.status !== 'active' && <span style={{ fontSize: 11, color: '#aaa' }}>({tStatus(at.status)})</span>}
-                  </label>
-                ))}
-              </div>
-            )}
-
             {/* Notes */}
             <SectionHeader title={t('section_notes')} />
             <textarea
@@ -547,9 +508,6 @@ export default function SpacesPage() {
             <SectionHeader title={t('section_availability')} />
             <DetailRow label={t('label_opening_time')} value={space.opening_time ?? '—'} />
             <DetailRow label={t('label_closing_time')} value={space.closing_time ?? '—'} />
-
-            <SectionHeader title={t('section_activity_types')} />
-            <SpaceActivityTypes apiFetch={apiFetch} spaceId={space.id} allTypes={activityTypes} noTypesLabel={t('no_activity_types')} tStatus={tStatus} />
 
             <SectionHeader title={t('section_notes')} />
             <p style={{ margin: '4px 0 0', fontSize: 13, color: space.notes ? '#333' : '#aaa', whiteSpace: 'pre-wrap' }}>
@@ -728,41 +686,6 @@ export default function SpacesPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />
-    </div>
-  );
-}
-
-// ─── Lazy activity-types loader for expanded read-only view ───────────────────
-
-function SpaceActivityTypes({
-  apiFetch, spaceId, allTypes, noTypesLabel, tStatus,
-}: {
-  apiFetch: <T>(url: string, opts?: any) => Promise<T>;
-  spaceId: number;
-  allTypes: ActivityType[];
-  noTypesLabel: string;
-  tStatus: (key: string) => string;
-}) {
-  const [assigned, setAssigned] = useState<Set<number> | null>(null);
-
-  useEffect(() => {
-    apiFetch<ActivityType[]>(`/spaces/${spaceId}/activity-types`)
-      .then((ats) => setAssigned(new Set(ats.map((a) => a.id))))
-      .catch(() => setAssigned(new Set()));
-  }, [spaceId]);
-
-  const list = allTypes.filter((at) => assigned?.has(at.id));
-
-  if (assigned === null) return <p style={{ fontSize: 13, color: '#aaa', margin: '4px 0 12px' }}>Loading…</p>;
-  if (list.length === 0) return <p style={{ fontSize: 13, color: '#aaa', margin: '4px 0 12px' }}>{noTypesLabel}</p>;
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '4px 0 12px' }}>
-      {list.map((at) => (
-        <span key={at.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>
-          {at.name}
-          {at.status !== 'active' && <span style={{ fontSize: 11, color: '#aaa', marginLeft: 4 }}>({tStatus(at.status)})</span>}
-        </span>
-      ))}
     </div>
   );
 }

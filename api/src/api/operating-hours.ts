@@ -11,7 +11,7 @@ export const operatingHoursRouter = Router();
 
 // ---------------------------------------------------------------------------
 // Weekly hours — bulk "set the whole week" endpoint (same delete-all +
-// reinsert shape as PUT /spaces/:id/activity-types), since the admin UI edits
+// reinsert shape as PUT /activity-types/:id/eligible-plans), since the admin UI edits
 // the full weekly grid at once rather than one shift at a time.
 // ---------------------------------------------------------------------------
 
