@@ -171,7 +171,7 @@ Then, by branch:
 | `failed` / `expired` | `payment_requests.status` and `provider_ref` only — and only on a row still `pending`, since a terminal row is never revived by a non-`completed` payload |
 | `pending` | **nothing** — an intermediate status must not flip the row, or the guard above would strand it before the real outcome arrives |
 
-The `completed` transaction (`webhooks.ts:235-319`):
+The `completed` transaction (`webhooks.ts`, the `completed` branch):
 
 1. `payment_requests` → `status = 'completed'`, `provider_ref`, `completed_at`;
 2. a `payment_recorded` Billing Event (`source = 'provider'`, `actor_user_id` NULL) carrying
@@ -183,23 +183,44 @@ The `completed` transaction (`webhooks.ts:235-319`):
    spent, unconditionally, because the cycle is settled whether or not a token came back;
 5. **only when `paymentToken` *and* `sequenceId` are present**: the `payment_methods`
    upsert (`ON DUPLICATE KEY UPDATE` on `(gym_id, member_id, provider)`, stamping
-   `updated_at`), and the **first `next_billing_date`**:
+   `updated_at`), and the **first `next_billing_date`** through
+   `stampFirstNextBillingDate()` (`api/src/domain/nextBillingDateStamp.ts`): the **first
+   cycle boundary strictly after UTC today** — `starts_at + n·cadence` for the smallest
+   `n ≥ 1` whose date is later than `UTC_DATE()` (#790).
 
-```sql
-SET um.next_billing_date = DATE_ADD(um.starts_at, INTERVAL <cadence>)
-WHERE um.id = ? AND um.next_billing_date IS NULL
-```
+The boundary is computed by `firstBillingDateAfter()` (`api/src/domain/billingDate.ts`),
+which steps with `advanceBillingDate()` — the same step the nightly run takes — so it is
+always a date the run would itself reach from `starts_at` (31 Jan steps to 3 Mar, then
+3 Apr). The schedule stays anchored to `starts_at`, so `classifyPlanDurationPeriod()`'s
+Free/Paid/Bonus arithmetic is untouched; only the *first charge date* moves, and only
+forward past today. For an assignment starting today or later that is exactly
+`starts_at + 1 cadence`, as before. The cadence is `ASSIGNMENT_CADENCE`
+(`api/src/api/assigned-plan-snapshot.ts`) — the assignment's frozen pair, its Plan's live
+`billing_policies` row only as a fallback, hence the **LEFT** JOIN — and every date,
+`UTC_DATE()` included, is read as a `YYYY-MM-DD` string from SQL, so none crosses a
+timezone conversion. `WHERE next_billing_date IS NULL` means only the *first* payment
+stamps it.
 
-The cadence is `ASSIGNMENT_CADENCE` (`api/src/api/assigned-plan-snapshot.ts`) — the
-assignment's frozen pair, its Plan's live `billing_policies` row only as a fallback, hence
-the **LEFT** JOIN. `WHERE next_billing_date IS NULL` means only the *first* payment stamps
-it.
+Why "strictly after today": the first payment is priced by `currentMembershipFee()` on
+`currentCycleDate()`, which for a back-dated assignment with no `next_billing_date` is
+**today**. Stamping `starts_at + cadence` (the pre-#790 SQL) put the next charge in the
+past, so the run charged one elapsed cycle per night — and the last of them was the very
+cycle the first payment had just been priced on, a double charge nothing could deduplicate.
+A boundary *equal* to today would be charged by tonight's run for the same reason.
 
-> ⚠️ A known defect lives in this step. **#790**: `starts_at` is whatever the staff
-> typed, so a back-dated assignment gets a `next_billing_date` in the past and is charged
-> one catch-up cycle per night.
->
-> The other one that lived here is closed. **#789**: `POST /billing/cleanup` used to expire
+> **Decisions (2026-09-27, #790)** — change them here if they turn out wrong:
+> - **(a1) write-off.** The first payment covers every cycle that elapsed between a
+>   back-dated `starts_at` and today. Those cycles are written off: nothing further is
+>   owed, no catch-up charge, and no `adjustment` Billing Event records them.
+> - **No confirm flag.** Back-dating `starts_at` stays allowed on all three insert paths,
+>   with no "are you sure" step (#790 option (c) is out of scope) — the fix is in what the
+>   webhook derives from `starts_at`, not in `starts_at` itself.
+> - **A pause is not a debt.** Any transition back to `active` (Reactivate, or a status
+>   flip through `PUT /user-memberships/:id`) whose `next_billing_date <= UTC_DATE()` walks
+>   it forward, along its own schedule, to the first boundary strictly after today — the
+>   cycles missed while paused are not collected (see "Assigned Plan status model").
+
+> The other defect that lived in this step is closed too. **#789**: `POST /billing/cleanup` used to expire
 > a request the member was still paying through, after which the guard above skipped the
 > completed webhook as "already processed" and the charge was lost. Cleanup now keeps an
 > opened request `pending` for hours — §B8.
@@ -227,12 +248,20 @@ it.
 so cleanup runs even when the charge step went red, but not when there is no API to call).
 
 - Auth is `checkInternalSecret()`: the `X-Internal-Secret` header against
-  `BILLING_INTERNAL_SECRET`.
-- `infra/nginx/corback.conf:22` additionally restricts `location /billing/` to GitHub
-  Actions IPs, from a file refreshed by hand
-  (`infra/nginx/update-github-actions-allowlist.sh`). `/recurring-bookings/` has **no**
-  `location` block at all and is therefore not restricted. #783 decides whether to automate
-  the refresh or drop the allowlist.
+  `BILLING_INTERNAL_SECRET`. Both halves come from the same GitHub environment: the
+  workflow sends its secret, and `deploy.yml` writes the same secret into the API's
+  quadlet (it refuses to deploy while it is empty). Until 2026-09-27 neither side had it,
+  so every scheduled run answered `401` and no recurring charge ran on `dev`.
+- There is **no** network-layer restriction: `/billing/*` and `/recurring-bookings/*` both
+  fall through `location /` in `infra/nginx/corback.conf` (#783). What stands in for one is
+  a per-route rate limiter mounted in `api/src/app.ts` ahead of both internal routers
+  (`internalRunLimiter`, config in `api/src/domain/internalRunRateLimit.ts`): per client IP,
+  `INTERNAL_RUN_RATE_LIMIT_MAX` (default 10) failed attempts per
+  `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` (default 15), one budget shared by
+  `/billing/run`, `/billing/cleanup` and `/recurring-bookings/run`. **Only a 401 spends it**,
+  so a caller holding the secret — both of #781's daily attempts, and a run the guard
+  answers `429 in_progress` or `200 already_completed_today` — never does. Once spent,
+  every call from that address is `429` until the window ends, the right secret included.
 - **Which environment** (#784). The job runs in `${{ inputs.environment || 'dev' }}`: a
   manual `workflow_dispatch` picks `dev` or `production` (default `dev`), and a scheduled
   run, which has no inputs, takes the literal on that line — `dev` until the `production`
@@ -262,6 +291,20 @@ so cleanup runs even when the charge step went red, but not when there is no API
 >   diagnosed.
 > - A manual run defaults to `dev`, so a dispatch nobody thought about never charges real
 >   members.
+
+> **Decisions (2026-09-27, #783)** — change them here if they turn out wrong:
+> - Option B: the GitHub Actions IP allowlist on `location /billing/` is **removed rather
+>   than automated**. It guarded nothing the secret does not, covered only one of the two
+>   internal endpoints (`/recurring-bookings/` never had it) and decayed by hand, since
+>   GitHub's ranges move and the refresh was a manual `scp`.
+> - It is replaced by a per-route limiter so the secret cannot be ground at the global
+>   500/15 min budget. Only failed-secret (401) responses count, so the legitimate
+>   workflow can never lock itself out.
+> - `BILLING_INTERNAL_SECRET` and `RECURRING_BOOKINGS_INTERNAL_SECRET` are rotated at
+>   launch (`docs/go-to-production.md` §1), since the old value was only ever reachable from
+>   GitHub's ranges and is now reachable from anywhere.
+> - A PCI/QSA argument for restricting these routes at the network layer, if one ever
+>   arises, reopens this.
 
 ### B2. The run guard
 
@@ -375,7 +418,8 @@ The rule is pure and unit-tested in `api/src/domain/billingDunning.ts`
   branches, the webhook's `completed` branch, both staff actions via `clearDunningState()`
   (`api/src/domain/billingEventPayments.ts`), and any transition back to `active`.
 - Reactivation stays **explicit**. Clearing the count never flips `paused → active`; staff
-  use `POST /user-memberships/:id/reactivate`.
+  use `POST /user-memberships/:id/reactivate`, which also walks a past `next_billing_date`
+  forward to the first boundary after today (#790 — a pause is not a debt).
 
 ### B7. Failure handling by the staff (#640)
 
@@ -396,9 +440,33 @@ Event is the charge, a `payment_requests` row is an attempt to settle it. That i
 `failed_billing` later settled this way reads as `paid` and becomes receipt-able without a
 special case.
 
-Nothing notifies the member of a failed internal charge, and nothing notifies the staff
-in-app either — #779 is the staff alert, and `failed_last_month` on the Payments dashboard
-is a monthly statistic, not a to-do.
+Nothing notifies the member of a failed internal charge (decided on #779: staff-only,
+in-app only — no email, no Slack).
+
+#### Failed payments awaiting action (#779)
+
+The staff's to-do list is the Billing Events list filtered by `failed`. A Billing Event is
+**awaiting action** while `deriveBillingEventStatus()` says `failed` (`isAwaitingAction()`
+in `domain/billingEventStatus.ts`), and one of the two actions above clears it by appending
+a `completed` transaction. There is no status column.
+
+| Surface | What it shows |
+|---|---|
+| `GET /payments/billing-events/attention` | `{ count, oldest_created_at }` (`loadFailedPaymentsAttention()` in `api/src/api/payments.ts`) |
+| Sidebar | A red count badge next to **Payments** and **Billing Events**, hidden at zero, polled every 60 s while that entry is visible |
+| Payments dashboard | A *Failed Payments Awaiting Action* card with the oldest failure's date (`awaiting_action_count` / `awaiting_action_oldest_at` on the summary) — all-time, unlike the monthly cards |
+| Both link to | `payments/billing-events?status=failed&order=asc`: the list is the queue, oldest first |
+
+> **Decisions (2026-09-27, #779)** — change them here if they turn out wrong:
+> - **Count events, not memberships.** The badge then matches the row count of the list it
+>   opens. Since #785 one assignment contributes at most two before the run pauses it.
+> - **Recurring charges only.** A rejected or expired *first* payment writes no Billing
+>   Event (A5 inserts `payment_recorded` only on `completed`), so it is not counted, and
+>   the member usually retries it themselves. Surfacing failed checkouts would be its own
+>   ticket.
+> - **No extra role gate.** PAYMENTS read access sees the count, and the actions stay behind
+>   `requireModuleWrite('PAYMENTS')`.
+> - **Poll every 60 s.** The number changes about once a night.
 
 ### B8. `POST /billing/cleanup`
 
@@ -563,6 +631,18 @@ what the row should become.
 
 `expired` is reached only by `assign-new-plan`'s supersede logic, never by request.
 
+**Back to `active` (#790).** Both paths that move an existing assignment to `active` —
+`POST /user-memberships/:id/reactivate` (`transitionMembership()`) and a `status` flip
+through `PUT /user-memberships/:id` — do two things in the transaction that flips the
+status: clear #785's dunning pair, and call `rollStaleNextBillingDateForward()`
+(`api/src/domain/nextBillingDateStamp.ts`). If `next_billing_date <= UTC_DATE()` it is
+walked forward along its own schedule, with the same `firstBillingDateAfter()` the first
+payment uses, to the first boundary strictly after today. **A pause is not a debt**: the
+cycles that went by while the assignment was off the run are not collected, one per night
+or otherwise. A date still in the future is left alone, and a NULL one stays NULL — an
+assignment that never paid has no schedule until its first payment stamps one. Pausing
+never touches the date.
+
 ### Provider layer
 
 `api/src/payments/`:
@@ -590,6 +670,7 @@ what the row should become.
 | `PAYMENT_REQUEST_ABANDONED_HOURS` | optional (default 24, floored at 1) — `abandonedRequestHours()`, §B8 |
 | `RUN_FRESHNESS_THRESHOLD_HOURS` | optional (default 26, floored at 1) — `runFreshnessThresholdHours()`, `GET /health/runs` (#782) |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | `/recurring-bookings/run` |
+| `INTERNAL_RUN_RATE_LIMIT_MAX`, `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` | optional (default 10 per 15 min, values below 1 ignored) — failed-secret budget per IP on the three internal run routes, §B1 (#783) |
 
 The `payment_providers` catalogue (#636, `api/src/api/payment-providers.ts`) names **which**
 adapter a gym uses (`gyms.payment_provider_id` → `provider_key`), never how to authenticate
@@ -703,8 +784,8 @@ absence into something a prober outside GitHub can see:
 >   check, because a GitHub-hosted check shares GitHub's failure modes, which are exactly
 >   what this alert exists to catch.
 > - The endpoint is unauthenticated at `GET /health/runs`, outside `/billing/`, so the nginx
->   GitHub Actions allowlist never 403s the prober and no internal secret is handed to
->   Grafana. It leaks one timestamp per internal job and nothing tenant-scoped.
+>   GitHub Actions allowlist (still live on the server until #783's conf is installed)
+>   never 403s the prober and no internal secret is handed to Grafana. It leaks one timestamp per internal job and nothing tenant-scoped.
 > - One endpoint for both runs, default threshold 26 h (a daily run plus the 06:00/10:00
 >   UTC spread), configurable through `RUN_FRESHNESS_THRESHOLD_HOURS`.
 > - Grafana (check, alert rule, contact point) is configured by hand, not provisioned from
@@ -775,10 +856,10 @@ SELECT next_billing_date FROM user_memberships WHERE id = <um>;
 
 Expect `completed`; a `payment_recorded` event with `source = 'provider'` carrying the same
 amount, back-linked both ways; a `payment_methods` row; and `next_billing_date` =
-`starts_at + cadence`.
+`starts_at + cadence` for a `starts_at` of today or later.
 
-⚠️ If `starts_at` is in the past, `next_billing_date` will be too — that is **#790**, not a
-setup mistake. Use a `starts_at` of today for a clean run.
+With a back-dated `starts_at`, expect instead the first `starts_at + n·cadence` **after**
+today (#790) — never a date in the past — and the next run to charge nothing for it.
 
 **6. Declined first payment.** Repeat 3–4 with a Monei test card that **declines**. Expect
 the request to end `failed` and — correctly — **no** `billing_events` row at all, which is
@@ -889,18 +970,18 @@ differently.
 | # | Gap |
 |---|---|
 | [#778](https://github.com/cordel-app/gymdesk/issues/778) | ✅ done — the workflow reports the run's outcome |
-| [#779](https://github.com/cordel-app/gymdesk/issues/779) | No in-app staff indicator of failed payments awaiting action |
+| [#779](https://github.com/cordel-app/gymdesk/issues/779) | ✅ done — sidebar badge + dashboard card for failed payments awaiting action (B7) |
 | [#780](https://github.com/cordel-app/gymdesk/issues/780) | ✅ done — one completed run per UTC date |
 | [#781](https://github.com/cordel-app/gymdesk/issues/781) | ✅ done — a second daily attempt |
 | [#782](https://github.com/cordel-app/gymdesk/issues/782) | partly done — endpoint shipped; Grafana check/alert pending (go-to-production) |
-| [#783](https://github.com/cordel-app/gymdesk/issues/783) | The `/billing/` GitHub Actions IP allowlist decays by hand; `/recurring-bookings/` has none |
+| [#783](https://github.com/cordel-app/gymdesk/issues/783) | ✅ done — allowlist removed; per-route limiter; secret rotation pending (go-to-production) |
 | [#784](https://github.com/cordel-app/gymdesk/issues/784) | partly done — workflows parametrised; production environment pending (go-to-production) |
 | [#785](https://github.com/cordel-app/gymdesk/issues/785) | ✅ done — a rejection escalates to a pause |
 | [#786](https://github.com/cordel-app/gymdesk/issues/786) | ✅ done — `draft`/`awaiting_payment` and `POST /:id/submit` retired; an assignment is `active` from creation |
 | [#787](https://github.com/cordel-app/gymdesk/issues/787) | ✅ done — the run allocates receipt numbers |
 | [#788](https://github.com/cordel-app/gymdesk/issues/788) | ✅ done — replacing a card charges nothing |
 | [#789](https://github.com/cordel-app/gymdesk/issues/789) | ✅ done — cleanup keeps an opened request `pending`, so a member's payment is not lost |
-| [#790](https://github.com/cordel-app/gymdesk/issues/790) | A back-dated `starts_at` yields a past first `next_billing_date`, charged one catch-up cycle per night |
+| [#790](https://github.com/cordel-app/gymdesk/issues/790) | ✅ done — the first `next_billing_date` (and a reactivated one) is the first boundary after today; elapsed and paused cycles are written off |
 | — | No reconciliation job against the provider. `POST /payments` (the staff ledger write) records a charge or a cash payment; nothing reads the provider back to confirm our rows agree with it. |
 
 Production-readiness items (live credentials, Monei AoC, SRI for `monei.js`, the dedicated

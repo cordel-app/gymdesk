@@ -57,7 +57,8 @@
     "feature_flags": "Flags de funcionalitats",
     "nutrition_plans": "Plans de nutrició",
     "operating_hours": "Horari i Festius",
-    "website_integration": "Integració web"
+    "website_integration": "Integració web",
+    "failed_payments_badge": "{count, plural, one {# pagament fallit pendent d'acció} other {# pagaments fallits pendents d'acció}}"
   },
   "dashboard": {
     "title": "Tauler",
@@ -3336,7 +3337,11 @@
     "card_successful_last_month": "Total d'esdeveniments de facturació correctes el mes passat",
     "loading": "Carregant…",
     "empty": "No hi ha dades de facturació per mostrar.",
-    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
+    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar.",
+    "card_awaiting_action": "Pagaments fallits pendents d'acció",
+    "awaiting_action_oldest": "El més antic: {date}",
+    "awaiting_action_none": "Res pendent",
+    "awaiting_action_unit": "esdeveniments de facturació fallits"
   },
   "financials_dashboard": {
     "title": "Tauler de finances",

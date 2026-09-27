@@ -35,3 +35,49 @@ export function advanceBillingDate(
   }
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
+
+/**
+ * Upper bound on the cycles `firstBillingDateAfter()` will walk. A daily
+ * cadence back-dated a decade is ~3,650 steps; anything past this bound is a
+ * corrupt row (a year-0001 `starts_at`), and looping on it would hang the
+ * request that asked.
+ */
+const MAX_BILLING_DATE_STEPS = 10_000;
+
+/**
+ * The first cycle boundary strictly after `after` (#790): `anchor` advanced by
+ * one cadence, then again and again, until the date is later than `after`.
+ * Always at least one step, so an `anchor` that is today or in the future still
+ * moves by exactly one cadence — which is what the first payment of an
+ * assignment starting today or later has always stamped.
+ *
+ * Each step is `advanceBillingDate()`, the same step the nightly run takes, so
+ * the date this returns is one the run would itself have reached from `anchor`:
+ * the two can never disagree about month-end clamping (31 Jan steps to 3 Mar,
+ * then 3 Apr). "Strictly after" is the point of the rule — a boundary equal to
+ * `after` (today) would be charged by tonight's run, and that is the cycle the
+ * caller has just settled or written off.
+ *
+ * Pass plain `YYYY-MM-DD` strings (`DATE_FORMAT` in SQL, `after` from
+ * `UTC_DATE()`): they are compared as strings, so no DATE ever crosses a
+ * timezone conversion.
+ */
+export function firstBillingDateAfter(
+  anchor: string,
+  interval: number,
+  unit: BillingDateUnit,
+  after: string,
+): string {
+  if (!Number.isInteger(interval) || interval < 1) {
+    throw new Error(`firstBillingDateAfter: interval must be a positive integer, got ${interval}`);
+  }
+  const bound = after.slice(0, 10);
+  let date = advanceBillingDate(anchor.slice(0, 10), interval, unit);
+  for (let steps = 1; date <= bound; steps++) {
+    if (steps >= MAX_BILLING_DATE_STEPS) {
+      throw new Error(`firstBillingDateAfter: more than ${MAX_BILLING_DATE_STEPS} cycles between ${anchor} and ${bound}`);
+    }
+    date = advanceBillingDate(date, interval, unit);
+  }
+  return date;
+}

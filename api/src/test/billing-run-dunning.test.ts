@@ -422,7 +422,17 @@ describe('POST /billing/run — bounded retry then pause (#785)', () => {
       status: 'active', failed_attempts: 0,
     });
 
-    // So the next night is a first rejection, not the one that pauses.
+    // #790: a pause is not a debt — the rejected 2000-01-01 cycle and everything
+    // since were walked forward to the first boundary after today, so tonight's
+    // run has nothing to charge. Bring that boundary due, as the calendar will.
+    const { rows: walked } = await db.query<{ after_today: number }>(
+      'SELECT next_billing_date > UTC_DATE() AS after_today FROM user_memberships WHERE id = ?',
+      [fx.membershipId],
+    );
+    expect(Number(walked[0].after_today)).toBe(1);
+    await db.query('UPDATE user_memberships SET next_billing_date = UTC_DATE() WHERE id = ?', [fx.membershipId]);
+
+    // So the next charge is a first rejection, not the one that pauses.
     const next = await runBilling();
     expect(next.body.paused).toBe(0);
     expect(await dunningState(fx.membershipId)).toMatchObject({

@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveBillingEventStatus,
+  isAwaitingAction,
   isPaymentActionable,
   statusFromEventType,
   statusFromTransaction,
@@ -71,5 +72,27 @@ describe('isPaymentActionable', () => {
     expect(isPaymentActionable('pending')).toBe(false);
     expect(isPaymentActionable('scheduled')).toBe(false);
     expect(isPaymentActionable('recorded')).toBe(false);
+  });
+});
+
+// #779: the staff's work queue is exactly the failed filter of the list.
+describe('isAwaitingAction', () => {
+  it('holds for a failed_billing event with no transaction', () => {
+    expect(isAwaitingAction('failed_billing', null)).toBe(true);
+  });
+
+  it('holds while the latest transaction is failed or expired', () => {
+    expect(isAwaitingAction('recurring_payment', 'failed')).toBe(true);
+    expect(isAwaitingAction('charge_created', 'expired')).toBe(true);
+  });
+
+  it('clears once a later transaction completed (retry or manual payment)', () => {
+    expect(isAwaitingAction('failed_billing', 'completed')).toBe(false);
+  });
+
+  it('does not hold for a payment still in flight or an informational row', () => {
+    expect(isAwaitingAction('failed_billing', 'pending')).toBe(false);
+    expect(isAwaitingAction('status_changed', null)).toBe(false);
+    expect(isAwaitingAction('adjustment', null)).toBe(false);
   });
 });

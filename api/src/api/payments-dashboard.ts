@@ -16,6 +16,7 @@ import { getTenantContext } from '../infra/tenantContext';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { advanceBillingDate } from './billing';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
+import { loadFailedPaymentsAttention } from './payments';
 
 export const paymentsDashboardRouter = Router();
 
@@ -32,6 +33,10 @@ export interface PaymentsDashboardSummary {
   total_last_month: number;
   failed_last_month: number;
   successful_last_month: number;
+  /** #779: failed Billing Events still awaiting a staff decision, all-time. */
+  awaiting_action_count: number;
+  /** #779: when the oldest of them was created (ISO, UTC); null when none. */
+  awaiting_action_oldest_at: string | null;
 }
 
 export interface MonthWindows {
@@ -176,6 +181,10 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
       );
     }
 
+    // ── Card 5 (#779): failed payments awaiting action — a to-do, not a
+    // monthly statistic, so it is not bounded by either month window.
+    const attention = await loadFailedPaymentsAttention(gymId);
+
     const summary: PaymentsDashboardSummary = {
       current_month_start: w.currentMonthStart,
       current_month_end: w.currentMonthEnd,
@@ -185,6 +194,8 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
       total_last_month: totalLastMonth,
       failed_last_month: failedLastMonth,
       successful_last_month: successfulLastMonth,
+      awaiting_action_count: attention.count,
+      awaiting_action_oldest_at: attention.oldest_created_at,
     };
     res.json(summary);
   } catch (err) {

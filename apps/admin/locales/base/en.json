@@ -56,7 +56,8 @@
     "feature_flags": "Feature Flags",
     "nutrition_plans": "Nutrition Plans",
     "operating_hours": "Operating Hours",
-    "website_integration": "Website Integration"
+    "website_integration": "Website Integration",
+    "failed_payments_badge": "{count, plural, one {# failed payment awaiting action} other {# failed payments awaiting action}}"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -3323,7 +3324,11 @@
     "card_successful_last_month": "Total Successful Billing Events Last Month",
     "loading": "Loading…",
     "empty": "No billing data to show.",
-    "error_generic": "Something went wrong. Please try again."
+    "error_generic": "Something went wrong. Please try again.",
+    "card_awaiting_action": "Failed Payments Awaiting Action",
+    "awaiting_action_oldest": "Oldest: {date}",
+    "awaiting_action_none": "Nothing awaiting action",
+    "awaiting_action_unit": "failed billing events"
   },
   "financials_dashboard": {
     "title": "Finance Dashboard",
