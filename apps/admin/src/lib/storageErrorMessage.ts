@@ -109,3 +109,19 @@ export function formatStorageError(err: StorageErrorLike, labels: StorageErrorLa
   if (details) lines.push(`${labels.details}: ${details}`);
   return lines.join('\n');
 }
+
+/**
+ * The same diagnostic on one line, for a failure reported as a toast (#828).
+ *
+ * `Toast` renders its message as a single text node, so the block form's
+ * newlines would collapse and run the labels together. Derived from
+ * `formatStorageError()` rather than assembled a second time: an "Initialize
+ * bucket" that fails has to name the same step, path and R2 error as a failed
+ * upload does, and a second formatter is how the two would drift.
+ */
+export function formatStorageErrorLine(err: StorageErrorLike, labels: StorageErrorLabels): string {
+  return formatStorageError(err, labels)
+    .split('\n')
+    .filter((line) => line !== '')
+    .join(' · ');
+}

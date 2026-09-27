@@ -837,7 +837,10 @@
     "storage_stage_remove_logo": "Remove logo",
     "storage_stage_upload_members_image": "Upload Members image",
     "storage_stage_remove_members_image": "Remove Members image",
-    "storage_stage_save_settings": "Save the theme configuration"
+    "storage_stage_save_settings": "Save the theme configuration",
+    "action_initialize_bucket": "Initialize bucket",
+    "toast_bucket_initialized": "Bucket initialized successfully.",
+    "storage_error_title_initialize_bucket": "Initializing the theme bucket failed."
   },
   "orphaned_accounts": {
     "title": "Orphaned accounts",
@@ -2383,7 +2386,12 @@
     "storage_stage_remove_logo": "Remove logo",
     "storage_stage_upload_members_image": "Upload Members image",
     "storage_stage_remove_members_image": "Remove Members image",
-    "storage_stage_save_settings": "Save the theme configuration"
+    "storage_stage_save_settings": "Save the theme configuration",
+    "action_initialize_bucket": "Initialize bucket",
+    "toast_bucket_initialized": "Bucket initialized successfully.",
+    "storage_error_title_initialize_bucket": "Initializing the theme bucket failed.",
+    "initialize_bucket_not_configured": "Cloudflare storage is not configured for this deployment, so the theme folders cannot be created.",
+    "initialize_bucket_not_initialized": "Cloudflare storage has not been initialized for this gym. Initialize the Cloudflare bucket before initializing a theme’s folders."
   },
   "activity_types": {
     "title": "Activities",

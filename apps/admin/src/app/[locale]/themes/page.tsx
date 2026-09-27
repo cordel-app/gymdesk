@@ -17,7 +17,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
-import { formatStorageError, type StorageErrorLike } from '@/lib/storageErrorMessage';
+import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
 import {
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_SLOTS,
@@ -107,6 +107,9 @@ export default function GymThemesPage() {
   const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['assignments']));
   const [editForm, setEditForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  // #828: the Theme whose bucket initialization is in flight, so the menu item
+  // cannot be fired twice while R2 is being written to.
+  const [initializingBucketId, setInitializingBucketId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
   const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
@@ -359,6 +362,45 @@ export default function GymThemesPage() {
       details: t('storage_error_details'),
       operationName: t(`storage_stage_${stage}`),
     });
+  }
+
+  /** The same diagnostic on one line, for a failure reported as a toast (#828). */
+  function storageErrorLine(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
+    const stage = err.body?.stage ?? fallbackStage;
+    return formatStorageErrorLine(err, {
+      title: t(titleKey),
+      operation: t('storage_error_operation'),
+      path: t('storage_error_path'),
+      error: t('storage_error_error'),
+      details: t('storage_error_details'),
+      operationName: t(`storage_stage_${stage}`),
+    });
+  }
+
+  /**
+   * #828: writes this Theme's own folder tree (`Themes/<id>-<name>/` with its
+   * `Logo/` and `Members/` leaves) into the gym's Cloudflare folder. Explicitly
+   * repeatable — the markers are zero-byte objects, so a second run just ensures
+   * the structure is there and touches no file and no Theme field.
+   *
+   * It does **not** initialize the gym bucket itself (§5): that is Gym Bucket
+   * Initialization's, and until it has run the action is disabled with the
+   * reason, exactly as Clone is (#823).
+   */
+  async function handleInitializeBucket(theme: Theme) {
+    if (storageBlock) { toast(t(`initialize_bucket_${storageBlock}`)); return; }
+    setInitializingBucketId(theme.id);
+    try {
+      await apiFetch(`/system/themes/${theme.id}/storage/initialize`, { method: 'POST' });
+      toast(t('toast_bucket_initialized'), 'success');
+    } catch (err: any) {
+      // A toast is one text node, so the diagnostic goes on one line. The
+      // fallback stage is the first marker the route writes — a failure that
+      // never reached storage carries no stage of its own.
+      toast(storageErrorLine(err, 'storage_error_title_initialize_bucket', 'create_theme_folder'));
+    } finally {
+      setInitializingBucketId(null);
+    }
   }
 
   async function handleSaveAll(theme: Theme) {
@@ -671,6 +713,15 @@ export default function GymThemesPage() {
         menuItems.push({ label: t('action_set_draft'), onClick: () => handleStatusChange(theme, 'draft') });
         menuItems.push({ label: t('action_set_inactive'), onClick: () => handleStatusChange(theme, 'inactive') });
       }
+      // #828: the Theme's *own* storage structure, manually and repeatably. A
+      // Base Theme is excluded: its objects are the platform's (`cordel/…`) and
+      // are initialized from the Base Themes page, not from a gym's.
+      menuItems.push({
+        label: t('action_initialize_bucket'),
+        onClick: () => handleInitializeBucket(theme),
+        disabled: !!storageBlock || initializingBucketId === theme.id,
+        title: storageBlock ? t(`initialize_bucket_${storageBlock}`) : undefined,
+      });
       menuItems.push({ label: t('delete'), onClick: () => setDeleting(theme), danger: true });
     }
     menuItems.push({ label: t('details'), onClick: () => setDetails(theme) });

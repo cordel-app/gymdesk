@@ -179,24 +179,7 @@ gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
       // behind to be half-created, and the markers a later retry re-writes are
       // zero-byte objects whose keys end in `/`, so re-creating them is
       // idempotent (§8) and can never overwrite a real object.
-      const themeFolderKeys = themeStorageFolderKeys(folderPrefix, id, baseName);
-      try {
-        await ensureStorageFolders(themeFolderKeys);
-      } catch (err: any) {
-        const details = err instanceof StorageOperationError
-          ? err.details
-          : describeStorageError(err, { operation: 'ensureStorageFolders', key: themeFolderKeys[0] });
-        logger.error(
-          { err, details, diagnostics: getStorageDiagnostics(), gymId, sourceThemeId: src.id },
-          'Cloudflare R2 theme folder creation failed',
-        );
-        return res.status(502).json({
-          error: `Failed to create the theme storage folders: ${details.message}`,
-          stage: themeFolderStageForKey(details.key, themeFolderKeys),
-          path: details.key ?? themeFolderKeys[0],
-          details,
-        });
-      }
+      if (!(await ensureThemeStorage(res, folderPrefix, id, baseName, { gymId, sourceThemeId: src.id }))) return;
 
       const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
       // Cloning is the only way a customer theme comes into existence, so this
@@ -354,6 +337,103 @@ async function resolveGymFolderPrefix(
   }
   return folderPrefix;
 }
+
+/**
+ * Writes a Theme's own folder tree — `Themes/<theme_id>-<sanitized name>/` with
+ * its `Logo/` and `Members/` leaves — and answers `502` naming the marker that
+ * broke when R2 refuses. The markers it wrote come back on success, `null` means
+ * the response has already been sent.
+ *
+ * Shared by its two callers rather than inlined twice: Theme creation writes the
+ * tree before the row exists (#827) and `POST /:id/storage/initialize` re-writes
+ * it for a Theme that already does (#828). The keys, the stage and the failure
+ * shape are the same operation either way — only what is logged beside it
+ * differs.
+ */
+async function ensureThemeStorage(
+  res: express.Response,
+  folderPrefix: string,
+  themeId: string,
+  themeName: string,
+  logContext: Record<string, unknown>,
+): Promise<string[] | null> {
+  const themeFolderKeys = themeStorageFolderKeys(folderPrefix, themeId, themeName);
+  try {
+    await ensureStorageFolders(themeFolderKeys);
+    return themeFolderKeys;
+  } catch (err: any) {
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'ensureStorageFolders', key: themeFolderKeys[0] });
+    logger.error(
+      { err, details, diagnostics: getStorageDiagnostics(), ...logContext },
+      'Cloudflare R2 theme folder creation failed',
+    );
+    res.status(502).json({
+      error: `Failed to create the theme storage folders: ${details.message}`,
+      stage: themeFolderStageForKey(details.key, themeFolderKeys),
+      path: details.key ?? themeFolderKeys[0],
+      details,
+    });
+    return null;
+  }
+}
+
+// ─── Initialize a Custom Theme's Cloudflare storage structure (#828) ──────────
+
+/**
+ * Creates (or re-creates) the folders a Theme's own assets live in:
+ * `<gym prefix>/Themes/<theme_id>-<sanitized name>/` with its `Logo/` and
+ * `Members/` leaves. Theme creation already writes them (#827); this is the
+ * manual, explicitly repeatable version, for a Theme whose folders are not there
+ * — one created before #827, or one renamed since (a rename moves the folder,
+ * and nothing re-creates it until the next upload).
+ *
+ * It initializes the **Theme's** structure and nothing above it (§5): the gym
+ * root and its `Themes/` branch belong to Gym Bucket Initialization (#735), so a
+ * gym with no `storage_folder_prefix` is a `409` here rather than having its tree
+ * papered over — which is also what the disabled menu item states in the admin
+ * (#823).
+ *
+ * Idempotent by construction (§3): the markers are zero-byte objects whose keys
+ * end in `/`, so re-writing one overwrites another marker and can never touch a
+ * real object. Nothing here reads, deletes or overwrites a file, and nothing
+ * writes to `themes` — the Theme's id, name and configuration are untouched.
+ */
+gymThemesRouter.post('/:id/storage/initialize', async (req, res, next) => {
+  try {
+    const { gymId } = getTenantContext(req);
+    await requireRole('admin')(req, res, async () => {
+      // A Base Theme is a `gym_id IS NULL` row and so is 404 here, whoever asks:
+      // its objects are the platform's (`cordel/…`) and are initialized by
+      // `POST /platform/themes/:id/storage/initialize`.
+      const { rows } = await db.query<{ id: string; name: string }>(
+        'SELECT id, name FROM themes WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+        [req.params.id, gymId],
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+      const theme = rows[0];
+
+      const folderPrefix = await resolveGymFolderPrefix(
+        gymId,
+        res,
+        'Cloudflare storage has not been initialized for this gym, therefore the theme folders cannot be created.',
+      );
+      if (!folderPrefix) return;
+
+      const folders = await ensureThemeStorage(res, folderPrefix, theme.id, theme.name, { gymId, themeId: theme.id });
+      if (!folders) return;
+
+      recordAudit(req, {
+        action: 'initialize_storage',
+        entityType: 'theme',
+        entityId: theme.id,
+        next: { folders },
+      });
+      res.json({ initialized: true, folders });
+    });
+  } catch (err) { next(err); }
+});
 
 gymThemesRouter.post(
   '/:id/logo',
