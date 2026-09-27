@@ -10,15 +10,38 @@ Tick items off in the PR that completes them.
 
 ## 1. Environment and secrets
 
-- [ ] Create a GitHub **`production`** environment (Settings → Environments) with its own
-      secrets/vars. Every workflow currently hardcodes `environment: dev`
-      (`deploy.yml`, `deploy-admin.yml`, `deploy-member.yml`, `deploy-payment.yml`,
-      `billing-run.yml`, `recurring-booking-run.yml`, `ci.yml`) — they need a production
-      target. **The environment is also the alerting channel** (#778): a nightly run that
-      fails a charge, or does not execute at all, turns `billing-run.yml` red, and the email
-      goes to whoever GitHub notifies for that environment. So the `production` environment
-      needs the right recipients — the people who act on a failed payment, not only the
-      committer of the last workflow change. Tracked as its own ticket in #784.
+- [x] **Workflows parametrised by GitHub environment** (#784). `billing-run.yml`,
+      `recurring-booking-run.yml`, `deploy.yml`, `deploy-admin.yml`, `deploy-member.yml`
+      and `deploy-payment.yml` take a `workflow_dispatch` input `environment` (`dev` |
+      `production`, default `dev`) and run in `${{ inputs.environment || 'dev' }}`, so a
+      schedule or a push to `main` still targets `dev` until the steps below are done. The
+      two scheduled workflows read their host from the environment **variable**
+      `vars.API_BASE_URL` and go red with an explicit error when it is missing — there is no
+      hardcoded fallback. `ci.yml`, `deploy-alloy.yml` and `debug-vps.yml` stay on `dev`.
+- [ ] **Owner steps for #784, in this order** (GitHub Settings — no repo change except 3):
+  1. [ ] Add the variable **`API_BASE_URL`** (`https://api.vdicube.com`) to the **`dev`**
+         environment's *variables* (not secrets). It must exist before the #784 PR merges,
+         or the next nightly billing and recurring booking runs fail at their first step.
+  2. [ ] Create the **`production`** environment (Settings → Environments) with the secrets
+         `BILLING_INTERNAL_SECRET`, `RECURRING_BOOKINGS_INTERNAL_SECRET` and every secret
+         the four deploy workflows read, the variable `API_BASE_URL` (the production API's
+         origin) plus the other variables the deploy workflows read, **required reviewers**
+         for deployments, and a deployment branch rule allowing **`main` only**. Note that
+         `deploy.yml` still carries literal `*.vdicube.com` payment URLs
+         (`PAYMENT_PAGE_URL`, `PAYMENT_NOTIFICATION_URL`, `PAYMENT_OK_URL`,
+         `PAYMENT_KO_URL`) — they must become environment variables before a production
+         deploy, or production points its payment flow at the dev hosts.
+  3. [ ] In `billing-run.yml` and `recurring-booking-run.yml`, change the one line marked
+         `# #784: switch to 'production' once the environment exists` from
+         `${{ inputs.environment || 'dev' }}` to `${{ inputs.environment || 'production' }}`.
+         From then on the schedules target `production` only and `dev` is run by manual
+         dispatch (the input still defaults to `dev`).
+  4. [ ] **Route the `production` environment's failure notifications to the people who
+         act on payments** (#784 §3). The environment is the alerting channel (#778): a
+         nightly run that fails a charge, or does not execute at all, turns `billing-run.yml`
+         red, and the email goes to whoever GitHub notifies for that workflow — by default
+         the committer of the last workflow change. This is a GitHub notification setting,
+         not a repo file, so nothing in the repository can verify it.
 - [ ] Runtime env stays GitHub-sourced: `deploy.yml` writes it into the Podman quadlet on
       every deploy. Do not hand-edit the VPS. Any env var added for production must also be
       forwarded in the workflow's `env:` / `envs:` / heredoc block, or it never reaches the
@@ -302,7 +325,8 @@ hardening:
 - [ ] **Decide the `/billing/` GitHub Actions IP allowlist**: automate its refresh or
       remove it (#783). See the nginx item in §4.
 - [ ] **A `production` GitHub environment** for the scheduled and deploy workflows (#784).
-      See §1.
+      The workflows are parametrised; the environment itself and the one-line switch are
+      the owner steps in §1.
 - [ ] **Bounded automatic retry, then pause** on a rejected recurring charge (#785). See
       the `#640` follow-up item in §5.
 
