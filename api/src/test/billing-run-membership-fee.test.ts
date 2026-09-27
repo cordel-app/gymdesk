@@ -135,8 +135,9 @@ async function applyPromotion(umId: number, opts: {
       free_months: opts.freeMonths ?? 0,
       paid_months: opts.paidMonths ?? 0,
       bonus_months: opts.bonusMonths ?? 0,
+      // #814: the snapshot shape is enabled + action + value + duration_months.
       membership_fee_benefits: opts.action == null ? [] : [{
-        quantity: 1, frequency_interval: 1, frequency_unit: 'month', enabled: true,
+        enabled: true,
         action: opts.action, value: opts.value ?? null,
         duration_months: opts.durationMonths ?? null,
       }],

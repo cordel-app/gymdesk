@@ -366,8 +366,9 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
         free_months: 0,
         paid_months: 3,
         bonus_months: 0,
+        // #814: the snapshot shape is enabled + action + value + duration_months.
         membership_fee_benefits: [{
-          quantity: 1, frequency_interval: 1, frequency_unit: 'month', enabled: true,
+          enabled: true,
           action: 'percentage_discount', value: 20, duration_months: null,
         }],
       })],

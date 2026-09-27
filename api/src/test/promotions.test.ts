@@ -521,13 +521,12 @@ describe('Membership Fee Benefit', () => {
     promoId = await createPromo(gymId, 'MF Benefit Promo');
   });
 
+  // #814: the benefit is duration + action + value + enabled. The PUT used to
+  // require `quantity`/`frequency_interval`/`frequency_unit` in every body;
+  // migration 199 dropped the columns and the validation went with them, so a
+  // body carries only what is still configurable.
   function mfBody(overrides: Record<string, any> = {}) {
-    return {
-      quantity: 1,
-      frequency_interval: 1,
-      frequency_unit: 'month',
-      ...overrides,
-    };
+    return { ...overrides };
   }
 
   const VALUE_ACTIONS = ['percentage_discount', 'fixed_discount', 'fixed_price'];
@@ -748,6 +747,71 @@ describe('Membership Fee Benefit', () => {
       .send(mfBody({ action: 'fixed_price', value: 100 })); // duration_months absent
     expect(res.status).toBe(200);
     expect(res.body.duration_months).toBeNull();
+  });
+
+  // ── #814: no recurrence on the Membership Fee Benefit ───────────────────
+  const REMOVED_RECURRENCE_FIELDS = ['quantity', 'frequency_interval', 'frequency_unit'] as const;
+
+  it('PUT /membership-fee-benefit succeeds with no recurrence fields at all', async () => {
+    const promo = await createPromo(gymId, 'MF No Recurrence');
+    const res = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ action: 'percentage_discount', value: 50, enabled: true });
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe('percentage_discount');
+    expect(parseFloat(res.body.value)).toBeCloseTo(50, 2);
+    expect(Number(res.body.enabled)).toBe(1);
+  });
+
+  it('neither GET nor PUT exposes quantity, frequency_interval or frequency_unit', async () => {
+    const promo = await createPromo(gymId, 'MF Shape');
+    const put = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ action: 'waive' });
+    expect(put.status).toBe(200);
+    const get = await request
+      .get(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(get.status).toBe(200);
+    for (const field of REMOVED_RECURRENCE_FIELDS) {
+      expect(put.body[field]).toBeUndefined();
+      expect(get.body[field]).toBeUndefined();
+    }
+  });
+
+  it('a stale client still sending the recurrence fields is accepted, and they are ignored', async () => {
+    const promo = await createPromo(gymId, 'MF Stale Client');
+    const res = await request
+      .put(`/promotions/${promo}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ quantity: 2, frequency_interval: 3, frequency_unit: 'week', action: 'fixed_price', value: 40 });
+    expect(res.status).toBe(200);
+    expect(res.body.action).toBe('fixed_price');
+    for (const field of REMOVED_RECURRENCE_FIELDS) {
+      expect(res.body[field]).toBeUndefined();
+    }
+  });
+
+  it('a non-positive quantity or frequency_interval is no longer a validation error', async () => {
+    const promo = await createPromo(gymId, 'MF No Recurrence Validation');
+    for (const body of [
+      { quantity: 0, action: 'waive' },
+      { frequency_interval: 0, action: 'waive' },
+      { frequency_unit: 'decade', action: 'waive' },
+    ]) {
+      const res = await request
+        .put(`/promotions/${promo}/membership-fee-benefit`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send(body);
+      expect(res.status).toBe(200);
+    }
   });
 
   it('duplicate copies the membership fee benefit', async () => {

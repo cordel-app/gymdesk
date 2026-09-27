@@ -106,18 +106,20 @@ promotionDetailsRouter.put('/plans', requireRole('admin'), async (req, res, next
 //
 // `action`/`value` are what billing applies, for `duration_months` months
 // counted from when the Promotion was applied (see the fee resolution in
-// membership-promotions.ts); `quantity` and `frequency_interval`/
-// `frequency_unit` are descriptive, exactly as they were under #551.
+// membership-promotions.ts). Those four fields are the whole benefit.
+//
+// #814 removed the three it used to carry beside them — `quantity`,
+// `frequency_interval` and `frequency_unit` (migration 199). They were
+// inherited from the Period Benefit shape the section was edited in ("2
+// sessions every 3 months") and meant nothing here: there is one membership
+// fee per assignment and its cadence is the assignment's own Billing frequency
+// (`ASSIGNMENT_CADENCE`), never a Promotion's. Nothing priced on them. Do not
+// reintroduce a recurrence on this benefit.
 
 const MEMBERSHIP_FEE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
 
 function validateMembershipFeeBenefit(body: any) {
-  const { quantity, frequency_interval, frequency_unit, duration_months, action, value } = body;
-  const qty = parseInt(quantity, 10);
-  if (isNaN(qty) || qty <= 0) return 'quantity must be a positive integer';
-  const freq = parseInt(frequency_interval, 10);
-  if (isNaN(freq) || freq <= 0) return 'frequency_interval must be a positive integer';
-  if (!['week', 'month'].includes(frequency_unit)) return "frequency_unit must be 'week' or 'month'";
+  const { duration_months, action, value } = body;
   if (duration_months != null) {
     const dur = parseInt(duration_months, 10);
     if (isNaN(dur) || dur <= 0) return 'duration_months must be a positive integer';
@@ -139,8 +141,13 @@ function membershipFeeValue(action: any, value: any) {
   return needsValue && value != null && value !== '' ? parseFloat(value) : null;
 }
 
+// An explicit projection rather than `SELECT *`, so the response shape is the
+// API's contract and not whatever the table happens to hold: during the
+// API-before-migration-199 deploy window the columns #814 retired are still
+// there, and this is what keeps them out of the answer.
 const SELECT_MEMBERSHIP_FEE_BENEFIT =
-  'SELECT * FROM promotion_membership_fee_benefits WHERE promotion_id = ? AND gym_id = ?';
+  `SELECT id, gym_id, promotion_id, duration_months, enabled, action, value, created_at
+   FROM promotion_membership_fee_benefits WHERE promotion_id = ? AND gym_id = ?`;
 
 promotionDetailsRouter.get('/membership-fee-benefit', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
@@ -184,7 +191,7 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
     }
   }
 
-  const { quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value } = req.body;
+  const { duration_months, enabled, action, value } = req.body;
   try {
     const dur = duration_months != null && duration_months !== '' ? parseInt(duration_months, 10) : null;
     const act = action ?? null;
@@ -193,14 +200,12 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
     // singleton PUT is an upsert rather than a replace-all delete/insert.
     await db.query(
       `INSERT INTO promotion_membership_fee_benefits
-         (gym_id, promotion_id, quantity, frequency_interval, frequency_unit, duration_months, enabled, action, value)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         (gym_id, promotion_id, duration_months, enabled, action, value)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-         quantity = VALUES(quantity), frequency_interval = VALUES(frequency_interval),
-         frequency_unit = VALUES(frequency_unit), duration_months = VALUES(duration_months),
+         duration_months = VALUES(duration_months),
          enabled = VALUES(enabled), action = VALUES(action), value = VALUES(value)`,
-      [gymId, promotionId, parseInt(quantity, 10), parseInt(frequency_interval, 10), frequency_unit,
-       dur, enabled != null ? (enabled ? 1 : 0) : 1, act, val],
+      [gymId, promotionId, dur, enabled != null ? (enabled ? 1 : 0) : 1, act, val],
     );
     const { rows } = await db.query(SELECT_MEMBERSHIP_FEE_BENEFIT, [promotionId, gymId]);
     res.json(rows[0]);

@@ -75,10 +75,15 @@ function toDateOnly(v: unknown): string {
 // `membership_fee` entries ever meant anything to billing, and all three
 // tables are gone. Snapshots written before this stage keep their old shape —
 // `membershipFeeBenefitsFromSnapshot()` below is what reads them.
+// #814 (migration 199): the benefit is these four fields and nothing else. It
+// used to carry `quantity`/`frequency_interval`/`frequency_unit` beside them,
+// inherited from the Period Benefit shape the Promotion editor was built on;
+// no pricing path ever read them (`MembershipFeeBenefit` in
+// domain/promotionApplication.ts is action + value + enabled + durationMonths),
+// so dropping them changes no price. Snapshots written before #814 still carry
+// those keys — this function returns stored objects as they are and nothing
+// looks at them, so no historical application is rewritten or re-priced.
 export interface SnapshotMembershipFeeBenefit {
-  quantity: number;
-  frequency_interval: number;
-  frequency_unit: string;
   enabled: boolean;
   action: string | null;
   value: number | null;
@@ -114,14 +119,13 @@ type LiveBenefits = Pick<PromotionSnapshot, 'membership_fee_benefits'>;
 // for legacy (snapshot IS NULL) promotion applications.
 export async function fetchLiveBenefits(exec: Queryable, promotionId: number): Promise<LiveBenefits> {
   const { rows } = await exec.query(
-    `SELECT quantity, frequency_interval, frequency_unit, enabled, action, value, duration_months
+    `SELECT enabled, action, value, duration_months
      FROM promotion_membership_fee_benefits
      WHERE promotion_id = ?`,
     [promotionId],
   );
   return {
     membership_fee_benefits: rows.map((r: any) => ({
-      quantity: r.quantity, frequency_interval: r.frequency_interval, frequency_unit: r.frequency_unit,
       enabled: !!r.enabled, action: r.action ?? null,
       value: r.value != null ? parseFloat(r.value) : null,
       duration_months: r.duration_months ?? null,
@@ -157,14 +161,12 @@ export function membershipFeeBenefitsFromSnapshot(snap: any): SnapshotMembership
   const legacyCharge: SnapshotMembershipFeeBenefit[] = (snap.charge_benefits ?? [])
     .filter(isMembershipFee)
     .map((b: any) => ({
-      quantity: 1, frequency_interval: 1, frequency_unit: 'month',
       enabled: true, action: b.action ?? null, value: b.value ?? null, duration_months: null,
     }));
   const legacyPeriod: SnapshotMembershipFeeBenefit[] = (snap.period_benefits ?? [])
     .filter(isMembershipFee)
     .map((b: any) => ({
-      quantity: b.quantity ?? 1, frequency_interval: b.frequency_interval ?? 1,
-      frequency_unit: b.frequency_unit ?? 'month', enabled: !!b.enabled,
+      enabled: !!b.enabled,
       action: b.action ?? null, value: b.value ?? null, duration_months: b.duration_months ?? null,
     }));
   // Period benefit first: it is the one the Promotion timeline reads (see

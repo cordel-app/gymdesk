@@ -593,6 +593,29 @@ runbook is how.
       `default_space_id`, which this migration does not touch. Capture
       `SELECT * FROM space_activity_types` before the deploy if any gym's assignments are
       worth keeping for reference.
+- [ ] **Migration 199 must run *after* the API build that stops writing the Membership
+      Fee Benefit's recurrence columns** (#814): it drops `quantity`,
+      `frequency_interval` and `frequency_unit` from
+      `promotion_membership_fee_benefits`. Run it first and the previous build's INSERT
+      fails with `ER_BAD_FIELD_ERROR` on every save of a Membership Fee Benefit
+      (`PUT /promotions/:id/membership-fee-benefit`) and on every
+      `POST /promotions/:id/duplicate` — and `deploy.yml` runs `knex migrate:latest`
+      before it restarts the API container, so this needs the API deployed on its own
+      first (it runs fine against the old schema, which simply keeps the three columns at
+      their defaults), then the migration. The same ordering as 176, 177, 179, 184 and
+      197. No price moves in either order: nothing ever read those columns — the fee
+      resolution takes `action`, `value`, `enabled` and `duration_months`, all of which
+      this migration leaves alone — and applications snapshotted before #814 keep their
+      old keys, which no caller looks at. Note that `deploy.yml` migrates *inside* the
+      job that restarts the API, so one deploy cannot honour the order: merge the API
+      change in a commit carrying no new migration, then the migration in a second.
+- [ ] **Migration 199's `down()` restores the defaults, not the values** (#814): the three
+      columns come back `1 / 1 / month` rather than whatever they held, and appended
+      rather than back in their old position. Accepted for the same reason the drop is —
+      nothing priced on them and nothing reads this table by ordinal — in the same way as
+      migrations 175, 189 and 192. Capture
+      `SELECT promotion_id, quantity, frequency_interval, frequency_unit FROM promotion_membership_fee_benefits`
+      before the deploy if any gym's values are worth keeping for reference.
 - [ ] **Check who loses a session cap before migrating 177** (#635 stage 4, part 2):
       `activity_type_eligible_plans` grants access without a per-window limit, so a plan
       with `allowance_type = 'session_count'` silently becomes unlimited for that

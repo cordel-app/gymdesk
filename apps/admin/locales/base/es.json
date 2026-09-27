@@ -1154,8 +1154,6 @@
     "label_applicable_plans": "Planes aplicables",
     "no_suitable_plans_selected": "No hay cuotas seleccionadas.",
     "label_quantity": "Cantidad",
-    "label_frequency_interval": "Cada",
-    "label_frequency_unit": "Unidad",
     "frequency_week": "Semana(s)",
     "frequency_month": "Mes(es)",
     "frequency_four_weeks": "4 semanas",

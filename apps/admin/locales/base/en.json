@@ -1168,8 +1168,6 @@
     "label_applicable_plans": "Applicable Plans",
     "no_suitable_plans_selected": "No suitable plans selected.",
     "label_quantity": "Quantity",
-    "label_frequency_interval": "Every",
-    "label_frequency_unit": "Unit",
     "frequency_week": "Week(s)",
     "frequency_month": "Month(s)",
     "frequency_four_weeks": "4 Weeks",
