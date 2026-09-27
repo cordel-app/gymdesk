@@ -777,9 +777,10 @@ absence into something a prober outside GitHub can see:
    alert rule on `probe_success{job="gymdesk-run-freshness"}`): fire when the check has
    **failed on 2 consecutive executions** (i.e. `max_over_time(probe_success[30m]) == 0`,
    pending period 0), routed to that contact point, labelled `severity=critical`.
-6. Verify: temporarily set `RUN_FRESHNESS_THRESHOLD_HOURS=1` in the deploy environment (or
-   wait out a day with the workflow disabled) and confirm the alert fires within ~30 min; set
-   it back.
+6. Verify: temporarily flip one assertion to `$.billing.stale` equals `true`, confirm the
+   alert fires within ~30 min, then set it back to `false`. (Setting
+   `RUN_FRESHNESS_THRESHOLD_HOURS` in the GitHub environment does nothing: `deploy.yml` does
+   not forward it, so the API always runs on the 26 h default.)
 
 > **Decisions (2026-09-27, #782)** — change them here if they turn out wrong:
 > - Option (b): a DB-backed freshness endpoint probed by a Grafana Cloud synthetic check —
