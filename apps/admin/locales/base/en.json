@@ -54,7 +54,7 @@
     "assigned_plans": "Assigned Plans",
     "taxes": "Taxes",
     "feature_flags": "Feature Flags",
-    "nutrition_plans": "Nutrition Plans",
+    "nutrition_plans": "Assigned Nutrition Plans",
     "operating_hours": "Operating Hours",
     "website_integration": "Website Integration",
     "failed_payments_badge": "{count, plural, one {# failed payment awaiting action} other {# failed payments awaiting action}}"
@@ -3389,7 +3389,7 @@
     "disabled_ok": "'{key}' disabled."
   },
   "nutrition_plans": {
-    "title": "Nutrition Plans",
+    "title": "Assigned Nutrition Plans",
     "assign_title": "Assign Nutrition Plan",
     "new_plan": "+ New Nutrition Plan",
     "new_plan_question": "How would you like to create this Nutrition Plan?",

@@ -54,7 +54,7 @@
     "assigned_plans": "Planes Asignados",
     "taxes": "Impuestos",
     "feature_flags": "Flags de características",
-    "nutrition_plans": "Planes de nutrición",
+    "nutrition_plans": "Planes de nutrición asignados",
     "operating_hours": "Horario y Festivos",
     "website_integration": "Integración web",
     "failed_payments_badge": "{count, plural, one {# pago fallido pendiente de acción} other {# pagos fallidos pendientes de acción}}"
@@ -3375,7 +3375,7 @@
     "disabled_ok": "'{key}' desactivado."
   },
   "nutrition_plans": {
-    "title": "Planes de nutrición",
+    "title": "Planes de nutrición asignados",
     "assign_title": "Asignar plan de nutrición",
     "new_plan": "+ Nuevo plan de nutrición",
     "new_plan_question": "¿Cómo quieres crear este plan de nutrición?",

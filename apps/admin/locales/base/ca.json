@@ -55,7 +55,7 @@
     "assigned_plans": "Plans Assignats",
     "taxes": "Impostos",
     "feature_flags": "Flags de funcionalitats",
-    "nutrition_plans": "Plans de nutrició",
+    "nutrition_plans": "Plans de nutrició assignats",
     "operating_hours": "Horari i Festius",
     "website_integration": "Integració web",
     "failed_payments_badge": "{count, plural, one {# pagament fallit pendent d'acció} other {# pagaments fallits pendents d'acció}}"
@@ -3402,7 +3402,7 @@
     "disabled_ok": "'{key}' desactivat."
   },
   "nutrition_plans": {
-    "title": "Plans de nutrició",
+    "title": "Plans de nutrició assignats",
     "assign_title": "Assignar pla de nutrició",
     "new_plan": "+ Nou pla de nutrició",
     "new_plan_question": "Com vols crear aquest pla de nutrició?",
