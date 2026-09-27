@@ -1229,3 +1229,77 @@ describe('goals', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Food Type options (#812)
+// ---------------------------------------------------------------------------
+
+describe('GET /member-nutrition-plans/component-types', () => {
+  it('returns the four types an assigned plan meal item accepts', async () => {
+    const res = await request
+      .get('/member-nutrition-plans/component-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.component_types).toEqual(['main_dish', 'side', 'sauce', 'additional']);
+  });
+
+  it('omits drink/dessert/other — chk_mnpmi_comp refuses them here', async () => {
+    // #294 widened the template table's CHECK only, so the Food Type selector on
+    // an assigned plan must offer a narrower set than on a template.
+    const res = await request
+      .get('/member-nutrition-plans/component-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    for (const templateOnly of ['drink', 'dessert', 'other']) {
+      expect(res.body.component_types).not.toContain(templateOnly);
+    }
+  });
+
+  it('requires auth', async () => {
+    const res = await request.get('/member-nutrition-plans/component-types');
+    expect(res.status).toBe(401);
+  });
+
+  it('every returned type is accepted by POST …/items, and a template-only one is not', async () => {
+    const optionsRes = await request
+      .get('/member-nutrition-plans/component-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+
+    const plan = await createTestPlan();
+    const dayRes = await request
+      .post(`/member-nutrition-plans/${plan.id}/days`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ weekday: 3 });
+    expect(dayRes.status).toBe(201);
+
+    const mealRes = await request
+      .post(`/member-nutrition-plans/${plan.id}/days/${dayRes.body.id}/meals`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ display_name: 'Meal', meal_type: 'lunch' });
+    expect(mealRes.status).toBe(201);
+
+    const itemsUrl = `/member-nutrition-plans/${plan.id}/days/${dayRes.body.id}/meals/${mealRes.body.id}/items`;
+
+    for (const componentType of optionsRes.body.component_types) {
+      const res = await request
+        .post(itemsUrl)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ nutrition_library_item_id: libraryItemId, component_type: componentType });
+      expect(res.status, `component_type ${componentType}`).toBe(201);
+    }
+
+    // The converse: a type this surface does not advertise is refused with a 400
+    // rather than reaching the CHECK.
+    const rejected = await request
+      .post(itemsUrl)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ nutrition_library_item_id: libraryItemId, component_type: 'dessert' });
+    expect(rejected.status).toBe(400);
+  });
+});

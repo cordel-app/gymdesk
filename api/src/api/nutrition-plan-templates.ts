@@ -6,6 +6,7 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
+import { TEMPLATE_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const nutritionPlanTemplatesRouter = Router();
 
@@ -26,7 +27,7 @@ const MEAL_TYPES = [
   'two_three_hours_before_training', 'immediately_before_training', 'immediately_after_training',
 ] as const;
 
-const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other', 'additional'] as const;
+const COMPONENT_TYPES = TEMPLATE_COMPONENT_TYPES;
 
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
@@ -98,6 +99,16 @@ async function fetchMealWithItems(mealId: string | number, locale: SupportedLoca
 }
 
 /* ---- Templates ---- */
+
+/* ── Food Type (component_type) options ──────────────────────────────────── */
+// #812: the set this surface accepts, served from the same constant the write
+// routes validate against — so the admin's Food Type selector cannot offer a
+// value the CHECK would refuse, and does not carry a second copy of the set.
+// Registered before `/:id`, or Express reads `component-types` as an id.
+
+nutritionPlanTemplatesRouter.get('/component-types', (_req, res) => {
+  res.json({ component_types: COMPONENT_TYPES });
+});
 
 nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
@@ -786,7 +797,7 @@ nutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items', requir
 
   const { nutrition_library_item_id, component_type, quantity, unit } = req.body;
   if (!nutrition_library_item_id) return res.status(400).json({ error: 'nutrition_library_item_id is required' });
-  if (!component_type || !(COMPONENT_TYPES as readonly string[]).includes(component_type)) {
+  if (!isComponentType(COMPONENT_TYPES, component_type)) {
     return res.status(400).json({ error: `component_type must be one of: ${COMPONENT_TYPES.join(', ')}` });
   }
   if (!(await libraryItemExists(Number(nutrition_library_item_id)))) {
@@ -830,7 +841,7 @@ nutritionPlanTemplatesRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId',
     updates.push('nutrition_library_item_id = ?'); params.push(Number(nutrition_library_item_id));
   }
   if (component_type !== undefined) {
-    if (!(COMPONENT_TYPES as readonly string[]).includes(component_type)) {
+    if (!isComponentType(COMPONENT_TYPES, component_type)) {
       return res.status(400).json({ error: `component_type must be one of: ${COMPONENT_TYPES.join(', ')}` });
     }
     updates.push('component_type = ?'); params.push(component_type);

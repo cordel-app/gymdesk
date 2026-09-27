@@ -6,6 +6,7 @@ import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { handleDupEntry } from '../infra/db-helpers';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
+import { MEMBER_PLAN_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const memberNutritionPlansRouter = Router();
 
@@ -14,7 +15,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // member_nutrition_plan_meal_items.component_type has a narrower CHECK than the
 // template equivalent (chk_mnpmi_comp, migration 105) — no drink/dessert/other.
-const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'additional'] as const;
+const COMPONENT_TYPES = MEMBER_PLAN_COMPONENT_TYPES;
 const MEAL_TYPES = [
   'recien_levantado', 'breakfast', 'media_manana',
   'lunch', 'snack', 'dinner', 'antes_de_dormir',
@@ -109,6 +110,16 @@ async function fetchMealWithItems(mealId: string | number, locale: SupportedLoca
  * POST /training-plans. Plain creation is used for the "from scratch" choice;
  * template_id set clones the template hierarchy via createNutritionPlanTx,
  * the same helper /nutrition-plan-templates/:id/assign now shares. */
+
+/* ── Food Type (component_type) options ──────────────────────────────────── */
+// #812: the set this surface accepts, served from the same constant the write
+// routes validate against — so the admin's Food Type selector cannot offer a
+// value the CHECK would refuse, and does not carry a second copy of the set.
+// Registered before `/:id`, or Express reads `component-types` as an id.
+
+memberNutritionPlansRouter.get('/component-types', (_req, res) => {
+  res.json({ component_types: COMPONENT_TYPES });
+});
 
 memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
@@ -570,7 +581,7 @@ memberNutritionPlansRouter.post('/:id/days/:dayId/meals/:mealId/items', requireM
   const { id, dayId, mealId } = req.params as { id: string; dayId: string; mealId: string };
   const { nutrition_library_item_id, component_type, quantity, unit } = req.body;
   if (!nutrition_library_item_id) return res.status(400).json({ error: 'nutrition_library_item_id is required' });
-  if (!component_type || !(COMPONENT_TYPES as readonly string[]).includes(component_type)) {
+  if (!isComponentType(COMPONENT_TYPES, component_type)) {
     return res.status(400).json({ error: `component_type must be one of: ${COMPONENT_TYPES.join(', ')}` });
   }
   try {
@@ -614,7 +625,7 @@ memberNutritionPlansRouter.put('/:id/days/:dayId/meals/:mealId/items/:itemId', r
     updates.push('nutrition_library_item_id = ?'); params.push(Number(nutrition_library_item_id));
   }
   if (component_type !== undefined) {
-    if (!(COMPONENT_TYPES as readonly string[]).includes(component_type)) {
+    if (!isComponentType(COMPONENT_TYPES, component_type)) {
       return res.status(400).json({ error: `component_type must be one of: ${COMPONENT_TYPES.join(', ')}` });
     }
     updates.push('component_type = ?'); params.push(component_type);

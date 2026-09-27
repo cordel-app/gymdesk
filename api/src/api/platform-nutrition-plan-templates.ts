@@ -4,6 +4,7 @@ import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
+import { TEMPLATE_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const platformNutritionPlanTemplatesRouter = Router();
 
@@ -14,7 +15,7 @@ const MEAL_TYPES = [
   'lunch', 'snack', 'dinner', 'antes_de_dormir',
   'two_three_hours_before_training', 'immediately_before_training', 'immediately_after_training',
 ] as const;
-const COMPONENT_TYPES = ['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other', 'additional'] as const;
+const COMPONENT_TYPES = TEMPLATE_COMPONENT_TYPES;
 const NUTRITION_GOALS = [
   'protein', 'water', 'calories', 'carbohydrates', 'fats', 'fiber',
   'weight_loss', 'weight_gain', 'muscle_gain', 'maintenance',
@@ -85,6 +86,16 @@ async function fetchMealWithItems(mealId: string | number, locale: SupportedLoca
 }
 
 /* ── Templates ───────────────────────────────────────────────────────────── */
+
+/* ── Food Type (component_type) options ──────────────────────────────────── */
+// #812: the set this surface accepts, served from the same constant the write
+// routes validate against — so the admin's Food Type selector cannot offer a
+// value the CHECK would refuse, and does not carry a second copy of the set.
+// Registered before `/:id`, or Express reads `component-types` as an id.
+
+platformNutritionPlanTemplatesRouter.get('/component-types', requireSuperadmin, (_req, res) => {
+  res.json({ component_types: COMPONENT_TYPES });
+});
 
 platformNutritionPlanTemplatesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   const status = req.query.status as string | undefined;
@@ -433,7 +444,7 @@ platformNutritionPlanTemplatesRouter.post('/:id/days/:dayId/meals/:mealId/items'
   if (!(await baseMealExists(dayId, mealId))) return res.status(404).json({ error: 'Meal not found' });
   const { nutrition_library_item_id, component_type, quantity, unit } = req.body;
   if (!nutrition_library_item_id) return res.status(400).json({ error: 'nutrition_library_item_id is required' });
-  if (!component_type || !(COMPONENT_TYPES as readonly string[]).includes(component_type)) {
+  if (!isComponentType(COMPONENT_TYPES, component_type)) {
     return res.status(400).json({ error: `component_type must be one of: ${COMPONENT_TYPES.join(', ')}` });
   }
   if (!(await libraryItemExists(Number(nutrition_library_item_id)))) {
