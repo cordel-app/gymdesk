@@ -57,7 +57,8 @@
     "feature_flags": "Flags de funcionalitats",
     "nutrition_plans": "Plans de nutrició",
     "operating_hours": "Horari i Festius",
-    "website_integration": "Integració web"
+    "website_integration": "Integració web",
+    "failed_payments_badge": "{count, plural, one {# pagament fallit pendent d'acció} other {# pagaments fallits pendents d'acció}}"
   },
   "dashboard": {
     "title": "Tauler",
@@ -849,7 +850,6 @@
     "expired": "Caducat",
     "pending": "Pendent",
     "draft": "Esborrany",
-    "awaiting_payment": "Pendent de Pagament",
     "deleted": "Eliminat",
     "completed": "Completat",
     "scheduled": "Programat",
@@ -3141,19 +3141,16 @@
     "retry": "Reintenta",
     "action_details": "Detalls",
     "action_edit": "Edita",
-    "action_submit": "Envia",
     "action_pause": "Pausa",
     "action_reactivate": "Reactiva",
     "action_close": "Cancel·la",
     "action_close_confirm": "Cancel·la el pla",
     "action_close_dismiss": "Mantén el pla",
     "actions_for": "Accions per a {plan}",
-    "section_edit": "Edita el Pla Assignat",
     "label_start_date": "Data d'Inici",
     "label_end_date": "Data de Fi",
     "detail_effective_price": "Preu Efectiu",
     "label_discount_reason": "Motiu del Descompte",
-    "label_discount_expires_at": "El Descompte Expira",
     "cancel": "Cancel·la",
     "saving": "Desant…",
     "save_changes": "Desa els Canvis",
@@ -3330,7 +3327,11 @@
     "card_successful_last_month": "Total d'esdeveniments de facturació correctes el mes passat",
     "loading": "Carregant…",
     "empty": "No hi ha dades de facturació per mostrar.",
-    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
+    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar.",
+    "card_awaiting_action": "Pagaments fallits pendents d'acció",
+    "awaiting_action_oldest": "El més antic: {date}",
+    "awaiting_action_none": "Res pendent",
+    "awaiting_action_unit": "esdeveniments de facturació fallits"
   },
   "financials_dashboard": {
     "title": "Tauler de finances",

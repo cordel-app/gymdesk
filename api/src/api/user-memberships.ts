@@ -28,35 +28,32 @@ import {
 } from '../domain/sellableItemClassification';
 import {
   AppliedPromotionForBilling,
-  BillingUnit,
   MembershipFeeBenefit,
   PromotionApplicationWindow,
-  projectDraftBillingEvents,
   selectPersistedBillingEventsInRange,
 } from '../domain/assignedPlanBillingEvents';
 import {
-  NO_PERSONAL_FEE_BENEFIT,
   PERSONAL_FEE_BENEFIT_ACTIONS,
-  PersonalFeeBenefit,
   PersonalFeeBenefitAction,
   isPersonalFeeBenefitAction,
-  toPersonalFeeBenefit,
 } from '../domain/personalFeeBenefit';
-import { NO_PLAN_DURATION, PlanDuration, toPlanDuration } from '../domain/planDuration';
 
-// #511 (stage 1 — Assigned Plans lifecycle): 'draft' and 'awaiting_payment' are
-// new, pre-activation statuses. The ticket's "Closed" action maps onto the
-// existing 'cancelled' value rather than introducing a new terminal status.
-const STATUSES = ['draft', 'awaiting_payment', 'active', 'paused', 'cancelled', 'expired'] as const;
+// An assignment is `active` from creation and its first payment is collected
+// afterwards (#786). #511 stage 1 added two pre-activation statuses, `draft`
+// and `awaiting_payment`, but no insert path ever produced them and no payment
+// path ever moved a row out of them, so #786 retired both (migration 198
+// narrowed the CHECK back). A payment gate before activation, if one is ever
+// wanted, is a schema widening and a ticket of its own. The ticket's "Closed"
+// action maps onto the existing 'cancelled' value rather than introducing a
+// new terminal status.
+const STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
 
 // #511 §10 — the allowed status transitions, enforced by both PUT /:id (when
-// `status` is set directly) and the dedicated /submit, /close, /pause and
+// `status` is set directly) and the dedicated /close, /pause and
 // /reactivate actions below. 'expired' has no forward transitions here: it's
 // only ever reached by assign-new-plan's supersede logic, never by request.
 const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
-  draft: ['awaiting_payment', 'cancelled'],
-  awaiting_payment: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
   cancelled: [],
@@ -65,7 +62,7 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['draft', 'awaiting_payment', 'pending', 'active', 'paused', 'expired', 'cancelled'] as const;
+const LIFECYCLE_STATUSES = ['pending', 'active', 'paused', 'expired', 'cancelled'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -92,7 +89,7 @@ export const LIST_SELECT = `
          p.name AS plan_name,
          p.member_limit AS plan_member_limit,
          CASE
-           WHEN um.status IN ('draft', 'awaiting_payment', 'paused', 'cancelled', 'expired') THEN um.status
+           WHEN um.status IN ('paused', 'cancelled', 'expired') THEN um.status
            WHEN um.starts_at > CURDATE() THEN 'pending'
            WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
            ELSE 'active'
@@ -175,7 +172,7 @@ userMembershipsRouter.get('/', async (req, res) => {
 // #511 (stage 2 — Assigned Plan Details modal): `created_by`/`modified_by`
 // are derived from audit_logs rather than stored on user_memberships itself,
 // mirroring the existing promotions.ts / themes.ts `:id` pattern. "Modified"
-// means the latest action of any kind after creation — edit, submit, close,
+// means the latest action of any kind after creation — edit, close,
 // pause, reactivate, apply/revoke promotion, add/remove member — never just
 // 'update', per the ticket's requirement that it reflect the last change
 // regardless of which action produced it. Deliberately not added to
@@ -337,61 +334,11 @@ export async function loadPromotionApplicationsFor(
   return byAssignment;
 }
 
-/**
- * #635 stage 12 — the assignment's own regular fee and Billing & Duration, for
- * the draft Billing Events projection.
- *
- * Read here rather than taken from the caller's row so both entry points (the
- * expanded card and `GET /:id/billing-events`) resolve identically. The
- * all-or-nothing snapshot rule is the same one `billing-simulation.ts` and the
- * nightly run apply: an assignment that captured anything reads its own columns,
- * NULLs included, so a Free Period added to the Plan later cannot reach it (§13).
- *
- * The price comes from `regularMembershipFee()` — the same chain the Billing
- * Simulation and the nightly run resolve — never from `base_price`: that column is
- * snapshotted from `effectivePrice()`, which has returned a constant 0 since
- * migration 058 dropped `membership_plans.base_price`, so a projection built on it
- * shows a column of zeros for every assignment created through the API.
- */
-async function loadAssignmentFeeContext(gymId: string, umId: number): Promise<{
-  regularFee: number | null; planDuration: PlanDuration; personalFeeBenefit: PersonalFeeBenefit;
-}> {
-  const { rows } = await db.query(
-    `SELECT um.membership_plan_id, um.membership_fee_price,
-            um.base_price, um.starts_at,
-            um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
-            um.personal_fee_benefit_action, um.personal_fee_benefit_value,
-            p.free_months AS plan_free_months,
-            p.paid_months AS plan_paid_months,
-            p.bonus_months AS plan_bonus_months,
-            p.pay_beforehand_months AS plan_pay_beforehand_months,
-            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-             OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
-             OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
-            ) AS has_billing_snapshot
-     FROM user_memberships um
-     LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-     WHERE um.id = ? AND um.gym_id = ?`,
-    [umId, gymId],
-  );
-  const um = rows[0];
-  if (!um) {
-    return { regularFee: null, planDuration: NO_PLAN_DURATION, personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT };
-  }
-  return {
-    regularFee: await regularMembershipFee(gymId, um, toDateOnly(um.starts_at)),
-    planDuration: Number(um.has_billing_snapshot) === 1
-      ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
-      : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
-    personalFeeBenefit: toPersonalFeeBenefit(um.personal_fee_benefit_action, um.personal_fee_benefit_value),
-  };
-}
-
 // The Billing Events view (#511 Q2) for one Assigned Plan — see
-// domain/assignedPlanBillingEvents.ts for the range rules. `draft` plans
-// never write to billing_events, so their view is a pure projection from the
-// plan's billing cadence + currently-applied promotions; every other status
-// queries the real, persisted ledger and only ever tags/filters it.
+// domain/assignedPlanBillingEvents.ts for the range rules. It queries the real,
+// persisted ledger and only ever tags/filters it. #511 also projected a view for
+// a `draft` assignment, which had no ledger yet; #786 retired that status, so
+// every assignment reads its ledger.
 async function computeBillingEventsView(gymId: string, um: {
   id: number; membership_plan_id: number | null; status: string;
   base_price: string | number | null; starts_at: unknown; ends_at: unknown;
@@ -401,32 +348,6 @@ async function computeBillingEventsView(gymId: string, um: {
   const endsAt = um.ends_at != null ? toDateOnly(um.ends_at) : null;
   const applications = await loadPromotionApplications(gymId, um.id);
   const windows: PromotionApplicationWindow[] = applications.map((p) => ({ appliedAt: p.appliedAt, revokedAt: p.revokedAt }));
-
-  if (um.status === 'draft') {
-    // #635 stage 3 — the cadence frozen onto the assignment decides its
-    // projection; the Plan's live policy is only the fallback for an
-    // assignment that captured none (§13: editing the Plan's billing
-    // frequency must not move an assignment that already exists).
-    const billingPolicy = um.recurring_billing_interval != null
-      ? null
-      : await loadBillingPolicy(gymId, um.membership_plan_id);
-    // #635 stage 12 — the assignment's own regular fee and Billing & Duration, so
-    // this projection prices each cycle exactly as the Billing Simulation, My
-    // Membership and the nightly run do.
-    const fee = await loadAssignmentFeeContext(gymId, um.id);
-    return projectDraftBillingEvents({
-      billingStart, endsAt,
-      basePrice: fee.regularFee ?? Number(um.base_price ?? 0),
-      recurringInterval: um.recurring_billing_interval ?? billingPolicy?.recurring_billing_interval ?? null,
-      recurringUnit: (um.recurring_billing_unit ?? billingPolicy?.recurring_billing_unit ?? null) as BillingUnit | null,
-      promotions: applications.filter((p) => p.status === 'applied'),
-      assignment: {
-        startsAt: billingStart,
-        planDuration: fee.planDuration,
-        personalFeeBenefit: fee.personalFeeBenefit,
-      },
-    });
-  }
 
   const { rows: beRows } = await db.query(
     `SELECT id, event_type, charge_type_id, previous_status, new_status, source, amount, notes, created_at
@@ -699,7 +620,7 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
       );
       if (current.length === 0) return { kind: 'not_found' } as const;
       // #511 §10 — validate any direct status flip against the transition table,
-      // same as the dedicated /submit, /close, /pause and /reactivate actions.
+      // same as the dedicated /close, /pause and /reactivate actions.
       if (status && status !== current[0].status
           && !ALLOWED_TRANSITIONS[current[0].status as Status].includes(status as Status)) {
         return { kind: 'invalid_transition', from: current[0].status } as const;
@@ -933,7 +854,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
 });
 
 // ─── Lifecycle actions (#511 stage 1 — Assigned Plans status model) ───────────
-// submit/pause/reactivate share the same shape: lock the row, check the
+// pause/reactivate share the same shape: lock the row, check the
 // current status against an allow-list, flip it, and record both a
 // billing_events status_changed row and an audit_logs entry. Close (below) is
 // bespoke — it needs an unused-value warning/confirm step and stamps
@@ -986,16 +907,6 @@ async function transitionMembership(
   res.json(moved);
 }
 
-// Submit (#511 Q1): draft -> awaiting_payment. Persisted future Billing
-// Events are materialized starting with this ticket's Billing Events stage —
-// submitting today only flips the status, which has no financial effect on
-// its own since nothing in the running system pre-creates future
-// billing_events rows yet (billing.ts only ever charges what's due the day
-// the billing run executes).
-userMembershipsRouter.post('/:id/submit', requireModuleWrite('PAYMENTS'), async (req, res) => {
-  await transitionMembership(req, res, 'submit', 'awaiting_payment', ['draft']);
-});
-
 userMembershipsRouter.post('/:id/pause', requireModuleWrite('PAYMENTS'), async (req, res) => {
   await transitionMembership(req, res, 'pause', 'paused', ['active']);
 });
@@ -1010,7 +921,7 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // proceeding (409 + `confirm: true` to resend, same contract as
 // activity-type-schedule-rules.ts's confirm_cancel_booked guard), and stamps
 // closed_at separately from the admin-settable `ends_at`.
-const CLOSEABLE_FROM: readonly Status[] = ['awaiting_payment', 'active', 'paused'];
+const CLOSEABLE_FROM: readonly Status[] = ['active', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
 // its current recurrence window as unused value about to be lost. #635 stage 4
@@ -1098,7 +1009,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
 // A terminal assignment is history: it bills nothing further, so rewriting the
 // configuration it was agreed with would only falsify the record. Same reasoning
 // as ATTACHABLE_STATUSES in user-membership-services.ts.
-const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['draft', 'awaiting_payment', 'active', 'paused'];
+const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['active', 'paused'];
 
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 

@@ -64,8 +64,8 @@ a `payment_methods` row. So an assignment is `active` — bookable, per
 `api/src/api/activity-eligibility.ts`'s `um.status = 'active'` gate — from the moment it is
 created, and the nightly run skips it silently until a card is on file.
 
-`draft` and `awaiting_payment` exist in the status vocabulary and **no code path creates
-them** — see [Assigned Plan status model](#assigned-plan-status-model) and #786.
+There is no pre-activation status: #786 retired `draft` and `awaiting_payment` — see
+[Assigned Plan status model](#assigned-plan-status-model).
 
 ### A3. A payment request is raised
 
@@ -249,11 +249,16 @@ so cleanup runs even when the charge step went red, but not when there is no API
 
 - Auth is `checkInternalSecret()`: the `X-Internal-Secret` header against
   `BILLING_INTERNAL_SECRET`.
-- `infra/nginx/corback.conf:22` additionally restricts `location /billing/` to GitHub
-  Actions IPs, from a file refreshed by hand
-  (`infra/nginx/update-github-actions-allowlist.sh`). `/recurring-bookings/` has **no**
-  `location` block at all and is therefore not restricted. #783 decides whether to automate
-  the refresh or drop the allowlist.
+- There is **no** network-layer restriction: `/billing/*` and `/recurring-bookings/*` both
+  fall through `location /` in `infra/nginx/corback.conf` (#783). What stands in for one is
+  a per-route rate limiter mounted in `api/src/app.ts` ahead of both internal routers
+  (`internalRunLimiter`, config in `api/src/domain/internalRunRateLimit.ts`): per client IP,
+  `INTERNAL_RUN_RATE_LIMIT_MAX` (default 10) failed attempts per
+  `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` (default 15), one budget shared by
+  `/billing/run`, `/billing/cleanup` and `/recurring-bookings/run`. **Only a 401 spends it**,
+  so a caller holding the secret — both of #781's daily attempts, and a run the guard
+  answers `429 in_progress` or `200 already_completed_today` — never does. Once spent,
+  every call from that address is `429` until the window ends, the right secret included.
 - **Which environment** (#784). The job runs in `${{ inputs.environment || 'dev' }}`: a
   manual `workflow_dispatch` picks `dev` or `production` (default `dev`), and a scheduled
   run, which has no inputs, takes the literal on that line — `dev` until the `production`
@@ -283,6 +288,20 @@ so cleanup runs even when the charge step went red, but not when there is no API
 >   diagnosed.
 > - A manual run defaults to `dev`, so a dispatch nobody thought about never charges real
 >   members.
+
+> **Decisions (2026-09-27, #783)** — change them here if they turn out wrong:
+> - Option B: the GitHub Actions IP allowlist on `location /billing/` is **removed rather
+>   than automated**. It guarded nothing the secret does not, covered only one of the two
+>   internal endpoints (`/recurring-bookings/` never had it) and decayed by hand, since
+>   GitHub's ranges move and the refresh was a manual `scp`.
+> - It is replaced by a per-route limiter so the secret cannot be ground at the global
+>   500/15 min budget. Only failed-secret (401) responses count, so the legitimate
+>   workflow can never lock itself out.
+> - `BILLING_INTERNAL_SECRET` and `RECURRING_BOOKINGS_INTERNAL_SECRET` are rotated at
+>   launch (`docs/go-to-production.md` §1), since the old value was only ever reachable from
+>   GitHub's ranges and is now reachable from anywhere.
+> - A PCI/QSA argument for restricting these routes at the network layer, if one ever
+>   arises, reopens this.
 
 ### B2. The run guard
 
@@ -418,9 +437,33 @@ Event is the charge, a `payment_requests` row is an attempt to settle it. That i
 `failed_billing` later settled this way reads as `paid` and becomes receipt-able without a
 special case.
 
-Nothing notifies the member of a failed internal charge, and nothing notifies the staff
-in-app either — #779 is the staff alert, and `failed_last_month` on the Payments dashboard
-is a monthly statistic, not a to-do.
+Nothing notifies the member of a failed internal charge (decided on #779: staff-only,
+in-app only — no email, no Slack).
+
+#### Failed payments awaiting action (#779)
+
+The staff's to-do list is the Billing Events list filtered by `failed`. A Billing Event is
+**awaiting action** while `deriveBillingEventStatus()` says `failed` (`isAwaitingAction()`
+in `domain/billingEventStatus.ts`), and one of the two actions above clears it by appending
+a `completed` transaction. There is no status column.
+
+| Surface | What it shows |
+|---|---|
+| `GET /payments/billing-events/attention` | `{ count, oldest_created_at }` (`loadFailedPaymentsAttention()` in `api/src/api/payments.ts`) |
+| Sidebar | A red count badge next to **Payments** and **Billing Events**, hidden at zero, polled every 60 s while that entry is visible |
+| Payments dashboard | A *Failed Payments Awaiting Action* card with the oldest failure's date (`awaiting_action_count` / `awaiting_action_oldest_at` on the summary) — all-time, unlike the monthly cards |
+| Both link to | `payments/billing-events?status=failed&order=asc`: the list is the queue, oldest first |
+
+> **Decisions (2026-09-27, #779)** — change them here if they turn out wrong:
+> - **Count events, not memberships.** The badge then matches the row count of the list it
+>   opens. Since #785 one assignment contributes at most two before the run pauses it.
+> - **Recurring charges only.** A rejected or expired *first* payment writes no Billing
+>   Event (A5 inserts `payment_recorded` only on `completed`), so it is not counted, and
+>   the member usually retries it themselves. Surfacing failed checkouts would be its own
+>   ticket.
+> - **No extra role gate.** PAYMENTS read access sees the count, and the actions stay behind
+>   `requireModuleWrite('PAYMENTS')`.
+> - **Poll every 60 s.** The number changes about once a night.
 
 ### B8. `POST /billing/cleanup`
 
@@ -548,21 +591,40 @@ nightly run (automatically, per settled charge).
 
 ### Assigned Plan status model
 
-`STATUSES` and `ALLOWED_TRANSITIONS` in `api/src/api/user-memberships.ts:49-63`:
+`STATUSES` and `ALLOWED_TRANSITIONS` in `api/src/api/user-memberships.ts`, and the
+`user_memberships_status_check` CHECK (current definition: migration 198):
 
 ```
-draft ──► awaiting_payment ──► active ◄──► paused
-  └──────────┴──────────────────┴──────────┴──► cancelled
-                                          expired (assign-new-plan only)
+active ◄──► paused
+  └───────────┴──► cancelled
+expired (assign-new-plan only)
 ```
 
-**Which are live today:** `active`, `paused`, `cancelled`, `expired`. `draft` and
-`awaiting_payment` are **unreachable** — all three insert paths hardcode `'active'`, and no
-path moves `awaiting_payment → active` (the webhook writes `next_billing_date`, never
-`um.status`). `POST /user-memberships/:id/submit` and the **Submit** action it backs
-(`apps/admin/src/app/[locale]/financials/assigned-plans/AssignedPlanExpandedRow.tsx:191`,
-gated on `detail.status === 'draft'`) are therefore unreachable.
-#786 decides whether to wire the pre-activation states to the first payment or retire them.
+An assignment is **`active` from creation** — all three insert paths (`POST /user-memberships`,
+`POST /user-memberships/:id/assign-new-plan`, `POST /membership-plans/:id/assign`) write
+`'active'` — and its first payment is collected afterwards (A3–A6). Nothing about the first
+payment moves `um.status`: the webhook's `completed` branch stamps `next_billing_date`, and
+the nightly run skips the assignment until a card is on file.
+
+#511 stage 1 (migration 148) had added two pre-activation statuses, `draft` and
+`awaiting_payment`, with a **Submit** action (`POST /user-memberships/:id/submit`,
+`draft → awaiting_payment`) — but no insert path produced them and no payment path moved a
+row on to `active`, so they were unreachable, and an `awaiting_payment` row written by hand
+would have been configurable and closeable but never activatable or payable. #786 retired
+them: the route, the Submit menu item, the dates-and-discount Edit form that only those two
+statuses could open, the `draft` Billing Events projection, and every status list that named
+them are gone, and migration 198 narrowed the CHECK back to the four values above. That
+migration **refuses to run** while any row still holds a retired status, rather than guess
+what the row should become.
+
+> **Decisions (2026-09-27, #786)** — change them here if they turn out wrong:
+> - Retired rather than wired: an assignment is `active` from creation and the first payment
+>   is collected afterwards. Plan-gated booking (`activity-eligibility.ts`, `um.status =
+>   'active'`) is therefore available before the first payment clears, as it always was.
+> - No pre-activation step replaces **Submit**: there is no "prepare, then activate" flow.
+> - Re-introducing a payment gate before activation later is a schema widening (the CHECK,
+>   `STATUSES`, `ALLOWED_TRANSITIONS`) plus an activation write in the webhook and manual
+>   payment paths — its own ticket, not a revert of this one.
 
 `expired` is reached only by `assign-new-plan`'s supersede logic, never by request.
 
@@ -603,7 +665,9 @@ never touches the date.
 | `PAYMENT_NOTIFICATION_URL` | the `callbackUrl` Monei posts the webhook to |
 | `BILLING_INTERNAL_SECRET` | `/billing/run`, `/billing/cleanup` |
 | `PAYMENT_REQUEST_ABANDONED_HOURS` | optional (default 24, floored at 1) — `abandonedRequestHours()`, §B8 |
+| `RUN_FRESHNESS_THRESHOLD_HOURS` | optional (default 26, floored at 1) — `runFreshnessThresholdHours()`, `GET /health/runs` (#782) |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | `/recurring-bookings/run` |
+| `INTERNAL_RUN_RATE_LIMIT_MAX`, `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` | optional (default 10 per 15 min, values below 1 ignored) — failed-secret budget per IP on the three internal run routes, §B1 (#783) |
 
 The `payment_providers` catalogue (#636, `api/src/api/payment-providers.ts`) names **which**
 adapter a gym uses (`gyms.payment_provider_id` → `provider_key`), never how to authenticate
@@ -652,11 +716,77 @@ Stated in full in `CLAUDE.md`; linked here so one page can point at all of them.
 | Staff ledger with a `failed` filter, and per-event transactions | Payments → Billing Events |
 | Monthly counters | `GET /payments/dashboard/summary` (#674) |
 | Per-member badge | `GET /members` → `payment_status` |
+| When each nightly run last **completed**, and whether that is overdue | `GET /health/runs` (#782) — unauthenticated, read by a Grafana Cloud synthetic check (below) |
 
 **What does not exist:** an in-app staff alert for failed payments awaiting action (#779), a
-freshness/dead-man's-switch alert for a run that never happened (#782), any reconciliation
-job against the provider, and any member notification of a failed internal charge
-(decision 2026-09-26: internal only).
+Grafana-side alert on the freshness endpoint below (#782 — the endpoint exists, the check and
+its alert rule are configured by hand and still pending, see `docs/go-to-production.md`), any
+reconciliation job against the provider, and any member notification of a failed internal
+charge (decision 2026-09-26: internal only).
+
+#### Run freshness — `GET /health/runs` (#782)
+
+Every other signal above needs a run to have *happened*: a day on which GitHub never fired the
+cron writes no log line, no run-log row and no red workflow. `GET /health/runs` turns that
+absence into something a prober outside GitHub can see:
+
+```json
+{
+  "billing":            { "last_completed_at": "2026-09-27T06:00:41.000Z", "age_hours": 3.2, "stale": false },
+  "recurring_bookings": { "last_completed_at": "2026-09-27T06:10:05.000Z", "age_hours": 3.0, "stale": false }
+}
+```
+
+- `last_completed_at` is the latest `finished_at` of a `status = 'completed'` row in
+  `billing_run_log` / `recurring_booking_run_log` (`lastCompletedRun()`,
+  `api/src/infra/run-log.ts`). A `failed` or `in_progress` row never counts, and the second
+  daily attempt's `already_completed_today` answer writes no row — correctly, the earlier run
+  is the one that completed.
+- `stale` is `age_hours > RUN_FRESHNESS_THRESHOLD_HOURS` (default **26**, floored to whole
+  hours, below 1 ignored — `runFreshnessThresholdHours()` / `evaluateRunFreshness()` in
+  `api/src/domain/runFreshness.ts`, pure and unit-tested). A log that never completed a run
+  answers `last_completed_at: null` and `stale: true`.
+- **200 whenever the database answers**, stale or not — the prober asserts on `stale`. **503**
+  only when the run logs cannot be read.
+- **Unauthenticated**, and it returns nothing else: no counters, no gym, no member.
+- **Outside `/billing/`** on purpose: nginx restricts `location /billing/` to GitHub Actions IPs
+  (`infra/nginx/corback.conf`), which would 403 a Grafana Cloud prober. `/health/runs` is
+  served by the unrestricted `location /` block, so `https://api.vdicube.com/health/runs` is
+  publicly reachable with no nginx change. The global API rate limiter (500 requests / 15 min
+  per IP) applies; a probe every few minutes from a handful of locations is far below it.
+
+**Grafana Cloud setup (manual, not provisioned from the repo):**
+
+1. *Testing & synthetics → Synthetics → Add new check → HTTP*. Job name
+   `gymdesk-run-freshness`, target `https://api.vdicube.com/health/runs`, method `GET`, no
+   headers, no auth.
+2. Frequency **every 15 minutes** (`900s`), timeout 10 s, 2–3 probe locations (e.g. Frankfurt,
+   London, Paris).
+3. Validation: *valid status codes* `200`; add two **JSON path value assertions**:
+   `$.billing.stale` equals `false`, and `$.recurring_bookings.stale` equals `false`. A 503,
+   a timeout or either `stale: true` fails the check.
+4. *Alerting → Contact points*: confirm one already exists that reaches the owner (email or
+   Slack); create one only if none does.
+5. Alert rule on the check (the synthetic check's built-in *alert sensitivity*, or a Grafana
+   alert rule on `probe_success{job="gymdesk-run-freshness"}`): fire when the check has
+   **failed on 2 consecutive executions** (i.e. `max_over_time(probe_success[30m]) == 0`,
+   pending period 0), routed to that contact point, labelled `severity=critical`.
+6. Verify: temporarily set `RUN_FRESHNESS_THRESHOLD_HOURS=1` in the deploy environment (or
+   wait out a day with the workflow disabled) and confirm the alert fires within ~30 min; set
+   it back.
+
+> **Decisions (2026-09-27, #782)** — change them here if they turn out wrong:
+> - Option (b): a DB-backed freshness endpoint probed by a Grafana Cloud synthetic check —
+>   not a Loki query on the `billing/run: complete` log line and not a GitHub-scheduled
+>   check, because a GitHub-hosted check shares GitHub's failure modes, which are exactly
+>   what this alert exists to catch.
+> - The endpoint is unauthenticated at `GET /health/runs`, outside `/billing/`, so the nginx
+>   GitHub Actions allowlist (still live on the server until #783's conf is installed)
+>   never 403s the prober and no internal secret is handed to Grafana. It leaks one timestamp per internal job and nothing tenant-scoped.
+> - One endpoint for both runs, default threshold 26 h (a daily run plus the 06:00/10:00
+>   UTC spread), configurable through `RUN_FRESHNESS_THRESHOLD_HOURS`.
+> - Grafana (check, alert rule, contact point) is configured by hand, not provisioned from
+>   the repo — nothing in `infra/` provisions Grafana today.
 
 ### Manual test runbook
 
@@ -837,14 +967,14 @@ differently.
 | # | Gap |
 |---|---|
 | [#778](https://github.com/cordel-app/gymdesk/issues/778) | ✅ done — the workflow reports the run's outcome |
-| [#779](https://github.com/cordel-app/gymdesk/issues/779) | No in-app staff indicator of failed payments awaiting action |
+| [#779](https://github.com/cordel-app/gymdesk/issues/779) | ✅ done — sidebar badge + dashboard card for failed payments awaiting action (B7) |
 | [#780](https://github.com/cordel-app/gymdesk/issues/780) | ✅ done — one completed run per UTC date |
 | [#781](https://github.com/cordel-app/gymdesk/issues/781) | ✅ done — a second daily attempt |
-| [#782](https://github.com/cordel-app/gymdesk/issues/782) | No freshness alert: a day on which *nothing* reached the API is invisible |
-| [#783](https://github.com/cordel-app/gymdesk/issues/783) | The `/billing/` GitHub Actions IP allowlist decays by hand; `/recurring-bookings/` has none |
+| [#782](https://github.com/cordel-app/gymdesk/issues/782) | partly done — endpoint shipped; Grafana check/alert pending (go-to-production) |
+| [#783](https://github.com/cordel-app/gymdesk/issues/783) | ✅ done — allowlist removed; per-route limiter; secret rotation pending (go-to-production) |
 | [#784](https://github.com/cordel-app/gymdesk/issues/784) | partly done — workflows parametrised; production environment pending (go-to-production) |
 | [#785](https://github.com/cordel-app/gymdesk/issues/785) | ✅ done — a rejection escalates to a pause |
-| [#786](https://github.com/cordel-app/gymdesk/issues/786) | `draft`/`awaiting_payment` are unreachable statuses, and `POST /:id/submit` is dead code |
+| [#786](https://github.com/cordel-app/gymdesk/issues/786) | ✅ done — `draft`/`awaiting_payment` and `POST /:id/submit` retired; an assignment is `active` from creation |
 | [#787](https://github.com/cordel-app/gymdesk/issues/787) | ✅ done — the run allocates receipt numbers |
 | [#788](https://github.com/cordel-app/gymdesk/issues/788) | ✅ done — replacing a card charges nothing |
 | [#789](https://github.com/cordel-app/gymdesk/issues/789) | ✅ done — cleanup keeps an opened request `pending`, so a member's payment is not lost |

@@ -1008,7 +1008,7 @@ membershipPlansRouter.delete('/:id/prices/:priceId', requireRole('admin'), async
 // price stays in the history exactly as it was (req. 15 — historical rows are
 // never recomputed, only closed).
 
-const ASSIGNABLE_STATUSES = ['draft', 'awaiting_payment', 'active', 'paused'];
+const ASSIGNABLE_STATUSES = ['active', 'paused'];
 
 function round2(value: number): number {
   return parseFloat(value.toFixed(2));

@@ -56,7 +56,8 @@
     "feature_flags": "Feature Flags",
     "nutrition_plans": "Nutrition Plans",
     "operating_hours": "Operating Hours",
-    "website_integration": "Website Integration"
+    "website_integration": "Website Integration",
+    "failed_payments_badge": "{count, plural, one {# failed payment awaiting action} other {# failed payments awaiting action}}"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -872,7 +873,6 @@
     "expired": "Expired",
     "pending": "Pending",
     "draft": "Draft",
-    "awaiting_payment": "Awaiting Payment",
     "archived": "Archived",
     "open": "Open",
     "closed": "Closed",
@@ -3128,19 +3128,16 @@
     "retry": "Retry",
     "action_details": "Details",
     "action_edit": "Edit",
-    "action_submit": "Submit",
     "action_pause": "Pause",
     "action_reactivate": "Reactivate",
     "action_close": "Cancel",
     "action_close_confirm": "Cancel Plan",
     "action_close_dismiss": "Keep Plan",
     "actions_for": "Actions for {plan}",
-    "section_edit": "Edit Assigned Plan",
     "label_start_date": "Start Date",
     "label_end_date": "End Date",
     "detail_effective_price": "Effective Price",
     "label_discount_reason": "Discount Reason",
-    "label_discount_expires_at": "Discount Expires At",
     "cancel": "Cancel",
     "saving": "Saving…",
     "save_changes": "Save Changes",
@@ -3317,7 +3314,11 @@
     "card_successful_last_month": "Total Successful Billing Events Last Month",
     "loading": "Loading…",
     "empty": "No billing data to show.",
-    "error_generic": "Something went wrong. Please try again."
+    "error_generic": "Something went wrong. Please try again.",
+    "card_awaiting_action": "Failed Payments Awaiting Action",
+    "awaiting_action_oldest": "Oldest: {date}",
+    "awaiting_action_none": "Nothing awaiting action",
+    "awaiting_action_unit": "failed billing events"
   },
   "financials_dashboard": {
     "title": "Finance Dashboard",
