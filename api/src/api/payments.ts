@@ -10,6 +10,7 @@ import { generateReceiptPdf } from '../lib/receipt-pdf';
 import {
   BILLING_EVENT_STATUSES,
   deriveBillingEventStatus,
+  isAwaitingAction,
   isPaymentActionable,
   isReceiptableEvent,
   receiptRefusalReason,
@@ -228,6 +229,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     status: billingEventStatusParam,
     from: z.string().optional(),
     to: z.string().optional(),
+    // #779: `asc` turns the failed filter into a work queue, oldest first.
+    order: z.enum(['asc', 'desc']).default('desc'),
     limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
     offset: z.coerce.number().int().min(0).default(0),
   }));
@@ -395,16 +398,89 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       }
     }
 
-    // Merge, sort DESC by billing_date
+    // Merge, sort by billing_date (DESC unless `order=asc`)
+    const dir = q.order === 'asc' ? -1 : 1;
     const merged = [...past, ...future].sort((a, b) => {
-      if (b.billing_date !== a.billing_date) return b.billing_date < a.billing_date ? -1 : 1;
-      return (b.id ?? 0) - (a.id ?? 0);
+      if (b.billing_date !== a.billing_date) return (b.billing_date < a.billing_date ? -1 : 1) * dir;
+      return ((b.id ?? 0) - (a.id ?? 0)) * dir;
     });
     const all = q.status?.length ? merged.filter((r) => q.status!.includes(r.status as any)) : merged;
 
     const total = all.length;
     const items = all.slice(q.offset, q.offset + q.limit);
     res.json({ items, total, limit: q.limit, offset: q.offset });
+  } catch (err) {
+    next(err);
+  }
+});
+
+export interface FailedPaymentsAttention {
+  /** Billing Events whose derived status is `failed` (`isAwaitingAction`). */
+  count: number;
+  /** Creation instant of the oldest of them (ISO, UTC), or null when count is 0. */
+  oldest_created_at: string | null;
+}
+
+/**
+ * #779: the failed payments awaiting a staff decision, for one gym.
+ *
+ * The same population the Billing Events list returns for `status=failed`, and
+ * the status is still derived by the shared pure function rather than spelled
+ * as SQL. The WHERE only narrows the candidates to rows that *can* derive to
+ * `failed` — a `failed_billing` row, or one with at least one failed/expired
+ * transaction — so a gym's growing history of settled charges is never scanned
+ * through the latest-transaction subquery.
+ *
+ * Events, not memberships: the badge must agree with the row count of the list
+ * it links to, and since #785 one assignment contributes at most two before the
+ * run pauses it. A rejected *first* payment writes no Billing Event (the
+ * webhook inserts `payment_recorded` only on `completed`), so it is not counted.
+ */
+export async function loadFailedPaymentsAttention(gymId: string): Promise<FailedPaymentsAttention> {
+  const { rows } = await db.query<{
+    event_type: string; latest_tx_status: string | null; cnt: number | string; oldest: Date | string;
+  }>(
+    `SELECT e.event_type, e.latest_tx_status, COUNT(*) AS cnt, MIN(e.created_at) AS oldest
+       FROM (
+         SELECT be.event_type, be.created_at,
+                (SELECT pr.status FROM payment_requests pr
+                  WHERE pr.billing_event_id = be.id
+                  ORDER BY pr.created_at DESC, pr.id DESC
+                  LIMIT 1) AS latest_tx_status
+           FROM billing_events be
+          WHERE be.gym_id = ?
+            AND (be.event_type = 'failed_billing'
+                 OR EXISTS (SELECT 1 FROM payment_requests pf
+                             WHERE pf.billing_event_id = be.id
+                               AND pf.status IN ('failed', 'expired')))
+       ) e
+      GROUP BY e.event_type, e.latest_tx_status`,
+    [gymId],
+  );
+
+  let count = 0;
+  let oldest: Date | null = null;
+  for (const r of rows) {
+    if (!isAwaitingAction(r.event_type, r.latest_tx_status)) continue;
+    count += Number(r.cnt);
+    const at = new Date(r.oldest);
+    if (!oldest || at < oldest) oldest = at;
+  }
+  return { count, oldest_created_at: oldest ? oldest.toISOString() : null };
+}
+
+/**
+ * GET /payments/billing-events/attention — #779.
+ *
+ * `{ count, oldest_created_at }` for the sidebar badge, which polls it. Read
+ * access to PAYMENTS is the whole gate (app.ts); the Retry / Manual payment
+ * actions on each row stay behind `requireModuleWrite('PAYMENTS')`.
+ * Registered before `/billing-events/:id` so `attention` is not read as an id.
+ */
+paymentsRouter.get('/billing-events/attention', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    res.json(await loadFailedPaymentsAttention(gymId));
   } catch (err) {
     next(err);
   }
