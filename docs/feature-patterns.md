@@ -374,7 +374,7 @@ Rules of thumb:
 
 ---
 
-## Read-Only Expanded Row, Editing Behind the Context Menu (#797, #798)
+## Read-Only Expanded Row, Editing Behind the Context Menu (#797, #798, #882)
 
 The counterpart to the pattern below: a list row whose expanded card is for
 **reading** an entity, with `⋮ → Edit` the only way to change it. Expanding
@@ -383,47 +383,67 @@ expanded card shows every persisted field and not one control that writes.
 
 1. **One definition of the field set, shared by both halves.** Put the fields
    in a module beside the page (`memberProfile.ts`:
-   `MEMBER_PROFILE_FIELDS` = `{ key, labelKey, kind? }`, the row type, the
-   empty form, the persisted-row → form-values mapping, the formatters). The
-   read-only section maps over it; the Edit form imports the types and the
-   mapping and renders its own inputs, because each input needs its own type,
-   placeholder and validation. A field added to the list reaches both; a field
-   added to only one is what the pattern exists to prevent.
-2. **The read-only label is not always the form's label.** A form marks its
+   `MEMBER_PROFILE_FIELDS` = `{ key, labelKey, editLabelKey, kind?,
+   placeholderKey?, helpKey? }`, the row type, the empty form, the
+   persisted-row → form-values mapping, the formatters). A field added to the
+   list reaches both halves; a field added to only one is what the pattern
+   exists to prevent.
+2. **The two halves share the *layout* too, not only the field list (#882).**
+   The read-only view is the Edit form with the inputs replaced by values, so
+   the grid, the field order, the labels, the full-width Notes and the position
+   of a trailing relation (Assigned Centers / Default Center) are declared once
+   in a layout component both render (`MemberProfileLayout.tsx`), and neither
+   half restates a grid template, a `gridColumn: '1 / -1'` or a label style.
+   What each half still owns is the *contents of a cell* — an `<input>` on one
+   side, the persisted value on the other — which the layout takes as a
+   `renderField` callback, so it stays presentational and cannot make a
+   read-only field editable. Two Profiles that reflow differently, or that move
+   every field when Edit opens, are the defect this removes.
+3. **While the inline form is open, the read-only half stands down.** Both
+   render the same fields, so rendering both shows the entity twice on one
+   page: the section that reads takes an `editing` prop keyed on the same
+   `editingId === row.id` that opens the form.
+4. **The read-only label is not always the form's label.** A form marks its
    required fields (`label_name` is "Name \*"), which is nonsense beside a
    value nobody can change — so `labelKey` points at the plain key
-   (`col_name`). Reuse an existing key before adding one.
-3. **Render from the row the form is seeded from**, not from a second read. The
+   (`col_name`) while `editLabelKey` keeps the marker. The same split applies
+   to a field's help sentence: it explains how to *fill the field in*
+   (`helpKey`, "Optional. NIF, NIE, or passport number."), so it is rendered by
+   the form and never beside a value. Reuse an existing key before adding one.
+5. **Render from the row the form is seeded from**, not from a second read. The
    list row already carries the entity's own columns, so the section and the
    form cannot disagree, and a saved edit refreshes both through the list's
    existing reload.
-4. **A related read the row does not carry gets a version counter, not a
+6. **A related read the row does not carry gets a version counter, not a
    remount.** Anything fetched separately (a Member's centers) goes stale when
    an edit saves. Bumping a `profileVersion` prop re-runs that one read;
    remounting the card would re-fetch every other section with it.
-5. **Every value falls back to the screens' em dash** — never `null`,
+7. **Every value falls back to the screens' em dash** — never `null`,
    `undefined` or a formatted epoch. Free text that may be long (Notes) wraps
    with `white-space: pre-wrap` inside the existing label/value row rather
    than getting a second visual pattern.
-6. **A date-only column is formatted field by field.** `new Date('1990-05-04')`
+8. **A date-only column is formatted field by field.** `new Date('1990-05-04')`
    is UTC midnight and prints as 3 May west of Greenwich — wrong for a birth
    date. Split on `-` and build a local `Date`.
-7. **Where the read needs a rule, the rule goes in the API, once.** The
+9. **Where the read needs a rule, the rule goes in the API, once.** The
    Member's centers have a sole-active-center fallback; it belongs on
    `GET /members/:memberId/centers` (which both the read-only section and the
    Edit form call), not restated in either caller. Guard the resource's
    ownership before the fallback, or an id from another tenant reads back the
    caller's own sole center.
-8. **A relation that may legitimately be empty says so in words.** The
+10. **A relation that may legitimately be empty says so in words.** The
    fallback above is Members'; a Staff member is allowed zero centers (#440),
    so its section reads "No centers assigned" and leaves Default Center at the
    em dash. Never imply a default the entity does not have.
 
 Reference implementation: the `PROFILE` section of
-`[locale]/members/MemberExpandedRow.tsx` +
-`[locale]/members/memberProfile.ts`. Regression test (source-scan style, since
+`[locale]/members/MemberExpandedRow.tsx` + `[locale]/members/MemberEditForm.tsx`,
+over `[locale]/members/MemberProfileLayout.tsx` +
+`[locale]/members/memberProfile.ts`. Regression tests (source-scan style, since
 `apps/admin` has no component-test infra):
-`apps/admin/src/test/member-expanded-profile.test.ts` — it slices the
+`apps/admin/src/test/member-profile-layout.test.ts` asserts the layout is
+rendered by both halves, declared once and free of controls;
+`apps/admin/src/test/member-expanded-profile.test.ts` slices the
 `PROFILE` `<Section>` out of the source and asserts no `<input`, `<select`,
 `<textarea`, `<button`, `onChange` or `onClick` inside it, rather than over the
 whole card, which has had its own editing controls since long before the

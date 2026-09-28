@@ -38,6 +38,7 @@ function read(file: string): string {
 
 const expandedSrc = read('MemberExpandedRow.tsx');
 const editFormSrc = read('MemberEditForm.tsx');
+const layoutSrc = read('MemberProfileLayout.tsx');
 const pageSrc = read('page.tsx');
 
 /**
@@ -57,8 +58,12 @@ function profileSection(): string {
 describe('Members: PROFILE in the expanded card (#797)', () => {
   it('renders the Profile from the one shared field definition', () => {
     const section = profileSection();
-    expect(section).toContain('MEMBER_PROFILE_FIELDS');
+    // #882: the field set reaches this section through the shared layout, which
+    // is the one place MEMBER_PROFILE_FIELDS is walked for either mode.
+    expect(section).toContain('<MemberProfileLayout');
+    expect(layoutSrc).toContain('MEMBER_PROFILE_FIELDS.map');
     expect(expandedSrc).toContain("from './memberProfile'");
+    expect(expandedSrc).toContain("from './MemberProfileLayout'");
   });
 
   it('is the first section of the expanded row', () => {
@@ -133,8 +138,11 @@ describe('Members: the Profile field definition is shared (#797)', () => {
   });
 
   it('is the field set the Edit form submits, so the two cannot drift apart', () => {
+    // #882: the form writes every field through one keyed update rather than a
+    // hand-written input per field, so a new field cannot reach only one half.
+    expect(editFormSrc).toContain('onChange({ ...form, [field.key]: next })');
+    expect(editFormSrc).toContain('const value = form[field.key];');
     for (const field of MEMBER_PROFILE_FIELDS) {
-      expect(editFormSrc, `Edit form does not edit ${field.key}`).toContain(`${field.key}: e.target.value`);
       expect(pageSrc, `saveEdit does not submit ${field.key}`).toContain(`${field.key}:`);
     }
     expect(Object.keys(emptyMemberEditForm).sort()).toEqual(MEMBER_PROFILE_FIELDS.map((f) => f.key).sort());
