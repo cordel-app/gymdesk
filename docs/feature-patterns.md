@@ -700,7 +700,10 @@ The General field set follows #800 unchanged — declared once in
 `[locale]/plans/planProfile.ts` (`PLAN_GENERAL_SECTION`, the row → form mapping,
 `toPlanGeneralUpdatePayload()`), with the row type extending it. The section
 *order* lives there too, as `PLAN_SECTION_ORDER`, so a moved section is a failing
-test rather than a review comment. Price, VAT, the durations, the cadence, the
+test rather than a review comment. A block rendered *inside* a section rather
+than beside it is declared the same way and kept out of that list — Price History
+is `PLAN_PRICING_SUBSECTIONS` since #881, because it belongs to PRICING, and a
+key in both lists would render it twice. Price, VAT, the durations, the cadence, the
 three Benefit sections and the Centers are not part of that declaration: each is
 its own resource with its own endpoint, and this ticket changes where its editor
 is reachable from, never what it submits.

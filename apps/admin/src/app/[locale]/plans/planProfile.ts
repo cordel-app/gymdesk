@@ -39,11 +39,14 @@ export type PlanEnrollmentStatus = (typeof ENROLLMENT_STATUSES)[number];
 export type PlanMemberLimit = (typeof MEMBER_LIMITS)[number];
 
 /**
- * The order the expanded card renders its sections in (§2). Price History comes
- * after the Example timeline — §2 keeps it "available after these sections
- * using its existing behavior" rather than in the numbered list. #818 renamed
- * the section that slot holds: the Billing Events Forecast became the Example
- * timeline, in the same place.
+ * The order the expanded card renders its sections in (§2). #818 renamed the
+ * last one: the Billing Events Forecast became the Example timeline, in the
+ * same place.
+ *
+ * Price History is **not** in this list any more (#881). It used to trail the
+ * Example timeline as a section of its own; it is now a collapsible card
+ * rendered inside PRICING, which is where a plan's prices belong — see
+ * `PLAN_PRICING_SUBSECTIONS`.
  */
 export const PLAN_SECTION_ORDER = [
   'section_general',
@@ -54,10 +57,22 @@ export const PLAN_SECTION_ORDER = [
   'section_plan_period_benefits',
   'section_centers',
   'section_example_timeline',
-  'section_prices',
 ] as const;
 
 export type PlanSectionKey = (typeof PLAN_SECTION_ORDER)[number];
+
+/**
+ * What PRICING renders *within* itself, after its own fields (#881). Declared
+ * here for the same reason as the section order: a sub-section that moves is a
+ * failing test rather than a review comment, and "is Price History a section or
+ * part of Pricing?" is answered in one place rather than by reading the JSX.
+ *
+ * A key here is deliberately absent from `PLAN_SECTION_ORDER` — rendering it in
+ * both would show the history twice.
+ */
+export const PLAN_PRICING_SUBSECTIONS = ['section_prices'] as const;
+
+export type PlanPricingSubsectionKey = (typeof PLAN_PRICING_SUBSECTIONS)[number];
 
 /** The `membership_plans` columns the inline General form manages. */
 export interface PlanGeneralProfile {

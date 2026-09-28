@@ -162,7 +162,6 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'section_plan_period_benefits',
       'section_centers',
       'section_example_timeline',
-      'section_prices',
     ]);
   });
 
@@ -177,7 +176,6 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'BENEFIT_SECTIONS.map(',
       'plans.section_centers',
       'plans.section_example_timeline',
-      'plans.section_prices',
     ];
     const positions = markers.map((m) => {
       const at = expandedSrc.indexOf(m);

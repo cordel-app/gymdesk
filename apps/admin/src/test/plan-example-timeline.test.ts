@@ -45,9 +45,10 @@ describe('Plans: the Example timeline replaces the Billing Events Forecast', () 
   it('takes the retired section’s place in the declared order', () => {
     expect([...PLAN_SECTION_ORDER]).toContain('section_example_timeline');
     expect([...PLAN_SECTION_ORDER]).not.toContain('section_billing_forecast');
-    // Still immediately before Price History, where the forecast sat.
+    // Still in the forecast's slot — last, since #881 moved Price History into
+    // PRICING and the timeline inherited the end of the card.
     expect(PLAN_SECTION_ORDER.indexOf('section_example_timeline')).toBe(
-      PLAN_SECTION_ORDER.indexOf('section_prices') - 1,
+      PLAN_SECTION_ORDER.length - 1,
     );
   });
 
