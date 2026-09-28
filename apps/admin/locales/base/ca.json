@@ -3150,6 +3150,7 @@
     "label_units": "Unitats",
     "label_status": "Estat",
     "label_enrollment_status": "Estat d'Inscripció",
+    "label_mandatory": "Obligatori",
     "label_price": "Preu",
     "label_frequency": "Freqüència de cobrament",
     "label_validity_days": "Validesa (dies)",
@@ -3191,7 +3192,9 @@
     "exempt": "Exempt",
     "section_professional_services": "Serveis Professionals",
     "label_professional_services": "Serveis Professionals",
-    "professional_services_empty": "No hi ha Serveis Professionals seleccionats."
+    "professional_services_empty": "No hi ha Serveis Professionals seleccionats.",
+    "yes": "Sí",
+    "no": "No"
   },
   "assigned_plans_page": {
     "title": "Plans Assignats",

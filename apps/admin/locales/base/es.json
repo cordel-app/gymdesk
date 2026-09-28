@@ -3123,6 +3123,7 @@
     "label_units": "Unidades",
     "label_status": "Estado",
     "label_enrollment_status": "Estado de Inscripción",
+    "label_mandatory": "Obligatorio",
     "label_price": "Precio",
     "label_frequency": "Frecuencia de cobro",
     "label_validity_days": "Validez (días)",
@@ -3164,7 +3165,9 @@
     "exempt": "Exento",
     "section_professional_services": "Servicios Profesionales",
     "label_professional_services": "Servicios Profesionales",
-    "professional_services_empty": "No hay Servicios Profesionales seleccionados."
+    "professional_services_empty": "No hay Servicios Profesionales seleccionados.",
+    "yes": "Sí",
+    "no": "No"
   },
   "assigned_plans_page": {
     "title": "Planes Asignados",
