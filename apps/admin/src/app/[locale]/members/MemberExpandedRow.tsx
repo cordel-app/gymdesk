@@ -14,7 +14,8 @@ import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { MemberPromotions } from './MemberPromotions';
 import { MemberAdditionalServices } from './MemberAdditionalServices';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
-import { MEMBER_PROFILE_FIELDS, formatProfileDate, type MemberProfile } from './memberProfile';
+import { formatProfileDate, type MemberProfile } from './memberProfile';
+import { MemberProfileLayout, profileValueStyle } from './MemberProfileLayout';
 
 interface Plan {
   id: number;
@@ -70,6 +71,7 @@ export function MemberExpandedRow({
   memberId,
   member,
   profileVersion,
+  editing,
   canManageTraining,
   canManagePackages,
   isAdmin,
@@ -84,6 +86,12 @@ export function MemberExpandedRow({
   member: MemberProfile;
   /** Bumped by the page when an edit was saved, so the centers below are re-read. */
   profileVersion: number;
+  /**
+   * #882: the inline Edit form is open above this row. It renders the Profile
+   * itself, in this same layout, so the read-only PROFILE section below stands
+   * down rather than showing the Member's Profile twice on one page.
+   */
+  editing: boolean;
   canManageTraining: boolean;
   canManagePackages: boolean;
   isAdmin: boolean;
@@ -262,20 +270,36 @@ export function MemberExpandedRow({
     <div style={panel}>
       {/* #797 — PROFILE: the complete persisted Member Profile, read-only.
           Expanding a Member is for reading it; editing stays behind ⋮ → Edit,
-          so this section carries no input, no toggle and no Edit affordance. */}
-      <Section label={t('members.section_profile')}>
-        <div style={card}>
-          {MEMBER_PROFILE_FIELDS.map((f) => (
-            <Field key={f.key} label={t(`members.${f.labelKey}`)} multiline={f.kind === 'multiline'}>
-              {(f.kind === 'date' ? formatProfileDate(member[f.key]) : member[f.key]?.trim()) || EMPTY_VALUE}
-            </Field>
-          ))}
-          <Field label={t('members.assigned_centers')}>
-            {centers.length === 0 ? EMPTY_VALUE : centers.map((c) => c.name).join(', ')}
-          </Field>
-          <Field label={t('members.default_center')}>{defaultCenter?.name ?? EMPTY_VALUE}</Field>
-        </div>
-      </Section>
+          so this section carries no input, no toggle and no Edit affordance.
+
+          #882 — and it reads in the layout the Edit form writes in: the same
+          grid, order, labels and full-width Notes, from MemberProfileLayout.
+          While that form is open above, this section steps aside rather than
+          showing the same Profile a second time. */}
+      {!editing && (
+        <Section label={t('members.section_profile')}>
+          <div style={card}>
+            <MemberProfileLayout
+              fieldLabel={(f) => t(`members.${f.labelKey}`)}
+              renderField={(f) => (
+                <p style={profileValueStyle}>
+                  {(f.kind === 'date' ? formatProfileDate(member[f.key]) : member[f.key]?.trim()) || EMPTY_VALUE}
+                </p>
+              )}
+              centers={{
+                assignedLabel: t('members.assigned_centers'),
+                assigned: (
+                  <p style={profileValueStyle}>
+                    {centers.length === 0 ? EMPTY_VALUE : centers.map((c) => c.name).join('\n')}
+                  </p>
+                ),
+                defaultLabel: t('members.default_center'),
+                default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
+              }}
+            />
+          </div>
+        </Section>
+      )}
 
       {/* Account (Clerk status) */}
       {clerkStatus && (
