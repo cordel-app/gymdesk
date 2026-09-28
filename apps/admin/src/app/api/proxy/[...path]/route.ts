@@ -28,7 +28,16 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
       cache: 'no-store',
     });
 
-    const resBody = res.status === 204 ? null : await res.text();
+    // #830: read the body as **bytes**, never `res.text()`. Most responses here
+    // are JSON, but not all of them: `GET /themes/:id/logo` answers the logo's
+    // raw bytes and `POST /payments/:id/receipt` a PDF, and decoding either as
+    // UTF-8 replaces every byte that is not valid UTF-8 with U+FFFD. The body
+    // then still has the right `Content-Type` and the right shape, so nothing
+    // errors — the browser simply cannot decode it and renders the Theme's
+    // `logo preview` as a broken image. A Base Theme's logo is a blob served by
+    // that route (it has no R2 `logo_url`), which is why the complaint was a
+    // Base Theme's. `ArrayBuffer` is a valid body and byte-exact for JSON too.
+    const resBody = res.status === 204 ? null : await res.arrayBuffer();
 
     return new NextResponse(resBody, {
       status: res.status,

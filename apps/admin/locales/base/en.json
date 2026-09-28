@@ -827,8 +827,6 @@
     "storage_error_title_settings": "Saving the theme failed.",
     "storage_error_title_logo": "Logo upload failed.",
     "storage_error_title_logo_remove": "Removing the logo failed.",
-    "storage_error_title_members_image": "Members image upload failed.",
-    "storage_error_title_members_image_remove": "Removing the Members image failed.",
     "storage_stage_resolve_path": "Resolve the gym/theme storage path",
     "storage_stage_create_theme_folder": "Create the theme folder",
     "storage_stage_create_logo_folder": "Create the Logo folder",
@@ -840,7 +838,12 @@
     "storage_stage_save_settings": "Save the theme configuration",
     "action_initialize_bucket": "Initialize bucket",
     "toast_bucket_initialized": "Bucket initialized successfully.",
-    "storage_error_title_initialize_bucket": "Initializing the theme bucket failed."
+    "storage_error_title_initialize_bucket": "Initializing the theme bucket failed.",
+    "storage_error_title_members_image_slot": "Members image upload failed ({slot}).",
+    "storage_error_title_members_image_remove_slot": "Removing the Members image failed ({slot}).",
+    "storage_error_fallback": "Failed to upload the image. Please try again.",
+    "logo_preview_unavailable": "The current logo could not be loaded.",
+    "asset_save_failed": "This file was not saved — see the message above."
   },
   "orphaned_accounts": {
     "title": "Orphaned accounts",
@@ -2376,8 +2379,6 @@
     "storage_error_title_clone": "Creating the theme failed.",
     "storage_error_title_logo": "Logo upload failed.",
     "storage_error_title_logo_remove": "Removing the logo failed.",
-    "storage_error_title_members_image": "Members image upload failed.",
-    "storage_error_title_members_image_remove": "Removing the Members image failed.",
     "storage_stage_resolve_path": "Resolve the gym/theme storage path",
     "storage_stage_create_theme_folder": "Create the theme folder",
     "storage_stage_create_logo_folder": "Create the Logo folder",
@@ -2391,7 +2392,12 @@
     "toast_bucket_initialized": "Bucket initialized successfully.",
     "storage_error_title_initialize_bucket": "Initializing the theme bucket failed.",
     "initialize_bucket_not_configured": "Cloudflare storage is not configured for this deployment, so the theme folders cannot be created.",
-    "initialize_bucket_not_initialized": "Cloudflare storage has not been initialized for this gym. Initialize the Cloudflare bucket before initializing a theme’s folders."
+    "initialize_bucket_not_initialized": "Cloudflare storage has not been initialized for this gym. Initialize the Cloudflare bucket before initializing a theme’s folders.",
+    "storage_error_title_members_image_slot": "Members image upload failed ({slot}).",
+    "storage_error_title_members_image_remove_slot": "Removing the Members image failed ({slot}).",
+    "storage_error_fallback": "Failed to upload the image. Please try again.",
+    "logo_preview_unavailable": "The current logo could not be loaded.",
+    "asset_save_failed": "This file was not saved — see the message above."
   },
   "activity_types": {
     "title": "Activities",

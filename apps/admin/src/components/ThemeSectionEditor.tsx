@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { FormLabel, FormInput } from '@/components/CrudModal';
 import { btnSmall, readOnlyStyle } from '@/components/ui';
 import type { GymStorageBlock } from '@/lib/gymStorageReadiness';
@@ -73,6 +73,14 @@ interface ThemeBrandingEditorProps {
    * the current logo, `Logo contains name of the gym?`, `Clear` — is untouched.
    */
   storageBlock?: GymStorageBlock;
+  /**
+   * #830: the last Save failed on the logo. The diagnostic itself is rendered
+   * once above the sections (it names the operation, the path and what storage
+   * said); this only marks *which* control it belongs to, so an admin who
+   * touched the logo and three backgrounds can see at a glance which one to
+   * retry. The page owns it — this component still never performs a request.
+   */
+  logoError?: boolean;
   autoFocusName?: boolean;
   /** Extra controls rendered under Name — the Base editor's Status select. */
   children?: React.ReactNode;
@@ -89,10 +97,17 @@ export function ThemeBrandingEditor({
   showLogo = true,
   readOnly = false,
   storageBlock = null,
+  logoError = false,
   autoFocusName = false,
   children,
 }: ThemeBrandingEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // #830: the preview `<img>` that cannot load says so instead of rendering the
+  // browser's broken-image icon beside the words `logo preview`, which is the
+  // screenshot the ticket was filed with. Keyed by the src that failed rather
+  // than a boolean, so picking another file clears it without an effect.
+  const [failedPreviewSrc, setFailedPreviewSrc] = useState<string | null>(null);
+  const previewBroken = logoPreview !== null && failedPreviewSrc === logoPreview;
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -127,11 +142,23 @@ export function ThemeBrandingEditor({
           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('logo_hint')}</p>
           {logoPreview ? (
             <div style={{ marginBottom: 8 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={logoPreview} alt="logo preview" style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }} />
+              {previewBroken ? (
+                <p style={{ margin: 0, fontSize: 13, color: '#c0392b' }}>{t('logo_preview_unavailable')}</p>
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={logoPreview}
+                  alt="logo preview"
+                  onError={() => setFailedPreviewSrc(logoPreview)}
+                  style={{ maxHeight: 60, maxWidth: 200, objectFit: 'contain', display: 'block', border: '1px solid #eee', borderRadius: 6, padding: 4 }}
+                />
+              )}
             </div>
           ) : (
             readOnly && <p style={{ margin: '0 0 8px', fontSize: 13, color: '#888' }}>{t('logo_no_preview')}</p>
+          )}
+          {logoError && (
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: '#c0392b' }}>{t('asset_save_failed')}</p>
           )}
           {!readOnly && (
             <>

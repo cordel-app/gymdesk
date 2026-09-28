@@ -6,6 +6,19 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
+import {
+  failedMembersImageSlots,
+  formatThemeAssetFailures,
+  keepBySlot,
+  keepFlagsBySlot,
+  logoAssetFailed,
+  pendingAfterFailures,
+  planThemeAssetOps,
+  runThemeAssetOps,
+  themeAssetOpTitle,
+  type ThemeAssetFailure,
+  type ThemeAssetLabels,
+} from '@/components/themes/themeAssetSave';
 import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
@@ -163,6 +176,10 @@ export default function ThemesPage() {
   const [membersImageFiles, setMembersImageFiles] = useState<Record<MemberImageSlot, File | null>>(bySlot(null));
   const [membersImagePreviews, setMembersImagePreviews] = useState<Record<MemberImageSlot, string | null>>(bySlot(null));
   const [membersImageRemovals, setMembersImageRemovals] = useState<Record<MemberImageSlot, boolean>>(bySlot(false));
+  // #830: the assets the last Save could not store — reported in the error block
+  // above the sections and marked on each failing control, and still queued so
+  // pressing Save again retries exactly those.
+  const [assetFailures, setAssetFailures] = useState<ThemeAssetFailure[]>([]);
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when entering edit mode, cleared once Save succeeds.
   const origFormRef = useRef<EditForm | null>(null);
@@ -258,28 +275,27 @@ export default function ThemesPage() {
     }
   }
 
-  async function uploadLogo(themeId: string) {
-    if (!editLogoFile) return;
-    try {
-      await uploadFetch(`/platform/themes/${themeId}/logo`, editLogoFile);
-    } catch (err: any) {
-      throw new Error(storageErrorMessage(err, 'storage_error_title_logo', 'upload_logo'));
-    }
-  }
-
   /**
-   * #732: raw image bytes to `POST /platform/themes/:id/members-images/:slot`.
-   * `uploadFetch` rather than `apiFetch` because the body is the file itself,
-   * not JSON, and the `Content-Type` is what the server validates the signature
-   * against (#824 moved the header assembly into the shared client).
+   * #830: the labels the shared asset-save reports a failure with, resolved
+   * through this screen's namespace. The uploads themselves (raw image bytes
+   * through `uploadFetch`, whose `Content-Type` is what the server validates the
+   * signature against — #824) and the removals now go through
+   * `runThemeAssetOps()`, which both Theme screens share: the two copies of this
+   * sequence had drifted, and a Base Theme's logo and Members removals were the
+   * half that had no diagnostic at all.
    */
-  async function uploadMembersImage(themeId: string, slot: MemberImageSlot, file: File) {
-    try {
-      await uploadFetch(`/platform/themes/${themeId}/members-images/${slot}`, file);
-    } catch (err: any) {
-      throw new Error(storageErrorMessage(err, 'storage_error_title_members_image', 'upload_members_image'));
-    }
-  }
+  const assetLabels: ThemeAssetLabels = {
+    operation: t('storage_error_operation'),
+    path: t('storage_error_path'),
+    error: t('storage_error_error'),
+    details: t('storage_error_details'),
+    fallbackError: t('storage_error_fallback'),
+    title: (op) => {
+      const { key, slot } = themeAssetOpTitle(op);
+      return slot ? t(key as any, { slot: t(`members_image_${slot}`) }) : t(key as any);
+    },
+    operationName: (_op, stage) => t(`storage_stage_${stage}` as any),
+  };
 
   // Deferred — the actual DELETE only fires on Save (#492), so editing the
   // logo never mutates the persisted Theme until the user commits the draft.
@@ -290,6 +306,8 @@ export default function ThemesPage() {
   }
 
   function handleLogoPick(file: File) {
+    setEditError(null);
+    setAssetFailures([]);
     setEditLogoFile(file);
     setLogoRemovePending(false);
     const reader = new FileReader();
@@ -303,6 +321,8 @@ export default function ThemesPage() {
     if (!file.type.startsWith('image/')) { setEditError(t('members_image_error_type')); return; }
     if (file.size > MEMBER_IMAGE_MAX_BYTES) { setEditError(t('members_image_error_size')); return; }
     setEditError(null);
+    // #830: the per-asset markers point at that message, so they go with it.
+    setAssetFailures([]);
     setMembersImageFiles((prev) => ({ ...prev, [slot]: file }));
     setMembersImageRemovals((prev) => ({ ...prev, [slot]: false }));
     const reader = new FileReader();
@@ -385,6 +405,7 @@ export default function ThemesPage() {
     setEditForm(form);
     origFormRef.current = form;
     setEditError(null);
+    setAssetFailures([]);
     setEditLogoFile(null);
     setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
     setLogoRemovePending(false);
@@ -406,6 +427,7 @@ export default function ThemesPage() {
     setExpandedId(null);
     setEditingId(null);
     setEditError(null);
+    setAssetFailures([]);
     setEditLogoFile(null);
     setEditLogoPreview(null);
     setLogoRemovePending(false);
@@ -440,6 +462,7 @@ export default function ThemesPage() {
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
     setEditSaving(true);
     setEditError(null);
+    setAssetFailures([]);
     try {
       if (id === NEW_ID) {
         await apiFetch('/platform/themes', {
@@ -455,40 +478,56 @@ export default function ThemesPage() {
         setExpandedId(null);
         setEditingId(null);
       } else {
-        await apiFetch(`/platform/themes/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            name: editForm.name.trim(),
-            description: editForm.description.trim() || null,
-            status: editForm.status,
-            logo_contains_gym_name: editForm.logoContainsGymName,
-            tokens: editForm.tokens,
+        try {
+          await apiFetch(`/platform/themes/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: editForm.name.trim(),
+              description: editForm.description.trim() || null,
+              status: editForm.status,
+              logo_contains_gym_name: editForm.logoContainsGymName,
+              tokens: editForm.tokens,
+            }),
+          });
+        } catch (err: any) {
+          // The configuration is the one step that still aborts the Save: the
+          // asset keys are built from the theme's persisted name, so there is
+          // nothing to be gained from uploading against a rename that did not
+          // happen. #830 gave it the diagnostic the Custom Themes screen had.
+          throw new Error(storageErrorMessage(err, 'storage_error_title_settings', 'save_settings'));
+        }
+        // #830 — every asset the admin touched is attempted, whatever the
+        // others did, and every failure is reported rather than just the first.
+        // #732's "one call per slot the admin actually touched" is unchanged: a
+        // picked file still wins over a queued removal for the same slot.
+        const { failures } = await runThemeAssetOps(
+          planThemeAssetOps({
+            logoFile: editLogoFile,
+            logoRemovePending,
+            membersImageFiles,
+            membersImageRemovals,
           }),
-        });
-        if (editLogoFile) {
-          await uploadLogo(id);
-        } else if (logoRemovePending) {
-          await apiFetch(`/platform/themes/${id}/logo`, { method: 'DELETE' });
-        }
-        // #732 — one call per slot the admin actually touched. A picked file
-        // wins over a queued removal for the same slot (picking clears the
-        // removal), so the two branches are exclusive.
-        for (const slot of MEMBER_IMAGE_SLOTS) {
-          const file = membersImageFiles[slot];
-          if (file) {
-            await uploadMembersImage(id, slot, file);
-          } else if (membersImageRemovals[slot]) {
-            await apiFetch(`/platform/themes/${id}/members-images/${slot}`, { method: 'DELETE' });
-          }
-        }
+          {
+            basePath: '/platform/themes',
+            themeId: id,
+            upload: (path, file) => uploadFetch(path, file),
+            remove: (path) => apiFetch(path, { method: 'DELETE' }),
+          },
+        );
+
         // Stay on the editor with a clean draft rather than collapsing back
-        // to the read-only view — the user may keep iterating (#492).
+        // to the read-only view — the user may keep iterating (#492). Only the
+        // assets that failed stay queued, with their files and previews intact,
+        // so pressing Save again retries exactly those.
+        const pending = pendingAfterFailures(failures);
         origFormRef.current = { ...editForm, name: editForm.name.trim(), description: editForm.description.trim() };
         setEditForm(origFormRef.current);
-        setEditLogoFile(null);
-        setLogoRemovePending(false);
-        setMembersImageFiles(bySlot(null));
-        setMembersImageRemovals(bySlot(false));
+        setEditLogoFile(pending.logoUpload ? editLogoFile : null);
+        setLogoRemovePending(pending.logoRemove);
+        setMembersImageFiles(keepBySlot(membersImageFiles, pending.slotUploads));
+        setMembersImageRemovals(keepFlagsBySlot(pending.slotRemovals));
+        setAssetFailures(failures);
+        setEditError(failures.length > 0 ? formatThemeAssetFailures(failures, assetLabels) : null);
       }
       load();
     } catch (err: any) {
@@ -599,6 +638,7 @@ export default function ThemesPage() {
               // A theme that does not exist yet has no id to upload a logo to;
               // the logo controls appear once it has been created (unchanged).
               showLogo={!isNew}
+              logoError={logoAssetFailed(assetFailures)}
               autoFocusName={isNew}
             >
               {/* Status is platform-only: on the Custom Themes screen a theme's
@@ -625,6 +665,7 @@ export default function ThemesPage() {
               onPick={pickMembersImage}
               onRemove={queueMembersImageRemove}
               t={t}
+              slotErrors={failedMembersImageSlots(assetFailures)}
             />
           ))}
 

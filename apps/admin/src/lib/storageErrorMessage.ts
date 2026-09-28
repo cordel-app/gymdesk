@@ -59,6 +59,14 @@ export interface StorageErrorLabels {
    * still named.
    */
   operationName: string;
+  /**
+   * #830: what the `Error:` line says when the failure carries nothing usable —
+   * no message, no status, no storage detail. The acceptance criteria require a
+   * clear generic sentence rather than an empty line, and it is a label like the
+   * rest so the caller resolves it through next-intl. Optional: a caller that
+   * omits it gets the block with no `Error:` line, exactly as before.
+   */
+  fallbackError?: string;
 }
 
 /** The error an `apiFetch`/`uploadFetch` rejection carries. */
@@ -103,7 +111,7 @@ export function formatStorageError(err: StorageErrorLike, labels: StorageErrorLa
   const lines = [labels.title, '', `${labels.operation}: ${labels.operationName}`];
   const path = err.body?.path ?? err.body?.details?.key ?? null;
   if (path) lines.push(`${labels.path}: ${path}`);
-  const error = errorLine(err);
+  const error = errorLine(err) || labels.fallbackError || '';
   if (error) lines.push(`${labels.error}: ${error}`);
   const details = detailLine(err.body);
   if (details) lines.push(`${labels.details}: ${details}`);

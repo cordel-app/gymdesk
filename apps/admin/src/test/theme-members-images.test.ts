@@ -23,6 +23,10 @@ function stripComments(src: string): string {
 
 const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
 const editorSrc = stripComments(readFileSync(EDITOR_PATH, 'utf-8'));
+// #830: the Save sequence both Theme screens now share.
+const assetSaveSrc = stripComments(
+  readFileSync(join(__dirname, '..', 'components', 'themes', 'themeAssetSave.ts'), 'utf-8'),
+);
 
 const locales = Object.fromEntries(
   LOCALE_CODES.map((c) => [c, JSON.parse(readFileSync(join(LOCALES_DIR, `${c}.json`), 'utf-8'))]),
@@ -78,14 +82,22 @@ describe('Custom Themes: Members App images (#725)', () => {
   });
 
   it('uploads and clears through the theme\'s own routes, one call per touched slot', () => {
-    // #824: the upload goes through `uploadFetch`, which prepends `/api/proxy`
-    // and adds the tenant headers, so the page names the API path only.
-    expect(pageSrc).toContain('uploadFetch(`/system/themes/${theme.id}/members-images/${slot}`');
-    expect(pageSrc).toContain('`/system/themes/${theme.id}/members-images/${slot}`');
-    // Only inside the Save handler — a pick must not call the API.
+    // #830 moved the sequence into `components/themes/themeAssetSave.ts`, which
+    // both Theme screens share: the page now names the router root and the shared
+    // module builds the per-slot path. The invariant is unchanged — one call per
+    // touched slot, uploads through `uploadFetch` (which prepends `/api/proxy`
+    // and adds the tenant headers, #824), removals through `apiFetch`.
+    expect(assetSaveSrc).toContain('`${basePath}/${themeId}/members-images/${op.slot}`');
     const saveBody = pageSrc.match(/async function handleSaveAll[\s\S]*?\n {2}}/)?.[0] ?? '';
-    expect(saveBody).toContain('members-images');
-    expect(saveBody).toContain('for (const slot of MEMBER_IMAGE_SLOTS)');
+    expect(saveBody).toContain("basePath: '/system/themes'");
+    expect(saveBody).toContain('planThemeAssetOps(');
+    expect(saveBody).toContain('runThemeAssetOps(');
+    expect(saveBody).toContain('upload: (path, file) => uploadFetch(path, file)');
+    expect(saveBody).toContain("remove: (path) => apiFetch(path, { method: 'DELETE' })");
+    // Only inside the Save handler — a pick must not call the API.
+    const pickBody = pageSrc.match(/function pickMembersImage[\s\S]*?\n {2}}/)?.[0] ?? '';
+    expect(pickBody).not.toContain('fetch(');
+    expect(pickBody).not.toContain('apiFetch');
   });
 
   it('reads the six URLs off the theme payload rather than fetching them', () => {

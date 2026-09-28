@@ -50,9 +50,17 @@ interface ThemeMembersImagesEditorProps {
    * untouched — removing a slot deletes its row, not an object (#725).
    */
   storageBlock?: GymStorageBlock;
+  /**
+   * #830: per slot, whether the last Save failed on it. The diagnostic is
+   * rendered once above the sections; this marks which of the six it belongs to,
+   * which is the visible half of "each upload handles its own errors
+   * independently" — one rejected slot no longer keeps the other five from being
+   * saved, so the admin has to be able to tell which one is still pending.
+   */
+  slotErrors?: Record<MemberImageSlot, boolean>;
 }
 
-export function ThemeMembersImagesEditor({ previews, onPick, onRemove, t, readOnly = false, storageBlock = null }: ThemeMembersImagesEditorProps) {
+export function ThemeMembersImagesEditor({ previews, onPick, onRemove, t, readOnly = false, storageBlock = null, slotErrors }: ThemeMembersImagesEditorProps) {
   return (
     <div>
       <p style={{ margin: '0 0 12px', fontSize: 12, color: '#888' }}>{t('members_images_hint')}</p>
@@ -72,6 +80,7 @@ export function ThemeMembersImagesEditor({ previews, onPick, onRemove, t, readOn
             t={t}
             readOnly={readOnly}
             storageBlock={storageBlock}
+            failed={slotErrors?.[slot] ?? false}
           />
         ))}
       </div>
@@ -87,6 +96,7 @@ function MemberImageSlotField({
   t,
   readOnly,
   storageBlock,
+  failed,
 }: {
   slot: MemberImageSlot;
   preview: string | null;
@@ -95,6 +105,7 @@ function MemberImageSlotField({
   t: (key: any) => string;
   readOnly: boolean;
   storageBlock: GymStorageBlock;
+  failed: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -118,6 +129,9 @@ function MemberImageSlotField({
       >
         {!preview && <span style={{ fontSize: 12, color: '#888' }}>{t('members_image_none')}</span>}
       </div>
+      {failed && (
+        <p style={{ margin: '0 0 6px', fontSize: 12, color: '#c0392b' }}>{t('asset_save_failed')}</p>
+      )}
       {!readOnly && (
         <>
           <div style={{ display: 'flex', gap: 8 }}>
