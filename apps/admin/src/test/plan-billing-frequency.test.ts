@@ -120,7 +120,10 @@ describe('the editor renders one dropdown and no numeric input (#820)', () => {
 
 describe('the read-only halves name the cadence the same way', () => {
   it('renders the Billing frequency row through the shared helper', () => {
-    expect(pageSrc).toContain('value={billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}');
+    // #879 turned the read-only row into an item of the shared compact
+    // summary, so the call is an object property rather than a JSX prop — what
+    // this pins is the call itself, never the syntax around it.
+    expect(pageSrc).toContain('billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)');
     expect(pageSrc).toMatch(/const billingFrequencyText = [\s\S]{0,400}legacyBillingFrequencyText\(interval, unit\)/);
   });
 

@@ -1380,6 +1380,19 @@ Reference implementation: `api/src/domain/planExampleTimeline.ts` + `api/src/api
 
 ---
 
+## Two Screens, One Read-Only Summary (#879)
+
+When a ticket asks that one card's section "look like" another card's — same information, two presentations — the answer is the **same component**, not a second stylesheet that happens to agree today:
+
+- **Extract the look, not the content.** `apps/admin/src/components/BillingDurationSummary.tsx` owns the `Label: Value` pairing, the typography, the horizontal spacing and the responsive wrap, and nothing else. Which items exist, how each value is formatted and what an unset value reads as stay with the page — a Promotion omits a zero month count, a Membership Plan spells out *Not configured* — so aligning the two screens visually never quietly changes what either one says.
+- **Labels arrive resolved.** The component takes no `useTranslations()`, because the two pages namespace their keys differently (`promotions.*` vs `plans.*`) — the same reason `SellableItemBenefits` and `ExampleTimeline` take theirs ready (#806's split).
+- **A read-only summary holds no control and no prose.** The section's Edit button stays in the page's own section header behind `⋮ → Edit` (#797), and a field's explanatory sentence belongs to the editor that sentence explains, not to the summary.
+- **A source-scanning test pins the reuse, not the markup.** `apps/admin` has no component-test infra, so the guard is: both pages import and render the shared component, *and* neither page restates the style literal. An assertion that pins JSX around a call (`value={f(…)}`) breaks the moment the call moves into an object — pin the call.
+
+Reference implementation: `apps/admin/src/components/BillingDurationSummary.tsx` + the Billing & Duration sections of `apps/admin/src/app/[locale]/plans/page.tsx` and `.../promotions/page.tsx`.
+
+---
+
 ## Scheduled Background Task (#647 stage 4)
 
 When a ticket asks for a "scheduled/background task", it means an **endpoint plus a cron**, not a timer inside the API process. `POST /billing/run` set the shape and `POST /recurring-bookings/run` follows it:
