@@ -1,6 +1,6 @@
 // #725: the six Members App background images of a Custom Theme, stored in the
 // gym's own Cloudflare R2 folder under
-// `<storage_folder_prefix>/Themes/<theme_id>-<name>/Members/<slot>.png`.
+// `<storage_folder_prefix>/themes/<theme_id>-<name>/members_app/<slot>.png`.
 // Covers the upload and remove routes (`/system/themes/:id/members-images/:slot`),
 // the theme payload they surface on, and the Members App's own read (`/me/gym`).
 //
@@ -95,7 +95,7 @@ function remove(id: string, callerGymId: string, slot: string) {
 }
 
 function keyFor(prefix: string, theme: string, name: string, slot: string) {
-  return `${prefix}/Themes/${theme}-${name.replace(/\s+/g, '')}/Members/${slot}.png`;
+  return `${prefix}/themes/${theme}-${name.replace(/\s+/g, '')}/members_app/${slot}.png`;
 }
 
 beforeAll(async () => {
@@ -184,12 +184,12 @@ describe('POST /system/themes/:id/members-images/:slot', () => {
   it('creates the whole missing folder hierarchy before the upload, and only markers', async () => {
     await upload(themeId, gymId, 'calendar', 'image/png', PNG_BYTES);
     const keys = sentCommands('put').map((c: any) => c.input.Key);
-    const themeFolder = `${folderPrefix}/Themes/${themeId}-${THEME_NAME.replace(/\s+/g, '')}`;
+    const themeFolder = `${folderPrefix}/themes/${themeId}-${THEME_NAME.replace(/\s+/g, '')}`;
     expect(keys.slice(0, 4)).toEqual([
       `${folderPrefix}/`,
-      `${folderPrefix}/Themes/`,
+      `${folderPrefix}/themes/`,
       `${themeFolder}/`,
-      `${themeFolder}/Members/`,
+      `${themeFolder}/members_app/`,
     ]);
     // Everything before the image is a folder marker; nothing else is written.
     expect(keys.slice(0, 4).every((k: string) => k.endsWith('/'))).toBe(true);
@@ -231,7 +231,7 @@ describe('POST /system/themes/:id/members-images/:slot', () => {
       expect(res.status).toBe(200);
       const puts = sentCommands('put');
       expect(puts[puts.length - 1].input.Key).toBe(keyFor(folderPrefix, themeId, THEME_NAME, slot));
-      expect(res.body.members_images[`${slot}_url`]).toContain(`/Members/${slot}.png`);
+      expect(res.body.members_images[`${slot}_url`]).toContain(`/members_app/${slot}.png`);
     }
     const { rows } = await db.query('SELECT slot FROM theme_member_images WHERE theme_id = ?', [themeId]);
     expect(rows).toHaveLength(6);
@@ -475,7 +475,7 @@ describe('Members images on the theme payload (#725 §Performance, §API)', () =
     expect(Object.keys(theme.members_images).sort()).toEqual(
       ['background_url', 'bookings_url', 'calendar_url', 'membership_url', 'nutrition_url', 'training_url'],
     );
-    expect(theme.members_images.background_url).toContain('/Members/background.png');
+    expect(theme.members_images.background_url).toContain('/members_app/background.png');
     expect(theme.members_images.training_url).toBeNull();
   });
 
@@ -511,7 +511,7 @@ describe('Members images on the theme payload (#725 §Performance, §API)', () =
       .set('x-gym-id', gymId)
       .send({ name: THEME_NAME, tokens: { v: 2 } });
     expect(res.status).toBe(200);
-    expect(res.body.members_images.training_url).toContain('/Members/training.png');
+    expect(res.body.members_images.training_url).toContain('/members_app/training.png');
   });
 
   it('gives a clone its own, independent (and empty) configuration', async () => {
@@ -565,7 +565,7 @@ describe('GET /me/gyms (#725 §Members App Rendering)', () => {
     const res = await request.get('/me/gyms').set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
     const theme = gymFrom(res.body, gymId).theme;
-    expect(theme.members_images.training_url).toContain('/Members/training.png');
+    expect(theme.members_images.training_url).toContain('/members_app/training.png');
     expect(theme.members_images.calendar_url).toBeNull();
     // Only URLs reach the Members App — never a key, a prefix or a theme folder.
     expect(JSON.stringify(theme.members_images)).not.toContain('object_key');

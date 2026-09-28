@@ -239,7 +239,7 @@ describe('formatThemeAssetFailures() (#830)', () => {
         body: {
           error: 'Failed to upload image',
           stage: 'create_members_folder',
-          path: 'cordel/Themes/456-CrimsonBase/Members/nutrition.png',
+          path: 'cordel/themes/456-CrimsonBase/members_app/nutrition.png',
           details: { name: 'AccessDenied', httpStatusCode: 403, bucket: 'gymdesk', requestId: 'req-9' },
         },
       },
@@ -250,7 +250,7 @@ describe('formatThemeAssetFailures() (#830)', () => {
         'storage_error_title_members_image_slot[nutrition]',
         '',
         'Operation: stage:create_members_folder',
-        'Path: cordel/Themes/456-CrimsonBase/Members/nutrition.png',
+        'Path: cordel/themes/456-CrimsonBase/members_app/nutrition.png',
         'Error: Failed to upload image (403)',
         'Details: AccessDenied — bucket: gymdesk — request: req-9',
       ].join('\n'),

@@ -43,11 +43,11 @@ describe('folderStageForKey()', () => {
     expect(folderStageForKey('gyms/other/', logoKeys, 'create_logo_folder')).toBe('create_theme_folder');
   });
 
-  // A theme named "Logo" has a folder of `…/Themes/<id>-Logo/`, which a regex
+  // A theme named "logo" has a folder of `…/themes/<id>-Logo/`, which a regex
   // on the key would read as the leaf. The list decides instead.
   it('is not fooled by a theme whose name is the leaf folder', () => {
-    const keys = themeLogoFolderKeys(PREFIX, '9', 'Logo');
-    expect(keys[0]).toBe(`${PREFIX}/Themes/9-Logo/`);
+    const keys = themeLogoFolderKeys(PREFIX, '9', 'logo');
+    expect(keys[0]).toBe(`${PREFIX}/themes/9-logo/`);
     expect(folderStageForKey(keys[0], keys, 'create_logo_folder')).toBe('create_theme_folder');
     expect(folderStageForKey(keys[1], keys, 'create_logo_folder')).toBe('create_logo_folder');
   });
@@ -55,7 +55,7 @@ describe('folderStageForKey()', () => {
   it('works the same for the Members branch, whose leaf is one level deeper', () => {
     const keys = themeMemberFolderKeys(PREFIX, '456', 'Crimson Base');
     expect(folderStageForKey(keys[keys.length - 1], keys, 'create_members_folder')).toBe('create_members_folder');
-    // The gym root and the gym-level `Themes/` marker are not the theme's leaf.
+    // The gym root and the gym-level `themes/` marker are not the theme's leaf.
     expect(folderStageForKey(keys[0], keys, 'create_members_folder')).toBe('create_theme_folder');
     expect(folderStageForKey(keys[1], keys, 'create_members_folder')).toBe('create_theme_folder');
   });
@@ -75,12 +75,12 @@ describe('themeFolderStageForKey (#827)', () => {
   it('falls back to the outermost stage when the key is unknown or missing', () => {
     expect(themeFolderStageForKey(null, keys)).toBe('create_theme_folder');
     expect(themeFolderStageForKey(undefined, keys)).toBe('create_theme_folder');
-    expect(themeFolderStageForKey('gyms/other/Themes/1-X/Logo/', keys)).toBe('create_theme_folder');
+    expect(themeFolderStageForKey('gyms/other/themes/1-X/logo/', keys)).toBe('create_theme_folder');
   });
 
-  it('reads the list rather than the key, so a theme named "Logo" is not mistaken for its own leaf', () => {
-    const named = themeStorageFolderKeys(PREFIX, '5', 'Logo');
-    expect(named[0]).toBe(`${PREFIX}/Themes/5-Logo/`);
+  it('reads the list rather than the key, so a theme named "logo" is not mistaken for its own leaf', () => {
+    const named = themeStorageFolderKeys(PREFIX, '5', 'logo');
+    expect(named[0]).toBe(`${PREFIX}/themes/5-logo/`);
     expect(themeFolderStageForKey(named[0], named)).toBe('create_theme_folder');
     expect(themeFolderStageForKey(named[1], named)).toBe('create_logo_folder');
   });

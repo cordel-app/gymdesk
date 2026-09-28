@@ -120,7 +120,7 @@ describe('isPlatformOwnedExerciseVideoUrl', () => {
 
   it("refuses another platform feature's object", () => {
     expect(isPlatformOwnedExerciseVideoUrl(url('cordel/Nutrition/12-Chicken.png'))).toBe(false);
-    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/Themes/3-Base/Members/training.png'))).toBe(false);
+    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/themes/3-Base/members_app/training.png'))).toBe(false);
   });
 
   it('refuses a YouTube link, an external URL and an empty reference', () => {

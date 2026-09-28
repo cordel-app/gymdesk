@@ -111,7 +111,7 @@ describe('Custom Themes: Members App images (#725)', () => {
     for (const src of [pageSrc, editorSrc]) {
       expect(src).not.toContain('storage_folder_prefix');
       expect(src).not.toContain('object_key');
-      expect(src).not.toContain('/Members/');
+      expect(src).not.toContain('/members_app/');
     }
   });
 

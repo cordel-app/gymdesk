@@ -129,8 +129,9 @@ Tick items off in the PR that completes them.
       until an admin uploads a replacement, which writes the R2 key and clears the blob. Before launch,
       either re-upload each affected gym's logo through **System → Themes** (list them with
       `SELECT id, gym_id, name FROM themes WHERE gym_id IS NOT NULL AND logo_bytes IS NOT NULL`) or accept
-      that the two storage modes coexist. Base Theme logos stay blobs by design — the platform has no gym
-      storage folder — so they are not part of this. Note the rollback is one-way for an R2-backed logo:
+      that the two storage modes coexist. Since #829 a **Base Theme** logo is an object too
+      (`cordel/themes/<theme_id>-<name>/logo/logo.<ext>`), so the blobs to re-upload are both kinds now:
+      `SELECT id, gym_id, name FROM themes WHERE logo_bytes IS NOT NULL`. Note the rollback is one-way for an R2-backed logo:
       `down()` drops the key and returns those rows to "no logo" (the object survives in the bucket, but
       nothing can reach it), so the header falls back to the gym name rather than rendering a broken image.
 - [ ] **Give the production bucket a public origin and set `CLOUDFLARE_R2_PUBLIC_URL`** (#713, #725).
@@ -153,13 +154,13 @@ Tick items off in the PR that completes them.
       keeps every key byte for byte. Until it runs, those images stay broken, but nothing is lost: a
       replaced-media sweep compares objects, not URL strings, so the mixed state never deletes an object
       that is still in use.
-- [ ] **Confirm the R2 objects under `Themes/<theme>/Members/` are publicly readable too** (#725). The six
+- [ ] **Confirm the R2 objects under `themes/<theme>/members_app/` are publicly readable too** (#725). The six
       Members App backgrounds are fetched by the member's browser directly from
       the public origin and, unlike the logo, have **no API route that serves the bytes**: a missing public
       origin means a theme colour where the artwork should be, not a broken image. Setting
       `CLOUDFLARE_R2_PUBLIC_URL`, as in the item above, covers both.
-- [ ] **Re-run Initialize Bucket for every gym provisioned before the `Themes/` folder existed** (#735).
-      The gym-level `Themes/` marker is written by `initializeGymBucket()`, so a gym whose bucket was
+- [ ] **Re-run Initialize Bucket for every gym provisioned before the `themes/` folder existed** (#735).
+      The gym-level `themes/` marker is written by `initializeGymBucket()`, so a gym whose bucket was
       initialized earlier does not have it until a superadmin re-runs **Cordel → Gyms → Initialize Bucket**
       for it (`SELECT id, name FROM gyms WHERE storage_initialized_at IS NOT NULL AND deleted_at IS NULL`).
       Re-running is idempotent and non-destructive — it rewrites the same zero-byte markers under the
@@ -168,20 +169,33 @@ Tick items off in the PR that completes them.
 - [ ] **Sweep the obsolete `Branding/` and `Members/` folder markers from every gym bucket** (#826).
       Initialization no longer creates them, but a gym provisioned before #826 still has the five
       zero-byte markers (`Branding/`, `Branding/Logo/`, `Branding/Images/`, `Members/`, and on gyms
-      initialized before #735 nothing under `Themes/`) — re-running **Initialize Bucket** does not
+      initialized before #735 nothing under `themes/`) — re-running **Initialize Bucket** does not
       remove them, because it only writes. Nothing reads them: the theme logo moved to
-      `Themes/<theme_id>-<name>/Logo/` in #824 and a theme's Members App slots have been under
-      `Themes/<theme_id>-<name>/Members/` since #725. Before deleting `Branding/Logo/logo.*` on a
+      `themes/<theme_id>-<name>/logo/` in #824 and a theme's Members App slots have been under
+      `themes/<theme_id>-<name>/members_app/` since #725. Before deleting `Branding/Logo/logo.*` on a
       gym, check no `themes.logo_object_key` still points at it — a row written before #824 keeps
       its legacy key and renders from it until its logo is replaced.
 - [ ] **Initialize the folders of Themes that predate #827** (#828). Creating a Custom Theme has written its
-      `Themes/<theme_id>-<name>/` folder with its `Logo/` and `Members/` leaves only since #827, and a Theme
+      `themes/<theme_id>-<name>/` folder with its `logo/` and `members_app/` leaves only since #827, and a Theme
       renamed since then has its markers under the old name. `⋮ → Initialize bucket` on the Themes page (and on
       Cordel → Base Themes for a Base Theme) writes them for one Theme, idempotently and without touching a
       file or the Theme row. Nothing breaks without it — an upload creates the parents it needs — so this is
       the same "the R2 browser shows the same tree for every Theme" housekeeping as the gym-level item above.
       It does not initialize the gym bucket: a gym with no `storage_folder_prefix` answers 409 and needs
       **Initialize Cloudflare Bucket** on Cordel → Gyms first.
+- [ ] **Move every Theme's assets onto the #829 folder names, then delete the old tree** (#829). The three
+      theme folders are lowercase now — `themes/`, `logo/`, `members_app/` — and in R2 a case difference is a
+      different key, so nothing moved on its own: a logo stored under `Themes/<theme>/Logo/logo.png` and a
+      background under `Themes/<theme>/Members/training.png` keep rendering, because the URL is derived from
+      the key the row still holds. Two ways to land them on the new names, per Theme: re-upload each asset
+      from **Themes** / **Cordel → Base Themes** (the upload writes the new key and best-effort deletes the
+      one it replaced), or copy the objects to the new keys in the bucket and rewrite `themes.logo_object_key`
+      and `theme_member_images.object_key` to match. List what is still on the old names with
+      `SELECT id, gym_id, name, logo_object_key FROM themes WHERE logo_object_key LIKE '%/Themes/%'` and
+      `SELECT theme_id, slot, object_key FROM theme_member_images WHERE object_key LIKE '%/Themes/%'`.
+      Only then delete the old `Themes/` trees (and the gym-level `Themes/` marker, replaced by `themes/`
+      on the next **Initialize Cloudflare Bucket**) — deleting an object a row still points at is what turns
+      a working logo into a broken image.
 - [ ] **Sweep the Members image objects of themes that were renamed or deleted** (#725). Remove clears the
       row and deliberately leaves the object (the ticket requires it), and a theme renamed between two
       uploads leaves its old folder behind — the next upload sweeps that one object best-effort, nothing

@@ -21,16 +21,16 @@ const THEME_ID = '456';
 describe('themeStorageFolderKeys (#827)', () => {
   it('is the theme folder and its two leaves, outermost first', () => {
     expect(themeStorageFolderKeys(PREFIX, THEME_ID, 'Crimson Base')).toEqual([
-      'gyms/11111111-QSport/Themes/456-CrimsonBase/',
-      'gyms/11111111-QSport/Themes/456-CrimsonBase/Logo/',
-      'gyms/11111111-QSport/Themes/456-CrimsonBase/Members/',
+      'gyms/11111111-QSport/themes/456-CrimsonBase/',
+      'gyms/11111111-QSport/themes/456-CrimsonBase/logo/',
+      'gyms/11111111-QSport/themes/456-CrimsonBase/members_app/',
     ]);
   });
 
-  it('creates neither the gym root nor its Themes/ branch — those are Gym Bucket Initialization (#735)', () => {
+  it('creates neither the gym root nor its themes/ branch — those are Gym Bucket Initialization (#735)', () => {
     const keys = themeStorageFolderKeys(PREFIX, THEME_ID, 'Crimson Base');
     expect(keys).not.toContain(`${PREFIX}/`);
-    expect(keys).not.toContain(`${PREFIX}/Themes/`);
+    expect(keys).not.toContain(`${PREFIX}/themes/`);
   });
 
   it('every key ends in a slash, which is what makes re-writing one idempotent (§8)', () => {
@@ -53,7 +53,7 @@ describe('themeStorageFolderKeys (#827)', () => {
   it('agrees with the folders the two upload routes create on demand', () => {
     const keys = themeStorageFolderKeys(PREFIX, THEME_ID, 'Crimson Base');
     for (const key of themeLogoFolderKeys(PREFIX, THEME_ID, 'Crimson Base')) expect(keys).toContain(key);
-    // `themeMemberFolderKeys()` also carries the gym root and its Themes/ branch,
+    // `themeMemberFolderKeys()` also carries the gym root and its themes/ branch,
     // which #827 deliberately does not create; the theme-scoped half must match.
     for (const key of themeMemberFolderKeys(PREFIX, THEME_ID, 'Crimson Base').slice(2)) {
       expect(keys).toContain(key);
@@ -67,15 +67,15 @@ describe('themeStorageFolderKeys (#827)', () => {
   });
 
   it('keeps the leaf names in the case the uploads use — a lowercase marker would add a folder, not rename one', () => {
-    expect(THEME_LOGO_FOLDER).toBe('Logo');
-    expect(THEME_MEMBERS_FOLDER).toBe('Members');
+    expect(THEME_LOGO_FOLDER).toBe('logo');
+    expect(THEME_MEMBERS_FOLDER).toBe('members_app');
   });
 
   it('works for a Base Theme under the platform root, which has no gym prefix', () => {
     expect(themeStorageFolderKeys('cordel', '3', 'Cordel Light')).toEqual([
-      'cordel/Themes/3-CordelLight/',
-      'cordel/Themes/3-CordelLight/Logo/',
-      'cordel/Themes/3-CordelLight/Members/',
+      'cordel/themes/3-CordelLight/',
+      'cordel/themes/3-CordelLight/logo/',
+      'cordel/themes/3-CordelLight/members_app/',
     ]);
   });
 });

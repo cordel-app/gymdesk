@@ -125,7 +125,7 @@ describe('the Members App knows only URLs (#725 §Members App Rendering)', () =>
     for (const src of [componentSrc, libSrc]) {
       expect(src).not.toContain('object_key');
       expect(src).not.toContain('storage_folder_prefix');
-      expect(src).not.toContain('/Themes/');
+      expect(src).not.toContain('/themes/');
       expect(src).not.toMatch(/\bupload\b/i);
       expect(src).not.toMatch(/\br2\.cloudflarestorage\b/i);
     }

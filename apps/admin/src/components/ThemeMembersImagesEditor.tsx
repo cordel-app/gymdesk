@@ -41,7 +41,7 @@ interface ThemeMembersImagesEditorProps {
    * #823: why an upload into this gym's Cloudflare folder is unavailable, or
    * `null` when it is available. Decided by the page, like every other decision
    * here — the Base Themes screen leaves it `null`, since a Base Theme's slots
-   * live under the platform root (`cordel/Themes/…`) and no gym's bucket gates
+   * live under the platform root (`cordel/themes/…`) and no gym's bucket gates
    * them.
    *
    * When set, every slot's `Upload image` is disabled together with its file

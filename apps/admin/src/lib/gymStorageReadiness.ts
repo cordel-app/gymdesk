@@ -11,10 +11,10 @@
  *  - **not_initialized** — R2 is configured, but *this gym* has never had its
  *    bucket folder tree written, so it has no `storage_folder_prefix` to hang a
  *    key off. Gym Bucket Initialization is what writes that tree — including the
- *    gym-level `Themes/` root (#735) — and captures the prefix, so the prefix is
+ *    gym-level `themes/` root (#735) — and captures the prefix, so the prefix is
  *    also the only signal a client has that the gym's folders (the theme branch
  *    among them) exist at all. A theme's own
- *    `Themes/<theme_id>-<name>/Members/` branch is deliberately not part of it:
+ *    `themes/<theme_id>-<name>/members_app/` branch is deliberately not part of it:
  *    it cannot exist before the theme does and `ensureStorageFolders()` writes it
  *    at upload time (#725).
  *
