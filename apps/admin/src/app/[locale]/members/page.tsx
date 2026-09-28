@@ -537,6 +537,7 @@ export default function MembersPage() {
               memberId={m.id}
               member={m}
               profileVersion={profileVersion}
+              editing={editingId === m.id}
               canManageTraining={canManageTraining}
               canManagePackages={canManagePackages}
               isAdmin={isAdmin}
