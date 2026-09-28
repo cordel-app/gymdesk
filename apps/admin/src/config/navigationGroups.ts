@@ -1,4 +1,5 @@
 import { AppRole, AppModule, canAccessModule } from './permissions';
+import type { NavIconName } from '@/components/icons/navIconNames';
 
 export interface NavItem {
   href: string;
@@ -14,6 +15,11 @@ export interface NavItem {
 export interface NavGroup {
   id: string;
   labelKey: string;
+  /**
+   * #884: the icon shown beside this first-level entry, drawn by `NAV_ICONS`.
+   * Required, so a group added later cannot reach the sidebar without one.
+   */
+  icon: NavIconName;
   /** Stable dot-separated feature key — if flags[featureKey] is false, entire group is hidden. */
   featureKey?: string;
   /** Module-based access gate: show when the user's role canAccessModule(module). */
@@ -27,6 +33,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'membership',
     labelKey: 'nav.groups.membership',
+    icon: 'users',
     featureKey: 'membership',
     module: 'MEMBERS',
     items: [
@@ -44,6 +51,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'calendar',
     labelKey: 'nav.groups.calendar',
+    icon: 'calendar',
     featureKey: 'calendar',
     module: 'CALENDAR',
     items: [
@@ -63,6 +71,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'organization',
     labelKey: 'nav.groups.organization',
+    icon: 'building',
     featureKey: 'organization',
     module: 'ORGANIZATION',
     items: [
@@ -100,6 +109,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'training',
     labelKey: 'nav.groups.training',
+    icon: 'dumbbell',
     featureKey: 'training',
     module: 'TRAINING',
     items: [
@@ -133,6 +143,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'nutrition',
     labelKey: 'nav.groups.nutrition',
+    icon: 'apple',
     featureKey: 'nutrition',
     module: 'NUTRITION',
     items: [
@@ -161,6 +172,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'payments',
     labelKey: 'nav.groups.payments',
+    icon: 'creditCard',
     featureKey: 'payments',
     module: 'PAYMENTS',
     items: [
@@ -184,6 +196,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'financials',
     labelKey: 'nav.groups.financials',
+    icon: 'banknote',
     featureKey: 'financials',
     module: 'FINANCIALS',
     items: [
@@ -224,6 +237,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'system',
     labelKey: 'nav.groups.system',
+    icon: 'sliders',
     featureKey: 'system',
     module: 'SYSTEM',
     items: [
@@ -252,6 +266,7 @@ export const navigationGroups: NavGroup[] = [
   {
     id: 'cordel',
     labelKey: 'nav.groups.cordel',
+    icon: 'shield',
     requiredRole: 'superadmin',
     items: [
       {
