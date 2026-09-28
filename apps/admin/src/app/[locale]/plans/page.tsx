@@ -17,6 +17,7 @@ import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
+import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
   SellableItemBenefitEditor,
   SellableItemBenefitView,
@@ -1199,25 +1200,38 @@ export default function PlansPage() {
                       </div>
                     ) : (
                       <>
-                        {DURATION_FIELDS.map((field) => (
-                          <DetailRow
-                            key={field}
-                            label={t(`plans.label_${field}`)}
-                            value={plan[field] != null ? t('plans.months_value', { n: plan[field] }) : t('plans.not_configured')}
+                        {/* #879: the same compact `Label: Value` summary the
+                            Promotion card shows, from the same component — the
+                            two-column DetailRow list is gone, and with it the
+                            two long explanatory sentences (§5/§6), which belong
+                            to the editor this section's Edit button opens. What
+                            each value *means* is unchanged: an unconfigured
+                            duration still reads "Not configured" (§4), and a
+                            Plan with no billing policy still says so below. */}
+                        <div style={{ marginBottom: 10 }}>
+                          <BillingDurationSummary
+                            items={billingDurationItems([
+                              ...DURATION_FIELDS.map((field) => ({
+                                key: field,
+                                label: t(`plans.label_${field}`),
+                                value: plan[field] != null ? t('plans.months_value', { n: plan[field] }) : t('plans.not_configured'),
+                              })),
+                              plan.billing_policy != null && {
+                                key: 'billing_frequency',
+                                label: t('plans.label_billing_frequency'),
+                                value: billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit),
+                              },
+                              plan.billing_policy != null && {
+                                key: 'auto_renew',
+                                label: t('plans.auto_renew'),
+                                value: plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no'),
+                              },
+                            ])}
                           />
-                        ))}
-                        {plan.billing_policy ? (
-                          <>
-                            <DetailRow
-                              label={t('plans.label_billing_frequency')}
-                              value={billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)}
-                              description={t('plans.desc_recurring_billing')}
-                            />
-                            <DetailRow label={t('plans.auto_renew')} value={plan.billing_policy.auto_renew ? t('plans.yes') : t('plans.no')} description={t('plans.desc_auto_renew')} />
-                          </>
-                        ) : (
-                          <p style={hintSt}>{t('plans.no_billing')}</p>
-                        )}
+                          {plan.billing_policy == null && (
+                            <p style={{ ...hintSt, marginTop: 6 }}>{t('plans.no_billing')}</p>
+                          )}
+                        </div>
                       </>
                     )}
 

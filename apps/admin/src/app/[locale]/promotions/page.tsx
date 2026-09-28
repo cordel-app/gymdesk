@@ -13,6 +13,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { ExampleTimeline, ExampleTimelineTone } from '@/components/ExampleTimeline';
+import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { PromotionDetailModal } from './PromotionDetailModal';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
 
@@ -1411,12 +1412,18 @@ export default function PromotionsPage() {
         {(free > 0 || paid > 0 || bonus > 0) && (
           <div style={subSectionSt}>
             <p style={sectionLabelSt}>{t('section_billing_duration')}</p>
-            <div style={{ display: 'flex', gap: 24, fontSize: 13, flexWrap: 'wrap' }}>
-              {free > 0 && <span><strong>{t('label_free_months')}:</strong> {free}</span>}
-              {paid > 0 && <span><strong>{t('label_paid_months')}:</strong> {paid}</span>}
-              {payBeforehand > 0 && <span><strong>{t('label_pay_beforehand_months')}:</strong> {payBeforehand}</span>}
-              {bonus > 0 && <span><strong>{t('label_bonus_months')}:</strong> {bonus}</span>}
-            </div>
+            {/* #879: the look of this summary now lives in the shared
+                component, so the Membership Plan card renders the same one.
+                Which items appear stays the Promotion's own decision — an
+                unconfigured month count is simply omitted here. */}
+            <BillingDurationSummary
+              items={billingDurationItems([
+                free > 0 && { key: 'free_months', label: t('label_free_months'), value: free },
+                paid > 0 && { key: 'paid_months', label: t('label_paid_months'), value: paid },
+                payBeforehand > 0 && { key: 'pay_beforehand_months', label: t('label_pay_beforehand_months'), value: payBeforehand },
+                bonus > 0 && { key: 'bonus_months', label: t('label_bonus_months'), value: bonus },
+              ])}
+            />
           </div>
         )}
 
