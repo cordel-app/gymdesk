@@ -78,6 +78,7 @@ import {
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
+import { nutritionDashboardRouter } from './api/nutrition-dashboard';
 import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
 import { recycleBinRouter } from './api/recycle-bin';
@@ -289,6 +290,8 @@ app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModule
 app.use('/member-nutrition-plans', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_plans'), memberNutritionPlansRouter);
 // Global read-only catalog — no gym_id required; only requireAuth + module gate
 app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionLibraryRouter);
+// #809: mounted on the Nutrition group flag, so turning the Nutrition Plans page off leaves the Dashboard readable.
+app.use('/nutrition/dashboard', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition'), nutritionDashboardRouter);
 
 // FINANCIALS module — admin=RW, front_desk/accountant=R, trainer*/nutritionist/member=NONE
 app.use('/membership-plans', requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.plans'), membershipPlansRouter);

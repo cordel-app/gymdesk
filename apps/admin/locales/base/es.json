@@ -3462,6 +3462,17 @@
     "empty": "No hay planes de membresía que mostrar.",
     "error_generic": "Algo ha salido mal. Inténtalo de nuevo."
   },
+  "nutrition_dashboard": {
+    "title": "Panel de nutrición",
+    "subtitle": "Resumen y métricas de la gestión de nutrición.",
+    "nutrition_plans": "Planes de nutrición",
+    "active_members": "Miembros activos",
+    "template_status": "Estado de la plantilla",
+    "no_template": "Sin plantilla base de plan de nutrición",
+    "loading": "Cargando…",
+    "empty": "Ningún plan de nutrición está asignado actualmente a miembros activos.",
+    "error_generic": "Algo ha salido mal. Inténtalo de nuevo."
+  },
   "professional_services": {
     "title": "Servicios profesionales",
     "loading": "Cargando…",

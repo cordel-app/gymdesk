@@ -3489,6 +3489,17 @@
     "empty": "No hi ha plans de membresia per mostrar.",
     "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
   },
+  "nutrition_dashboard": {
+    "title": "Tauler de nutrició",
+    "subtitle": "Resum i mètriques de la gestió de nutrició.",
+    "nutrition_plans": "Plans de nutrició",
+    "active_members": "Membres actius",
+    "template_status": "Estat de la plantilla",
+    "no_template": "Sense plantilla base de pla de nutrició",
+    "loading": "Carregant…",
+    "empty": "Cap pla de nutrició està assignat actualment a membres actius.",
+    "error_generic": "Alguna cosa ha anat malament. Torna-ho a provar."
+  },
   "professional_services": {
     "title": "Serveis professionals",
     "loading": "Carregant…",
