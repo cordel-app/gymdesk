@@ -8,6 +8,7 @@ import { handleDupEntry } from '../infra/db-helpers';
 import { validateDocumentId, maskDocumentId } from '../domain/documentId';
 import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
 import { classifyAccount, loadAccountLinksFor } from '../infra/clerk-account-links';
+import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 
 /**
  * #513: never write the raw nif_nie_passport value into audit_logs — mask it
@@ -95,10 +96,7 @@ membersRouter.get('/', async (req, res) => {
               WHEN m.invitation_id IS NOT NULL THEN 'invited'
               ELSE 'not_enrolled'
             END AS account_status,
-            (SELECT um.status
-             FROM user_memberships um
-             WHERE um.member_id = m.id AND um.gym_id = m.gym_id
-             ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS enrollment_status,
+            ${latestEnrollmentStatusSql('m')} AS enrollment_status,
             -- #640: a Membership covering two people or a family bills once,
             -- against its owner, so a covered member's payment status has to
             -- follow the transactions of any Membership they are covered by —

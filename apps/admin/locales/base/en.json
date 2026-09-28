@@ -3476,6 +3476,17 @@
     "empty": "No membership plans to show.",
     "error_generic": "Something went wrong. Please try again."
   },
+  "nutrition_dashboard": {
+    "title": "Nutrition Dashboard",
+    "subtitle": "Overview and metrics for nutrition management.",
+    "nutrition_plans": "Nutrition Plans",
+    "active_members": "Active members",
+    "template_status": "Template status",
+    "no_template": "No base nutrition template plan",
+    "loading": "Loading…",
+    "empty": "No Nutrition Plans are currently assigned to active members.",
+    "error_generic": "Something went wrong. Please try again."
+  },
   "professional_services": {
     "title": "Professional Services",
     "loading": "Loading…",
