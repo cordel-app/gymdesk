@@ -333,12 +333,12 @@ describe('idempotency', () => {
   });
 
   // #735 §"Existing Gym Support": a gym initialized before the gym-level
-  // `Themes/` folder existed receives it by re-running the same action — the
+  // `themes/` folder existed receives it by re-running the same action — the
   // endpoint re-writes the whole marker set under the prefix already captured,
   // so nothing about the row has to be migrated. Which markers that set holds
-  // (Themes/ among them) is pinned by the unit tests in storage.test.ts, since
+  // (themes/ among them) is pinned by the unit tests in storage.test.ts, since
   // initializeGymBucket is mocked here.
-  it('re-initializes a gym whose storage was provisioned before Themes/ existed, using its stored prefix', async () => {
+  it('re-initializes a gym whose storage was provisioned before themes/ existed, using its stored prefix', async () => {
     const id = await createTestGym('Gym Initialized Before Themes');
     const legacyPrefix = buildGymFolderPrefix(id, 'Gym Initialized Before Themes');
     await db.query(

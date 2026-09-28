@@ -16,8 +16,9 @@ import {
   themeMemberFolderKeys,
   type MemberImageRow,
 } from '../domain/themeMemberImages';
-import { themeStorageFolderKeys } from '../domain/themeFolders';
-import { themeFolderStageForKey } from '../domain/storageFailureStage';
+import { themeRootFolderKeys, themeStorageFolderKeys } from '../domain/themeFolders';
+import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
+import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
 import { loadPlatformMemberImagesByTheme } from './theme-member-images';
 import {
   deleteStorageObject,
@@ -45,13 +46,22 @@ const ALLOWED_MIME_TYPES = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/w
 const LOGO_MAX_BYTES = 512 * 1024; // 512 KB
 
 /**
+ * The columns every single-theme response is built from. `logo_object_key` joined
+ * them with #829, which moved a Base Theme logo out of `themes.logo_bytes` and
+ * into the platform's own R2 folder: `shapeTheme()` derives `logo_url` from it,
+ * so a list or a write that forgot the column would report a logo-less theme.
+ */
+const THEME_SELECT_COLS = 'id, gym_id, is_system_default, name, description, status, logo_mime, '
+  + 'logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, modified_at';
+
+/**
  * `memberImages` are this theme's `theme_member_images` rows (#732), passed in
  * rather than fetched here so a list of N themes costs one query, not N — #732
  * asks for the Members configuration inside the existing Theme payload and
  * explicitly not as six requests of its own.
  */
 function shapeTheme(row: any, memberImages: MemberImageRow[] = []) {
-  const { logo_bytes: _lb, ...rest } = row;
+  const { logo_bytes: _lb, logo_object_key: _lk, ...rest } = row;
   return {
     ...rest,
     // #732: always all six fields; `null` is "this slot is not configured", and
@@ -60,6 +70,12 @@ function shapeTheme(row: any, memberImages: MemberImageRow[] = []) {
     members_images: memberImageUrls(memberImages),
     type: row.gym_id === null ? 'system' : 'custom',
     has_logo: !!row.logo_mime,
+    // #829: where the binary actually is. A Base Theme logo is an object in the
+    // platform's own folder now, so this is the URL a browser can read it from
+    // directly; it is null for a row uploaded before #829, whose logo is still a
+    // `logo_bytes` blob served by `GET /themes/:id/logo` — the fallback every
+    // consumer keeps.
+    logo_url: themeLogoUrl(row),
     is_system_default: !!row.is_system_default,
     logo_contains_gym_name: !!row.logo_contains_gym_name,
     tokens: typeof row.tokens === 'string' ? JSON.parse(row.tokens) : (row.tokens ?? null),
@@ -104,7 +120,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const sql = `
     SELECT
       t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-      t.logo_mime, t.logo_updated_at, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
+      t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
       (
         SELECT COUNT(DISTINCT gg.id)
         FROM gyms gg
@@ -128,7 +144,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
 themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
     `SELECT t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-            t.logo_mime, t.logo_updated_at, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
+            t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
             (
               SELECT COUNT(DISTINCT gg.id) FROM gyms gg
               LEFT JOIN centers cc ON cc.gym_id = gg.id AND cc.deleted_at IS NULL
@@ -195,7 +211,7 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
     [id, name.trim(), description?.trim() ?? null, resolvedStatus, logo_contains_gym_name ?? false, JSON.stringify(mergedTokens)],
   );
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
     [id],
   );
   recordAudit(req, { action: 'create', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });
@@ -263,7 +279,7 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
     [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), req.params.id],
   );
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
     [req.params.id],
   );
   recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, previous: shapeTheme(current), next: shapeTheme(rows[0]) });
@@ -271,6 +287,32 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
 });
 
 // ─── Logo upload ──────────────────────────────────────────────────────────────
+//
+// #829: a Base Theme logo is an object in the *platform's* own folder, under
+// `cordel/themes/<theme_id>-<sanitized name>/logo/logo.<ext>` — the same shape a
+// Custom Theme's has had since #824, off `PLATFORM_STORAGE_ROOT` rather than a
+// gym's `storage_folder_prefix`, because a Base Theme is a `gym_id IS NULL` row
+// that hangs off no gym. It replaces the `themes.logo_bytes` MEDIUMBLOB #824
+// deliberately left in place: the reason for the blob was that the platform had
+// nowhere to upload to, and `cordel/` has been a real root since #732.
+//
+// The columns are the Custom Theme's own, not a second set (#829's answer on the
+// thread): `logo_object_key` holds the key, `logo_bytes` is cleared in the same
+// statement — migration 180's `chk_themes_logo_storage` forbids a row carrying
+// both — and the URL is *derived* from the key by `themeLogoUrl()` rather than
+// stored. Rows uploaded before this keep their blob and still render, because
+// `GET /themes/:id/logo` prefers the object and falls back to the bytes; they
+// move the next time the logo is replaced, the same rule #824 used.
+//
+// Neither the folder nor the key comes from the request: the prefix is the
+// `cordel` constant and the theme is looked up with `gym_id IS NULL`, so a
+// Custom Theme is simply 404 here (§8) and an upload cannot be aimed at another
+// theme's storage. The extension comes from the server-validated MIME type — the
+// uploaded file's name reaches the key at no point (§2).
+//
+// The failure modes and their `stage`/`path` diagnostics are the gym route's
+// (#824), minus the 409: the platform folder is a constant rather than a per-gym
+// row, so no gym's bucket gates it and its markers are written on demand here.
 
 themesRouter.post(
   '/:id/logo',
@@ -287,39 +329,159 @@ themesRouter.post(
       return res.status(413).json({ error: 'Logo exceeds 512 KB limit' });
     }
 
-    const { rows: existing } = await db.query('SELECT id FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL', [req.params.id]);
-    if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+    if (!isStorageConfigured()) {
+      const missingConfig = getMissingStorageConfigKeys();
+      return res.status(503).json({
+        error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+        stage: 'resolve_path',
+        missingConfig,
+        diagnostics: getStorageDiagnostics(),
+      });
+    }
 
-    await db.query(
-      'UPDATE themes SET logo_bytes = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP() WHERE id = ?',
-      [body, mime, req.params.id],
-    );
-    const { rows } = await db.query(
-      'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    // The theme's `name` is part of its folder, so it is read here rather than
+    // assumed: a renamed theme writes to its new folder, and the key it held
+    // before is swept below exactly as a type change is.
+    const { rows: existing } = await db.query<{ id: string; name: string; logo_object_key: string | null }>(
+      'SELECT id, name, logo_object_key FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
       [req.params.id],
     );
-    res.json(shapeTheme(rows[0]));
+    if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+    const theme = existing[0];
+
+    const key = buildThemeLogoKey(PLATFORM_STORAGE_ROOT, theme.id, theme.name, mime);
+
+    // `cordel/`, `cordel/themes/`, the theme's own folder and its `logo/` leaf,
+    // created on demand — the same chain the Base Theme Members upload writes
+    // (#732), because no Gym Bucket Initialization owns the platform root.
+    // Idempotent: every key ends in `/`, so what it overwrites is always another
+    // zero-byte marker and never a file.
+    const logoFolderKeys = [
+      ...themeRootFolderKeys(PLATFORM_STORAGE_ROOT),
+      ...themeLogoFolderKeys(PLATFORM_STORAGE_ROOT, theme.id, theme.name),
+    ];
+    try {
+      await ensureStorageFolders(logoFolderKeys);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'ensureStorageFolders', key });
+      logger.error(
+        { err, details, diagnostics: getStorageDiagnostics(), themeId: theme.id },
+        'Cloudflare R2 base theme logo folder creation failed',
+      );
+      return res.status(502).json({
+        error: `Failed to create the theme logo folder: ${details.message}`,
+        stage: folderStageForKey(details.key, logoFolderKeys, 'create_logo_folder'),
+        path: details.key ?? key,
+        details,
+      });
+    }
+
+    try {
+      await uploadStorageObject(key, mime, body);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'uploadStorageObject', key });
+      logger.error(
+        { err, details, diagnostics: getStorageDiagnostics(), themeId: theme.id },
+        'Cloudflare R2 base theme logo upload failed',
+      );
+      return res.status(502).json({
+        error: `Failed to upload logo: ${details.message}`,
+        stage: 'upload_logo',
+        path: key,
+        details,
+      });
+    }
+
+    // One logo per theme: `logo.png` and `logo.svg` are different keys, and so
+    // are two folders of a renamed theme, so whatever this theme pointed at
+    // before is removed. Best-effort *after* the new logo is safely stored — the
+    // upload has already succeeded and is what was asked for, so a failure here
+    // is an orphan to sweep, not a failed save. No sibling theme is touched: the
+    // key names this theme's own folder.
+    const previousKey = theme.logo_object_key;
+    if (previousKey && previousKey !== key) {
+      try {
+        await deleteStorageObject(previousKey);
+      } catch (err: any) {
+        const details = err instanceof StorageOperationError
+          ? err.details
+          : describeStorageError(err, { operation: 'deleteStorageObject', key: previousKey });
+        logger.warn(
+          { err, details, themeId: theme.id },
+          'Replaced base theme logo left an orphaned object in Cloudflare R2',
+        );
+      }
+    }
+
+    // `logo_bytes = NULL`: R2 is the source of the binary now, and leaving the
+    // old blob behind would be a second copy the readers could prefer.
+    await db.query(
+      'UPDATE themes SET logo_bytes = NULL, logo_object_key = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP() WHERE id = ?',
+      [key, mime, theme.id],
+    );
+    const { rows } = await db.query(
+      `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
+      [theme.id],
+    );
+    res.json(shapeTheme(rows[0], await loadThemeMemberImages(theme.id)));
   },
 );
 
 // ─── Logo delete ──────────────────────────────────────────────────────────────
 
 themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
-  const { rows: existing } = await db.query('SELECT id FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL', [req.params.id]);
-  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
-  await db.query('UPDATE themes SET logo_bytes = NULL, logo_mime = NULL, logo_updated_at = NULL WHERE id = ?', [req.params.id]);
-  const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
+  const { rows: existing } = await db.query<{ id: string; logo_object_key: string | null }>(
+    'SELECT id, logo_object_key FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
     [req.params.id],
   );
-  res.json(shapeTheme(rows[0]));
+  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+
+  // #829, as the gym route has done since #713: an R2-backed logo leaves the
+  // bucket first, and unlike the orphan sweep on replace this failure is
+  // reported (502) with the row left alone — clearing the reference while the
+  // file survives would strand an object nothing points at any more. A row that
+  // is still a blob has no object, so there is nothing to delete for it.
+  const key: string | null = existing[0].logo_object_key ?? null;
+  if (key) {
+    try {
+      await deleteStorageObject(key);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'deleteStorageObject', key });
+      logger.error(
+        { err, details, diagnostics: getStorageDiagnostics(), themeId: req.params.id },
+        'Cloudflare R2 base theme logo delete failed',
+      );
+      return res.status(502).json({
+        error: `Failed to remove logo: ${details.message}`,
+        stage: 'remove_logo',
+        path: key,
+        details,
+      });
+    }
+  }
+
+  await db.query(
+    'UPDATE themes SET logo_bytes = NULL, logo_object_key = NULL, logo_mime = NULL, logo_updated_at = NULL WHERE id = ?',
+    [req.params.id],
+  );
+  const { rows } = await db.query(
+    `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
+    [req.params.id],
+  );
+  res.json(shapeTheme(rows[0], await loadThemeMemberImages(existing[0].id)));
 });
 
 // ─── Members App background images (base themes) ─────────────────────────────
 //
 // #732: the six fixed slots a Custom Theme has carried since #725, now on a
 // Base Theme too — stored in the *platform's* own R2 folder, under
-// `cordel/Themes/<theme_id>-<name>/Members/<slot>.png`.
+// `cordel/themes/<theme_id>-<name>/members_app/<slot>.png`.
 //
 // The routes below take neither the folder nor the object key from the request:
 // the prefix is the `cordel` constant, the theme is looked up with
@@ -456,7 +618,7 @@ themesRouter.post(
     );
 
     const { rows } = await db.query(
-      'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
+      `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
       [theme.id],
     );
     res.json(shapeTheme(rows[0], await loadThemeMemberImages(theme.id)));
@@ -482,7 +644,7 @@ themesRouter.delete('/:id/members-images/:slot', requireSuperadmin, async (req, 
   );
 
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
     [theme.id],
   );
   res.json(shapeTheme(rows[0], await loadThemeMemberImages(theme.id)));
@@ -492,7 +654,7 @@ themesRouter.delete('/:id/members-images/:slot', requireSuperadmin, async (req, 
 
 /**
  * Creates (or re-creates) the folders a Base Theme's own assets live in:
- * `cordel/Themes/<theme_id>-<sanitized name>/` with its `Logo/` and `Members/`
+ * `cordel/themes/<theme_id>-<sanitized name>/` with its `Logo/` and `Members/`
  * leaves. The same three markers a Custom Theme gets (#827), off
  * `PLATFORM_STORAGE_ROOT` rather than a gym's prefix, because a Base Theme is a
  * `gym_id IS NULL` row with no `storage_folder_prefix` to hang off.
@@ -579,7 +741,7 @@ themesRouter.post('/clone/:sourceId', requireSuperadmin, async (req, res) => {
     [id, baseName, src.logo_contains_gym_name, tokens],
   );
   const { rows } = await db.query(
-    'SELECT id, gym_id, is_system_default, name, description, status, logo_mime, logo_updated_at, logo_contains_gym_name, tokens, created_at, modified_at FROM themes WHERE id = ?',
+    `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
     [id],
   );
   recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0]) });
@@ -631,9 +793,11 @@ themesPublicRouter.get('/:id/logo', async (req, res) => {
     'SELECT logo_bytes, logo_mime, logo_object_key FROM themes WHERE id = ? AND deleted_at IS NULL',
     [req.params.id],
   );
-  // #713: a Custom Theme logo lives in the gym's R2 folder, and this endpoint
-  // stays the one logo URL every consumer can use whichever way the binary is
-  // stored — it reads the object and returns the bytes. Deliberately not a
+  // #713/#829: a theme logo lives in R2 — the gym's folder for a Custom Theme,
+  // the platform's for a Base Theme — and this endpoint stays the one logo URL
+  // every consumer can use whichever way the binary is stored: it reads the
+  // object and returns the bytes, and falls back to the `logo_bytes` blob a row
+  // written before its side moved to R2 still holds. Deliberately not a
   // redirect to the bucket: the Payment app loads this URL under
   // `img-src 'self'` (its nginx proxies `/themes/` for exactly that reason) and
   // CSP still matches a redirect's host, so a 302 would be blocked there.

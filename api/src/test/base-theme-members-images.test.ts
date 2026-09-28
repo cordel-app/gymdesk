@@ -1,6 +1,6 @@
 // #732: the six Members App background images of a **Base Theme**, stored in
 // the platform's own Cloudflare R2 folder under
-// `cordel/Themes/<theme_id>-<name>/Members/<slot>.png`.
+// `cordel/themes/<theme_id>-<name>/members_app/<slot>.png`.
 // Covers the upload and remove routes (`/platform/themes/:id/members-images/:slot`),
 // the theme payload they surface on, what a gym is served for a Base Theme and
 // what the Members App reads (`/me/gym`).
@@ -117,9 +117,9 @@ function remove(id: string, slot: string) {
     .set('Authorization', TEST_AUTH_HEADER);
 }
 
-/** `cordel/Themes/<id>-<Name>/Members/<slot>.png` — the key the route derives. */
+/** `cordel/themes/<id>-<Name>/members_app/<slot>.png` — the key the route derives. */
 function keyFor(theme: string, name: string, slot: string) {
-  return `cordel/Themes/${theme}-${name.replace(/\s+/g, '')}/Members/${slot}.png`;
+  return `cordel/themes/${theme}-${name.replace(/\s+/g, '')}/members_app/${slot}.png`;
 }
 
 beforeAll(async () => {
@@ -190,7 +190,7 @@ describe('POST /platform/themes/:id/members-images/:slot', () => {
     expect(res.status).toBe(200);
 
     const key = keyFor(baseThemeId, THEME_NAME, 'training');
-    expect(key.startsWith('cordel/Themes/')).toBe(true);
+    expect(key.startsWith('cordel/themes/')).toBe(true);
     const puts = sentCommands('put');
     expect(puts[puts.length - 1].input).toMatchObject({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/png' });
 
@@ -217,12 +217,12 @@ describe('POST /platform/themes/:id/members-images/:slot', () => {
   it('creates the whole missing folder hierarchy before the upload, and only markers', async () => {
     await upload(baseThemeId, 'calendar', 'image/png', PNG_BYTES);
     const keys = sentCommands('put').map((c: any) => c.input.Key);
-    const themeFolder = `cordel/Themes/${baseThemeId}-${THEME_NAME.replace(/\s+/g, '')}`;
+    const themeFolder = `cordel/themes/${baseThemeId}-${THEME_NAME.replace(/\s+/g, '')}`;
     expect(keys.slice(0, 4)).toEqual([
       'cordel/',
-      'cordel/Themes/',
+      'cordel/themes/',
       `${themeFolder}/`,
-      `${themeFolder}/Members/`,
+      `${themeFolder}/members_app/`,
     ]);
     expect(keys.slice(0, 4).every((k: string) => k.endsWith('/'))).toBe(true);
     expect(keys).toHaveLength(5);

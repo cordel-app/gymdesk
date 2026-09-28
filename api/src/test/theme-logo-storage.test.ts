@@ -1,6 +1,6 @@
 // #713: a Custom Theme logo is stored in the gym's Cloudflare R2 folder instead
 // of in `themes.logo_bytes`. #824 moved the key into the theme's own folder —
-// `<storage_folder_prefix>/Themes/<theme_id>-<name>/Logo/logo.<ext>` — so each
+// `<storage_folder_prefix>/themes/<theme_id>-<name>/logo/logo.<ext>` — so each
 // theme carries its own logo and nothing writes to the obsolete `Branding/`
 // any more. Covers the gym-admin upload/remove routes
 // (`/system/themes/:id/logo`) and the public read (`GET /themes/:id/logo`),
@@ -65,18 +65,18 @@ const THEME_NAME = 'Theme Logo Storage Custom';
 const OTHER_THEME_NAME = 'Theme Logo Storage Other Custom';
 
 /**
- * #824: `<prefix>/Themes/<theme_id>-<sanitized name>/Logo/logo.<ext>`. Built
+ * #824: `<prefix>/themes/<theme_id>-<sanitized name>/logo/logo.<ext>`. Built
  * here from the same parts the route builds it from rather than imported, so a
  * change to the shape has to be stated in the test too.
  */
 function logoKey(prefix: string, id: string, themeName: string, ext: string): string {
-  return `${prefix}/Themes/${id}-${themeName.replace(/\s+/g, '')}/Logo/logo.${ext}`;
+  return `${prefix}/themes/${id}-${themeName.replace(/\s+/g, '')}/logo/logo.${ext}`;
 }
 
 /** The two folder markers the upload writes before the object itself. */
 function folderMarkers(prefix: string, id: string, themeName: string): string[] {
-  const folder = `${prefix}/Themes/${id}-${themeName.replace(/\s+/g, '')}`;
-  return [`${folder}/`, `${folder}/Logo/`];
+  const folder = `${prefix}/themes/${id}-${themeName.replace(/\s+/g, '')}`;
+  return [`${folder}/`, `${folder}/logo/`];
 }
 
 /** Keys of the PUTs that are objects rather than zero-byte folder markers. */
@@ -217,7 +217,7 @@ describe('POST /system/themes/:id/logo', () => {
   });
 
   // §"The theme folder is automatically created when missing" / "The Logo folder
-  // is automatically created when missing" — and the gym-level `Themes/` root is
+  // is automatically created when missing" — and the gym-level `themes/` root is
   // not, because Gym Bucket Initialization owns it (#735) and #823 keeps the
   // control disabled until it exists.
   it('creates the theme folder and its Logo leaf, but never the Themes root', async () => {
@@ -225,7 +225,7 @@ describe('POST /system/themes/:id/logo', () => {
 
     const markerKeys = sentCommands('put').map((c: any) => c.input.Key).filter((k: string) => k.endsWith('/'));
     expect(markerKeys).toEqual(folderMarkers(folderPrefix, themeId, THEME_NAME));
-    expect(markerKeys).not.toContain(`${folderPrefix}/Themes/`);
+    expect(markerKeys).not.toContain(`${folderPrefix}/themes/`);
     expect(markerKeys.some((k: string) => k.includes('Branding'))).toBe(false);
   });
 
@@ -234,7 +234,7 @@ describe('POST /system/themes/:id/logo', () => {
     const res = await uploadLogo(themeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(502);
     expect(res.body.stage).toBe('create_theme_folder');
-    expect(res.body.path).toBe(`${folderPrefix}/Themes/${themeId}-${THEME_NAME.replace(/\s+/g, '')}/`);
+    expect(res.body.path).toBe(`${folderPrefix}/themes/${themeId}-${THEME_NAME.replace(/\s+/g, '')}/`);
     expect(res.body.details.operation).toBe('ensureStorageFolders');
 
     const { rows } = await db.query<{ logo_object_key: string | null }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
@@ -319,11 +319,11 @@ describe('POST /system/themes/:id/logo', () => {
     expect(rows[0].logo_object_key).toBe(logoKey(otherFolderPrefix, otherThemeId, OTHER_THEME_NAME, 'png'));
   });
 
-  // §6: a row written before #824 keeps its `Branding/Logo/` key and still
+  // §6: a row written before #824 keeps its `Branding/logo/` key and still
   // renders; replacing the logo is what moves it into the theme's folder, and
   // the object it left behind is swept.
   it('moves a legacy Branding/Logo key into the theme folder on the next upload', async () => {
-    const legacyKey = `${folderPrefix}/Branding/Logo/logo.png`;
+    const legacyKey = `${folderPrefix}/Branding/logo/logo.png`;
     await db.query(
       "UPDATE themes SET logo_object_key = ?, logo_mime = 'image/png', logo_updated_at = UTC_TIMESTAMP() WHERE id = ?",
       [legacyKey, themeId],

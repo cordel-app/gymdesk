@@ -47,13 +47,13 @@ describe('formatStorageErrorLine() (#828)', () => {
     body: {
       error: 'Failed to create the theme storage folders: Unauthorized',
       stage: 'create_logo_folder',
-      path: 'gyms/123-QSport/Themes/456-CrimsonBase/Logo/',
+      path: 'gyms/123-QSport/themes/456-CrimsonBase/logo/',
       details: {
         operation: 'ensureStorageFolders',
         message: 'Unauthorized',
         name: 'AccessDenied',
         httpStatusCode: 401,
-        key: 'gyms/123-QSport/Themes/456-CrimsonBase/Logo/',
+        key: 'gyms/123-QSport/themes/456-CrimsonBase/logo/',
       },
     },
   };
@@ -63,7 +63,7 @@ describe('formatStorageErrorLine() (#828)', () => {
     expect(line).not.toContain('\n');
     expect(line).toContain('Initializing the theme bucket failed.');
     expect(line).toContain('Operation: Create the Logo folder');
-    expect(line).toContain('Path: gyms/123-QSport/Themes/456-CrimsonBase/Logo/');
+    expect(line).toContain('Path: gyms/123-QSport/themes/456-CrimsonBase/logo/');
     expect(line).toContain('Error: Failed to create the theme storage folders: Unauthorized (401)');
     expect(line).toContain('AccessDenied');
   });

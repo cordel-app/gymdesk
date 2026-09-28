@@ -54,22 +54,22 @@ describe('Members image slots (#725)', () => {
 describe('object keys (#725 §Objective, §Customer Theme Ownership)', () => {
   const folderPrefix = buildGymFolderPrefix(GYM_ID, 'Acme Fitness');
 
-  it('nests the theme folder under the gym folder and `Themes/`', () => {
+  it('nests the theme folder under the gym folder and `themes/`', () => {
     expect(buildThemeFolderPrefix(folderPrefix, THEME_ID, 'Dark Modern'))
-      .toBe(`gyms/${GYM_ID}-AcmeFitness/Themes/${THEME_ID}-DarkModern`);
+      .toBe(`gyms/${GYM_ID}-AcmeFitness/themes/${THEME_ID}-DarkModern`);
   });
 
   it('uses the fixed filename per slot, always `.png`', () => {
     for (const slot of MEMBER_IMAGE_SLOTS) {
       expect(buildThemeMemberImageKey(folderPrefix, THEME_ID, 'Dark Modern', slot))
-        .toBe(`gyms/${GYM_ID}-AcmeFitness/Themes/${THEME_ID}-DarkModern/Members/${slot}.png`);
+        .toBe(`gyms/${GYM_ID}-AcmeFitness/themes/${THEME_ID}-DarkModern/members_app/${slot}.png`);
     }
   });
 
   it('never lets a theme name introduce a path separator', () => {
     const key = buildThemeMemberImageKey(folderPrefix, THEME_ID, '../../other gym/evil', 'training');
-    expect(key).toBe(`gyms/${GYM_ID}-AcmeFitness/Themes/${THEME_ID}-othergymevil/Members/training.png`);
-    // gyms / <gym> / Themes / <theme> / Members / training.png — the depth the
+    expect(key).toBe(`gyms/${GYM_ID}-AcmeFitness/themes/${THEME_ID}-othergymevil/members_app/training.png`);
+    // gyms / <gym> / themes / <theme> / members_app / training.png — the depth the
     // key always has, so a name can never climb out of its own folder.
     expect(key.split('/')).toHaveLength(6);
     expect(sanitizeStorageFolderName('../../other gym/evil')).toBe('othergymevil');
@@ -89,9 +89,9 @@ describe('object keys (#725 §Objective, §Customer Theme Ownership)', () => {
   it('lists the whole folder hierarchy outermost first', () => {
     expect(themeMemberFolderKeys(folderPrefix, THEME_ID, 'Dark Modern')).toEqual([
       `gyms/${GYM_ID}-AcmeFitness/`,
-      `gyms/${GYM_ID}-AcmeFitness/Themes/`,
-      `gyms/${GYM_ID}-AcmeFitness/Themes/${THEME_ID}-DarkModern/`,
-      `gyms/${GYM_ID}-AcmeFitness/Themes/${THEME_ID}-DarkModern/Members/`,
+      `gyms/${GYM_ID}-AcmeFitness/themes/`,
+      `gyms/${GYM_ID}-AcmeFitness/themes/${THEME_ID}-DarkModern/`,
+      `gyms/${GYM_ID}-AcmeFitness/themes/${THEME_ID}-DarkModern/members_app/`,
     ]);
   });
 
@@ -105,10 +105,10 @@ describe('object keys (#725 §Objective, §Customer Theme Ownership)', () => {
 // ─── Base Themes (#732) ──────────────────────────────────────────────────────
 
 describe('platform object keys (#732)', () => {
-  it('puts a Base Theme under `cordel/Themes/`, with the same slot filenames', () => {
+  it('puts a Base Theme under `cordel/themes/`, with the same slot filenames', () => {
     for (const slot of MEMBER_IMAGE_SLOTS) {
       expect(buildThemeMemberImageKey(PLATFORM_STORAGE_ROOT, THEME_ID, 'Dark Modern', slot))
-        .toBe(`cordel/Themes/${THEME_ID}-DarkModern/Members/${slot}.png`);
+        .toBe(`cordel/themes/${THEME_ID}-DarkModern/members_app/${slot}.png`);
     }
   });
 
@@ -123,8 +123,8 @@ describe('platform object keys (#732)', () => {
 
   it('sanitizes a Base Theme name the same way, so it cannot climb out of its folder', () => {
     const key = buildThemeMemberImageKey(PLATFORM_STORAGE_ROOT, THEME_ID, '../../gyms/evil', 'training');
-    expect(key).toBe(`cordel/Themes/${THEME_ID}-gymsevil/Members/training.png`);
-    // cordel / Themes / <theme> / Members / training.png
+    expect(key).toBe(`cordel/themes/${THEME_ID}-gymsevil/members_app/training.png`);
+    // cordel / themes / <theme> / members_app / training.png
     expect(key.split('/')).toHaveLength(5);
   });
 
@@ -132,9 +132,9 @@ describe('platform object keys (#732)', () => {
     const keys = themeMemberFolderKeys(PLATFORM_STORAGE_ROOT, THEME_ID, 'Dark Modern');
     expect(keys).toEqual([
       'cordel/',
-      'cordel/Themes/',
-      `cordel/Themes/${THEME_ID}-DarkModern/`,
-      `cordel/Themes/${THEME_ID}-DarkModern/Members/`,
+      'cordel/themes/',
+      `cordel/themes/${THEME_ID}-DarkModern/`,
+      `cordel/themes/${THEME_ID}-DarkModern/members_app/`,
     ]);
     for (const key of keys) expect(key.endsWith('/')).toBe(true);
   });
@@ -155,9 +155,9 @@ describe('the API shape (#725 §Database / Storage References)', () => {
   it('resolves a stored key to its R2 URL with a cache-busting stamp', () => {
     const modified = new Date('2026-09-24T10:00:00Z');
     const urls = memberImageUrls([
-      { slot: 'training', object_key: 'gyms/g/Themes/t/Members/training.png', modified_at: modified },
+      { slot: 'training', object_key: 'gyms/g/themes/t/members_app/training.png', modified_at: modified },
     ]);
-    expect(urls.training_url).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/gyms/g/Themes/t/Members/training.png?v=${modified.getTime()}`);
+    expect(urls.training_url).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/gyms/g/themes/t/members_app/training.png?v=${modified.getTime()}`);
     expect(urls.nutrition_url).toBeNull();
   });
 

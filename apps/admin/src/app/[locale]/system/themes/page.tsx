@@ -254,7 +254,7 @@ export default function ThemesPage() {
   // ─── Initialize bucket (#828) ──────────────────────────────────────────────
 
   /**
-   * Writes this Base Theme's own folder tree — `cordel/Themes/<id>-<name>/` with
+   * Writes this Base Theme's own folder tree — `cordel/themes/<id>-<name>/` with
    * its `Logo/` and `Members/` leaves — into the platform's Cloudflare folder.
    * Explicitly repeatable: the markers are zero-byte objects, so a second run
    * only ensures the structure exists and touches no file and no Theme field.
@@ -794,7 +794,7 @@ export default function ThemesPage() {
         }
         if (th.status !== 'deleted') {
           // #828: the Base Theme's own storage structure, manually and
-          // repeatably — `cordel/Themes/<id>-<name>/` with its two leaves.
+          // repeatably — `cordel/themes/<id>-<name>/` with its two leaves.
           items.push({
             label: t('action_initialize_bucket'),
             onClick: () => handleInitializeBucket(th),

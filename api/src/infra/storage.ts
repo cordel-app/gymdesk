@@ -22,7 +22,7 @@ const GYM_STORAGE_ROOT = 'gyms';
  * sibling of `gyms/` (#668). Platform-level assets belong to no gym, so they
  * cannot hang off `gyms.storage_folder_prefix`; this constant is the whole of
  * their prefix, which is why a Base Theme's folder is
- * `cordel/Themes/<theme_id>-<name>/` — `buildThemeMemberImageKey()` takes the
+ * `cordel/themes/<theme_id>-<name>/` — `buildThemeMemberImageKey()` takes the
  * prefix as its first argument and neither knows nor cares which root it came
  * from. Exported so there is one spelling of the platform root in the codebase:
  * a second literal `'cordel'` anywhere is a bug waiting to diverge from this.
@@ -30,29 +30,37 @@ const GYM_STORAGE_ROOT = 'gyms';
 export const PLATFORM_STORAGE_ROOT = 'cordel';
 
 /**
- * `Themes` — the branch every theme's own folder hangs off, under the gym root
+ * `themes` — the branch every theme's own folder hangs off, under the gym root
  * for a Custom Theme and under {@link PLATFORM_STORAGE_ROOT} for a Base Theme
  * (#725, #732). Declared here because it is also one of the gym's top-level
  * folders (#735) and `domain/themeMemberImages.ts` re-exports it as
  * `THEME_STORAGE_FOLDER`, so the string has exactly one spelling.
+ *
+ * Lowercase since #829, which fixed the whole theme tree's spelling
+ * (`themes/<theme_id>-<name>/logo/`, `.../members_app/`). R2 has no directories,
+ * so the case *is* the folder: the objects an earlier deployment wrote under
+ * `Themes/` are still reachable under their stored keys and are swept by hand
+ * (see `docs/go-to-production.md`), because nothing in the API may rewrite a key
+ * a row still points at.
  */
-export const THEMES_FOLDER = 'Themes';
+export const THEMES_FOLDER = 'themes';
 
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
 // #826: the gym root carries exactly **three** first-level folders — `Nutrition/`,
-// `Exercises/` and `Themes/`. `Branding/` (with its `Logo/` and `Images/` leaves)
+// `Exercises/` and `themes/`, the last of them lowercased by #829.
+// `Branding/` (with its `Logo/` and `Images/` leaves)
 // and `Members/` were dropped: nothing has written to either since #824 moved the
-// theme logo into the theme's own folder (`Themes/<theme_id>-<name>/Logo/`) and
-// #725 put a theme's Members App slots under `Themes/<theme_id>-<name>/Members/`.
+// theme logo into the theme's own folder (`themes/<theme_id>-<name>/logo/`) and
+// #725 put a theme's Members App slots under `themes/<theme_id>-<name>/members_app/`.
 // Initialization is what stops creating them; the markers an earlier run already
 // wrote are left alone, since removing objects from a gym's bucket is not this
 // ticket's business (see `docs/go-to-production.md`).
 //
-// The leaves below the three roots are unchanged (§6 — this ticket is only about
-// what sits directly under the gym root), and the existing spelling of each name
-// is kept: the folder names here are the same strings the key builders in
+// The leaves below the three roots are unchanged (#826 §6 — that ticket was only
+// about what sits directly under the gym root), and the spelling of each name is
+// the key builders' own: the folder names here are the same strings the builders in
 // `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`, `domain/themeFolders.ts`
 // and the nutrition upload route write into, so a marker that disagreed with them
 // in case alone would add a *fourth* first-level folder rather than rename one.
@@ -62,8 +70,8 @@ const GYM_FOLDERS = [
   'Exercises/',
   'Exercises/Images/',
   'Exercises/Videos/',
-  // #735: the gym-level `Themes/` root only. A Custom Theme's own
-  // `Themes/<theme_id>-<name>/Members/` branch is deliberately *not* created
+  // #735: the gym-level `themes/` root only. A Custom Theme's own
+  // `themes/<theme_id>-<name>/members_app/` branch is deliberately *not* created
   // here — it cannot exist before the theme does, and `ensureStorageFolders()`
   // writes it at upload time (#725). Appended rather than slotted in, so every
   // folder that existed before keeps the position it was written in.
@@ -331,7 +339,7 @@ export async function initializeGymBucket(folderPrefix: string): Promise<void> {
 /**
  * Writes zero-byte folder markers, outermost first, for a branch of the tree
  * that `initializeGymBucket()` did not create — a Custom Theme's own folder and
- * its `Members/` leaf (#725), which cannot exist at gym-initialize time because
+ * its `members_app/` leaf (#725), which cannot exist at gym-initialize time because
  * the theme does not exist yet.
  *
  * Idempotent and non-destructive by construction: every key ends in `/`, so the

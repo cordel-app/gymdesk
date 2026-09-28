@@ -13,7 +13,7 @@
  * Logo upload failed.
  *
  * Operation: Upload logo
- * Path: gyms/123-QSport/Themes/456-CrimsonBase/Logo/logo.png
+ * Path: gyms/123-QSport/themes/456-CrimsonBase/logo/logo.png
  * Error: Unauthorized (401)
  * Details: Cloudflare storage rejected the request.
  * ```

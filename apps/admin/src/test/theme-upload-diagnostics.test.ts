@@ -50,7 +50,7 @@ describe('formatStorageError() (#824)', () => {
         body: {
           error: 'Failed to upload logo: Unauthorized',
           stage: 'upload_logo',
-          path: 'gyms/123-QSport/Themes/456-CrimsonBase/Logo/logo.png',
+          path: 'gyms/123-QSport/themes/456-CrimsonBase/logo/logo.png',
           details: {
             operation: 'uploadStorageObject',
             message: 'Unauthorized',
@@ -59,7 +59,7 @@ describe('formatStorageError() (#824)', () => {
             httpStatusCode: 401,
             requestId: 'req-7',
             bucket: 'gym-bucket',
-            key: 'gyms/123-QSport/Themes/456-CrimsonBase/Logo/logo.png',
+            key: 'gyms/123-QSport/themes/456-CrimsonBase/logo/logo.png',
           },
         },
       },
@@ -68,7 +68,7 @@ describe('formatStorageError() (#824)', () => {
 
     expect(message).toContain('Logo upload failed.');
     expect(message).toContain('Operation: Upload logo');
-    expect(message).toContain('Path: gyms/123-QSport/Themes/456-CrimsonBase/Logo/logo.png');
+    expect(message).toContain('Path: gyms/123-QSport/themes/456-CrimsonBase/logo/logo.png');
     // The status comes from the storage layer's own response, not the HTTP
     // status of our route — a 502 carrying a 401 from R2 is the interesting case.
     expect(message).toContain('Error: Failed to upload logo: Unauthorized (401)');
@@ -79,10 +79,10 @@ describe('formatStorageError() (#824)', () => {
 
   it('falls back to the key when the body carries no explicit path', () => {
     const message = formatStorageError(
-      { message: 'boom', status: 502, body: { details: { key: 'gyms/1-G/Themes/2-T/Logo/logo.png' } } },
+      { message: 'boom', status: 502, body: { details: { key: 'gyms/1-G/themes/2-T/logo/logo.png' } } },
       LABELS,
     );
-    expect(message).toContain('Path: gyms/1-G/Themes/2-T/Logo/logo.png');
+    expect(message).toContain('Path: gyms/1-G/themes/2-T/logo/logo.png');
   });
 
   it('still says what it can for a failure that never reached storage', () => {

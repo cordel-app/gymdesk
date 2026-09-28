@@ -88,8 +88,8 @@ let baseThemeId: string;
 
 /** The three markers an initialization writes, outermost first. */
 function expectedMarkers(prefix: string, themeId: string, themeName: string): string[] {
-  const folder = `${prefix}/Themes/${themeId}-${themeName.replace(/\s+/g, '')}`;
-  return [`${folder}/`, `${folder}/Logo/`, `${folder}/Members/`];
+  const folder = `${prefix}/themes/${themeId}-${themeName.replace(/\s+/g, '')}`;
+  return [`${folder}/`, `${folder}/logo/`, `${folder}/members_app/`];
 }
 
 function sentCommands(type: 'put' | 'get' | 'delete') {
@@ -201,11 +201,11 @@ describe('POST /system/themes/:id/storage/initialize — a Custom Theme (#828 §
     expect(sentCommands('get')).toHaveLength(0);
   });
 
-  it('never touches the gym root or its Themes/ branch — Gym Bucket Initialization owns those (§5, #735)', async () => {
+  it('never touches the gym root or its themes/ branch — Gym Bucket Initialization owns those (§5, #735)', async () => {
     const res = await initCustom(customThemeId, gymId);
     expect(res.status).toBe(200);
     expect(putKeys()).not.toContain(`${folderPrefix}/`);
-    expect(putKeys()).not.toContain(`${folderPrefix}/Themes/`);
+    expect(putKeys()).not.toContain(`${folderPrefix}/themes/`);
   });
 
   it('leaves the theme row untouched — no id, name, status or configuration change (§3)', async () => {
@@ -224,7 +224,7 @@ describe('POST /system/themes/:id/storage/initialize — a Custom Theme (#828 §
 
   it('sanitizes the theme name in the key, exactly as the upload routes do', async () => {
     const res = await initCustom(customThemeId, gymId);
-    expect(res.body.folders[0]).toBe(`${folderPrefix}/Themes/${customThemeId}-BucketInitCustomTheme/`);
+    expect(res.body.folders[0]).toBe(`${folderPrefix}/themes/${customThemeId}-BucketInitCustomTheme/`);
   });
 
   it('404s another gym\'s theme and writes nothing', async () => {
@@ -275,7 +275,7 @@ describe('POST /system/themes/:id/storage/initialize — a Custom Theme (#828 §
     const res = await initCustom(customThemeId, gymId);
     expect(res.status).toBe(502);
     expect(res.body.stage).toBe('create_theme_folder');
-    expect(res.body.path).toBe(`${folderPrefix}/Themes/${customThemeId}-BucketInitCustomTheme/`);
+    expect(res.body.path).toBe(`${folderPrefix}/themes/${customThemeId}-BucketInitCustomTheme/`);
     expect(res.body.details.operation).toBe('ensureStorageFolders');
   });
 
@@ -289,7 +289,7 @@ describe('POST /system/themes/:id/storage/initialize — a Custom Theme (#828 §
     const res = await initCustom(customThemeId, gymId);
     expect(res.status).toBe(502);
     expect(res.body.stage).toBe('create_members_folder');
-    expect(res.body.path.endsWith('/Members/')).toBe(true);
+    expect(res.body.path.endsWith('/members_app/')).toBe(true);
   });
 });
 
@@ -301,7 +301,7 @@ describe('POST /platform/themes/:id/storage/initialize — a Base Theme (#828 §
     expect(res.body.folders).toEqual(markers);
     expect(putKeys()).toEqual(markers);
     // Never a gym's folder, whichever gym the superadmin has selected.
-    for (const key of putKeys()) expect(key.startsWith('cordel/Themes/')).toBe(true);
+    for (const key of putKeys()) expect(key.startsWith('cordel/themes/')).toBe(true);
   });
 
   it('is idempotent — a second run rewrites the same zero-byte markers (§3)', async () => {
@@ -363,7 +363,7 @@ describe('POST /platform/themes/:id/storage/initialize — a Base Theme (#828 §
     const res = await initBase(baseThemeId);
     expect(res.status).toBe(502);
     expect(res.body.stage).toBe('create_theme_folder');
-    expect(res.body.path.startsWith('cordel/Themes/')).toBe(true);
+    expect(res.body.path.startsWith('cordel/themes/')).toBe(true);
     expect(res.body.details.operation).toBe('ensureStorageFolders');
   });
 });
