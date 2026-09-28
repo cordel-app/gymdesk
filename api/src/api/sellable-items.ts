@@ -26,6 +26,7 @@ const SELECT = `
     gc.status,
     gc.enrollment_status,
     gc.is_system,
+    gc.mandatory,
     gc.description,
     gc.amount,
     gc.currency,
@@ -69,6 +70,16 @@ function validateUnits(units: any): string | null {
   const n = Number(units);
   if (!Number.isInteger(n) || n <= 0) return 'units must be a positive integer';
   return null;
+}
+
+// #832: the checkbox sends a real boolean, so anything else is a client bug
+// rather than a value to coerce — `"false"` is truthy in JS and would silently
+// mark an item mandatory. 0/1 are accepted because they are what the column
+// stores and what every GET returns.
+function validateMandatory(mandatory: any): string | null {
+  if (mandatory === undefined || mandatory === null) return null;
+  if (typeof mandatory === 'boolean' || mandatory === 0 || mandatory === 1) return null;
+  return 'mandatory must be a boolean';
 }
 
 export async function validateTaxRateId(gymId: string, taxRateId: any): Promise<string | null> {
@@ -182,6 +193,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const {
     name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
+    mandatory,
   } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -198,6 +210,8 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   }
   const unitsErr = validateUnits(units);
   if (unitsErr) return res.status(400).json({ error: unitsErr });
+  const mandatoryErr = validateMandatory(mandatory);
+  if (mandatoryErr) return res.status(400).json({ error: mandatoryErr });
 
   try {
     const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
@@ -215,9 +229,9 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       const { insertId } = await tx.query(
         `INSERT INTO gym_charges
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name.trim(),
@@ -228,6 +242,9 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
           billing_frequency || null,
           status || 'active',
           enrollment_status || 'public',
+          // #832: absent means non-mandatory — the ticket's default for a new
+          // item and for every row that existed before the column did.
+          mandatory ? 1 : 0,
           notes?.trim() || null,
           package_information?.trim() || null,
           validity_days != null ? parseInt(validity_days, 10) : null,
@@ -251,7 +268,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
       entityType: 'gym_charge',
       entityId: String(insertId),
       entityName: name.trim(),
-      next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids },
+      next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids, mandatory: mandatory ? 1 : 0 },
     });
     res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
@@ -288,9 +305,9 @@ sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
       const { insertId } = await tx.query(
         `INSERT INTO gym_charges
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name,
@@ -306,6 +323,9 @@ sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
           orig.billing_frequency,
           orig.status,
           orig.enrollment_status,
+          // #832: Duplicate is a copy, not the form — the flag comes over as it
+          // stands, the same rule the frequency above follows.
+          orig.mandatory,
           orig.notes,
           orig.package_information,
           orig.validity_days,
@@ -327,7 +347,7 @@ sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
       entityType: 'gym_charge',
       entityId: String(insertId),
       entityName: name,
-      next: { name, type: orig.type, duplicated_from: Number(req.params.id), professional_service_ids: linkedServiceIds },
+      next: { name, type: orig.type, duplicated_from: Number(req.params.id), professional_service_ids: linkedServiceIds, mandatory: orig.mandatory },
     });
     res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
@@ -342,6 +362,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   const {
     description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
+    mandatory,
   } = req.body;
 
   if (type && !VALID_TYPES.includes(type)) {
@@ -358,6 +379,13 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
   }
   const unitsErr = validateUnits(units);
   if (unitsErr) return res.status(400).json({ error: unitsErr });
+  const mandatoryErr = validateMandatory(mandatory);
+  if (mandatoryErr) return res.status(400).json({ error: mandatoryErr });
+  // #832: a partial update leaves the flag alone, but `false` is a value the
+  // user chose and has to reach the column — so what decides whether the
+  // column moves is whether the request supplied the field, not its truthiness
+  // (a COALESCE on the value itself could never persist an unchecked box).
+  const mandatoryProvided = mandatory !== undefined && mandatory !== null;
 
   try {
     const taxRateErr = await validateTaxRateId(gymId, tax_rate_id);
@@ -413,6 +441,13 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
          ),
          status                    = COALESCE(?, status),
          enrollment_status         = COALESCE(?, enrollment_status),
+         -- #832: written for a System item as readily as for a custom one — the
+         -- ticket requires the flag to be editable on both kinds — so it is
+         -- deliberately not wrapped in the IF(? = 0, ...) is_system guard the
+         -- catalogue-shape columns below carry. The first placeholder is
+         -- mandatoryProvided, the shape PUT /promotions/:id uses for
+         -- only_applicable_for_new_members.
+         mandatory                 = IF(?, ?, mandatory),
          notes                     = ?,
          name                      = COALESCE(IF(? = 0, ?, NULL), name),
          type                      = COALESCE(IF(? = 0, ?, NULL), type),
@@ -431,6 +466,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         status ?? null, status ?? null,
         status ?? null,
         enrollment_status ?? null,
+        mandatoryProvided ? 1 : 0, mandatory ? 1 : 0,
         notes ?? null,
         isSystem, name?.trim() ?? null,
         isSystem, type ?? null,
@@ -458,7 +494,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
       entityType: 'gym_charge',
       entityId: String(req.params.id),
       entityName: rows[0]?.name ?? rows[0]?.charge_type_name,
-      next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids: professionalServiceIdsToPersist },
+      next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids: professionalServiceIdsToPersist, mandatory: mandatoryProvided ? (mandatory ? 1 : 0) : undefined },
     });
     res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {

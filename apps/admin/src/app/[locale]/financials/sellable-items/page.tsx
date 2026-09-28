@@ -95,6 +95,8 @@ interface SellableItem {
   status: ItemStatus;
   enrollment_status: EnrollmentStatus;
   is_system: number;
+  /** #832: 0/1 from MySQL, like `is_system` — read through Boolean(). */
+  mandatory: number;
   description: string | null;
   amount: string | null;
   currency: string;
@@ -133,6 +135,7 @@ type EditForm = {
   package_information: string;
   validity_days: string;
   tax_rate_id: string;
+  mandatory: boolean;
   professionalServiceIds: number[];
 };
 
@@ -143,6 +146,7 @@ type InlineNew = {
   amount: string;
   billing_frequency: string;
   tax_rate_id: string;
+  mandatory: boolean;
   professionalServiceIds: number[];
   saving: boolean;
   error: string | null;
@@ -176,6 +180,7 @@ function emptyEditForm(item: SellableItem): EditForm {
     package_information: item.package_information ?? '',
     validity_days: item.validity_days != null ? String(item.validity_days) : '',
     tax_rate_id: item.tax_rate_id != null ? String(item.tax_rate_id) : '',
+    mandatory: Boolean(item.mandatory),
     professionalServiceIds: item.professional_services?.map((s) => s.id) ?? [],
   };
 }
@@ -332,7 +337,7 @@ export default function SellableItemsPage() {
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', type: 'fee', units: '', amount: '', billing_frequency: '', tax_rate_id: '', professionalServiceIds: [], saving: false, error: null });
+    setInlineNew({ name: '', type: 'fee', units: '', amount: '', billing_frequency: '', tax_rate_id: '', mandatory: false, professionalServiceIds: [], saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -363,6 +368,7 @@ export default function SellableItemsPage() {
           amount: inlineNew.amount !== '' ? parseFloat(inlineNew.amount) : null,
           billing_frequency: inlineNew.billing_frequency || null,
           tax_rate_id: inlineNew.tax_rate_id !== '' ? parseInt(inlineNew.tax_rate_id, 10) : null,
+          mandatory: inlineNew.mandatory,
           professional_service_ids: inlineNew.type === SESSION_TYPE ? inlineNew.professionalServiceIds : undefined,
         }),
       });
@@ -411,6 +417,7 @@ export default function SellableItemsPage() {
           package_information: editForm.package_information.trim() || null,
           validity_days: editForm.validity_days !== '' ? parseInt(editForm.validity_days, 10) : null,
           tax_rate_id: editForm.tax_rate_id !== '' ? parseInt(editForm.tax_rate_id, 10) : null,
+          mandatory: editForm.mandatory,
           professional_service_ids: editForm.type === SESSION_TYPE ? editForm.professionalServiceIds : undefined,
         }),
       });
@@ -543,6 +550,19 @@ export default function SellableItemsPage() {
                 ))}
               </select>
             </div>
+          </div>
+          {/* #832: its own row rather than a seventh grid cell, so the six
+              tracks above keep their widths. The inline editor below renders
+              the same control, against the same `label_mandatory`. */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={checkboxLabelStyle}>
+              <input
+                type="checkbox"
+                checked={inlineNew.mandatory}
+                onChange={(e) => setInlineNew({ ...inlineNew, mandatory: e.target.checked })}
+              />
+              {t('label_mandatory')}
+            </label>
           </div>
           {inlineNew.type === SESSION_TYPE && (
             <div style={{ marginBottom: 12 }}>
@@ -703,6 +723,20 @@ export default function SellableItemsPage() {
                   {ENROLLMENT_STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
                 </select>
               </div>
+              {/* #832: deliberately not wrapped in `!isSystem` — a System
+                  item's Mandatory flag is editable, unlike the catalogue-shape
+                  fields (name/type/units) beside it, which is why `PUT /:id`
+                  writes this column outside its is_system guard. */}
+              <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
+                <label style={checkboxLabelStyle}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.mandatory}
+                    onChange={(e) => setEditForm({ ...editForm, mandatory: e.target.checked })}
+                  />
+                  {t('label_mandatory')}
+                </label>
+              </div>
             </div>
 
             <SectionHeader title={t('section_billing')} />
@@ -815,6 +849,7 @@ export default function SellableItemsPage() {
             <DetailRow label={t('label_units')} value={item.units != null ? String(item.units) : '—'} />
             <DetailRow label={t('label_status')} value={tStatus(item.status)} />
             <DetailRow label={t('label_enrollment_status')} value={tStatus(item.enrollment_status)} />
+            <DetailRow label={t('label_mandatory')} value={item.mandatory ? t('yes') : t('no')} />
 
             <SectionHeader title={t('section_billing')} />
             <DetailRow label={t('label_price')} value={fmtAmount(item.amount, item.currency)} />
@@ -941,6 +976,7 @@ export default function SellableItemsPage() {
               <ModalField label={t('label_units')} value={details.units != null ? String(details.units) : '—'} />
               <ModalField label={t('label_status')} value={tStatus(details.status)} />
               <ModalField label={t('label_enrollment_status')} value={tStatus(details.enrollment_status)} />
+              <ModalField label={t('label_mandatory')} value={details.mandatory ? t('yes') : t('no')} />
             </div>
 
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
@@ -1096,6 +1132,11 @@ const inlineSelectStyle: React.CSSProperties = {
 };
 
 const errorStyle: React.CSSProperties = { margin: '8px 0 0', fontSize: 13, color: '#c0392b' };
+
+/** #832: matches the Promotion editor's flag checkboxes (`checkboxLabelSt`). */
+const checkboxLabelStyle: React.CSSProperties = {
+  display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer',
+};
 
 function chipCheckboxLabel(checked: boolean): React.CSSProperties {
   return {

@@ -3201,6 +3201,7 @@
     "label_units": "Units",
     "label_status": "Status",
     "label_enrollment_status": "Enrollment Status",
+    "label_mandatory": "Mandatory",
     "label_price": "Price",
     "label_frequency": "Billing Frequency",
     "label_validity_days": "Validity (days)",
@@ -3242,7 +3243,9 @@
     "exempt": "Exempt",
     "section_professional_services": "Professional Services",
     "label_professional_services": "Professional Services",
-    "professional_services_empty": "No Professional Services selected."
+    "professional_services_empty": "No Professional Services selected.",
+    "yes": "Yes",
+    "no": "No"
   },
   "assigned_plans_page": {
     "title": "Assigned Plans",
