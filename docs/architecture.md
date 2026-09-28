@@ -747,6 +747,14 @@ The per-group "Dashboard" pages (Organization, Training, Nutrition, Financials, 
 ### AppShell (admin)
 Wraps all admin pages. Hides sidebar + header for sign-in/sign-up and the unauthenticated home page.
 
+**The navigation drawer and its one scroll container (#883).** Below 769px the sidebar is a fixed drawer that slides in from the left. Three elements share the job and each owns exactly one part of it:
+
+* `.sidebar-wrapper` (AppShell's `<style>` block) **bounds** the drawer — `height: calc(100dvh - var(--gd-top-bar-h))`, with the `100vh` form declared first as the fallback for browsers without dynamic viewport units, plus `overflow: hidden`. It is a `flex-direction: column` container on both breakpoints.
+* `<aside class="sidebar-panel">` (`Sidebar.tsx`) **fills** the wrapper (`flex: 1; min-height: 0`) and declares no height of its own. It used to carry `min-height: 100vh`, which on mobile made the panel taller than the drawer that contains it: the bottom groups were pushed past the viewport with nothing able to scroll them back, and expanding a group made it worse.
+* `<nav>` is the **one** scroll container (`flex: 1; min-height: 0; overflow-y: auto`), with `overscroll-behavior: contain` so a swipe reaching either end does not chain to the page behind, and `-webkit-overflow-scrolling: touch` for native momentum. It is a block container, not a column flex box — flex children would shrink to fit instead of overflowing, so an expanded group would squeeze the others rather than scroll.
+
+While the drawer is open AppShell toggles `sidebar-drawer-open` on `<body>`, whose `overflow: hidden` rule lives inside the mobile media query only, so the desktop sidebar is untouched. Desktop keeps `position: relative` and imposes no height or overflow of its own; the panel stretches to the shell's `min-height: 100vh` flex line exactly as before. Covered by `apps/admin/src/test/mobile-sidebar-scroll.test.ts`.
+
 ### Theming (`ThemeProvider` + per-gym `theme_id`)
 
 **Two tiers of themes (migration 065):**

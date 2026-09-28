@@ -102,16 +102,35 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <aside style={{
+    // #883: the panel fills its wrapper rather than declaring a viewport height
+    // of its own. On mobile the wrapper is the drawer, bounded to the viewport
+    // below the top bar, so a panel taller than the viewport would push its own
+    // bottom items out of reach with nothing able to scroll them back.
+    <aside className="sidebar-panel" style={{
       width: 220,
       background: 'var(--gd-sidebar-bg, var(--chrome, #1a1a2e))',
       color: 'var(--gd-sidebar-text, #fff)',
       display: 'flex',
       flexDirection: 'column',
-      flexShrink: 0,
-      minHeight: '100vh',
+      flex: 1,
+      minHeight: 0,
     }}>
-      <nav style={{ padding: '12px 0', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
+      {/* The one scroll container of the navigation (#883): it takes the height
+          the panel has left and scrolls its own overflow. `minHeight: 0` is what
+          lets a flex child shrink below its content, `overscrollBehavior:
+          'contain'` keeps a swipe that reaches either end from scrolling the
+          page behind the drawer, and the block layout (not a column flex box)
+          keeps expanded groups at their natural height instead of squeezing
+          them to fit. */}
+      <nav style={{
+        padding: '12px 0',
+        flex: 1,
+        minHeight: 0,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        overscrollBehavior: 'contain',
+        WebkitOverflowScrolling: 'touch',
+      }}>
         {translatedGroups.map(group => {
           const isAnyChildActive = group.items.some(item =>
             pathname === item.href ||
