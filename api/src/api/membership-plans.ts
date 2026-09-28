@@ -9,7 +9,9 @@ import { applyPromotionToMembership } from './membership-promotions';
 import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
 import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
-import { computeBillingForecast } from '../domain/billingForecast';
+import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
+import { BillingDateUnit } from '../domain/billingDate';
+import { toPlanDuration } from '../domain/planDuration';
 import {
   describeAcceptedPlanCadences,
   isAcceptedPlanCadence,
@@ -253,17 +255,26 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   });
 
   const billingPolicy = bpRows[0] ?? null;
-  const billingForecast = computeBillingForecast({
-    planName: plan.name,
-    price: currentPrice ? parseFloat(currentPrice.price) : null,
-    recurringBillingInterval: billingPolicy ? billingPolicy.recurring_billing_interval : null,
-    recurringBillingUnit: (billingPolicy ? billingPolicy.recurring_billing_unit : null) as any,
-    // #635 stage 4: Charge Benefits were the only source of benefit lines, and
-    // they are gone. The forecast is now the plan fee and its cadence alone —
-    // `computeBillingForecast` keeps supporting benefit lines because the
-    // Assigned Plan's own projection (billing-simulation.ts) still applies
-    // Promotion benefits to a charge.
-    benefitLines: [],
+  // #818: the Example timeline replaces #485's Billing Events Forecast. One row
+  // per billing period of the Plan's own cadence, each classified by the Plan's
+  // Billing & Duration through `classifyPlanDurationPeriod()` — the same rule
+  // the nightly run prices a cycle with, so the table can never advertise a
+  // charge the run does not make. The price it quotes is the VAT-inclusive one
+  // the Pricing section shows (`amount_incl_tax`, or the gross alone for a gym
+  // with no tax rate at all, exactly as `formatPlanCurrentPrice()` falls back);
+  // no tax arithmetic happens in the projection or in the frontend (#817).
+  const exampleTimeline = computePlanExampleTimeline({
+    duration: toPlanDuration(
+      plan.free_months, plan.paid_months, plan.bonus_months, plan.pay_beforehand_months,
+    ),
+    cadence: billingPolicy
+      ? {
+          interval: Number(billingPolicy.recurring_billing_interval),
+          unit: billingPolicy.recurring_billing_unit as BillingDateUnit,
+        }
+      : null,
+    priceInclTax: priceFields.amount_incl_tax
+      ?? (currentPrice ? parseFloat(currentPrice.price) : null),
   });
 
   // #547: the stored status is a projection of the validity windows, refreshed on
@@ -292,8 +303,8 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     tax_rate_name: taxRate ? taxRate.name : null,
     tax_rate_percent: taxRate ? taxRate.rate_percent : null,
     ...priceFields,
-    // #485: read-only, dynamically computed — never persisted (see docs/architecture.md).
-    billing_forecast: { ...billingForecast, currency: 'EUR' },
+    // #485/#818: read-only, dynamically computed — never persisted (see docs/architecture.md).
+    example_timeline: exampleTimeline,
   };
 }
 
@@ -841,19 +852,21 @@ membershipPlansRouter.put('/:id/billing-policy', requireRole('admin'), async (re
   }
 });
 
-// ─── Billing Events Forecast (#485) ────────────────────────────────────────────
+// ─── Example timeline (#485, reshaped by #818) ─────────────────────────────────
 // Read-only, dynamically calculated — never persisted. Reuses the same
-// calculation `enrichPlan` embeds as `billing_forecast` on every Plan.
+// calculation `enrichPlan` embeds as `example_timeline` on every Plan. #818
+// renamed the route with the section: the Billing Events Forecast it served
+// (the next ten charges, the durations ignored) no longer exists.
 
-membershipPlansRouter.get('/:id/billing-forecast', async (req, res) => {
+membershipPlansRouter.get('/:id/example-timeline', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query<PlanRow>(
     'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],
   );
   if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
-  const enriched = await enrichPlan(rows[0], gymId) as { billing_forecast: unknown };
-  res.json(enriched.billing_forecast);
+  const enriched = await enrichPlan(rows[0], gymId) as { example_timeline: unknown };
+  res.json(enriched.example_timeline);
 });
 
 // ─── Centers ──────────────────────────────────────────────────────────────────

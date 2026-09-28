@@ -16,6 +16,7 @@ import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/component
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
+import { ExampleTimeline } from '@/components/ExampleTimeline';
 import {
   SellableItemBenefitEditor,
   SellableItemBenefitView,
@@ -33,17 +34,21 @@ import {
   PLAN_BILLING_FREQUENCY_OPTIONS,
   PLAN_GENERAL_EDITABLE_FIELDS,
   PLAN_GENERAL_FIELDS,
+  PLAN_TIMELINE_STATUS_LABEL_KEYS,
   PlanBillingFrequency,
+  PlanExampleTimeline,
   PlanGeneralField,
   PlanGeneralFormValues,
   PlanGeneralRow,
   formatPlanCurrentPrice,
   formatPlanGeneralField,
+  formatPlanTimelineBilling,
   isPlanGeneralFormValid,
   legacyBillingFrequencyText,
   memberLimitChipStyle,
   planBillingFrequencyOf,
   planBillingPolicyBody,
+  planTimelineRowTone,
   toPlanGeneralFormValues,
   toPlanGeneralUpdatePayload,
 } from './planProfile';
@@ -86,14 +91,6 @@ interface GymCharge extends SellableItemOption {
 }
 interface TaxRate { id: number; name: string; rate_percent: string; status: 'active' | 'inactive'; is_system: boolean | number; }
 
-// #485: read-only, dynamically computed by the backend — never persisted.
-interface ForecastLine {
-  label: string;
-  amount: number;
-}
-interface ForecastEvent { date: string; description: string; total: number; lines: ForecastLine[]; }
-interface BillingForecast { available: boolean; reason: string | null; currency: string; events: ForecastEvent[]; }
-
 // #816: the plan's own General columns are declared once, in `planProfile.ts`,
 // and the row type extends that declaration — the expanded card's read-only
 // GENERAL section and the inline Edit form render the same field list from it.
@@ -126,7 +123,9 @@ interface Plan extends PlanGeneralRow {
   tax_rate_percent: string | null;
   amount_excl_tax: number | null;
   amount_incl_tax: number | null;
-  billing_forecast: BillingForecast;
+  // #818: the Example timeline — read-only, computed by the backend on every
+  // read, never persisted. Its rows are the Plan's own billing periods.
+  example_timeline: PlanExampleTimeline;
 }
 
 // Applied automatically to every new plan; staff can adjust it afterwards in
@@ -207,6 +206,15 @@ function emptyInlineNew(): InlineNew {
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// #818: a plain YYYY-MM-DD boundary from the Example timeline, read in the
+// viewer's locale. Parsed field by field rather than with `new Date(str)`, which
+// reads a bare date as UTC midnight and can render the previous day west of
+// Greenwich — the same reason the Promotions page parses its timeline dates.
+function fmtTimelineDate(dateStr: string, locale: string) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -1253,38 +1261,65 @@ export default function PlansPage() {
                       (plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)
                     )}
 
-                    {/* BILLING EVENTS FORECAST (§10) — read-only by nature: it is
-                        computed server-side and never persisted (#485). */}
-                    <SectionHeader title={t('plans.section_billing_forecast')} />
-                    {plan.billing_forecast?.available ? (
+                    {/* EXAMPLE TIMELINE (§10, #818) — the Promotion card's own
+                        simulation, for a Plan: one row per billing period of the
+                        Plan's cadence, each row's Status and Billing decided
+                        server-side by the same rule the nightly run prices a
+                        cycle with. Read-only by nature — computed on every read
+                        and never persisted, and a Membership Plan is not
+                        assigned to anybody, so the dates are an illustration
+                        from a hypothetical enrollment today. */}
+                    <SectionHeader title={t('plans.section_example_timeline')} />
+                    {plan.example_timeline?.available ? (
                       <>
-                        <p style={{ fontSize: 12, color: '#888', margin: '4px 0 10px', fontStyle: 'italic' }}>
-                          ⚠ {t('plans.billing_forecast_disclaimer')}
-                        </p>
-                        {plan.billing_forecast.events.map((ev, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              padding: '8px 0',
-                              borderBottom: i < plan.billing_forecast.events.length - 1 ? '1px solid var(--gd-card-border, #f0f0f0)' : 'none',
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
-                              <span>{ev.date} — {ev.description}</span>
-                              <strong style={{ flexShrink: 0 }}>€{ev.total.toFixed(2)} {t('plans.forecast_total')}</strong>
-                            </div>
-                            {ev.lines.map((line, j) => (
-                              <div key={j} style={{ fontSize: 12, color: '#666', marginTop: 2 }}>
-                                • {line.label}: €{line.amount.toFixed(2)}
-                              </div>
-                            ))}
-                          </div>
-                        ))}
+                        {plan.example_timeline.anchorDate && (
+                          <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>
+                            {t('plans.timeline_example_note', {
+                              date: fmtTimelineDate(plan.example_timeline.anchorDate, locale),
+                            })}
+                          </p>
+                        )}
+                        <ExampleTimeline
+                          labels={{
+                            period: t('plans.col_period'),
+                            dates: t('plans.col_dates'),
+                            status: t('plans.col_status'),
+                            billing: t('plans.col_billing'),
+                          }}
+                          rows={plan.example_timeline.periods.map((row) => ({
+                            key: row.period,
+                            period: row.endsOn ? String(row.period) : `${row.period}+`,
+                            dates: row.endsOn
+                              ? `${fmtTimelineDate(row.startsOn, locale)} – ${fmtTimelineDate(row.endsOn, locale)}`
+                              : t('plans.timeline_dates_from', { date: fmtTimelineDate(row.startsOn, locale) }),
+                            status: t(`plans.${PLAN_TIMELINE_STATUS_LABEL_KEYS[row.status]}` as any),
+                            billing: formatPlanTimelineBilling(
+                              row,
+                              t('plans.timeline_no_charge'),
+                              t('plans.tax_included_suffix'),
+                            ),
+                            tone: planTimelineRowTone(row.status),
+                          }))}
+                          footnotes={
+                            <>
+                              <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
+                                {t('plans.timeline_disclaimer')}
+                              </p>
+                              <p style={{ margin: '4px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
+                                {t('plans.timeline_duration_disclaimer')}
+                              </p>
+                              <p style={{ margin: '4px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
+                                {t('plans.timeline_promotions_disclaimer')}
+                              </p>
+                            </>
+                          }
+                        />
                       </>
                     ) : (
-                      <p style={hintSt}>
-                        {plan.billing_forecast?.reason ?? t('plans.billing_forecast_unavailable')}
-                      </p>
+                      // The server's `reason` is a single, known condition (no
+                      // billing frequency configured), so it is said in the
+                      // viewer's language rather than relayed in English.
+                      <p style={hintSt}>{t('plans.timeline_unavailable')}</p>
                     )}
 
                     {/* PRICE HISTORY (§11, #817 §1) — after the numbered sections,

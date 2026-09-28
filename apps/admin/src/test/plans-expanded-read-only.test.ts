@@ -161,7 +161,7 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'section_session_benefits',
       'section_plan_period_benefits',
       'section_centers',
-      'section_billing_forecast',
+      'section_example_timeline',
       'section_prices',
     ]);
   });
@@ -176,7 +176,7 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'plans.section_billing_duration',
       'BENEFIT_SECTIONS.map(',
       'plans.section_centers',
-      'plans.section_billing_forecast',
+      'plans.section_example_timeline',
       'plans.section_prices',
     ];
     const positions = markers.map((m) => {
@@ -245,7 +245,9 @@ describe('Plans: terminology is unchanged (#816 §6–§8, §14)', () => {
     expect(locales.en.section_oneoff_benefits).toBe('One-off Benefits');
     expect(locales.en.section_session_benefits).toBe('Session Benefits');
     expect(locales.en.section_plan_period_benefits).toBe('Period Benefits');
-    expect(locales.en.section_billing_forecast).toBe('Billing Events Forecast');
+    // #818 renamed this one section: the Billing Events Forecast became the
+    // Example Timeline, the name the Promotion card already uses.
+    expect(locales.en.section_example_timeline).toBe('Example Timeline');
   });
 
   it('introduces no BILLING PLAN section', () => {

@@ -562,8 +562,9 @@ each pricing every projected date through the same resolver the run uses:
 | `GET /me/membership` — `upcoming_payments` | `api/src/api/me.ts:1453` |
 
 One further projection is scoped to one record rather than the gym:
-`api/src/domain/billingForecast.ts` projects a *Membership Plan's* events (#485, deliberately
-promotion-free). An Assigned Plan's own Billing Events view
+`api/src/domain/planExampleTimeline.ts` projects a *Membership Plan's* own Example timeline
+(#485, reshaped by #818 — one row per billing period of the Plan's cadence, each classified by
+`classifyPlanDurationPeriod()`, and deliberately promotion-free). An Assigned Plan's own Billing Events view
 (`api/src/domain/assignedPlanBillingEvents.ts`, #511 stage 3) is not one: since #854 it only
 tags and filters the persisted `billing_events` ledger. Both are pure and unit-tested.
 

@@ -457,14 +457,15 @@ describe('Membership Plan legacy sections (stage 1 is additive)', () => {
   // Stage 4 retired both legacy sections — Charge Benefits in part 1
   // (charge-benefits-retired.test.ts) and Included Services in part 2
   // (included-services-retired.test.ts). What a Plan still serves beside its
-  // three Benefit sections is the billing forecast.
-  it('still serves the billing forecast', async () => {
+  // three Benefit sections is its projection, which #818 reshaped from the
+  // Billing Events Forecast into the Example timeline.
+  it('still serves the example timeline', async () => {
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.allowances).toBeUndefined();
-    expect(res.body.billing_forecast).toBeDefined();
+    expect(res.body.example_timeline).toBeDefined();
   });
 });

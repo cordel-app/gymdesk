@@ -1193,7 +1193,7 @@ describe('Applicable tax on membership plans', () => {
   });
 });
 
-// ─── GET /membership-plans/:id/billing-forecast (#485) ────────────────────────
+// ─── GET /membership-plans/:id/example-timeline (#485, reshaped by #818) ──────
 
 async function setPlanPrice(gymId: string, planId: number, price: number): Promise<void> {
   await db.query(
@@ -1215,78 +1215,95 @@ async function setBillingPolicy(
   );
 }
 
-describe('GET /membership-plans/:id/billing-forecast', () => {
+describe('GET /membership-plans/:id/example-timeline', () => {
   let gymId: string;
   let otherGymId: string;
   let planId: number;
 
   beforeAll(async () => {
-    gymId = await createTestGym('Plans Billing Forecast Gym');
+    gymId = await createTestGym('Plans Example Timeline Gym');
     await createTestMembership(gymId, 'admin');
-    otherGymId = await createTestGym('Plans Billing Forecast Gym B');
-    planId = await createPlan(gymId, { name: 'Forecast Plan' });
+    otherGymId = await createTestGym('Plans Example Timeline Gym B');
+    planId = await createPlan(gymId, { name: 'Timeline Plan' });
   });
 
   it('returns 401 without an Authorization header', async () => {
-    const res = await request.get(`/membership-plans/${planId}/billing-forecast`).set('x-gym-id', gymId);
+    const res = await request.get(`/membership-plans/${planId}/example-timeline`).set('x-gym-id', gymId);
     expect(res.status).toBe(401);
   });
 
   it('returns 404 when the plan belongs to a different gym', async () => {
-    const otherPlanId = await createPlan(otherGymId, { name: 'Other Gym Forecast Plan' });
+    const otherPlanId = await createPlan(otherGymId, { name: 'Other Gym Timeline Plan' });
     const res = await request
-      .get(`/membership-plans/${otherPlanId}/billing-forecast`)
+      .get(`/membership-plans/${otherPlanId}/example-timeline`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
   });
 
-  it('reports unavailable when the plan has no price or billing policy', async () => {
-    const bareId = await createPlan(gymId, { name: 'Bare Forecast Plan' });
+  it('reports unavailable when the plan has no billing frequency', async () => {
+    const bareId = await createPlan(gymId, { name: 'Bare Timeline Plan' });
     const res = await request
-      .get(`/membership-plans/${bareId}/billing-forecast`)
+      .get(`/membership-plans/${bareId}/example-timeline`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.available).toBe(false);
-    expect(res.body.events).toEqual([]);
+    expect(res.body.periods).toEqual([]);
   });
 
-  // #635 stage 4: the forecast used to carry a benefit line per Plan Charge
-  // Benefit. Charge Benefits are gone, so it is the plan fee and its cadence —
-  // and nothing else can move its total.
-  it('returns the next 10 events reflecting the plan price, without creating any billing events', async () => {
+  // #818: the durations decide the Status of every row, which the #485 forecast
+  // never looked at — and the projection charges nobody, as before.
+  it('expands the plan durations into billing periods without creating any billing events', async () => {
     await setPlanPrice(gymId, planId, 60);
     await setBillingPolicy(gymId, planId, 1, 'month');
+    // Free 1 / Paid 2 (1 of them pre-paid) / Bonus 1 → 4 configured periods + 2.
+    await request
+      .put(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ free_months: 1, paid_months: 2, pay_beforehand_months: 1, bonus_months: 1 });
 
     const { rows: beforeRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
 
     const res = await request
-      .get(`/membership-plans/${planId}/billing-forecast`)
+      .get(`/membership-plans/${planId}/example-timeline`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.available).toBe(true);
     expect(res.body.currency).toBe('EUR');
-    expect(res.body.events).toHaveLength(10);
-    const [event] = res.body.events;
-    expect(event.total).toBe(60);
-    expect(event.lines).toHaveLength(1);
-    expect(event.lines[0]).toMatchObject({ label: 'Forecast Plan', amount: 60 });
-    expect(event.lines[0].benefit).toBeUndefined();
+    expect(res.body.periods.map((p: any) => p.status)).toEqual([
+      'free_plan', 'prepaid_plan', 'pay_plan', 'bonus_plan', 'pay_regular', 'pay_regular',
+    ]);
+    // Only a charged period quotes a price; a waived one says so.
+    expect(res.body.periods.map((p: any) => p.amount)).toEqual([null, null, 60, null, 60, 60]);
+    expect(res.body.periods.map((p: any) => p.waived)).toEqual([true, true, false, true, false, false]);
+    // The rows tile the calendar: each one ends the day before the next begins,
+    // starting from the hypothetical enrollment date the response names.
+    expect(res.body.periods[0].startsOn).toBe(res.body.anchorDate);
+    for (let i = 0; i < res.body.periods.length - 1; i++) {
+      const dayAfter = new Date(`${res.body.periods[i].endsOn}T00:00:00Z`);
+      dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+      expect(dayAfter.toISOString().slice(0, 10)).toBe(res.body.periods[i + 1].startsOn);
+    }
+    // Only the trailing regular period is open-ended.
+    expect(res.body.periods.filter((p: any) => p.endsOn === null)).toHaveLength(1);
+    expect(res.body.periods[res.body.periods.length - 1].endsOn).toBeNull();
 
     const { rows: afterRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
     expect(Number(afterRows[0].n)).toBe(Number(beforeRows[0].n));
   });
 
-  it('embeds the same forecast on GET /membership-plans/:id as billing_forecast', async () => {
+  it('embeds the same projection on GET /membership-plans/:id as example_timeline', async () => {
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.billing_forecast.available).toBe(true);
-    expect(res.body.billing_forecast.events).toHaveLength(10);
+    expect(res.body.example_timeline.available).toBe(true);
+    expect(res.body.example_timeline.periods).toHaveLength(6);
+    expect(res.body.billing_forecast).toBeUndefined();
   });
 });
 

@@ -40,8 +40,10 @@ export type PlanMemberLimit = (typeof MEMBER_LIMITS)[number];
 
 /**
  * The order the expanded card renders its sections in (§2). Price History comes
- * after Billing Events Forecast — §2 keeps it "available after these sections
- * using its existing behavior" rather than in the numbered list.
+ * after the Example timeline — §2 keeps it "available after these sections
+ * using its existing behavior" rather than in the numbered list. #818 renamed
+ * the section that slot holds: the Billing Events Forecast became the Example
+ * timeline, in the same place.
  */
 export const PLAN_SECTION_ORDER = [
   'section_general',
@@ -51,7 +53,7 @@ export const PLAN_SECTION_ORDER = [
   'section_session_benefits',
   'section_plan_period_benefits',
   'section_centers',
-  'section_billing_forecast',
+  'section_example_timeline',
   'section_prices',
 ] as const;
 
@@ -315,4 +317,85 @@ export function planBillingPolicyBody(freq: PlanBillingFrequency, autoRenew: boo
  */
 export function legacyBillingFrequencyText(interval: number, unit: string): string {
   return `Every ${interval === 1 ? unit : `${interval} ${unit}s`}`;
+}
+
+// ─── Example timeline (#818) ──────────────────────────────────────────────────
+//
+// The Plan card's simulation is the Promotion card's: one row per billing
+// period, with Period / Dates / Status / Billing. The rows themselves come from
+// the server (`example_timeline`, `api/src/domain/planExampleTimeline.ts`) —
+// which period is Free / Pre-paid / Pay / Bonus / regular is a billing rule and
+// is never re-derived here. What lives in this declaration is how a row reads:
+// its status label and its Billing cell.
+//
+// The labels say **(benefit)**, not (promotion): these are the Plan's own
+// durations and no Promotion is involved, and the Plan's read-only rows already
+// refuse the Promotion's vocabulary (#816 §14).
+
+export const PLAN_TIMELINE_STATUSES = [
+  'free_plan',
+  'prepaid_plan',
+  'pay_plan',
+  'bonus_plan',
+  'pay_regular',
+] as const;
+
+export type PlanTimelineStatus = (typeof PLAN_TIMELINE_STATUSES)[number];
+
+/** The `plans.*` key labelling each status. */
+export const PLAN_TIMELINE_STATUS_LABEL_KEYS: Record<PlanTimelineStatus, string> = {
+  free_plan: 'timeline_free_benefit',
+  prepaid_plan: 'timeline_prepaid_benefit',
+  pay_plan: 'timeline_pay_benefit',
+  bonus_plan: 'timeline_bonus_benefit',
+  pay_regular: 'timeline_pay_regular',
+};
+
+/** One row of the server's projection. */
+export interface PlanTimelinePeriod {
+  period: number;
+  status: PlanTimelineStatus;
+  startsOn: string;
+  endsOn: string | null;
+  /** The VAT-inclusive price this period charges, `null` for no charge. */
+  amount: number | null;
+  waived: boolean;
+}
+
+export interface PlanExampleTimeline {
+  available: boolean;
+  reason: string | null;
+  currency: string;
+  anchorDate: string | null;
+  periods: PlanTimelinePeriod[];
+}
+
+/**
+ * The Billing cell. A waived period (Free, Bonus, or a Pre-paid one already
+ * collected) reads "No charge"; a charged one quotes the Plan's current price
+ * as the server computed it, VAT included — never recomputed here (#817). A
+ * Plan with no price yet has nothing to quote, so it reads as the admin's empty
+ * value rather than as €0.00, which would claim the member is charged nothing.
+ */
+export function formatPlanTimelineBilling(
+  row: Pick<PlanTimelinePeriod, 'amount' | 'waived'>,
+  /** `plans.timeline_no_charge` — "No charge". */
+  noChargeLabel: string,
+  /** `plans.tax_included_suffix` — "VAT included". */
+  taxIncludedSuffix: string,
+): string {
+  if (row.waived) return noChargeLabel;
+  if (row.amount == null) return EMPTY_VALUE;
+  return `€${row.amount.toFixed(2)} ${taxIncludedSuffix}`;
+}
+
+/**
+ * Row tinting, the Promotion table's own three tones: green for a period that
+ * charges nothing, grey for the regular ones, amber for the Plan's paid
+ * durations in between.
+ */
+export function planTimelineRowTone(status: PlanTimelineStatus): 'free' | 'regular' | 'benefit' {
+  if (status === 'free_plan' || status === 'bonus_plan' || status === 'prepaid_plan') return 'free';
+  if (status === 'pay_regular') return 'regular';
+  return 'benefit';
 }
