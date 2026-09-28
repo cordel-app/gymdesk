@@ -256,7 +256,7 @@ export default function TrainingPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: '#18181b' },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
   message: { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 14 },
   weekdayBar: { display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto' },
   weekdayBtn: { flex: 1, padding: '10px 0', background: '#fff', color: '#71717a', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' },

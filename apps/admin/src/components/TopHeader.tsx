@@ -38,6 +38,8 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       height: 52,
       background: 'var(--gd-header-bg, var(--chrome, #1a1a2e))',
       color: 'var(--gd-header-text, #fff)',
+      // #833 §2 — the Header Text Font the theme configures.
+      fontFamily: 'var(--gd-header-font, inherit)',
       borderBottom: 'var(--gd-header-sep-height, 1px) solid var(--gd-header-sep-color, rgba(255,255,255,0.1))',
       display: 'flex',
       alignItems: 'center',

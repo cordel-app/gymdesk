@@ -128,7 +128,7 @@ export default function NotificationsPage() {
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto', paddingBottom: 80 },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  title: { margin: 0, fontSize: 22, fontWeight: 700, color: '#18181b' },
+  title: { margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
   markAllBtn: {
     padding: '6px 12px', background: 'transparent', color: '#18181b',
     border: '1px solid #d4d4d8', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',

@@ -132,7 +132,7 @@ export default function PackagesPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container:     { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title:         { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: '#18181b' },
+  title:         { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
   summaryChip:   { display: 'inline-flex', alignItems: 'center', gap: 8, background: '#18181b', color: '#fff', borderRadius: 999, padding: '8px 18px', marginBottom: 20 },
   summaryCount:  { fontSize: 22, fontWeight: 800, fontVariantNumeric: 'tabular-nums' },
   summaryLabel:  { fontSize: 14, fontWeight: 500 },

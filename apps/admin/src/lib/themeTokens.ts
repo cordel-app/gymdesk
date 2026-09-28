@@ -81,6 +81,14 @@ export interface ThemeTokens {
     calendarNavButtonText: string;
   };
   advanced?: Record<string, string | number | boolean | null>;
+  /**
+   * #833 — the Members App's own visual settings, **overrides only**. A key
+   * that is absent means the setting is inherited from its Admin source
+   * (apps/admin/src/lib/membersAppTokens.ts declares which), and restoring
+   * inheritance removes the key rather than storing the Admin value, so
+   * inheritance stays dynamic instead of becoming a snapshot (§13, §19).
+   */
+  membersApp?: Record<string, string | number | null>;
 }
 
 export interface AdvancedAttribute {
@@ -104,6 +112,9 @@ export const DEFAULT_ADVANCED: Record<string, string | number | boolean> = {
   // Shape & Borders
   globalBorderRadius: '8px',
   cardBorderRadius: '8px',
+  // #833 §4 — border *width*, not radius. 1px is the width every card surface
+  // hardcoded before this, so an unconfigured theme is unchanged.
+  cardBorderWidth: '1px',
   buttonBorderRadius: '6px',
   inputBorderRadius: '6px',
   modalBorderRadius: '12px',
@@ -137,6 +148,10 @@ export const DEFAULT_ADVANCED: Record<string, string | number | boolean> = {
   // Navigation — Header
   headerHeight: '56px',
   headerSpacing: '16px',
+  // #833 §2 — the Admin Header Text Font the Members App's own Header Text
+  // Font inherits from. The default is the stack every typography level
+  // already defaults to, so an unconfigured theme's header looks unchanged.
+  headerTextFont: 'system-ui, -apple-system, sans-serif',
   // Tables
   tableRowHeight: '48px',
   tableHeaderHeight: '40px',
@@ -170,6 +185,20 @@ export const DEFAULT_ADVANCED: Record<string, string | number | boolean> = {
   calendarNavButtonBorderRadius: '4px',
 };
 
+export const FONT_STACKS: { label: string; value: string }[] = [
+  { label: 'System UI',      value: 'system-ui, -apple-system, sans-serif' },
+  { label: 'Georgia (Serif)', value: 'Georgia, "Times New Roman", serif' },
+  { label: 'Mono',           value: '"Courier New", Courier, monospace' },
+  { label: 'Arial',          value: 'Arial, Helvetica, sans-serif' },
+  { label: 'Trebuchet',      value: '"Trebuchet MS", sans-serif' },
+];
+
+// The font stacks a font-valued setting may hold, as the `select` options of
+// the Header Text Font attribute below and as what the Members App validates
+// an override against. Declared here rather than restated so a stack added to
+// FONT_STACKS reaches both.
+export const FONT_STACK_VALUES = FONT_STACKS.map((f) => f.value);
+
 // Per #489 stage 2 (remainder): these attributes no longer live under a
 // standalone "Advanced" section. Each `group` below is one of the same
 // section keys COLOR_GROUPS uses in the theme editor pages, so the editor
@@ -192,6 +221,7 @@ export const ADVANCED_ATTRIBUTES: AdvancedAttribute[] = [
   { key: 'transitionSpeed',         labelKey: 'adv_transition_speed',        group: 'group_application',     type: 'select', options: ['fast', 'normal', 'slow'] },
   // Cards
   { key: 'cardBorderRadius',        labelKey: 'adv_card_radius',             group: 'group_cards',           type: 'text' },
+  { key: 'cardBorderWidth',         labelKey: 'adv_card_border_width',       group: 'group_cards',           type: 'text' },
   { key: 'cardShadow',              labelKey: 'adv_card_shadow',             group: 'group_cards',           type: 'select', options: ['none', 'small', 'medium', 'large'] },
   // Inputs
   { key: 'inputBorderRadius',       labelKey: 'adv_input_radius',            group: 'group_inputs',          type: 'text' },
@@ -204,6 +234,7 @@ export const ADVANCED_ATTRIBUTES: AdvancedAttribute[] = [
   { key: 'inputBorderWidth',        labelKey: 'adv_input_border_width',      group: 'group_inputs',          type: 'text' },
   { key: 'focusRingWidth',          labelKey: 'adv_focus_ring_width',        group: 'group_inputs',          type: 'text' },
   // Header
+  { key: 'headerTextFont',          labelKey: 'adv_header_text_font',        group: 'group_header',          type: 'select', options: FONT_STACK_VALUES },
   { key: 'headerHeight',            labelKey: 'adv_header_height',           group: 'group_header',          type: 'text' },
   { key: 'headerSpacing',           labelKey: 'adv_header_spacing',          group: 'group_header',          type: 'text' },
   // Sidebar
@@ -277,6 +308,10 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
 // application colors, as `--gd-card-border`.
 export const CARD_ADVANCED_VARS: Record<string, string> = {
   cardBorderRadius: '--gd-card-radius',
+  // #833 §4 — the Card Border Width the Members App's Section Cards Border
+  // Width inherits from. Wired here for the same reason #677 wired the radius:
+  // an attribute the editor persists but no CSS variable carries does nothing.
+  cardBorderWidth: '--gd-card-border-width',
 };
 
 export const CALENDAR_ADVANCED_VARS: Record<string, string> = {
@@ -325,6 +360,17 @@ export function calendarVarValue(
     return isHexColor(raw) ? raw : String(fallback);
   }
   return cssLengthValue(raw, fallback);
+}
+
+/**
+ * The value to write for a font-family variable: one of the allowed stacks, or
+ * the default. `advanced` is not format-checked on write (it never has been),
+ * so a stack the pickers cannot produce has to be caught on the way out (#833).
+ */
+export function fontStackValue(raw: unknown): string {
+  return typeof raw === 'string' && FONT_STACK_VALUES.includes(raw)
+    ? raw
+    : String(DEFAULT_ADVANCED.headerTextFont);
 }
 
 /**
@@ -403,14 +449,6 @@ export const DEFAULT_TOKENS: ThemeTokens = {
   },
 };
 
-export const FONT_STACKS: { label: string; value: string }[] = [
-  { label: 'System UI',      value: 'system-ui, -apple-system, sans-serif' },
-  { label: 'Georgia (Serif)', value: 'Georgia, "Times New Roman", serif' },
-  { label: 'Mono',           value: '"Courier New", Courier, monospace' },
-  { label: 'Arial',          value: 'Arial, Helvetica, sans-serif' },
-  { label: 'Trebuchet',      value: '"Trebuchet MS", sans-serif' },
-];
-
 // Draft/live-preview support for the Theme editors (#492): compares a draft
 // against the last-persisted tokens to drive the Save/Cancel dirty state.
 export function tokensEqual(a: ThemeTokens, b: ThemeTokens): boolean {
@@ -452,6 +490,10 @@ export function applyTokens(tokens: ThemeTokens) {
   el.style.setProperty('--gd-header-text',          c.headerText);
   el.style.setProperty('--gd-header-sep-color',     c.headerSeparatorColor);
   el.style.setProperty('--gd-header-sep-height',    `${c.headerSeparatorHeight}px`);
+  // #833 §2 — the header's own font. A theme saved before this carries no
+  // value and falls back to the default stack; anything outside the allowed
+  // stacks falls back the same way rather than reaching the variable.
+  el.style.setProperty('--gd-header-font',           fontStackValue((tokens.advanced ?? {}).headerTextFont));
   // Sidebar
   el.style.setProperty('--gd-sidebar-bg',           c.sidebarBackground);
   el.style.setProperty('--gd-sidebar-text',         c.sidebarText);

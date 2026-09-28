@@ -264,10 +264,10 @@ export default function MemberSchedulePage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: '#18181b' },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
   message: { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 14 },
-  sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#18181b' },
-  dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#71717a', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: 'var(--gd-color-h2, #18181b)' },
+  dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--gd-color-h3, #71717a)', textTransform: 'uppercase', letterSpacing: '0.05em' },
   card: { background: '#fff', borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' },
   details: { marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0' },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: '#18181b' },

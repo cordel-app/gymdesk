@@ -1,0 +1,224 @@
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import {
+  DEFAULT_MEMBERS_APP_SOURCE_ADVANCED,
+  MEMBERS_APP_SETTINGS,
+  adminSourceValue,
+  applyMembersAppTokens,
+  effectiveMembersAppValue,
+  membersAppCssVars,
+} from '../lib/membersAppTokens';
+import { DEFAULT_TOKENS, applyTokens, type ThemeTokens } from '../lib/themeTokens';
+
+// #833 — the Members App renders with its own theme settings, each following
+// the Admin setting it inherits from unless the active Theme overrides it.
+//
+// The declaration is Admin's (apps/admin/src/lib/membersAppTokens.ts, which
+// holds §8's mapping); this file's copy is a mirror, so the first block below
+// fails if the two drift — the convention lib/themeTokens.ts has followed since
+// #489 stage 4.
+
+const ADMIN_LIB = join(__dirname, '..', '..', '..', 'admin', 'src', 'lib');
+
+function stubDocument(): Record<string, string> {
+  const written: Record<string, string> = {};
+  (globalThis as any).document = {
+    documentElement: {
+      style: { setProperty: (name: string, value: string) => { written[name] = value; } },
+    },
+  };
+  return written;
+}
+
+describe('Members App theme settings: mirror of the Admin declaration (#833)', () => {
+  const adminSrc = readFileSync(join(ADMIN_LIB, 'membersAppTokens.ts'), 'utf-8');
+  const adminThemeTokens = readFileSync(join(ADMIN_LIB, 'themeTokens.ts'), 'utf-8');
+
+  it('declares the same settings, sources and CSS variables Admin does', () => {
+    for (const { key, cssVar, type, source } of MEMBERS_APP_SETTINGS) {
+      expect(adminSrc, `Admin has no ${key}`).toContain(`key: '${key}'`);
+      expect(adminSrc, `Admin does not map ${key} to ${cssVar}`).toContain(`cssVar: '${cssVar}'`);
+      expect(adminSrc, `Admin has no ${type} setting`).toContain(`type: '${type}'`);
+      if (source.kind !== 'typography') {
+        expect(adminSrc).toContain(`key: '${source.key}', labelKey: '${source.labelKey}'`);
+      } else {
+        expect(adminSrc).toContain(`level: '${source.level}', labelKey: '${source.labelKey}'`);
+      }
+    }
+    // And nothing Admin declares is missing here: the count has to match, or a
+    // setting configurable in the editor would never be painted.
+    const adminKeys = adminSrc.match(/^    key: '(\w+)',$/gm) ?? [];
+    expect(adminKeys.length).toBe(MEMBERS_APP_SETTINGS.length);
+  });
+
+  it('keeps the advanced-source defaults in step with Admin’s DEFAULT_ADVANCED', () => {
+    for (const [key, value] of Object.entries(DEFAULT_MEMBERS_APP_SOURCE_ADVANCED)) {
+      expect(adminThemeTokens, `Admin's default for ${key} is not ${value}`).toContain(`${key}: '${value}'`);
+    }
+  });
+});
+
+describe('Members App theme settings: resolution (#833)', () => {
+  let written: Record<string, string>;
+
+  beforeEach(() => { written = stubDocument(); });
+  afterEach(() => { delete (globalThis as any).document; });
+
+  it('inherits every setting from its Admin source on a Theme that overrides nothing', () => {
+    applyMembersAppTokens(DEFAULT_TOKENS);
+    for (const setting of MEMBERS_APP_SETTINGS) {
+      const inherited = adminSourceValue(DEFAULT_TOKENS, setting.source);
+      const expected = setting.type === 'pixels' ? `${inherited}px` : String(inherited);
+      expect(written[setting.cssVar], `${setting.key} does not follow its Admin source`).toBe(expected);
+    }
+  });
+
+  it('follows the Admin value as it is today, not a snapshot', () => {
+    const edited = {
+      ...DEFAULT_TOKENS,
+      colors: { ...DEFAULT_TOKENS.colors, headerBackground: '#eeeeee', pageBackground: '#fafafa' },
+    } as ThemeTokens;
+    applyMembersAppTokens(edited);
+    expect(written['--gd-members-header-bg']).toBe('#eeeeee');
+    expect(written['--gd-app-bg']).toBe('#fafafa');
+  });
+
+  it('paints an overridden setting with the override and leaves the rest inherited', () => {
+    const themed = {
+      ...DEFAULT_TOKENS,
+      colors: { ...DEFAULT_TOKENS.colors, headerBackground: '#eeeeee' },
+      membersApp: { headerColor: '#000000' },
+    } as ThemeTokens;
+    applyMembersAppTokens(themed);
+    expect(written['--gd-members-header-bg']).toBe('#000000');
+    expect(written['--gd-members-header-text']).toBe(DEFAULT_TOKENS.colors.headerText);
+  });
+
+  it('wins over the Theme variable it shares a name with', () => {
+    // The page background, the calendar surfaces and the title colours are
+    // painted through the same variables Admin's own tokens use, so the
+    // Members App value has to be written last.
+    const themed = {
+      ...DEFAULT_TOKENS,
+      membersApp: { backgroundColor: '#010203', calendarBackgroundColor: '#040506', title1Color: '#070809' },
+    } as ThemeTokens;
+    applyTokens(themed);
+    applyMembersAppTokens(themed);
+    expect(written['--gd-app-bg']).toBe('#010203');
+    expect(written['--gd-calendar-bg']).toBe('#040506');
+    expect(written['--gd-color-h1']).toBe('#070809');
+  });
+
+  it('keeps the time column and the event window off the calendar background', () => {
+    const themed = {
+      ...DEFAULT_TOKENS,
+      membersApp: {
+        calendarBackgroundColor: '#111111',
+        calendarTimeColumnBackgroundColor: '#222222',
+        calendarModalBackgroundColor: '#333333',
+        calendarModalInputBackgroundColor: '#444444',
+      },
+    } as ThemeTokens;
+    applyMembersAppTokens(themed);
+    expect(written['--gd-calendar-bg']).toBe('#111111');
+    expect(written['--gd-calendar-time-axis-bg']).toBe('#222222');
+    expect(written['--gd-members-calendar-modal-bg']).toBe('#333333');
+    expect(written['--gd-members-calendar-modal-input-bg']).toBe('#444444');
+  });
+
+  it('resolves a Theme saved before this ticket', () => {
+    const legacy = { ...DEFAULT_TOKENS } as ThemeTokens;
+    delete (legacy as any).advanced;
+    delete (legacy as any).membersApp;
+    applyMembersAppTokens(legacy);
+    expect(written['--gd-members-header-font']).toBe(DEFAULT_MEMBERS_APP_SOURCE_ADVANCED.headerTextFont);
+    expect(written['--gd-members-card-border-width']).toBe(DEFAULT_MEMBERS_APP_SOURCE_ADVANCED.cardBorderWidth);
+    expect(written['--gd-members-calendar-modal-bg']).toBe(DEFAULT_MEMBERS_APP_SOURCE_ADVANCED.modalBackground);
+  });
+
+  it('falls back to the inherited value for an unusable stored one', () => {
+    const broken = {
+      ...DEFAULT_TOKENS,
+      membersApp: { headerColor: '', headerTextFont: 'Papyrus', sectionCardsBorderWidth: '  ', headerSeparatorWidth: -1 },
+    } as unknown as ThemeTokens;
+    const vars = membersAppCssVars(broken);
+    expect(vars['--gd-members-header-bg']).toBe(DEFAULT_TOKENS.colors.headerBackground);
+    expect(vars['--gd-members-header-font']).toBe(DEFAULT_MEMBERS_APP_SOURCE_ADVANCED.headerTextFont);
+    expect(vars['--gd-members-card-border-width']).toBe(DEFAULT_MEMBERS_APP_SOURCE_ADVANCED.cardBorderWidth);
+    expect(vars['--gd-header-sep-height']).toBe(`${DEFAULT_TOKENS.colors.headerSeparatorHeight}px`);
+  });
+
+  it('treats an explicit null as inherited', () => {
+    const nulled = { ...DEFAULT_TOKENS, membersApp: { headerColor: null } } as ThemeTokens;
+    const header = MEMBERS_APP_SETTINGS.find((s) => s.key === 'headerColor')!;
+    expect(effectiveMembersAppValue(nulled, header)).toBe(DEFAULT_TOKENS.colors.headerBackground);
+  });
+});
+
+describe('Members App theme settings: where they are painted (#833)', () => {
+  // Comments in these files name the variables they replaced, so the scans run
+  // on comment-free code.
+  const read = (...parts: string[]) =>
+    readFileSync(join(__dirname, '..', ...parts), 'utf-8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+      .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+
+  it('applies them once the Theme’s own variables are written', () => {
+    const provider = read('components', 'ThemeProvider.tsx');
+    expect(provider).toContain('applyMembersAppTokens(tokens)');
+    expect(provider.indexOf('applyTokens(tokens)')).toBeLessThan(provider.indexOf('applyMembersAppTokens(tokens)'));
+  });
+
+  it('paints the header from the Members App header settings, not the sidebar', () => {
+    const topBar = read('components', 'TopBar.tsx');
+    expect(topBar).toContain('var(--gd-members-header-bg');
+    expect(topBar).toContain('var(--gd-members-header-text');
+    expect(topBar).toContain('var(--gd-members-header-font');
+    expect(topBar, 'the header still borrows the sidebar colour').not.toContain('--gd-sidebar-bg');
+  });
+
+  it('borders every Section Card, and only Section Cards', () => {
+    const card = read('components', 'MembersSectionCard.tsx');
+    expect(card).toContain('var(--gd-members-card-border,');
+    expect(card).toContain('var(--gd-members-card-border-width, 1px)');
+    // The rule lives on the component every navigation card renders through,
+    // so no page restates it.
+    const home = read('app', '[locale]', 'page.tsx');
+    expect(home).not.toContain('--gd-members-card-border');
+  });
+
+  it('paints the titles from the Title 1/2/3 settings', () => {
+    const home = read('app', '[locale]', 'page.tsx');
+    expect(home).toContain('var(--gd-color-h1,');
+    expect(home).toContain('var(--gd-color-h2,');
+    const membership = read('app', '[locale]', 'membership', 'page.tsx');
+    expect(membership).toContain('var(--gd-color-h3,');
+  });
+
+  it('leaves no setting unpainted', () => {
+    // Every Members App setting has to reach a surface: a setting the editor
+    // persists but nothing reads is a setting that changes nothing (the #677
+    // defect). The variables the FullCalendar sheet owns count through it.
+    const sources = [
+      read('components', 'TopBar.tsx'),
+      read('components', 'MembersSectionCard.tsx'),
+      read('components', 'CalendarThemeStyles.tsx'),
+      read('app', '[locale]', 'layout.tsx'),
+      read('app', '[locale]', 'page.tsx'),
+      read('app', '[locale]', 'membership', 'page.tsx'),
+      read('app', '[locale]', 'calendar', 'page.tsx'),
+    ].join('\n');
+    for (const { key, cssVar } of MEMBERS_APP_SETTINGS) {
+      expect(sources, `${key} writes ${cssVar}, which nothing reads`).toContain(`var(${cssVar}`);
+    }
+  });
+
+  it('paints the calendar’s event window and its inputs from their own settings', () => {
+    const calendar = read('app', '[locale]', 'calendar', 'page.tsx');
+    expect(calendar).toContain('var(--gd-members-calendar-modal-bg');
+    expect(calendar).toContain('var(--gd-members-calendar-modal-input-bg');
+    expect(calendar, 'the event window still borrows the sidebar colour').not.toContain('--gd-sidebar-bg');
+  });
+});

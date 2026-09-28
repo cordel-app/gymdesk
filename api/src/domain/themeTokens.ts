@@ -3,15 +3,12 @@
 // operate on the same `tokens` JSON shape and previously duplicated this
 // validation verbatim.
 
-export const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+import { validateMembersApp } from './membersAppTokens';
 
-export const FONT_STACKS = [
-  'system-ui, -apple-system, sans-serif',
-  'Georgia, "Times New Roman", serif',
-  '"Courier New", Courier, monospace',
-  'Arial, Helvetica, sans-serif',
-  '"Trebuchet MS", sans-serif',
-];
+// Re-exported from `themeTokenFormats.ts`, which both this module and
+// `membersAppTokens.ts` read (#833) — the two cannot import each other.
+import { FONT_STACKS, HEX_RE } from './themeTokenFormats';
+export { FONT_STACKS, HEX_RE };
 
 export function defaultTokens() {
   return {
@@ -99,6 +96,10 @@ export const CALENDAR_COLOR_FIELDS = [
 export function validateTokens(tokens: any): string | null {
   if (!tokens || typeof tokens !== 'object') return 'tokens must be an object';
   const { colors, typography } = tokens;
+  // #833 — the Members App's own settings. Overrides only: an inherited
+  // setting is not stored, so an empty or absent map is the normal case.
+  const membersAppError = validateMembersApp(tokens.membersApp);
+  if (membersAppError) return membersAppError;
   if (colors) {
     const hexFields = [
       'pageBackground', 'textColor', 'secondaryTextColor', 'mutedTextColor', 'sectionHeadingTextColor',

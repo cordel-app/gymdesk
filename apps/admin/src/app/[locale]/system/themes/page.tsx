@@ -30,6 +30,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
+import { ThemeMembersAppEditor } from '@/components/ThemeMembersAppEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import {
   MEMBER_IMAGE_MAX_BYTES,
@@ -75,7 +76,7 @@ const EDITABLE_STATUSES = ['draft', 'active', 'inactive'] as const;
 // #678 — the same section model as the Custom Themes editor. `Assignments`
 // is the one section that has no platform-level counterpart: a theme is
 // assigned to a gym's centers, and this screen is above any gym.
-type SectionKey = 'branding' | 'members' | 'colors' | 'typography';
+type SectionKey = 'branding' | 'members' | 'colors' | 'typography' | 'members_app';
 
 const NEW_ID = 'new';
 
@@ -675,6 +676,13 @@ export default function ThemesPage() {
 
           {!isNew && renderSection('typography', t('section_typography'), (
             <ThemeTypographyEditor tokens={editForm.tokens} onChange={updateTokens} t={t} />
+          ))}
+
+          {/* #833 — the same Members App editor the Custom Themes screen
+              renders: one set of settings, one inheritance system, both Theme
+              kinds. */}
+          {!isNew && renderSection('members_app', t('section_members_app'), (
+            <ThemeMembersAppEditor tokens={editForm.tokens} onChange={updateTokens} t={t} />
           ))}
         </div>
 

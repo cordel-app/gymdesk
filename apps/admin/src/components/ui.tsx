@@ -14,7 +14,9 @@ export const modalStyle: React.CSSProperties = { background: 'var(--gd-card-bg, 
  * of the spread and keeps the themed radius.
  */
 export const cardSurfaceStyle: React.CSSProperties = {
-  border: '1px solid var(--gd-card-border, #e2e2e6)',
+  // #833 §4 added Card Border Width beside the colour, so the width is themed
+  // too rather than being a hardcoded 1px under a configurable colour.
+  border: 'var(--gd-card-border-width, 1px) solid var(--gd-card-border, #e2e2e6)',
   borderRadius: 'var(--gd-card-radius, 8px)',
   background: 'var(--gd-card-bg, #ffffff)',
 };

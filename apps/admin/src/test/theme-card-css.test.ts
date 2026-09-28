@@ -38,9 +38,10 @@ describe('Card theme CSS variables (#677)', () => {
   it('maps every editable card attribute to exactly one CSS variable', () => {
     const cardAdvanced = ADVANCED_ATTRIBUTES.filter((a) => a.group === 'group_cards');
     // `cardShadow` is a named preset (none/small/…), not a value a card style
-    // can hold directly, so the radius is the only advanced card *variable*.
-    expect(cardAdvanced.map((a) => a.key).sort()).toEqual(['cardBorderRadius', 'cardShadow']);
-    expect(Object.keys(CARD_ADVANCED_VARS)).toEqual(['cardBorderRadius']);
+    // can hold directly, so the radius and — since #833 §4 — the border width
+    // are the advanced card *variables*.
+    expect(cardAdvanced.map((a) => a.key).sort()).toEqual(['cardBorderRadius', 'cardBorderWidth', 'cardShadow']);
+    expect(Object.keys(CARD_ADVANCED_VARS)).toEqual(['cardBorderRadius', 'cardBorderWidth']);
     const names = Object.values(CARD_ADVANCED_VARS);
     expect(new Set(names).size, 'two attributes share one CSS variable').toBe(names.length);
   });
