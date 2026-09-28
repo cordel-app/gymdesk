@@ -1079,6 +1079,46 @@ export default function PlansPage() {
                       </>
                     )}
 
+                    {/* PRICE HISTORY (#881) — a collapsible card *inside* PRICING,
+                        not a section of its own. #817 §1 made the history
+                        collapsible and collapsed by default; #881 moves it to
+                        where it belongs, so the plan's prices — current and
+                        superseded — are read in one place and the history is
+                        rendered exactly once. The rows themselves are untouched:
+                        a superseded price is never rewritten, and the card holds
+                        no control but its own expander, so PRICING stays
+                        read-only outside Edit mode (#797/#816). */}
+                    <CollapsibleCard
+                      title={t('plans.section_prices')}
+                      open={isPriceHistoryOpen}
+                      onToggle={() => togglePriceHistory(plan.id)}
+                    >
+                      {(plan.price_history ?? []).length === 0 ? (
+                        <p style={hintSt}>{t('plans.no_prices')}</p>
+                      ) : (
+                        // Newest first — the plan's current price heads its own history.
+                        [...(plan.price_history ?? [])]
+                          .sort((a, b) =>
+                            Number(a.status === 'inactive') - Number(b.status === 'inactive')
+                            || String(b.valid_from).localeCompare(String(a.valid_from))
+                            || b.id - a.id)
+                          .map((row) => (
+                            <div key={row.id} style={benefitRowStyle}>
+                              <span style={benefitNameStyle}>
+                                {String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}
+                              </span>
+                              <span style={benefitValueStyle}>
+                                €{parseFloat(row.price).toFixed(2)}
+                                {row.tax_rate_percent != null && ` (${t('plans.price_hint_inclusive', { rate: parseFloat(row.tax_rate_percent) })})`}
+                              </span>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: row.status === 'inactive' ? '#888' : '#1e7e34' }}>
+                                {t(`plans.price_status_${row.status}`)}
+                              </span>
+                            </div>
+                          ))
+                      )}
+                    </CollapsibleCard>
+
                     {/* #635 §7 + stage 13: Billing & Duration — the Promotion's
                         Free Period / Paid Duration / Pre-paid Duration / Bonus
                         Duration, on the Plan itself, plus the Billing frequency
@@ -1336,41 +1376,6 @@ export default function PlansPage() {
                       <p style={hintSt}>{t('plans.timeline_unavailable')}</p>
                     )}
 
-                    {/* PRICE HISTORY (§11, #817 §1) — after the numbered sections,
-                        with its existing behaviour: a superseded price is never
-                        rewritten. #817 frames it as a collapsible card that starts
-                        collapsed, so a plan with a long price history no longer
-                        buries the sections above it — only the framing changes,
-                        the rows inside it are untouched. */}
-                    <CollapsibleSectionHeader
-                      title={t('plans.section_prices')}
-                      open={isPriceHistoryOpen}
-                      onToggle={() => togglePriceHistory(plan.id)}
-                    />
-                    {isPriceHistoryOpen && ((plan.price_history ?? []).length === 0 ? (
-                      <p style={hintSt}>{t('plans.no_prices')}</p>
-                    ) : (
-                      // Newest first — the plan's current price heads its own history.
-                      [...(plan.price_history ?? [])]
-                        .sort((a, b) =>
-                          Number(a.status === 'inactive') - Number(b.status === 'inactive')
-                          || String(b.valid_from).localeCompare(String(a.valid_from))
-                          || b.id - a.id)
-                        .map((row) => (
-                          <div key={row.id} style={benefitRowStyle}>
-                            <span style={benefitNameStyle}>
-                              {String(row.valid_from).slice(0, 10)}{row.valid_to ? ` – ${String(row.valid_to).slice(0, 10)}` : ''}
-                            </span>
-                            <span style={benefitValueStyle}>
-                              €{parseFloat(row.price).toFixed(2)}
-                              {row.tax_rate_percent != null && ` (${t('plans.price_hint_inclusive', { rate: parseFloat(row.tax_rate_percent) })})`}
-                            </span>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: row.status === 'inactive' ? '#888' : '#1e7e34' }}>
-                              {t(`plans.price_status_${row.status}`)}
-                            </span>
-                          </div>
-                        ))
-                    ))}
                   </div>
                 )}
               </div>
@@ -1439,26 +1444,36 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
 }
 
 /**
- * #817 §1 — a section header that opens and closes its own body. The whole
- * header is the control (a real `<button>` carrying `aria-expanded`, the
- * treatment #632 established for the Theme Colors groups), so the label, the
- * chevron and the keyboard focus target are one thing rather than three.
+ * #817 §1 / #881 — a collapsible card. The whole header is the control (a real
+ * `<button>` carrying `aria-expanded`, the treatment #632 established for the
+ * Theme Colors groups), so the label, the chevron and the keyboard focus target
+ * are one thing rather than three, and the body is rendered only while open.
+ *
+ * #881 makes it a *card* rather than a section divider: Price History now lives
+ * inside PRICING, and a `subSectionSt` rule there would have read as the start
+ * of a new plan section. It borrows the plan card's own themed border and radius
+ * (`cardSurfaceStyle`) instead of declaring a second card look.
  *
  * It is deliberately separate from `SectionHeader`'s `action` slot: an action is
  * a second control *beside* a static label, and mixing the two would make the
  * label both a button and not a button depending on a prop.
  */
-function CollapsibleSectionHeader({ title, open, onToggle }: { title: string; open: boolean; onToggle: () => void }) {
+function CollapsibleCard({ title, open, onToggle, children }: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div style={{ ...subSectionSt, marginBottom: 8 }}>
+    <div style={nestedCardSt}>
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-          width: '100%', padding: 0, background: 'none', border: 'none', cursor: 'pointer',
-          textAlign: 'left',
+          width: '100%', padding: '10px 12px', background: 'none', border: 'none', cursor: 'pointer',
+          textAlign: 'left', fontFamily: 'inherit',
         }}
       >
         <span style={sectionLabelSt}>{title}</span>
@@ -1472,6 +1487,11 @@ function CollapsibleSectionHeader({ title, open, onToggle }: { title: string; op
           ▾
         </span>
       </button>
+      {open && (
+        <div style={{ padding: '8px 12px 10px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -1546,6 +1566,11 @@ const inlineLabelStyle: React.CSSProperties = {
 const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
 const sectionLabelSt: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
 const hintSt: React.CSSProperties = { color: '#aaa', fontSize: 13, margin: 0 };
+
+// #881: a card nested inside a section (Price History inside PRICING). It reuses
+// the plan card's own themed border, radius and background rather than declaring
+// a second card look, so one theme change still moves both.
+const nestedCardSt: React.CSSProperties = { ...cardSurfaceStyle, margin: '10px 0 4px', overflow: 'hidden' };
 
 const fieldDescStyle: React.CSSProperties = {
   fontSize: 12, color: '#888', marginTop: 2, marginBottom: 6,

@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   EMPTY_VALUE,
+  PLAN_PRICING_SUBSECTIONS,
   PLAN_SECTION_ORDER,
   formatPlanCurrentPrice,
 } from '@/app/[locale]/plans/planProfile';
@@ -39,25 +40,27 @@ const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, plansNamespace(c)
   Record<string, string>
 >;
 
-/** The `CollapsibleSectionHeader` component body. */
+/** The `CollapsibleCard` component body. */
 const headerSrc =
-  pageSrc.match(/function CollapsibleSectionHeader[\s\S]*?\n}\n/)?.[0] ?? '';
+  pageSrc.match(/function CollapsibleCard[\s\S]*?\n}\n/)?.[0] ?? '';
 
-/** Everything from the PRICE HISTORY header to the end of the expanded card. */
+/** The PRICE HISTORY card, from its opening tag to its closing one. */
 const priceHistorySrc = (() => {
-  const start = pageSrc.indexOf('<CollapsibleSectionHeader');
-  expect(start, 'PRICE HISTORY is not rendered through CollapsibleSectionHeader').toBeGreaterThan(-1);
-  const end = pageSrc.indexOf('<ConfirmDialog', start);
+  const start = pageSrc.indexOf('<CollapsibleCard');
+  expect(start, 'PRICE HISTORY is not rendered through CollapsibleCard').toBeGreaterThan(-1);
+  const end = pageSrc.indexOf('</CollapsibleCard>', start);
   expect(end).toBeGreaterThan(start);
   return pageSrc.slice(start, end);
 })();
 
 describe('Plans: Price History is a collapsible card (#817 §1)', () => {
-  it('renders the Price History header as a CollapsibleSectionHeader', () => {
+  it('renders the Price History header as a CollapsibleCard', () => {
     expect(priceHistorySrc).toContain("title={t('plans.section_prices')}");
     expect(priceHistorySrc).toContain('onToggle={() => togglePriceHistory(plan.id)}');
-    // Still the last section — #816 §2's order is unchanged by the framing.
-    expect(PLAN_SECTION_ORDER[PLAN_SECTION_ORDER.length - 1]).toBe('section_prices');
+    // #881: no longer a section of the plan — it is declared as PRICING's own
+    // sub-section, and a key in both lists would render the history twice.
+    expect([...PLAN_PRICING_SUBSECTIONS]).toEqual(['section_prices']);
+    expect([...PLAN_SECTION_ORDER]).not.toContain('section_prices');
   });
 
   it('starts collapsed: open state is a set nothing seeds', () => {
@@ -79,7 +82,11 @@ describe('Plans: Price History is a collapsible card (#817 §1)', () => {
   });
 
   it('renders the history rows only while open, and leaves them unchanged', () => {
-    expect(priceHistorySrc).toContain('{isPriceHistoryOpen && ((plan.price_history ?? []).length === 0');
+    // The card owns "only while open": its body is a child it renders behind
+    // `open`, so no caller can forget the guard.
+    expect(priceHistorySrc).toContain('open={isPriceHistoryOpen}');
+    expect(headerSrc).toContain('{open && (');
+    expect(priceHistorySrc).toContain('{(plan.price_history ?? []).length === 0 ? (');
     // The existing row content: the validity window, the price, the VAT hint and
     // the status badge. §1 changes the framing only.
     expect(priceHistorySrc).toContain('String(row.valid_from).slice(0, 10)');
@@ -101,7 +108,45 @@ describe('Plans: Price History is a collapsible card (#817 §1)', () => {
 
   it('keeps the section label styling shared with the non-collapsible headers', () => {
     expect(headerSrc).toContain('style={sectionLabelSt}');
-    expect(headerSrc).toContain('...subSectionSt');
+  });
+
+  // #881 §7 — the card reuses the plan card's themed chrome rather than
+  // declaring a second card look, and it is a card rather than the section
+  // divider it was, because it now sits *inside* a section.
+  it('is a card built from the shared card surface, not a section divider', () => {
+    expect(headerSrc).toContain('style={nestedCardSt}');
+    expect(headerSrc).not.toContain('...subSectionSt');
+    expect(pageSrc).toContain('const nestedCardSt: React.CSSProperties = { ...cardSurfaceStyle');
+  });
+});
+
+// #881 — Price History moves into PRICING and stops being a section of its own.
+describe('Plans: Price History lives inside PRICING (#881)', () => {
+  it('renders the card between the PRICING fields and the next section', () => {
+    const pricing = pageSrc.indexOf("plans.section_pricing");
+    const card = pageSrc.indexOf('<CollapsibleCard');
+    const nextSection = pageSrc.indexOf("plans.section_billing_duration");
+    expect(pricing).toBeGreaterThan(-1);
+    expect(card).toBeGreaterThan(pricing);
+    expect(card).toBeLessThan(nextSection);
+  });
+
+  it('renders the history exactly once, and never as a top-level section', () => {
+    expect([...pageSrc.matchAll(/<CollapsibleCard/g)].length).toBe(1);
+    expect([...pageSrc.matchAll(/plans\.section_prices/g)].length).toBe(1);
+    // The retired framing: a `SectionHeader` for Price History would put it back
+    // beside the numbered sections.
+    expect(pageSrc).not.toContain("<SectionHeader title={t('plans.section_prices')}");
+    expect(pageSrc).not.toContain('CollapsibleSectionHeader');
+  });
+
+  it('adds no control to the card beyond its own expander', () => {
+    // #797/#816: an expanded card is read-only outside Edit mode. The expander
+    // is the card's, not the history's — the rows carry nothing writable.
+    for (const control of ['<input', '<select', '<textarea', '<button', 'onChange', 'onClick']) {
+      expect(priceHistorySrc, `the Price History card renders a ${control}`).not.toContain(control + ' ');
+    }
+    expect(priceHistorySrc).not.toContain('onClick=');
   });
 });
 
