@@ -154,6 +154,73 @@ describe('Semantic color tokens (#489)', () => {
   });
 });
 
+// ─── Members App settings (#833) ─────────────────────────────────────────────
+
+describe('Members App settings (#833)', () => {
+  const overrides = {
+    headerColor: '#010101',
+    headerTextFont: 'Georgia, "Times New Roman", serif',
+    headerSeparatorWidth: 5,
+    sectionCardsBorderWidth: '3px',
+    calendarModalBackgroundColor: '#020202',
+  };
+
+  it('persists and returns the Members App overrides for a customer theme', async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { ...defaultTokensFixture(), membersApp: overrides } });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.membersApp).toEqual(overrides);
+
+    const { rows } = await db.query<{ tokens: string }>('SELECT tokens FROM themes WHERE id = ?', [customThemeId]);
+    const persisted = typeof rows[0].tokens === 'string' ? JSON.parse(rows[0].tokens) : rows[0].tokens;
+    expect(persisted.membersApp).toEqual(overrides);
+  });
+
+  it('stores nothing for a setting that is inherited', async () => {
+    // Restoring inheritance removes the override rather than writing the Admin
+    // value into it (§13, §19), so a Theme that overrides nothing carries no
+    // `membersApp` map at all.
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { ...defaultTokensFixture() } });
+    expect(res.status).toBe(200);
+    expect(res.body.tokens.membersApp).toBeUndefined();
+  });
+
+  it('rejects an invalid override (400)', async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { membersApp: { headerColor: 'not-a-hex' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error ?? res.body.message).toMatch(/headerColor/);
+  });
+
+  it('rejects a key that is not a Members App setting (400)', async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ tokens: { membersApp: { headerColour: '#000000' } } });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 when writing Members App settings to another gym's theme (tenant isolation)", async () => {
+    const res = await request
+      .put(`/system/themes/${customThemeId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', otherGymId)
+      .send({ tokens: { membersApp: { headerColor: '#abcdef' } } });
+    expect(res.status).toBe(404);
+  });
+});
+
 // ─── Calendar color tokens (#559 stages 1 & 3) ───────────────────────────────
 
 describe('Calendar color tokens (#559)', () => {

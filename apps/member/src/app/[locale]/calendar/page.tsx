@@ -297,7 +297,9 @@ export default function MemberCalendarPage() {
             <div
               style={{
                 position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 70,
-                width: 240, background: 'var(--gd-card-bg, #fff)', borderRadius: 10,
+                // #833 §7 — a window layered above the Calendar takes the
+                // Calendar Modal Background, never the Calendar Background.
+                width: 240, background: 'var(--gd-members-calendar-modal-bg, var(--gd-card-bg, #fff))', borderRadius: 10,
                 border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
                 padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
               }}
@@ -309,7 +311,7 @@ export default function MemberCalendarPage() {
                 <select
                   value={pendingCenterId}
                   onChange={(e) => setPendingCenterId(e.target.value)}
-                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                  style={{ ...modalInputStyle }}
                 >
                   <option value="">{t('filter_all_centers')}</option>
                   {centers.map((c) => (
@@ -325,7 +327,7 @@ export default function MemberCalendarPage() {
                 <select
                   value={pendingTrainerId}
                   onChange={(e) => setPendingTrainerId(e.target.value)}
-                  style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                  style={{ ...modalInputStyle }}
                 >
                   <option value="">{t('filter_all_trainers')}</option>
                   {trainers.map((tr) => (
@@ -430,7 +432,9 @@ export default function MemberCalendarPage() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: '100%', background: 'var(--gd-sidebar-bg, #fff)',
+              // #833 §7 — the event window's own surface setting. It used to
+              // borrow the Admin sidebar's colour, which was never its own.
+              width: '100%', background: 'var(--gd-members-calendar-modal-bg, var(--gd-card-bg, #fff))',
               borderRadius: '16px 16px 0 0', padding: '20px 16px',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
             }}
@@ -521,6 +525,18 @@ const OCCUPANCY_BADGE_COLORS: Record<OccupancyStatus, string> = {
   few_spots_left:  '#f59e0b',
   full:            '#ef4444',
   unavailable:     '#9ca3af',
+};
+
+/**
+ * #833 §7 — a text input or dropdown inside the Calendar's event window. Its
+ * background is the Calendar Modal Input Background setting (inheriting from
+ * the Admin Input Background), deliberately not the Calendar Background.
+ */
+const modalInputStyle: React.CSSProperties = {
+  width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13,
+  border: '1px solid var(--gd-input-border, #d1d5db)',
+  background: 'var(--gd-members-calendar-modal-input-bg, var(--gd-input-bg, #fff))',
+  color: 'inherit',
 };
 
 function badgeStyle(bg: string, color: string): React.CSSProperties {

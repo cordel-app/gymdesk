@@ -1226,6 +1226,22 @@ Reference implementation: `api/src/api/assigned-plan-snapshot.ts` + migration 17
 
 ---
 
+## Per-Setting Inheritance from an Existing Setting (#833)
+
+When a ticket asks for a second set of settings that *default to* an existing set — the Members App's colours following the Admin ones until a Theme overrides them — the shape is **overrides only**, not a copy.
+
+- **Store the override, never the inherited value.** A key absent from the map means "follow the source", so nothing is written when a Theme is created and `Restore inherited value` **deletes** the key rather than writing today's source value into it (drop the map entirely when it empties). Copying at creation time turns inheritance into a snapshot: the source edited a month later reaches nothing, which is the one behaviour the ticket exists to provide.
+- **Declare the mapping once, and make the source a datum.** One list of `{ key, section, labelKey, type, source, cssVar }` (`apps/admin/src/lib/membersAppTokens.ts`) is what the editor renders, what the consumer resolves and what the tests assert against §-by-§. The source is part of the declaration because the UI has to *name* it — "(inherited from Header Background)" is only true if it comes from the same place the value does.
+- **Resolve per setting.** `override ?? sourceValue` evaluated independently, so editing one setting cannot implicitly override another. A single "customised?" flag for the whole group is the trap: it makes the first edit freeze everything else at today's values.
+- **Reuse an existing source before inventing one.** A ticket listing "required sources" usually lists some that already exist under another name (`Application Surface` was `advanced.modalBackground`, `Input Background` was `colors.inputBackgroundColor`). Reuse them and let the "(inherited from …)" line say the real name; add a source only when nothing equivalent exists — and then wire it to something that reads it, because an editable setting no surface consumes is the #677 defect.
+- **Treat an unusable stored value as inherited.** A colour that is not `#rrggbb`, a font outside the allowed stacks, a blank length: fall back to the source rather than writing it to a CSS variable, for `calendarVarValue()`'s reason (an invalid custom property invalidates the declaration reading it, so the stylesheet's own `var()` literal does *not* take over).
+- **Order the writes where a setting shares its source's variable.** The consuming app writes the source's variables first and the derived ones second, so a shared name resolves to the derived value — and no second rule is needed downstream for the surfaces already reading it.
+- **Keep the editor a pure draft editor.** It takes the draft and an `onChange` and names no endpoint, so the screen's existing Save/Cancel, dirty state and read-only mode cover the new settings — restoring inheritance included — and the same component serves both screens that administer the entity (#806).
+
+Reference implementation: `apps/admin/src/lib/membersAppTokens.ts` + `apps/admin/src/components/ThemeMembersAppEditor.tsx`, mirrored by `apps/member/src/lib/membersAppTokens.ts` (resolution) and `api/src/domain/membersAppTokens.ts` (validation).
+
+---
+
 ## Parent-Level Configuration Read over Child-Owned Writes (#634)
 
 When a ticket splits one record's configuration into **independent sections** that each live on a *child* row (a Member's Promotions and Additional Services both belong to an Assigned Plan, but §13 requires them to be rendered at Member level, not inside a plan card), don't let the browser fan out one request per child.

@@ -15,6 +15,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ThemeColorsEditor, ThemeTypographyEditor } from '@/components/ThemeTokensEditor';
+import { ThemeMembersAppEditor } from '@/components/ThemeMembersAppEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
@@ -84,7 +85,7 @@ const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 
 // Assignments first, then Branding → Colors → Typography — the same set for a
 // Base Theme and a Custom one (#678); see renderInlineEditor().
-type SectionKey = 'branding' | 'members' | 'typography' | 'colors' | 'assignments';
+type SectionKey = 'branding' | 'members' | 'typography' | 'colors' | 'assignments' | 'members_app';
 const CENTERS_INITIAL_LIMIT = 10;
 
 const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
@@ -711,6 +712,14 @@ export default function GymThemesPage() {
 
           {renderSection(t('section_typography'), 'typography', (
             <ThemeTypographyEditor tokens={editForm.tokens} onChange={updateTokens} t={t} readOnly={isBase} />
+          ))}
+
+          {/* #833 — the Members App's own settings, each inheriting from its
+              Admin source until this Theme overrides it. The same component
+              renders on the Base Themes screen, so both Theme kinds get one
+              editor and one inheritance system. */}
+          {renderSection(t('section_members_app'), 'members_app', (
+            <ThemeMembersAppEditor tokens={editForm.tokens} onChange={updateTokens} t={t} readOnly={isBase} />
           ))}
         </div>
 

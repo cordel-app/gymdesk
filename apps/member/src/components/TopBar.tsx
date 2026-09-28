@@ -42,7 +42,14 @@ export function TopBar() {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '10px 16px',
-      background: 'var(--gd-sidebar-bg, #fff)',
+      // #833 §2 — the Members App header's own colour, text colour and font.
+      // Each follows the Admin Header setting it inherits from unless the
+      // active Theme overrides it; lib/membersAppTokens.ts writes the three
+      // variables. Before this the bar borrowed `--gd-sidebar-bg`, which is the
+      // Admin sidebar's colour and was never the header's.
+      background: 'var(--gd-members-header-bg, var(--gd-header-bg, #fff))',
+      color: 'var(--gd-members-header-text, var(--gd-text, #18181b))',
+      fontFamily: 'var(--gd-members-header-font, inherit)',
       borderBottom: 'var(--gd-header-sep-height, 1px) solid var(--gd-header-sep-color, #e5e5e5)',
     }}>
       {isHome ? (
@@ -52,13 +59,13 @@ export function TopBar() {
             <img src={logoSrc} alt={gymName ?? ''} style={{ height: 24, width: 'auto', objectFit: 'contain' }} />
           )}
           {(!logoSrc || !theme?.logo_contains_gym_name) && gymName && (
-            <strong style={{ fontSize: 15, color: 'var(--gd-text, #18181b)' }}>{gymName}</strong>
+            <strong style={{ fontSize: 15, color: 'inherit' }}>{gymName}</strong>
           )}
         </div>
       ) : (
         <button
           onClick={() => router.push(homePath)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, color: 'var(--gd-text, #18181b)', fontSize: 14, fontWeight: 600 }}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, color: 'inherit', fontFamily: 'inherit', fontSize: 14, fontWeight: 600 }}
         >
           <span style={{ fontSize: 18 }}>←</span> {t('home.dashboard_title')}
         </button>

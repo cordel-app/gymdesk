@@ -68,6 +68,12 @@ export interface ThemeTokens {
     calendarNavButtonText: string;
   };
   advanced?: Record<string, string | number | boolean | null>;
+  /**
+   * #833 — the Members App's own visual settings, **overrides only**. A key
+   * that is absent means the setting follows its Admin source; see
+   * lib/membersAppTokens.ts, which resolves them.
+   */
+  membersApp?: Record<string, string | number | null>;
 }
 
 // Mirrors apps/admin/src/lib/themeTokens.ts — the calendar `advanced` defaults

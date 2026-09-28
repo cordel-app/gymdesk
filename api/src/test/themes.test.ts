@@ -405,6 +405,63 @@ describe('PUT /platform/themes/:id/set-system-default', () => {
   });
 });
 
+// ─── Members App settings (#833) ─────────────────────────────────────────────
+
+describe('Members App settings (#833)', () => {
+  beforeAll(() => mockAsSuperadmin());
+
+  it('persists and returns the Members App overrides for a base theme', async () => {
+    // Base Themes and Custom Themes carry these settings the same way — one
+    // editor, one shape, one validator (§15).
+    const overrides = {
+      headerColor: '#010101',
+      title1Color: '#020202',
+      calendarModalInputBackgroundColor: '#030303',
+      sectionCardsBorderWidth: '4px',
+    };
+    const create = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Members App' });
+    expect(create.status).toBe(201);
+    // §13 — nothing is copied into a Theme when it is created.
+    expect(create.body.tokens.membersApp).toBeUndefined();
+
+    const putRes = await request
+      .put(`/platform/themes/${create.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ tokens: { ...defaultTokensFixture(), membersApp: overrides } });
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.tokens.membersApp).toEqual(overrides);
+
+    const getRes = await request
+      .get(`/platform/themes/${create.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER);
+    expect(getRes.body.tokens.membersApp).toEqual(overrides);
+
+    // Restoring inheritance removes the key rather than storing a value.
+    const restored = await request
+      .put(`/platform/themes/${create.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ tokens: { ...defaultTokensFixture(), membersApp: { title1Color: '#020202' } } });
+    expect(restored.status).toBe(200);
+    expect(restored.body.tokens.membersApp).toEqual({ title1Color: '#020202' });
+  });
+
+  it('rejects an invalid Members App override (400)', async () => {
+    const create = await request
+      .post('/platform/themes')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ name: 'Test Base Theme Members App Invalid' });
+    const res = await request
+      .put(`/platform/themes/${create.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .send({ tokens: { membersApp: { headerTextFont: 'Comic Sans MS' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error ?? res.body.message).toMatch(/headerTextFont/);
+  });
+});
+
 // ─── Semantic color tokens (#489 stage 5) ────────────────────────────────────
 
 describe('Semantic color tokens (#489)', () => {

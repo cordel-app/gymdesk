@@ -64,8 +64,25 @@ export function MembersSectionCard({ slot, as = 'div', style, children, ...rest 
     {
       ...(as === 'button' ? { type: 'button' as const } : {}),
       ...rest,
-      style: background ? { ...style, background } : style,
+      style: { ...style, ...(background ? { background } : {}), ...SECTION_CARD_BORDER },
     },
     children,
   );
 }
+
+/**
+ * #833 §4 — a Section Card's border, from the theme. The colour and the width
+ * are two Members App settings of their own, each inheriting from the Admin
+ * Card Border / Card Border Width until the Theme overrides it
+ * (lib/membersAppTokens.ts writes both variables).
+ *
+ * It lives here rather than on the pages because "Section Card" is exactly what
+ * this component is: every navigation card the ticket names renders through it,
+ * and nothing else does, so one rule covers all of them and reaches no other
+ * surface.
+ */
+const SECTION_CARD_BORDER = {
+  borderStyle: 'solid',
+  borderColor: 'var(--gd-members-card-border, var(--gd-card-border, #e5e7eb))',
+  borderWidth: 'var(--gd-members-card-border-width, 1px)',
+} as const;

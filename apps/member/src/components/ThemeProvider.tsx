@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { DEFAULT_TOKENS, applyTokens, ThemeTokens } from '@/lib/themeTokens';
+import { applyMembersAppTokens } from '@/lib/membersAppTokens';
 
 /**
  * Writes theme CSS variables to <html> whenever the active gym's theme
@@ -14,7 +15,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const { theme } = useApp();
 
   useEffect(() => {
-    applyTokens((theme?.tokens ?? DEFAULT_TOKENS) as ThemeTokens);
+    const tokens = (theme?.tokens ?? DEFAULT_TOKENS) as ThemeTokens;
+    applyTokens(tokens);
+    // #833 — then the Members App's own settings, each resolved against its
+    // Admin source unless this Theme overrides it. Written after the Theme's
+    // own variables so a Members App setting sharing a variable with its
+    // source (the page background, the calendar surfaces, the titles) wins.
+    applyMembersAppTokens(tokens);
   }, [theme?.id]);
 
   return <>{children}</>;
