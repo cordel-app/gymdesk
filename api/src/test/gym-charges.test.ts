@@ -1597,3 +1597,159 @@ describe('Sellable Items — Professional Services linkage (#546)', () => {
     });
   });
 });
+
+// ─── #832 Mandatory attribute ────────────────────────────────────────────────────
+
+describe('#832 mandatory attribute', () => {
+  let gymId: string;
+  let systemId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Charges Mandatory Gym');
+    await createTestMembership(gymId, 'admin');
+    await seedGymCharges(gymId);
+    systemId = (await firstChargeId(gymId))!;
+  });
+
+  const post = (body: Record<string, unknown>) => request
+    .post('/sellable-items')
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send(body);
+
+  const put = (id: number, body: Record<string, unknown>) => request
+    .put(`/sellable-items/${id}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send(body);
+
+  const stored = async (id: number) => {
+    const { rows } = await db.query<{ mandatory: number }>(
+      'SELECT mandatory FROM gym_charges WHERE id = ?', [id],
+    );
+    return rows[0].mandatory;
+  };
+
+  it('defaults to false when the field is omitted on create', async () => {
+    const res = await post({ name: 'Mandatory Omitted', type: 'service' });
+    expect(res.status).toBe(201);
+    expect(res.body.mandatory).toBe(0);
+    expect(await stored(res.body.id)).toBe(0);
+  });
+
+  it('persists mandatory = true on create', async () => {
+    const res = await post({ name: 'Mandatory On Create', type: 'service', mandatory: true });
+    expect(res.status).toBe(201);
+    expect(res.body.mandatory).toBe(1);
+    expect(await stored(res.body.id)).toBe(1);
+  });
+
+  it('persists mandatory = false on create', async () => {
+    const res = await post({ name: 'Mandatory Off Create', type: 'service', mandatory: false });
+    expect(res.status).toBe(201);
+    expect(res.body.mandatory).toBe(0);
+  });
+
+  it('reads the flag back on GET /:id and in the list', async () => {
+    const created = await post({ name: 'Mandatory Readback', type: 'fee', mandatory: true });
+    const one = await request
+      .get(`/sellable-items/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(one.status).toBe(200);
+    expect(one.body.mandatory).toBe(1);
+
+    const list = await request
+      .get('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    const row = (list.body as Array<{ id: number; mandatory: number }>).find((i) => i.id === created.body.id);
+    expect(row?.mandatory).toBe(1);
+  });
+
+  // The COALESCE trap: `false` is a value the user chose, not an absent field,
+  // so unchecking the box has to reach the column.
+  it('toggles the flag both ways through PUT', async () => {
+    const created = await post({ name: 'Mandatory Toggle', type: 'service' });
+    const id = created.body.id as number;
+
+    const on = await put(id, { name: 'Mandatory Toggle', mandatory: true });
+    expect(on.status).toBe(200);
+    expect(on.body.mandatory).toBe(1);
+    expect(await stored(id)).toBe(1);
+
+    const off = await put(id, { name: 'Mandatory Toggle', mandatory: false });
+    expect(off.status).toBe(200);
+    expect(off.body.mandatory).toBe(0);
+    expect(await stored(id)).toBe(0);
+  });
+
+  it('leaves the flag untouched when PUT does not mention it', async () => {
+    const created = await post({ name: 'Mandatory Untouched', type: 'service', mandatory: true });
+    const id = created.body.id as number;
+    const res = await put(id, { name: 'Mandatory Untouched', amount: 12.5 });
+    expect(res.status).toBe(200);
+    expect(res.body.mandatory).toBe(1);
+    expect(await stored(id)).toBe(1);
+  });
+
+  // §2: the flag is editable on a Base (System) Sellable Item too, which is why
+  // the UPDATE writes it outside the is_system guard the catalogue-shape
+  // columns carry — name/type on a System row still cannot move.
+  it('is editable on a System item, whose name and type still cannot be', async () => {
+    const { rows: before } = await db.query<{ name: string; type: string; is_system: number }>(
+      'SELECT name, type, is_system FROM gym_charges WHERE id = ?', [systemId],
+    );
+    expect(before[0].is_system).toBe(1);
+
+    const res = await put(systemId, { name: 'Renamed System Item', type: 'other', mandatory: true });
+    expect(res.status).toBe(200);
+    expect(res.body.mandatory).toBe(1);
+    expect(res.body.name).toBe(before[0].name);
+    expect(res.body.type).toBe(before[0].type);
+
+    const off = await put(systemId, { mandatory: false });
+    expect(off.status).toBe(200);
+    expect(off.body.mandatory).toBe(0);
+  });
+
+  it('accepts 0/1 as well as booleans, and refuses anything else', async () => {
+    const one = await post({ name: 'Mandatory Numeric One', type: 'service', mandatory: 1 });
+    expect(one.status).toBe(201);
+    expect(one.body.mandatory).toBe(1);
+
+    const zero = await post({ name: 'Mandatory Numeric Zero', type: 'service', mandatory: 0 });
+    expect(zero.status).toBe(201);
+    expect(zero.body.mandatory).toBe(0);
+
+    // "false" is truthy in JS — coercing it would silently mark the item
+    // mandatory, so the string is refused rather than interpreted.
+    const bad = await post({ name: 'Mandatory Bad Value', type: 'service', mandatory: 'false' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain('mandatory');
+
+    const created = await post({ name: 'Mandatory Bad On Put', type: 'service', mandatory: true });
+    const badPut = await put(created.body.id, { mandatory: 'no' });
+    expect(badPut.status).toBe(400);
+    expect(await stored(created.body.id)).toBe(1);
+  });
+
+  it('treats an explicit null as "not supplied"', async () => {
+    const created = await post({ name: 'Mandatory Null', type: 'service', mandatory: true });
+    const id = created.body.id as number;
+    const res = await put(id, { name: 'Mandatory Null', mandatory: null });
+    expect(res.status).toBe(200);
+    expect(res.body.mandatory).toBe(1);
+  });
+
+  it('copies the flag onto a duplicate', async () => {
+    const created = await post({ name: 'Mandatory To Duplicate', type: 'service', mandatory: true });
+    const res = await request
+      .post(`/sellable-items/${created.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(201);
+    expect(res.body.mandatory).toBe(1);
+  });
+});
