@@ -12,6 +12,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { ExampleTimeline, ExampleTimelineTone } from '@/components/ExampleTimeline';
 import { PromotionDetailModal } from './PromotionDetailModal';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
 
@@ -859,6 +860,14 @@ export default function PromotionsPage() {
     pay_regular: 'timeline_pay_regular',
   };
 
+  // Which of the shared table's three tones a period is drawn in (#818 moved the
+  // colours into `ExampleTimeline`; the mapping stays with the statuses).
+  function timelineTone(status: PromotionTimelineStatus): ExampleTimelineTone {
+    if (status === 'free_promotion' || status === 'bonus_promotion') return 'free';
+    if (status === 'pay_regular') return 'regular';
+    return 'benefit';
+  }
+
   // Billing column (#552): free/bonus periods are always "No charge" and the
   // trailing regular period is always "Regular price". A paid promotional
   // period reflects the promotion's Membership Fee Benefit — `waive` reads
@@ -999,45 +1008,32 @@ export default function PromotionsPage() {
 
     const enrollmentStr = fmtDate(parseDateStr(timeline.periods[0].startsOn), locale);
 
+    // #818: the table itself is the shared `ExampleTimeline` the Membership Plan
+    // card renders too — the classification, the labels and the Billing column
+    // stay here, where the Promotion's own Membership Fee Benefit lives.
     return (
       <div style={subSectionSt}>
         <p style={sectionLabelSt}>{t('section_timeline')}</p>
         <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>{t('timeline_example_note', { date: enrollmentStr })}</p>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th style={thSt}>{t('col_period')}</th>
-                <th style={thSt}>{t('col_dates')}</th>
-                <th style={thSt}>Status</th>
-                <th style={thSt}>{t('col_billing')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {timeline.periods.map((row) => {
-                const isFree = row.status === 'free_promotion' || row.status === 'bonus_promotion';
-                const isRegular = row.status === 'pay_regular';
-                const bg = isFree ? '#f0fdf4' : isRegular ? '#f9fafb' : '#fefce8';
-                const statusLabel = t(STATUS_LABEL_KEYS[row.status] as any);
-                const billingLabel = billingLabelFor(row);
-                return (
-                  <tr key={row.period} style={{ background: bg }}>
-                    <td style={tdSt}>{row.endsOn ? row.period : `${row.period}+`}</td>
-                    <td style={tdSt}>
-                      {row.endsOn
-                        ? `${fmtDate(parseDateStr(row.startsOn), locale)} – ${fmtDate(parseDateStr(row.endsOn), locale)}`
-                        : `From ${fmtDate(parseDateStr(row.startsOn), locale)}`}
-                    </td>
-                    <td style={{ ...tdSt, fontWeight: 500 }}>{statusLabel}</td>
-                    <td style={{ ...tdSt, color: isFree ? '#166534' : isRegular ? '#666' : '#854d0e' }}>{billingLabel}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>{t('timeline_disclaimer')}</p>
-        <p style={{ margin: '4px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>{t('timeline_monthly_billing_disclaimer')}</p>
+        <ExampleTimeline
+          labels={{ period: t('col_period'), dates: t('col_dates'), status: t('col_status'), billing: t('col_billing') }}
+          rows={timeline.periods.map((row) => ({
+            key: row.period,
+            period: row.endsOn ? String(row.period) : `${row.period}+`,
+            dates: row.endsOn
+              ? `${fmtDate(parseDateStr(row.startsOn), locale)} – ${fmtDate(parseDateStr(row.endsOn), locale)}`
+              : t('timeline_dates_from', { date: fmtDate(parseDateStr(row.startsOn), locale) }),
+            status: t(STATUS_LABEL_KEYS[row.status] as any),
+            billing: billingLabelFor(row),
+            tone: timelineTone(row.status),
+          }))}
+          footnotes={
+            <>
+              <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>{t('timeline_disclaimer')}</p>
+              <p style={{ margin: '4px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>{t('timeline_monthly_billing_disclaimer')}</p>
+            </>
+          }
+        />
       </div>
     );
   }

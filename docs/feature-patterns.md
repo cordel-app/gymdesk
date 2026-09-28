@@ -1365,6 +1365,21 @@ Reference implementation: `api/src/domain/personalTrainingSlots.ts` + `api/src/a
 
 ---
 
+## Simulating a Billing Rule You Must Not Restate (#818)
+
+When a ticket asks for a preview of what something *will* bill — a Membership Plan's Example Timeline, a Promotion's — the preview is a **projection over the rule that really bills**, never a second copy of it:
+
+- **The pure `domain/` module owns the projection and imports the rule.** `domain/planExampleTimeline.ts` steps rows with `advanceBillingDate()` and asks `classifyPlanDurationPeriod()` what each row's start date is — the same classifier `resolveMembershipFee()` and the nightly run price a cycle with. A preview that re-derives the boundaries is how a screen comes to show a charge the run does not make, in either direction.
+- **Where the ticket's arithmetic and the billed arithmetic disagree, the billed one wins** — and say so on the screen. #818 asked for durations counted in billing periods while a Plan's durations are calendar months, so a 4-weekly Plan with Free Period = 2 shows *three* free rows, under a footnote that states the rule. Changing the billing side is a different ticket (it reprices existing assignments); silently showing the other answer is a defect.
+- **Compute nothing money-shaped in the frontend.** The projection returns the amount the server already computed (`amount_incl_tax`) plus a `waived` flag, so the page only picks between a price, "No charge" and the em dash. `null` alone cannot tell "waived" from "no price configured" — and rendering the second as €0.00 tells a gym it charges nothing.
+- **Bound the row count.** The inputs are free-form numbers on a form; a cap (`MAX_TIMELINE_PERIODS`) is what keeps a mistyped duration from rendering a thousand-row table inside a card.
+- **Never persist it, and never let it write.** It is recomputed on every read (embedded by `enrichPlan`, plus a thin `GET /:id/example-timeline` wrapper over the same call), so an integration test asserts the `billing_events` count is unchanged.
+- **Two pages showing the same simulation share the table, not the logic.** `apps/admin/src/components/ExampleTimeline.tsx` renders Period / Dates / Status / Billing from generic rows and knows nothing about plans, promotions, prices or endpoints; each page keeps its own labels and its own Billing cell (#806's split). Adding a second table design for the second entity is what the ticket forbade.
+
+Reference implementation: `api/src/domain/planExampleTimeline.ts` + `api/src/api/membership-plans.ts` + `apps/admin/src/components/ExampleTimeline.tsx` + `apps/admin/src/app/[locale]/plans/planProfile.ts`.
+
+---
+
 ## Scheduled Background Task (#647 stage 4)
 
 When a ticket asks for a "scheduled/background task", it means an **endpoint plus a cron**, not a timer inside the API process. `POST /billing/run` set the shape and `POST /recurring-bookings/run` follows it:

@@ -131,7 +131,10 @@ describe('Charge Benefits are retired (#635 stage 4)', () => {
     }
   });
 
-  it('leaves the Plan Billing Forecast with the fee alone — no benefit lines', async () => {
+  // #818 replaced the Billing Events Forecast with the Example timeline: still
+  // the fee and the Plan's own cadence, and still nothing a Charge Benefit could
+  // move — there is no benefit line to carry one any more.
+  it('leaves the Plan Example timeline with the fee alone — no benefit lines', async () => {
     await db.query(
       `INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from)
        VALUES (?, ?, 55, CURDATE())`,
@@ -144,15 +147,16 @@ describe('Charge Benefits are retired (#635 stage 4)', () => {
     );
 
     const res = await request
-      .get(`/membership-plans/${planId}/billing-forecast`)
+      .get(`/membership-plans/${planId}/example-timeline`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.available).toBe(true);
-    for (const event of res.body.events) {
-      expect(event.lines.every((l: any) => l.benefit === undefined)).toBe(true);
+    for (const period of res.body.periods) {
+      expect(Object.keys(period)).not.toContain('lines');
+      expect(period.amount == null || period.amount === 55).toBe(true);
     }
-    expect(res.body.events[0].total).toBe(55);
+    expect(res.body.periods.some((p: any) => p.amount === 55)).toBe(true);
   });
 
   // ── The Assigned Plan ──
