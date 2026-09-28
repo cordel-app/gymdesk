@@ -26,6 +26,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect();
   });
 
+  // #883: the mobile drawer scrolls on its own, so the document behind it is
+  // frozen while it is open. The class is only honoured under the mobile media
+  // query, so the desktop sidebar is unaffected.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.classList.toggle('sidebar-drawer-open', sidebarOpen);
+    return () => document.body.classList.remove('sidebar-drawer-open');
+  }, [sidebarOpen]);
+
   if (isAuthPage || (isHomePage && (!isLoaded || !isSignedIn))) {
     return <>{children}</>;
   }
@@ -62,12 +71,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       <style>{`
+        /* #883: the wrapper is what bounds the navigation. It lays its panel out
+           in a column so the panel is exactly the wrapper's height on both
+           breakpoints, which is what gives the nav inside it something finite to
+           scroll within. */
+        .sidebar-wrapper {
+          display: flex;
+          flex-direction: column;
+          /* The panel's own flex-shrink: 0 moved here with it: the wrapper is
+             what the shell lays out in a row, so it is what must not be
+             squeezed by a wide page. */
+          flex-shrink: 0;
+        }
         @media (max-width: 768px) {
           .sidebar-wrapper {
             position: fixed;
             top: var(--gd-top-bar-h, 52px);
             left: -220px;
+            /* The drawer never exceeds the viewport below the top bar. 100dvh
+               follows the mobile browser's collapsing address bar; 100vh is the
+               fallback where it is unsupported. */
             height: calc(100vh - var(--gd-top-bar-h, 52px));
+            height: calc(100dvh - var(--gd-top-bar-h, 52px));
+            overflow: hidden;
             z-index: 45;
             transition: left 0.25s ease;
           }
@@ -79,6 +105,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           }
           .main-content {
             padding: 20px 16px !important;
+          }
+          /* While the drawer is open the page behind it does not scroll, so a
+             swipe that starts on the navigation stays in the navigation. */
+          body.sidebar-drawer-open {
+            overflow: hidden;
           }
         }
         @media (min-width: 769px) {
