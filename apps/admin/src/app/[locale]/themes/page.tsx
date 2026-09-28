@@ -19,6 +19,19 @@ import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEdit
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
 import {
+  failedMembersImageSlots,
+  formatThemeAssetFailures,
+  keepBySlot,
+  keepFlagsBySlot,
+  logoAssetFailed,
+  pendingAfterFailures,
+  planThemeAssetOps,
+  runThemeAssetOps,
+  themeAssetOpTitle,
+  type ThemeAssetFailure,
+  type ThemeAssetLabels,
+} from '@/components/themes/themeAssetSave';
+import {
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_SLOTS,
   ThemeMembersImagesEditor,
@@ -120,6 +133,10 @@ export default function GymThemesPage() {
   const [membersImageFiles, setMembersImageFiles] = useState<Record<MemberImageSlot, File | null>>(bySlot(null));
   const [membersImagePreviews, setMembersImagePreviews] = useState<Record<MemberImageSlot, string | null>>(bySlot(null));
   const [membersImageRemovals, setMembersImageRemovals] = useState<Record<MemberImageSlot, boolean>>(bySlot(false));
+  // #830: the assets the last Save could not store. Each one is reported in the
+  // error block above the sections *and* marked on its own control, and stays
+  // queued so pressing Save again retries exactly what failed.
+  const [assetFailures, setAssetFailures] = useState<ThemeAssetFailure[]>([]);
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when a row is expanded for editing, cleared on Save.
   const origFormRef = useRef<typeof emptyForm | null>(null);
@@ -191,6 +208,7 @@ export default function GymThemesPage() {
       setEditForm(form);
       origFormRef.current = form;
       setEditError(null);
+      setAssetFailures([]);
       setEditLogoFile(null);
       setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
       setLogoRemovePending(false);
@@ -324,6 +342,9 @@ export default function GymThemesPage() {
     if (!file.type.startsWith('image/')) { setEditError(t('members_image_error_type')); return; }
     if (file.size > MEMBER_IMAGE_MAX_BYTES) { setEditError(t('members_image_error_size')); return; }
     setEditError(null);
+    // #830: the per-asset markers say "see the message above", so they go when
+    // that message does — picking a file clears both, not one of the two.
+    setAssetFailures([]);
     setMembersImageFiles((prev) => ({ ...prev, [slot]: file }));
     setMembersImageRemovals((prev) => ({ ...prev, [slot]: false }));
     const reader = new FileReader();
@@ -403,10 +424,30 @@ export default function GymThemesPage() {
     }
   }
 
+  /**
+   * #830: the labels `formatThemeAssetFailures()` needs, resolved through this
+   * screen's own namespace. The shared module holds no next-intl, so the two
+   * Theme screens read the same keys from `gym_themes` and `themes` and neither
+   * can grow a heading the other lacks.
+   */
+  const assetLabels: ThemeAssetLabels = {
+    operation: t('storage_error_operation'),
+    path: t('storage_error_path'),
+    error: t('storage_error_error'),
+    details: t('storage_error_details'),
+    fallbackError: t('storage_error_fallback'),
+    title: (op) => {
+      const { key, slot } = themeAssetOpTitle(op);
+      return slot ? t(key as any, { slot: t(`members_image_${slot}`) }) : t(key as any);
+    },
+    operationName: (_op, stage) => t(`storage_stage_${stage}` as any),
+  };
+
   async function handleSaveAll(theme: Theme) {
     if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
     setSaving(true);
     setEditError(null);
+    setAssetFailures([]);
     try {
       try {
         await apiFetch(`/system/themes/${theme.id}`, {
@@ -419,46 +460,42 @@ export default function GymThemesPage() {
           }),
         });
       } catch (err: any) {
+        // The configuration is the one step that still aborts: the asset keys
+        // are built from the theme's persisted name, so there is nothing to be
+        // gained from uploading against a rename that did not happen.
         throw new Error(storageErrorMessage(err, 'storage_error_title_settings', 'save_settings'));
       }
-      if (editLogoFile) {
-        try {
-          await uploadFetch(`/system/themes/${theme.id}/logo`, editLogoFile);
-        } catch (err: any) {
-          throw new Error(storageErrorMessage(err, 'storage_error_title_logo', 'upload_logo'));
-        }
-      } else if (logoRemovePending) {
-        try {
-          await apiFetch(`/system/themes/${theme.id}/logo`, { method: 'DELETE' });
-        } catch (err: any) {
-          throw new Error(storageErrorMessage(err, 'storage_error_title_logo_remove', 'remove_logo'));
-        }
-      }
-      // #725 — one call per slot the admin actually touched. A picked file wins
-      // over a queued removal for the same slot (picking clears the removal),
-      // so the two branches are exclusive.
-      for (const slot of MEMBER_IMAGE_SLOTS) {
-        const file = membersImageFiles[slot];
-        if (file) {
-          try {
-            await uploadFetch(`/system/themes/${theme.id}/members-images/${slot}`, file);
-          } catch (err: any) {
-            throw new Error(storageErrorMessage(err, 'storage_error_title_members_image', 'upload_members_image'));
-          }
-        } else if (membersImageRemovals[slot]) {
-          try {
-            await apiFetch(`/system/themes/${theme.id}/members-images/${slot}`, { method: 'DELETE' });
-          } catch (err: any) {
-            throw new Error(storageErrorMessage(err, 'storage_error_title_members_image_remove', 'remove_members_image'));
-          }
-        }
-      }
+
+      // #830 — every asset the admin touched is attempted, whatever the others
+      // did: a rejected `training` upload must not stop `nutrition` from being
+      // saved. The shared runner (#725's one call per touched slot, unchanged)
+      // reports all of the failures rather than the first.
+      const { failures } = await runThemeAssetOps(
+        planThemeAssetOps({
+          logoFile: editLogoFile,
+          logoRemovePending,
+          membersImageFiles,
+          membersImageRemovals,
+        }),
+        {
+          basePath: '/system/themes',
+          themeId: theme.id,
+          upload: (path, file) => uploadFetch(path, file),
+          remove: (path) => apiFetch(path, { method: 'DELETE' }),
+        },
+      );
+
+      // The configuration saved, so the draft baseline moves regardless; only the
+      // assets that failed stay pending, with their files and previews intact.
+      const pending = pendingAfterFailures(failures);
       origFormRef.current = { ...editForm, name: editForm.name.trim(), description: editForm.description.trim() };
       setEditForm(origFormRef.current);
-      setEditLogoFile(null);
-      setLogoRemovePending(false);
-      setMembersImageFiles(bySlot(null));
-      setMembersImageRemovals(bySlot(false));
+      setEditLogoFile(pending.logoUpload ? editLogoFile : null);
+      setLogoRemovePending(pending.logoRemove);
+      setMembersImageFiles(keepBySlot(membersImageFiles, pending.slotUploads));
+      setMembersImageRemovals(keepFlagsBySlot(pending.slotRemovals));
+      setAssetFailures(failures);
+      setEditError(failures.length > 0 ? formatThemeAssetFailures(failures, assetLabels) : null);
       await Promise.all([load(), refreshGyms(), refreshCenters()]);
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
@@ -482,6 +519,8 @@ export default function GymThemesPage() {
     // #823 — as in `pickMembersImage`: nothing may be staged for an upload the
     // gym's storage cannot accept.
     if (storageBlock) { setEditError(t(`logo_upload_${storageBlock}`)); return; }
+    setEditError(null);
+    setAssetFailures([]);
     setEditLogoFile(file);
     setLogoRemovePending(false);
     const reader = new FileReader();
@@ -650,6 +689,7 @@ export default function GymThemesPage() {
               onLogoRemove={queueLogoRemove}
               readOnly={isBase}
               storageBlock={storageBlock}
+              logoError={logoAssetFailed(assetFailures)}
             />
           ))}
 
@@ -661,6 +701,7 @@ export default function GymThemesPage() {
               t={t}
               readOnly={isBase}
               storageBlock={storageBlock}
+              slotErrors={failedMembersImageSlots(assetFailures)}
             />
           ))}
 

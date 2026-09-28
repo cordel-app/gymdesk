@@ -804,8 +804,6 @@
     "storage_error_title_settings": "No s'ha pogut desar el tema.",
     "storage_error_title_logo": "No s'ha pogut pujar el logotip.",
     "storage_error_title_logo_remove": "No s'ha pogut eliminar el logotip.",
-    "storage_error_title_members_image": "No s'ha pogut pujar la imatge de Members.",
-    "storage_error_title_members_image_remove": "No s'ha pogut eliminar la imatge de Members.",
     "storage_stage_resolve_path": "Resoldre la ruta d'emmagatzematge del gimnàs/tema",
     "storage_stage_create_theme_folder": "Crear la carpeta del tema",
     "storage_stage_create_logo_folder": "Crear la carpeta Logo",
@@ -817,7 +815,12 @@
     "storage_stage_save_settings": "Desar la configuració del tema",
     "action_initialize_bucket": "Inicialitzar bucket",
     "toast_bucket_initialized": "Bucket inicialitzat correctament.",
-    "storage_error_title_initialize_bucket": "No s’ha pogut inicialitzar el bucket del tema."
+    "storage_error_title_initialize_bucket": "No s’ha pogut inicialitzar el bucket del tema.",
+    "storage_error_title_members_image_slot": "No s'ha pogut pujar la imatge de Members ({slot}).",
+    "storage_error_title_members_image_remove_slot": "No s'ha pogut eliminar la imatge de Members ({slot}).",
+    "storage_error_fallback": "No s'ha pogut pujar la imatge. Torna-ho a provar.",
+    "logo_preview_unavailable": "No s'ha pogut carregar el logotip actual.",
+    "asset_save_failed": "Aquest fitxer no s'ha desat: consulta el missatge anterior."
   },
   "orphaned_accounts": {
     "title": "Comptes orfes",
@@ -2389,8 +2392,6 @@
     "storage_error_title_clone": "No s'ha pogut crear el tema.",
     "storage_error_title_logo": "No s'ha pogut pujar el logotip.",
     "storage_error_title_logo_remove": "No s'ha pogut eliminar el logotip.",
-    "storage_error_title_members_image": "No s'ha pogut pujar la imatge de Members.",
-    "storage_error_title_members_image_remove": "No s'ha pogut eliminar la imatge de Members.",
     "storage_stage_resolve_path": "Resoldre la ruta d'emmagatzematge del gimnàs/tema",
     "storage_stage_create_theme_folder": "Crear la carpeta del tema",
     "storage_stage_create_logo_folder": "Crear la carpeta Logo",
@@ -2404,7 +2405,12 @@
     "toast_bucket_initialized": "Bucket inicialitzat correctament.",
     "storage_error_title_initialize_bucket": "No s’ha pogut inicialitzar el bucket del tema.",
     "initialize_bucket_not_configured": "L’emmagatzematge de Cloudflare no està configurat en aquesta instal·lació, per tant no es poden crear les carpetes del tema.",
-    "initialize_bucket_not_initialized": "L’emmagatzematge de Cloudflare no s’ha inicialitzat per a aquest gimnàs. Inicialitza el bucket de Cloudflare abans d’inicialitzar les carpetes d’un tema."
+    "initialize_bucket_not_initialized": "L’emmagatzematge de Cloudflare no s’ha inicialitzat per a aquest gimnàs. Inicialitza el bucket de Cloudflare abans d’inicialitzar les carpetes d’un tema.",
+    "storage_error_title_members_image_slot": "No s'ha pogut pujar la imatge de Members ({slot}).",
+    "storage_error_title_members_image_remove_slot": "No s'ha pogut eliminar la imatge de Members ({slot}).",
+    "storage_error_fallback": "No s'ha pogut pujar la imatge. Torna-ho a provar.",
+    "logo_preview_unavailable": "No s'ha pogut carregar el logotip actual.",
+    "asset_save_failed": "Aquest fitxer no s'ha desat: consulta el missatge anterior."
   },
   "weekday": {
     "0": "Diumenge",

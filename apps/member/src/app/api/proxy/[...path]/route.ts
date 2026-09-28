@@ -14,11 +14,18 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
     }
   });
 
-  const body = req.method !== 'GET' && req.method !== 'HEAD' ? await req.text() : undefined;
+  // Bytes for the same reason, in the other direction: a request body is
+  // forwarded verbatim rather than decoded and re-encoded.
+  const body = req.method !== 'GET' && req.method !== 'HEAD' ? await req.arrayBuffer() : undefined;
 
   try {
     const res = await fetch(url, { method: req.method, headers, body });
-    const resBody = res.status === 204 ? null : await res.text();
+    // #830: bytes, never `res.text()` — the same defect the Admin proxy carried.
+    // `GET /themes/:id/logo` answers raw image bytes, which is how the TopBar
+    // renders the logo of a theme that still keeps it as a blob (a Base Theme),
+    // and a UTF-8 decode turns every such byte into U+FFFD: the response still
+    // looks like an image and the browser still cannot decode it.
+    const resBody = res.status === 204 ? null : await res.arrayBuffer();
 
     return new NextResponse(resBody, {
       status: res.status,

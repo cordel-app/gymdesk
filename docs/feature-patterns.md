@@ -977,7 +977,7 @@ Derive the public URL from the key at read time (`buildStorageObjectUrl()` + a `
 
 ---
 
-## A binary upload goes through the API client, and says what broke (#824)
+## A binary upload goes through the API client, and says what broke (#824, #830)
 
 A JSON call uses `apiFetch`, which assembles the bearer token, `x-gym-id`, `x-center-id`, `x-impersonate-as` and `x-locale`. A raw-bytes upload cannot reuse it (the body is the file and the `Content-Type` is what the server validates against), and every page that hand-rolled the `fetch` sent only the token — so the Next proxy, which forwards `x-gym-id` but cannot invent it, handed `tenantContext` a request with no gym and every theme logo upload came back as a bare `401 Unauthorized`.
 
@@ -988,6 +988,12 @@ A JSON call uses `apiFetch`, which assembles the bearer token, `x-gym-id`, `x-ce
 3. **The page names the stage for what never reached storage.** A 401 or a validation refusal carries no `stage`, so the caller passes the step it was performing as a fallback: `err.body?.stage ?? fallbackStage`. The API's own answer always wins — only it knows whether it broke resolving the path or writing a marker.
 
 4. **Render it as a block, not a sentence.** `formatStorageError()` (`lib/storageErrorMessage.ts`) is pure and returns `Operation` / `Path` / `Error` / `Details` lines; the error element needs `whiteSpace: 'pre-line'` or it collapses to one line. Every stage gets its own locale key (`storage_stage_<value>`), because the key is interpolated from the wire value and next-intl prints a missing key verbatim.
+
+5. **The proxy forwards bytes, not text.** `app/api/proxy/[...path]/route.ts` (both apps) reads the response with `await res.arrayBuffer()`. A `res.text()` read is a UTF-8 decode, so every byte that is not valid UTF-8 becomes U+FFFD while the status and `Content-Type` stay correct — nothing errors and the image is simply undecodable, which is how a Base Theme's blob-backed logo rendered as a broken `logo preview` until #830. Any route that answers bytes (a logo, a receipt PDF) is affected; `ArrayBuffer` is byte-exact for JSON too.
+
+6. **A screen that saves several assets at once fails per asset.** One Save may carry a logo and six backgrounds, and a loop that throws on the first rejection leaves the rest unattempted with nothing said about them. Declare the sequence once beside the screens that share it (`components/themes/themeAssetSave.ts`): plan the operations from the draft, run **all** of them collecting a failure each, render every failure as its own block, and keep exactly the failed ones queued so Save is the retry and a stored asset is never uploaded twice. Name the asset in its heading (a slot interpolated into the key) and mark the control it belongs to, or six identical headings tell the admin nothing. The shared module takes its router root and its two requests as parameters — #806's rule: no endpoint and no permission decision in shared code.
+
+7. **A preview that cannot load says so.** Guard the `<img>` with `onError` and render a line in place of the browser's broken-image icon: a failed upload must never leave an apparently broken asset with no explanation, and the icon is indistinguishable from a genuinely missing one.
 
 Nothing secret crosses: `describeStorageError()` returns the S3 error name, code, HTTP status, request id, bucket and key — never a credential.
 

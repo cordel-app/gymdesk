@@ -177,8 +177,10 @@ describe('every stage has a label in every locale (#824)', () => {
     'storage_error_title_settings',
     'storage_error_title_logo',
     'storage_error_title_logo_remove',
-    'storage_error_title_members_image',
-    'storage_error_title_members_image_remove',
+    // #830: a Members failure names the slot it belongs to, so the two headings
+    // that did not are gone — six identical ones told the admin nothing.
+    'storage_error_title_members_image_slot',
+    'storage_error_title_members_image_remove_slot',
   ];
 
   it.each(LOCALE_CODES)('%s carries every stage and label in both theme namespaces', (code) => {

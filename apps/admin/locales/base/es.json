@@ -803,8 +803,6 @@
     "storage_error_title_settings": "No se ha podido guardar el tema.",
     "storage_error_title_logo": "No se ha podido subir el logotipo.",
     "storage_error_title_logo_remove": "No se ha podido eliminar el logotipo.",
-    "storage_error_title_members_image": "No se ha podido subir la imagen de Members.",
-    "storage_error_title_members_image_remove": "No se ha podido eliminar la imagen de Members.",
     "storage_stage_resolve_path": "Resolver la ruta de almacenamiento del gimnasio/tema",
     "storage_stage_create_theme_folder": "Crear la carpeta del tema",
     "storage_stage_create_logo_folder": "Crear la carpeta Logo",
@@ -816,7 +814,12 @@
     "storage_stage_save_settings": "Guardar la configuración del tema",
     "action_initialize_bucket": "Inicializar bucket",
     "toast_bucket_initialized": "Bucket inicializado correctamente.",
-    "storage_error_title_initialize_bucket": "No se ha podido inicializar el bucket del tema."
+    "storage_error_title_initialize_bucket": "No se ha podido inicializar el bucket del tema.",
+    "storage_error_title_members_image_slot": "No se ha podido subir la imagen de Members ({slot}).",
+    "storage_error_title_members_image_remove_slot": "No se ha podido eliminar la imagen de Members ({slot}).",
+    "storage_error_fallback": "No se ha podido subir la imagen. Inténtalo de nuevo.",
+    "logo_preview_unavailable": "No se ha podido cargar el logotipo actual.",
+    "asset_save_failed": "Este archivo no se ha guardado: consulta el mensaje anterior."
   },
   "orphaned_accounts": {
     "title": "Cuentas huérfanas",
@@ -2362,8 +2365,6 @@
     "storage_error_title_clone": "No se ha podido crear el tema.",
     "storage_error_title_logo": "No se ha podido subir el logotipo.",
     "storage_error_title_logo_remove": "No se ha podido eliminar el logotipo.",
-    "storage_error_title_members_image": "No se ha podido subir la imagen de Members.",
-    "storage_error_title_members_image_remove": "No se ha podido eliminar la imagen de Members.",
     "storage_stage_resolve_path": "Resolver la ruta de almacenamiento del gimnasio/tema",
     "storage_stage_create_theme_folder": "Crear la carpeta del tema",
     "storage_stage_create_logo_folder": "Crear la carpeta Logo",
@@ -2377,7 +2378,12 @@
     "toast_bucket_initialized": "Bucket inicializado correctamente.",
     "storage_error_title_initialize_bucket": "No se ha podido inicializar el bucket del tema.",
     "initialize_bucket_not_configured": "El almacenamiento de Cloudflare no está configurado en esta instalación, por lo que no se pueden crear las carpetas del tema.",
-    "initialize_bucket_not_initialized": "El almacenamiento de Cloudflare no se ha inicializado para este gimnasio. Inicializa el bucket de Cloudflare antes de inicializar las carpetas de un tema."
+    "initialize_bucket_not_initialized": "El almacenamiento de Cloudflare no se ha inicializado para este gimnasio. Inicializa el bucket de Cloudflare antes de inicializar las carpetas de un tema.",
+    "storage_error_title_members_image_slot": "No se ha podido subir la imagen de Members ({slot}).",
+    "storage_error_title_members_image_remove_slot": "No se ha podido eliminar la imagen de Members ({slot}).",
+    "storage_error_fallback": "No se ha podido subir la imagen. Inténtalo de nuevo.",
+    "logo_preview_unavailable": "No se ha podido cargar el logotipo actual.",
+    "asset_save_failed": "Este archivo no se ha guardado: consulta el mensaje anterior."
   },
   "weekday": {
     "0": "Domingo",
