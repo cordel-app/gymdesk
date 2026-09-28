@@ -134,7 +134,7 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/Exercises/',
       'gym_123-GymName/Exercises/Images/',
       'gym_123-GymName/Exercises/Videos/',
-      'gym_123-GymName/Themes/',
+      'gym_123-GymName/themes/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
@@ -144,7 +144,8 @@ describe('initializeGymBucket()', () => {
   // ─── #826: exactly three first-level folders under the gym root ────────────
   //
   // The ticket is scoped to what sits *directly* under
-  // `gyms/<gym_id>-<gym_name>/`: `Nutrition/`, `Exercises/` and `Themes/`, and
+  // `gyms/<gym_id>-<gym_name>/`: `Nutrition/`, `Exercises/` and `themes/` (#829
+  // lowercased the last of the three), and
   // nothing else. The leaves below them (§6) and the `<gym_id>-<name>` naming
   // (§5) are unchanged, which the tests above and below pin.
 
@@ -157,26 +158,26 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates Nutrition/, Exercises/ and Themes/ as the only first-level folders', async () => {
+  it('creates Nutrition/, Exercises/ and themes/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName')).toEqual(['Nutrition', 'Exercises', 'Themes']);
+    expect(firstLevelFolders('gyms/gym_123-GymName')).toEqual(['Nutrition', 'Exercises', 'themes']);
   });
 
   // §4 + the acceptance list: the three folders nothing has written to since
-  // #824 (theme logo → `Themes/<theme_id>-<name>/Logo/`) and #725 (Members App
-  // slots → `Themes/<theme_id>-<name>/Members/`) are no longer created at all.
-  it('creates no Members/, Branding/ or Branding/Logo/ markers', async () => {
+  // #824 (theme logo → `themes/<theme_id>-<name>/logo/`) and #725 (Members App
+  // slots → `themes/<theme_id>-<name>/members_app/`) are no longer created at all.
+  it('creates no Members/, Branding/ or Branding/logo/ markers', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
-    expect(keys).not.toContain('gyms/gym_123-GymName/Members/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/members_app/');
     expect(keys).not.toContain('gyms/gym_123-GymName/Branding/');
-    expect(keys).not.toContain('gyms/gym_123-GymName/Branding/Logo/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/Branding/logo/');
     expect(keys).not.toContain('gyms/gym_123-GymName/Branding/Images/');
     for (const key of keys) expect(key).not.toContain('Branding');
   });
@@ -213,20 +214,20 @@ describe('initializeGymBucket()', () => {
     expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));
   });
 
-  // ─── #735: the gym-level Themes/ folder ────────────────────────────────────
+  // ─── #735: the gym-level themes/ folder ────────────────────────────────────
 
-  it('creates the gym-level Themes/ folder marker', async () => {
+  it('creates the gym-level themes/ folder marker', async () => {
     setConfigured();
     const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket(buildGymFolderPrefix('gym_123', 'Gym Name'));
 
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
-    expect(keys).toContain('gyms/gym_123-GymName/Themes/');
+    expect(keys).toContain('gyms/gym_123-GymName/themes/');
   });
 
   // The folder is the same one `THEME_STORAGE_FOLDER` names, so a Custom Theme's
   // own folder is written under the marker initialization creates, not beside it.
-  it('uses the same Themes folder a theme folder prefix is built from', async () => {
+  it('uses the same themes folder a theme folder prefix is built from', async () => {
     setConfigured();
     const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
     const { buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
@@ -235,26 +236,26 @@ describe('initializeGymBucket()', () => {
 
     const themesMarker = sendMock.mock.calls
       .map((call) => call[0].input.Key)
-      .find((key: string) => key.endsWith('/Themes/'));
+      .find((key: string) => key.endsWith('/themes/'));
     expect(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern').startsWith(themesMarker)).toBe(true);
   });
 
   // §"Important Scope": initialization creates the root and nothing below it —
   // a theme's own folder and its Members/ leaf belong to the upload workflow.
-  it('creates no theme-specific folders below Themes/', async () => {
+  it('creates no theme-specific folders below themes/', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
     const belowThemes = sendMock.mock.calls
       .map((call) => call[0].input.Key)
-      .filter((key: string) => key.includes('/Themes/') && key !== 'gyms/gym_123-GymName/Themes/');
+      .filter((key: string) => key.includes('/themes/') && key !== 'gyms/gym_123-GymName/themes/');
     expect(belowThemes).toEqual([]);
   });
 
   // §"Existing Gym Support" / §"Idempotency": re-running writes the same marker
   // set again — every key ends in `/`, and the body is empty, so an existing
-  // Themes/ folder (and anything inside it) is left exactly as it was.
+  // themes/ folder (and anything inside it) is left exactly as it was.
   it('is idempotent: a second run writes the same keys, all empty markers', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
@@ -368,9 +369,9 @@ describe('buildThemeLogoKey() (#824)', () => {
     const { buildThemeLogoKey } = await import('../domain/themeLogo');
     const prefix = buildGymFolderPrefix('123', 'Q-Sport');
     expect(buildThemeLogoKey(prefix, '456', 'Crimson Base', 'image/png'))
-      .toBe('gyms/123-Q-Sport/Themes/456-CrimsonBase/Logo/logo.png');
+      .toBe('gyms/123-Q-Sport/themes/456-CrimsonBase/logo/logo.png');
     expect(buildThemeLogoKey(prefix, '456', 'Crimson Base', 'image/svg+xml'))
-      .toBe('gyms/123-Q-Sport/Themes/456-CrimsonBase/Logo/logo.svg');
+      .toBe('gyms/123-Q-Sport/themes/456-CrimsonBase/logo/logo.svg');
   });
 
   it('never writes into Branding/, which is obsolete', async () => {
@@ -384,8 +385,8 @@ describe('buildThemeLogoKey() (#824)', () => {
     const { buildThemeLogoKey } = await import('../domain/themeLogo');
     const { buildThemeMemberImageKey, buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
     const folder = buildThemeFolderPrefix('gyms/g-Name', 't1', 'Dark Modern');
-    expect(buildThemeLogoKey('gyms/g-Name', 't1', 'Dark Modern', 'image/png')).toBe(`${folder}/Logo/logo.png`);
-    expect(buildThemeMemberImageKey('gyms/g-Name', 't1', 'Dark Modern', 'training')).toBe(`${folder}/Members/training.png`);
+    expect(buildThemeLogoKey('gyms/g-Name', 't1', 'Dark Modern', 'image/png')).toBe(`${folder}/logo/logo.png`);
+    expect(buildThemeMemberImageKey('gyms/g-Name', 't1', 'Dark Modern', 'training')).toBe(`${folder}/members_app/training.png`);
   });
 
   it('only the extension varies between types — which is why a replacement must delete the old key', async () => {
@@ -401,18 +402,18 @@ describe('themeLogoFolderKeys() (#824)', () => {
   it("creates the theme folder and its Logo leaf, outermost first", async () => {
     const { themeLogoFolderKeys } = await import('../domain/themeLogo');
     expect(themeLogoFolderKeys('gyms/123-QSport', '456', 'Crimson Base')).toEqual([
-      'gyms/123-QSport/Themes/456-CrimsonBase/',
-      'gyms/123-QSport/Themes/456-CrimsonBase/Logo/',
+      'gyms/123-QSport/themes/456-CrimsonBase/',
+      'gyms/123-QSport/themes/456-CrimsonBase/logo/',
     ]);
   });
 
-  // §"The Themes folder must already exist before the user can upload a logo":
+  // §"The themes folder must already exist before the user can upload a logo":
   // the gym-level root belongs to Gym Bucket Initialization (#735), and the
   // upload control is disabled until it is there (#823).
-  it('never creates the gym-level Themes/ root, nor Branding/', async () => {
+  it('never creates the gym-level themes/ root, nor Branding/', async () => {
     const { themeLogoFolderKeys } = await import('../domain/themeLogo');
     const keys = themeLogoFolderKeys('gyms/123-QSport', '456', 'Crimson');
-    expect(keys).not.toContain('gyms/123-QSport/Themes/');
+    expect(keys).not.toContain('gyms/123-QSport/themes/');
     expect(keys.some((k) => k.includes('Branding'))).toBe(false);
   });
 
@@ -428,13 +429,13 @@ describe('buildStorageObjectUrl()', () => {
   it('composes endpoint + bucket + key', async () => {
     setConfigured();
     const { buildStorageObjectUrl } = await import('../infra/storage');
-    expect(buildStorageObjectUrl('gyms/g-Name/Branding/Logo/logo.png'))
-      .toBe('https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/Logo/logo.png');
+    expect(buildStorageObjectUrl('gyms/g-Name/Branding/logo/logo.png'))
+      .toBe('https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/logo/logo.png');
   });
 
   it('returns null for a missing key, and when the deployment has no R2 configured', async () => {
     const { buildStorageObjectUrl } = await import('../infra/storage');
-    expect(buildStorageObjectUrl('gyms/g-Name/Branding/Logo/logo.png')).toBeNull();
+    expect(buildStorageObjectUrl('gyms/g-Name/Branding/logo/logo.png')).toBeNull();
     setConfigured();
     expect(buildStorageObjectUrl(null)).toBeNull();
     expect(buildStorageObjectUrl(undefined)).toBeNull();
@@ -445,10 +446,10 @@ describe('deleteStorageObject()', () => {
   it('sends a delete for exactly that key', async () => {
     setConfigured();
     const { deleteStorageObject } = await import('../infra/storage');
-    await deleteStorageObject('gyms/g-Name/Branding/Logo/logo.png');
+    await deleteStorageObject('gyms/g-Name/Branding/logo/logo.png');
     expect(sendMock.mock.calls[0][0].input).toEqual({
       Bucket: 'test-bucket',
-      Key: 'gyms/g-Name/Branding/Logo/logo.png',
+      Key: 'gyms/g-Name/Branding/logo/logo.png',
     });
   });
 
@@ -468,7 +469,7 @@ describe('getStorageObject()', () => {
       Body: { transformToByteArray: async () => new Uint8Array([1, 2, 3]) },
     });
     const { getStorageObject } = await import('../infra/storage');
-    const object = await getStorageObject('gyms/g-Name/Branding/Logo/logo.png');
+    const object = await getStorageObject('gyms/g-Name/Branding/logo/logo.png');
     expect(object.contentType).toBe('image/png');
     expect(object.body.equals(Buffer.from([1, 2, 3]))).toBe(true);
   });
@@ -486,11 +487,11 @@ describe('themeLogoUrl()', () => {
     setConfigured();
     const { themeLogoUrl } = await import('../domain/themeLogo');
     const url = themeLogoUrl({
-      logo_object_key: 'gyms/g-Name/Branding/Logo/logo.png',
+      logo_object_key: 'gyms/g-Name/Branding/logo/logo.png',
       logo_updated_at: new Date('2026-09-24T10:00:00Z'),
     });
     expect(url).toBe(
-      'https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/Logo/logo.png'
+      'https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/logo/logo.png'
       + `?v=${new Date('2026-09-24T10:00:00Z').getTime()}`,
     );
   });
@@ -498,8 +499,8 @@ describe('themeLogoUrl()', () => {
   it('omits the stamp when there is no timestamp', async () => {
     setConfigured();
     const { themeLogoUrl } = await import('../domain/themeLogo');
-    expect(themeLogoUrl({ logo_object_key: 'gyms/g-Name/Branding/Logo/logo.png', logo_updated_at: null }))
-      .toBe('https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/Logo/logo.png');
+    expect(themeLogoUrl({ logo_object_key: 'gyms/g-Name/Branding/logo/logo.png', logo_updated_at: null }))
+      .toBe('https://example.r2.cloudflarestorage.com/test-bucket/gyms/g-Name/Branding/logo/logo.png');
   });
 
   it('is null for a blob-backed or logo-less theme', async () => {

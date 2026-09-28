@@ -57,7 +57,7 @@ function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: Me
     // the Members App answers it with the theme's background colour.
     //
     // #732: a Base Theme now carries its own six as well — the platform's, in
-    // `cordel/Themes/…`, which is why this no longer forces a Base Theme to six
+    // `cordel/themes/…`, which is why this no longer forces a Base Theme to six
     // nulls. The gym reads them (its members see them if it runs that theme)
     // but cannot write them: the upload and remove routes below are scoped to
     // `gym_id = gymId` and answer 404 for a Base Theme, which is what keeps a
@@ -279,7 +279,7 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
 // ─── Logo upload (customer themes only) ───────────────────────────────────────
 //
 // #824: the file goes into the theme's *own* folder inside the gym's R2 tree,
-// under `<storage_folder_prefix>/Themes/<theme_id>-<name>/Logo/logo.<ext>`. The
+// under `<storage_folder_prefix>/themes/<theme_id>-<name>/logo/logo.<ext>`. The
 // folder prefix is read from the *tenant's* `gyms` row — never from the request
 // — so a caller cannot aim an upload at another gym's storage, and the theme
 // lookup already restricts the row to `gym_id = gymId`.
@@ -293,7 +293,7 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
 //
 // The theme's own folder and its `Logo/` leaf are created on demand
 // (`themeLogoFolderKeys`), the same way #725 creates `Members/`. The gym-level
-// `Themes/` root is deliberately *not*: it belongs to Gym Bucket Initialization
+// `themes/` root is deliberately *not*: it belongs to Gym Bucket Initialization
 // (#735), and until it exists the control is disabled in the admin (#823) and
 // this route answers 409.
 //
@@ -339,7 +339,7 @@ async function resolveGymFolderPrefix(
 }
 
 /**
- * Writes a Theme's own folder tree — `Themes/<theme_id>-<sanitized name>/` with
+ * Writes a Theme's own folder tree — `themes/<theme_id>-<sanitized name>/` with
  * its `Logo/` and `Members/` leaves — and answers `502` naming the marker that
  * broke when R2 refuses. The markers it wrote come back on success, `null` means
  * the response has already been sent.
@@ -383,14 +383,14 @@ async function ensureThemeStorage(
 
 /**
  * Creates (or re-creates) the folders a Theme's own assets live in:
- * `<gym prefix>/Themes/<theme_id>-<sanitized name>/` with its `Logo/` and
+ * `<gym prefix>/themes/<theme_id>-<sanitized name>/` with its `Logo/` and
  * `Members/` leaves. Theme creation already writes them (#827); this is the
  * manual, explicitly repeatable version, for a Theme whose folders are not there
  * — one created before #827, or one renamed since (a rename moves the folder,
  * and nothing re-creates it until the next upload).
  *
  * It initializes the **Theme's** structure and nothing above it (§5): the gym
- * root and its `Themes/` branch belong to Gym Bucket Initialization (#735), so a
+ * root and its `themes/` branch belong to Gym Bucket Initialization (#735), so a
  * gym with no `storage_folder_prefix` is a `409` here rather than having its tree
  * papered over — which is also what the disabled menu item states in the admin
  * (#823).
@@ -467,7 +467,7 @@ gymThemesRouter.post(
 
         const key = buildThemeLogoKey(folderPrefix, theme.id, theme.name, mime);
 
-        // `Themes/<theme_id>-<name>/` and its `Logo/` leaf, created on demand.
+        // `themes/<theme_id>-<name>/` and its `Logo/` leaf, created on demand.
         // Idempotent: every key ends in `/`, so what it overwrites is always
         // another zero-byte marker and never a file.
         const logoFolderKeys = themeLogoFolderKeys(folderPrefix, theme.id, theme.name);
@@ -598,7 +598,7 @@ gymThemesRouter.delete('/:id/logo', async (req, res, next) => {
 // ─── Members App background images (customer themes only) ────────────────────
 //
 // #725: six fixed slots per Custom Theme, each stored in the gym's own R2 folder
-// under `<storage_folder_prefix>/Themes/<theme_id>-<name>/Members/<slot>.png`.
+// under `<storage_folder_prefix>/themes/<theme_id>-<name>/members_app/<slot>.png`.
 //
 // Three things the routes below never take from the request: the gym (the
 // folder prefix is read from the *tenant's* `gyms` row), the theme (the lookup

@@ -1,6 +1,6 @@
 // #827: a Custom Theme is created only when the gym's Cloudflare R2 bucket has
 // been initialized, and creating one initializes the Theme's own storage
-// structure — `Themes/<theme_id>-<name>/` with its `Logo/` and `Members/`
+// structure — `themes/<theme_id>-<name>/` with its `Logo/` and `Members/`
 // leaves.
 //
 // Cloning is the only way a Custom Theme comes into existence (there is no
@@ -56,8 +56,8 @@ const SOURCE_THEME_NAME = 'Theme Storage Init Source';
 
 /** The three markers a Theme's initialization writes, outermost first. */
 function expectedMarkers(prefix: string, themeId: string, themeName: string): string[] {
-  const folder = `${prefix}/Themes/${themeId}-${themeName.replace(/\s+/g, '')}`;
-  return [`${folder}/`, `${folder}/Logo/`, `${folder}/Members/`];
+  const folder = `${prefix}/themes/${themeId}-${themeName.replace(/\s+/g, '')}`;
+  return [`${folder}/`, `${folder}/logo/`, `${folder}/members_app/`];
 }
 
 function sentCommands(type: 'put' | 'get' | 'delete') {
@@ -165,11 +165,11 @@ describe('POST /system/themes/clone/:sourceId — theme storage initialization (
     expect(putKeys()).toEqual(expectedMarkers(folderPrefix, res.body.id, 'Initialized Clone'));
   });
 
-  it('never creates the gym root or its Themes/ branch — Gym Bucket Initialization owns those (#735)', async () => {
+  it('never creates the gym root or its themes/ branch — Gym Bucket Initialization owns those (#735)', async () => {
     const res = await clone(sourceThemeId, gymId, 'Roots Untouched Clone');
     expect(res.status).toBe(201);
     expect(putKeys()).not.toContain(`${folderPrefix}/`);
-    expect(putKeys()).not.toContain(`${folderPrefix}/Themes/`);
+    expect(putKeys()).not.toContain(`${folderPrefix}/themes/`);
   });
 
   it('writes folder markers only — zero-byte keys ending in a slash, so a re-run is idempotent (§8)', async () => {
@@ -192,7 +192,7 @@ describe('POST /system/themes/clone/:sourceId — theme storage initialization (
     expect(res.status).toBe(201);
     expect(res.body.id).not.toBe(sourceThemeId);
     for (const key of putKeys()) {
-      expect(key).toContain(`${folderPrefix}/Themes/${res.body.id}-`);
+      expect(key).toContain(`${folderPrefix}/themes/${res.body.id}-`);
       expect(key).not.toContain(`/${sourceThemeId}-`);
     }
   });
@@ -200,7 +200,7 @@ describe('POST /system/themes/clone/:sourceId — theme storage initialization (
   it('sanitizes the theme name in the key, exactly as the upload routes do', async () => {
     const res = await clone(sourceThemeId, gymId, 'Spaced Out Clone');
     expect(res.status).toBe(201);
-    expect(putKeys()[0]).toBe(`${folderPrefix}/Themes/${res.body.id}-SpacedOutClone/`);
+    expect(putKeys()[0]).toBe(`${folderPrefix}/themes/${res.body.id}-SpacedOutClone/`);
   });
 
   it('returns 502 naming the failing marker and creates no theme when storage fails', async () => {
@@ -209,7 +209,7 @@ describe('POST /system/themes/clone/:sourceId — theme storage initialization (
     const res = await clone(sourceThemeId, gymId, 'Storage Failure Clone');
     expect(res.status).toBe(502);
     expect(res.body.stage).toBe('create_theme_folder');
-    expect(res.body.path).toContain(`${folderPrefix}/Themes/`);
+    expect(res.body.path).toContain(`${folderPrefix}/themes/`);
     expect(res.body.details.operation).toBe('ensureStorageFolders');
     // §7: no partially created theme is left behind.
     expect(await themeRowCount('Storage Failure Clone')).toBe(0);
@@ -226,7 +226,7 @@ describe('POST /system/themes/clone/:sourceId — theme storage initialization (
     const res = await clone(sourceThemeId, gymId, 'Members Leaf Failure Clone');
     expect(res.status).toBe(502);
     expect(res.body.stage).toBe('create_members_folder');
-    expect(res.body.path.endsWith('/Members/')).toBe(true);
+    expect(res.body.path.endsWith('/members_app/')).toBe(true);
     expect(await themeRowCount('Members Leaf Failure Clone')).toBe(0);
   });
 

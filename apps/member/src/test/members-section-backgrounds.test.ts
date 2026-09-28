@@ -130,7 +130,7 @@ describe('the Members App knows only URLs (#728 §Fallback, §Performance)', () 
       expect(src).not.toContain('object_key');
       expect(src).not.toContain('storage_folder_prefix');
       expect(src).not.toContain('cordel/');
-      expect(src).not.toContain('/Themes/');
+      expect(src).not.toContain('/themes/');
     }
     // A missing section image is never substituted by the general background.
     expect(backgroundUrlForSlot({ background_url: 'https://r2/background.png' }, 'membership')).toBeNull();

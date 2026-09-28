@@ -45,7 +45,7 @@ describe('gymStorageBlock() — the one readiness rule (#823)', () => {
 
   it('blocks a gym whose bucket folders were never initialized', () => {
     // No `storage_folder_prefix` means Gym Bucket Initialization never ran, so
-    // neither the gym root nor the `Themes/` branch under it exists (#735) and
+    // neither the gym root nor the `themes/` branch under it exists (#735) and
     // there is no prefix to build a key from.
     expect(gymStorageBlock({ storage_configured: true, storage_folder_prefix: null })).toBe('not_initialized');
     expect(gymStorageBlock({ storage_configured: true, storage_folder_prefix: '' })).toBe('not_initialized');
@@ -153,7 +153,7 @@ describe('Custom Themes: uploads are disabled while storage is unavailable (#823
 
 describe('Base Themes are not gated on a gym’s bucket (#823)', () => {
   it('passes no storage block, because its objects are the platform’s', () => {
-    // A Base Theme's Members images live under `cordel/Themes/…` and its logo is
+    // A Base Theme's Members images live under `cordel/themes/…` and its logo is
     // a blob on the row — neither hangs off `gyms.storage_folder_prefix`, so the
     // superadmin's currently selected gym must not be able to block them.
     expect(basePage).not.toContain('storageBlock');

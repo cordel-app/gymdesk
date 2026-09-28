@@ -6,7 +6,12 @@
 // both are decided in one place and can be unit-tested without a database.
 
 import { buildStorageObjectUrl } from '../infra/storage';
-import { buildThemeFolderPrefix, THEME_MEMBERS_FOLDER, THEME_STORAGE_FOLDER } from './themeFolders';
+import {
+  buildThemeFolderPrefix,
+  THEME_MEMBERS_FOLDER,
+  THEME_STORAGE_FOLDER,
+  themeRootFolderKeys,
+} from './themeFolders';
 
 /**
  * #725: six fixed slots, each mapped to one Members section, and nothing else —
@@ -24,17 +29,17 @@ export function isMemberImageSlot(value: unknown): value is MemberImageSlot {
 // #824: a theme's own folder is `themeFolders.ts`' now that both the Members
 // backgrounds and the logo hang off it. Re-exported so every existing importer
 // of this module keeps working and the tree still has one definition.
-// `Members` — the leaf of a theme's own folder that holds these six — moved
+// `members_app` — the leaf of a theme's own folder that holds these six — moved
 // there too with #827, which creates it when the Theme is created.
 export { buildThemeFolderPrefix, THEME_MEMBERS_FOLDER, THEME_STORAGE_FOLDER };
 
 /**
  * The one key a slot's image is stored under:
- * `<folderPrefix>/Themes/<theme_id>-<name>/Members/<slot>.png`.
+ * `<folderPrefix>/themes/<theme_id>-<name>/members_app/<slot>.png`.
  *
  * The extension is part of the slot's *fixed name*, not a claim about the
  * bytes: #725 is explicit that `my-training.jpg`, `training-final.png` and
- * `awesome-training-image.webp` must all land on `Members/training.png`. The
+ * `awesome-training-image.webp` must all land on `members_app/training.png`. The
  * uploaded file name never reaches the key, and the object's `Content-Type` is
  * the MIME the server validated — which is what a browser reads. Keeping one
  * key per slot regardless of type is also what makes a replacement incapable of
@@ -51,7 +56,7 @@ export function buildThemeMemberImageKey(
 }
 
 /**
- * Every folder marker between the gym root and a theme's `Members/`, outermost
+ * Every folder marker between the gym root and a theme's `members_app/`, outermost
  * first — what #725 means by *"automatically create the complete missing folder
  * structure"*. R2 has no directories, so these are the zero-byte `…/` objects
  * `initializeGymBucket()` writes; re-writing one is idempotent and cannot
@@ -60,8 +65,7 @@ export function buildThemeMemberImageKey(
 export function themeMemberFolderKeys(folderPrefix: string, themeId: string, themeName: string): string[] {
   const themeFolder = buildThemeFolderPrefix(folderPrefix, themeId, themeName);
   return [
-    `${folderPrefix}/`,
-    `${folderPrefix}/${THEME_STORAGE_FOLDER}/`,
+    ...themeRootFolderKeys(folderPrefix),
     `${themeFolder}/`,
     `${themeFolder}/${THEME_MEMBERS_FOLDER}/`,
   ];

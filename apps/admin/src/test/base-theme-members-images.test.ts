@@ -94,8 +94,8 @@ describe('Base Themes: Members App images (#732)', () => {
   it('never names a storage path — the client only names the slot', () => {
     expect(pageSrc).not.toContain('storage_folder_prefix');
     expect(pageSrc).not.toContain('object_key');
-    expect(pageSrc).not.toContain('/Members/');
-    expect(pageSrc).not.toContain('cordel/Themes');
+    expect(pageSrc).not.toContain('/members_app/');
+    expect(pageSrc).not.toContain('cordel/themes');
   });
 
   it('labels the section and every slot in en, es and ca', () => {

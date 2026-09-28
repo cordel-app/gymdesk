@@ -400,7 +400,7 @@ export default function GymThemesPage() {
   }
 
   /**
-   * #828: writes this Theme's own folder tree (`Themes/<id>-<name>/` with its
+   * #828: writes this Theme's own folder tree (`themes/<id>-<name>/` with its
    * `Logo/` and `Members/` leaves) into the gym's Cloudflare folder. Explicitly
    * repeatable — the markers are zero-byte objects, so a second run just ensures
    * the structure is there and touches no file and no Theme field.
