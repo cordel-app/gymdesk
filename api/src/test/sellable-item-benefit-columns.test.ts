@@ -293,7 +293,7 @@ describe('#896 — a snapshot carries the treatment it was agreed with', () => {
     await createTestMembership(gymId, 'admin');
     const plan = await db.query(
       `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit)
-       VALUES (?, 'Snapshot Plan', 'active', 'staff_only', '1')`,
+       VALUES (?, 'Snapshot Plan', 'active', 'public', '1')`,
       [gymId],
     );
     planId = plan.insertId;
