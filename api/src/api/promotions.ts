@@ -5,10 +5,16 @@ import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
 import { PromotionBenefitAction } from '../domain/promotionBenefits';
+import { PROMOTION_LIFECYCLE_STATUSES } from '../domain/promotionLifecycle';
 
 const MEMBERSHIP_FEE_ACTIONS: PromotionBenefitAction[] = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
 
-const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
+// #900: `expired` joined the set. It is declared once in
+// `domain/promotionLifecycle.ts` beside the rule that writes it, so the filter
+// below, the write validation and the sweep cannot disagree about what a
+// Promotion's status may be. `deleted` is still absent on purpose — it is
+// reached only through DELETE and restored only through the Recycle Bin.
+const LIFECYCLE_STATUSES = PROMOTION_LIFECYCLE_STATUSES;
 
 const SORT_COLUMNS: Record<string, string> = {
   name: 'p.name',

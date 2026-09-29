@@ -162,3 +162,35 @@ jobs:
           fi
 
           echo "expired=$expired stale pending payment request(s)."
+
+      - name: POST /promotion-lifecycle/run
+        # #900: expiring Promotions past their End Date is independent of the
+        # charge outcome, so it runs even when the run step went red — but not
+        # when there is no API to call (#784: the configuration check failed).
+        # It is a single idempotent UPDATE with no run-log guard, so the 10:00
+        # UTC safety net (#781) simply finds nothing left to expire.
+        if: ${{ !cancelled() && steps.config.outcome == 'success' }}
+        env:
+          BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
+        run: |
+          set -euo pipefail
+
+          rc=0
+          body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/promotion-lifecycle/run" \
+            -H "X-Internal-Secret: $BILLING_INTERNAL_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 30)" || rc=$?
+
+          printf 'POST /promotion-lifecycle/run -> %s\n' "$body"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Promotion expiry did not execute::POST /promotion-lifecycle/run failed (curl exit $rc). Promotions past their End Date still read as Active in the Promotions list; nothing was mis-billed (every apply path already refuses a Promotion outside its window) but the status column is stale."
+            exit 1
+          fi
+
+          if ! expired="$(printf '%s' "$body" | jq -er '.expired | numbers')"; then
+            echo "::error title=Promotion expiry answered an unreadable body::POST /promotion-lifecycle/run returned 2xx but carried no expired counter. The body is in the step log."
+            exit 1
+          fi
+
+          echo "expired=$expired promotion(s) past their end date."

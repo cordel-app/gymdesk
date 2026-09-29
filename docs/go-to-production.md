@@ -423,6 +423,18 @@ hardening:
 - [ ] **A `production` GitHub environment** for the scheduled and deploy workflows (#784).
       The workflows are parametrised; the environment itself and the one-line switch are
       the owner steps in §1.
+- [ ] **The first Promotion expiry sweep will move every past-dated Promotion at once**
+      (#900). `POST /promotion-lifecycle/run` is the third step of `billing-run.yml` and
+      sets `lifecycle_status = 'expired'` on every `active` Promotion whose `ends_at` has
+      passed. Migration 202 deliberately backfills nothing, so on the first night after
+      deploy the step's `expired=N` counter is the whole historical backlog rather than
+      "yesterday's Promotions" — expect a number, and read it as the migration it is.
+      Nothing is charged or re-priced by it (an assignment prices from its own snapshot),
+      and the Promotions those gyms were actually using keep running: only a Promotion
+      already outside its own window is touched. Two things to check on that first run:
+      the counter is plausible for the gym's history, and any Promotion a gym still wants
+      is given a new End Date and set back to Active (the sweep expires it again
+      otherwise). No new secret is owed — the step reuses `BILLING_INTERNAL_SECRET`.
 - [ ] **Bounded automatic retry, then pause** on a rejected recurring charge (#785). See
       the `#640` follow-up item in §5.
 
