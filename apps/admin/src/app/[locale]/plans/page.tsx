@@ -13,6 +13,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { SectionEditButton } from '@/components/SectionEditButton';
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
@@ -1001,9 +1002,12 @@ export default function PlansPage() {
                     <SectionHeader
                       title={t('plans.section_pricing')}
                       action={isEditing && pricingForPlanId !== plan.id ? (
-                        <button onClick={() => openPricing(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
-                          {t('plans.edit_pricing')}
-                        </button>
+                        <SectionEditButton
+                          label={t('plans.edit_pricing')}
+                          onClick={() => openPricing(plan)}
+                          disabled={!canWrite}
+                          title={readOnlyTitle}
+                        />
                       ) : null}
                     />
                     {isEditing && pricingForPlanId === plan.id ? (
@@ -1148,9 +1152,12 @@ export default function PlansPage() {
                     <SectionHeader
                       title={t('plans.section_billing_duration')}
                       action={isEditing && durationEditForPlanId !== plan.id ? (
-                        <button onClick={() => openDurationEdit(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
-                          {t('plans.edit')}
-                        </button>
+                        <SectionEditButton
+                          label={t('plans.edit')}
+                          onClick={() => openDurationEdit(plan)}
+                          disabled={!canWrite}
+                          title={readOnlyTitle}
+                        />
                       ) : null}
                     />
                     {isEditing && durationEditForPlanId === plan.id ? (
@@ -1281,9 +1288,12 @@ export default function PlansPage() {
                         <SectionHeader
                           title={t(`plans.${titleKey}`)}
                           action={isEditing && !isEditingBenefit(plan.id, section) ? (
-                            <button onClick={() => openBenefitEdit(plan, section)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
-                              {t('plans.edit')}
-                            </button>
+                            <SectionEditButton
+                              label={t('plans.edit')}
+                              onClick={() => openBenefitEdit(plan, section)}
+                              disabled={!canWrite}
+                              title={readOnlyTitle}
+                            />
                           ) : null}
                         />
                         {isEditing && isEditingBenefit(plan.id, section) ? (
@@ -1322,9 +1332,12 @@ export default function PlansPage() {
                     <SectionHeader
                       title={t('plans.section_centers')}
                       action={isEditing && centersForPlanId !== plan.id ? (
-                        <button onClick={() => openCenters(plan)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(linkBtn, !canWrite)}>
-                          {t('plans.edit')}
-                        </button>
+                        <SectionEditButton
+                          label={t('plans.edit')}
+                          onClick={() => openCenters(plan)}
+                          disabled={!canWrite}
+                          title={readOnlyTitle}
+                        />
                       ) : null}
                     />
                     {isEditing && centersForPlanId === plan.id ? (
@@ -1624,10 +1637,6 @@ const inlineInputStyle: React.CSSProperties = {
 const inlineSelectStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
   fontSize: 14, boxSizing: 'border-box', background: '#fff',
-};
-
-const linkBtn: React.CSSProperties = {
-  background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--brand, #6c63ff)', padding: '0 2px',
 };
 
 const dangerLinkBtn: React.CSSProperties = {

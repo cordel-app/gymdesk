@@ -67,9 +67,15 @@ describe('Promotions: component Edit actions live inside Edit mode (#897)', () =
 
   it('keeps the existing Edit button, its placement and its label', () => {
     const header = fn('renderSectionHeader');
-    expect(header, 'the section Edit button lost its small-button style').toContain("btnSmall('#6c63ff')");
-    expect(header, 'the section Edit button lost its read-only styling').toContain('readOnlyStyle');
-    expect(header, 'the section Edit button lost its label').toContain("{t('edit')}");
+    // #901 moved the button itself into the shared `SectionEditButton`, which
+    // the Membership Plan card renders too and which takes its colours from the
+    // Theme instead of the lilac literal this page used to pass to `btnSmall`.
+    // The read-only styling for a role that may not write lives in there as
+    // well; what stays this page's is the label, the disabled decision and the
+    // title-left / button-right header.
+    expect(header, 'the section Edit button is no longer the shared one').toContain('<SectionEditButton');
+    expect(header, 'the section Edit button lost its label').toContain("label={t('edit')}");
+    expect(header, 'the section Edit button lost its disabled state').toContain('disabled={disabled}');
     expect(header, 'the header is no longer title-left / button-right')
       .toContain("justifyContent: 'space-between'");
   });
