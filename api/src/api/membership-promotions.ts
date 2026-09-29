@@ -223,6 +223,13 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
 // displays under its `charge_types` name), so both resolve the same fallback
 // `assigned-plan-snapshot.ts` and migration 174 use — otherwise applying a
 // Promotion that grants a system item would fail on the insert.
+//
+// #896 stage 1: the grant's `(action, value)` pricing treatment is copied with
+// everything else. It has to be: billing reads this snapshot and never the
+// live `promotion_*` row, so a copy that left the pair behind would record a
+// Promotion the member was never given — a grant that means *waive* today
+// would read back as "charge the normal price" the moment stage 3 starts
+// pricing from the column.
 const PROMOTION_GRANT_SNAPSHOTS: {
   category: SellableItemBenefitCategory; source: string; target: string;
 }[] = [
@@ -238,11 +245,11 @@ async function snapshotPromotionGrants(
     await tx.query(
       `INSERT INTO ${target}
          (gym_id, user_membership_promotion_id, gym_charge_id, gym_charge_name, quantity,
-          item_type, item_billing_frequency, unit_price, currency)
+          item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`)
        SELECT ?, ?, b.gym_charge_id,
               COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)), b.quantity,
               COALESCE(gc.type, 'other'), gc.billing_frequency,
-              COALESCE(gc.amount, 0), gc.currency
+              COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`
        FROM ${source} b
        JOIN gym_charges gc ON gc.id = b.gym_charge_id
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
