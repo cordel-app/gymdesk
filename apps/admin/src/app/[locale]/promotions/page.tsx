@@ -103,14 +103,18 @@ interface SellableItemBenefit {
   gym_charge_status: string;
 }
 
-// #627: Promotion editing is split by section. The context-menu Edit action
-// only opens the main Promotion configuration ('main' — General, Suitable
-// Membership Plans, Billing & Duration); each Benefit section has its own Edit
-// button and its own independent Save/Cancel. Exactly one section of one card
-// is editable at a time, which is what keeps the single set of drafts below
-// unambiguous.
-type EditSection = 'main' | 'session' | 'oneoff' | 'periodical' | 'membership_fee';
-type BenefitSection = Exclude<EditSection, 'main'>;
+// #627: Promotion editing is split by section — the main Promotion
+// configuration (General, Suitable Membership Plans, Billing & Duration) and
+// each Benefit section save independently, and the whole Promotion is never
+// written at once.
+//
+// #897 puts both behind one door. `editingId` is the card's own Edit mode,
+// entered only from `⋮ → Edit`: while it is set the main configuration renders
+// as a form and every Benefit section shows its Edit button, and while it is
+// not the expanded card is read-only with no Edit affordance anywhere in it.
+// `openSection` is which Benefit section's editor is open inside that mode —
+// at most one, which is what keeps the single set of drafts below unambiguous.
+type BenefitSection = 'session' | 'oneoff' | 'periodical' | 'membership_fee';
 type SellableBenefitSection = Exclude<BenefitSection, 'membership_fee'>;
 
 const SELLABLE_BENEFIT_ENDPOINT: Record<SellableBenefitSection, string> = {
@@ -233,12 +237,17 @@ export default function PromotionsPage() {
   const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  // #897: the card in Edit mode — `⋮ → Edit` is its only entry point, and
+  // everything editable inside the expanded card is gated on it.
   const [editingId, setEditingId] = useState<number | null>(null);
-  // #627: which part of `editingId`'s card is editable. `null` means the card
-  // is read-only. The new-Promotion row is the one case where 'main' still
-  // covers every section at once: the Promotion has no id yet, so there is
+  // #627 + #897: which Benefit section of `editingId`'s card has its editor
+  // open. `null` means only the main configuration is being edited. The
+  // new-Promotion row never sets it: the Promotion has no id yet, so there is
   // nothing to hang per-section saves off and creation stays a single form.
-  const [editingSection, setEditingSection] = useState<EditSection | null>(null);
+  const [openSection, setOpenSection] = useState<BenefitSection | null>(null);
+  // A Benefit section's own save error, kept apart from the main form's so a
+  // failed section save cannot print its message under the main configuration.
+  const [sectionError, setSectionError] = useState<string | null>(null);
 
   // Full { id, name } objects for whatever plans are currently associated
   // with a promotion — from GET /promotions/:id/plans, which is not limited
@@ -326,8 +335,10 @@ export default function PromotionsPage() {
   useEffect(() => {
     if (expandedId === null) { setTimeline(null); setTimelineError(null); return; }
     const editingHere = editingId === expandedId;
-    const useForm = editingHere && (editingSection === 'main' || expandedId === NEW_ID);
-    const useMfDraft = editingHere && (editingSection === 'membership_fee' || expandedId === NEW_ID);
+    // #897: the main configuration is a form for as long as the card is in Edit
+    // mode, so the forecast follows the unsaved form throughout it.
+    const useForm = editingHere;
+    const useMfDraft = editingHere && (openSection === 'membership_fee' || expandedId === NEW_ID);
 
     const promo = expandedId !== NEW_ID ? rows.find((r) => r.id === expandedId) : undefined;
     if (!useForm && !promo) { setTimeline(null); setTimelineError(null); return; }
@@ -374,7 +385,7 @@ export default function PromotionsPage() {
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    expandedId, editingId, editingSection, rows, cachedMf,
+    expandedId, editingId, openSection, rows, cachedMf,
     editForm.free_months, editForm.paid_months, editForm.pay_beforehand_months, editForm.bonus_months,
     mfDraft?.action, mfDraft?.value, mfDraft?.enabled, mfDraft?.duration_months,
   ]);
@@ -393,14 +404,14 @@ export default function PromotionsPage() {
       return prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, editingSection, rows, editForm.free_months, editForm.paid_months, editForm.bonus_months]);
+  }, [editingId, openSection, rows, editForm.free_months, editForm.paid_months, editForm.bonus_months]);
 
   // #625 + #627: the ceiling for the Membership Fee Benefit duration. While the
-  // main configuration is being edited (or a Promotion is being created) that is
-  // the unsaved form's duration; when only the Membership Fee section is being
-  // edited the Promotion itself is not changing, so it is the saved duration.
+  // card is in Edit mode (or a Promotion is being created) that is the unsaved
+  // form's duration — the main configuration is editable throughout Edit mode
+  // since #897; for a card that is merely expanded it is the saved duration.
   function mfMaxDurationMonths(promoId: number): number {
-    if (promoId === NEW_ID || (editingId === promoId && editingSection === 'main')) {
+    if (promoId === NEW_ID || editingId === promoId) {
       return promotionDurationFromForm(editForm);
     }
     const promo = rows.find((r) => r.id === promoId);
@@ -486,12 +497,15 @@ export default function PromotionsPage() {
     }
   }
 
-  // Context-menu Edit (#627) — the main Promotion configuration only. The
-  // Benefit sections below stay read-only and keep their own Edit buttons.
+  // Context-menu Edit (#627, #897) — the only way into Edit mode. It opens the
+  // main Promotion configuration as a form and makes the Benefit sections'
+  // own Edit buttons available; it expands the card too, so leaving Edit mode
+  // reveals the read-only view rather than collapsing the row.
   async function enterEdit(promo: Promo) {
     setExpandedId(promo.id);
     setEditingId(promo.id);
-    setEditingSection('main');
+    setOpenSection(null);
+    setSectionError(null);
     setEditForm(emptyEditForm(promo));
     setEditError(null);
     // Still loads every sub-resource: the Benefit sections are rendered
@@ -504,12 +518,12 @@ export default function PromotionsPage() {
 
   // A Benefit section's own Edit button (#627) — seeds only that section's
   // draft, from freshly reloaded saved values, and leaves every other section
-  // (and the main configuration) read-only.
+  // untouched. Reachable only from inside Edit mode since #897, which is why it
+  // never enters that mode itself.
   async function enterSectionEdit(promo: Promo, section: BenefitSection) {
     setExpandedId(promo.id);
-    setEditingId(promo.id);
-    setEditingSection(section);
-    setEditError(null);
+    setOpenSection(section);
+    setSectionError(null);
     const { mf, sessionB, oneoffB, periodicalB } = await loadSubResources(promo.id);
     if (section === 'membership_fee') setMfDraft(mf ? { ...mf } : defaultMfDraft());
     if (section === 'session') setSessionDraft(sessionB.map((b) => ({ ...b })));
@@ -517,14 +531,22 @@ export default function PromotionsPage() {
     if (section === 'periodical') setPeriodicalDraft(periodicalB.map((b) => ({ ...b })));
   }
 
-  // Cancelling discards only the section being edited (#627). A cancelled
-  // section edit leaves the card open on its read-only view; cancelling the
-  // main configuration (or the new-Promotion row) collapses the card, as before.
+  // Cancelling a Benefit section discards that section's draft and nothing
+  // else — the card stays in Edit mode, on that section's read-only view.
+  function cancelSectionEdit() {
+    setOpenSection(null);
+    setSectionError(null);
+  }
+
+  // Cancelling Edit mode (#897) returns the Promotion to its read-only expanded
+  // view — every section editor closes with it, and no Edit button is left in
+  // the card. The new-Promotion row is the one case that still collapses:
+  // cancelling it discards a Promotion that was never created.
   function cancelEdit() {
     if (editingId === NEW_ID) { setHasNewRow(false); setExpandedId(null); }
-    else if (editingSection === 'main') setExpandedId(null);
     setEditingId(null);
-    setEditingSection(null);
+    setOpenSection(null);
+    setSectionError(null);
     setEditError(null);
   }
 
@@ -535,7 +557,8 @@ export default function PromotionsPage() {
     setHasNewRow(true);
     setExpandedId(NEW_ID);
     setEditingId(NEW_ID);
-    setEditingSection('main');
+    setOpenSection(null);
+    setSectionError(null);
     setEditForm(emptyEditForm());
     setPlansDraft([]);
     setMfDraft(defaultMfDraft());
@@ -635,8 +658,11 @@ export default function PromotionsPage() {
         body: JSON.stringify({ membership_plan_ids: plansDraft }),
       });
       await clampSavedMembershipFeeDuration(promoId);
+      // #897: saving leaves Edit mode but keeps the card open, so the staff
+      // member lands on the read-only view of what they just saved. The
+      // sub-resources are reloaded because that view renders off their caches.
+      await loadSubResources(promoId);
       finishEdit();
-      setExpandedId(null);
       load();
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
@@ -668,7 +694,7 @@ export default function PromotionsPage() {
   // is written — nothing else about the Promotion is touched.
   async function handleSaveBenefitSection(promoId: number, section: BenefitSection) {
     setEditSaving(true);
-    setEditError(null);
+    setSectionError(null);
     try {
       if (section === 'membership_fee') {
         if (mfDraft) {
@@ -684,9 +710,11 @@ export default function PromotionsPage() {
         });
       }
       await loadSubResources(promoId);
-      finishEdit();
+      // #897: only this section closes — the card stays in Edit mode, so the
+      // other sections' Edit buttons are still there to be used.
+      cancelSectionEdit();
     } catch (err: any) {
-      setEditError(err.message ?? t('error_generic'));
+      setSectionError(err.message ?? t('error_generic'));
     } finally {
       setEditSaving(false);
     }
@@ -694,7 +722,8 @@ export default function PromotionsPage() {
 
   function finishEdit() {
     setEditingId(null);
-    setEditingSection(null);
+    setOpenSection(null);
+    setSectionError(null);
     setEditError(null);
   }
 
@@ -733,14 +762,19 @@ export default function PromotionsPage() {
 
   // ─── Section editing state (#627) ─────────────────────────────────────────
 
-  function isEditingSection(promoId: number, section: EditSection) {
-    return editingId === promoId && editingSection === section;
+  // #897: the expanded card is read-only unless it is the one in Edit mode.
+  function isEditingCard(promoId: number) {
+    return editingId === promoId;
+  }
+
+  function isEditingSection(promoId: number, section: BenefitSection) {
+    return editingId === promoId && openSection === section;
   }
 
   // Only one section is ever editable at a time, so every other section's Edit
   // button is disabled while one is open — a second Edit would otherwise
   // silently discard the unsaved draft it shares state with.
-  const sectionEditBusy = editingSection !== null;
+  const sectionEditBusy = openSection !== null;
 
   function sellableSectionDraft(section: SellableBenefitSection): SellableItemBenefit[] {
     if (section === 'session') return sessionDraft;
@@ -1272,9 +1306,11 @@ export default function PromotionsPage() {
 
   // ─── Section shells (#627) ────────────────────────────────────────────────
 
-  // A section header: its title plus, on an existing Promotion that is not
-  // currently being edited, its own Edit button. Only one section can be open
-  // at a time, so every other section's button is disabled while one is.
+  // A section header: its title plus, only while the card is in Edit mode and
+  // this section's own editor is closed, its Edit button (#897 — the caller
+  // passes `null` for it in every other state, so a read-only expanded card
+  // carries no Edit affordance at all). Only one section can be open at a time,
+  // so every other section's button is disabled while one is.
   function renderSectionHeader(titleKey: string, onEdit: (() => void) | null) {
     const disabled = !canWrite || sectionEditBusy;
     return (
@@ -1294,14 +1330,21 @@ export default function PromotionsPage() {
     );
   }
 
-  // Save / Cancel for whichever section is being edited. Saving one section
-  // never writes another; cancelling discards only that section's draft.
-  function renderSectionActions(onSave: () => void) {
+  // Save / Cancel for whichever part of the card is being edited. Saving one
+  // section never writes another; cancelling discards only that part's draft —
+  // a Benefit section's Cancel closes that section (#897), the main
+  // configuration's leaves Edit mode. Each renders its own error, so a failed
+  // section save never prints its message under the main form.
+  function renderSectionActions(
+    onSave: () => void,
+    opts: { onCancel?: () => void; error?: string | null } = {},
+  ) {
+    const { onCancel = cancelEdit, error = editError } = opts;
     return (
       <>
-        {editError && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
+        {error && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{error}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
           <button onClick={onSave} disabled={editSaving} style={btnSmall('#6c63ff')}>
             {editSaving ? t('saving') : t('save_changes')}
           </button>
@@ -1314,7 +1357,10 @@ export default function PromotionsPage() {
     const editing = isEditingSection(promo.id, cfg.section);
     return (
       <div key={cfg.section} style={subSectionSt}>
-        {renderSectionHeader(cfg.titleKey, editing ? null : () => enterSectionEdit(promo, cfg.section))}
+        {renderSectionHeader(
+          cfg.titleKey,
+          isEditingCard(promo.id) && !editing ? () => enterSectionEdit(promo, cfg.section) : null,
+        )}
         {editing ? (
           <>
             {renderSellableItemBenefitEditor({
@@ -1324,7 +1370,10 @@ export default function PromotionsPage() {
               categoryItems: sellableSectionItems(cfg.section),
               showFrequency: cfg.showFrequency,
             })}
-            {renderSectionActions(() => handleSaveBenefitSection(promo.id, cfg.section))}
+            {renderSectionActions(
+              () => handleSaveBenefitSection(promo.id, cfg.section),
+              { onCancel: cancelSectionEdit, error: sectionError },
+            )}
           </>
         ) : renderSellableItemBenefitView(cfg.emptyKey, sellableSectionSaved(promo.id, cfg.section), cfg.showFrequency)}
       </div>
@@ -1335,25 +1384,33 @@ export default function PromotionsPage() {
     const editing = isEditingSection(promo.id, 'membership_fee');
     return (
       <div style={subSectionSt}>
-        {renderSectionHeader('section_membership_fee_benefits', editing ? null : () => enterSectionEdit(promo, 'membership_fee'))}
+        {renderSectionHeader(
+          'section_membership_fee_benefits',
+          isEditingCard(promo.id) && !editing ? () => enterSectionEdit(promo, 'membership_fee') : null,
+        )}
         {editing ? (
           <>
             {renderMembershipFeeEditor(promo.id)}
-            {renderSectionActions(() => handleSaveBenefitSection(promo.id, 'membership_fee'))}
+            {renderSectionActions(
+              () => handleSaveBenefitSection(promo.id, 'membership_fee'),
+              { onCancel: cancelSectionEdit, error: sectionError },
+            )}
           </>
         ) : renderMembershipFeeView(cachedMf[promo.id] ?? null)}
       </div>
     );
   }
 
-  // ─── Expanded card (#627) ─────────────────────────────────────────────────
+  // ─── Expanded card (#627, #897) ───────────────────────────────────────────
   // One body for both states: each section renders itself either read-only or
-  // in edit mode, so the Promotion is never editable as a whole.
+  // in edit mode, so the Promotion is never editable as a whole. Expanding the
+  // card reads it — every editor in here, the main configuration's included, is
+  // behind `⋮ → Edit`.
   function renderExpandedSection(promo: Promo) {
-    const editingMain = isEditingSection(promo.id, 'main');
+    const editing = isEditingCard(promo.id);
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
-        {editingMain
+        {editing
           ? <>{renderMainFields()}{renderSectionActions(() => handleSaveMain(promo.id))}</>
           : renderMainView(promo)}
 
@@ -1447,9 +1504,10 @@ export default function PromotionsPage() {
   function renderRow(promo: Promo) {
     const isExpanded = editingId === promo.id || expandedId === promo.id;
 
-    // #627: the context-menu Edit action opens only the main Promotion
-    // configuration; each Benefit section has its own Edit button. It is
-    // disabled while a section of this card is already being edited, so it can
+    // #627 + #897: the context-menu Edit action is the single entry point into
+    // everything this card can edit — the main Promotion configuration opens as
+    // a form and each Benefit section's own Edit button appears with it. It is
+    // disabled while a section of a card is already being edited, so it can
     // never silently discard that section's unsaved draft.
     const editDisabled = !canWrite || sectionEditBusy;
     const menuItems: ContextMenuItem[] = [

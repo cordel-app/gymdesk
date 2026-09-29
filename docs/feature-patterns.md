@@ -708,9 +708,24 @@ three Benefit sections and the Centers are not part of that declaration: each is
 its own resource with its own endpoint, and this ticket changes where its editor
 is reachable from, never what it submits.
 
+**Promotions are the same shape (#897).** The page #627 built had exactly the
+defect above in its other half: its section-level `Edit` buttons sat in the
+read-only body, so a staff member reading a Promotion could open the Session,
+One-off, Periodical or Membership Fee editor without passing through
+`⋮ → Edit`. The three rules apply unchanged — `isEditingCard(promo.id)` is the
+mode, every section header is handed its `onEdit` only inside it (and `null`
+otherwise, so the button is absent rather than disabled), and leaving the mode
+closes every section editor with it. Two details are worth copying: the main
+configuration renders as a form for as long as the mode lasts, exactly as
+GENERAL does on a Plan, so a section editor opens *beside* it rather than
+replacing it; and cancelling one section is not cancelling the mode, which is
+why the two Cancels are separate functions (`cancelSectionEdit` /
+`cancelEdit`) and each editor renders its own error line.
+
 Reference implementation: `[locale]/plans/page.tsx` +
-`[locale]/plans/planProfile.ts`. Regression test:
-`apps/admin/src/test/plans-expanded-read-only.test.ts`.
+`[locale]/plans/planProfile.ts`. Regression tests:
+`apps/admin/src/test/plans-expanded-read-only.test.ts` and, for Promotions,
+`apps/admin/src/test/promotions-expanded-read-only.test.ts`.
 
 ---
 
@@ -725,15 +740,21 @@ context-menu **Edit** action edits only the main configuration, and each
 sub-resource section gets its own **Edit** button and its own Save/Cancel.
 
 1. **One discriminator, not one flag per section** — keep the card-level
-   `editingId` and add `editingSection: 'main' | '<section>' | … | null`.
+   `editingId` and add `openSection: '<section>' | … | null`.
    `isEditingSection(id, section)` is then the only thing any renderer asks.
    Exactly one section of one card is editable at a time, which is what lets
    the drafts stay single-valued (`mfDraft`, `sessionDraft`, …) instead of
-   becoming per-section maps.
+   becoming per-section maps. Since #897 the card-level flag means Edit mode
+   and the discriminator only says which section is open *inside* it — it
+   carries no `'main'` member, because the main configuration is editable for
+   as long as the mode lasts rather than taking its turn with the sections.
 2. **Disable the other Edit buttons while one section is open** — including
    the context-menu one. A second Edit would otherwise silently overwrite
    the draft it shares state with. Reuse `readOnlyStyle(...)` and give the
    disabled button a hint (`edit_busy_hint`) distinct from `readOnlyTitle`.
+   A section's `Edit` button exists only inside Edit mode (#897): the read-only
+   expanded card is handed `null` for it, which removes the button rather than
+   disabling it, so expanding a row can never reach an editor.
 3. **Split the renderers in two, shell outside** — `render<X>Editor()` and
    `render<X>View()` render controls only; a `renderSectionHeader(titleKey,
    onEdit)` / `renderSectionActions(onSave)` shell owns the title, the Edit
@@ -742,7 +763,11 @@ sub-resource section gets its own **Edit** button and its own Save/Cancel.
    "the card is in edit mode" body to keep in sync with the view one.
 4. **One save handler per section, writing only its own endpoint** — and
    `enterSectionEdit` re-reads the saved values before seeding that
-   section's draft, so a section is never edited from a stale cache.
+   section's draft, so a section is never edited from a stale cache. Saving or
+   cancelling a section closes that section and nothing else; only the card's
+   own Cancel (or the main save) leaves Edit mode. Give a section editor its
+   own error state too, or a failed section save prints its message under the
+   main form as well.
 5. **Creation stays a single form** — a row that hasn't been created yet has
    no id to hang per-section saves off. Keep the create form covering every
    section with one Save, and give its section headers no Edit button.
@@ -755,9 +780,11 @@ sub-resource section gets its own **Edit** button and its own Save/Cancel.
    (`clampSavedMembershipFeeDuration`), which would otherwise be stuck
    un-saveable.
 
-Reference implementation: `[locale]/promotions/page.tsx`. Regression test
+Reference implementation: `[locale]/promotions/page.tsx`. Regression tests
 (source-scan style, since `apps/admin` has no component-test infra):
-`apps/admin/src/test/promotions-section-editing.test.ts`.
+`apps/admin/src/test/promotions-section-editing.test.ts` and
+`apps/admin/src/test/promotions-expanded-read-only.test.ts` (#897 — when each
+editor is reachable).
 
 ---
 
