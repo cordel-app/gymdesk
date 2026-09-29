@@ -187,10 +187,11 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
     await tx.query(
       `INSERT INTO ${target}
          (gym_id, user_membership_id, gym_charge_id, quantity,
-          item_name, item_type, item_billing_frequency, unit_price, currency)
+          item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`)
        SELECT ?, ?, b.gym_charge_id, b.quantity,
               ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
-              gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency
+              gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
+              b.\`action\`, b.\`value\`
        FROM ${source} b
        JOIN gym_charges gc ON gc.id = b.gym_charge_id
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -342,12 +343,16 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
       await tx.query(
         `INSERT INTO ${table}
            (gym_id, user_membership_id, gym_charge_id, quantity,
-            item_name, item_type, item_billing_frequency, unit_price, currency)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            item_name, item_type, item_billing_frequency, unit_price, currency,
+            \`action\`, \`value\`)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId, userMembershipId, item.gym_charge_id, item.quantity,
           previous.item_name, previous.item_type, previous.item_billing_frequency,
           previous.unit_price, previous.currency,
+          // #896 stage 1: a kept line keeps its pricing treatment for the same
+          // reason it keeps its frozen price — this edit did not mention it.
+          previous.action, previous.value,
         ],
       );
       continue;

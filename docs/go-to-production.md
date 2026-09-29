@@ -103,6 +103,22 @@ Tick items off in the PR that completes them.
       list is a strict superset of the old one, so it cannot fail on data; time it
       against a copy of the table first. (The statement is guarded, so re-running
       migrations after it lands is a no-op rather than a second rebuild.)
+- [ ] **Run migration 203 in a maintenance window** (#896 stage 1). Twelve tables
+      gain an `(action, value)` pair, and each one takes a CHECK — which MySQL 8
+      applies with ALGORITHM=COPY, exactly as migration 170's does. The file is
+      written to cost **one** rebuild per table rather than three: the column is
+      added `NOT NULL DEFAULT '<what the existing rows already mean>'` (so the
+      backfill is the add, with no separate `UPDATE` and no nullable window), the
+      default is then demoted with a metadata-only `ALTER COLUMN … SET DEFAULT`,
+      and both CHECKs go in a single `ALTER`. Six of the twelve
+      (`user_membership_{session,oneoff,periodical}` and the three
+      `user_membership_promotion_*_snapshot`) grow with every assignment and every
+      Promotion application, so time those against a copy first; the other six are
+      per-gym catalogue tables. Every statement is guarded, so re-running after it
+      lands is a no-op. Note that its `down` deliberately **refuses** to drop a
+      promotion-side row holding anything other than `waive`: after stage 2 makes
+      the pair writable, a rollback-and-re-apply would otherwise re-run the
+      one-shot `waive` backfill over configured data.
 - [ ] **Time migration 175's backfill before running it** (#635 stage 2). The DDL is
       cheap — six nullable column adds on `user_memberships` plus three new tables —
       but the file ends with data statements that touch every existing row: one
