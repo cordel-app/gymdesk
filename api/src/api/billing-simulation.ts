@@ -12,7 +12,7 @@ import {
   computeBillingSimulation,
 } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
-import { PlanDuration, toPlanDuration } from '../domain/planDuration';
+import { PlanDuration, toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 import { loadServicesForSimulation } from './user-membership-services';
 import {
@@ -80,15 +80,15 @@ interface AssignmentRow {
   /** 1 when any of the seven snapshot columns is set; decides the benefit fallback. */
   has_billing_snapshot: number;
   /** #635 stage 8 — the assignment's own Billing & Duration, and its Plan's live one. */
-  free_months: number | null;
-  paid_months: number | null;
-  bonus_months: number | null;
+  free_periods: number | null;
+  paid_periods: number | null;
+  bonus_periods: number | null;
   /** #635 stage 13 — the Pre-paid Duration, on the assignment and on its Plan. */
-  pay_beforehand_months: number | null;
-  plan_free_months: number | null;
-  plan_paid_months: number | null;
-  plan_bonus_months: number | null;
-  plan_pay_beforehand_months: number | null;
+  pay_beforehand_periods: number | null;
+  plan_free_periods: number | null;
+  plan_paid_periods: number | null;
+  plan_bonus_periods: number | null;
+  plan_pay_beforehand_periods: number | null;
   /** #772 — the assignment's own Personal Membership Fee Benefit. */
   personal_fee_benefit_action: string | null;
   personal_fee_benefit_value: string | number | null;
@@ -106,9 +106,16 @@ interface AssignmentRow {
  * therefore reads its own columns, NULLs included (= no such period).
  */
 function assignmentPlanDuration(row: AssignmentRow): PlanDuration {
+  // #892 — the counts are periods of the assignment's own cadence
+  // (`ASSIGNMENT_CADENCE`: its frozen pair, else its Plan's live one), so the
+  // simulation classifies a 4-weekly assignment's Free Period in 4-week steps,
+  // exactly as the nightly run prices it.
+  const cadence = toPlanDurationCadence(row.recurring_billing_interval, row.recurring_billing_unit);
   return Number(row.has_billing_snapshot) === 1
-    ? toPlanDuration(row.free_months, row.paid_months, row.bonus_months, row.pay_beforehand_months)
-    : toPlanDuration(row.plan_free_months, row.plan_paid_months, row.plan_bonus_months, row.plan_pay_beforehand_months);
+    ? toPlanDuration(row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods, cadence)
+    : toPlanDuration(
+        row.plan_free_periods, row.plan_paid_periods, row.plan_bonus_periods, row.plan_pay_beforehand_periods, cadence,
+      );
 }
 
 /**
@@ -167,17 +174,17 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
   const { rows } = await db.query<AssignmentRow>(
     `SELECT um.id, um.membership_plan_id, um.status, um.starts_at, um.ends_at,
             um.membership_fee_price, um.base_price,
-            um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
+            um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
             um.personal_fee_benefit_action, um.personal_fee_benefit_value,
             p.name AS plan_name,
-            p.free_months AS plan_free_months,
-            p.paid_months AS plan_paid_months,
-            p.bonus_months AS plan_bonus_months,
-            p.pay_beforehand_months AS plan_pay_beforehand_months,
+            p.free_periods AS plan_free_periods,
+            p.paid_periods AS plan_paid_periods,
+            p.bonus_periods AS plan_bonus_periods,
+            p.pay_beforehand_periods AS plan_pay_beforehand_periods,
             ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
-            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-             OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+            (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
+             OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
             ) AS has_billing_snapshot
      FROM user_memberships um

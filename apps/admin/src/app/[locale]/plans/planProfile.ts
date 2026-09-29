@@ -334,6 +334,68 @@ export function legacyBillingFrequencyText(interval: number, unit: string): stri
   return `Every ${interval === 1 ? unit : `${interval} ${unit}s`}`;
 }
 
+// ─── Billing & Duration, in Billing Frequency periods (#892) ─────────────────
+//
+// A Membership Plan's Free Period / Paid Duration / Pre-paid Duration / Bonus
+// Duration are **counts of the Plan's own Billing Frequency periods**, never of
+// calendar months (`api/src/domain/planDuration.ts` is where that rule is
+// applied to money; this is only how the number reads on screen). So the four
+// fields are declared once, with the Billing Frequency the unit comes from, and
+// the read-only summary, the Details modal and the editor's own suffix all
+// render through `formatPlanDurationPeriods()`.
+
+/** The four fields, in the order both halves of the section show them. */
+export const PLAN_DURATION_FIELDS = [
+  'free_periods', 'paid_periods', 'pay_beforehand_periods', 'bonus_periods',
+] as const;
+
+export type PlanDurationField = (typeof PLAN_DURATION_FIELDS)[number];
+
+/** A stored `billing_policies` pair, as the Plan payload carries it. */
+export interface PlanDurationCadenceSummary {
+  recurring_billing_interval: number;
+  recurring_billing_unit: string;
+}
+
+/**
+ * How one period reads: `Month`, `4 Weeks`, or — for a Plan with no billing
+ * policy, or one on a cadence outside #820's two — `null`, which is what makes
+ * the value fall back to the neutral "{n} period(s)" form rather than naming a
+ * frequency the Plan is not billed on. A legacy cadence is *not* spelled into
+ * the duration ("2 × Every 2 months" reads as nonsense); the Billing Frequency
+ * row beside it already says what the Plan bills on.
+ */
+export function planDurationUnitLabel(
+  cadence: PlanDurationCadenceSummary | null | undefined,
+  t: (key: string, values?: Record<string, unknown>) => string,
+): string | null {
+  if (!cadence) return null;
+  const freq = planBillingFrequencyOf(cadence.recurring_billing_interval, cadence.recurring_billing_unit);
+  return freq ? t(PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey) : null;
+}
+
+/**
+ * What a duration field reads as: `2 × 4 Weeks` (§9 of the ticket), `2 month(s)`
+ * when the Plan bills monthly — a count of monthly periods *is* a count of
+ * months, and "2 × Month" would be a worse way to say so — and `2 period(s)`
+ * when no frequency can be named. An unset field is "Not configured", never 0.
+ */
+export function formatPlanDurationPeriods(
+  value: number | null | undefined,
+  cadence: PlanDurationCadenceSummary | null | undefined,
+  t: (key: string, values?: Record<string, unknown>) => string,
+): string {
+  if (value == null) return t('not_configured');
+  const freq = cadence
+    ? planBillingFrequencyOf(cadence.recurring_billing_interval, cadence.recurring_billing_unit)
+    : null;
+  if (freq === 'month') return t('months_value', { n: value });
+  const unit = planDurationUnitLabel(cadence, t);
+  return unit != null
+    ? t('periods_value', { n: value, frequency: unit })
+    : t('periods_value_plain', { n: value });
+}
+
 // ─── Example timeline (#818) ──────────────────────────────────────────────────
 //
 // The Plan card's simulation is the Promotion card's: one row per billing

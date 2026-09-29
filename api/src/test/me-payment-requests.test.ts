@@ -241,7 +241,7 @@ describe('POST /me/payment-requests — a cycle that owes nothing', () => {
   it('returns 400 while the assignment is inside its Free Period, and calls no provider', async () => {
     const { memberId } = await actAsNewMember('free');
     const umId = await createAssignment(memberId, '29.99');
-    await db.query('UPDATE user_memberships SET free_months = 1 WHERE id = ?', [umId]);
+    await db.query('UPDATE user_memberships SET free_periods = 1 WHERE id = ?', [umId]);
     providerCalls.createPaymentRequest = [];
 
     const res = await post();

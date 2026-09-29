@@ -67,9 +67,9 @@ describe('Membership Plan Billing & Duration', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.free_months).toBeNull();
-    expect(res.body.paid_months).toBeNull();
-    expect(res.body.bonus_months).toBeNull();
+    expect(res.body.free_periods).toBeNull();
+    expect(res.body.paid_periods).toBeNull();
+    expect(res.body.bonus_periods).toBeNull();
   });
 
   it('PUT stores free / paid / bonus months', async () => {
@@ -77,11 +77,11 @@ describe('Membership Plan Billing & Duration', () => {
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ free_months: 1, paid_months: 2, bonus_months: 2 });
+      .send({ free_periods: 1, paid_periods: 2, bonus_periods: 2 });
     expect(res.status).toBe(200);
-    expect(res.body.free_months).toBe(1);
-    expect(res.body.paid_months).toBe(2);
-    expect(res.body.bonus_months).toBe(2);
+    expect(res.body.free_periods).toBe(1);
+    expect(res.body.paid_periods).toBe(2);
+    expect(res.body.bonus_periods).toBe(2);
   });
 
   // The Billing & Duration section saves on its own, so a PUT from any other
@@ -93,9 +93,9 @@ describe('Membership Plan Billing & Duration', () => {
       .set('x-gym-id', gymId)
       .send({ name: 'Duration Plan Renamed' });
     expect(res.status).toBe(200);
-    expect(res.body.free_months).toBe(1);
-    expect(res.body.paid_months).toBe(2);
-    expect(res.body.bonus_months).toBe(2);
+    expect(res.body.free_periods).toBe(1);
+    expect(res.body.paid_periods).toBe(2);
+    expect(res.body.bonus_periods).toBe(2);
   });
 
   // An emptied field means "not configured", which must round-trip as NULL —
@@ -105,11 +105,11 @@ describe('Membership Plan Billing & Duration', () => {
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ free_months: null, paid_months: 3, bonus_months: null });
+      .send({ free_periods: null, paid_periods: 3, bonus_periods: null });
     expect(res.status).toBe(200);
-    expect(res.body.free_months).toBeNull();
-    expect(res.body.paid_months).toBe(3);
-    expect(res.body.bonus_months).toBeNull();
+    expect(res.body.free_periods).toBeNull();
+    expect(res.body.paid_periods).toBe(3);
+    expect(res.body.bonus_periods).toBeNull();
   });
 
   it('accepts an explicit 0, distinct from null', async () => {
@@ -117,9 +117,9 @@ describe('Membership Plan Billing & Duration', () => {
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ free_months: 0 });
+      .send({ free_periods: 0 });
     expect(res.status).toBe(200);
-    expect(res.body.free_months).toBe(0);
+    expect(res.body.free_periods).toBe(0);
   });
 
   it('rejects a negative value', async () => {
@@ -127,7 +127,7 @@ describe('Membership Plan Billing & Duration', () => {
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ paid_months: -1 });
+      .send({ paid_periods: -1 });
     expect(res.status).toBe(400);
   });
 
@@ -136,7 +136,7 @@ describe('Membership Plan Billing & Duration', () => {
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ bonus_months: 'soon' });
+      .send({ bonus_periods: 'soon' });
     expect(res.status).toBe(400);
   });
 
@@ -145,7 +145,7 @@ describe('Membership Plan Billing & Duration', () => {
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymB)
-      .send({ free_months: 9 });
+      .send({ free_periods: 9 });
     expect(res.status).toBe(404);
   });
 
@@ -153,7 +153,7 @@ describe('Membership Plan Billing & Duration', () => {
     const res = await request
       .put(`/membership-plans/${planId}`)
       .set('x-gym-id', gymId)
-      .send({ free_months: 1 });
+      .send({ free_periods: 1 });
     expect(res.status).toBe(401);
   });
 
@@ -165,7 +165,7 @@ describe('Membership Plan Billing & Duration', () => {
       .put(`/membership-plans/${otherPlan}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', frontDeskGym)
-      .send({ free_months: 1 });
+      .send({ free_periods: 1 });
     expect(res.status).toBe(403);
   });
 });
@@ -407,7 +407,7 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ free_months: 1, paid_months: 2, bonus_months: 2 });
+      .send({ free_periods: 1, paid_periods: 2, bonus_periods: 2 });
     await request
       .put(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -421,9 +421,9 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(dup.status).toBe(201);
-    expect(dup.body.free_months).toBe(1);
-    expect(dup.body.paid_months).toBe(2);
-    expect(dup.body.bonus_months).toBe(2);
+    expect(dup.body.free_periods).toBe(1);
+    expect(dup.body.paid_periods).toBe(2);
+    expect(dup.body.bonus_periods).toBe(2);
     expect(dup.body.session_benefits).toHaveLength(1);
     expect(dup.body.session_benefits[0].gym_charge_id).toBe(sessionItemId);
     expect(dup.body.session_benefits[0].quantity).toBe(4);

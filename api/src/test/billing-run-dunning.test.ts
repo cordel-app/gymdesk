@@ -139,7 +139,7 @@ async function dueAssignment(name: string, opts: {
   const { insertId: membershipId } = await db.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
-        next_billing_date, free_months, membership_fee_price)
+        next_billing_date, free_periods, membership_fee_price)
      VALUES (?, ?, ?, ?, '2000-01-01', '29.99', '2000-01-01', ?, '29.99')`,
     [gymId, memberId, planId, opts.status ?? 'active', opts.freeMonths ?? null],
   );

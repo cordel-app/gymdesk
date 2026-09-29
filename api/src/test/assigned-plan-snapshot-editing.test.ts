@@ -35,7 +35,7 @@ async function createPlan(gymId: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans
        (gym_id, name, lifecycle_status, enrollment_status, member_limit,
-        free_months, paid_months, bonus_months)
+        free_periods, paid_periods, bonus_periods)
      VALUES (?, ?, 'active', 'public', '1', 1, 12, 2)`,
     [gymId, `APSE-Plan-${uniq()}`],
   );
@@ -136,35 +136,35 @@ describe('PUT /user-memberships/:id/billing-duration', () => {
 
   it('edits this assignment only — not the Plan, not another assignment (§15)', async () => {
     const res = await putBillingDuration(gymId, umId, {
-      free_months: 0, paid_months: 6, bonus_months: 3,
+      free_periods: 0, paid_periods: 6, bonus_periods: 3,
       recurring_billing_interval: 3, recurring_billing_unit: 'month',
       membership_fee_price: 90,
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      free_months: 0, paid_months: 6, bonus_months: 3,
+      free_periods: 0, paid_periods: 6, bonus_periods: 3,
       recurring_billing_interval: 3, recurring_billing_unit: 'month',
       membership_fee_price: 90,
       snapshot_captured: true,
     });
 
     const { rows: planRows } = await db.query(
-      'SELECT free_months, paid_months, bonus_months FROM membership_plans WHERE id = ?', [planId],
+      'SELECT free_periods, paid_periods, bonus_periods FROM membership_plans WHERE id = ?', [planId],
     );
-    expect(planRows[0]).toMatchObject({ free_months: 1, paid_months: 12, bonus_months: 2 });
+    expect(planRows[0]).toMatchObject({ free_periods: 1, paid_periods: 12, bonus_periods: 2 });
 
     const sibling = await getAssignment(gymId, siblingUmId);
     expect(sibling.body.snapshot).toMatchObject({
-      free_months: 1, paid_months: 12, bonus_months: 2, membership_fee_price: 80,
+      free_periods: 1, paid_periods: 12, bonus_periods: 2, membership_fee_price: 80,
     });
   });
 
   it('writes only the fields it was sent, and reads a cleared one back as null', async () => {
-    const res = await putBillingDuration(gymId, umId, { bonus_months: null });
+    const res = await putBillingDuration(gymId, umId, { bonus_periods: null });
     expect(res.status).toBe(200);
-    expect(res.body.bonus_months).toBeNull();
+    expect(res.body.bonus_periods).toBeNull();
     // Untouched by this request.
-    expect(res.body).toMatchObject({ paid_months: 6, membership_fee_price: 90 });
+    expect(res.body).toMatchObject({ paid_periods: 6, membership_fee_price: 90 });
   });
 
   it('rejects a half-configured cadence, which would mix in the Plan’s unit', async () => {
@@ -175,7 +175,7 @@ describe('PUT /user-memberships/:id/billing-duration', () => {
   });
 
   it('rejects a negative duration, an unknown unit and an empty payload', async () => {
-    expect((await putBillingDuration(gymId, umId, { paid_months: -1 })).status).toBe(400);
+    expect((await putBillingDuration(gymId, umId, { paid_periods: -1 })).status).toBe(400);
     expect((await putBillingDuration(gymId, umId, { recurring_billing_unit: 'fortnight' })).status).toBe(400);
     expect((await putBillingDuration(gymId, umId, {})).status).toBe(400);
   });
@@ -286,7 +286,7 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
     const other = await assignConfiguredPlan(gymId);
     await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [other.umId]);
     expect((await putBenefits(gymId, other.umId, 'periodical-benefits', [])).status).toBe(400);
-    expect((await putBillingDuration(gymId, other.umId, { paid_months: 1 })).status).toBe(400);
+    expect((await putBillingDuration(gymId, other.umId, { paid_periods: 1 })).status).toBe(400);
   });
 });
 
@@ -314,7 +314,7 @@ describe('editing an assignment that predates the snapshot', () => {
     // Strip the snapshot stage 2 captured, reproducing a row the migration-174
     // backfill could not reach: it resolves the live catalogue today.
     await db.query(
-      `UPDATE user_memberships SET free_months = NULL, paid_months = NULL, bonus_months = NULL,
+      `UPDATE user_memberships SET free_periods = NULL, paid_periods = NULL, bonus_periods = NULL,
           recurring_billing_interval = NULL, recurring_billing_unit = NULL, membership_fee_price = NULL
        WHERE id = ?`,
       [umId],
@@ -344,7 +344,7 @@ describe('editing an assignment that predates the snapshot', () => {
     expect(after.body.snapshot.session_benefits).toHaveLength(1);
     expect(after.body.snapshot.session_benefits[0]).toMatchObject({ gym_charge_id: sessionItem, quantity: 10, unit_price: 30 });
     expect(after.body.snapshot).toMatchObject({
-      free_months: 1, paid_months: 12, bonus_months: 2,
+      free_periods: 1, paid_periods: 12, bonus_periods: 2,
       recurring_billing_interval: 1, recurring_billing_unit: 'month',
       membership_fee_price: 80,
       snapshot_captured: true,
@@ -352,10 +352,10 @@ describe('editing an assignment that predates the snapshot', () => {
   });
 
   it('then stops following the Plan (§13)', async () => {
-    await db.query('UPDATE membership_plans SET paid_months = 36 WHERE id = ?', [planId]);
+    await db.query('UPDATE membership_plans SET paid_periods = 36 WHERE id = ?', [planId]);
     await db.query('DELETE FROM membership_plan_session WHERE membership_plan_id = ?', [planId]);
     const after = await getAssignment(gymId, umId);
-    expect(after.body.snapshot.paid_months).toBe(12);
+    expect(after.body.snapshot.paid_periods).toBe(12);
     expect(after.body.snapshot.session_benefits).toHaveLength(1);
   });
 });
@@ -370,7 +370,7 @@ describe('materialising, on an assignment that captured nothing', () => {
     expect(res.status).toBe(201);
     const umId = res.body.id as number;
     await db.query(
-      `UPDATE user_memberships SET free_months = NULL, paid_months = NULL, bonus_months = NULL,
+      `UPDATE user_memberships SET free_periods = NULL, paid_periods = NULL, bonus_periods = NULL,
           recurring_billing_interval = NULL, recurring_billing_unit = NULL, membership_fee_price = NULL
        WHERE id = ?`,
       [umId],
@@ -419,7 +419,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
   it("returns 404 for another gym's assignment", async () => {
     expect((await getBenefits(gymB, umId, 'periodical-benefits')).status).toBe(404);
     expect((await putBenefits(gymB, umId, 'periodical-benefits', [])).status).toBe(404);
-    expect((await putBillingDuration(gymB, umId, { paid_months: 1 })).status).toBe(404);
+    expect((await putBillingDuration(gymB, umId, { paid_periods: 1 })).status).toBe(404);
   });
 
   it("refuses an item that belongs to another gym", async () => {
@@ -434,7 +434,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
     const res = await request
       .put(`/user-memberships/${umId}/billing-duration`)
       .set('x-gym-id', gymA)
-      .send({ paid_months: 1 });
+      .send({ paid_periods: 1 });
     expect(res.status).toBe(401);
     const benefits = await request
       .put(`/user-memberships/${umId}/periodical-benefits`)
@@ -448,10 +448,10 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
     await createTestMembership(readOnlyGym, 'accountant');
     const { umId: readOnlyUmId } = await assignConfiguredPlanAsAdmin(readOnlyGym);
 
-    expect((await putBillingDuration(readOnlyGym, readOnlyUmId, { paid_months: 1 })).status).toBe(403);
+    expect((await putBillingDuration(readOnlyGym, readOnlyUmId, { paid_periods: 1 })).status).toBe(403);
     expect((await putBenefits(readOnlyGym, readOnlyUmId, 'periodical-benefits', [])).status).toBe(403);
-    const { rows } = await db.query('SELECT paid_months FROM user_memberships WHERE id = ?', [readOnlyUmId]);
-    expect(rows[0].paid_months).toBe(12);
+    const { rows } = await db.query('SELECT paid_periods FROM user_memberships WHERE id = ?', [readOnlyUmId]);
+    expect(rows[0].paid_periods).toBe(12);
     // Reading the section is allowed for a role with read access.
     expect((await getBenefits(readOnlyGym, readOnlyUmId, 'periodical-benefits')).status).toBe(200);
   });
@@ -476,7 +476,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
     const { insertId } = await db.query(
       `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, starts_at, status,
-          free_months, paid_months, bonus_months, recurring_billing_interval, recurring_billing_unit,
+          free_periods, paid_periods, bonus_periods, recurring_billing_interval, recurring_billing_unit,
           membership_fee_price)
        VALUES (?, ?, ?, 0, ?, 'active', 1, 12, 2, 1, 'month', 80)`,
       [memberId, gym, planId, dayOffset(0)],

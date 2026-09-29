@@ -66,7 +66,7 @@ async function createMember(): Promise<number> {
 async function createPlan(duration?: { free?: number; paid?: number; bonus?: number }): Promise<number> {
   const { insertId: planId } = await db.query(
     `INSERT INTO membership_plans
-       (gym_id, name, lifecycle_status, enrollment_status, free_months, paid_months, bonus_months)
+       (gym_id, name, lifecycle_status, enrollment_status, free_periods, paid_periods, bonus_periods)
      VALUES (?, ?, 'active', 'staff_only', ?, ?, ?)`,
     [gymId, `Waived-Plan-${uniq()}`, duration?.free ?? null, duration?.paid ?? null, duration?.bonus ?? null],
   );
@@ -92,7 +92,7 @@ async function createDueAssignment(
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
-        next_billing_date, free_months, paid_months, bonus_months, pay_beforehand_months,
+        next_billing_date, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
         membership_fee_price)
      VALUES (?, ?, ?, 'active', ?, '29.99', ?, ?, ?, ?, ?, ?)`,
     [

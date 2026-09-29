@@ -6,7 +6,8 @@ import {
   resolveMembershipFee,
 } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
-import { PlanDurationStatus, toPlanDuration } from '../domain/planDuration';
+import { PlanDurationStatus, toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
+import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { PromotionTimelineStatus } from '../domain/promotionTimeline';
 
 /**
@@ -43,26 +44,39 @@ import { PromotionTimelineStatus } from '../domain/promotionTimeline';
  * and the Member's own page all price the same date through the same call.
  */
 
-/** The columns every caller has to read for one assignment. Aliases: `um`, `p`. */
+/**
+ * The columns every caller has to read for one assignment. Aliases: `um`, `p`,
+ * and — since #892 — `bp`, because the Billing & Duration counts are periods of
+ * the assignment's own cadence and pricing a cycle cannot be done without it.
+ * The cadence is read through `ASSIGNMENT_CADENCE` (the assignment's frozen
+ * pair, then its Plan's live one), which is why `bp` must be **LEFT** joined: an
+ * INNER join would drop every assignment whose Plan has since lost its policy.
+ * The aliases are deliberately not `recurring_billing_*`, which two callers
+ * already select under those names.
+ */
 export const FEE_ASSIGNMENT_COLUMNS = `
   um.id, um.gym_id, um.starts_at, um.next_billing_date,
   um.membership_fee_price, um.membership_plan_id, um.base_price,
   um.discount_reason, um.discount_expires_at,
   um.personal_fee_benefit_action, um.personal_fee_benefit_value,
-  um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
-  p.free_months AS plan_free_months,
-  p.paid_months AS plan_paid_months,
-  p.bonus_months AS plan_bonus_months,
-  p.pay_beforehand_months AS plan_pay_beforehand_months,
-  (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-   OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+  um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
+  p.free_periods AS plan_free_periods,
+  p.paid_periods AS plan_paid_periods,
+  p.bonus_periods AS plan_bonus_periods,
+  p.pay_beforehand_periods AS plan_pay_beforehand_periods,
+  ${ASSIGNMENT_CADENCE.interval()} AS duration_cadence_interval,
+  ${ASSIGNMENT_CADENCE.unit()} AS duration_cadence_unit,
+  (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
+   OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
    OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
   ) AS has_billing_snapshot`;
 
 /** The FROM/JOIN `FEE_ASSIGNMENT_COLUMNS` resolves against. */
 export const FEE_ASSIGNMENT_FROM = `
   FROM user_memberships um
-  LEFT JOIN membership_plans p ON p.id = um.membership_plan_id`;
+  LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+  LEFT JOIN billing_policies bp
+         ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id`;
 
 /** One assignment, as much of it as pricing a Membership Fee needs. */
 export interface FeeAssignmentRow {
@@ -100,16 +114,22 @@ export interface FeeAssignmentRow {
    */
   personal_fee_benefit_action: string | null;
   personal_fee_benefit_value: string | number | null;
-  /** The assignment's own frozen Billing & Duration (migration 174). */
-  free_months: number | null;
-  paid_months: number | null;
-  bonus_months: number | null;
-  pay_beforehand_months: number | null;
+  /**
+   * The assignment's own frozen Billing & Duration (migration 174, renamed by
+   * migration 201): counts of `duration_cadence_*` periods, not months (#892).
+   */
+  free_periods: number | null;
+  paid_periods: number | null;
+  bonus_periods: number | null;
+  pay_beforehand_periods: number | null;
   /** Its Plan's live ones — the fallback for an assignment that captured nothing. */
-  plan_free_months: number | null;
-  plan_paid_months: number | null;
-  plan_bonus_months: number | null;
-  plan_pay_beforehand_months: number | null;
+  plan_free_periods: number | null;
+  plan_paid_periods: number | null;
+  plan_bonus_periods: number | null;
+  plan_pay_beforehand_periods: number | null;
+  /** `ASSIGNMENT_CADENCE` — the length of one of those periods (#892). */
+  duration_cadence_interval: number | string | null;
+  duration_cadence_unit: string | null;
   /** 1 when any of the seven snapshot columns is set; decides that fallback. */
   has_billing_snapshot: number;
 }
@@ -136,17 +156,25 @@ function toDateOnly(v: unknown): string {
 }
 
 /**
- * The Billing & Duration this assignment bills on: the months frozen onto it,
- * or — only when it captured no snapshot at all — its Plan's live ones. The
+ * The Billing & Duration this assignment bills on: the period counts frozen
+ * onto it, or — only when it captured no snapshot at all — its Plan's live
+ * ones. The
  * same all-or-nothing rule `billing-simulation.ts` applies, and for the same
  * reason: the columns are nullable, so falling back column by column would let
  * a Free Period *added to the Plan later* waive a cycle of an assignment that
  * already exists (§13).
  */
 function durationForRow(row: FeeAssignmentRow) {
+  // #892 — the cadence those counts are periods of. It is resolved with the
+  // same all-or-nothing precedence (`ASSIGNMENT_CADENCE`: the assignment's
+  // frozen pair, else its Plan's live one), and falls back to `1 month` for a
+  // row that has neither, which is what every duration meant before #892.
+  const cadence = toPlanDurationCadence(row.duration_cadence_interval, row.duration_cadence_unit);
   return Number(row.has_billing_snapshot) === 1
-    ? toPlanDuration(row.free_months, row.paid_months, row.bonus_months, row.pay_beforehand_months)
-    : toPlanDuration(row.plan_free_months, row.plan_paid_months, row.plan_bonus_months, row.plan_pay_beforehand_months);
+    ? toPlanDuration(row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods, cadence)
+    : toPlanDuration(
+        row.plan_free_periods, row.plan_paid_periods, row.plan_bonus_periods, row.plan_pay_beforehand_periods, cadence,
+      );
 }
 
 /**

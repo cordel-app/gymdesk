@@ -25,7 +25,7 @@ import { loadPromotionApplications, regularMembershipFee } from './user-membersh
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
-import { toPlanDuration } from '../domain/planDuration';
+import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 import {
   createCardUpdateRequest,
@@ -1391,17 +1391,17 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               um.base_price, um.discount_reason, um.discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
               um.next_billing_date, um.membership_fee_price,
-              um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
+              um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
               um.personal_fee_benefit_action, um.personal_fee_benefit_value,
-              p.free_months AS plan_free_months,
-              p.paid_months AS plan_paid_months,
-              p.bonus_months AS plan_bonus_months,
-              p.pay_beforehand_months AS plan_pay_beforehand_months,
+              p.free_periods AS plan_free_periods,
+              p.paid_periods AS plan_paid_periods,
+              p.bonus_periods AS plan_bonus_periods,
+              p.pay_beforehand_periods AS plan_pay_beforehand_periods,
               p.name AS plan_name, p.description AS plan_description,
               ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS billing_unit,
-              (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-               OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+              (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
+               OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
                OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
               ) AS has_billing_snapshot
        FROM user_memberships um
@@ -1431,9 +1431,17 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // discounting once the Promotion's own Free/Paid/Bonus timeline ends.
     const feeContext = {
       startsAt: toDateOnly(um.starts_at),
-      planDuration: Number(um.has_billing_snapshot) === 1
-        ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
-        : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
+      // #892 — those counts are periods of this assignment's own Billing
+      // Frequency (`ASSIGNMENT_CADENCE`, already selected above), so the Member
+      // is shown the same free window the nightly run will honour.
+      planDuration: (() => {
+        const cadence = toPlanDurationCadence(um.billing_interval, um.billing_unit);
+        return Number(um.has_billing_snapshot) === 1
+          ? toPlanDuration(um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods, cadence)
+          : toPlanDuration(
+              um.plan_free_periods, um.plan_paid_periods, um.plan_bonus_periods, um.plan_pay_beforehand_periods, cadence,
+            );
+      })(),
       // #772 — the Personal Membership Fee Benefit discounts every cycle this
       // page shows, including the ones after the Promotion has ended, because
       // that is what the nightly run will charge.
@@ -1459,12 +1467,12 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
         : null,
     );
 
-    // The months and `has_billing_snapshot` only decide the resolution above —
-    // they are not part of the contract the Member app reads.
+    // The period counts and `has_billing_snapshot` only decide the resolution
+    // above — they are not part of the contract the Member app reads.
     const {
       has_billing_snapshot, membership_fee_price,
-      free_months, paid_months, bonus_months, pay_beforehand_months,
-      plan_free_months, plan_paid_months, plan_bonus_months, plan_pay_beforehand_months,
+      free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
+      plan_free_periods, plan_paid_periods, plan_bonus_periods, plan_pay_beforehand_periods,
       personal_fee_benefit_action, personal_fee_benefit_value,
       ...membership
     } = um as any;

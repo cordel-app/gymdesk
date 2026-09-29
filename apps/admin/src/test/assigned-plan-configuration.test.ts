@@ -53,8 +53,10 @@ const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, loadLocale(c)])) 
   Messages
 >;
 
-// #635 stage 13 added the fourth field, Pre-paid Duration.
-const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
+// #635 stage 13 added the fourth field, Pre-paid Duration. #892 (migration 201)
+// renamed all four: they are counts of the assignment's own Billing Frequency
+// periods, not of calendar months.
+const DURATION_FIELDS = ['free_periods', 'paid_periods', 'pay_beforehand_periods', 'bonus_periods'] as const;
 const BENEFIT_SECTIONS = ['oneoff', 'session', 'periodical'] as const;
 
 describe('Assigned Plan: Billing & Duration (#635 §7/§9)', () => {
@@ -76,8 +78,8 @@ describe('Assigned Plan: Billing & Duration (#635 §7/§9)', () => {
   // Stage 13: the Pre-paid Duration is sent like the other three — blank means
   // "not configured", which the API stores as NULL and reads differently from 0.
   it('sends the Pre-paid Duration, blank included', () => {
-    expect(src).toContain('pay_beforehand_months: durationForm.pay_beforehand_months');
-    expect(src).toMatch(/pay_beforehand_months[\s\S]{0,80}\? null : Number\(durationForm\.pay_beforehand_months\)/);
+    expect(src).toContain('pay_beforehand_periods: durationForm.pay_beforehand_periods');
+    expect(src).toMatch(/pay_beforehand_periods[\s\S]{0,80}\? null : Number\(durationForm\.pay_beforehand_periods\)/);
   });
 
   it('saves it to the assignment, never to the Membership Plan (§15)', () => {
@@ -161,10 +163,12 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
 describe('Assigned Plan configuration: locales', () => {
   const REQUIRED_KEYS = [
     'section_configuration', 'section_billing_duration',
-    'label_pay_beforehand_months',
-    'label_free_months', 'label_paid_months', 'label_bonus_months',
+    'label_pay_beforehand_periods',
+    'label_free_periods', 'label_paid_periods', 'label_bonus_periods',
     'label_billing_interval', 'label_billing_unit', 'label_membership_fee',
-    'months_value', 'not_configured', 'snapshot_edit_hint',
+    // #892 — a duration reads in the unit it is counted in.
+    'months_value', 'periods_value_plain', 'duration_periods_hint',
+    'not_configured', 'snapshot_edit_hint',
     'col_sellable_item', 'col_quantity', 'col_frequency', 'col_snapshot_price',
     'inactive_item_tag',
     'no_oneoff_benefits', 'no_session_benefits', 'no_period_benefits',

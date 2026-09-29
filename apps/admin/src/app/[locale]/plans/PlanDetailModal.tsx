@@ -5,6 +5,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import {
   PLAN_BILLING_FREQUENCY_OPTIONS,
+  formatPlanDurationPeriods,
   legacyBillingFrequencyText,
   planBillingFrequencyOf,
 } from './planProfile';
@@ -24,10 +25,11 @@ interface PlanSummary {
   billing_policy: BillingPolicySummary | null;
   // #635 stage 13: the Plan's Duration is its Billing & Duration, not the
   // retired `recurring_service_*` pair this row used to read (migration 189).
-  free_months: number | null;
-  paid_months: number | null;
-  pay_beforehand_months: number | null;
-  bonus_months: number | null;
+  // #892: counts of `billing_policy`'s periods, not of calendar months.
+  free_periods: number | null;
+  paid_periods: number | null;
+  pay_beforehand_periods: number | null;
+  bonus_periods: number | null;
   // #635 stage 4: the Benefits count is the three Sellable-Item-keyed
   // sections, now that Charge Benefits are gone.
   session_benefits: unknown[];
@@ -59,8 +61,10 @@ export function PlanDetailModal({ plan, onClose }: {
 
   // Each Billing & Duration field on its own row: the four are what the Plan
   // stores, and summing them here would be business logic in the frontend.
-  const months = (label: string, value: number | null) =>
-    field(label, value != null ? t('months_value', { n: value }) : t('not_configured'));
+  // #892: each is a count of the Plan's own Billing Frequency periods, and
+  // reads with that unit — the same helper the card's summary renders through.
+  const duration = (label: string, value: number | null) =>
+    field(label, formatPlanDurationPeriods(value, plan.billing_policy, t as any));
 
   const priceLabel = plan.current_price != null ? `€${parseFloat(plan.current_price).toFixed(2)}` : null;
 
@@ -102,10 +106,10 @@ export function PlanDetailModal({ plan, onClose }: {
         {field(t('details_status'), tStatus(plan.lifecycle_status as any))}
         {field(t('details_enrollment_status'), enrollmentLabel)}
         {field(t('label_current_price'), priceLabel)}
-        {months(t('label_free_months'), plan.free_months)}
-        {months(t('label_paid_months'), plan.paid_months)}
-        {months(t('label_pay_beforehand_months'), plan.pay_beforehand_months)}
-        {months(t('label_bonus_months'), plan.bonus_months)}
+        {duration(t('label_free_periods'), plan.free_periods)}
+        {duration(t('label_paid_periods'), plan.paid_periods)}
+        {duration(t('label_pay_beforehand_periods'), plan.pay_beforehand_periods)}
+        {duration(t('label_bonus_periods'), plan.bonus_periods)}
         {field(t('details_billing_frequency'), billingLabel)}
         {field(t('details_benefits'), String(benefitCount))}
         {field(t('details_promotions'), String(plan.promotion_count))}

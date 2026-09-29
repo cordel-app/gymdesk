@@ -52,7 +52,7 @@ async function createPlan(gymId: string, durations: {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans
        (gym_id, name, lifecycle_status, enrollment_status, member_limit,
-        free_months, paid_months, bonus_months)
+        free_periods, paid_periods, bonus_periods)
      VALUES (?, ?, 'active', 'public', '1', ?, ?, ?)`,
     [gymId, `APDB-Plan-${uniq()}`, free, paid, bonus],
   );
@@ -140,7 +140,7 @@ describe('Billing Simulation — the assignment bills its own Billing & Duration
   it('does not follow a later change to the Plan\'s Billing & Duration', async () => {
     const before = (await getSimulation(gymId, memberId)).body;
     await db.query(
-      'UPDATE membership_plans SET free_months = 12, paid_months = 0, bonus_months = 0 WHERE id = ?',
+      'UPDATE membership_plans SET free_periods = 12, paid_periods = 0, bonus_periods = 0 WHERE id = ?',
       [planId],
     );
     expect((await getSimulation(gymId, memberId)).body).toEqual(before);
@@ -171,7 +171,7 @@ describe('PUT /user-memberships/:id/billing-duration — the edit stays on the a
   it('bills the edited Free Period from the next simulation onwards', async () => {
     expect(feeEvents((await getSimulation(gymId, memberA)).body)).toEqual([[MONTHS[0], 100]]);
 
-    const res = await putBillingDuration(gymId, umA, { free_months: 2 });
+    const res = await putBillingDuration(gymId, umA, { free_periods: 2 });
     expect(res.status).toBe(200);
 
     expect(feeEvents((await getSimulation(gymId, memberA)).body)).toEqual([
@@ -182,10 +182,10 @@ describe('PUT /user-memberships/:id/billing-duration — the edit stays on the a
   it('leaves the other assignment of the same Plan, and the Plan itself, untouched', async () => {
     expect(feeEvents((await getSimulation(gymId, memberB)).body)).toEqual([[MONTHS[0], 100]]);
     const { rows } = await db.query(
-      'SELECT free_months, paid_months, bonus_months FROM membership_plans WHERE id = ?',
+      'SELECT free_periods, paid_periods, bonus_periods FROM membership_plans WHERE id = ?',
       [planId],
     );
-    expect(rows[0]).toMatchObject({ free_months: 0, paid_months: 12, bonus_months: 0 });
+    expect(rows[0]).toMatchObject({ free_periods: 0, paid_periods: 12, bonus_periods: 0 });
   });
 });
 
@@ -225,8 +225,8 @@ describe('Billing Simulation — an assignment with no snapshot reads the Plan\'
     // An explicit edit materialises the snapshot first (stage 6), so the
     // assignment now owns every section — including the durations it had been
     // reading live.
-    expect((await putBillingDuration(gymId, rows[0].id, { bonus_months: 1 })).status).toBe(200);
-    await db.query('UPDATE membership_plans SET free_months = 6 WHERE id = ?', [planId]);
+    expect((await putBillingDuration(gymId, rows[0].id, { bonus_periods: 1 })).status).toBe(200);
+    await db.query('UPDATE membership_plans SET free_periods = 6 WHERE id = ?', [planId]);
 
     const { body } = await getSimulation(gymId, memberId);
     expect(feeEvents(body)).toEqual([[MONTHS[0], 0], [MONTHS[1], 0], [MONTHS[2], 100]]);

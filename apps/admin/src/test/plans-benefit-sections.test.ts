@@ -19,6 +19,8 @@ import { join } from 'path';
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const SHARED_COMPONENT = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
+// #892: the four duration fields are declared beside the Billing Frequency.
+const PLAN_PROFILE = join(__dirname, '..', 'app', '[locale]', 'plans', 'planProfile.ts');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;
@@ -41,21 +43,25 @@ function stripComments(src: string): string {
 
 const pageSrc = stripComments(readFileSync(PLANS_PAGE, 'utf-8'));
 const componentSrc = stripComments(readFileSync(SHARED_COMPONENT, 'utf-8'));
+const profileSrc = stripComments(readFileSync(PLAN_PROFILE, 'utf-8'));
 const locales = Object.fromEntries(LOCALE_CODES.map((c) => [c, loadLocale(c)])) as Record<
   (typeof LOCALE_CODES)[number],
   Messages
 >;
 
 // #635 stage 13 added the fourth field, Pre-paid Duration.
-const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
+// #892 (migration 201): counts of Billing Frequency periods, renamed with them.
+const DURATION_FIELDS = ['free_periods', 'paid_periods', 'pay_beforehand_periods', 'bonus_periods'] as const;
 const BENEFIT_SECTIONS = ['oneoff', 'session', 'periodical'] as const;
 
 describe('Plans: Billing & Duration (#635 §7)', () => {
   it('renders its own section with Free Period, Paid, Pre-paid and Bonus Duration', () => {
     expect(pageSrc).toContain('plans.section_billing_duration');
     for (const field of DURATION_FIELDS) {
-      expect(pageSrc, `${field} missing from DURATION_FIELDS`).toMatch(
-        new RegExp(`DURATION_FIELDS[\\s\\S]{0,120}'${field}'`),
+      // #892 moved the list into `planProfile.ts`, beside the Billing
+      // Frequency that gives the four numbers their unit.
+      expect(profileSrc, `${field} missing from PLAN_DURATION_FIELDS`).toMatch(
+        new RegExp(`PLAN_DURATION_FIELDS[\\s\\S]{0,160}'${field}'`),
       );
     }
   });
@@ -77,7 +83,7 @@ describe('Plans: Billing & Duration (#635 §7)', () => {
   // charge"), so the Plan now carries it — the Membership Fee Benefit is what
   // stays Promotion-only (§6).
   it('carries Pre-paid Duration, and still no Membership Fee Benefit (§6)', () => {
-    expect(pageSrc).toContain('pay_beforehand_months');
+    expect(profileSrc).toContain('pay_beforehand_periods');
     expect(pageSrc).not.toContain('membership_fee_benefit');
   });
 
@@ -157,10 +163,10 @@ describe('Plans: Included Services retired in stage 4', () => {
 describe('Plans: locale coverage', () => {
   const REQUIRED_KEYS = [
     'section_billing_duration',
-    'label_free_months',
-    'label_paid_months',
-    'label_bonus_months',
-    'label_pay_beforehand_months',
+    'label_free_periods',
+    'label_paid_periods',
+    'label_bonus_periods',
+    'label_pay_beforehand_periods',
     'label_billing_frequency',
     'desc_billing_duration',
     'months_value',

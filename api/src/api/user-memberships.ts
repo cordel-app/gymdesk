@@ -1022,7 +1022,7 @@ const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 async function loadAssignmentForSnapshotEdit(gymId: string, id: string | string[]) {
   const { rows } = await db.query(
     `SELECT id, membership_plan_id, status, starts_at,
-            free_months, paid_months, bonus_months, pay_beforehand_months,
+            free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
             recurring_billing_interval, recurring_billing_unit, membership_fee_price
      FROM user_memberships WHERE id = ? AND gym_id = ?`,
     [id, gymId],
@@ -1078,7 +1078,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
   // Only the fields the caller sent are written, so a section's editor can save
   // Billing & Duration without having to resend the cadence it doesn't show.
   const patch: Record<string, number | string | null> = {};
-  for (const field of ['free_months', 'paid_months', 'bonus_months', 'pay_beforehand_months', 'recurring_billing_interval'] as const) {
+  for (const field of ['free_periods', 'paid_periods', 'bonus_periods', 'pay_beforehand_periods', 'recurring_billing_interval'] as const) {
     if (!(field in req.body)) continue;
     const value = nonNegativeInteger(req.body[field]);
     if (value === false) return res.status(400).json({ error: `${field} must be a non-negative integer` });
@@ -1128,7 +1128,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       // captured its snapshot above already has the Plan's cadence on it, so
       // sending one half of the pair is valid for it.
       const { rows: current } = await tx.query(
-        `SELECT recurring_billing_interval, recurring_billing_unit, paid_months, pay_beforehand_months
+        `SELECT recurring_billing_interval, recurring_billing_unit, paid_periods, pay_beforehand_periods
          FROM user_memberships WHERE id = ? AND gym_id = ?`,
         [req.params.id, gymId],
       );
@@ -1143,9 +1143,9 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       // The Pre-paid Duration is a slice of the Paid Duration, so it is checked
       // against the row as it will stand — sending only one of the two is valid,
       // and either one alone can break the bound.
-      const nextPaid = 'paid_months' in patch ? patch.paid_months : current[0].paid_months;
-      const nextPrepaid = 'pay_beforehand_months' in patch
-        ? patch.pay_beforehand_months : current[0].pay_beforehand_months;
+      const nextPaid = 'paid_periods' in patch ? patch.paid_periods : current[0].paid_periods;
+      const nextPrepaid = 'pay_beforehand_periods' in patch
+        ? patch.pay_beforehand_periods : current[0].pay_beforehand_periods;
       if (nextPrepaid != null && Number(nextPrepaid) > Number(nextPaid ?? 0)) throw new PrepaidBoundError();
 
       const assignments = Object.keys(patch).map((c) => `${c} = ?`).join(', ');
@@ -1163,8 +1163,8 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
     recordAudit(req, {
       action: 'update', entityType: 'user_membership', entityId: req.params.id,
       previous: {
-        free_months: um.free_months, paid_months: um.paid_months, bonus_months: um.bonus_months,
-        pay_beforehand_months: um.pay_beforehand_months,
+        free_periods: um.free_periods, paid_periods: um.paid_periods, bonus_periods: um.bonus_periods,
+        pay_beforehand_periods: um.pay_beforehand_periods,
         recurring_billing_interval: um.recurring_billing_interval,
         recurring_billing_unit: um.recurring_billing_unit,
         membership_fee_price: um.membership_fee_price,
@@ -1177,7 +1177,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
       return res.status(400).json({ error: 'recurring_billing_interval and recurring_billing_unit must be set together' });
     }
     if (err instanceof PrepaidBoundError) {
-      return res.status(400).json({ error: 'pay_beforehand_months cannot exceed paid_months' });
+      return res.status(400).json({ error: 'pay_beforehand_periods cannot exceed paid_periods' });
     }
     next(err);
   }

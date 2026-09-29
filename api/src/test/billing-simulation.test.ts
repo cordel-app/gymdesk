@@ -16,6 +16,10 @@ import {
 import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
 import { NO_PLAN_DURATION, toPlanDuration } from '../domain/planDuration';
 
+// #892 — a duration is a count of Billing Frequency periods; these cases are
+// all monthly, which is what the numbers meant before the ticket.
+const MONTHLY_CADENCE = { interval: 1, unit: 'month' as const };
+
 const START = '2026-09-01';
 
 function assignment(over: Partial<SimulationAssignment> = {}): SimulationAssignment {
@@ -594,7 +598,7 @@ describe('computeBillingSimulation — Membership Plan benefits (#635)', () => {
 describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
   it('waives the Membership Fee for the Free Period and continues to the first regular charge', () => {
     const result = computeBillingSimulation({
-      assignments: [assignment({ planDuration: toPlanDuration(2, 0, 0) })],
+      assignments: [assignment({ planDuration: toPlanDuration(2, 0, 0, 0, MONTHLY_CADENCE) })],
     });
     const events = section(result, 'month')!.events;
     expect(events.map((e) => e.date)).toEqual(['2026-09-01', '2026-10-01', '2026-11-01']);
@@ -609,7 +613,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
 
   it('bills the Paid Duration at the regular price, with no benefit line', () => {
     const result = computeBillingSimulation({
-      assignments: [assignment({ planDuration: toPlanDuration(1, 12, 0) })],
+      assignments: [assignment({ planDuration: toPlanDuration(1, 12, 0, 0, MONTHLY_CADENCE) })],
     });
     const events = section(result, 'month')!.events;
     // Free month, then the first paid one — which *is* the regular charge, so
@@ -620,7 +624,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
 
   it('projects through the Paid Duration when a Bonus Duration is still ahead', () => {
     const result = computeBillingSimulation({
-      assignments: [assignment({ planDuration: toPlanDuration(1, 2, 2) })],
+      assignments: [assignment({ planDuration: toPlanDuration(1, 2, 2, 0, MONTHLY_CADENCE) })],
     });
     const events = section(result, 'month')!.events;
     expect(events.map((e) => e.total)).toEqual([0, 100, 100, 0, 0, 100]);
@@ -634,7 +638,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
   it('changes nothing when no Billing & Duration is configured', () => {
     const withNothing = computeBillingSimulation({ assignments: [assignment()] });
     const withZeroes = computeBillingSimulation({
-      assignments: [assignment({ planDuration: toPlanDuration(0, 0, 0) })],
+      assignments: [assignment({ planDuration: toPlanDuration(0, 0, 0, 0, MONTHLY_CADENCE) })],
     });
     expect(withZeroes).toEqual(withNothing);
     expect(section(withZeroes, 'month')!.events).toHaveLength(1);
@@ -642,7 +646,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
 
   it('waives only the Membership Fee — a Period Benefit is still charged', () => {
     const result = computeBillingSimulation({
-      assignments: [assignment({ planDuration: toPlanDuration(1, 0, 0), planBenefits: [planBenefit()] })],
+      assignments: [assignment({ planDuration: toPlanDuration(1, 0, 0, 0, MONTHLY_CADENCE), planBenefits: [planBenefit()] })],
     });
     const first = section(result, 'month')!.events[0];
     expect(first.lines.map((l) => [l.label, l.actual_charge])).toEqual([
@@ -654,7 +658,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
 
   it('counts the periods from the assignment start date, not from the first of its month', () => {
     const result = computeBillingSimulation({
-      assignments: [assignment({ startsAt: '2026-09-20', planDuration: toPlanDuration(1, 0, 0) })],
+      assignments: [assignment({ startsAt: '2026-09-20', planDuration: toPlanDuration(1, 0, 0, 0, MONTHLY_CADENCE) })],
     });
     const events = section(result, 'month')!.events;
     expect(events.map((e) => [e.date, e.total])).toEqual([['2026-09-20', 0], ['2026-10-20', 100]]);
@@ -665,7 +669,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
     it('lets the Promotion charge its paid month even inside the Plan\'s Free Period', () => {
       const result = computeBillingSimulation({
         assignments: [assignment({
-          planDuration: toPlanDuration(3, 0, 0),
+          planDuration: toPlanDuration(3, 0, 0, 0, MONTHLY_CADENCE),
           promotions: [promotion({
             paidMonths: 1,
             membershipFeeBenefits: [{ action: 'fixed_price', value: 80, enabled: true, durationMonths: null }],
@@ -681,7 +685,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
     it('does not report the waiver twice when both would waive the fee', () => {
       const result = computeBillingSimulation({
         assignments: [assignment({
-          planDuration: toPlanDuration(2, 0, 0),
+          planDuration: toPlanDuration(2, 0, 0, 0, MONTHLY_CADENCE),
           promotions: [promotion({ freeMonths: 1 })],
         })],
       });
@@ -698,7 +702,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
     it('applies the Plan\'s own period once a Promotion has been revoked', () => {
       const result = computeBillingSimulation({
         assignments: [assignment({
-          planDuration: toPlanDuration(2, 0, 0),
+          planDuration: toPlanDuration(2, 0, 0, 0, MONTHLY_CADENCE),
           promotions: [promotion({
             paidMonths: 6, revokedAt: '2026-09-15',
             membershipFeeBenefits: [{ action: 'fixed_price', value: 80, enabled: true, durationMonths: null }],

@@ -235,7 +235,7 @@ describe('POST /me/payment-method/replace-requests', () => {
     // appears when the cycle owes a fee — so a free month, a Promotion or a
     // Free Period made updating a card impossible. This must not depend on it.
     await db.query(
-      'UPDATE user_memberships SET free_months = 12, paid_months = 12 WHERE id = ?',
+      'UPDATE user_memberships SET free_periods = 12, paid_periods = 12 WHERE id = ?',
       [membershipId],
     );
     const res = await request
@@ -244,7 +244,7 @@ describe('POST /me/payment-method/replace-requests', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(201);
     await db.query(
-      'UPDATE user_memberships SET free_months = NULL, paid_months = NULL WHERE id = ?',
+      'UPDATE user_memberships SET free_periods = NULL, paid_periods = NULL WHERE id = ?',
       [membershipId],
     );
   });

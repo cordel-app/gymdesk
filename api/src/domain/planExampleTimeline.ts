@@ -22,13 +22,13 @@
 //     `classifyPlanDurationPeriod()` (`domain/planDuration.ts`) — the one
 //     implementation `resolveMembershipFee()`, the nightly run and
 //     `GET /me/membership` price a cycle with — evaluated at the row's own start
-//     date. The Plan's durations are calendar months there, and this is a
-//     simulation of billing, not a second definition of it: showing "Free ×2"
-//     for a 4-weekly Plan whose free window really runs two calendar months
-//     would advertise a charge the run does not make. That is the thread's Q1
-//     answer ("Only the simulation"), and its visible consequence is that a
-//     4-weekly Plan with Free Period = 2 shows *three* free rows — the third
-//     4-week period still starts inside the two free months.
+//     date. Since #892 that classifier counts the Plan's durations in periods of
+//     the very cadence these rows step by, so the two halves of a row can no
+//     longer disagree: a 4-weekly Plan with Free Period = 2 shows exactly *two*
+//     free rows, and each row's status is the whole row's status. (Until #892 it
+//     showed three — the third 4-week period still started inside the two free
+//     calendar months — which is the inconsistency #892 removes, in the run as
+//     well as in the preview.)
 //
 // Nothing here is persisted and nothing here charges: a Membership Plan is not
 // assigned to anybody, so the timeline is an illustration anchored on a
@@ -37,22 +37,30 @@
 // preview is — `planDuration.ts` already refuses that snap, because a Plan's
 // durations are counted from a real assignment's `starts_at`.
 
-import { BillingDateUnit, advanceBillingDate } from './billingDate';
+import { advanceBillingDate } from './billingDate';
 import {
   PlanDuration,
+  PlanDurationCadence,
   PlanDurationStatus,
   classifyPlanDurationPeriod,
   planDurationWaivesFee,
+  withDurationCadence,
 } from './planDuration';
 
-/** The cadence one row spans — the Plan's stored `billing_policies` pair. */
-export interface PlanTimelineCadence {
-  interval: number;
-  unit: BillingDateUnit;
-}
+/**
+ * The cadence one row spans — the Plan's stored `billing_policies` pair, which
+ * since #892 is also the unit its durations are counted in
+ * (`PlanDurationCadence`).
+ */
+export type PlanTimelineCadence = PlanDurationCadence;
 
 export interface PlanExampleTimelineInput {
-  /** The Plan's Billing & Duration, already normalized by `toPlanDuration()`. */
+  /**
+   * The Plan's Billing & Duration, already normalized by `toPlanDuration()`.
+   * Its counts are what matter here — the cadence it carries is re-bound to
+   * `cadence` below, so the rows and the statuses cannot be stepped by
+   * different period lengths.
+   */
   duration: PlanDuration;
   /**
    * The Plan's `(recurring_billing_interval, recurring_billing_unit)`, or
@@ -107,7 +115,7 @@ export const TRAILING_REGULAR_PERIODS = 2;
 
 /**
  * Upper bound on the rows a timeline may hold. The durations are free-form
- * numbers on the Plan form; a Plan configured with 500 free months must not
+ * numbers on the Plan form; a Plan configured with 500 free periods must not
  * turn a card render into a 500-row table (or, for a weekly legacy cadence, a
  * multi-thousand-row one).
  */
@@ -129,14 +137,17 @@ const NO_CADENCE_REASON = 'Configure a billing frequency to preview an example t
  * a lie.
  */
 export function computePlanExampleTimeline(input: PlanExampleTimelineInput): PlanExampleTimelineResult {
-  const { duration, cadence, priceInclTax } = input;
+  const { cadence, priceInclTax } = input;
   if (!cadence || !Number.isInteger(Number(cadence.interval)) || Number(cadence.interval) < 1) {
     return { available: false, reason: NO_CADENCE_REASON, currency: 'EUR', anchorDate: null, periods: [] };
   }
 
+  // #892 — one period length for both halves of a row: the durations are
+  // counted in the same cadence the rows step by.
+  const duration = withDurationCadence(input.duration, cadence);
   const anchor = (input.anchorDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
   const interval = Number(cadence.interval);
-  const configured = duration.freeMonths + duration.paidMonths + duration.bonusMonths;
+  const configured = duration.freePeriods + duration.paidPeriods + duration.bonusPeriods;
   const count = Math.min(configured + TRAILING_REGULAR_PERIODS, MAX_TIMELINE_PERIODS);
 
   const periods: PlanExampleTimelinePeriod[] = [];

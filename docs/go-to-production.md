@@ -666,7 +666,7 @@ runbook is how.
       Billing Simulation and the member's My Membership page have shown €0 for those
       cycles since stages 8 and 10. Revenue for a gym selling free months will drop to
       what it was always quoting. Check who is affected before the deploy:
-      `SELECT gym_id, COUNT(*) FROM user_memberships WHERE status = 'active' AND (free_months > 0 OR bonus_months > 0)`.
+      `SELECT gym_id, COUNT(*) FROM user_memberships WHERE status = 'active' AND (free_periods > 0 OR bonus_periods > 0)` (the columns were named `free_months`/`bonus_months` until migration 201, #892).
 - [ ] **`waived_billing` rows block migration 185's `down()`** (#635 stage 11): the
       ledger is append-only, so `down()` keeps the widened CHECK (and says so in the
       deploy output) rather than deleting rows to make the narrow one fit. Roll the API
@@ -747,3 +747,33 @@ runbook is how.
       handler), so nothing has to happen at deploy time — but it writes a master with no
       thumbnail and applies none of #719's ownership rules, so it should not be given a
       new caller. Retire it once #719 part 3 has landed.
+
+- [ ] **Migration 201 must run *before* the API build that reads `*_periods`** (#892):
+      the rename of `free_months` / `paid_months` / `pay_beforehand_months` /
+      `bonus_months` to `*_periods` on `membership_plans` and `user_memberships` is a
+      breaking change in both directions — the old build queries the old names and the
+      new build the new ones. Migrate first, then deploy the API (the same order as
+      migration 185, #635 stage 11), and expect every request that prices a Membership
+      Fee to fail in the window between them. `RENAME COLUMN` is an in-place metadata
+      change in MySQL 8, and the migration pins `ALGORITHM=INPLACE, LOCK=NONE`
+      so a server that cannot do it in place fails loudly instead of rebuilding
+      `user_memberships` under a lock (migration 182's rule).
+- [ ] **Capture the durations before rolling migration 201 back** (#892): the
+      rename converts no values, so `down()` is value-safe *until* a 4-weekly
+      Plan's durations are first edited under the new rule — after that the
+      stored number means "N × 4 weeks" and the pre-#892 build a rollback
+      restores would read it as N calendar months, which is a silent
+      reinterpretation of a live contract. Capture
+      `SELECT id, gym_id, free_periods, paid_periods, pay_beforehand_periods, bonus_periods FROM membership_plans`
+      first, the way migration 189's item captures `billing_policies`.
+- [ ] **Announce that a 4-weekly Plan's free and bonus windows get shorter** (#892):
+      the four durations are counts of the Plan's own Billing Frequency periods now, so
+      a Plan billed every 4 Weeks with `Free Period = 3` runs free for 84 days instead
+      of three calendar months — and the cycles between the two readings start being
+      charged on the first run after the deploy. It *raises* real charges, exactly as
+      #635 stage 15 did. A Plan on the Month cadence is unaffected (1 × month is a
+      month), so the check is narrow — active assignments whose cadence is not monthly
+      and that still have a duration running:
+      `SELECT um.gym_id, COUNT(*) FROM user_memberships um LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id WHERE um.status = 'active' AND COALESCE(um.recurring_billing_unit, bp.recurring_billing_unit) <> 'month' AND (um.free_periods > 0 OR um.bonus_periods > 0 OR um.pay_beforehand_periods > 0) GROUP BY um.gym_id`
+      — tell those gyms before the deploy. Nothing is back-dated and no adjustment is
+      written: the run prices each cycle as it comes.

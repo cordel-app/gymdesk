@@ -5,7 +5,7 @@ import { recordAudit } from '../infra/audit';
 import { applyPeriodBenefit, PromotionBenefitAction } from '../domain/promotionBenefits';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
-import { toPlanDuration } from '../domain/planDuration';
+import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import {
   AppliedPromotionForBilling,
   MembershipFeeBenefit,
@@ -15,7 +15,7 @@ import { currentCycleDate } from './membership-fee-pricing';
 import { validatePromotionStacking } from '../domain/promotionStacking';
 import { canReapplyPromotion, promotionApplicationStatus } from '../domain/promotionApplicationStatus';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
-import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
+import { ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -375,29 +375,40 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
   const { rows: umRows } = await tx.query(
     `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price,
             um.membership_fee_price, um.starts_at, um.next_billing_date,
-            um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months,
-            p.free_months AS plan_free_months,
-            p.paid_months AS plan_paid_months,
-            p.bonus_months AS plan_bonus_months,
-            p.pay_beforehand_months AS plan_pay_beforehand_months,
+            um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
+            p.free_periods AS plan_free_periods,
+            p.paid_periods AS plan_paid_periods,
+            p.bonus_periods AS plan_bonus_periods,
+            p.pay_beforehand_periods AS plan_pay_beforehand_periods,
             um.personal_fee_benefit_action, um.personal_fee_benefit_value,
-            (um.free_months IS NOT NULL OR um.paid_months IS NOT NULL OR um.pay_beforehand_months IS NOT NULL
-             OR um.bonus_months IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+            ${ASSIGNMENT_CADENCE.interval()} AS duration_cadence_interval,
+            ${ASSIGNMENT_CADENCE.unit()} AS duration_cadence_unit,
+            (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
+             OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
             ) AS has_billing_snapshot
      FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+     LEFT JOIN billing_policies bp
+            ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
      WHERE um.id = ? AND um.gym_id = ?`,
     [userMembershipId, gymId],
   );
   if (umRows.length === 0) return null;
   const um = umRows[0];
+  const durationCadence = toPlanDurationCadence(um.duration_cadence_interval, um.duration_cadence_unit);
   const regular = (await regularMembershipFee(gymId, um, toDateOnly(um.starts_at))) ?? 0;
   const charge = resolveMembershipFee(regular, currentCycleDate(um), {
     startsAt: toDateOnly(um.starts_at),
+    // #892 — counts of the assignment's own Billing Frequency periods.
     planDuration: Number(um.has_billing_snapshot) === 1
-      ? toPlanDuration(um.free_months, um.paid_months, um.bonus_months, um.pay_beforehand_months)
-      : toPlanDuration(um.plan_free_months, um.plan_paid_months, um.plan_bonus_months, um.plan_pay_beforehand_months),
+      ? toPlanDuration(
+          um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods, durationCadence,
+        )
+      : toPlanDuration(
+          um.plan_free_periods, um.plan_paid_periods, um.plan_bonus_periods, um.plan_pay_beforehand_periods,
+          durationCadence,
+        ),
     // #772 — an adjustment event must be the difference between two prices the
     // member would actually be charged, so the personal benefit is on both.
     personalFeeBenefit: toPersonalFeeBenefit(um.personal_fee_benefit_action, um.personal_fee_benefit_value),
