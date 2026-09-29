@@ -412,7 +412,12 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
       .put(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: sessionItemId, quantity: 4 }] });
+      .send({
+        items: [{
+          gym_charge_id: sessionItemId, quantity: 4,
+          action: 'percentage_discount', value: 15,
+        }],
+      });
   });
 
   it('copies the Billing & Duration months and the benefit rows', async () => {
@@ -427,6 +432,9 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
     expect(dup.body.session_benefits).toHaveLength(1);
     expect(dup.body.session_benefits[0].gym_charge_id).toBe(sessionItemId);
     expect(dup.body.session_benefits[0].quantity).toBe(4);
+    // #896 stage 2: Duplicate is a copy, so the pricing treatment travels too.
+    expect(dup.body.session_benefits[0].action).toBe('percentage_discount');
+    expect(dup.body.session_benefits[0].value).toBe(15);
 
     // Editing the copy must not reach back into the original.
     await request
@@ -645,5 +653,119 @@ describe('Membership Plan mandatory Sellable Items (#893)', () => {
   it('404s a plan from another gym rather than reporting its mandatory items', async () => {
     const res = await periodicalBenefits(planId, gymB);
     expect(res.status).toBe(404);
+  });
+});
+
+// ─── The line's pricing treatment (#896 stage 2) ──────────────────────────────
+
+describe('Membership Plan benefit actions', () => {
+  let gymId: string;
+  let planId: number;
+  let itemId: number;
+
+  const putSession = (items: unknown[]) => request
+    .put(`/membership-plans/${planId}/session-benefits`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ items });
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MPB Action Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, 'MPB Action Plan');
+    itemId = await createSellableItem(gymId, 'Action Group Class', 'sessions', null);
+  });
+
+  it('defaults a brand new line to the neutral action', async () => {
+    const res = await putSession([{ gym_charge_id: itemId, quantity: 4 }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ quantity: 4, action: 'no_benefit', value: null });
+  });
+
+  it('stores a percentage discount and reports the value as a number', async () => {
+    const res = await putSession([
+      { gym_charge_id: itemId, quantity: 4, action: 'percentage_discount', value: 20 },
+    ]);
+    expect(res.status).toBe(200);
+    // Not the "20.00" string mysql2 hands back for a DECIMAL column.
+    expect(res.body[0]).toMatchObject({ action: 'percentage_discount', value: 20 });
+
+    const get = await request
+      .get(`/membership-plans/${planId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(get.body[0]).toMatchObject({ action: 'percentage_discount', value: 20 });
+  });
+
+  it('keeps a stored treatment when the save does not mention it', async () => {
+    // The replace-all `PUT` is how every other field of the section is edited,
+    // so a client that only knows `gym_charge_id` + `quantity` must not reset
+    // what someone configured. Clearing it stays possible, explicitly.
+    const res = await putSession([{ gym_charge_id: itemId, quantity: 9 }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ quantity: 9, action: 'percentage_discount', value: 20 });
+
+    const cleared = await putSession([{ gym_charge_id: itemId, quantity: 9, action: 'no_benefit' }]);
+    expect(cleared.body[0]).toMatchObject({ action: 'no_benefit', value: null });
+  });
+
+  it('refuses the two actions §16 keeps out of a Membership Plan', async () => {
+    for (const action of ['fixed_discount', 'fixed_price']) {
+      const res = await putSession([{ gym_charge_id: itemId, quantity: 1, action, value: 10 }]);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('action must be one of');
+    }
+  });
+
+  it('refuses a missing, out-of-range or superfluous value', async () => {
+    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount' }])).status)
+      .toBe(400);
+    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount', value: 120 }])).status)
+      .toBe(400);
+    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'waive', value: 5 }])).status)
+      .toBe(400);
+    const orphanValue = await putSession([{ gym_charge_id: itemId, quantity: 1, value: 20 }]);
+    expect(orphanValue.status).toBe(400);
+    expect(orphanValue.body.error).toBe('value requires an action');
+  });
+
+  it('leaves the section untouched when one line is rejected', async () => {
+    const before = await request
+      .get(`/membership-plans/${planId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'fixed_price', value: 10 }]);
+    const after = await request
+      .get(`/membership-plans/${planId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(after.body).toEqual(before.body);
+  });
+
+  it('reports a mandatory item the Plan has no row for at the neutral action', async () => {
+    // #893: the item is part of the section whether or not it is stored, and
+    // Mandatory says nothing about what it costs.
+    const mandatoryId = await createSellableItem(gymId, 'Action Mandatory Class', 'sessions', null);
+    await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
+
+    const get = await request
+      .get(`/membership-plans/${planId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    const implicit = get.body.find((row: any) => row.gym_charge_id === mandatoryId);
+    expect(implicit).toMatchObject({ implicit: true, action: 'no_benefit', value: null });
+  });
+
+  it('preserves a dropped mandatory item without repricing it', async () => {
+    const mandatoryId = await createSellableItem(gymId, 'Action Waived Class', 'sessions', null);
+    await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
+    await putSession([{ gym_charge_id: mandatoryId, quantity: 2, action: 'waive' }]);
+
+    // The client drops it; #893 puts it back, and #896 must not turn the waive
+    // it was configured with into a charge on the way.
+    const res = await putSession([]);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === mandatoryId);
+    expect(row).toMatchObject({ action: 'waive', value: null });
   });
 });

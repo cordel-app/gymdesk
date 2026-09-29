@@ -1,5 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
+import { SellableItemBenefit, toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
 import {
   SellableItemBenefitCategory,
   planBenefitTableForCategory,
@@ -73,6 +74,14 @@ export interface AssignedPlanBenefitRow {
   item_billing_frequency: string | null;
   unit_price: number;
   currency: string | null;
+  /**
+   * #896 stage 2 — the pricing treatment this line was agreed with, copied
+   * from the Plan section at assignment time and frozen here with the price.
+   * Read from the snapshot for the same reason the price is: the Plan's own
+   * row may have been re-configured since.
+   */
+  action: SellableItemBenefit['action'];
+  value: number | null;
 }
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
@@ -126,6 +135,9 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     item_billing_frequency: row.item_billing_frequency ?? null,
     unit_price: row.unit_price != null ? Number(row.unit_price) : 0,
     currency: row.currency ?? null,
+    // A snapshot row came from a Membership Plan section, so it is read with
+    // the Plan's option set — the three of §16 and no more.
+    ...toSellableItemBenefit('plan', row.action, row.value),
   };
 }
 
@@ -359,7 +371,10 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
     }
     // A newly added line freezes the Sellable Item as it is now. `gym_charges`
     // is not filtered on `deleted_at` for the same reason as at assignment
-    // time: the route has already decided the item may be attached.
+    // time: the route has already decided the item may be attached. Its
+    // `(action, value)` pair is the column's own neutral default (#896): the
+    // line was agreed here rather than copied from a Plan section, so there is
+    // no configured treatment to carry, and the item bills at its own price.
     await tx.query(
       `INSERT INTO ${table}
          (gym_id, user_membership_id, gym_charge_id, quantity,

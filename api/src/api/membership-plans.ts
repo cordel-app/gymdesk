@@ -29,6 +29,12 @@ import {
   mergeMandatoryBenefits,
   withMandatoryBenefits,
 } from '../domain/mandatoryPlanBenefits';
+import {
+  NO_SELLABLE_ITEM_BENEFIT,
+  SellableItemBenefit,
+  parseSellableItemBenefitInput,
+  shapeSellableItemBenefitRow,
+} from '../domain/sellableItemBenefitActions';
 
 interface PlanRow {
   id: number;
@@ -106,6 +112,9 @@ interface PlanSellableItemBenefitRow extends PlanBenefitRow {
   gym_charge_status: string;
   // #893: joined so the editor can hide Remove on a mandatory item and say why.
   gym_charge_mandatory: boolean | number;
+  // #896 stage 2: the line's own pricing treatment, normalized by the loader.
+  action: string;
+  value: number | null;
 }
 
 interface SellableItemRow {
@@ -228,10 +237,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     // 173), served with the plan so the Plans page renders them without three
     // extra round trips per card — same reason `sellable_items` is inlined above.
     ...(['session', 'oneoff', 'periodical'] as SellableItemBenefitCategory[]).map(category =>
-      db.query<PlanSellableItemBenefitRow>(
-        selectPlanSellableItemBenefits(planBenefitTableForCategory(category)),
-        [plan.id, gymId],
-      ).then(r => r.rows),
+      loadPlanBenefits(planBenefitTableForCategory(category), plan.id, gymId),
     ),
   ]);
 
@@ -749,15 +755,19 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       // records who made the copy, not who configured the original.
       for (const category of ['session', 'oneoff', 'periodical'] as SellableItemBenefitCategory[]) {
         const table = planBenefitTableForCategory(category);
+        // #896 stage 2: the `(action, value)` pricing treatment travels with the
+        // quantity — Duplicate is a copy, not a re-configuration.
         const { rows: benefits } = await tx.query(
-          `SELECT gym_charge_id, quantity FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`,
+          `SELECT gym_charge_id, quantity, \`action\`, \`value\` FROM ${table}
+            WHERE membership_plan_id = ? AND gym_id = ?`,
           [req.params.id, gymId],
         );
         for (const b of benefits) {
           await tx.query(
-            `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity, created_by_membership_id)
-             VALUES (?, ?, ?, ?, ?)`,
-            [gymId, insertId, b.gym_charge_id, b.quantity, callerMemberId],
+            `INSERT INTO ${table}
+               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`, created_by_membership_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, insertId, b.gym_charge_id, b.quantity, b.action, b.value, callerMemberId],
           );
         }
       }
@@ -1277,6 +1287,21 @@ function selectPlanSellableItemBenefits(table: string): string {
 }
 
 /**
+ * One Plan section's stored rows, with the `(action, value)` pair normalized
+ * (#896 stage 2): `value` a number rather than mysql2's `DECIMAL` string, and
+ * an action a Plan may not configure — `fixed_discount`, `fixed_price`, §16 —
+ * read back as the neutral default rather than leaking into the Plan editor.
+ */
+async function loadPlanBenefits(
+  table: string, planId: unknown, gymId: string,
+): Promise<PlanSellableItemBenefitRow[]> {
+  const { rows } = await db.query<PlanSellableItemBenefitRow>(
+    selectPlanSellableItemBenefits(table), [planId, gymId],
+  );
+  return rows.map((row) => shapeSellableItemBenefitRow('plan', row) as PlanSellableItemBenefitRow);
+}
+
+/**
  * #893: the gym's mandatory Sellable Items, as candidates for the rule in
  * `domain/mandatoryPlanBenefits.ts`. Active and non-deleted only — a mandatory
  * item that has been deactivated or deleted is not something a Plan can be
@@ -1308,9 +1333,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
     const { gymId } = getTenantContext(req);
     try {
       if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-      const { rows } = await db.query<PlanSellableItemBenefitRow>(
-        selectPlanSellableItemBenefits(table), [req.params.id, gymId],
-      );
+      const rows = await loadPlanBenefits(table, req.params.id, gymId);
       // #893 §1/§5: a mandatory item is part of the section whether or not this
       // Plan has a row for it — the editor and the read-only view both read this.
       const mandatory = mandatoryItemsForCategory(await loadMandatorySellableItems(gymId), category);
@@ -1340,9 +1363,14 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       if (seen.has(gymChargeId)) {
         return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
       }
+      // #896 stage 2 §5/§16 — a Plan may configure three of the five actions;
+      // `Fixed discount` and `Fixed Price` are a 400 here and a CHECK violation
+      // in SQL, so the dropdown is never what enforces it.
+      const parsed = parseSellableItemBenefitInput('plan', item);
+      if (parsed.error) return res.status(400).json({ error: parsed.error });
       seen.add(gymChargeId);
       gymChargeIds.push(gymChargeId);
-      submitted.push({ gym_charge_id: gymChargeId, quantity });
+      submitted.push({ gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit });
     }
 
     if (gymChargeIds.length > 0) {
@@ -1388,20 +1416,32 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
     const callerMemberId = await getCallerMembershipId(req);
     try {
       await db.transaction(async (tx) => {
+        // #896 stage 2: a replace-all must not rewrite what it was not asked
+        // about — a line the request named no treatment for keeps the one it is
+        // stored with, which is also what a mandatory item re-added by
+        // `withMandatoryBenefits()` gets, so preserving an item can never
+        // change what it costs.
+        const { rows: stored } = await tx.query(
+          `SELECT gym_charge_id, \`action\`, \`value\` FROM ${table}
+            WHERE membership_plan_id = ? AND gym_id = ? FOR UPDATE`,
+          [planId, gymId],
+        );
+        const kept = new Map<number, SellableItemBenefit>(
+          stored.map((r: any) => [Number(r.gym_charge_id), shapeSellableItemBenefitRow('plan', r)]),
+        );
         await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
         for (const item of toWrite) {
+          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_SELLABLE_ITEM_BENEFIT;
           await tx.query(
-            `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity, created_by_membership_id)
-             VALUES (?, ?, ?, ?, ?)`,
-            [gymId, planId, item.gym_charge_id, item.quantity, callerMemberId],
+            `INSERT INTO ${table}
+               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`, created_by_membership_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, planId, item.gym_charge_id, item.quantity, benefit.action, benefit.value, callerMemberId],
           );
         }
       });
       recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: planId, next: { [`${category}_benefits`]: toWrite } });
-      const { rows } = await db.query<PlanSellableItemBenefitRow>(
-        selectPlanSellableItemBenefits(table), [planId, gymId],
-      );
-      res.json(mergeMandatoryBenefits(rows, mandatory));
+      res.json(mergeMandatoryBenefits(await loadPlanBenefits(table, planId, gymId), mandatory));
     } catch (err) { next(err); }
   });
 }

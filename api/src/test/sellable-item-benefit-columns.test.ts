@@ -3,15 +3,15 @@
  * Sellable Item relationship tables (migration 203).
  *
  * Integration, because the thing under test *is* the schema: the columns, the
- * two CHECK sets and the default are only real against MySQL. The stage-2 API
- * that reads and writes the pair does not exist yet, so the action here is a
- * direct `db.query` rather than an HTTP call — except for the last block,
- * which goes through the existing routers to prove the new columns did not
- * change what they already do.
+ * two CHECK sets and the default are only real against MySQL, so the action
+ * here is a direct `db.query` rather than an HTTP call.
  *
  * The per-context option sets and the value rules themselves are pure and
  * covered by `sellable-item-benefit-actions.unit.test.ts`; this file is the
- * half that proves the database agrees with them.
+ * half that proves the database agrees with them. Stage 2's API — the six
+ * replace-all `PUT`s that validate and persist the pair — is covered where
+ * those routes already are, in `membership-plan-benefits.test.ts` and
+ * `promotions.test.ts`.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -240,7 +240,7 @@ describe('#896 — what the database accepts', () => {
   });
 });
 
-describe('#896 — the existing editors are unchanged until stage 2', () => {
+describe('#896 — a save that names no treatment writes the neutral default', () => {
   let gymId: string;
   let planId: number;
   let itemId: number;

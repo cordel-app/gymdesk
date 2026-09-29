@@ -39,6 +39,7 @@
 // quantity it was given and only a *missing* one is defaulted.
 
 import { SellableItemBenefitCategory, classifySellableItem } from './sellableItemClassification';
+import { DEFAULT_BENEFIT_ACTION, SellableItemBenefit } from './sellableItemBenefitActions';
 
 /**
  * The quantity a mandatory item is added with when a Plan does not have it
@@ -98,6 +99,13 @@ export interface PlanBenefitRow {
    * shows it (§1, §5) and the next save of the section persists it.
    */
   implicit?: boolean;
+  /**
+   * #896 stage 2 — the row's pricing treatment. A stored row reports what it
+   * holds; an implicit one reports the neutral default, because Mandatory says
+   * the item must be *there*, never what it costs.
+   */
+  action?: string;
+  value?: number | null;
   [key: string]: unknown;
 }
 
@@ -123,6 +131,10 @@ export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
       gym_charge_status: item.status,
       gym_charge_mandatory: 1,
       implicit: true,
+      // #896 stage 2: no row exists, so nothing was configured — the item is
+      // included at its own price until someone saves the section and edits it.
+      action: DEFAULT_BENEFIT_ACTION,
+      value: null,
     }));
   return [...stored, ...missing];
 }
@@ -131,6 +143,16 @@ export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
 export interface PlanBenefitWrite {
   gym_charge_id: number;
   quantity: number;
+  /**
+   * #896 stage 2 — the pricing treatment the request named for this line.
+   * Absent (or `null`) means it named none, which is not `no_benefit`: the
+   * route resolves it against what the line is already stored with, so a save
+   * that never mentions the pair cannot rewrite it (see
+   * `parseSellableItemBenefitInput`). A mandatory item re-added below carries
+   * none for exactly that reason — Mandatory says the item must be there, never
+   * what it costs, so preserving it can never change what it was agreed at.
+   */
+  benefit?: SellableItemBenefit | null;
 }
 
 /**
