@@ -48,3 +48,23 @@ export const listExpandedStyle: React.CSSProperties = {
   background: 'var(--gd-app-bg, #f5f5f5)',
   ...listRowDividerStyle,
 };
+
+/**
+ * A metadata pill inside a row's name cell — `System`, `Mandatory`.
+ *
+ * Smaller and quieter than `StatusBadge`, which carries a row's *state* in its
+ * own column; these sit on the name itself and only say what kind of row it is.
+ * #894 added the second one, so the three pages that draw them (Sellable Items,
+ * Taxes, Professional Services) read the look from here rather than each
+ * restating it — a fourth badge in a fourth page cannot drift from the rest.
+ */
+export const listNameBadgeStyle: React.CSSProperties = {
+  marginLeft: 6,
+  fontSize: 11,
+  fontWeight: 500,
+  color: '#888',
+  background: '#f0f0f0',
+  borderRadius: 4,
+  padding: '1px 5px',
+  verticalAlign: 'middle',
+};
