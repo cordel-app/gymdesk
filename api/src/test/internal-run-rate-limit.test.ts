@@ -1,5 +1,6 @@
 // Integration tests for the per-route limiter on the internal run endpoints
-// (#783): POST /billing/run, POST /billing/cleanup, POST /recurring-bookings/run.
+// (#783): POST /billing/run, POST /billing/cleanup, POST /recurring-bookings/run
+// and, since #900, POST /promotion-lifecycle/run.
 //
 // Every request here is refused by checkInternalSecret() — or by the limiter
 // before it — so no run executes and no row is touched. Each test takes its own
@@ -67,5 +68,17 @@ describe('internal run rate limit (#783)', () => {
     }
     expect((await post('/recurring-bookings/run', ip, RECURRING_SECRET)).status).toBe(429);
     expect((await post('/billing/cleanup', ip, BILLING_SECRET)).status).toBe(429);
+  });
+
+  // #900: the Promotion expiry sweep is mounted behind the same limiter, so an
+  // address that has spent the budget guessing at one internal route cannot
+  // carry on guessing at this one.
+  it('counts /promotion-lifecycle/run against the same budget', async () => {
+    const ip = '203.0.113.15';
+    for (let i = 0; i < LIMIT; i++) {
+      expect((await post('/promotion-lifecycle/run', ip, 'wrong')).status).toBe(401);
+    }
+    expect((await post('/promotion-lifecycle/run', ip, BILLING_SECRET)).status).toBe(429);
+    expect((await post('/billing/run', ip, BILLING_SECRET)).status).toBe(429);
   });
 });

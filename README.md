@@ -170,7 +170,7 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 | `PAYMENT_PAGE_URL` / `PAYMENT_OK_URL` / `PAYMENT_KO_URL` / `PAYMENT_NOTIFICATION_URL` | Hosted payment page, success/failure redirects and provider webhook URL |
 | `MONEI_API_KEY` / `MONEI_WEBHOOK_SECRET` | MONEI credentials (required to create payment requests) |
 | `MONEI_ACCOUNT_ID` | Optional — MONEI Connect sub-account |
-| `BILLING_INTERNAL_SECRET` | Secret for `POST /billing/run` and `/billing/cleanup` (nightly `billing-run.yml`) |
+| `BILLING_INTERNAL_SECRET` | Secret for `POST /billing/run`, `/billing/cleanup` and `/promotion-lifecycle/run` (nightly `billing-run.yml`) |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | Secret for `POST /recurring-bookings/run` (nightly `recurring-booking-run.yml`) |
 | `CLOUDFLARE_R2_ENDPOINT` / `_ACCESS_KEY_ID` / `_SECRET_ACCESS_KEY` / `_BUCKET` | Optional — object storage for uploads and gym folders; unset disables storage features |
 | `CLOUDFLARE_R2_PUBLIC_URL` | Optional: the bucket's public origin (r2.dev URL or custom domain) that stored image URLs are built on. Unset falls back to endpoint + bucket, which browsers cannot read |
