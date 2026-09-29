@@ -31,6 +31,24 @@ export interface SellableItemBenefitRow {
   gym_charge_type: string;
   gym_charge_billing_frequency: string | null;
   gym_charge_status: string;
+  /**
+   * #893: `gym_charges.mandatory`, joined server-side. Present only where the
+   * caller enforces the rule (the Membership Plan sections) — a Promotion's
+   * benefit rows do not carry it, which is why `enforceMandatory` is an
+   * explicit prop rather than something inferred from the field being there.
+   */
+  gym_charge_mandatory?: boolean | number;
+  /**
+   * #893: a mandatory item the Plan has no stored row for yet. The section
+   * shows it and the next save of the section persists it — the server decides
+   * this, never the editor.
+   */
+  implicit?: boolean;
+}
+
+/** #893: `tinyint(1)` from MySQL, `boolean` from a literal. */
+export function isMandatoryBenefitRow(row: SellableItemBenefitRow): boolean {
+  return row.gym_charge_mandatory === true || Number(row.gym_charge_mandatory) === 1;
 }
 
 /** A Sellable Item offered by the picker. `benefit_category` is computed
@@ -42,6 +60,8 @@ export interface SellableItemOption {
   billing_frequency: string | null;
   status: string;
   benefit_category: 'session' | 'oneoff' | 'periodical';
+  /** #893: `gym_charges.mandatory` — served by `GET /sellable-items` since #832. */
+  mandatory?: boolean | number;
 }
 
 type Translate = (key: string, values?: Record<string, unknown>) => string;
@@ -70,7 +90,7 @@ export function addBenefitRow(setDraft: SetDraft, categoryItems: SellableItemOpt
     {
       gym_charge_id: next.id, quantity: 1, gym_charge_name: next.name,
       gym_charge_type: next.type, gym_charge_billing_frequency: next.billing_frequency,
-      gym_charge_status: next.status,
+      gym_charge_status: next.status, gym_charge_mandatory: next.mandatory ?? 0,
     },
   ]);
 }
@@ -92,6 +112,7 @@ export function updateBenefitRow(
         next.gym_charge_type = item.type;
         next.gym_charge_billing_frequency = item.billing_frequency;
         next.gym_charge_status = item.status;
+        next.gym_charge_mandatory = item.mandatory ?? 0;
       }
     }
     return next;
@@ -114,10 +135,19 @@ const thSt: React.CSSProperties = {
 };
 const tdSt: React.CSSProperties = { padding: '4px 8px 4px 0', fontSize: 13 };
 const hintSt: React.CSSProperties = { margin: 0, fontSize: 13, color: '#888' };
+/**
+ * #893 §2/§3: the pill that says *why* a row has no Remove control. Same
+ * compact grey badge the Sellable Items list uses for `System`, so the two
+ * screens read as one visual language.
+ */
+export const mandatoryTagStyle: React.CSSProperties = {
+  marginLeft: 6, fontSize: 11, fontWeight: 500, color: '#888', background: '#f0f0f0',
+  borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle', whiteSpace: 'nowrap',
+};
 
 /** The editable grid: item picker + quantity (+ the item's own, read-only frequency). */
 export function SellableItemBenefitEditor({
-  t, addKey, draft, setDraft, categoryItems, showFrequency,
+  t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
 }: {
   t: Translate;
   addKey: string;
@@ -125,8 +155,21 @@ export function SellableItemBenefitEditor({
   setDraft: SetDraft;
   categoryItems: SellableItemOption[];
   showFrequency: boolean;
+  /**
+   * #893: Membership Plan sections only. A mandatory row then renders its item
+   * as a labelled value instead of a picker and has no Remove control — the
+   * item can neither be dropped nor swapped for another one. The rule itself is
+   * the API's (`domain/mandatoryPlanBenefits.ts`); this is presentation, so a
+   * client that bypasses it changes nothing. Promotions pass nothing and keep
+   * their existing behaviour unchanged (§9).
+   */
+  enforceMandatory?: boolean;
 }) {
   const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.gym_charge_id === c.id));
+  // #893 §3: the user must not have to guess why a row has no Remove control.
+  // A form's explanatory sentence stays in the form (#797), so it is rendered
+  // here and never beside the read-only values.
+  const hasMandatory = enforceMandatory && draft.some(isMandatoryBenefitRow);
   return (
     <>
       {draft.length > 0 && (
@@ -141,35 +184,48 @@ export function SellableItemBenefitEditor({
           <span style={colHeaderSt}>{t('col_quantity')}</span>
           {showFrequency && <span style={colHeaderSt}>{t('col_frequency')}</span>}
           <span />
-          {draft.map((row, idx) => (
-            <div key={row.gym_charge_id} style={{ display: 'contents' }}>
-              <select
-                value={row.gym_charge_id}
-                onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { gym_charge_id: parseInt(e.target.value, 10) })}
-                style={inlineSelectSt}
-              >
-                {benefitRowOptions(categoryItems, row).map((o) => (
-                  <option key={o.id} value={o.id}>{o.inactive ? `${o.name} ${t('inactive_item_tag')}` : o.name}</option>
-                ))}
-              </select>
-              <input
-                type="number" min="1" value={row.quantity}
-                onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { quantity: parseInt(e.target.value, 10) || 1 })}
-                style={{ ...inlineSelectSt, width: '100%' }}
-              />
-              {showFrequency && (
-                <span style={{ fontSize: 13, color: '#666' }}>
-                  {row.gym_charge_billing_frequency ? t(`frequency_${row.gym_charge_billing_frequency}`) : '—'}
-                </span>
-              )}
-              <button
-                onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}
-              >✕</button>
-            </div>
-          ))}
+          {draft.map((row, idx) => {
+            const mandatory = enforceMandatory && isMandatoryBenefitRow(row);
+            return (
+              <div key={row.gym_charge_id} style={{ display: 'contents' }}>
+                {mandatory ? (
+                  <span style={{ fontSize: 13 }}>
+                    {row.gym_charge_name}
+                    <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>
+                  </span>
+                ) : (
+                  <select
+                    value={row.gym_charge_id}
+                    onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { gym_charge_id: parseInt(e.target.value, 10) })}
+                    style={inlineSelectSt}
+                  >
+                    {benefitRowOptions(categoryItems, row).map((o) => (
+                      <option key={o.id} value={o.id}>{o.inactive ? `${o.name} ${t('inactive_item_tag')}` : o.name}</option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  type="number" min="1" value={row.quantity}
+                  onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { quantity: parseInt(e.target.value, 10) || 1 })}
+                  style={{ ...inlineSelectSt, width: '100%' }}
+                />
+                {showFrequency && (
+                  <span style={{ fontSize: 13, color: '#666' }}>
+                    {row.gym_charge_billing_frequency ? t(`frequency_${row.gym_charge_billing_frequency}`) : '—'}
+                  </span>
+                )}
+                {mandatory ? <span /> : (
+                  <button
+                    onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}
+                  >✕</button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+      {hasMandatory && <p style={{ ...hintSt, marginBottom: 8 }}>{t('mandatory_benefit_hint')}</p>}
       {hasMoreToAdd && (
         <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={btnSmall('#6c63ff')}>{t(addKey)}</button>
       )}
@@ -179,12 +235,15 @@ export function SellableItemBenefitEditor({
 
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
 export function SellableItemBenefitView({
-  t, emptyKey, rows, showFrequency,
+  t, emptyKey, rows, showFrequency, enforceMandatory = false,
 }: {
   t: Translate;
   emptyKey: string;
   rows: SellableItemBenefitRow[];
   showFrequency: boolean;
+  /** #893: tags a mandatory item here too, so the read-only half of the card
+   *  says the same thing the editor does. */
+  enforceMandatory?: boolean;
 }) {
   if (rows.length === 0) return <p style={hintSt}>{t(emptyKey)}</p>;
   return (
@@ -199,7 +258,12 @@ export function SellableItemBenefitView({
       <tbody>
         {rows.map((r) => (
           <tr key={r.gym_charge_id}>
-            <td style={tdSt}>{r.gym_charge_name}{r.gym_charge_status !== 'active' && ` ${t('inactive_item_tag')}`}</td>
+            <td style={tdSt}>
+              {r.gym_charge_name}{r.gym_charge_status !== 'active' && ` ${t('inactive_item_tag')}`}
+              {enforceMandatory && isMandatoryBenefitRow(r) && (
+                <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>
+              )}
+            </td>
             <td style={tdSt}>{r.quantity}</td>
             {showFrequency && (
               <td style={tdSt}>{r.gym_charge_billing_frequency ? t(`frequency_${r.gym_charge_billing_frequency}`) : '—'}</td>

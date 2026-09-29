@@ -1092,6 +1092,8 @@
     "col_quantity": "Cantidad",
     "col_frequency": "Frecuencia",
     "inactive_item_tag": "(inactivo)",
+    "mandatory_item_tag": "Obligatorio",
+    "mandatory_benefit_hint": "Los artículos vendibles obligatorios forman parte siempre de este plan de socio y no se pueden eliminar.",
     "frequency_week": "Semana(s)",
     "frequency_month": "Mes(es)",
     "frequency_four_weeks": "4 semanas",

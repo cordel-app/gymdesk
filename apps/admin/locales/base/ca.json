@@ -1092,6 +1092,8 @@
     "col_quantity": "Quantitat",
     "col_frequency": "Freqüència",
     "inactive_item_tag": "(inactiu)",
+    "mandatory_item_tag": "Obligatori",
+    "mandatory_benefit_hint": "Els articles venibles obligatoris formen part sempre d’aquest pla de soci i no es poden eliminar.",
     "frequency_week": "Setmana(es)",
     "frequency_month": "Mes(os)",
     "frequency_four_weeks": "4 setmanes",

@@ -1259,6 +1259,7 @@ export default function PlansPage() {
                               setDraft={setBenefitDraft}
                               categoryItems={categoryItems(section)}
                               showFrequency={showFrequency}
+                              enforceMandatory
                             />
                             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
                               <button onClick={cancelBenefitEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
@@ -1273,6 +1274,7 @@ export default function PlansPage() {
                             emptyKey={emptyKey}
                             rows={savedBenefits(plan, section)}
                             showFrequency={showFrequency}
+                            enforceMandatory
                           />
                         )}
                       </div>

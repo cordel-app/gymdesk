@@ -1403,6 +1403,22 @@ Reference implementation: `api/src/domain/planExampleTimeline.ts` + `api/src/api
 
 ---
 
+## Catalogue Flag That Forces a Row into a Replace-All Relation (#893)
+
+When a catalogue attribute means "every parent must carry this child" — a Mandatory Sellable Item in every Membership Plan — the rule belongs entirely to the API, and the relation stays a replace-all `PUT`:
+
+- **One pure module decides everything.** `api/src/domain/mandatoryPlanBenefits.ts` answers three questions and nothing else: which catalogue rows are candidates, what a read reports (`mergeMandatoryBenefits()` — stored rows plus a missing forced one, flagged `implicit: true` at the default configuration), and what a write persists (`withMandatoryBenefits()`). No DB, no HTTP, so it is unit-tested directly.
+- **Preserve, don't reject.** A `PUT` that omits a forced row writes it anyway rather than 400ing. That is what makes the rule retroactive without a migration or a `GET` with a side effect: the first save of any section is when an existing parent picks up a row that became mandatory after it was configured. A 400 would hand the user an error about a row they never chose.
+- **The flag forces presence, never configuration.** A submitted forced row passes through untouched — quantity, dates, whatever the relation carries. Only a *missing* one is defaulted, and the default is named once as a constant.
+- **Candidates are the rows the relation would accept anyway.** Active and non-deleted only. Forcing in a row the same `PUT` validates against (an inactive catalogue item) would make an unrelated catalogue change fail every parent's save.
+- **Reads and the embedded copy merge through the same call.** The per-section `GET` and the parent's enriched response both call the merge, or the expanded card and the editor disagree about what the section holds.
+- **The frontend is told, not trusted.** The shared editor takes an explicit opt-in prop (`enforceMandatory`) and the row carries the joined flag; it renders the row without a Remove control **and without a picker that could swap the item away**, plus the sentence saying why — in the form only (#797). Inferring the behaviour from "the field is present in the payload" would silently change the other page that shares the component the day its endpoint starts returning the column.
+- **A flag with one consumer is documented as having one.** The catalogue-side constraint in `CLAUDE.md` said "nothing reads it yet"; a ticket that reads it says which half it read and leaves the rest out of scope, so the next ticket still knows what has not been decided.
+
+Reference implementation: `api/src/domain/mandatoryPlanBenefits.ts` + the `PLAN_BENEFIT_ROUTES` loop in `api/src/api/membership-plans.ts` + `apps/admin/src/components/SellableItemBenefits.tsx`.
+
+---
+
 ## Two Screens, One Read-Only Summary (#879)
 
 When a ticket asks that one card's section "look like" another card's — same information, two presentations — the answer is the **same component**, not a second stylesheet that happens to agree today:

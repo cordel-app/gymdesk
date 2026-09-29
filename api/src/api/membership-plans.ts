@@ -21,6 +21,14 @@ import {
   planBenefitTableForCategory,
   SellableItemBenefitCategory,
 } from '../domain/sellableItemClassification';
+import {
+  MandatorySellableItem,
+  PlanBenefitRow,
+  PlanBenefitWrite,
+  mandatoryItemsForCategory,
+  mergeMandatoryBenefits,
+  withMandatoryBenefits,
+} from '../domain/mandatoryPlanBenefits';
 
 interface PlanRow {
   id: number;
@@ -86,7 +94,7 @@ interface BillingPolicyRow {
 // (migration 173). `gym_charge_*` comes from the join, so an item that has
 // since gone inactive still resolves to its real name and status instead of a
 // bare id — same shape the Promotion benefit endpoints return.
-interface PlanSellableItemBenefitRow {
+interface PlanSellableItemBenefitRow extends PlanBenefitRow {
   id: number;
   gym_id: string;
   membership_plan_id: number;
@@ -96,6 +104,8 @@ interface PlanSellableItemBenefitRow {
   gym_charge_type: string;
   gym_charge_billing_frequency: string | null;
   gym_charge_status: string;
+  // #893: joined so the editor can hide Remove on a mandatory item and say why.
+  gym_charge_mandatory: boolean | number;
 }
 
 interface SellableItemRow {
@@ -112,6 +122,8 @@ interface SellableItemRow {
   availability: string | null;
   enrollment_status: string;
   is_system: boolean | number;
+  // #893: whether every Membership Plan must carry this item.
+  mandatory: boolean | number;
 }
 
 export const membershipPlansRouter = Router();
@@ -180,7 +192,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     // populate the Benefit selectors without a separate round trip.
     db.query<SellableItemRow>(
       `SELECT gc.id, gc.gym_id, gc.name, gc.type, gc.amount, gc.currency, gc.billing_frequency,
-              gc.status, gc.availability, gc.enrollment_status, gc.is_system,
+              gc.status, gc.availability, gc.enrollment_status, gc.is_system, gc.mandatory,
               ct.code AS charge_type_code, ct.name AS charge_type_name
        FROM gym_charges gc
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -296,9 +308,13 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     centers,
     member_count: memberCount,
     promotion_count: promotionCount,
-    session_benefits: sessionBenefits,
-    oneoff_benefits: oneoffBenefits,
-    periodical_benefits: periodicalBenefits,
+    // #893: a Mandatory Sellable Item is part of every Plan, so each section is
+    // the stored rows plus the mandatory items this Plan has no row for yet.
+    // `sellableItems` above is already the gym's active, non-deleted catalogue —
+    // exactly the candidate set the rule takes — so no extra round trip.
+    session_benefits: mergeMandatoryBenefits(sessionBenefits, mandatoryItemsForCategory(sellableItems, 'session')),
+    oneoff_benefits: mergeMandatoryBenefits(oneoffBenefits, mandatoryItemsForCategory(sellableItems, 'oneoff')),
+    periodical_benefits: mergeMandatoryBenefits(periodicalBenefits, mandatoryItemsForCategory(sellableItems, 'periodical')),
     sellable_items: sellableItems,
     tax_rate_name: taxRate ? taxRate.name : null,
     tax_rate_percent: taxRate ? taxRate.rate_percent : null,
@@ -1240,11 +1256,31 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 
 function selectPlanSellableItemBenefits(table: string): string {
   return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
-                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status
+                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status,
+                 gc.mandatory AS gym_charge_mandatory
           FROM ${table} b
           JOIN gym_charges gc ON gc.id = b.gym_charge_id
           WHERE b.membership_plan_id = ? AND b.gym_id = ?
           ORDER BY gym_charge_name ASC`;
+}
+
+/**
+ * #893: the gym's mandatory Sellable Items, as candidates for the rule in
+ * `domain/mandatoryPlanBenefits.ts`. Active and non-deleted only — a mandatory
+ * item that has been deactivated or deleted is not something a Plan can be
+ * forced to carry, and the benefit `PUT` already refuses a newly selected
+ * inactive item. `enrichPlan` does not call this: it already has the same
+ * catalogue in hand for the Benefit pickers.
+ */
+async function loadMandatorySellableItems(gymId: string): Promise<MandatorySellableItem[]> {
+  const { rows } = await db.query<MandatorySellableItem>(
+    `SELECT id, name, type, billing_frequency, status, mandatory
+       FROM gym_charges
+      WHERE gym_id = ? AND deleted_at IS NULL AND status = 'active' AND mandatory = 1
+      ORDER BY name ASC`,
+    [gymId],
+  );
+  return rows;
 }
 
 const PLAN_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
@@ -1260,8 +1296,13 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
     const { gymId } = getTenantContext(req);
     try {
       if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
-      const { rows } = await db.query(selectPlanSellableItemBenefits(table), [req.params.id, gymId]);
-      res.json(rows);
+      const { rows } = await db.query<PlanSellableItemBenefitRow>(
+        selectPlanSellableItemBenefits(table), [req.params.id, gymId],
+      );
+      // #893 §1/§5: a mandatory item is part of the section whether or not this
+      // Plan has a row for it — the editor and the read-only view both read this.
+      const mandatory = mandatoryItemsForCategory(await loadMandatorySellableItems(gymId), category);
+      res.json(mergeMandatoryBenefits(rows, mandatory));
     } catch (err) { next(err); }
   });
 
@@ -1273,6 +1314,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
     if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
 
     const gymChargeIds: number[] = [];
+    const submitted: PlanBenefitWrite[] = [];
     const seen = new Set<number>();
     for (const item of items) {
       const gymChargeId = parseInt(item.gym_charge_id, 10);
@@ -1288,6 +1330,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       }
       seen.add(gymChargeId);
       gymChargeIds.push(gymChargeId);
+      submitted.push({ gym_charge_id: gymChargeId, quantity });
     }
 
     if (gymChargeIds.length > 0) {
@@ -1321,21 +1364,32 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       }
     }
 
+    // #893 §7: the client cannot drop a mandatory item, whatever it sends.
+    // Preserving it rather than 400ing is the ticket's own alternative and is
+    // what makes §5 work — the first save of any section is when an existing
+    // Plan picks up an item that became mandatory after it was configured.
+    // A mandatory item the client *did* send passes through untouched, quantity
+    // included (§4), and §8's no-duplicates rule is the merge's `has` check.
+    const mandatory = mandatoryItemsForCategory(await loadMandatorySellableItems(gymId), category);
+    const toWrite = withMandatoryBenefits(submitted, mandatory);
+
     const callerMemberId = await getCallerMembershipId(req);
     try {
       await db.transaction(async (tx) => {
         await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
-        for (const item of items) {
+        for (const item of toWrite) {
           await tx.query(
             `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity, created_by_membership_id)
              VALUES (?, ?, ?, ?, ?)`,
-            [gymId, planId, parseInt(item.gym_charge_id, 10), parseInt(item.quantity, 10), callerMemberId],
+            [gymId, planId, item.gym_charge_id, item.quantity, callerMemberId],
           );
         }
       });
-      recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: planId, next: { [`${category}_benefits`]: items } });
-      const { rows } = await db.query(selectPlanSellableItemBenefits(table), [planId, gymId]);
-      res.json(rows);
+      recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: planId, next: { [`${category}_benefits`]: toWrite } });
+      const { rows } = await db.query<PlanSellableItemBenefitRow>(
+        selectPlanSellableItemBenefits(table), [planId, gymId],
+      );
+      res.json(mergeMandatoryBenefits(rows, mandatory));
     } catch (err) { next(err); }
   });
 }
