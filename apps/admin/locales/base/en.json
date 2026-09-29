@@ -1106,6 +1106,8 @@
     "col_quantity": "Quantity",
     "col_frequency": "Frequency",
     "inactive_item_tag": "(inactive)",
+    "mandatory_item_tag": "Mandatory",
+    "mandatory_benefit_hint": "Mandatory Sellable Items are always part of this Membership Plan and cannot be removed.",
     "frequency_week": "Week(s)",
     "frequency_month": "Month(s)",
     "frequency_four_weeks": "4 Weeks",

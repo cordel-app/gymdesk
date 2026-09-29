@@ -469,3 +469,181 @@ describe('Membership Plan legacy sections (stage 1 is additive)', () => {
     expect(res.body.example_timeline).toBeDefined();
   });
 });
+
+// ─── #893: Mandatory Sellable Items are always part of the Plan ───────────────
+
+describe('Membership Plan mandatory Sellable Items (#893)', () => {
+  let gymId: string;
+  let gymB: string;
+  let planId: number;
+  let insuranceId: number;   // periodical, mandatory
+  let lockerId: number;      // periodical, not mandatory
+  let registrationId: number; // oneoff, mandatory
+
+  async function setMandatory(id: number, mandatory: 0 | 1) {
+    await db.query('UPDATE gym_charges SET mandatory = ? WHERE id = ?', [mandatory, id]);
+  }
+
+  async function periodicalBenefits(plan: number, gym: string) {
+    const res = await request
+      .get(`/membership-plans/${plan}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gym);
+    return res;
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MPB Mandatory Gym');
+    gymB = await createTestGym('MPB Mandatory Gym B');
+    await createTestMembership(gymId, 'admin');
+    await createTestMembership(gymB, 'admin');
+    planId = await createPlan(gymId, 'MPB Mandatory Plan');
+    insuranceId = await createSellableItem(gymId, 'Insurance Fee', 'fee', 'year');
+    lockerId = await createSellableItem(gymId, 'Locker Rental', 'fee', 'month');
+    registrationId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
+    await setMandatory(insuranceId, 1);
+    await setMandatory(registrationId, 1);
+  });
+
+  it('reports a mandatory item the Plan has no row for, flagged implicit', async () => {
+    const res = await periodicalBenefits(planId, gymId);
+    expect(res.status).toBe(200);
+    const insurance = res.body.find((r: any) => r.gym_charge_id === insuranceId);
+    expect(insurance).toBeDefined();
+    expect(insurance.implicit).toBe(true);
+    expect(insurance.quantity).toBe(1);
+    expect(Number(insurance.gym_charge_mandatory)).toBe(1);
+    expect(res.body.some((r: any) => r.gym_charge_id === lockerId)).toBe(false);
+  });
+
+  it('puts the mandatory item in its own section only', async () => {
+    const sessions = await request
+      .get(`/membership-plans/${planId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(sessions.body).toHaveLength(0);
+    const oneoff = await request
+      .get(`/membership-plans/${planId}/oneoff-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(oneoff.body.map((r: any) => r.gym_charge_id)).toEqual([registrationId]);
+  });
+
+  it('embeds the same merged sections in the Plan itself', async () => {
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.periodical_benefits.map((r: any) => r.gym_charge_id)).toContain(insuranceId);
+    expect(res.body.oneoff_benefits.map((r: any) => r.gym_charge_id)).toContain(registrationId);
+  });
+
+  it('writes the mandatory item even when the save leaves it out (§7)', async () => {
+    const res = await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: lockerId, quantity: 1 }] });
+    expect(res.status).toBe(200);
+    const ids = res.body.map((r: any) => r.gym_charge_id);
+    expect(ids).toContain(insuranceId);
+    expect(ids).toContain(lockerId);
+    // Persisted, not merely reported: the row exists and is no longer implicit.
+    const { rows } = await db.query(
+      'SELECT gym_charge_id, quantity FROM membership_plan_periodical WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      [planId, insuranceId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].quantity).toBe(1);
+    const after = await periodicalBenefits(planId, gymId);
+    expect(after.body.find((r: any) => r.gym_charge_id === insuranceId).implicit).toBeUndefined();
+  });
+
+  it('cannot be emptied out of the section', async () => {
+    const res = await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.map((r: any) => r.gym_charge_id)).toEqual([insuranceId]);
+  });
+
+  it('keeps the quantity the Plan configured (§4)', async () => {
+    const res = await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: insuranceId, quantity: 3 }] });
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].quantity).toBe(3);
+  });
+
+  it('never duplicates the item (§8)', async () => {
+    await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: insuranceId, quantity: 2 }, { gym_charge_id: lockerId, quantity: 1 }] });
+    const { rows } = await db.query(
+      'SELECT gym_charge_id FROM membership_plan_periodical WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      [planId, insuranceId],
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  it('becomes removable once the item is no longer mandatory (§6)', async () => {
+    await setMandatory(insuranceId, 0);
+    const res = await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: lockerId, quantity: 1 }] });
+    expect(res.status).toBe(200);
+    expect(res.body.map((r: any) => r.gym_charge_id)).toEqual([lockerId]);
+    await setMandatory(insuranceId, 1);
+  });
+
+  it('does not remove a configured item just because it stopped being mandatory (§6)', async () => {
+    await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: insuranceId, quantity: 5 }] });
+    await setMandatory(insuranceId, 0);
+    const res = await periodicalBenefits(planId, gymId);
+    const row = res.body.find((r: any) => r.gym_charge_id === insuranceId);
+    expect(row).toBeDefined();
+    expect(row.quantity).toBe(5);
+    await setMandatory(insuranceId, 1);
+  });
+
+  it('ignores a mandatory item that is inactive or soft-deleted', async () => {
+    const plan = await createPlan(gymId, 'MPB Mandatory Inactive Plan');
+    const inactive = await createSellableItem(gymId, 'Inactive Mandatory', 'fee', 'month', 'inactive');
+    await setMandatory(inactive, 1);
+    const deleted = await createSellableItem(gymId, 'Deleted Mandatory', 'fee', 'month');
+    await setMandatory(deleted, 1);
+    await db.query('UPDATE gym_charges SET deleted_at = NOW() WHERE id = ?', [deleted]);
+
+    const res = await periodicalBenefits(plan, gymId);
+    const ids = res.body.map((r: any) => r.gym_charge_id);
+    expect(ids).not.toContain(inactive);
+    expect(ids).not.toContain(deleted);
+    expect(ids).toContain(insuranceId);
+  });
+
+  it("stays within the gym — another gym's mandatory item never appears", async () => {
+    const planB = await createPlan(gymB, 'MPB Mandatory Plan B');
+    const res = await periodicalBenefits(planB, gymB);
+    expect(res.status).toBe(200);
+    expect(res.body.map((r: any) => r.gym_charge_id)).not.toContain(insuranceId);
+  });
+
+  it('404s a plan from another gym rather than reporting its mandatory items', async () => {
+    const res = await periodicalBenefits(planId, gymB);
+    expect(res.status).toBe(404);
+  });
+});
