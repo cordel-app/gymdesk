@@ -9,6 +9,10 @@ import { toPlanDuration } from '../domain/planDuration';
 import { promotionTimelineEndsOn } from '../domain/promotionTimeline';
 import { computeUpcomingPayments } from '../api/me';
 
+// #892 — a duration is a count of Billing Frequency periods; these cases are
+// all monthly, which is what the numbers meant before the ticket.
+const MONTHLY_CADENCE = { interval: 1, unit: 'month' as const };
+
 /**
  * #635 stage 11 — the Membership Fee owed on one date.
  *
@@ -42,7 +46,7 @@ function promotion(over: Partial<SimulationPromotion> = {}): SimulationPromotion
 function context(over: Partial<MembershipFeeContext> = {}): MembershipFeeContext {
   return {
     startsAt: '2026-01-01',
-    planDuration: toPlanDuration(0, 0, 0),
+    planDuration: toPlanDuration(0, 0, 0, 0, MONTHLY_CADENCE),
     personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
     promotions: [],
     ...over,
@@ -59,7 +63,7 @@ describe('resolveMembershipFee — the Plan\'s own Billing & Duration', () => {
 
   it('waives the fee inside the Free Period, naming the period on the benefit', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-01-15', context({
-      planDuration: toPlanDuration(1, 2, 0),
+      planDuration: toPlanDuration(1, 2, 0, 0, MONTHLY_CADENCE),
     }));
     expect(charge.amount).toBe(0);
     expect(charge.benefits).toEqual([
@@ -69,7 +73,7 @@ describe('resolveMembershipFee — the Plan\'s own Billing & Duration', () => {
 
   it('charges the regular fee inside the Paid Duration', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-02-15', context({
-      planDuration: toPlanDuration(1, 2, 0),
+      planDuration: toPlanDuration(1, 2, 0, 0, MONTHLY_CADENCE),
     }));
     expect(charge.amount).toBe(REGULAR);
     expect(charge.benefits).toEqual([]);
@@ -77,7 +81,7 @@ describe('resolveMembershipFee — the Plan\'s own Billing & Duration', () => {
 
   it('waives the fee inside the Bonus Duration', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-04-15', context({
-      planDuration: toPlanDuration(1, 2, 2),
+      planDuration: toPlanDuration(1, 2, 2, 0, MONTHLY_CADENCE),
     }));
     expect(charge.amount).toBe(0);
     expect(charge.benefits[0].period_status).toBe('bonus_plan');
@@ -85,7 +89,7 @@ describe('resolveMembershipFee — the Plan\'s own Billing & Duration', () => {
 
   it('charges the regular fee once every configured period has run out', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-07-01', context({
-      planDuration: toPlanDuration(1, 2, 2),
+      planDuration: toPlanDuration(1, 2, 2, 0, MONTHLY_CADENCE),
     }));
     expect(charge.amount).toBe(REGULAR);
   });
@@ -94,7 +98,7 @@ describe('resolveMembershipFee — the Plan\'s own Billing & Duration', () => {
   // before it belongs to no period at all.
   it('charges the regular fee for a date before the assignment starts', () => {
     const charge = resolveMembershipFee(REGULAR, '2025-12-01', context({
-      planDuration: toPlanDuration(1, 0, 0),
+      planDuration: toPlanDuration(1, 0, 0, 0, MONTHLY_CADENCE),
     }));
     expect(charge.amount).toBe(REGULAR);
   });
@@ -113,7 +117,7 @@ describe('resolveMembershipFee — an applied Promotion outranks the Plan', () =
   // Period must NOT waive a month the Promotion charges for.
   it('charges the Promotion\'s paid month even where the Plan\'s Free Period covers it', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-01-15', context({
-      planDuration: toPlanDuration(6, 0, 0),
+      planDuration: toPlanDuration(6, 0, 0, 0, MONTHLY_CADENCE),
       promotions: [promotion({ paidMonths: 3 })],
     }));
     expect(charge.amount).toBe(REGULAR);
@@ -281,7 +285,7 @@ describe('#635 stage 12 — a Promotion\'s Membership Fee Benefit ends with its 
   it('still lets the assignment\'s own Free Period waive a cycle no Promotion governs', () => {
     const ctx = context({
       startsAt: '2026-01-01',
-      planDuration: toPlanDuration(1, 12, 0),
+      planDuration: toPlanDuration(1, 12, 0, 0, MONTHLY_CADENCE),
       // Revoked before the Plan's free month would be billed, so the Promotion
       // no longer governs the date and the contract's own period decides it.
       promotions: [promotion({ paidMonths: 3, appliedAt: '2026-01-01', revokedAt: '2026-01-05' })],

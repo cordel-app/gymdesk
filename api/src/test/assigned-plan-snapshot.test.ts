@@ -46,7 +46,7 @@ async function createPlan(gymId: string, opts: {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans
        (gym_id, name, lifecycle_status, enrollment_status, member_limit,
-        free_months, paid_months, bonus_months)
+        free_periods, paid_periods, bonus_periods)
      VALUES (?, ?, 'active', ?, '1', ?, ?, ?)`,
     [gymId, `APS-Plan-${uniq()}`, enrollment, freeMonths, paidMonths, bonusMonths],
   );
@@ -177,9 +177,9 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
     const res = await getAssignment(gymId, umId);
     expect(res.status).toBe(200);
     expect(res.body.snapshot).toMatchObject({
-      free_months: 1,
-      paid_months: 12,
-      bonus_months: 2,
+      free_periods: 1,
+      paid_periods: 12,
+      bonus_periods: 2,
       recurring_billing_interval: 1,
       recurring_billing_unit: 'month',
       membership_fee_price: 75,
@@ -200,7 +200,7 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
   // §13 — every row of the ticket's "must NOT change" table, in one pass.
   it('does not move when the Plan, its price or a Sellable Item is edited afterwards', async () => {
     await db.query(
-      'UPDATE membership_plans SET free_months = 6, paid_months = 24, bonus_months = 0 WHERE id = ?',
+      'UPDATE membership_plans SET free_periods = 6, paid_periods = 24, bonus_periods = 0 WHERE id = ?',
       [planId],
     );
     await db.query('UPDATE billing_policies SET recurring_billing_interval = 4, recurring_billing_unit = ? WHERE membership_plan_id = ?', ['week', planId]);
@@ -210,7 +210,7 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
 
     const { body } = await getAssignment(gymId, umId);
     expect(body.snapshot).toMatchObject({
-      free_months: 1, paid_months: 12, bonus_months: 2,
+      free_periods: 1, paid_periods: 12, bonus_periods: 2,
       recurring_billing_interval: 1, recurring_billing_unit: 'month',
       membership_fee_price: 75,
     });
@@ -254,13 +254,13 @@ describe('the other assignment entry points snapshot too', () => {
 
     const fresh = await getAssignment(gymId, res.body.id);
     expect(fresh.body.snapshot).toMatchObject({
-      free_months: 0, paid_months: 6, bonus_months: null,
+      free_periods: 0, paid_periods: 6, bonus_periods: null,
       recurring_billing_interval: 1, recurring_billing_unit: 'year',
       membership_fee_price: 120,
     });
 
     const superseded = await getAssignment(gymId, created.body.id);
-    expect(superseded.body.snapshot).toMatchObject({ paid_months: 12, membership_fee_price: 75 });
+    expect(superseded.body.snapshot).toMatchObject({ paid_periods: 12, membership_fee_price: 75 });
   });
 
   it('POST /membership-plans/:id/assign snapshots as well', async () => {
@@ -400,7 +400,7 @@ describe('an assignment with no snapshot still reads back', () => {
     const res = await getAssignment(gymId, umId);
     expect(res.status).toBe(200);
     expect(res.body.snapshot).toMatchObject({
-      free_months: null, paid_months: null, bonus_months: null,
+      free_periods: null, paid_periods: null, bonus_periods: null,
       recurring_billing_interval: null, recurring_billing_unit: null,
       membership_fee_price: null,
       session_benefits: [], oneoff_benefits: [], periodical_benefits: [],

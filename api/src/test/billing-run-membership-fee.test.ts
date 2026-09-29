@@ -256,7 +256,7 @@ describe('POST /billing/run — the Membership Fee of a lapsed Promotion (#635 s
     const memberId = await createMember();
     const planId = await createPlan();
     const umId = await createAssignment(memberId, planId, '2000-01-15');
-    await db.query('UPDATE user_memberships SET free_months = 1, paid_months = 12 WHERE id = ?', [umId]);
+    await db.query('UPDATE user_memberships SET free_periods = 1, paid_periods = 12 WHERE id = ?', [umId]);
 
     await runBilling();
 
@@ -330,7 +330,7 @@ describe('a fee written alone captures the snapshot and drops the Plan durations
   it("stops applying the Plan's Free Period once only the fee is frozen", async () => {
     const memberId = await createMember();
     const planId = await createPlan();
-    await db.query('UPDATE membership_plans SET free_months = 1, paid_months = 12 WHERE id = ?', [planId]);
+    await db.query('UPDATE membership_plans SET free_periods = 1, paid_periods = 12 WHERE id = ?', [planId]);
 
     // Uncaptured: no months, no cadence, no fee of its own — so it reads the
     // Plan's Billing & Duration and its first cycle is free.
@@ -356,7 +356,7 @@ describe('a fee written alone captures the snapshot and drops the Plan durations
     // Materialising the rest — what the migration does first — restores it.
     await db.query(
       `UPDATE user_memberships um JOIN membership_plans p ON p.id = um.membership_plan_id
-          SET um.free_months = p.free_months, um.paid_months = p.paid_months
+          SET um.free_periods = p.free_periods, um.paid_periods = p.paid_periods
         WHERE um.id = ?`,
       [umId],
     );

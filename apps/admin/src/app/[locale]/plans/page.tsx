@@ -33,15 +33,18 @@ import {
   MEMBER_LIMITS,
   PLAN_BILLING_FREQUENCIES,
   PLAN_BILLING_FREQUENCY_OPTIONS,
+  PLAN_DURATION_FIELDS,
   PLAN_GENERAL_EDITABLE_FIELDS,
   PLAN_GENERAL_FIELDS,
   PLAN_TIMELINE_STATUS_LABEL_KEYS,
   PlanBillingFrequency,
+  PlanDurationField,
   PlanExampleTimeline,
   PlanGeneralField,
   PlanGeneralFormValues,
   PlanGeneralRow,
   formatPlanCurrentPrice,
+  formatPlanDurationPeriods,
   formatPlanGeneralField,
   formatPlanTimelineBilling,
   isPlanGeneralFormValid,
@@ -113,11 +116,12 @@ interface Plan extends PlanGeneralRow {
   oneoff_benefits: SellableItemBenefitRow[];
   periodical_benefits: SellableItemBenefitRow[];
   // #635 §7: Billing & Duration. null = never configured, which reads
-  // differently from an explicit 0.
-  free_months: number | null;
-  paid_months: number | null;
-  bonus_months: number | null;
-  pay_beforehand_months: number | null;
+  // differently from an explicit 0. #892: each one is a count of this Plan's
+  // own Billing Frequency periods, not of calendar months.
+  free_periods: number | null;
+  paid_periods: number | null;
+  bonus_periods: number | null;
+  pay_beforehand_periods: number | null;
   tax_rate_id: number | null;
   tax_behavior: 'inclusive' | 'exclusive';
   tax_rate_name: string | null;
@@ -136,9 +140,10 @@ const DEFAULT_BILLING_POLICY = planBillingPolicyBody(DEFAULT_PLAN_BILLING_FREQUE
 
 // #635 §7 + stage 13: Billing & Duration — the Promotion's four fields, in the
 // Promotion's own order. Pre-paid Duration is a slice of the Paid Duration, so
-// it sits next to it.
-const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
-type DurationField = typeof DURATION_FIELDS[number];
+// it sits next to it. #892 moved the list into `planProfile.ts`, beside the
+// Billing Frequency that gives the four numbers their unit.
+const DURATION_FIELDS = PLAN_DURATION_FIELDS;
+type DurationField = PlanDurationField;
 
 // The section's draft: the four durations, plus the cadence and Auto-renew it
 // absorbed from the retired Billing Policy section.
@@ -155,7 +160,7 @@ type DurationForm = Record<DurationField, string> & {
 };
 
 const EMPTY_DURATION_FORM: DurationForm = {
-  free_months: '', paid_months: '', pay_beforehand_months: '', bonus_months: '',
+  free_periods: '', paid_periods: '', pay_beforehand_periods: '', bonus_periods: '',
   billing_frequency: DEFAULT_PLAN_BILLING_FREQUENCY,
   legacy_cadence: null,
   auto_renew: DEFAULT_BILLING_POLICY.auto_renew,
@@ -231,6 +236,12 @@ export default function PlansPage() {
   // #820: how a stored cadence reads on screen — "Month" / "4 Weeks" for the two
   // configurable ones, and the plain "Every 2 months" form for a Plan configured
   // before the rule, which still bills on it and must still say so.
+  // The `plans.*` namespace, for helpers that are shared with a screen using
+  // `useTranslations('plans')` (the Details modal) and so name their keys
+  // unprefixed.
+  const planT = (key: string, values?: Record<string, unknown>): string =>
+    t(`plans.${key}` as any, values as any);
+
   const billingFrequencyText = (interval: number, unit: string): string => {
     const freq = planBillingFrequencyOf(interval, unit);
     return freq
@@ -585,10 +596,10 @@ export default function PlansPage() {
   function openDurationEdit(plan: Plan) {
     const bp = plan.billing_policy;
     setDurationForm({
-      free_months: plan.free_months != null ? String(plan.free_months) : '',
-      paid_months: plan.paid_months != null ? String(plan.paid_months) : '',
-      pay_beforehand_months: plan.pay_beforehand_months != null ? String(plan.pay_beforehand_months) : '',
-      bonus_months: plan.bonus_months != null ? String(plan.bonus_months) : '',
+      free_periods: plan.free_periods != null ? String(plan.free_periods) : '',
+      paid_periods: plan.paid_periods != null ? String(plan.paid_periods) : '',
+      pay_beforehand_periods: plan.pay_beforehand_periods != null ? String(plan.pay_beforehand_periods) : '',
+      bonus_periods: plan.bonus_periods != null ? String(plan.bonus_periods) : '',
       // #820: the stored pair maps onto one of the two options, or onto none —
       // a Plan configured before the rule. It is not coerced silently: the
       // dropdown falls back to the default and the notice below it names the
@@ -1135,18 +1146,31 @@ export default function PlansPage() {
                     />
                     {isEditing && durationEditForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
+                        {/* #892: each box now carries its unit beside it, so the
+                            four columns wrap rather than squeezing the suffix. */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: 8 }}>
                           {DURATION_FIELDS.map((field) => (
                             <div key={field}>
                               <label htmlFor={`plan-${plan.id}-${field}`} style={inlineLabelStyle}>{t(`plans.label_${field}`)}</label>
-                              <input
-                                id={`plan-${plan.id}-${field}`}
-                                type="number" min="0"
-                                value={durationForm[field]}
-                                onChange={(e) => setDurationForm({ ...durationForm, [field]: e.target.value })}
-                                placeholder="0"
-                                style={inlineInputStyle}
-                              />
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <input
+                                  id={`plan-${plan.id}-${field}`}
+                                  type="number" min="0"
+                                  value={durationForm[field]}
+                                  onChange={(e) => setDurationForm({ ...durationForm, [field]: e.target.value })}
+                                  placeholder="0"
+                                  style={{ ...inlineInputStyle, flex: 1, minWidth: 0 }}
+                                />
+                                {/* #892 §3: the unit each number is counted in,
+                                    taken from the Billing Frequency selected
+                                    below — so changing the dropdown changes the
+                                    unit on screen and never the values. */}
+                                <span style={{ ...fieldDescStyle, whiteSpace: 'nowrap' }}>
+                                  {t('plans.periods_unit_suffix', {
+                                    frequency: t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[durationForm.billing_frequency].labelKey}` as any),
+                                  })}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1211,10 +1235,13 @@ export default function PlansPage() {
                         <div style={{ marginBottom: 10 }}>
                           <BillingDurationSummary
                             items={billingDurationItems([
+                              // #892: the value carries the unit the count is
+                              // in — "2 × 4 Weeks", never "2 month(s)" for a
+                              // Plan that bills every four weeks.
                               ...DURATION_FIELDS.map((field) => ({
                                 key: field,
                                 label: t(`plans.label_${field}`),
-                                value: plan[field] != null ? t('plans.months_value', { n: plan[field] }) : t('plans.not_configured'),
+                                value: formatPlanDurationPeriods(plan[field], plan.billing_policy, planT),
                               })),
                               plan.billing_policy != null && {
                                 key: 'billing_frequency',

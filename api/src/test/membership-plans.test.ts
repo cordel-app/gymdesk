@@ -1262,7 +1262,7 @@ describe('GET /membership-plans/:id/example-timeline', () => {
       .put(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ free_months: 1, paid_months: 2, pay_beforehand_months: 1, bonus_months: 1 });
+      .send({ free_periods: 1, paid_periods: 2, pay_beforehand_periods: 1, bonus_periods: 1 });
 
     const { rows: beforeRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
 

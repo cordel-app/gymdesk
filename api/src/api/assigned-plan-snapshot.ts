@@ -77,11 +77,11 @@ export interface AssignedPlanBenefitRow {
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
 export interface AssignedPlanBillingSnapshot {
-  free_months: number | null;
-  paid_months: number | null;
-  bonus_months: number | null;
-  /** Stage 13 — of `paid_months`, how many were already paid up front. */
-  pay_beforehand_months: number | null;
+  free_periods: number | null;
+  paid_periods: number | null;
+  bonus_periods: number | null;
+  /** Stage 13 — of `paid_periods`, how many were already paid up front. */
+  pay_beforehand_periods: number | null;
   recurring_billing_interval: number | null;
   recurring_billing_unit: string | null;
   membership_fee_price: number | null;
@@ -158,7 +158,7 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
   if (membershipPlanId == null) return;
 
   const { rows: planRows } = await tx.query(
-    `SELECT p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
+    `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods,
             bp.recurring_billing_interval, bp.recurring_billing_unit
      FROM membership_plans p
      LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = p.gym_id
@@ -169,12 +169,12 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
 
   await tx.query(
     `UPDATE user_memberships
-     SET free_months = ?, paid_months = ?, bonus_months = ?, pay_beforehand_months = ?,
+     SET free_periods = ?, paid_periods = ?, bonus_periods = ?, pay_beforehand_periods = ?,
          recurring_billing_interval = ?, recurring_billing_unit = ?, membership_fee_price = ?
      WHERE id = ? AND gym_id = ?`,
     [
-      plan.free_months ?? null, plan.paid_months ?? null, plan.bonus_months ?? null,
-      plan.pay_beforehand_months ?? null,
+      plan.free_periods ?? null, plan.paid_periods ?? null, plan.bonus_periods ?? null,
+      plan.pay_beforehand_periods ?? null,
       plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
       membershipFeePrice ?? null,
       userMembershipId, gymId,
@@ -212,8 +212,8 @@ export async function hasAssignedPlanSnapshot(tx: Tx, gymId: string, umId: numbe
     `SELECT EXISTS(
        SELECT 1 FROM user_memberships
         WHERE id = ? AND gym_id = ?
-          AND (free_months IS NOT NULL OR paid_months IS NOT NULL OR bonus_months IS NOT NULL
-               OR pay_beforehand_months IS NOT NULL
+          AND (free_periods IS NOT NULL OR paid_periods IS NOT NULL OR bonus_periods IS NOT NULL
+               OR pay_beforehand_periods IS NOT NULL
                OR recurring_billing_interval IS NOT NULL OR recurring_billing_unit IS NOT NULL
                OR membership_fee_price IS NOT NULL)
      ) ${CATEGORIES.map((c) => `OR EXISTS(
@@ -257,7 +257,7 @@ export async function loadAssignedPlanSnapshot(
 ): Promise<AssignedPlanSnapshot> {
   const [{ rows: umRows }, ...benefitResults] = await Promise.all([
     db.query(
-      `SELECT free_months, paid_months, bonus_months, pay_beforehand_months,
+      `SELECT free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
               recurring_billing_interval, recurring_billing_unit, membership_fee_price,
               personal_fee_benefit_action, personal_fee_benefit_value
        FROM user_memberships WHERE id = ? AND gym_id = ?`,
@@ -273,10 +273,10 @@ export async function loadAssignedPlanSnapshot(
   const [session, oneoff, periodical] = benefitResults.map((r) => r.rows.map(shapeBenefit));
 
   const billing: AssignedPlanBillingSnapshot = {
-    free_months: um.free_months ?? null,
-    paid_months: um.paid_months ?? null,
-    bonus_months: um.bonus_months ?? null,
-    pay_beforehand_months: um.pay_beforehand_months ?? null,
+    free_periods: um.free_periods ?? null,
+    paid_periods: um.paid_periods ?? null,
+    bonus_periods: um.bonus_periods ?? null,
+    pay_beforehand_periods: um.pay_beforehand_periods ?? null,
     recurring_billing_interval: um.recurring_billing_interval ?? null,
     recurring_billing_unit: um.recurring_billing_unit ?? null,
     membership_fee_price: um.membership_fee_price != null ? Number(um.membership_fee_price) : null,

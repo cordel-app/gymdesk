@@ -368,7 +368,7 @@ describe('POST /payment-requests', () => {
     // A Free Period covering the assignment's first month: nothing is owed for
     // the cycle a request would be raised against.
     await db.query(
-      'UPDATE user_memberships SET membership_fee_price = 40, free_months = 1, paid_months = 12 WHERE id = ?',
+      'UPDATE user_memberships SET membership_fee_price = 40, free_periods = 1, paid_periods = 12 WHERE id = ?',
       [umId],
     );
 

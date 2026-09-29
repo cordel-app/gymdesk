@@ -40,8 +40,9 @@ import type {
 const EDITABLE_STATUSES = ['active', 'paused'];
 
 // Stage 13: Pre-paid Duration beside the Paid Duration it is a slice of —
-// the same four fields, in the same order, as the Plan's own section.
-const DURATION_FIELDS = ['free_months', 'paid_months', 'pay_beforehand_months', 'bonus_months'] as const;
+// the same four fields, in the same order, as the Plan's own section. #892:
+// each is a count of this assignment's own Billing Frequency periods.
+const DURATION_FIELDS = ['free_periods', 'paid_periods', 'pay_beforehand_periods', 'bonus_periods'] as const;
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
 type BenefitSection = 'oneoff' | 'session' | 'periodical';
@@ -71,10 +72,10 @@ interface FeeBenefitForm {
 }
 
 interface DurationForm {
-  free_months: string;
-  paid_months: string;
-  pay_beforehand_months: string;
-  bonus_months: string;
+  free_periods: string;
+  paid_periods: string;
+  pay_beforehand_periods: string;
+  bonus_periods: string;
   recurring_billing_interval: string;
   recurring_billing_unit: string;
   membership_fee_price: string;
@@ -154,10 +155,10 @@ export function AssignedPlanConfiguration({
 
   function openDurationEdit() {
     setDurationForm({
-      free_months: numField(snapshot.free_months),
-      paid_months: numField(snapshot.paid_months),
-      pay_beforehand_months: numField(snapshot.pay_beforehand_months),
-      bonus_months: numField(snapshot.bonus_months),
+      free_periods: numField(snapshot.free_periods),
+      paid_periods: numField(snapshot.paid_periods),
+      pay_beforehand_periods: numField(snapshot.pay_beforehand_periods),
+      bonus_periods: numField(snapshot.bonus_periods),
       recurring_billing_interval: numField(snapshot.recurring_billing_interval),
       recurring_billing_unit: snapshot.recurring_billing_unit ?? '',
       membership_fee_price: numField(snapshot.membership_fee_price),
@@ -195,11 +196,11 @@ export function AssignedPlanConfiguration({
       await apiFetch(`/user-memberships/${assignedPlanId}/billing-duration`, {
         method: 'PUT',
         body: JSON.stringify({
-          free_months: durationForm.free_months === '' ? null : Number(durationForm.free_months),
-          paid_months: durationForm.paid_months === '' ? null : Number(durationForm.paid_months),
-          pay_beforehand_months: durationForm.pay_beforehand_months === ''
-            ? null : Number(durationForm.pay_beforehand_months),
-          bonus_months: durationForm.bonus_months === '' ? null : Number(durationForm.bonus_months),
+          free_periods: durationForm.free_periods === '' ? null : Number(durationForm.free_periods),
+          paid_periods: durationForm.paid_periods === '' ? null : Number(durationForm.paid_periods),
+          pay_beforehand_periods: durationForm.pay_beforehand_periods === ''
+            ? null : Number(durationForm.pay_beforehand_periods),
+          bonus_periods: durationForm.bonus_periods === '' ? null : Number(durationForm.bonus_periods),
           recurring_billing_interval: durationForm.recurring_billing_interval === ''
             ? null : Number(durationForm.recurring_billing_interval),
           recurring_billing_unit: durationForm.recurring_billing_unit || null,
@@ -255,6 +256,21 @@ export function AssignedPlanConfiguration({
     } finally {
       setSaving(false);
     }
+  }
+
+  /**
+   * #892 — a duration reads in the unit it is counted in. An assignment billed
+   * monthly (or one with no cadence at all, which prices as `1 month`) still
+   * reads "2 months"; anything else reads as billing periods, with the Billing
+   * Frequency row right below naming what one of them is. The cadence is
+   * free-form here — this is the assignment's own snapshot, not the Plan's
+   * two-choice dropdown — so it is never spelled into the value itself.
+   */
+  function durationText(value: number | null): string {
+    if (value == null) return t('not_configured');
+    const monthly = snapshot.recurring_billing_unit == null
+      || (Number(snapshot.recurring_billing_interval) === 1 && snapshot.recurring_billing_unit === 'month');
+    return monthly ? t('months_value', { n: value }) : t('periods_value_plain', { n: value });
   }
 
   function editButton(onClick: () => void) {
@@ -316,6 +332,9 @@ export function AssignedPlanConfiguration({
               />
             </div>
           </div>
+          {/* #892 — the four numbers above are billing periods, and the
+              cadence beside them is what one period is. */}
+          <p style={hintSt}>{t('duration_periods_hint')}</p>
           <p style={hintSt}>{t('snapshot_edit_hint')}</p>
           <SaveCancel saving={saving} onSave={saveDuration} onCancel={cancelEdit} t={t} />
         </div>
@@ -325,7 +344,7 @@ export function AssignedPlanConfiguration({
             <DetailRow
               key={field}
               label={t(`label_${field}` as any)}
-              value={snapshot[field] != null ? t('months_value', { n: snapshot[field] as number }) : t('not_configured')}
+              value={durationText(snapshot[field] as number | null)}
             />
           ))}
           <DetailRow

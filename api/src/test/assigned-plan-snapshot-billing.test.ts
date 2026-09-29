@@ -59,7 +59,7 @@ async function createPlan(gymId: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans
        (gym_id, name, lifecycle_status, enrollment_status, member_limit,
-        free_months, paid_months, bonus_months)
+        free_periods, paid_periods, bonus_periods)
      VALUES (?, ?, 'active', 'public', '1', 0, 12, 0)`,
     [gymId, `APSB-Plan-${uniq()}`],
   );
@@ -186,7 +186,7 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
       'UPDATE billing_policies SET recurring_billing_interval = 1, recurring_billing_unit = ? WHERE membership_plan_id = ?',
       ['year', planId],
     );
-    await db.query('UPDATE membership_plans SET free_months = 6, paid_months = 24 WHERE id = ?', [planId]);
+    await db.query('UPDATE membership_plans SET free_periods = 6, paid_periods = 24 WHERE id = ?', [planId]);
     await db.query('UPDATE gym_charges SET amount = 999, name = ? WHERE id = ?', ['Renamed Locker', lockerId]);
     await db.query('UPDATE membership_plan_session SET quantity = 99 WHERE membership_plan_id = ?', [planId]);
     await db.query('DELETE FROM membership_plan_periodical WHERE membership_plan_id = ?', [planId]);

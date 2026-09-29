@@ -391,9 +391,9 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
     const { rows } = await db.query(
       `SELECT um.id, um.gym_id, um.membership_plan_id, um.starts_at, um.next_billing_date,
               um.membership_fee_price, um.base_price, um.discount_reason, um.discount_expires_at,
-              um.free_months, um.paid_months, um.bonus_months,
-              p.free_months AS plan_free_months, p.paid_months AS plan_paid_months,
-              p.bonus_months AS plan_bonus_months, 1 AS has_billing_snapshot
+              um.free_periods, um.paid_periods, um.bonus_periods,
+              p.free_periods AS plan_free_periods, p.paid_periods AS plan_paid_periods,
+              p.bonus_periods AS plan_bonus_periods, 1 AS has_billing_snapshot
        FROM user_memberships um
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        WHERE um.id = ?`,
@@ -415,7 +415,7 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
 
   it('does not leak the months it resolved from', async () => {
     const { body } = await getMembership(gymId);
-    for (const field of ['free_months', 'paid_months', 'bonus_months', 'plan_free_months', 'membership_fee_price']) {
+    for (const field of ['free_periods', 'paid_periods', 'bonus_periods', 'plan_free_periods', 'membership_fee_price']) {
       expect(body.membership).not.toHaveProperty(field);
     }
   });

@@ -82,9 +82,16 @@ describe('#879: the Plan summary', () => {
     expect(autoRenew).toBeGreaterThan(frequency);
   });
 
-  it('keeps "Not configured" for an unset duration (§4)', () => {
-    expect(slice).toContain("t('plans.not_configured')");
-    expect(slice).toContain("t('plans.months_value', { n: plan[field] })");
+  // #892: the value carries the unit its number is counted in, so the summary
+  // renders through the shared `formatPlanDurationPeriods()` — which is also
+  // what keeps "Not configured" (§4) and the Details modal in step with it.
+  it('keeps "Not configured" for an unset duration (§4), through the shared formatter', () => {
+    expect(slice).toContain('formatPlanDurationPeriods(plan[field], plan.billing_policy, planT)');
+    const profileSrc = readFileSync(
+      join(__dirname, '..', 'app', '[locale]', 'plans', 'planProfile.ts'), 'utf-8',
+    );
+    expect(profileSrc).toContain("t('not_configured')");
+    expect(profileSrc).toContain("t('periods_value', { n: value, frequency: unit })");
   });
 
   it('drops the two long descriptions from the summary (§5/§6)', () => {
@@ -120,10 +127,10 @@ describe('#879: the Promotion summary is unchanged in behaviour', () => {
 });
 
 describe('billingDurationItems()', () => {
-  const item: BillingDurationItem = { key: 'free_months', label: 'Free Period', value: 1 };
+  const item: BillingDurationItem = { key: 'free_periods', label: 'Free Period', value: 1 };
 
   it('keeps the items a page decided to show, in order', () => {
-    const second: BillingDurationItem = { key: 'paid_months', label: 'Paid Duration', value: 2 };
+    const second: BillingDurationItem = { key: 'paid_periods', label: 'Paid Duration', value: 2 };
     expect(billingDurationItems([item, second])).toEqual([item, second]);
   });
 
@@ -135,7 +142,7 @@ describe('billingDurationItems()', () => {
   it('keeps an item whose value is itself falsy', () => {
     // "Auto-renew: No" and a zero month count are values, not absent items —
     // only the page's own condition decides whether an item exists.
-    const zero: BillingDurationItem = { key: 'bonus_months', label: 'Bonus Duration', value: 0 };
+    const zero: BillingDurationItem = { key: 'bonus_periods', label: 'Bonus Duration', value: 0 };
     expect(billingDurationItems([zero])).toEqual([zero]);
   });
 });
@@ -144,9 +151,10 @@ describe('#879: no new locale keys were needed', () => {
   // The summary reuses the keys the DetailRow list already used, so a locale
   // that was complete before this ticket stays complete.
   const REQUIRED = [
-    'label_free_months', 'label_paid_months', 'label_pay_beforehand_months',
-    'label_bonus_months', 'label_billing_frequency', 'auto_renew',
-    'not_configured', 'months_value', 'no_billing', 'yes', 'no',
+    'label_free_periods', 'label_paid_periods', 'label_pay_beforehand_periods',
+    'label_bonus_periods', 'label_billing_frequency', 'auto_renew',
+    'not_configured', 'months_value', 'periods_value', 'periods_value_plain',
+    'no_billing', 'yes', 'no',
   ];
 
   for (const code of LOCALE_CODES) {

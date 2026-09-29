@@ -185,7 +185,9 @@ export interface SimulationAssignment {
   /**
    * #635 stage 8 — the assignment's own Billing & Duration (Free Period / Paid
    * Duration / Bonus Duration), frozen at assignment time. Counted from
-   * `startsAt`, not from any Promotion's application date.
+   * `startsAt`, not from any Promotion's application date, and — since #892 —
+   * in periods of the assignment's own Billing Frequency, which the value
+   * carries (`PlanDuration.cadence`).
    */
   planDuration: PlanDuration;
   /** #772 — the assignment's own Personal Membership Fee Benefit. */
@@ -440,7 +442,7 @@ function resolveAgreedMembershipFee(regular: number, date: string, a: Membership
     // Inside the Paid Duration: the regular amount either way, so this only
     // decides whether the projection may stop here — it may not while a Bonus
     // Duration behind it still has to be shown.
-    return a.planDuration.bonusMonths > 0 ? { ...fromPromotions, promotional: true } : fromPromotions;
+    return a.planDuration.bonusPeriods > 0 ? { ...fromPromotions, promotional: true } : fromPromotions;
   }
   return {
     amount: 0,

@@ -449,7 +449,7 @@ describe('POST /billing/run — receipts (#787)', () => {
     const { insertId: umId } = await db.query(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
-          next_billing_date, free_months)
+          next_billing_date, free_periods)
        VALUES (?, ?, ?, 'active', '2000-01-01', '29.99', '2000-01-01', 120)`,
       [gymId, memberId, planId],
     );

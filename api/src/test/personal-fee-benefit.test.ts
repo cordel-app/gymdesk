@@ -197,10 +197,10 @@ describe('PUT /user-memberships/:id/fee-benefit', () => {
     expect(after.body.snapshot.snapshot_captured).toBe(false);
     expect(after.body.snapshot.personal_fee_benefit).toEqual({ action: 'percentage_discount', value: 20 });
     const { rows } = await db.query(
-      'SELECT free_months, paid_months, membership_fee_price FROM user_memberships WHERE id = ?', [bare],
+      'SELECT free_periods, paid_periods, membership_fee_price FROM user_memberships WHERE id = ?', [bare],
     );
-    expect(rows[0].free_months).toBe(null);
-    expect(rows[0].paid_months).toBe(null);
+    expect(rows[0].free_periods).toBe(null);
+    expect(rows[0].paid_periods).toBe(null);
     expect(rows[0].membership_fee_price).toBe(null);
   });
 

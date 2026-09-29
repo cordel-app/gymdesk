@@ -247,7 +247,7 @@ describe('GET /payments/billing-events', () => {
       const { insertId: umId } = await db.query(
         `INSERT INTO user_memberships
            (gym_id, member_id, membership_plan_id, status, starts_at, next_billing_date,
-            membership_fee_price, free_months, paid_months,
+            membership_fee_price, free_periods, paid_periods,
             recurring_billing_interval, recurring_billing_unit)
          VALUES (?, ?, ?, 'active', ?, ?, 55.00, 1, 12, 1, 'month')`,
         [gymId, memberId, planId, startsAt, new Date().toISOString().slice(0, 10)],

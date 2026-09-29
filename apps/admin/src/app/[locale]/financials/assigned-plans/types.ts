@@ -29,11 +29,14 @@ export interface AssignedPlanSnapshotBenefit {
 
 /** The assignment's frozen commercial configuration (#635 §11–§17). */
 export interface AssignedPlanSnapshot {
-  free_months: number | null;
-  paid_months: number | null;
-  /** #635 stage 13 — of `paid_months`, how many were already paid up front. */
-  pay_beforehand_months: number | null;
-  bonus_months: number | null;
+  // #892 (migration 201) — counts of this assignment's own Billing Frequency
+  // periods (`recurring_billing_interval` × `recurring_billing_unit` below),
+  // never of calendar months.
+  free_periods: number | null;
+  paid_periods: number | null;
+  /** #635 stage 13 — of `paid_periods`, how many were already paid up front. */
+  pay_beforehand_periods: number | null;
+  bonus_periods: number | null;
   recurring_billing_interval: number | null;
   recurring_billing_unit: string | null;
   membership_fee_price: number | null;

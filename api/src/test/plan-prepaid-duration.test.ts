@@ -3,7 +3,7 @@
 // The thread's answer to the stage 13 question adds a fourth field to Billing
 // & Duration: "I'd also like to include the pre-paid duration which will flag
 // in the simulation as pre-paid - no charge". It is the Promotion's own
-// `pay_beforehand_months` (migration 141) on a Plan: the first N months of the
+// `pay_beforehand_periods` (migration 141) on a Plan: the first N months of the
 // Paid Duration are already paid up front, so they charge nothing while the
 // rest of the Paid Duration still charges the regular fee.
 //
@@ -51,7 +51,7 @@ async function createPlan(gymId: string, durations: {
   const { insertId: planId } = await db.query(
     `INSERT INTO membership_plans
        (gym_id, name, lifecycle_status, enrollment_status, member_limit,
-        free_months, paid_months, bonus_months, pay_beforehand_months)
+        free_periods, paid_periods, bonus_periods, pay_beforehand_periods)
      VALUES (?, ?, 'active', 'public', '1', ?, ?, ?, ?)`,
     [gymId, `PPD-Plan-${uniq()}`, free, paid, bonus, prepaid],
   );
@@ -112,40 +112,40 @@ describe('PUT /membership-plans/:id — Pre-paid Duration', () => {
 
   it('stores it alongside the other three durations', async () => {
     const res = await putPlan(gymId, planId, {
-      free_months: 1, paid_months: 12, pay_beforehand_months: 3, bonus_months: 2,
+      free_periods: 1, paid_periods: 12, pay_beforehand_periods: 3, bonus_periods: 2,
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
-      free_months: 1, paid_months: 12, pay_beforehand_months: 3, bonus_months: 2,
+      free_periods: 1, paid_periods: 12, pay_beforehand_periods: 3, bonus_periods: 2,
     });
   });
 
   it('clears it back to "not configured" when the field is emptied', async () => {
-    const res = await putPlan(gymId, planId, { pay_beforehand_months: null });
+    const res = await putPlan(gymId, planId, { pay_beforehand_periods: null });
     expect(res.status).toBe(200);
-    expect(res.body.pay_beforehand_months).toBeNull();
+    expect(res.body.pay_beforehand_periods).toBeNull();
   });
 
   it('rejects a negative value', async () => {
-    const res = await putPlan(gymId, planId, { pay_beforehand_months: -1 });
+    const res = await putPlan(gymId, planId, { pay_beforehand_periods: -1 });
     expect(res.status).toBe(400);
   });
 
-  // The Promotion's own 0..paid_months bound (`validatePayBeforehandMonths`):
+  // The Promotion's own 0..paid_periods bound (`validatePayBeforehandMonths`):
   // a Pre-paid month is a month of the Paid Duration, so there cannot be more
   // of them than there are paid months to pay for.
   it('rejects more pre-paid months than paid ones, in one payload', async () => {
-    const res = await putPlan(gymId, planId, { paid_months: 2, pay_beforehand_months: 3 });
+    const res = await putPlan(gymId, planId, { paid_periods: 2, pay_beforehand_periods: 3 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/pay_beforehand_months/);
+    expect(res.body.error).toMatch(/pay_beforehand_periods/);
   });
 
   it('rejects it against the stored Paid Duration when only one field is sent', async () => {
-    expect((await putPlan(gymId, planId, { paid_months: 6, pay_beforehand_months: 6 })).status).toBe(200);
+    expect((await putPlan(gymId, planId, { paid_periods: 6, pay_beforehand_periods: 6 })).status).toBe(200);
     // Only the prepaid months move: 7 > the stored 6.
-    expect((await putPlan(gymId, planId, { pay_beforehand_months: 7 })).status).toBe(400);
+    expect((await putPlan(gymId, planId, { pay_beforehand_periods: 7 })).status).toBe(400);
     // Only the paid months move: the stored 6 prepaid would outlast them.
-    expect((await putPlan(gymId, planId, { paid_months: 5 })).status).toBe(400);
+    expect((await putPlan(gymId, planId, { paid_periods: 5 })).status).toBe(400);
   });
 
   // A Plan with no Paid Duration has no months to prepay, and `null` must not
@@ -153,27 +153,27 @@ describe('PUT /membership-plans/:id — Pre-paid Duration', () => {
   // says the same thing, so this can never be stored either way).
   it('rejects pre-paid months on a Plan with no Paid Duration at all', async () => {
     const plan = await createPlan(gymId, { free: 1, paid: null, bonus: null });
-    const res = await putPlan(gymId, plan, { pay_beforehand_months: 2 });
+    const res = await putPlan(gymId, plan, { pay_beforehand_periods: 2 });
     expect(res.status).toBe(400);
     const { rows } = await db.query(
-      'SELECT pay_beforehand_months FROM membership_plans WHERE id = ?', [plan],
+      'SELECT pay_beforehand_periods FROM membership_plans WHERE id = ?', [plan],
     );
-    expect(rows[0].pay_beforehand_months).toBeNull();
+    expect(rows[0].pay_beforehand_periods).toBeNull();
   });
 
   it('is invisible to another gym', async () => {
     const otherGym = await createTestGym('PPD Other Gym');
     await createTestMembership(otherGym, 'admin');
-    const res = await putPlan(otherGym, planId, { pay_beforehand_months: 1 });
+    const res = await putPlan(otherGym, planId, { pay_beforehand_periods: 1 });
     expect(res.status).toBe(404);
   });
 
   it('carries over to a duplicated Plan', async () => {
-    expect((await putPlan(gymId, planId, { paid_months: 6, pay_beforehand_months: 2 })).status).toBe(200);
+    expect((await putPlan(gymId, planId, { paid_periods: 6, pay_beforehand_periods: 2 })).status).toBe(200);
     const res = await request.post(`/membership-plans/${planId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     expect(res.status).toBe(201);
-    expect(res.body.pay_beforehand_months).toBe(2);
+    expect(res.body.pay_beforehand_periods).toBe(2);
   });
 });
 
@@ -198,9 +198,9 @@ describe('Billing Simulation — a Pre-paid month charges nothing', () => {
 
   it('freezes the Plan\'s Pre-paid Duration onto the assignment (§11)', async () => {
     const { rows } = await db.query(
-      'SELECT pay_beforehand_months FROM user_memberships WHERE id = ?', [umId],
+      'SELECT pay_beforehand_periods FROM user_memberships WHERE id = ?', [umId],
     );
-    expect(Number(rows[0].pay_beforehand_months)).toBe(2);
+    expect(Number(rows[0].pay_beforehand_periods)).toBe(2);
   });
 
   it('charges the free month, then the two pre-paid ones, at 0', async () => {
@@ -226,7 +226,7 @@ describe('Billing Simulation — a Pre-paid month charges nothing', () => {
   // §13 — the assignment reads its own frozen column, so the catalogue can move.
   it('does not follow a later change to the Plan\'s Pre-paid Duration', async () => {
     const before = (await getSimulation(gymId, memberId)).body;
-    expect((await putPlan(gymId, planId, { pay_beforehand_months: 0 })).status).toBe(200);
+    expect((await putPlan(gymId, planId, { pay_beforehand_periods: 0 })).status).toBe(200);
     expect((await getSimulation(gymId, memberId)).body).toEqual(before);
   });
 });
@@ -255,9 +255,9 @@ describe('PUT /user-memberships/:id/billing-duration — Pre-paid Duration', () 
   it('stops charging the months it now covers', async () => {
     expect(feeEvents((await getSimulation(gymId, memberA)).body)).toEqual([[MONTHS[0], 100]]);
 
-    const res = await putBillingDuration(gymId, umA, { pay_beforehand_months: 2 });
+    const res = await putBillingDuration(gymId, umA, { pay_beforehand_periods: 2 });
     expect(res.status).toBe(200);
-    expect(res.body.pay_beforehand_months).toBe(2);
+    expect(res.body.pay_beforehand_periods).toBe(2);
 
     expect(feeEvents((await getSimulation(gymId, memberA)).body)).toEqual([
       [MONTHS[0], 0], [MONTHS[1], 0], [MONTHS[2], 100],
@@ -267,24 +267,24 @@ describe('PUT /user-memberships/:id/billing-duration — Pre-paid Duration', () 
   it('leaves the other assignment of the same Plan, and the Plan itself, untouched', async () => {
     expect(feeEvents((await getSimulation(gymId, memberB)).body)).toEqual([[MONTHS[0], 100]]);
     const { rows } = await db.query(
-      'SELECT pay_beforehand_months FROM membership_plans WHERE id = ?', [planId],
+      'SELECT pay_beforehand_periods FROM membership_plans WHERE id = ?', [planId],
     );
-    expect(Number(rows[0].pay_beforehand_months)).toBe(0);
+    expect(Number(rows[0].pay_beforehand_periods)).toBe(0);
   });
 
   it('rejects more pre-paid months than the assignment\'s Paid Duration', async () => {
-    const res = await putBillingDuration(gymId, umA, { pay_beforehand_months: 13 });
+    const res = await putBillingDuration(gymId, umA, { pay_beforehand_periods: 13 });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/pay_beforehand_months/);
+    expect(res.body.error).toMatch(/pay_beforehand_periods/);
 
     // Rejected inside the transaction, so nothing of the payload landed.
     const { rows } = await db.query(
-      'SELECT pay_beforehand_months FROM user_memberships WHERE id = ?', [umA],
+      'SELECT pay_beforehand_periods FROM user_memberships WHERE id = ?', [umA],
     );
-    expect(Number(rows[0].pay_beforehand_months)).toBe(2);
+    expect(Number(rows[0].pay_beforehand_periods)).toBe(2);
   });
 
   it('rejects a Paid Duration shorter than the pre-paid months already agreed', async () => {
-    expect((await putBillingDuration(gymId, umA, { paid_months: 1 })).status).toBe(400);
+    expect((await putBillingDuration(gymId, umA, { paid_periods: 1 })).status).toBe(400);
   });
 });

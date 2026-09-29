@@ -11,7 +11,7 @@ import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
 import { BillingDateUnit } from '../domain/billingDate';
-import { toPlanDuration } from '../domain/planDuration';
+import { DEFAULT_PLAN_DURATION_CADENCE, toPlanDuration } from '../domain/planDuration';
 import {
   describeAcceptedPlanCadences,
   isAcceptedPlanCadence,
@@ -42,12 +42,12 @@ interface PlanRow {
   tax_behavior: 'inclusive' | 'exclusive';
   // #635 §7 — Billing & Duration, the same free/paid/bonus a Promotion carries.
   // Nullable: "never configured" stays distinguishable from an explicit 0.
-  free_months: number | null;
-  paid_months: number | null;
-  bonus_months: number | null;
-  // #635 stage 13 — Pre-paid Duration: how many of `paid_months` are already
-  // paid up front (the Promotion's own `pay_beforehand_months`, migration 189).
-  pay_beforehand_months: number | null;
+  free_periods: number | null;
+  paid_periods: number | null;
+  bonus_periods: number | null;
+  // #635 stage 13 — Pre-paid Duration: how many of `paid_periods` are already
+  // paid up front (the Promotion's own `pay_beforehand_periods`, migration 189).
+  pay_beforehand_periods: number | null;
   created_by: number | null;
   created_by_name?: string | null;
   modified_at: string | null;
@@ -138,13 +138,15 @@ const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'];
 // it.
 const BILLING_UNITS = ['day', 'week', 'month', 'year'];
 
-// #635 §7: Billing & Duration, with the Promotion's semantics (migration 102) —
-// whole months, never negative. Sent together by the section's own Save, and an
+// #635 §7: Billing & Duration, with the Promotion's semantics (migration 102).
+// Whole numbers, never negative — and since #892 (migration 201) counts of the
+// Plan's own **Billing Frequency periods**, not of calendar months: "2" on a
+// 4-weekly Plan is 2 × 4 weeks. Sent together by the section's own Save, and an
 // empty field clears the value back to "not configured" rather than writing 0.
-const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months', 'pay_beforehand_months'] as const;
+const DURATION_FIELDS = ['free_periods', 'paid_periods', 'bonus_periods', 'pay_beforehand_periods'] as const;
 
 /** null = absent (leave as is), or a parsed non-negative integer. Throws the error string for a bad value. */
-function parseDurationMonths(raw: unknown, field: string): number | null | string {
+function parseDurationPeriods(raw: unknown, field: string): number | null | string {
   if (raw === undefined) return null;
   if (raw === null || raw === '') return null;
   const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
@@ -276,8 +278,17 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   // with no tax rate at all, exactly as `formatPlanCurrentPrice()` falls back);
   // no tax arithmetic happens in the projection or in the frontend (#817).
   const exampleTimeline = computePlanExampleTimeline({
+    // #892 — the durations are counts of this Plan's own Billing Frequency
+    // periods; `computePlanExampleTimeline` re-binds them to the cadence below,
+    // so the rows and their statuses can never be stepped differently.
     duration: toPlanDuration(
-      plan.free_months, plan.paid_months, plan.bonus_months, plan.pay_beforehand_months,
+      plan.free_periods, plan.paid_periods, plan.bonus_periods, plan.pay_beforehand_periods,
+      billingPolicy
+        ? {
+            interval: Number(billingPolicy.recurring_billing_interval),
+            unit: billingPolicy.recurring_billing_unit as BillingDateUnit,
+          }
+        : DEFAULT_PLAN_DURATION_CADENCE,
     ),
     cadence: billingPolicy
       ? {
@@ -444,26 +455,27 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
   // have the plan's duration wiped, hence the "field present in body" gate below.
   const durations: Record<string, number | null> = {};
   for (const field of DURATION_FIELDS) {
-    const parsed = parseDurationMonths(req.body[field], field);
+    const parsed = parseDurationPeriods(req.body[field], field);
     if (typeof parsed === 'string') return res.status(400).json({ error: parsed });
     durations[field] = parsed;
   }
   // #635 stage 13: the Pre-paid Duration is a slice of the Paid Duration, the
-  // Promotion's own 0..paid_months bound (`validatePayBeforehandMonths`).
+  // Promotion's own 0..paid bound (`validatePayBeforehandMonths`), counted in
+  // this Plan's Billing Frequency periods since #892.
   // Checked against the plan as it will stand, because either field can be sent
   // on its own and either one alone can break the bound.
-  if ('pay_beforehand_months' in req.body || 'paid_months' in req.body) {
+  if ('pay_beforehand_periods' in req.body || 'paid_periods' in req.body) {
     const { rows: current } = await db.query(
-      `SELECT paid_months, pay_beforehand_months FROM membership_plans
+      `SELECT paid_periods, pay_beforehand_periods FROM membership_plans
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [req.params.id, gymId],
     );
     if (!current[0]) return res.status(404).json({ error: 'Plan not found' });
-    const nextPaid = 'paid_months' in req.body ? durations.paid_months : current[0].paid_months;
-    const nextPrepaid = 'pay_beforehand_months' in req.body
-      ? durations.pay_beforehand_months : current[0].pay_beforehand_months;
+    const nextPaid = 'paid_periods' in req.body ? durations.paid_periods : current[0].paid_periods;
+    const nextPrepaid = 'pay_beforehand_periods' in req.body
+      ? durations.pay_beforehand_periods : current[0].pay_beforehand_periods;
     if (nextPrepaid != null && Number(nextPrepaid) > Number(nextPaid ?? 0)) {
-      return res.status(400).json({ error: 'pay_beforehand_months cannot exceed paid_months' });
+      return res.status(400).json({ error: 'pay_beforehand_periods cannot exceed paid_periods' });
     }
   }
   // Shrinking the cap must not orphan Members already covered by an active
@@ -497,10 +509,10 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         member_limit      = COALESCE(?, member_limit),
         tax_rate_id       = COALESCE(?, tax_rate_id),
         tax_behavior      = COALESCE(?, tax_behavior),
-        free_months       = IF(?, ?, free_months),
-        paid_months       = IF(?, ?, paid_months),
-        bonus_months      = IF(?, ?, bonus_months),
-        pay_beforehand_months = IF(?, ?, pay_beforehand_months),
+        free_periods       = IF(?, ?, free_periods),
+        paid_periods       = IF(?, ?, paid_periods),
+        bonus_periods      = IF(?, ?, bonus_periods),
+        pay_beforehand_periods = IF(?, ?, pay_beforehand_periods),
         modified_at       = NOW(),
         modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -515,10 +527,10 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         // COALESCE can't express "clear this back to NULL", which Billing &
         // Duration needs — an emptied field means "not configured", not 0. The
         // IF(present, value, current) pair writes only the fields actually sent.
-        'free_months' in req.body ? 1 : 0, durations.free_months,
-        'paid_months' in req.body ? 1 : 0, durations.paid_months,
-        'bonus_months' in req.body ? 1 : 0, durations.bonus_months,
-        'pay_beforehand_months' in req.body ? 1 : 0, durations.pay_beforehand_months,
+        'free_periods' in req.body ? 1 : 0, durations.free_periods,
+        'paid_periods' in req.body ? 1 : 0, durations.paid_periods,
+        'bonus_periods' in req.body ? 1 : 0, durations.bonus_periods,
+        'pay_beforehand_periods' in req.body ? 1 : 0, durations.pay_beforehand_periods,
         callerMemberId,
         req.params.id, gymId,
       ],
@@ -674,13 +686,13 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       const { insertId } = await tx.query(
         `INSERT INTO membership_plans
          (gym_id, name, description, lifecycle_status, enrollment_status, member_limit, tax_rate_id, tax_behavior,
-          free_months, paid_months, bonus_months, pay_beforehand_months, created_by)
+          free_periods, paid_periods, bonus_periods, pay_beforehand_periods, created_by)
          VALUES (?, ?, ?, 'draft', 'staff_only', ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, `${orig.name} (Copy)`, orig.description ?? null, orig.member_limit, orig.tax_rate_id, orig.tax_behavior,
          // #635: Billing & Duration is part of the plan's commercial config, so
          // a copy that dropped it would quietly differ from its original.
-         orig.free_months ?? null, orig.paid_months ?? null, orig.bonus_months ?? null,
-         orig.pay_beforehand_months ?? null, callerMemberId],
+         orig.free_periods ?? null, orig.paid_periods ?? null, orig.bonus_periods ?? null,
+         orig.pay_beforehand_periods ?? null, callerMemberId],
       );
 
       // Copy billing policy
