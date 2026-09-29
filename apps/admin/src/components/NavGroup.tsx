@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { CSSProperties, useState } from 'react';
 import { NavGroup as NavGroupType, NavItem as NavItemType } from '@/config/navigationGroups';
+import { NavIcon } from './icons/NavIcons';
 
 /**
  * #779: a count shown beside the group header and beside one of its items,
@@ -162,7 +163,11 @@ export function NavGroup({
           display: 'flex',
           alignItems: 'center',
           width: '100%',
-          padding: '10px 20px',
+          // #884: 16px rather than 20px, and a 6px gap rather than 8px, so the
+          // section icon fits beside the chevron without the longest uppercase
+          // label ("CONFIGURACIÓN", "ENTRENAMIENTO") wrapping onto a second line
+          // in the 220px sidebar. Nothing else about the header's spacing moves.
+          padding: '10px 16px',
           background: 'transparent',
           border: 'none',
           color: 'rgba(255,255,255,0.6)',
@@ -172,7 +177,8 @@ export function NavGroup({
           cursor: 'pointer',
           textTransform: 'uppercase',
           letterSpacing: '0.08em',
-          gap: '8px',
+          gap: '6px',
+          whiteSpace: 'nowrap',
         }}
       >
         <span
@@ -182,12 +188,21 @@ export function NavGroup({
             justifyContent: 'center',
             width: '16px',
             height: '16px',
+            flexShrink: 0,
             transition: 'transform 150ms ease-in-out',
             transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
           }}
         >
           ▶
         </span>
+        {/*
+          #884: the section's own icon, beside — never instead of — the chevron:
+          the icon identifies the category, the chevron says whether it is open.
+          It is decorative and `aria-hidden`, so the button's accessible name is
+          still the label, and it draws in `currentColor`, so it follows the
+          header's colour rather than carrying a state of its own.
+        */}
+        <NavIcon name={group.icon} />
         {label}
       </button>
       {showBadge && (
