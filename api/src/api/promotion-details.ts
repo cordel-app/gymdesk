@@ -7,6 +7,12 @@ import {
   SellableItemBenefitCategory,
 } from '../domain/sellableItemClassification';
 import { promotionDurationMonths } from '../domain/promotionBenefits';
+import {
+  NO_SELLABLE_ITEM_BENEFIT,
+  SellableItemBenefit,
+  parseSellableItemBenefitInput,
+  shapeSellableItemBenefitRow,
+} from '../domain/sellableItemBenefitActions';
 
 export const promotionDetailsRouter = Router({ mergeParams: true });
 
@@ -236,6 +242,17 @@ function selectSellableItemBenefits(table: string): string {
           ORDER BY gym_charge_name ASC`;
 }
 
+/**
+ * One section, as the API serves it. #896 stage 2: every read reports the
+ * `(action, value)` pair normalized — `value` a number rather than mysql2's
+ * `DECIMAL` string, and an action outside what a Promotion may configure read
+ * back as the neutral default.
+ */
+async function loadPromotionBenefits(table: string, promotionId: unknown, gymId: string) {
+  const { rows } = await db.query(selectSellableItemBenefits(table), [promotionId, gymId]);
+  return rows.map((row: any) => shapeSellableItemBenefitRow('promotion', row));
+}
+
 const CATEGORY_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
   { path: 'session-benefits', category: 'session' },
   { path: 'oneoff-benefits', category: 'oneoff' },
@@ -249,8 +266,7 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     const { gymId } = getTenantContext(req);
     const promotionId = (req.params as any).id;
     try {
-      const { rows } = await db.query(selectSellableItemBenefits(table), [promotionId, gymId]);
-      res.json(rows);
+      res.json(await loadPromotionBenefits(table, promotionId, gymId));
     } catch (err) { next(err); }
   });
 
@@ -262,6 +278,7 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
 
     const gymChargeIds: number[] = [];
+    const submitted: { gym_charge_id: number; quantity: number; benefit: SellableItemBenefit | null }[] = [];
     const seen = new Set<number>();
     for (const item of items) {
       const gymChargeId = parseInt(item.gym_charge_id, 10);
@@ -275,8 +292,14 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
       if (seen.has(gymChargeId)) {
         return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
       }
+      // #896 stage 2 §6 — the line's own pricing treatment. A Promotion may
+      // configure all five actions; the CHECK beside the table is the backstop,
+      // this is the 400.
+      const parsed = parseSellableItemBenefitInput('promotion', item);
+      if (parsed.error) return res.status(400).json({ error: parsed.error });
       seen.add(gymChargeId);
       gymChargeIds.push(gymChargeId);
+      submitted.push({ gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit });
     }
 
     if (gymChargeIds.length > 0) {
@@ -314,16 +337,33 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
 
     try {
       await db.transaction(async (tx) => {
+        // #896 stage 2: this is a replace-all, so a line the request configured
+        // no treatment for has to keep the one it is stored with — read under
+        // the same transaction that is about to delete it. Promotion rows that
+        // predate migration 203 read `waive`, which is what they have always
+        // meant; rewriting them to the neutral default here would, at stage 3,
+        // start charging for an item the Promotion gives away.
+        const { rows: stored } = await tx.query(
+          `SELECT gym_charge_id, \`action\`, \`value\` FROM ${table}
+            WHERE promotion_id = ? AND gym_id = ? FOR UPDATE`,
+          [promotionId, gymId],
+        );
+        const kept = new Map<number, SellableItemBenefit>(
+          stored.map((r: any) => [Number(r.gym_charge_id), shapeSellableItemBenefitRow('promotion', r)]),
+        );
         await tx.query(`DELETE FROM ${table} WHERE promotion_id = ? AND gym_id = ?`, [promotionId, gymId]);
-        for (const item of items) {
+        for (const item of submitted) {
+          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_SELLABLE_ITEM_BENEFIT;
           await tx.query(
-            `INSERT INTO ${table} (gym_id, promotion_id, gym_charge_id, quantity, created_by_membership_id) VALUES (?, ?, ?, ?, ?)`,
-            [gymId, promotionId, parseInt(item.gym_charge_id, 10), parseInt(item.quantity, 10), gymMembershipId ?? null],
+            `INSERT INTO ${table}
+               (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`, created_by_membership_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, promotionId, item.gym_charge_id, item.quantity,
+             benefit.action, benefit.value, gymMembershipId ?? null],
           );
         }
       });
-      const { rows } = await db.query(selectSellableItemBenefits(table), [promotionId, gymId]);
-      res.json(rows);
+      res.json(await loadPromotionBenefits(table, promotionId, gymId));
     } catch (err) { next(err); }
   });
 }

@@ -1304,7 +1304,9 @@ describe('Session / One-off / Periodical benefits — duplicate', () => {
       .put(`/promotions/${promoId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: sessionItemId, quantity: 2 }] });
+      .send({
+        items: [{ gym_charge_id: sessionItemId, quantity: 2, action: 'fixed_price', value: 25 }],
+      });
   });
 
   it('duplicate copies session/one-off/periodical benefits', async () => {
@@ -1323,6 +1325,9 @@ describe('Session / One-off / Periodical benefits — duplicate', () => {
     expect(res.body).toHaveLength(1);
     expect(res.body[0].gym_charge_id).toBe(sessionItemId);
     expect(res.body[0].quantity).toBe(2);
+    // #896 stage 2: Duplicate is a copy, so the pricing treatment travels too.
+    expect(res.body[0].action).toBe('fixed_price');
+    expect(res.body[0].value).toBe(25);
   });
 });
 
@@ -1396,5 +1401,85 @@ describe('GET /promotions — membership_plan_id filter', () => {
     const ids = res.body.map((p: any) => p.id);
     expect(ids).toContain(promoForA);
     expect(ids).toContain(promoForB);
+  });
+});
+
+// ─── The grant's pricing treatment (#896 stage 2) ─────────────────────────────
+
+describe('Promotion benefit actions', () => {
+  let gymId: string;
+  let promoId: number;
+  let itemId: number;
+
+  const putSession = (items: unknown[]) => request
+    .put(`/promotions/${promoId}/session-benefits`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ items });
+
+  beforeAll(async () => {
+    gymId = await createTestGym('SIB Action Gym');
+    await createTestMembership(gymId, 'admin');
+    promoId = await createPromo(gymId, 'SIB Action Promo');
+    itemId = await createSellableItem(gymId, 'Action Group Class', 'sessions', null);
+  });
+
+  it('defaults a brand new grant to the neutral action', async () => {
+    const res = await putSession([{ gym_charge_id: itemId, quantity: 3 }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ quantity: 3, action: 'no_benefit', value: null });
+  });
+
+  it('stores all five actions a Promotion may configure', async () => {
+    for (const [action, value] of [
+      ['waive', null], ['percentage_discount', 20], ['fixed_discount', 5], ['fixed_price', 12],
+      ['no_benefit', null],
+    ] as const) {
+      const res = await putSession([
+        value == null
+          ? { gym_charge_id: itemId, quantity: 3, action }
+          : { gym_charge_id: itemId, quantity: 3, action, value },
+      ]);
+      expect(res.status).toBe(200);
+      // The value comes back a number, not mysql2's DECIMAL string.
+      expect(res.body[0]).toMatchObject({ action, value: value ?? null });
+    }
+  });
+
+  it('keeps a stored treatment when the save does not mention it', async () => {
+    // This is what protects migration 203's `waive` backfill: a grant configured
+    // before stage 4's editor exists must not be rewritten to "charge the normal
+    // price" by an unrelated quantity edit.
+    await putSession([{ gym_charge_id: itemId, quantity: 3, action: 'waive' }]);
+    const res = await putSession([{ gym_charge_id: itemId, quantity: 8 }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ quantity: 8, action: 'waive', value: null });
+  });
+
+  it('refuses a missing, out-of-range or superfluous value', async () => {
+    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'fixed_price' }])).status)
+      .toBe(400);
+    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount', value: 120 }])).status)
+      .toBe(400);
+    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'no_benefit', value: 5 }])).status)
+      .toBe(400);
+    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'nonsense' }])).status)
+      .toBe(400);
+    const orphanValue = await putSession([{ gym_charge_id: itemId, quantity: 1, value: 20 }]);
+    expect(orphanValue.status).toBe(400);
+    expect(orphanValue.body.error).toBe('value requires an action');
+  });
+
+  it('leaves the section untouched when one line is rejected', async () => {
+    const before = await request
+      .get(`/promotions/${promoId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount', value: -1 }]);
+    const after = await request
+      .get(`/promotions/${promoId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(after.body).toEqual(before.body);
   });
 });

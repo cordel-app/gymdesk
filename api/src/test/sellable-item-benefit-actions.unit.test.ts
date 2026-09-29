@@ -23,8 +23,15 @@ import {
   benefitActionsFor,
   benefitConfigError,
   isBenefitActionAllowed,
+  parseSellableItemBenefitInput,
+  shapeSellableItemBenefitRow,
   toSellableItemBenefit,
 } from '../domain/sellableItemBenefitActions';
+import {
+  MANDATORY_BENEFIT_QUANTITY,
+  mergeMandatoryBenefits,
+  withMandatoryBenefits,
+} from '../domain/mandatoryPlanBenefits';
 
 const require = createRequire(__filename);
 const migration = require('../infra/migrations/203_sellable_item_benefit_actions.js') as {
@@ -249,5 +256,101 @@ describe('#896 — migration 203 says the same thing as the module', () => {
     // bound, and `MAX_BENEFIT_AMOUNT` is that same limit spelled out so the
     // API answers 400 rather than letting MySQL raise an out-of-range error.
     expect(MAX_BENEFIT_AMOUNT).toBe(10 ** 8 - 0.01);
+  });
+});
+
+/* ── stage 2 ─────────────────────────────────────────────────────────────── */
+
+describe('#896 stage 2 — reading one submitted line', () => {
+  it('reports "not mentioned" rather than the default when no action is sent', () => {
+    // The distinction is the whole point: the six `PUT`s are replace-all, and
+    // a client that knows nothing about the pair must not silently rewrite it.
+    expect(parseSellableItemBenefitInput('promotion', { quantity: 3 } as any))
+      .toEqual({ error: null, benefit: null });
+    expect(parseSellableItemBenefitInput('plan', {})).toEqual({ error: null, benefit: null });
+    expect(parseSellableItemBenefitInput('plan', { action: null, value: null }))
+      .toEqual({ error: null, benefit: null });
+  });
+
+  it('refuses a value with no action', () => {
+    // The one shape that reads as a configured discount the server would drop.
+    const parsed = parseSellableItemBenefitInput('promotion', { value: 20 });
+    expect(parsed.error).toBe('value requires an action');
+    expect(parsed.benefit).toBeNull();
+  });
+
+  it('accepts the five a Promotion may configure and normalizes the value', () => {
+    expect(parseSellableItemBenefitInput('promotion', { action: 'waive' }))
+      .toEqual({ error: null, benefit: { action: 'waive', value: null } });
+    // A string from a form body is a number by the time it is stored.
+    expect(parseSellableItemBenefitInput('promotion', { action: 'percentage_discount', value: '20' }))
+      .toEqual({ error: null, benefit: { action: 'percentage_discount', value: 20 } });
+    expect(parseSellableItemBenefitInput('promotion', { action: 'fixed_price', value: 20 }))
+      .toEqual({ error: null, benefit: { action: 'fixed_price', value: 20 } });
+  });
+
+  it('refuses the two a Membership Plan may not (§16)', () => {
+    for (const action of ['fixed_discount', 'fixed_price']) {
+      const parsed = parseSellableItemBenefitInput('plan', { action, value: 10 });
+      expect(parsed.error).toContain('action must be one of');
+      expect(parsed.benefit).toBeNull();
+    }
+    // …while a Promotion takes both.
+    expect(parseSellableItemBenefitInput('promotion', { action: 'fixed_discount', value: 10 }).error)
+      .toBeNull();
+  });
+
+  it('refuses a value the action does not take, and a missing one it does', () => {
+    expect(parseSellableItemBenefitInput('plan', { action: 'waive', value: 5 }).error)
+      .toBe('waive takes no value');
+    expect(parseSellableItemBenefitInput('plan', { action: 'percentage_discount' }).error)
+      .toBe('percentage_discount requires a value');
+    expect(parseSellableItemBenefitInput('plan', { action: 'percentage_discount', value: 120 }).error)
+      .toBe('percentage_discount value must be between 0 and 100');
+  });
+});
+
+describe('#896 stage 2 — reporting one stored row', () => {
+  it('turns the DECIMAL string mysql2 hands back into a number', () => {
+    expect(shapeSellableItemBenefitRow('promotion', { gym_charge_id: 7, action: 'percentage_discount', value: '20.00' }))
+      .toEqual({ gym_charge_id: 7, action: 'percentage_discount', value: 20 });
+  });
+
+  it('reports an action the context may not configure as the neutral default', () => {
+    // Nothing can put a `fixed_price` on a Plan row — the CHECK refuses it —
+    // but a read must never hand the Plan editor an option it cannot offer.
+    expect(shapeSellableItemBenefitRow('plan', { action: 'fixed_price', value: '20.00' }))
+      .toEqual({ action: 'no_benefit', value: null });
+    expect(shapeSellableItemBenefitRow('plan', { action: 'waive', value: null }))
+      .toEqual({ action: 'waive', value: null });
+  });
+});
+
+describe('#896 stage 2 — the mandatory rule carries the pair (#893)', () => {
+  const item = {
+    id: 9, name: 'Insurance Fee', type: 'other',
+    billing_frequency: 'month', status: 'active', mandatory: 1,
+  };
+
+  it('shows a mandatory item a Plan has no row for at the neutral default', () => {
+    // Mandatory says the item must be *there*, never what it costs.
+    const merged = mergeMandatoryBenefits([], [item]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      gym_charge_id: 9, implicit: true, action: DEFAULT_BENEFIT_ACTION, value: null,
+    });
+  });
+
+  it('re-adds a dropped mandatory item without naming a treatment', () => {
+    // Naming none is what makes the route keep whatever the row was configured
+    // with: preserving an item the client dropped must not reprice it.
+    const written = withMandatoryBenefits([], [item]);
+    expect(written).toEqual([{ gym_charge_id: 9, quantity: MANDATORY_BENEFIT_QUANTITY }]);
+    expect(written[0].benefit).toBeUndefined();
+  });
+
+  it('passes a submitted mandatory item through with its own pair', () => {
+    const submitted = [{ gym_charge_id: 9, quantity: 3, benefit: { action: 'waive' as const, value: null } }];
+    expect(withMandatoryBenefits(submitted, [item])).toEqual(submitted);
   });
 });

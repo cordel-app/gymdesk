@@ -391,15 +391,22 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       // above — copied the same way so duplicating a promotion never drops
       // benefits configured through the new session/one-off/periodical
       // endpoints.
+      // #896 stage 2: the `(action, value)` pricing treatment is copied verbatim
+      // beside the quantity. Duplicate is a copy, not a re-configuration — a
+      // copy that dropped the pair would silently turn a waived grant into a
+      // charged one.
       for (const table of ['promotion_session', 'promotion_oneoff', 'promotion_periodical']) {
         const { rows: sibs } = await tx.query(
-          `SELECT gym_charge_id, quantity FROM ${table} WHERE promotion_id = ? AND gym_id = ?`,
+          `SELECT gym_charge_id, quantity, \`action\`, \`value\` FROM ${table}
+            WHERE promotion_id = ? AND gym_id = ?`,
           [src.id, gymId],
         );
         for (const sib of sibs) {
           await tx.query(
-            `INSERT INTO ${table} (gym_id, promotion_id, gym_charge_id, quantity, created_by_membership_id) VALUES (?, ?, ?, ?, ?)`,
-            [gymId, newId, sib.gym_charge_id, sib.quantity, gymMembershipId ?? null],
+            `INSERT INTO ${table}
+               (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`, created_by_membership_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [gymId, newId, sib.gym_charge_id, sib.quantity, sib.action, sib.value, gymMembershipId ?? null],
           );
         }
       }

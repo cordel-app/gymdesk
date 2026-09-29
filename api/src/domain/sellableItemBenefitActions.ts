@@ -192,3 +192,67 @@ export function applyLineBenefit(
   if (!benefit || benefit.action === 'no_benefit') return Math.round(line * 100) / 100;
   return applyPeriodBenefit(line, benefit.action, benefit.value);
 }
+
+/* ── Stage 2: what a request may say, and what a read reports ────────────── */
+
+/**
+ * The outcome of reading one submitted line's pricing treatment.
+ *
+ * `benefit: null` is **not** `no_benefit` — it is "this request did not
+ * mention the pair at all", which is a different thing and the reason this is
+ * three states rather than two. The six replace-all `PUT`s delete and re-insert
+ * the whole section on every save, so a client that only knows about
+ * `gym_charge_id` and `quantity` (every client until stage 4) would otherwise
+ * rewrite a configured treatment to the neutral default on an unrelated edit —
+ * and on the Promotion side that default is not what the row means, since
+ * migration 203 backfilled those rows to `waive`. A line the request did not
+ * mention therefore keeps what it is stored with, exactly as
+ * `writeAssignedPlanBenefitSection()` keeps a kept line's frozen price.
+ *
+ * Clearing a treatment stays possible and stays explicit: send
+ * `action: 'no_benefit'`.
+ */
+export interface ParsedSellableItemBenefit {
+  /** The 400's message, or `null` when the line is valid. */
+  error: string | null;
+  /** The pair to write, or `null` when the request named none. */
+  benefit: SellableItemBenefit | null;
+}
+
+/**
+ * §6's validation on the way in, for one line of a replace-all `PUT`.
+ *
+ * A `value` without an `action` is refused rather than ignored: it is the one
+ * shape that reads as a configured discount the server would silently drop.
+ */
+export function parseSellableItemBenefitInput(
+  context: SellableItemBenefitContext,
+  item: { action?: unknown; value?: unknown } | null | undefined,
+): ParsedSellableItemBenefit {
+  const action = item?.action;
+  const value = item?.value;
+  const hasValue = value !== undefined && value !== null && value !== '';
+  if (action === undefined || action === null || action === '') {
+    return { error: hasValue ? 'value requires an action' : null, benefit: null };
+  }
+  const error = benefitConfigError(context, action, value);
+  if (error) return { error, benefit: null };
+  const act = action as PromotionBenefitAction;
+  return {
+    error: null,
+    benefit: { action: act, value: benefitActionRequiresValue(act) ? Number(value) : null },
+  };
+}
+
+/**
+ * One stored row as a read must report it: the pair normalized through
+ * `toSellableItemBenefit()`, so `value` is a number rather than the
+ * `DECIMAL(10,2)` string mysql2 hands back, and a pair the context may not
+ * configure reads as the neutral default rather than leaking out of its editor.
+ */
+export function shapeSellableItemBenefitRow<T extends { action?: unknown; value?: unknown }>(
+  context: SellableItemBenefitContext, row: T,
+): Omit<T, 'action' | 'value'> & SellableItemBenefit {
+  const benefit = toSellableItemBenefit(context, row.action, row.value);
+  return { ...row, action: benefit.action, value: benefit.value };
+}
