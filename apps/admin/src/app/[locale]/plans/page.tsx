@@ -23,6 +23,7 @@ import {
   SellableItemBenefitView,
   SellableItemBenefitRow,
   SellableItemOption,
+  invalidBenefitValueRow,
   toBenefitItems,
 } from '@/components/SellableItemBenefits';
 import {
@@ -666,6 +667,14 @@ export default function PlansPage() {
   }
 
   async function saveBenefitEdit(planId: number, endpoint: string) {
+    // #896 §6: an action that asks for a value must carry one. The API refuses
+    // the same shape (`benefitConfigError()`); catching it here is what lets
+    // the message name the item instead of the field.
+    const incomplete = invalidBenefitValueRow(benefitDraft);
+    if (incomplete) {
+      toast(t('plans.benefit_value_required', { item: incomplete.gym_charge_name }));
+      return;
+    }
     setBenefitSaving(true);
     try {
       await apiFetch(`/membership-plans/${planId}/${endpoint}`, {
@@ -1287,6 +1296,7 @@ export default function PlansPage() {
                               categoryItems={categoryItems(section)}
                               showFrequency={showFrequency}
                               enforceMandatory
+                              benefitContext="plan"
                             />
                             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
                               <button onClick={cancelBenefitEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
@@ -1302,6 +1312,7 @@ export default function PlansPage() {
                             rows={savedBenefits(plan, section)}
                             showFrequency={showFrequency}
                             enforceMandatory
+                            benefitContext="plan"
                           />
                         )}
                       </div>

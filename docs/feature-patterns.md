@@ -815,7 +815,15 @@ presentation; do not re-decide anything.
    row helpers; each page keeps its own drafts and decides what is editable.
    That is what lets one component serve two different editing models (#627's
    single `editingSection` on Promotions, a `{planId, section}` pair on Plans)
-   without either page's state leaking into the other's.
+   without either page's state leaking into the other's. Promotions kept a
+   private copy of the grid until #896 stage 4 and the two had already drifted;
+   its `renderSellableItemBenefitEditor` / `…View` are wrappers over the shared
+   component now. What *does* differ between the two screens is passed in:
+   `benefitContext` picks the option set for a line's pricing treatment
+   (`'promotion'` → five, `'plan'` → three, omitted → no column at all, which is
+   how the Assigned Plan snapshot editor stays quantity-only), and every label
+   is a key in the caller's own namespace, so the same stored `no_benefit`
+   reads as *No promotion* on one screen and *No benefit* on the other.
 5. **Take only the sections the ticket names.** Membership Fee Benefits and
    Pay Beforehand stayed Promotion-only because §6/§7 said so — "behaves like"
    is not a licence to copy the whole entity.
