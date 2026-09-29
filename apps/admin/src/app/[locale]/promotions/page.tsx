@@ -12,6 +12,7 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { SectionEditButton } from '@/components/SectionEditButton';
 import { ExampleTimeline, ExampleTimelineTone } from '@/components/ExampleTimeline';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
@@ -1245,14 +1246,12 @@ export default function PromotionsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <p style={sectionLabelSt}>{t(titleKey as any)}</p>
         {onEdit && (
-          <button
+          <SectionEditButton
+            label={t('edit')}
             onClick={onEdit}
             disabled={disabled}
             title={!canWrite ? readOnlyTitle : sectionEditBusy ? t('edit_busy_hint') : undefined}
-            style={readOnlyStyle(btnSmall('#6c63ff'), disabled)}
-          >
-            {t('edit')}
-          </button>
+          />
         )}
       </div>
     );

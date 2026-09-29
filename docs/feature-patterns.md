@@ -758,7 +758,9 @@ sub-resource section gets its own **Edit** button and its own Save/Cancel.
 3. **Split the renderers in two, shell outside** — `render<X>Editor()` and
    `render<X>View()` render controls only; a `renderSectionHeader(titleKey,
    onEdit)` / `renderSectionActions(onSave)` shell owns the title, the Edit
-   button and Save/Cancel. One `renderExpandedSection(row)` then composes
+   button and Save/Cancel. The button itself is the shared
+   `SectionEditButton` (#901), so the shell decides *whether* and *with what
+   label*, never what it looks like. One `renderExpandedSection(row)` then composes
    every section, each choosing its own half — so there is no separate
    "the card is in edit mode" body to keep in sync with the view one.
 4. **One save handler per section, writing only its own endpoint** — and
@@ -1480,6 +1482,20 @@ When a ticket asks that one card's section "look like" another card's — same i
 - **A source-scanning test pins the reuse, not the markup.** `apps/admin` has no component-test infra, so the guard is: both pages import and render the shared component, *and* neither page restates the style literal. An assertion that pins JSX around a call (`value={f(…)}`) breaks the moment the call moves into an object — pin the call.
 
 Reference implementation: `apps/admin/src/components/BillingDurationSummary.tsx` + the Billing & Duration sections of `apps/admin/src/app/[locale]/plans/page.tsx` and `.../promotions/page.tsx`.
+
+---
+
+## Two Screens, One Themed Action Button (#901)
+
+The control half of the same problem: when two cards carry the *same action* and it looks different on each (the subsection `Edit` button — a filled `btnSmall('#6c63ff')` on Promotions, a bare brand-coloured text link on Plans), extract the button, not a second stylesheet.
+
+- **One component, no entity knowledge.** `apps/admin/src/components/SectionEditButton.tsx` owns the geometry and the colours and takes `label`, `onClick`, `disabled` and `title`. It resolves no locale key (a Plan says *Edit pricing* where a Promotion says *Edit*, and the two pages namespace their keys differently) and makes no permission decision — `disabled` and the title arrive decided, exactly as `BillingDurationSummary`'s labels do.
+- **Colours come from a Theme setting that already exists.** `primaryButton`/`primaryButtonText` are already in the Theme editor's **Buttons** group and `applyTokens()` already writes `--gd-primary-btn`/`--gd-primary-btn-text`; the button reads those rather than getting a setting of its own. Check for an existing setting before adding one — and prefer the one whose *meaning* matches (a primary action, not `--brand`, which is the sidebar's selected-item background). Reusing it also retires an editable setting nothing consumed, which is the #677 defect in the other direction.
+- **The literals stay `var()` fallbacks.** `var(--gd-primary-btn, #6c63ff)` keeps the pre-ticket look for the frames before `applyTokens()` has run; a bare hex anywhere else in the module is a second source of truth a themed gym cannot move. The default happens to *be* the old lilac, so unification changes nothing visually until a gym themes it.
+- **Unifying the look must not move the availability.** Whether the button is rendered at all stays with each page: absent, not disabled, outside `⋮ → Edit` (#897/#816), and disabled with `readOnlyTitle` for a role that may not write. A test that pins the look should pin the gates beside it.
+- **Source-scanning test, same shape as #879's.** Both pages import and render the shared component, *and* neither page's old styling survives (`btnSmall('#6c63ff')`, `readOnlyStyle(linkBtn`), *and* the orphaned page-local style constant is deleted rather than left behind. See `apps/admin/src/test/section-edit-button.test.ts`.
+
+Reference implementation: `apps/admin/src/components/SectionEditButton.tsx` + the section headers of `apps/admin/src/app/[locale]/plans/page.tsx` and `.../promotions/page.tsx`.
 
 ---
 
