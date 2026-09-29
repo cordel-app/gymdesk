@@ -22,6 +22,7 @@ import {
   toBenefitItems,
 } from '@/components/SellableItemBenefits';
 import { PromotionDetailModal } from './PromotionDetailModal';
+import { mfDurationOptions, promotionTimelineMonths } from './membershipFeeDuration';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -176,16 +177,15 @@ function parseDateStr(dateStr: string): Date {
 // ceiling for the Membership Fee Benefit duration. Pay Beforehand is excluded —
 // it only reclassifies paid months as prepaid, it never lengthens the Promotion.
 function promotionDurationFromForm(form: { free_months: string; paid_months: string; bonus_months: string }): number {
-  const n = (v: string) => Math.max(0, parseInt(v, 10) || 0);
-  return n(form.free_months) + n(form.paid_months) + n(form.bonus_months);
+  const n = (v: string) => parseInt(v, 10) || 0;
+  return promotionTimelineMonths(n(form.free_months), n(form.paid_months), n(form.bonus_months));
 }
 
 // Same ceiling, computed from a saved Promotion instead of the edit form —
 // needed now that a Benefit section can be edited (#627) without the main
 // configuration being in edit mode.
 function promotionDurationFromPromo(promo: Promo): number {
-  const n = (v: number | null) => Math.max(0, v ?? 0);
-  return n(promo.free_months) + n(promo.paid_months) + n(promo.bonus_months);
+  return promotionTimelineMonths(promo.free_months, promo.paid_months, promo.bonus_months);
 }
 
 // PUT body for the Membership Fee Benefit singleton (#551) — `value` is only
@@ -395,6 +395,11 @@ export default function PromotionsPage() {
   // must be re-constrained down to the new maximum so it never outlasts the
   // Promotion. Only clamps an explicit (non-null) over-long value; a null
   // (unbounded) duration is left alone.
+  //
+  // #899 replaced the Duration input with a selector, so this is the one place
+  // a selection can still fall out of range: the value was valid when it was
+  // picked and the Promotion shrank underneath it. Without this the select
+  // would simply render blank while the draft still carried the old number.
   useEffect(() => {
     if (editingId == null) return;
     const max = mfMaxDurationMonths(editingId);
@@ -1127,9 +1132,11 @@ export default function PromotionsPage() {
   // columns it inherited from the Period Benefits shape are gone.
   function renderMembershipFeeEditor(promoId: number) {
     // #625: the Membership Fee Benefit can never outlast the Promotion, so its
-    // duration is capped at the total Promotion duration
+    // duration is bounded by the total Promotion duration
     // (free + paid + bonus — Pay Beforehand only reclassifies paid months as
-    // prepaid, it never lengthens the Promotion).
+    // prepaid, it never lengthens the Promotion). #899 made that bound the
+    // Duration selector's own option list rather than a cap applied after the
+    // fact, so there is nothing left to truncate on the way in.
     const maxDuration = mfMaxDurationMonths(promoId);
     return (
       <>
@@ -1146,22 +1153,26 @@ export default function PromotionsPage() {
             return (
               <div style={{ display: 'contents' }}>
                 <span style={{ fontSize: 13 }}>{membershipFeeName}</span>
-                <input
-                  type="number" min="1"
-                  max={maxDuration > 0 ? maxDuration : undefined}
+                {/* #899: a selector, not a free-text number. The options are
+                    the durations the Promotion can actually carry (1..max, plus
+                    "—" for the whole Promotion), so an out-of-range value cannot
+                    be typed and then silently truncated — it is simply not
+                    offered. A Promotion with no periods at all (max 0) offers
+                    "—" alone, which is what keeps a positive duration off a
+                    zero-period Promotion. */}
+                <select
                   value={mfDraft.duration_months ?? ''}
-                  // #625: the benefit can never outlast the Promotion, so cap
-                  // the entered duration at the Promotion duration (Option A —
-                  // prevent an out-of-range value rather than flagging it).
-                  onChange={(e) => {
-                    const raw = e.target.value ? parseInt(e.target.value, 10) : null;
-                    const clamped = raw != null && maxDuration > 0 ? Math.min(raw, maxDuration) : raw;
-                    updateMfDraft({ duration_months: clamped });
-                  }}
-                  placeholder="—"
+                  onChange={(e) => updateMfDraft({
+                    duration_months: e.target.value ? parseInt(e.target.value, 10) : null,
+                  })}
                   title={maxDuration > 0 ? t('mf_duration_max_hint', { max: maxDuration }) : undefined}
                   style={{ ...inlineSelectSt, width: '100%' }}
-                />
+                >
+                  <option value="">—</option>
+                  {mfDurationOptions(maxDuration).map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
                 <select
                   value={mfAction}
                   onChange={(e) => updateMfDraft({ action: e.target.value, value: '' })}
