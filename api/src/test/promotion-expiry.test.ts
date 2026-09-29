@@ -112,7 +112,12 @@ describe('which Promotions the sweep expires', () => {
   });
 
   it('a manually inactive Promotion is never expired, however old (§5)', async () => {
-    const id = await createPromo({ name: 'Past Inactive', status: 'inactive', endsAt: dayOffset(-90) });
+    // `promotions_dates_check` (migration 019) is `ends_at >= starts_at`, so a
+    // Promotion this old needs a start date older still — the helper's default
+    // is 30 days back.
+    const id = await createPromo({
+      name: 'Past Inactive', status: 'inactive', startsAt: dayOffset(-120), endsAt: dayOffset(-90),
+    });
 
     await sweep();
 
