@@ -52,23 +52,25 @@ const BENEFIT_SECTIONS = ['session', 'oneoff', 'periodical', 'membership_fee'] a
 describe('Promotions: editing split by section (#627)', () => {
   it('tracks which single section of a card is editable', () => {
     // A card-wide `editingId` alone is what used to make the entire Promotion
-    // editable — the section discriminator is what splits it up.
-    expect(pageSrc).toContain('editingSection');
-    expect(pageSrc).toContain('setEditingSection');
+    // editable — the section discriminator is what splits it up. #897 renamed
+    // it to `openSection` and dropped its 'main' member: the main configuration
+    // is editable for as long as the card is in Edit mode, so it is no longer
+    // one of the mutually exclusive sections.
+    expect(pageSrc).toContain('openSection');
+    expect(pageSrc).toContain('setOpenSection');
     for (const section of BENEFIT_SECTIONS) {
-      expect(pageSrc, `no '${section}' section in the EditSection union`).toMatch(
-        new RegExp(`type EditSection[\\s\\S]*?'${section}'`),
+      expect(pageSrc, `no '${section}' section in the BenefitSection union`).toMatch(
+        new RegExp(`type BenefitSection[\\s\\S]*?'${section}'`),
       );
     }
-    expect(pageSrc, "EditSection must keep a 'main' member for the Promotion configuration")
-      .toMatch(/type EditSection[\s\S]*?'main'/);
   });
 
   it('enters edit mode per section rather than for the whole card', () => {
     expect(pageSrc).toContain('function isEditingSection');
     expect(pageSrc).toContain('async function enterSectionEdit');
-    // The context-menu Edit action opens the main configuration only.
-    expect(pageSrc).toMatch(/async function enterEdit[\s\S]*?setEditingSection\('main'\)/);
+    // The context-menu Edit action opens the main configuration, with no
+    // Benefit section's editor open under it (#897).
+    expect(pageSrc).toMatch(/async function enterEdit[\s\S]*?setOpenSection\(null\)/);
   });
 
   it('gives every Benefit section its own Edit button', () => {
@@ -98,8 +100,10 @@ describe('Promotions: editing split by section (#627)', () => {
     expect(saveSection).not.toBe('');
     expect(saveSection).not.toContain('mainBody()');
     expect(saveSection).not.toContain('/plans');
-    // Cancel is shared, and clears only the section currently being edited.
-    expect(pageSrc).toMatch(/function cancelEdit[\s\S]*?setEditingSection\(null\)/);
+    // Cancelling a section closes that section alone; cancelling Edit mode
+    // closes every editor with it (#897).
+    expect(pageSrc).toMatch(/function cancelSectionEdit[\s\S]*?setOpenSection\(null\)/);
+    expect(pageSrc).toMatch(/function cancelEdit[\s\S]*?setOpenSection\(null\)/);
   });
 
   it('keeps every Benefit section read-only until its own Edit button is used', () => {
@@ -114,8 +118,8 @@ describe('Promotions: editing split by section (#627)', () => {
     // Each section picks its renderer off its own editing state.
     expect(pageSrc).toMatch(/renderSellableBenefitSection[\s\S]*?isEditingSection\(promo\.id, cfg\.section\)/);
     expect(pageSrc).toMatch(/renderMembershipFeeSection[\s\S]*?isEditingSection\(promo\.id, 'membership_fee'\)/);
-    // …and the main configuration off its own.
-    expect(pageSrc).toMatch(/renderExpandedSection[\s\S]*?isEditingSection\(promo\.id, 'main'\)/);
+    // …and the main configuration off the card's own Edit mode (#897).
+    expect(pageSrc).toMatch(/renderExpandedSection[\s\S]*?isEditingCard\(promo\.id\)/);
   });
 
   it('still preserves the Membership Fee Benefit duration cap (#625)', () => {
