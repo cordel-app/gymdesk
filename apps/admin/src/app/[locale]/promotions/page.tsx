@@ -27,7 +27,7 @@ interface Promo {
   ends_at: string;
   stackable: number;
   only_applicable_for_new_members: number;
-  lifecycle_status: 'active' | 'inactive';
+  lifecycle_status: PromotionLifecycleStatus;
   created_at: string;
   created_by_name: string | null;
   free_months: number | null;
@@ -137,7 +137,17 @@ const SELLABLE_BENEFIT_SECTIONS: {
   { section: 'periodical', titleKey: 'section_period_benefits', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', showFrequency: true },
 ];
 
-const LIFECYCLE_STATUSES = ['active', 'inactive'] as const;
+// #900: `Expired` is a status the sweep writes (POST /promotion-lifecycle/run),
+// never something a gym picks — it means "this Promotion reached its End Date",
+// and offering it in the form would make it a second way of saying Inactive.
+// So the two lists are not the same one: the filter offers all three (§10 — an
+// expired Promotion must be findable, and not lumped in with the inactive
+// ones), the editor offers the two a gym decides between, and a row that is
+// already `expired` renders it as a disabled option so the select shows the
+// status it actually holds instead of silently reading as Active.
+type PromotionLifecycleStatus = 'active' | 'inactive' | 'expired';
+const LIFECYCLE_FILTER_STATUSES: readonly PromotionLifecycleStatus[] = ['active', 'inactive', 'expired'];
+const LIFECYCLE_EDIT_STATUSES: readonly PromotionLifecycleStatus[] = ['active', 'inactive'];
 const CHARGE_ACTIONS = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'] as const;
 const VALUED_CHARGE_ACTIONS = ['percentage_discount', 'fixed_discount', 'fixed_price'];
 const NEW_ID = 0;
@@ -198,7 +208,7 @@ function emptyEditForm(promo?: Promo) {
     stackable: promo ? !!promo.stackable : false,
     // #633: checked by default on create; on edit it mirrors the stored value.
     only_applicable_for_new_members: promo ? !!promo.only_applicable_for_new_members : true,
-    lifecycle_status: (promo?.lifecycle_status ?? 'active') as 'active' | 'inactive',
+    lifecycle_status: (promo?.lifecycle_status ?? 'active') as PromotionLifecycleStatus,
     free_months: promo?.free_months != null ? String(promo.free_months) : '',
     paid_months: promo?.paid_months != null ? String(promo.paid_months) : '',
     pay_beforehand_months: promo?.pay_beforehand_months != null ? String(promo.pay_beforehand_months) : '',
@@ -1112,8 +1122,15 @@ export default function PromotionsPage() {
           </div>
           <div>
             <label style={inlineLabelSt}>{t('label_lifecycle_status')}</label>
-            <select value={editForm.lifecycle_status} onChange={(e) => setEditForm({ ...editForm, lifecycle_status: e.target.value as 'active' | 'inactive' })} style={inlineSelectSt}>
-              {LIFECYCLE_STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+            <select value={editForm.lifecycle_status} onChange={(e) => setEditForm({ ...editForm, lifecycle_status: e.target.value as PromotionLifecycleStatus })} style={inlineSelectSt}>
+              {LIFECYCLE_EDIT_STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+              {/* #900: only while the form holds it — selectable never, visible
+                  so that saving an expired Promotion's other fields does not
+                  quietly reactivate it. Choosing Active is how a gym revives
+                  one, and the sweep expires it again unless its End Date moved. */}
+              {!LIFECYCLE_EDIT_STATUSES.includes(editForm.lifecycle_status) && (
+                <option value={editForm.lifecycle_status} disabled>{tStatus(editForm.lifecycle_status)}</option>
+              )}
             </select>
           </div>
           {/* #633: the two Promotion booleans are grouped in one cell, the new
@@ -1600,7 +1617,7 @@ export default function PromotionsPage() {
           <StatusFilter
             value={statusFilter}
             onChange={setStatusFilter}
-            options={LIFECYCLE_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
+            options={LIFECYCLE_FILTER_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
           <button onClick={handleNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || hasNewRow}>{t('add')}</button>

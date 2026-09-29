@@ -245,7 +245,12 @@ A boundary *equal* to today would be charged by tonight's run for the same reaso
 `.github/workflows/billing-run.yml` fires `POST /billing/run` twice a day — `0 6 * * *` and
 `0 10 * * *` UTC, the second being #781's safety net for a schedule GitHub dropped — then
 `POST /billing/cleanup` (with `if: ${{ !cancelled() && steps.config.outcome == 'success' }}`,
-so cleanup runs even when the charge step went red, but not when there is no API to call).
+so cleanup runs even when the charge step went red, but not when there is no API to call),
+and since #900 `POST /promotion-lifecycle/run` under the same condition. That third step is
+not a payments concern — it moves an `active` Promotion whose End Date has passed to
+`expired` (`api/src/domain/promotionLifecycle.ts`) and charges nothing — but it rides this
+workflow, and therefore this workflow's secret, rather than adding a third internal secret
+to provision and rotate.
 
 - Auth is `checkInternalSecret()`: the `X-Internal-Secret` header against
   `BILLING_INTERNAL_SECRET`. Both halves come from the same GitHub environment: the
@@ -258,7 +263,8 @@ so cleanup runs even when the charge step went red, but not when there is no API
   (`internalRunLimiter`, config in `api/src/domain/internalRunRateLimit.ts`): per client IP,
   `INTERNAL_RUN_RATE_LIMIT_MAX` (default 10) failed attempts per
   `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` (default 15), one budget shared by
-  `/billing/run`, `/billing/cleanup` and `/recurring-bookings/run`. **Only a 401 spends it**,
+  `/billing/run`, `/billing/cleanup`, `/recurring-bookings/run` and `/promotion-lifecycle/run`.
+  **Only a 401 spends it**,
   so a caller holding the secret — both of #781's daily attempts, and a run the guard
   answers `429 in_progress` or `200 already_completed_today` — never does. Once spent,
   every call from that address is `429` until the window ends, the right secret included.

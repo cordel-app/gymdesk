@@ -91,6 +91,7 @@ import { paymentMethodsRouter } from './api/payment-methods';
 import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
 import { recurringBookingsRouter } from './api/recurring-bookings';
+import { promotionLifecycleRouter } from './api/promotion-lifecycle';
 import { healthRouter } from './api/health';
 import { tenantContext, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
@@ -207,6 +208,13 @@ app.use('/billing', internalRunLimiter as any, billingRouter);
 // #647 stage 4: internal nightly runner that maintains the rolling 2-month
 // Personal Training booking window — same X-Internal-Secret pattern as /billing.
 app.use('/recurring-bookings', internalRunLimiter as any, recurringBookingsRouter);
+
+// #900: internal sweep that expires Promotions past their End Date — same
+// X-Internal-Secret pattern, and a step of the billing workflow (see
+// api/src/api/promotion-lifecycle.ts for why it shares that secret). Mounted
+// here rather than on the tenant-scoped `/promotions` router below because it
+// walks every gym.
+app.use('/promotion-lifecycle', internalRunLimiter as any, promotionLifecycleRouter);
 
 // Theme logo — no auth (img tags in both apps need this)
 app.use('/themes', themesPublicRouter);

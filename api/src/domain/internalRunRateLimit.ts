@@ -1,6 +1,7 @@
 /**
  * The per-route rate limit in front of the internal run endpoints (#783):
- * `POST /billing/run`, `POST /billing/cleanup` and `POST /recurring-bookings/run`.
+ * `POST /billing/run`, `POST /billing/cleanup`, `POST /recurring-bookings/run`
+ * and, since #900, `POST /promotion-lifecycle/run`.
  *
  * Those routes are authenticated by one thing only — the `X-Internal-Secret`
  * header, compared by each router's `checkInternalSecret()`. Until #783 the
