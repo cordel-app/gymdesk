@@ -14,6 +14,13 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { ExampleTimeline, ExampleTimelineTone } from '@/components/ExampleTimeline';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
+import {
+  SellableItemBenefitEditor,
+  SellableItemBenefitRow,
+  SellableItemBenefitView,
+  invalidBenefitValueRow,
+  toBenefitItems,
+} from '@/components/SellableItemBenefits';
 import { PromotionDetailModal } from './PromotionDetailModal';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
 
@@ -94,14 +101,12 @@ interface MembershipFeeBenefit {
 // which is why an item that has since gone inactive still resolves to its
 // real name/status here instead of falling back to "#<id>" — same pattern as
 // Suitable Membership Plans (#554) and Suitable Membership Plans' `cachedPlans`.
-interface SellableItemBenefit {
-  gym_charge_id: number;
-  quantity: number;
-  gym_charge_name: string;
-  gym_charge_type: string;
-  gym_charge_billing_frequency: string | null;
-  gym_charge_status: string;
-}
+// #896 stage 4: the row shape is the shared component's, not a second copy of
+// it. The three sections are rendered by `SellableItemBenefitEditor` /
+// `SellableItemBenefitView` now — the markup was duplicated here from the day
+// Plans got the same sections (#635 stage 1), and the (action, value) pair this
+// ticket adds is exactly the kind of field the two copies would have drifted on.
+type SellableItemBenefit = SellableItemBenefitRow;
 
 // #627: Promotion editing is split by section — the main Promotion
 // configuration (General, Suitable Membership Plans, Billing & Duration) and
@@ -182,10 +187,6 @@ function promotionDurationFromPromo(promo: Promo): number {
   const n = (v: number | null) => Math.max(0, v ?? 0);
   return n(promo.free_months) + n(promo.paid_months) + n(promo.bonus_months);
 }
-
-// Replace-all payload shape for the Sellable-Item-keyed benefit sections (#550).
-const toBenefitItems = (draft: SellableItemBenefit[]) =>
-  draft.map((b) => ({ gym_charge_id: b.gym_charge_id, quantity: b.quantity }));
 
 // PUT body for the Membership Fee Benefit singleton (#551) — `value` is only
 // sent for the actions that take one.
@@ -295,22 +296,11 @@ export default function PromotionsPage() {
   // `benefit_category` — the only classification source of truth (never
   // re-derived from name/type/frequency here). New selections only ever come
   // from these three lists; an item already associated with a promotion but
-  // since deactivated is merged in separately per-row (see benefitRowOptions).
+  // since deactivated is merged in separately per-row by the shared editor's
+  // benefitRowOptions().
   const activeSessionItems = gymCharges.filter((gc) => gc.benefit_category === 'session');
   const activeOneoffItems = gymCharges.filter((gc) => gc.benefit_category === 'oneoff');
   const activePeriodicalItems = gymCharges.filter((gc) => gc.benefit_category === 'periodical');
-
-  // Existing selections must remain visible/editable even after the
-  // underlying Sellable Item goes inactive (#550) — so a row's own saved
-  // gym_charge_id is always offered as an option, even if it fell out of the
-  // active-only `categoryItems` list above.
-  function benefitRowOptions(categoryItems: GymCharge[], row: SellableItemBenefit) {
-    const opts = categoryItems.map((c) => ({ id: c.id, name: c.name, inactive: false }));
-    if (!opts.some((o) => o.id === row.gym_charge_id)) {
-      opts.unshift({ id: row.gym_charge_id, name: row.gym_charge_name, inactive: true });
-    }
-    return opts;
-  }
 
   function defaultMfDraft(): MembershipFeeBenefit {
     return {
@@ -714,9 +704,18 @@ export default function PromotionsPage() {
           });
         }
       } else {
+        // #896 §6: an action that asks for a value must carry one. The API
+        // refuses the same shape; catching it here names the item instead of
+        // reporting a bare field error.
+        const draft = sellableSectionDraft(section);
+        const incomplete = invalidBenefitValueRow(draft);
+        if (incomplete) {
+          setSectionError(t('benefit_value_required', { item: incomplete.gym_charge_name }));
+          return;
+        }
         await apiFetch(`/promotions/${promoId}/${SELLABLE_BENEFIT_ENDPOINT[section]}`, {
           method: 'PUT',
-          body: JSON.stringify({ items: toBenefitItems(sellableSectionDraft(section)) }),
+          body: JSON.stringify({ items: toBenefitItems(draft) }),
         });
       }
       await loadSubResources(promoId);
@@ -810,50 +809,6 @@ export default function PromotionsPage() {
     return cachedPeriodicalB[promoId] ?? [];
   }
 
-  // ─── Session / One-off / Periodical benefit draft helpers (#550) ─────────
-  // Shared by all three sections — the only difference between them is which
-  // `categoryItems` list (active Sellable Items of that classification) and
-  // which draft/setter they operate on.
-
-  function addBenefitRow(
-    setDraft: (fn: (prev: SellableItemBenefit[]) => SellableItemBenefit[]) => void,
-    categoryItems: GymCharge[],
-    draft: SellableItemBenefit[],
-  ) {
-    const next = categoryItems.find((c) => !draft.some((d) => d.gym_charge_id === c.id));
-    if (!next) return;
-    setDraft((prev) => [
-      ...prev,
-      {
-        gym_charge_id: next.id, quantity: 1, gym_charge_name: next.name,
-        gym_charge_type: next.type, gym_charge_billing_frequency: next.billing_frequency,
-        gym_charge_status: next.status,
-      },
-    ]);
-  }
-
-  function updateBenefitRow(
-    setDraft: (fn: (prev: SellableItemBenefit[]) => SellableItemBenefit[]) => void,
-    categoryItems: GymCharge[],
-    idx: number,
-    patch: Partial<SellableItemBenefit>,
-  ) {
-    setDraft((prev) => prev.map((r, i) => {
-      if (i !== idx) return r;
-      const next = { ...r, ...patch };
-      if (patch.gym_charge_id != null) {
-        const item = categoryItems.find((c) => c.id === patch.gym_charge_id);
-        if (item) {
-          next.gym_charge_name = item.name;
-          next.gym_charge_type = item.type;
-          next.gym_charge_billing_frequency = item.billing_frequency;
-          next.gym_charge_status = item.status;
-        }
-      }
-      return next;
-    }));
-  }
-
   // ─── Suitable Membership Plans: Select All (#554) ─────────────────────────
   // Selection math itself lives in lib/suitablePlansSelection.ts (unit
   // tested there) — this just wires it to component state and to the native
@@ -934,11 +889,14 @@ export default function PromotionsPage() {
     return base;
   }
 
-  // #550: shared row/grid renderer for the Session / One-off / Periodical
-  // Benefit sections — identical shape, differing only in which category's
-  // active items back the picker and whether the (read-only, Sellable-Item-
-  // derived) Frequency column is shown. #627: renders the controls only — the
-  // section shell (title, Edit / Save / Cancel) is renderBenefitSection's job.
+  // #550/#635: the Session / One-off / Periodical Promotion sections are the
+  // same grid the Membership Plan card renders, so since #896 stage 4 there is
+  // one implementation of it — `SellableItemBenefitEditor`. These two wrappers
+  // stay because the sections are picked by name elsewhere on the page (#627's
+  // one-section-at-a-time shell) and because this is where the Promotion's own
+  // context is named: five options, and every label out of the `promotions`
+  // namespace, which is what makes the very same stored `no_benefit` read as
+  // *No promotion* here and *No benefit* on the Plans page (§3).
   function renderSellableItemBenefitEditor(opts: {
     addKey: string;
     draft: SellableItemBenefit[];
@@ -946,90 +904,32 @@ export default function PromotionsPage() {
     categoryItems: GymCharge[];
     showFrequency: boolean;
   }) {
-    const { addKey, draft, setDraft, categoryItems, showFrequency } = opts;
-    const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.gym_charge_id === c.id));
     return (
-      <>
-        {draft.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: showFrequency ? '1.3fr 80px 100px 28px' : '1.3fr 80px 28px',
-              gap: '3px 8px', alignItems: 'center', marginBottom: 8,
-            }}
-          >
-            <span style={colHeaderSt}>{t('col_sellable_item')}</span>
-            <span style={colHeaderSt}>{t('col_quantity')}</span>
-            {showFrequency && <span style={colHeaderSt}>{t('col_frequency')}</span>}
-            <span />
-            {draft.map((row, idx) => (
-              <div key={row.gym_charge_id} style={{ display: 'contents' }}>
-                <select
-                  value={row.gym_charge_id}
-                  onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { gym_charge_id: parseInt(e.target.value, 10) })}
-                  style={inlineSelectSt}
-                >
-                  {benefitRowOptions(categoryItems, row).map((o) => (
-                    <option key={o.id} value={o.id}>{o.inactive ? `${o.name} ${t('inactive_item_tag')}` : o.name}</option>
-                  ))}
-                </select>
-                <input
-                  type="number" min="1" value={row.quantity}
-                  onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { quantity: parseInt(e.target.value, 10) || 1 })}
-                  style={{ ...inlineSelectSt, width: '100%' }}
-                />
-                {showFrequency && (
-                  <span style={{ fontSize: 13, color: '#666' }}>
-                    {row.gym_charge_billing_frequency ? t(`frequency_${row.gym_charge_billing_frequency}` as any) : '—'}
-                  </span>
-                )}
-                <button
-                  onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}
-                >✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-        {hasMoreToAdd && (
-          <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={btnSmall('#6c63ff')}>{t(addKey as any)}</button>
-        )}
-      </>
+      <SellableItemBenefitEditor
+        t={(key, values) => t(key as any, values as any)}
+        addKey={opts.addKey}
+        draft={opts.draft}
+        setDraft={opts.setDraft}
+        categoryItems={opts.categoryItems}
+        showFrequency={opts.showFrequency}
+        benefitContext="promotion"
+      />
     );
   }
 
-  // Read-only counterpart of renderSellableItemBenefitEditor — what a Benefit
-  // section shows until its own Edit button is pressed (#627).
+  // Read-only counterpart of renderSellableItemBenefitEditor — what a section
+  // shows until its own Edit button is pressed (#627).
   function renderSellableItemBenefitView(
     emptyKey: string, rows: SellableItemBenefit[], showFrequency: boolean,
   ) {
     return (
-      <>
-        {rows.length === 0
-          ? <p style={hintSt}>{t(emptyKey as any)}</p>
-          : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr>
-                  <th style={thSt}>{t('col_sellable_item')}</th>
-                  <th style={thSt}>{t('col_quantity')}</th>
-                  {showFrequency && <th style={thSt}>{t('col_frequency')}</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.gym_charge_id}>
-                    <td style={tdSt}>{r.gym_charge_name}{r.gym_charge_status !== 'active' && ` ${t('inactive_item_tag')}`}</td>
-                    <td style={tdSt}>{r.quantity}</td>
-                    {showFrequency && (
-                      <td style={tdSt}>{r.gym_charge_billing_frequency ? t(`frequency_${r.gym_charge_billing_frequency}` as any) : '—'}</td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-      </>
+      <SellableItemBenefitView
+        t={(key, values) => t(key as any, values as any)}
+        emptyKey={emptyKey}
+        rows={rows}
+        showFrequency={showFrequency}
+        benefitContext="promotion"
+      />
     );
   }
 

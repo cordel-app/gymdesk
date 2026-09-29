@@ -20,6 +20,7 @@ import { join } from 'path';
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
+const SHARED_EDITOR = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;
@@ -152,7 +153,13 @@ describe('Promotions: Membership Fee recurrence fields removed (#814)', () => {
       expect(keys.has('col_quantity'), `${locale}.json lost promotions.col_quantity`).toBe(true);
       expect(keys.has('col_frequency'), `${locale}.json lost promotions.col_frequency`).toBe(true);
     }
-    expect(code, 'the Sellable Item sections lost their Quantity column').toContain("'col_quantity'");
+    // #896 stage 4: the three Sellable Item sections render through the shared
+    // editor now, so the Quantity column is declared there — the page names the
+    // context, the component names the columns.
+    expect(code, 'the Sellable Item sections no longer render through the shared editor')
+      .toContain('benefitContext="promotion"');
+    const sharedSrc = stripComments(readFileSync(SHARED_EDITOR, 'utf-8'));
+    expect(sharedSrc, 'the shared editor lost its Quantity column').toContain("t('col_quantity')");
   });
 
   it('has an identical "promotions" key set across every supported locale (en/es/ca)', () => {

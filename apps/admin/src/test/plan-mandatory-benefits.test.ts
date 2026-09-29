@@ -95,8 +95,12 @@ describe('the shared benefit editor', () => {
     // mandatory item can be neither dropped nor swapped for another one.
     expect(componentSrc).toMatch(/\{mandatory \? <span \/> : \(\s*<button/);
     expect(componentSrc).toMatch(/\{mandatory \? \(\s*<span style=\{\{ fontSize: 13 \}\}>/);
-    // The picker is the other half of that ternary, so there is exactly one.
-    expect(componentSrc.match(/<select/g) ?? []).toHaveLength(1);
+    // The picker is the other half of that ternary, so there is exactly one of
+    // it. #896 stage 4 added a second <select> to the grid — the line's pricing
+    // treatment — which a mandatory row *does* get: Mandatory says the item must
+    // exist, never what it costs.
+    expect(componentSrc.match(/<select/g) ?? []).toHaveLength(2);
+    expect(componentSrc).toContain('{benefitActionsFor(benefitContext).map((a) => (');
   });
 
   it('keeps the quantity editable (§4)', () => {
