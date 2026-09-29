@@ -245,9 +245,12 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
       'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
       [gymId, promotionId, planId],
     );
-    // Two free months of the locker the Plan already carries.
+    // Two free months of the locker the Plan already carries. `waive` is the
+    // #896 treatment that makes them free — the column defaults to
+    // `no_benefit`, which charges the normal price.
     await db.query(
-      'INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, 2)',
+      `INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity, action)
+       VALUES (?, ?, ?, 2, 'waive')`,
       [gymId, promotionId, lockerId],
     );
 
@@ -263,7 +266,9 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
     // Membership Fee + one locker line, not two locker lines.
     expect(Object.keys(lines)).toHaveLength(2);
     expect(lines[lockerName]).toMatchObject({ actual_charge: 0, regular_price: 20 });
-    expect(lines[lockerName].benefits[0]).toMatchObject({ source: 'promotion', action: 'included' });
+    // #896 stage 3 — the line reports the grant's own treatment rather than the
+    // pre-ticket `included`, which meant exactly this `waive`.
+    expect(lines[lockerName].benefits[0]).toMatchObject({ source: 'promotion', action: 'waive' });
   });
 
   it('charges the item again once the granted periods run out', async () => {

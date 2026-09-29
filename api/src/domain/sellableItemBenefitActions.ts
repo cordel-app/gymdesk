@@ -180,9 +180,11 @@ export function toSellableItemBenefit(
  * Fixed Price of €20 it bills €20 for the line.
  *
  * The arithmetic itself is `applyPeriodBenefit()` — this function decides only
- * what amount to hand it. Nothing calls it yet: the billing cutover is stage 3
- * of the plan agreed on #896, and this is where the answered semantics live
- * until it does.
+ * what amount to hand it. Since stage 3 the Billing Simulation's two charge
+ * builders are what call it (`domain/billingSimulation.ts`): a Plan benefit's
+ * own pair prices the line for the life of the assignment, and a covering
+ * Promotion grant's pair is folded on top for the periods or units that grant
+ * covers.
  */
 export function applyLineBenefit(
   unitPrice: number, quantity: number, benefit: SellableItemBenefit | null | undefined,

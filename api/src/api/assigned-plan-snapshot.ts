@@ -439,7 +439,7 @@ export async function loadPlanBenefitsForSimulation(
   const { rows } = await db.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, user_membership_id, gym_charge_id, quantity,
-             item_name, item_billing_frequency, unit_price
+             item_name, item_billing_frequency, unit_price, \`action\`, \`value\`
       FROM ${BENEFIT_TABLE_BY_CATEGORY[category]}
       WHERE gym_id = ? AND user_membership_id IN (${marks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...ids]),
@@ -453,6 +453,11 @@ export async function loadPlanBenefitsForSimulation(
       billingFrequency: toFrequency(row.item_billing_frequency),
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
       quantity: positiveQuantity(row.quantity),
+      // #896 stage 3 — the Plan's own treatment of this line, as frozen with
+      // it. Read through `toSellableItemBenefit('plan', …)`, so a value stored
+      // as mysql2's DECIMAL string arrives as a number and an action a Plan may
+      // not configure reads as the neutral default rather than pricing.
+      benefit: toSellableItemBenefit('plan', row.action, row.value),
     });
     byAssignment.set(row.user_membership_id, list);
   }
@@ -467,7 +472,8 @@ export async function loadPlanBenefitsForSimulation(
   const { rows: liveRows } = await db.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, b.membership_plan_id, b.gym_charge_id, b.quantity,
-             ${ITEM_NAME_EXPR} AS item_name, gc.billing_frequency, gc.amount
+             ${ITEM_NAME_EXPR} AS item_name, gc.billing_frequency, gc.amount,
+             b.\`action\`, b.\`value\`
       FROM ${planBenefitTableForCategory(category)} b
       JOIN gym_charges gc ON gc.id = b.gym_charge_id
       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -484,6 +490,7 @@ export async function loadPlanBenefitsForSimulation(
       billingFrequency: toFrequency(row.billing_frequency),
       unitPrice: row.amount != null ? Number(row.amount) : 0,
       quantity: positiveQuantity(row.quantity),
+      benefit: toSellableItemBenefit('plan', row.action, row.value),
     });
     livePerPlan.set(row.membership_plan_id, list);
   }
@@ -523,7 +530,8 @@ export async function loadPromotionGrantSnapshots(
   const { rows } = await db.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, user_membership_promotion_id, gym_charge_id,
-             gym_charge_name, quantity, item_billing_frequency, unit_price
+             gym_charge_name, quantity, item_billing_frequency, unit_price,
+             \`action\`, \`value\`
       FROM ${PROMOTION_GRANT_SNAPSHOT_TABLE[category]}
       WHERE gym_id = ? AND user_membership_promotion_id IN (${marks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...applicationIds]),
@@ -540,6 +548,11 @@ export async function loadPromotionGrantSnapshots(
       billingFrequency: toFrequency(row.item_billing_frequency),
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
       quantity: positiveQuantity(row.quantity),
+      // #896 stage 3 — what this grant does to the periods/units it covers, as
+      // agreed when the Promotion was applied (§16). A row snapshotted before
+      // migration 203 carries the `waive` its backfill wrote, which is what a
+      // grant meant when the column did not exist.
+      benefit: toSellableItemBenefit('promotion', row.action, row.value),
     });
     byApplication.set(row.user_membership_promotion_id, list);
   }

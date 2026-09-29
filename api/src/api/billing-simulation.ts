@@ -12,6 +12,7 @@ import {
   computeBillingSimulation,
 } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
+import { toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
 import { PlanDuration, toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
 import { loadServicesForSimulation } from './user-membership-services';
@@ -138,6 +139,7 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
   const marks = promotionIds.map(() => '?').join(',');
   const select = (table: string, category: SellableItemBenefitCategory) => `
     SELECT '${category}' AS category, b.promotion_id, b.gym_charge_id, b.quantity,
+           b.\`action\`, b.\`value\`,
            gc.name, gc.amount, gc.billing_frequency
     FROM ${table} b
     JOIN gym_charges gc ON gc.id = b.gym_charge_id
@@ -161,6 +163,10 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
       billingFrequency: (row.billing_frequency ?? null) as SellableItemFrequency | null,
       unitPrice: row.amount != null ? Number(row.amount) : 0,
       quantity: Math.max(1, Number(row.quantity) || 1),
+      // #896 stage 3 — the treatment the Promotion configures for this item.
+      // Every row that predates migration 203 reads `waive`, which is the free
+      // coverage this fallback used to hard-code.
+      benefit: toSellableItemBenefit('promotion', row.action, row.value),
     };
     const list = byPromotion.get(row.promotion_id) ?? [];
     list.push(grant);

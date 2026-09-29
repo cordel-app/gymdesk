@@ -2458,8 +2458,13 @@ async function applyPromotionDirect(gymId: string, umId: number, promoId: number
 }
 
 async function grantPeriodicalItem(gymId: string, promoId: number, gymChargeId: number, quantity: number): Promise<void> {
+  // #896 — a grant carries its own pricing treatment since migration 203, and
+  // the column defaults to `no_benefit` (the normal price). `waive` is what a
+  // grant meant before the column existed, and what migration 203 backfilled
+  // every existing row to, so it is what these cases configure.
   await db.query(
-    'INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)',
+    `INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity, action)
+     VALUES (?, ?, ?, ?, 'waive')`,
     [gymId, promoId, gymChargeId, quantity],
   );
 }
@@ -2742,12 +2747,16 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     const promoId = await createPromotion(gymId, planId, `Sim Grants ${Date.now()}`);
     const feeItem = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once', 50);
     const sessionItem = await createSellableItem(gymId, 'Personal Training Class', 'sessions', 'per_session', 30);
+    // #896 — `waive` is the treatment that makes a granted item free; the
+    // column's own default charges the normal price.
     await db.query(
-      'INSERT INTO promotion_oneoff (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, 1)',
+      `INSERT INTO promotion_oneoff (gym_id, promotion_id, gym_charge_id, quantity, action)
+       VALUES (?, ?, ?, 1, 'waive')`,
       [gymId, promoId, feeItem],
     );
     await db.query(
-      'INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, 4)',
+      `INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity, action)
+       VALUES (?, ?, ?, 4, 'waive')`,
       [gymId, promoId, sessionItem],
     );
     await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');

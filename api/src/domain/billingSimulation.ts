@@ -53,6 +53,16 @@
 // Plan's own Personal Membership Fee Benefit, applied on top of whatever the
 // Promotions and the Billing & Duration resolve, on every cycle for the whole
 // life of the assignment.
+//
+// #896 stage 3 makes the Sellable Item half of that explicit. A Plan benefit
+// and a Promotion grant each carry their own `(action, value)` pair now
+// (migration 203), so "the Plan charges for it and the Promotion makes it
+// free" stops being hard-coded and becomes the `no_benefit` / `waive` case of
+// one rule, applied through `applyLineBenefit()` / `applyPeriodBenefit()` —
+// §11's "do not introduce a second independent pricing system". Every row that
+// predates the column reads what it already meant (`waive` on the Promotion
+// side, `no_benefit` on the Plan side), so no existing configuration changes
+// price by a cent.
 
 import { advanceBillingDate } from './billingDate';
 import {
@@ -67,6 +77,11 @@ import {
   personalFeeBenefitApplies,
 } from './personalFeeBenefit';
 import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
+import {
+  NO_SELLABLE_ITEM_BENEFIT,
+  SellableItemBenefit,
+  applyLineBenefit,
+} from './sellableItemBenefitActions';
 import {
   AppliedPromotionForBilling,
   MembershipFeeBenefit,
@@ -131,6 +146,19 @@ export interface SimulationGrant {
    * covered (`promotion_periodical.quantity`).
    */
   quantity: number;
+  /**
+   * #896 stage 3 — what the grant *does* to the units it covers, which until
+   * this stage was hard-coded: a grant made them free. It is now the
+   * relationship's own `(action, value)` pair, read from the application's
+   * snapshot (§16) and normalized through `toSellableItemBenefit()`.
+   *
+   * Required rather than optional, for the reason `personalFeeBenefit` is: a
+   * loader that forgot it would silently price a grant as `no_benefit` and
+   * start charging a member for what their Promotion gives them. Every row
+   * that predates the column reads `waive` (migration 203's backfill), so
+   * nothing an existing member holds changes price here.
+   */
+  benefit: SellableItemBenefit;
 }
 
 /**
@@ -166,6 +194,17 @@ export interface SimulationPlanBenefit {
   unitPrice: number;
   /** Units billed — per period for a Period Benefit, once for the other two. */
   quantity: number;
+  /**
+   * #896 stage 3 — the Plan's own pricing treatment of this line, frozen onto
+   * the assignment with it. `no_benefit` (the column default, and what every
+   * row written before migration 203 reads as) is the normal price, which is
+   * what a Plan benefit has always been charged at.
+   *
+   * Unlike a Promotion grant's, it is bounded by nothing: it is how this
+   * contract prices the item for its whole life, so it never makes a charge
+   * `promotional` — see `buildItemStream`.
+   */
+  benefit: SellableItemBenefit;
 }
 
 export interface SimulationAssignment {
@@ -242,7 +281,18 @@ export interface SimulationBenefit {
    */
   source: 'promotion' | 'membership_plan' | 'personal';
   name: string | null;
-  /** `included` = the item itself is granted by the Promotion (session/one-off/periodical benefit). */
+  /**
+   * The treatment applied, in the one vocabulary both sides store
+   * (`PromotionBenefitAction`).
+   *
+   * `included` is the pre-#896 spelling of "this Promotion grant made the item
+   * free": until stage 3 a grant carried no action of its own, so the line had
+   * nothing truer to report. A grant now reports the pair it is configured
+   * with — `waive` for every row migration 203 backfilled, which is what
+   * `included` always meant — so nothing writes `included` any more. The member
+   * of the union stays because the admin still labels it and removing it is a
+   * label change, not a pricing one.
+   */
   action: PromotionBenefitAction | 'included';
   value: number | null;
   /**
@@ -657,6 +707,13 @@ interface BillableItem {
   unitPrice: number;
   /** Units billed each occurrence (Period Benefit) or once (one-off/session). */
   quantity: number;
+  /**
+   * #896 — the item's own treatment: the Plan benefit's `(action, value)` pair
+   * when the Plan carries it, and the neutral default for an item that exists
+   * only because a Promotion granted it (there is no Plan row to configure one
+   * on — the grant's own pair is what prices those units).
+   */
+  benefit: SellableItemBenefit;
   coverage: GrantCoverage[];
 }
 
@@ -685,6 +742,7 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
       billingFrequency: benefit.billingFrequency,
       unitPrice: benefit.unitPrice,
       quantity: Math.max(1, Math.trunc(benefit.quantity) || 1),
+      benefit: benefit.benefit,
       coverage: [],
     });
   }
@@ -703,6 +761,10 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
         billingFrequency: grant.billingFrequency,
         unitPrice: grant.unitPrice,
         quantity: grant.category === 'periodical' ? 1 : Math.max(1, Math.trunc(grant.quantity) || 1),
+        // The item is the Promotion's alone — no Plan row configures it, so the
+        // line prices at the catalogue price and the grant's own pair is what
+        // changes it for the units/periods it covers.
+        benefit: NO_SELLABLE_ITEM_BENEFIT,
         coverage: [{ promo, grant }],
       });
     }
@@ -713,14 +775,38 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
 
 /**
  * A recurring Sellable Item: billed at its own `billing_frequency` from the
- * assignment's start date, waived for the periods a Promotion grant covers and
- * charged at its regular price otherwise (#629 thread Q3, #635 §14).
+ * assignment's start date, priced by the Plan's own treatment of the line, and
+ * by a covering Promotion grant's treatment for the periods that grant covers
+ * (#629 thread Q3, #635 §14, #896 §11).
+ *
+ * Until #896 stage 3 a covered period was free and an uncovered one cost the
+ * full line. Both are now the `no_benefit`/`waive` cases of one rule:
+ *
+ *   line   = unit x quantity                      (`regular_price`, unchanged)
+ *   base   = the Plan's own pair applied to it    (`no_benefit` for every row
+ *                                                  written before migration 203)
+ *   charge = each covering grant's pair applied to `base`, in turn
+ *
+ * The grants fold rather than replace, because two Promotions may cover the
+ * same period and the member is entitled to both; folding a `waive` over
+ * anything still gives 0, which is why every existing configuration keeps its
+ * price to the cent.
  */
 function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | null {
   const cadence = item.billingFrequency ? cadenceForSellableItem(item.billingFrequency) : null;
   if (!cadence) return null;
   const unit = round2(item.unitPrice);
   const regular = round2(unit * item.quantity);
+  // The Plan's own treatment of the line. It applies to every occurrence for
+  // the life of the assignment, so — exactly like the Personal Membership Fee
+  // Benefit (#772) — it never sets `promotional`: a discount that never ends
+  // *is* this contract's regular charge, and treating it as promotional would
+  // push the horizon to the safety cap for every discounted item.
+  const base = applyLineBenefit(unit, item.quantity, item.benefit);
+  const planBenefitLines: SimulationBenefit[] = item.benefit.action === 'no_benefit' ? [] : [{
+    source: 'membership_plan', name: null,
+    action: item.benefit.action, value: item.benefit.value, period_status: null,
+  }];
   // The item is billed from the assignment's start date, but a grant only
   // starts covering periods once its Promotion was applied — which can be
   // later. Counting the granted periods from the first *covered* occurrence
@@ -738,20 +824,24 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
       const covering = coverage.filter((c) => occurrence >= c.firstCovered
         && occurrence < c.firstCovered + c.grant.quantity
         && promotionCoversDate(c.promo, date));
-      if (covering.length > 0) {
-        return {
-          amount: 0,
-          benefits: covering.map((c) => ({
-            source: 'promotion' as const, name: c.promo.name,
-            action: 'included' as const, value: null, period_status: null,
-          })),
-          promotional: true,
-          pending: false,
-        };
+      let amount = base;
+      const benefits = [...planBenefitLines];
+      let promotional = false;
+      for (const c of covering) {
+        const { action, value } = c.grant.benefit;
+        // A grant covering the period with no treatment configured charges the
+        // normal price and explains nothing — and, deliberately, does not make
+        // the occurrence promotional: the projection's horizon asks whether a
+        // charge differs from the regular one, and this one does not.
+        if (action === 'no_benefit') continue;
+        amount = applyPeriodBenefit(amount, action, value);
+        benefits.push({ source: 'promotion', name: c.promo.name, action, value, period_status: null });
+        promotional = true;
       }
+      if (promotional) return { amount, benefits, promotional, pending: false };
       const pending = coverage.some((c) => occurrence < c.firstCovered
         && (c.promo.revokedAt == null || date <= c.promo.revokedAt));
-      return { amount: regular, benefits: [], promotional: false, pending };
+      return { amount, benefits, promotional: false, pending };
     },
     line: (date, resolved) => ({
       kind: 'sellable_item',
@@ -823,16 +913,46 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
  * the assignment's start date covering the whole quantity (#629 thread Q5 —
  * `per_session` items appear as "N sessions").
  *
- * The Promotion grants covering it pay for as many units as they grant, capped
- * at the quantity actually billed: a Plan carrying 10 sessions and a Promotion
- * granting 4 of them charges the remaining 6, while an item the Plan does not
- * carry at all is granted in full and charges nothing.
+ * Each Promotion grant prices as many units as it grants, capped at the
+ * quantity actually billed, and whatever is left over is priced by the Plan's
+ * own treatment: a Plan carrying 10 sessions and a Promotion waiving 4 of them
+ * charges the remaining 6, while an item the Plan does not carry at all is
+ * granted in full. Since #896 stage 3 "prices" is the grant's own
+ * `(action, value)` pair rather than an implicit free — 4 waived units cost 0
+ * exactly as before (migration 203 backfilled every existing grant to `waive`),
+ * and 4 units at 20% off cost 80% of their share of the line.
+ *
+ * The units are allocated grant by grant, in the order the grants were
+ * collected: each one may only treat units no earlier grant has taken, so two
+ * Promotions granting 4 sessions each on a 6-session Plan discount 4 and 2, not
+ * 8 of 6.
  */
 function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): SingleCharge {
   const unit = round2(item.unitPrice);
   const regular = round2(unit * item.quantity);
-  const granted = item.coverage.reduce((sum, c) => sum + Math.max(0, Math.trunc(c.grant.quantity) || 0), 0);
-  const covered = Math.min(item.quantity, granted);
+  const benefits: SimulationBenefit[] = [];
+  let remaining = item.quantity;
+  let amount = 0;
+  for (const c of item.coverage) {
+    if (remaining <= 0) break;
+    const units = Math.min(remaining, Math.max(0, Math.trunc(c.grant.quantity) || 0));
+    if (units <= 0) continue;
+    remaining -= units;
+    amount += applyLineBenefit(unit, units, c.grant.benefit);
+    const { action, value } = c.grant.benefit;
+    if (action !== 'no_benefit') {
+      benefits.push({ source: 'promotion', name: c.promo.name, action, value, period_status: null });
+    }
+  }
+  if (remaining > 0) {
+    amount += applyLineBenefit(unit, remaining, item.benefit);
+    if (item.benefit.action !== 'no_benefit') {
+      benefits.push({
+        source: 'membership_plan', name: null,
+        action: item.benefit.action, value: item.benefit.value, period_status: null,
+      });
+    }
+  }
   return {
     section: item.category === 'session' ? 'session' : 'one_off',
     date: a.startsAt,
@@ -845,13 +965,8 @@ function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): Sin
       quantity: item.quantity,
       unit_price: unit,
       regular_price: regular,
-      benefits: covered > 0
-        ? item.coverage.map((c) => ({
-          source: 'promotion' as const, name: c.promo.name,
-          action: 'included' as const, value: null, period_status: null,
-        }))
-        : [],
-      actual_charge: round2(unit * (item.quantity - covered)),
+      benefits,
+      actual_charge: round2(amount),
       price_may_change: false,
     },
   };
