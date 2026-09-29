@@ -15,6 +15,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { listNameBadgeStyle } from '@/components/listChrome';
 import { Frequency, frequencyOptions, isLegacyFrequency } from './sellableItemFrequency';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -589,6 +590,7 @@ export default function SellableItemsPage() {
     const isExpanded = expanded.has(item.id);
     const isEditing = editingId === item.id;
     const isSystem = Boolean(item.is_system);
+    const isMandatory = Boolean(item.mandatory);
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetails(item) },
@@ -607,8 +609,16 @@ export default function SellableItemsPage() {
           <div style={{ ...cellStyle, fontWeight: 600, fontSize: 15 }}>
             {item.name}
             {isSystem && (
-              <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 500, color: '#888', background: '#f0f0f0', borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle' }}>
+              <span style={listNameBadgeStyle}>
                 {t('system_badge')}
+              </span>
+            )}
+            {/* #894: read-only, and read from the column rather than from the
+                item's name or type — a System item is not mandatory by virtue
+                of being a System item. The checkbox stays in the edit form. */}
+            {isMandatory && (
+              <span style={listNameBadgeStyle}>
+                {t('mandatory_badge')}
               </span>
             )}
           </div>
