@@ -162,6 +162,8 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'section_plan_period_benefits',
       'section_centers',
       'section_example_timeline',
+      // #915 — a second read-only projection, appended after the timeline.
+      'section_billing_event_simulation',
     ]);
   });
 

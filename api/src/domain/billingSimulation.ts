@@ -266,6 +266,27 @@ export interface BillingSimulationInput {
   assignments: SimulationAssignment[];
   /** Overrides MAX_SIMULATION_MONTHS — tests only. */
   maxMonths?: number;
+  /**
+   * #915 — a floor on the projection's horizon, in complete cycles of *every*
+   * recurring stream. The default rule (#629 §6) is "run until each item has
+   * been charged once at its regular price", which for a configuration with no
+   * Promotions at all is satisfied by the very first charge: a Plan billing a
+   * flat €70 every 4 weeks would project one event and stop.
+   *
+   * The Membership Plan's own Billing Event Simulation needs a span instead —
+   * "two complete cycles of every recurring billing frequency present in the
+   * plan", so a yearly item stretches the projection to two years and drags the
+   * 4-weekly ones along with it. `2` therefore means the horizon is at least
+   * `stream.start + 2 x cadence`, which is two whole cycles of wall-clock time
+   * and (because an event lands on the horizon itself) three charges of the
+   * fastest stream — exactly the Sep 30 / Oct 28 / Nov 25 shape #915 specifies.
+   *
+   * It only ever *raises* the horizon: the first-regular-charge rule still
+   * applies, so a Plan with a six-period Free Period keeps projecting until its
+   * first paid period instead of stopping two cycles in. Bounded by the same
+   * `cap` and by each stream's own end date.
+   */
+  minimumCycles?: number;
 }
 
 /** Why an actual charge differs from the regular price. */
@@ -650,6 +671,22 @@ function occurrenceIndexOf(start: string, from: string, cadence: Cadence): numbe
     index++;
   }
   return index;
+}
+
+/**
+ * The date `cycles` complete cadence steps after `start` — the span a caller's
+ * `minimumCycles` floor asks the projection to cover (#915). Bounded by the
+ * same scan cap as `occurrenceIndexOf`, so a cadence that fails to advance
+ * returns the last date it reached rather than spinning.
+ */
+function cyclesFrom(start: string, cycles: number, cadence: Cadence): string {
+  let cursor = start;
+  for (let i = 0; i < cycles && i < MAX_OCCURRENCE_SCAN; i++) {
+    const next = cadence.advance(cursor);
+    if (next <= cursor) break;
+    cursor = next;
+  }
+  return cursor;
 }
 
 /** A non-recurring charge: one line, on the assignment's start date. */
@@ -1060,7 +1097,9 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
   ].reduce(minDate);
   const cap = advanceBillingDate(startDate, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
 
-  // Pass 1 — each stream's own first regular (unbenefited) charge.
+  // Pass 1 — each stream's own first regular (unbenefited) charge, and (#915)
+  // the caller's floor of N complete cycles of that stream, whichever is later.
+  const minimumCycles = Math.max(0, Math.trunc(input.minimumCycles ?? 0) || 0);
   let horizon = startDate;
   let truncated = false;
   for (const stream of streams) {
@@ -1068,6 +1107,9 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
     if (capped) truncated = true;
     const last = events[events.length - 1];
     if (last) horizon = maxDate(horizon, last.date);
+    const floor = cyclesFrom(stream.start, minimumCycles, stream.cadence);
+    const bounded = stream.end != null ? minDate(floor, stream.end) : floor;
+    horizon = maxDate(horizon, minDate(bounded, cap));
   }
 
   // Pass 2 — every stream now runs to the shared horizon.

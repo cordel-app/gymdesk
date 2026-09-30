@@ -910,4 +910,47 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
       expect(events.map((e) => e.total)).toEqual([80, 0, 100]);
     });
   });
+
+  // #915 — the horizon floor the Membership Plan's Billing Event Simulation
+  // needs. The default rule stops at the first regular charge, which for a
+  // configuration with no Promotions is the very first one.
+  describe('minimumCycles', () => {
+    it('is not applied by default', () => {
+      const result = computeBillingSimulation({ assignments: [assignment()] });
+      expect(section(result, 'month')!.events.map((e) => e.date)).toEqual([START]);
+    });
+
+    it('spans N complete cycles of every recurring stream', () => {
+      const result = computeBillingSimulation({
+        assignments: [assignment()],
+        minimumCycles: 2,
+      });
+      // Two complete cycles of wall-clock time, so an event lands on the horizon
+      // itself and the fastest stream shows three charges.
+      expect(section(result, 'month')!.events.map((e) => e.date))
+        .toEqual(['2026-09-01', '2026-10-01', '2026-11-01']);
+      expect(result.horizon_date).toBe('2026-11-01');
+    });
+
+    it('takes the slowest stream\'s span, and carries the others out with it', () => {
+      const result = computeBillingSimulation({
+        assignments: [assignment({
+          planBenefits: [planBenefit({ billingFrequency: 'year', unitPrice: 30 })],
+        })],
+        minimumCycles: 2,
+      });
+      expect(result.horizon_date).toBe('2028-09-01');
+      expect(section(result, 'year')!.events.map((e) => e.date))
+        .toEqual(['2026-09-01', '2027-09-01', '2028-09-01']);
+      expect(section(result, 'month')!.events).toHaveLength(25);
+    });
+
+    it('only raises the horizon — the first regular charge still wins when later', () => {
+      const result = computeBillingSimulation({
+        assignments: [assignment({ planDuration: toPlanDuration(6, 12, 0, 0, MONTHLY_CADENCE) })],
+        minimumCycles: 2,
+      });
+      expect(result.horizon_date).toBe('2027-03-01');
+    });
+  });
 });
