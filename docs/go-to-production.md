@@ -278,6 +278,34 @@ Clerk Development and Production instances are separate: users, user ids and met
 - [ ] Admin and member apps: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is a Docker build `ARG`,
       baked in at **build time** — the production images must be built with the `pk_live_…`
       key; changing a runtime variable is not enough.
+- [ ] **Session lifetime.** Clerk ends every session a fixed time after sign-in (Configure →
+      Sessions → *Maximum lifetime*, default 7 days), however active the user is, and each
+      browser runs its own clock, so a user on several devices is asked to sign in again
+      almost daily (measured on a real Development user, September 2026). Changing it on
+      Production is a paid-plan feature: decide the value and the plan before launch.
+
+### Google sign-in (custom OAuth credentials)
+
+Development already signs in with our own Google OAuth client instead of Clerk's shared one
+(which shows "Clerk" on Google's page and asks for consent on every sign-in). It lives in
+Google Cloud project **Cordel Fitness Pro** (`cordel-fitness-pro`, owner `xavier.egea@gmail.com`),
+OAuth client **Clerk sign-in**, app published (*In production*, External). Production reuses the
+same project and client:
+
+- [ ] Clerk Production → SSO connections → Google → **Use custom credentials**: paste the same
+      Client ID and secret (Google shows the secret once, so keep a copy somewhere safe).
+- [ ] Google client *Clerk sign-in* → add Production's redirect URI
+      (`https://clerk.<prod-domain>/v1/oauth_callback`, exactly as Clerk shows it).
+- [ ] Google **Branding**: home page and privacy policy link on the production domain
+      (`https://admin.<prod-domain>/privacy`; the page ships with the admin app, #921), and add
+      `<prod-domain>` to *Authorized domains*. `vdicube.com` is **not** the production domain.
+- [ ] **Brand verification**, so Google's page says "Cordel Fitness Pro" instead of a domain. Until
+      then Google shows the redirect domain (today `accounts.dev`, Clerk's Development host).
+      Verification requires proving ownership of **every** authorized domain, so first remove
+      `vdicube.com` and `accounts.dev` (this breaks custom-credential Google sign-in on the
+      Development instance: switch it back to Clerk's shared credentials), verify
+      `<prod-domain>` in Google Search Console, then Google Auth Platform → Verification Center →
+      *Verify branding*. Uploading a logo also requires verification.
 
 ## 3. First superadmin (bootstrap)
 
