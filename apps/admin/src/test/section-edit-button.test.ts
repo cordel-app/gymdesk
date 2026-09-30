@@ -49,14 +49,13 @@ describe('SectionEditButton: theme-derived colours (#901 §3, §4, §5)', () => 
     expect(sectionEditButtonStyle.cursor).toBe('pointer');
   });
 
-  it('spells the colours only as CSS var() fallbacks', () => {
-    // A bare `#6c63ff` or `#fff` anywhere else in the module would be a second
-    // source of truth that a themed gym could not move.
-    const colourLiterals = componentSrc.match(/#[0-9a-fA-F]{3,8}/g) ?? [];
-    expect(colourLiterals).toEqual(['#6c63ff', '#ffffff']);
-    for (const literal of colourLiterals) {
-      expect(componentSrc).toContain(`, ${literal})`);
-    }
+  it('spells no colour of its own at all', () => {
+    // #912 moved the `var()` fallback pair into `primaryActionColors` in
+    // `ui.tsx`, since the Theme editor's primary actions need the same one. A
+    // bare `#6c63ff` or `#fff` here would be the second source of truth this
+    // component exists to remove.
+    expect(componentSrc.match(/#[0-9a-fA-F]{3,8}/g) ?? []).toEqual([]);
+    expect(componentSrc).toContain('sectionEditButtonStyle: React.CSSProperties = primaryBtnSmall()');
   });
 
   it('carries no locale key and no permission decision of its own', () => {
