@@ -41,6 +41,7 @@ import {
   shapeSellableItemBenefitRow,
   toSellableItemBenefit,
 } from '../domain/sellableItemBenefitActions';
+import { PlanBenefitPrices, planBenefitPrices } from '../domain/planBenefitPrices';
 
 interface PlanRow {
   id: number;
@@ -153,7 +154,55 @@ interface SellableItemRow {
 interface BenefitPricingRow extends PlanBenefitRow {
   gym_charge_amount?: string | number | null;
   gym_charge_tax_behavior?: string | null;
-  gym_charge_tax_rate_percent?: string | null;
+  gym_charge_tax_rate_percent?: string | number | null;
+}
+
+/**
+ * One benefit row's item price, **grossed up** — the amount every Plan-side
+ * projection is denominated in (#915's tax note, #817 for why the arithmetic is
+ * the server's and never the page's). `null` for an item that carries no price
+ * at all, which is not the same as €0.00: a priced-at-nothing row bills nothing
+ * and reads as "—".
+ *
+ * The rate may be missing while the amount is not (a gym with no tax rate
+ * configured), and the stored amount is then the honest gross — exactly how
+ * `formatPlanCurrentPrice()` falls back for the Plan's own price.
+ */
+function grossBenefitUnitPrice(
+  row: BenefitPricingRow, fallback?: SellableItemRow,
+): number | null {
+  const amount = row.gym_charge_amount ?? fallback?.amount ?? null;
+  if (amount == null) return null;
+  return computePriceFields({
+    amount,
+    tax_rate_percent: row.gym_charge_tax_rate_percent ?? fallback?.tax_rate_percent ?? null,
+    tax_behavior: row.gym_charge_tax_behavior ?? fallback?.tax_behavior ?? 'inclusive',
+  }).amount_incl_tax ?? Number(amount);
+}
+
+/**
+ * #916 — the section as the card renders it: every row plus the Original and
+ * Final Price it must show, VAT included.
+ *
+ * The amounts are `domain/planBenefitPrices.ts`'s, over the same
+ * `applyLineBenefit()` the Billing Simulation's charge builders use, so the
+ * Benefit sections and the Billing Event Simulation beside them on the very
+ * same card cannot quote one line two ways. Nothing is stored: like
+ * `example_timeline` and `billing_event_simulation`, these are computed on
+ * every read.
+ */
+function withPlanBenefitPrices<T extends PlanBenefitRow>(
+  rows: (T | PlanBenefitRow)[], catalogue?: SellableItemRow[],
+): ((T | PlanBenefitRow) & PlanBenefitPrices)[] {
+  const byId = new Map((catalogue ?? []).map((item) => [Number(item.id), item]));
+  return rows.map((row) => ({
+    ...row,
+    ...planBenefitPrices(
+      grossBenefitUnitPrice(row as BenefitPricingRow, byId.get(Number(row.gym_charge_id))),
+      Number(row.quantity) || 1,
+      toSellableItemBenefit('plan', row.action, row.value),
+    ),
+  }));
 }
 
 /**
@@ -178,14 +227,10 @@ function planSimulationItems(
   const items: PlanSimulationItem[] = [];
   for (const { category, rows } of sections) {
     for (const row of rows as BenefitPricingRow[]) {
-      const fallback = byId.get(Number(row.gym_charge_id));
-      const amount = row.gym_charge_amount ?? fallback?.amount ?? null;
-      if (amount == null) continue; // an item with no price bills nothing
-      const gross = computePriceFields({
-        amount,
-        tax_rate_percent: row.gym_charge_tax_rate_percent ?? fallback?.tax_rate_percent ?? null,
-        tax_behavior: row.gym_charge_tax_behavior ?? fallback?.tax_behavior ?? 'inclusive',
-      }).amount_incl_tax ?? Number(amount);
+      // #916: the same gross-up the Benefit sections' own Original Price uses,
+      // so the two projections on one card cannot price an item differently.
+      const gross = grossBenefitUnitPrice(row, byId.get(Number(row.gym_charge_id)));
+      if (gross == null) continue; // an item with no price bills nothing
       items.push({
         gymChargeId: Number(row.gym_charge_id),
         name: row.gym_charge_name,
@@ -394,9 +439,15 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   // the stored rows plus the mandatory items this Plan has no row for yet.
   // `sellableItems` above is already the gym's active, non-deleted catalogue —
   // exactly the candidate set the rule takes — so no extra round trip.
-  const sessionSection = mergeMandatoryBenefits(sessionBenefits, mandatoryItemsForCategory(sellableItems, 'session'));
-  const oneoffSection = mergeMandatoryBenefits(oneoffBenefits, mandatoryItemsForCategory(sellableItems, 'oneoff'));
-  const periodicalSection = mergeMandatoryBenefits(periodicalBenefits, mandatoryItemsForCategory(sellableItems, 'periodical'));
+  // #916: and each row carries the Original / Final Price the card shows — one
+  // pricing pass over the merged section, so a Mandatory item the Plan has no
+  // stored row for yet is quoted exactly like a configured one.
+  const sessionSection = withPlanBenefitPrices(
+    mergeMandatoryBenefits(sessionBenefits, mandatoryItemsForCategory(sellableItems, 'session')), sellableItems);
+  const oneoffSection = withPlanBenefitPrices(
+    mergeMandatoryBenefits(oneoffBenefits, mandatoryItemsForCategory(sellableItems, 'oneoff')), sellableItems);
+  const periodicalSection = withPlanBenefitPrices(
+    mergeMandatoryBenefits(periodicalBenefits, mandatoryItemsForCategory(sellableItems, 'periodical')), sellableItems);
 
   // #915: the Billing Event Simulation — the same three sections the card
   // renders, projected into the billing events a member enrolling today would
@@ -1433,10 +1484,14 @@ async function loadPlanBenefits(
  */
 async function loadMandatorySellableItems(gymId: string): Promise<MandatorySellableItem[]> {
   const { rows } = await db.query<MandatorySellableItem>(
-    `SELECT id, name, type, billing_frequency, status, mandatory
-       FROM gym_charges
-      WHERE gym_id = ? AND deleted_at IS NULL AND status = 'active' AND mandatory = 1
-      ORDER BY name ASC`,
+    // #916: the price columns come along, so an implicit row quotes its
+    // Original and Final Price like a stored one instead of reading "—".
+    `SELECT gc.id, gc.name, gc.type, gc.billing_frequency, gc.status, gc.mandatory,
+            gc.amount, gc.tax_behavior, tr.rate_percent AS tax_rate_percent
+       FROM gym_charges gc
+       LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
+      WHERE gc.gym_id = ? AND gc.deleted_at IS NULL AND gc.status = 'active' AND gc.mandatory = 1
+      ORDER BY gc.name ASC`,
     [gymId],
   );
   return rows;
@@ -1459,7 +1514,10 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       // #893 §1/§5: a mandatory item is part of the section whether or not this
       // Plan has a row for it — the editor and the read-only view both read this.
       const mandatory = mandatoryItemsForCategory(await loadMandatorySellableItems(gymId), category);
-      res.json(mergeMandatoryBenefits(rows, mandatory));
+      // #916: the section's own endpoint reports the same Original / Final
+      // Price pair `enrichPlan` embeds, so the card and a refetch of one
+      // section cannot disagree about what a line costs.
+      res.json(withPlanBenefitPrices(mergeMandatoryBenefits(rows, mandatory)));
     } catch (err) { next(err); }
   });
 
@@ -1563,7 +1621,8 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         }
       });
       recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: planId, next: { [`${category}_benefits`]: toWrite } });
-      res.json(mergeMandatoryBenefits(await loadPlanBenefits(table, planId, gymId), mandatory));
+      res.json(withPlanBenefitPrices(
+        mergeMandatoryBenefits(await loadPlanBenefits(table, planId, gymId), mandatory)));
     } catch (err) { next(err); }
   });
 }

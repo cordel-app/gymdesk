@@ -1,0 +1,245 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import {
+  BENEFIT_ITEM_COLUMN_MIN_WIDTH,
+  SELLABLE_ITEM_BENEFIT_COLUMNS,
+  SellableItemBenefitColumnKey,
+  benefitTableMinWidth,
+  formatBenefitPrice,
+  sellableItemBenefitColumns,
+} from '@/components/SellableItemBenefits';
+
+// #916 — the Membership Plan card's three Sellable Item sections must read as
+// one table, and each row must show what the item normally costs and what it
+// costs inside the Plan.
+//
+// The ticket's central invariant is that the sections no longer have
+// independent column layouts: `SELLABLE_ITEM_BENEFIT_COLUMNS` is the one
+// declaration and every section renders from it, so a column a section has no
+// value for keeps its place with a "—" instead of vanishing and shifting the
+// columns after it.
+//
+// apps/admin has no component-test infra (docs/architecture.md's TL;DR), so the
+// pure declaration is exercised directly and the wiring is pinned by scanning
+// the sources, the way plans-benefit-sections.test.ts does.
+
+const SRC = join(__dirname, '..');
+const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
+const LOCALE_CODES = ['en', 'es', 'ca'] as const;
+
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
+const componentSrc = stripComments(
+  readFileSync(join(SRC, 'components', 'SellableItemBenefits.tsx'), 'utf-8'),
+);
+const plansSrc = stripComments(
+  readFileSync(join(SRC, 'app', '[locale]', 'plans', 'page.tsx'), 'utf-8'),
+);
+const promotionsSrc = stripComments(
+  readFileSync(join(SRC, 'app', '[locale]', 'promotions', 'page.tsx'), 'utf-8'),
+);
+
+const keysOf = (cols: { key: SellableItemBenefitColumnKey }[]) => cols.map((c) => c.key);
+
+describe('#916: one shared column declaration', () => {
+  it('fixes the column order the ticket asks for', () => {
+    expect(keysOf([...SELLABLE_ITEM_BENEFIT_COLUMNS])).toEqual([
+      'item', 'quantity', 'frequency', 'action', 'original_price', 'final_price',
+    ]);
+  });
+
+  it('keeps Benefit between Frequency and the prices, never after them', () => {
+    const at = (key: SellableItemBenefitColumnKey) =>
+      SELLABLE_ITEM_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
+    expect(at('action')).toBeGreaterThan(at('frequency'));
+    expect(at('action')).toBeLessThan(at('original_price'));
+    expect(at('final_price')).toBeGreaterThan(at('original_price'));
+  });
+
+  it('right-aligns the numbers and left-aligns the words', () => {
+    const align = Object.fromEntries(SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => [c.key, c.align]));
+    expect(align).toMatchObject({
+      item: 'left', quantity: 'right', frequency: 'left', action: 'left',
+      original_price: 'right', final_price: 'right',
+    });
+  });
+
+  it('sizes every column but the name, which takes the rest', () => {
+    const flexible = SELLABLE_ITEM_BENEFIT_COLUMNS.filter((c) => c.width == null);
+    expect(keysOf(flexible)).toEqual(['item']);
+    for (const col of SELLABLE_ITEM_BENEFIT_COLUMNS) {
+      if (col.width != null) expect(col.width).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('#916: sellableItemBenefitColumns()', () => {
+  const full = { showFrequency: true, showAction: true, showPrices: true };
+
+  it('is the whole grid for the Membership Plan sections', () => {
+    expect(keysOf(sellableItemBenefitColumns(full))).toEqual([
+      'item', 'quantity', 'frequency', 'action', 'original_price', 'final_price',
+    ]);
+  });
+
+  it('gives every section of one page the same columns — the flags are the page\'s, not the section\'s', () => {
+    // Called once per section with the same flags, it can only answer the same
+    // grid, which is what makes the horizontal positions identical.
+    const oneoff = sellableItemBenefitColumns(full);
+    const periodical = sellableItemBenefitColumns(full);
+    expect(keysOf(oneoff)).toEqual(keysOf(periodical));
+    expect(oneoff.map((c) => c.width)).toEqual(periodical.map((c) => c.width));
+  });
+
+  it('drops the two price columns for a caller that does not price its rows', () => {
+    expect(keysOf(sellableItemBenefitColumns({ ...full, showPrices: false }))).toEqual([
+      'item', 'quantity', 'frequency', 'action',
+    ]);
+  });
+
+  it('drops the treatment column for a caller that named no context', () => {
+    expect(keysOf(sellableItemBenefitColumns({ ...full, showAction: false }))).toEqual([
+      'item', 'quantity', 'frequency', 'original_price', 'final_price',
+    ]);
+  });
+
+  it('never reorders what it keeps', () => {
+    for (const showFrequency of [true, false]) {
+      for (const showAction of [true, false]) {
+        for (const showPrices of [true, false]) {
+          const kept = keysOf(sellableItemBenefitColumns({ showFrequency, showAction, showPrices }));
+          const expected = keysOf([...SELLABLE_ITEM_BENEFIT_COLUMNS]).filter((k) => kept.includes(k));
+          expect(kept).toEqual(expected);
+        }
+      }
+    }
+  });
+});
+
+describe('#916: the table scrolls rather than squashing', () => {
+  it('adds up the fixed widths plus a floor for the name column', () => {
+    const columns = sellableItemBenefitColumns({
+      showFrequency: true, showAction: true, showPrices: true,
+    });
+    const fixed = columns.reduce((sum, c) => sum + (c.width ?? 0), 0);
+    expect(benefitTableMinWidth(columns)).toBe(fixed + BENEFIT_ITEM_COLUMN_MIN_WIDTH);
+  });
+
+  it('asks for less room when a page shows fewer columns', () => {
+    const withPrices = sellableItemBenefitColumns({
+      showFrequency: true, showAction: true, showPrices: true,
+    });
+    const without = sellableItemBenefitColumns({
+      showFrequency: true, showAction: true, showPrices: false,
+    });
+    expect(benefitTableMinWidth(without)).toBeLessThan(benefitTableMinWidth(withPrices));
+  });
+});
+
+describe('#916: the read-only view renders from the declaration', () => {
+  it('builds one grid for the section and renders every cell through it', () => {
+    expect(componentSrc).toContain('const columns = sellableItemBenefitColumns({');
+    expect(componentSrc).toContain('<col key={col.key}');
+    expect(componentSrc).toContain("<th key={col.key} style={{ ...thSt, textAlign: col.align }}>{t(col.labelKey)}</th>");
+    expect(componentSrc).toContain('<td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r)}</td>');
+  });
+
+  it('fixes the layout, so a long item name cannot widen its column', () => {
+    expect(componentSrc).toContain("tableLayout: 'fixed'");
+    expect(componentSrc).toContain('minWidth: benefitTableMinWidth(columns)');
+    expect(componentSrc).toContain("overflowX: 'auto'");
+  });
+
+  it('no longer spells the columns out one <th> at a time', () => {
+    // The four inline headers the view carried before the shared declaration.
+    for (const key of ['col_sellable_item', 'col_quantity', 'col_frequency', 'col_item_action']) {
+      expect(componentSrc, `${key} is still restated in the view's JSX`)
+        .not.toContain(`<th style={thSt}>{t('${key}')}</th>`);
+    }
+  });
+
+  it('keeps a missing frequency as a "—" in its own cell', () => {
+    expect(componentSrc).toMatch(/gym_charge_billing_frequency[\s\S]{0,140}: '—'/);
+  });
+
+  it('shows "—" for an item with no price rather than €0.00', () => {
+    expect(componentSrc).toContain('if (unit == null) return <span style={mutedValueSt}>—</span>;');
+  });
+
+  it('shows the line total only when the quantity makes it differ from the unit price', () => {
+    expect(componentSrc).toContain('line != null && line !== unit');
+    expect(componentSrc).toContain("t('benefit_total_price', { amount: formatBenefitPrice(line) })");
+  });
+
+  it('formats money, and never prices anything itself (#817)', () => {
+    expect(formatBenefitPrice(0)).toBe('€0.00');
+    expect(formatBenefitPrice(16.5)).toBe('€16.50');
+    // No discount arithmetic in the component: the server's numbers are read,
+    // never recomputed from a quantity and a percentage.
+    expect(componentSrc).not.toMatch(/original_price_incl_tax\s*\*/);
+    expect(componentSrc).not.toMatch(/\/\s*100\s*\)/);
+  });
+
+  it('stays read-only — the price columns add no control (#797)', () => {
+    const start = componentSrc.indexOf('export function SellableItemBenefitView');
+    expect(start).toBeGreaterThan(-1);
+    const view = componentSrc.slice(start);
+    for (const control of ['<input', '<select', '<textarea', '<button', 'onChange']) {
+      expect(view, `${control} in the read-only view`).not.toContain(control);
+    }
+  });
+});
+
+describe('#916: the Plans card', () => {
+  it('asks for the price columns', () => {
+    expect(plansSrc).toContain('showPrices');
+  });
+
+  it('shows the Frequency column in all three sections, so they line up', () => {
+    expect(plansSrc.match(/showFrequency: true/g) ?? []).toHaveLength(3);
+    expect(plansSrc).not.toContain('showFrequency: false');
+  });
+
+  it('reads the amounts off the row instead of computing them', () => {
+    for (const field of ['original_price_incl_tax', 'final_price_incl_tax']) {
+      expect(plansSrc, `${field} is computed in the page`).not.toContain(field);
+    }
+  });
+});
+
+describe('#916: the Promotions card is untouched', () => {
+  // A Promotion's grants are priced against the assignment they are applied to,
+  // not against the Promotion — its columns are #919/#920's question, not this
+  // ticket's.
+  it('does not ask for the Plan price columns', () => {
+    expect(promotionsSrc).not.toContain('showPrices');
+  });
+
+  it('keeps its Frequency column on the Period section alone', () => {
+    expect(promotionsSrc).toContain('showFrequency: false');
+  });
+});
+
+describe('#916: locale coverage', () => {
+  const REQUIRED = [
+    'col_original_price', 'col_final_price', 'benefit_total_price',
+    // The Frequency column now shows for the One-off and Session sections too,
+    // whose items carry these two frequencies — and next-intl prints a missing
+    // key verbatim, so an absent one would render "plans.frequency_once".
+    'frequency_once', 'frequency_per_session',
+  ];
+
+  for (const code of LOCALE_CODES) {
+    it(`${code}.json defines every key the columns render`, () => {
+      const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
+      const plans = (messages.plans ?? {}) as Record<string, string>;
+      for (const key of REQUIRED) {
+        expect(plans[key], `plans.${key} missing from ${code}.json`).toBeTruthy();
+      }
+      expect(plans.benefit_total_price).toContain('{amount}');
+    });
+  }
+});

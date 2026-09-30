@@ -69,6 +69,21 @@ export interface SellableItemBenefitRow {
    * API normalizes and the page refuses an empty one before saving.
    */
   value?: number | string | null;
+  /**
+   * #916 — what the row costs, VAT included, as the server computed it
+   * (`domain/planBenefitPrices.ts` over `applyLineBenefit()`): the Sellable
+   * Item's own unit price, the same price after this row's treatment, and the
+   * two line totals (`unit × quantity`) beside them.
+   *
+   * `null` means the item carries no price at all, which reads as "—" and never
+   * as €0.00. Absent means the caller does not price this section — the
+   * Promotion sections and the Assigned Plan snapshot editor — and the two
+   * price columns are then not rendered at all.
+   */
+  original_price_incl_tax?: number | null;
+  final_price_incl_tax?: number | null;
+  original_line_price_incl_tax?: number | null;
+  final_line_price_incl_tax?: number | null;
 }
 
 /** #893: `tinyint(1)` from MySQL, `boolean` from a literal. */
@@ -239,7 +254,25 @@ const thSt: React.CSSProperties = {
   textAlign: 'left', padding: '4px 8px 4px 0', fontSize: 11, fontWeight: 600,
   color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
 };
-const tdSt: React.CSSProperties = { padding: '4px 8px 4px 0', fontSize: 13 };
+const tdSt: React.CSSProperties = {
+  padding: '4px 8px 4px 0', fontSize: 13, verticalAlign: 'top', wordBreak: 'break-word',
+};
+/**
+ * #916: `table-layout: fixed` is what makes the shared column declaration
+ * actually hold — without it a long Sellable Item name widens its cell and the
+ * section stops lining up with the one above it, which is the defect the ticket
+ * describes.
+ */
+const benefitTableSt: React.CSSProperties = {
+  width: '100%', borderCollapse: 'collapse', fontSize: 13, tableLayout: 'fixed',
+};
+/** Tabular figures, so the two price columns compare vertically digit by digit. */
+const moneySt: React.CSSProperties = { fontVariantNumeric: 'tabular-nums' };
+/** The line total under a unit price, when the quantity makes them differ. */
+const lineTotalSt: React.CSSProperties = {
+  display: 'block', fontSize: 11, color: '#888', fontVariantNumeric: 'tabular-nums',
+};
+const mutedValueSt: React.CSSProperties = { color: '#888' };
 const hintSt: React.CSSProperties = { margin: 0, fontSize: 13, color: '#888' };
 /**
  * #896 §14: the value input names itself, because what it holds depends on the
@@ -260,6 +293,82 @@ export const mandatoryTagStyle: React.CSSProperties = {
   marginLeft: 6, fontSize: 11, fontWeight: 500, color: '#888', background: '#f0f0f0',
   borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle', whiteSpace: 'nowrap',
 };
+
+/* ── #916: the one column grid every Sellable Item section shares ─────────── */
+
+/**
+ * #916 — the read-only sections used to be three independent tables whose cells
+ * were sized by their own content, so `QUANTITY`, `FREQUENCY` and `BENEFIT`
+ * landed at a different horizontal position in each one and the three could not
+ * be read as one data set. The columns are declared **once**, here, and every
+ * section renders from the same declaration in the same order — which is the
+ * ticket's central invariant:
+ *
+ *   > All Sellable Item sections must visually behave as one table with a shared
+ *   > column grid, while remaining grouped into their existing semantic
+ *   > sections.
+ *
+ * Which columns a *page* shows is still the page's choice (a Promotion does not
+ * quote Plan prices), but it is one choice for all of that page's sections —
+ * `sellableItemBenefitColumns()` takes the flags, not the section — so a column
+ * a section has no value for renders an empty cell rather than disappearing and
+ * shifting everything after it.
+ */
+export type SellableItemBenefitColumnKey =
+  'item' | 'quantity' | 'frequency' | 'action' | 'original_price' | 'final_price';
+
+export interface SellableItemBenefitColumn {
+  key: SellableItemBenefitColumnKey;
+  /** Resolved in the caller's namespace, so a Plan and a Promotion can label the same column differently. */
+  labelKey: string;
+  /** Fixed width in px, or `null` for the one column that takes the rest. */
+  width: number | null;
+  align: 'left' | 'right';
+}
+
+/**
+ * The column order the ticket fixes: Benefit sits **between** Frequency and the
+ * two prices, never after them.
+ */
+export const SELLABLE_ITEM_BENEFIT_COLUMNS: readonly SellableItemBenefitColumn[] = [
+  { key: 'item', labelKey: 'col_sellable_item', width: null, align: 'left' },
+  { key: 'quantity', labelKey: 'col_quantity', width: 90, align: 'right' },
+  { key: 'frequency', labelKey: 'col_frequency', width: 120, align: 'left' },
+  { key: 'action', labelKey: 'col_item_action', width: 170, align: 'left' },
+  { key: 'original_price', labelKey: 'col_original_price', width: 130, align: 'right' },
+  { key: 'final_price', labelKey: 'col_final_price', width: 130, align: 'right' },
+];
+
+/** How little the flexible name column may be squeezed to before the table scrolls. */
+export const BENEFIT_ITEM_COLUMN_MIN_WIDTH = 180;
+
+export function sellableItemBenefitColumns(opts: {
+  showFrequency: boolean;
+  showAction: boolean;
+  showPrices: boolean;
+}): SellableItemBenefitColumn[] {
+  return SELLABLE_ITEM_BENEFIT_COLUMNS.filter((col) => {
+    if (col.key === 'frequency') return opts.showFrequency;
+    if (col.key === 'action') return opts.showAction;
+    if (col.key === 'original_price' || col.key === 'final_price') return opts.showPrices;
+    return true;
+  });
+}
+
+/**
+ * The width below which the table scrolls horizontally instead of squashing its
+ * columns out of alignment — the same answer #637 gave the Sellable Items list.
+ */
+export function benefitTableMinWidth(columns: SellableItemBenefitColumn[]): number {
+  return columns.reduce(
+    (total, col) => total + (col.width ?? BENEFIT_ITEM_COLUMN_MIN_WIDTH), 0,
+  );
+}
+
+/** The page-wide `€100.00` form the Billing Event Simulation beside this table uses. */
+export function formatBenefitPrice(amount: number): string {
+  return `€${amount.toFixed(2)}`;
+}
 
 /** The editable grid: item picker + quantity (+ the item's own, read-only frequency). */
 export function SellableItemBenefitEditor({
@@ -407,9 +516,41 @@ export function SellableItemBenefitEditor({
   );
 }
 
+/**
+ * One read-only price cell: the Sellable Item's own price (or the same price
+ * after the row's treatment), plus the line total whenever the quantity makes
+ * the two differ.
+ *
+ * Both numbers are the server's (#916, #817 — no arithmetic in a page). The
+ * secondary line exists so a quantity-5 row cannot quote €25 next to a Billing
+ * Event Simulation charging €125, and it is omitted when it would merely repeat
+ * the figure above it.
+ */
+function BenefitPriceCell({
+  t, unit, line,
+}: {
+  t: Translate;
+  unit: number | null | undefined;
+  line: number | null | undefined;
+}) {
+  // An item with no price at all reads "—". €0.00 would claim it is free.
+  if (unit == null) return <span style={mutedValueSt}>—</span>;
+  return (
+    <>
+      <span style={moneySt}>{formatBenefitPrice(unit)}</span>
+      {line != null && line !== unit && (
+        <span style={lineTotalSt}>
+          {t('benefit_total_price', { amount: formatBenefitPrice(line) })}
+        </span>
+      )}
+    </>
+  );
+}
+
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
 export function SellableItemBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
+  showPrices = false,
 }: {
   t: Translate;
   emptyKey: string;
@@ -424,37 +565,86 @@ export function SellableItemBenefitView({
   /** #893: tags a mandatory item here too, so the read-only half of the card
    *  says the same thing the editor does. */
   enforceMandatory?: boolean;
+  /**
+   * #916: the Original / Final Price pair the row carries. Opt-in, because the
+   * two amounts are a Membership Plan's — a Promotion's grants are priced
+   * against the assignment they are applied to, not against the Promotion, and
+   * the Assigned Plan snapshot sections quote their own frozen prices.
+   */
+  showPrices?: boolean;
 }) {
   if (rows.length === 0) return <p style={hintSt}>{t(emptyKey)}</p>;
+  // One grid for every section of this page, whatever each section has values
+  // for: a column with nothing to say renders an empty cell rather than
+  // vanishing and shifting the columns after it out of line (#916).
+  const columns = sellableItemBenefitColumns({
+    showFrequency, showAction: benefitContext != null, showPrices,
+  });
+
+  const cell = (col: SellableItemBenefitColumn, row: SellableItemBenefitRow): React.ReactNode => {
+    switch (col.key) {
+      case 'item':
+        return (
+          <>
+            {row.gym_charge_name}{row.gym_charge_status !== 'active' && ` ${t('inactive_item_tag')}`}
+            {enforceMandatory && isMandatoryBenefitRow(row) && (
+              <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>
+            )}
+          </>
+        );
+      case 'quantity':
+        return row.quantity;
+      case 'frequency':
+        // An item with no frequency of its own keeps its cell and says "—".
+        return row.gym_charge_billing_frequency
+          ? t(`frequency_${row.gym_charge_billing_frequency}`)
+          : '—';
+      case 'action':
+        return benefitContext ? benefitTreatmentLabel(t, benefitContext, row) : null;
+      case 'original_price':
+        return (
+          <BenefitPriceCell
+            t={t} unit={row.original_price_incl_tax}
+            line={row.original_line_price_incl_tax}
+          />
+        );
+      case 'final_price':
+        return (
+          <BenefitPriceCell
+            t={t} unit={row.final_price_incl_tax}
+            line={row.final_line_price_incl_tax}
+          />
+        );
+    }
+  };
+
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-      <thead>
-        <tr>
-          <th style={thSt}>{t('col_sellable_item')}</th>
-          <th style={thSt}>{t('col_quantity')}</th>
-          {showFrequency && <th style={thSt}>{t('col_frequency')}</th>}
-          {benefitContext && <th style={thSt}>{t('col_item_action')}</th>}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.gym_charge_id}>
-            <td style={tdSt}>
-              {r.gym_charge_name}{r.gym_charge_status !== 'active' && ` ${t('inactive_item_tag')}`}
-              {enforceMandatory && isMandatoryBenefitRow(r) && (
-                <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>
-              )}
-            </td>
-            <td style={tdSt}>{r.quantity}</td>
-            {showFrequency && (
-              <td style={tdSt}>{r.gym_charge_billing_frequency ? t(`frequency_${r.gym_charge_billing_frequency}`) : '—'}</td>
-            )}
-            {benefitContext && (
-              <td style={tdSt}>{benefitTreatmentLabel(t, benefitContext, r)}</td>
-            )}
+    // #637's answer, one screen over: the table scrolls rather than squashing
+    // its columns when the viewport is too narrow.
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ ...benefitTableSt, minWidth: benefitTableMinWidth(columns) }}>
+        <colgroup>
+          {columns.map((col) => (
+            <col key={col.key} style={col.width == null ? undefined : { width: col.width }} />
+          ))}
+        </colgroup>
+        <thead>
+          <tr>
+            {columns.map((col) => (
+              <th key={col.key} style={{ ...thSt, textAlign: col.align }}>{t(col.labelKey)}</th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.gym_charge_id}>
+              {columns.map((col) => (
+                <td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

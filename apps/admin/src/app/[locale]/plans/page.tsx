@@ -185,8 +185,13 @@ const BENEFIT_SECTIONS: {
   addKey: string;
   showFrequency: boolean;
 }[] = [
-  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: false },
-  { section: 'session', endpoint: 'session-benefits', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: false },
+  // #916: `showFrequency` is true for all three sections, not only the
+  // recurring one. The column is what a One-off or Session item has no value
+  // for, and the ticket is explicit that it must still occupy its place (with a
+  // "—") rather than disappear and shift every column after it — the three
+  // sections have to read as one table.
+  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: true },
+  { section: 'session', endpoint: 'session-benefits', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: true },
   { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'section_plan_period_benefits', emptyKey: 'no_plan_period_benefits', addKey: 'add_period_benefit', showFrequency: true },
 ];
 
@@ -1327,6 +1332,10 @@ export default function PlansPage() {
                             showFrequency={showFrequency}
                             enforceMandatory
                             benefitContext="plan"
+                            /* #916: the Original and Final Price the server
+                               computed for each row — the page formats, it
+                               never prices (#817). */
+                            showPrices
                           />
                         )}
                       </div>

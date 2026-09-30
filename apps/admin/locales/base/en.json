@@ -1138,7 +1138,12 @@
     "simulation_price_fixed_discount": "{amount} off",
     "simulation_price_fixed_price": "Fixed price {amount}",
     "simulation_disclaimer": "Example only. Dates and amounts are illustrative and will be recalculated from each member's actual enrollment date; promotions are not included.",
-    "simulation_truncated": "The projection was cut short at its safety limit — later billing events are not shown."
+    "simulation_truncated": "The projection was cut short at its safety limit — later billing events are not shown.",
+    "col_original_price": "Original price",
+    "col_final_price": "Final price",
+    "benefit_total_price": "Total {amount}",
+    "frequency_once": "Once",
+    "frequency_per_session": "Per Session"
   },
   "prices": {
     "title": "Prices",
