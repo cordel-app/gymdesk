@@ -39,7 +39,7 @@ import {
   type MemberImageSlot,
   type MembersImages,
 } from '@/components/ThemeMembersImagesEditor';
-import { btnSmall, cardSurfaceStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryBtnSmall } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
 interface Theme {
@@ -651,7 +651,7 @@ export default function GymThemesPage() {
             onClick={() => openPicker(theme.id)}
             disabled={!canAssign}
             title={canAssign ? undefined : tStatus('active')}
-            style={{ ...btnSmall('#6c63ff'), opacity: canAssign ? 1 : 0.5, cursor: canAssign ? 'pointer' : 'not-allowed' }}
+            style={{ ...primaryBtnSmall(), opacity: canAssign ? 1 : 0.5, cursor: canAssign ? 'pointer' : 'not-allowed' }}
           >
             {t('assign_centers_btn')}
           </button>
@@ -730,7 +730,7 @@ export default function GymThemesPage() {
         ) : (
           <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
             <button onClick={handleCancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={() => handleSaveAll(theme)} disabled={saving || !dirty} style={{ ...btnSmall('#6c63ff'), opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? 'not-allowed' : 'pointer' }}>
+            <button onClick={() => handleSaveAll(theme)} disabled={saving || !dirty} style={{ ...primaryBtnSmall(), opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? 'not-allowed' : 'pointer' }}>
               {saving ? t('saving') : t('save_changes')}
             </button>
           </div>

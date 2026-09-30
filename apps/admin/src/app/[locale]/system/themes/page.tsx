@@ -39,7 +39,7 @@ import {
   type MemberImageSlot,
   type MembersImages,
 } from '@/components/ThemeMembersImagesEditor';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -691,7 +691,7 @@ export default function ThemesPage() {
           <button
             onClick={() => handleSave(id)}
             disabled={editSaving || !isDirty()}
-            style={{ ...btnSmall('#6c63ff'), opacity: (editSaving || !isDirty()) ? 0.5 : 1, cursor: (editSaving || !isDirty()) ? 'not-allowed' : 'pointer' }}
+            style={{ ...primaryBtnSmall(), opacity: (editSaving || !isDirty()) ? 0.5 : 1, cursor: (editSaving || !isDirty()) ? 'not-allowed' : 'pointer' }}
           >
             {editSaving ? t('saving') : t('save_changes')}
           </button>
@@ -867,7 +867,7 @@ export default function ThemesPage() {
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 10 }}>
           <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
-          <button onClick={handleNew} disabled={hasNewRow} style={btnStyle('#6c63ff')}>{t('add')}</button>
+          <button onClick={handleNew} disabled={hasNewRow} style={primaryBtnStyle()}>{t('add')}</button>
         </div>
       </div>
 

@@ -1497,6 +1497,15 @@ The control half of the same problem: when two cards carry the *same action* and
 
 Reference implementation: `apps/admin/src/components/SectionEditButton.tsx` + the section headers of `apps/admin/src/app/[locale]/plans/page.tsx` and `.../promotions/page.tsx`.
 
+### Styling any other primary action (#912)
+
+Once the pair exists, a *third* button that needs it must not re-spell it. `apps/admin/src/components/ui.tsx` declares `primaryActionColors` once and exposes `primaryBtnStyle()` (page-chrome geometry) and `primaryBtnSmall()` (in-card geometry); `sectionEditButtonStyle` is now just `primaryBtnSmall()`, so `SectionEditButton.tsx` holds no colour literal at all.
+
+- **Call a helper, don't repeat the `var()`.** A new primary action spreads `primaryBtnStyle()` / `primaryBtnSmall()`. Two modules spelling `var(--gd-primary-btn, #6c63ff)` is the same drift #901 removed, one level up.
+- **`btnStyle()` / `btnSmall()` with no argument is a different colour.** Their default is `var(--brand, …)`, and `applyTokens()` maps `--brand` to `sidebarSelectedItemBackground`. Dropping the hardcoded argument therefore does *not* theme a primary action — it moves it onto the sidebar's colour.
+- **Only primary actions move.** Secondary (`btnSmall('#888')`), neutral file-pickers (`'#444'`) and destructive (`'#c0392b'`) buttons keep their own colours, and a text *link* is not a button — its token is the Links group's `--gd-link`, a separate decision.
+- **Spread it first, keep the state on top.** `{ ...primaryBtnSmall(), opacity: …, cursor: … }` keeps the disabled affordance a button already had; the helper decides colour and geometry, never state.
+
 ---
 
 ## Scheduled Background Task (#647 stage 4)

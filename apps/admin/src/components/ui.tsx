@@ -35,3 +35,35 @@ export function readOnlyStyle(style: React.CSSProperties, disabled: boolean): Re
 export function btnSmall(bg?: string): React.CSSProperties {
   return { background: bg ?? 'var(--brand, #6c63ff)', color: '#fff', border: 'none', borderRadius: 4, padding: '6px 12px', cursor: 'pointer', fontSize: 13 };
 }
+
+/**
+ * #912 — the Admin UI's primary action colours, in one place.
+ *
+ * `primaryButton` / `primaryButtonText` are existing Theme settings and
+ * `applyTokens` already writes `--gd-primary-btn` / `--gd-primary-btn-text`
+ * from them (#901), so a primary action spreads these rather than spelling a
+ * colour of its own. Dropping `btnStyle()`/`btnSmall()`'s argument is *not* the
+ * same thing: their own default is `--brand`, which `applyTokens` maps to
+ * `sidebarSelectedItemBackground` — a different Theme setting, and not an
+ * action colour.
+ *
+ * The literals are the CSS `var()` fallbacks for the frames before
+ * `applyTokens` has run, never a second source of truth: they are
+ * `DEFAULT_TOKENS.colors.primaryButton` / `.primaryButtonText`, so nothing
+ * looks different until a gym themes it. This module is the only place they
+ * are spelled — `SectionEditButton` derives from `primaryBtnSmall()`.
+ */
+export const primaryActionColors: Pick<React.CSSProperties, 'background' | 'color'> = {
+  background: 'var(--gd-primary-btn, #6c63ff)',
+  color: 'var(--gd-primary-btn-text, #ffffff)',
+};
+
+/** A primary action in a page's own chrome — `btnStyle` geometry, themed colours. */
+export function primaryBtnStyle(): React.CSSProperties {
+  return { ...btnStyle(), ...primaryActionColors };
+}
+
+/** A primary action inside a card or a section — `btnSmall` geometry, themed colours. */
+export function primaryBtnSmall(): React.CSSProperties {
+  return { ...btnSmall(), ...primaryActionColors };
+}
