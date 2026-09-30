@@ -16,6 +16,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const topBarRef = useRef<HTMLDivElement>(null);
   const [topBarHeight, setTopBarHeight] = useState(52);
   const isAuthPage = /\/(sign-in|sign-up)/.test(pathname);
+  // The public privacy policy renders bare, like sign-in: visitors are usually signed out.
+  const isPublicPage = /^\/[a-z]{2}\/privacy$/.test(pathname);
   const isHomePage = /^\/[a-z]{2}$/.test(pathname);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => document.body.classList.remove('sidebar-drawer-open');
   }, [sidebarOpen]);
 
-  if (isAuthPage || (isHomePage && (!isLoaded || !isSignedIn))) {
+  if (isAuthPage || isPublicPage || (isHomePage && (!isLoaded || !isSignedIn))) {
     return <>{children}</>;
   }
 
