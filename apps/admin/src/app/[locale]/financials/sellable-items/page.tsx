@@ -15,7 +15,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
-import { listNameBadgeStyle } from '@/components/listChrome';
+import { listNameBadgeAccentStyle, listNameBadgeStyle } from '@/components/listChrome';
 import { Frequency, frequencyOptions, isLegacyFrequency } from './sellableItemFrequency';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -615,9 +615,11 @@ export default function SellableItemsPage() {
             )}
             {/* #894: read-only, and read from the column rather than from the
                 item's name or type — a System item is not mandatory by virtue
-                of being a System item. The checkbox stays in the edit form. */}
+                of being a System item. The checkbox stays in the edit form.
+                #913: the accent pill, not the neutral one — Mandatory has to
+                be noticeable beside System rather than blend into the row. */}
             {isMandatory && (
-              <span style={listNameBadgeStyle}>
+              <span style={listNameBadgeAccentStyle}>
                 {t('mandatory_badge')}
               </span>
             )}
