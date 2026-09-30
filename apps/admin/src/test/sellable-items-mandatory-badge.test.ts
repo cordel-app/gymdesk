@@ -63,7 +63,7 @@ describe('Sellable Items: Mandatory badge in the card header (#894)', () => {
   it('shows it only for a mandatory item, read from the column', () => {
     // §4: the flag itself decides, never the name or the type.
     expect(page).toContain('const isMandatory = Boolean(item.mandatory);');
-    expect(nameCell).toMatch(/\{isMandatory && \(\s*\n\s*<span style=\{listNameBadgeStyle\}>/);
+    expect(nameCell).toMatch(/\{isMandatory && \(\s*\n\s*<span style=\{listNameBadgeAccentStyle\}>/);
     expect(nameCell).not.toMatch(/item\.name ===|item\.type ===|charge_type_code/);
   });
 
@@ -91,10 +91,11 @@ describe('Sellable Items: Mandatory badge in the card header (#894)', () => {
   it('takes the pill look from the shared list chrome, not from a page literal', () => {
     const chrome = readFileSync(LIST_CHROME, 'utf-8');
     expect(chrome).toContain('export const listNameBadgeStyle');
+    expect(chrome).toContain('export const listNameBadgeAccentStyle');
     for (const file of [SELLABLE_ITEMS_PAGE, ...OTHER_BADGE_PAGES]) {
       const src = readFileSync(file, 'utf-8');
       expect(src, `${file} does not import the shared badge style`)
-        .toContain("import { listNameBadgeStyle } from '@/components/listChrome';");
+        .toMatch(/import \{[^}]*\blistNameBadgeStyle\b[^}]*\} from '@\/components\/listChrome';/);
       expect(src, `${file} still restates the badge style inline`)
         .not.toMatch(/marginLeft: 6, fontSize: 11, fontWeight: 500/);
     }
@@ -105,5 +106,68 @@ describe('Sellable Items: Mandatory badge in the card header (#894)', () => {
       .toBeTypeOf('string');
     // The System badge keeps its own key: the two are not one label.
     expect(sellableItemsKey(code, 'system_badge')).toBeTypeOf('string');
+  });
+});
+
+// #913 — the Mandatory pill is the accent one, the System pill is not.
+//
+// The badge landed on the neutral `listNameBadgeStyle`, which is right for
+// `System` ("what kind of row is this") but made the Mandatory status read as
+// part of the row's chrome. The ticket asks for a more prominent background
+// only: same size, type, padding and radius, no new theme token, System
+// untouched. So what is pinned here is that the accent style is *derived* from
+// the neutral one rather than written out again, and that it changes exactly
+// the two colour properties.
+describe('Sellable Items: the Mandatory pill is visually distinct (#913)', () => {
+  const chrome = readFileSync(LIST_CHROME, 'utf-8');
+  const accent = chrome.match(/export const listNameBadgeAccentStyle: React\.CSSProperties = \{[\s\S]*?\n\};/)?.[0] ?? '';
+  const neutral = chrome.match(/export const listNameBadgeStyle: React\.CSSProperties = \{[\s\S]*?\n\};/)?.[0] ?? '';
+
+  it('declares the accent pill beside the neutral one', () => {
+    expect(accent, 'listNameBadgeAccentStyle could not be located').not.toBe('');
+    expect(neutral, 'listNameBadgeStyle could not be located').not.toBe('');
+  });
+
+  it('inherits the neutral pill\'s geometry and type instead of restating it', () => {
+    // The spread is what keeps sizing, typography, padding and radius shared:
+    // a value changed on the neutral pill reaches this one too.
+    expect(accent).toContain('...listNameBadgeStyle');
+    for (const prop of ['marginLeft', 'fontSize', 'fontWeight', 'borderRadius', 'padding', 'verticalAlign']) {
+      expect(accent, `the accent pill must not restate ${prop}`).not.toMatch(new RegExp(`\\n\\s*${prop}:`));
+    }
+  });
+
+  it('changes the two colours and nothing else, with no new theme token', () => {
+    const overrides = [...accent.matchAll(/\n\s{2}([A-Za-z]+):/g)].map((m) => m[1]);
+    expect(overrides.sort()).toEqual(['background', 'color']);
+    // The pair the existing badge uses is a literal too (#894), so a Theme
+    // variable is not required here — and adding one would be a new token.
+    expect(accent).not.toContain('--gd-');
+  });
+
+  it('does not reuse the System pill\'s own colours', () => {
+    const colours = (style: string) => [...style.matchAll(/#[0-9a-fA-F]{3,6}/g)].map((m) => m[0].toLowerCase());
+    const accentColours = colours(accent);
+    expect(accentColours).toHaveLength(2);
+    for (const colour of colours(neutral)) {
+      expect(accentColours, 'the accent pill repeats a System pill colour').not.toContain(colour);
+    }
+  });
+
+  it('leaves the System badge and the other two pages on the neutral pill', () => {
+    const systemBadge = nameCell.match(/\{isSystem && \([\s\S]*?\)\}/)?.[0] ?? '';
+    expect(systemBadge, 'the System badge block could not be located').not.toBe('');
+    expect(systemBadge).toContain('style={listNameBadgeStyle}');
+    expect(systemBadge).not.toContain('listNameBadgeAccentStyle');
+    for (const file of OTHER_BADGE_PAGES) {
+      expect(readFileSync(file, 'utf-8'), `${file} should not have moved to the accent pill`)
+        .not.toContain('listNameBadgeAccentStyle');
+    }
+  });
+
+  it('renders nothing extra for an item that is not mandatory', () => {
+    // The pill is still the whole of it: one conditional, no wrapper, no
+    // placeholder for the non-mandatory case.
+    expect([...nameCell.matchAll(/isMandatory/g)]).toHaveLength(1);
   });
 });

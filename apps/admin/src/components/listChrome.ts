@@ -68,3 +68,22 @@ export const listNameBadgeStyle: React.CSSProperties = {
   padding: '1px 5px',
   verticalAlign: 'middle',
 };
+
+/**
+ * The same pill, in the accent colour a row's *attention-worthy* metadata gets
+ * — `Mandatory`.
+ *
+ * #913: the neutral pill above says "this is what kind of row it is" quietly,
+ * which is right for `System` but left `Mandatory` reading as part of the row's
+ * chrome. This one changes the two colours and nothing else — it spreads the
+ * neutral style, so the sizing, type, padding and radius are the same object's
+ * and cannot drift from it — so the hierarchy inside a name cell is visible at
+ * a glance without a second pill shape. Amber on a light amber field, which is
+ * ~8:1 against its own background and distinct from both the row surface and
+ * the grey `System` pill beside it.
+ */
+export const listNameBadgeAccentStyle: React.CSSProperties = {
+  ...listNameBadgeStyle,
+  color: '#92400e',
+  background: '#fde68a',
+};
