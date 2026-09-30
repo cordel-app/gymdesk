@@ -2049,3 +2049,158 @@ describe('PUT /membership-plans/:id/billing-policy — the two accepted cadences
     expect(res.body.recurring_billing_unit).toBe('month');
   });
 });
+
+// ─── GET /membership-plans/:id/billing-event-simulation (#915) ─────────────────
+//
+// The projection is unit-tested in `plan-billing-event-simulation.test.ts`; what
+// is checked here is the wiring the engine cannot see: tenancy, auth, that the
+// three Benefit sections and their prices actually reach it, and that reading it
+// bills nobody.
+
+async function createSellableItem(
+  gymId: string,
+  name: string,
+  type: string,
+  billingFrequency: string,
+  amount: number,
+  overrides: { mandatory?: boolean } = {},
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, amount, status, is_system, currency, mandatory, tax_behavior)
+     VALUES (?, ?, ?, ?, ?, 'active', 0, 'EUR', ?, 'inclusive')`,
+    [gymId, name, type, billingFrequency, amount, overrides.mandatory ? 1 : 0],
+  );
+  return insertId;
+}
+
+describe('GET /membership-plans/:id/billing-event-simulation', () => {
+  let gymId: string;
+  let otherGymId: string;
+  let planId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Plans Billing Event Simulation Gym');
+    await createTestMembership(gymId, 'admin');
+    otherGymId = await createTestGym('Plans Billing Event Simulation Gym B');
+    planId = await createPlan(gymId, { name: 'Simulation Plan' });
+  });
+
+  it('returns 401 without an Authorization header', async () => {
+    const res = await request
+      .get(`/membership-plans/${planId}/billing-event-simulation`)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 when the plan belongs to a different gym', async () => {
+    const otherPlanId = await createPlan(otherGymId, { name: 'Other Gym Simulation Plan' });
+    const res = await request
+      .get(`/membership-plans/${otherPlanId}/billing-event-simulation`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(404);
+  });
+
+  it('reports unavailable when the plan has no billing frequency', async () => {
+    const bareId = await createPlan(gymId, { name: 'Bare Simulation Plan' });
+    const res = await request
+      .get(`/membership-plans/${bareId}/billing-event-simulation`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(false);
+    expect(res.body.reason).toBeTruthy();
+    expect(res.body.dates).toEqual([]);
+  });
+
+  it('groups the fee and every configured Sellable Item by billing date, and charges nobody', async () => {
+    await setPlanPrice(gymId, planId, 70);
+    await setBillingPolicy(gymId, planId, 4, 'week');
+
+    const registration = await createSellableItem(gymId, `Registration ${Date.now()}`, 'fee', 'once', 100);
+    const locker = await createSellableItem(gymId, `Locker ${Date.now()}`, 'service', 'month', 15);
+    await request
+      .put(`/membership-plans/${planId}/oneoff-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: registration, quantity: 1 }] });
+    await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: locker, quantity: 1, action: 'waive' }] });
+
+    const { rows: before } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
+    const res = await request
+      .get(`/membership-plans/${planId}/billing-event-simulation`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.available).toBe(true);
+    expect(res.body.currency).toBe('EUR');
+    expect(res.body.tax_included).toBe(true);
+    expect(res.body.dates.length).toBeGreaterThanOrEqual(3);
+
+    // The first date carries everything that falls on it: the one-off, the
+    // waived periodical and the Membership Fee.
+    const first = res.body.dates[0];
+    expect(first.date).toBe(res.body.anchor_date);
+    const byCharge = new Map<number | null, any>(first.lines.map((l: any) => [l.gym_charge_id, l]));
+    expect(byCharge.get(registration).actual_charge).toBe(100);
+    // `Waive` still produces an event, at €0 (the ticket's §Waive).
+    expect(byCharge.get(locker).regular_price).toBe(15);
+    expect(byCharge.get(locker).actual_charge).toBe(0);
+    expect(byCharge.get(null).kind).toBe('membership_fee');
+    expect(byCharge.get(null).actual_charge).toBe(70);
+    expect(first.total).toBe(170);
+
+    // A `Once` item is billed once and never repeats.
+    const repeats = res.body.dates
+      .slice(1)
+      .flatMap((g: any) => g.lines.map((l: any) => l.gym_charge_id));
+    expect(repeats).not.toContain(registration);
+
+    // Read-only: no billing event, payment request or charge is created.
+    const { rows: after } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
+    expect(Number(after[0].n)).toBe(Number(before[0].n));
+  });
+
+  // #893 — a Mandatory item is part of every Plan even before the Plan is saved
+  // again, so it has to reach the simulation from the catalogue, priced.
+  it('includes a Mandatory item the plan has no stored benefit row for', async () => {
+    const mandatoryGymId = await createTestGym('Plans Simulation Mandatory Gym');
+    await createTestMembership(mandatoryGymId, 'admin');
+    const insuranceId = await createSellableItem(
+      mandatoryGymId, `Insurance ${Date.now()}`, 'fee', 'once', 20, { mandatory: true },
+    );
+    const mandatoryPlanId = await createPlan(mandatoryGymId, { name: 'Mandatory Simulation Plan' });
+    await setPlanPrice(mandatoryGymId, mandatoryPlanId, 70);
+    await setBillingPolicy(mandatoryGymId, mandatoryPlanId, 1, 'month');
+
+    const res = await request
+      .get(`/membership-plans/${mandatoryPlanId}/billing-event-simulation`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', mandatoryGymId);
+    expect(res.status).toBe(200);
+    const line = res.body.dates[0].lines.find((l: any) => l.gym_charge_id === insuranceId);
+    expect(line).toBeTruthy();
+    expect(line.mandatory).toBe(true);
+    expect(line.actual_charge).toBe(20);
+    expect(res.body.dates[0].total).toBe(90);
+  });
+
+  // The card renders the embedded copy; the route exists so a client can refresh
+  // one Plan. They must be the same calculation, not two.
+  it('is embedded on the plan itself as billing_event_simulation', async () => {
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const direct = await request
+      .get(`/membership-plans/${planId}/billing-event-simulation`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.body.billing_event_simulation).toEqual(direct.body);
+  });
+});

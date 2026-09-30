@@ -18,6 +18,7 @@ import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
+import { PlanBillingEventSimulation } from './PlanBillingEventSimulation';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
   SellableItemBenefitEditor,
@@ -42,6 +43,7 @@ import {
   PlanBillingFrequency,
   PlanDurationField,
   PlanExampleTimeline,
+  PlanBillingEventSimulation as PlanBillingEventSimulationData,
   PlanGeneralField,
   PlanGeneralFormValues,
   PlanGeneralRow,
@@ -133,6 +135,8 @@ interface Plan extends PlanGeneralRow {
   // #818: the Example timeline — read-only, computed by the backend on every
   // read, never persisted. Its rows are the Plan's own billing periods.
   example_timeline: PlanExampleTimeline;
+  // #915 — read-only, computed on every read, persisted nowhere.
+  billing_event_simulation: PlanBillingEventSimulationData;
 }
 
 // Applied automatically to every new plan; staff can adjust it afterwards in
@@ -1428,6 +1432,21 @@ export default function PlansPage() {
                       // viewer's language rather than relayed in English.
                       <p style={hintSt}>{t('plans.timeline_unavailable')}</p>
                     )}
+
+                    {/* BILLING EVENT SIMULATION (#915) — the billing events a
+                        member enrolling today would actually be charged, grouped
+                        by date: the Membership Fee plus every Sellable Item the
+                        Plan carries, each at the price the Plan's own treatment
+                        gives it. A projection over the same engine the nightly
+                        run prices a cycle with, so it cannot advertise a charge
+                        the run does not make. Nothing is persisted and nothing
+                        is charged. */}
+                    <SectionHeader title={t('plans.section_billing_event_simulation')} />
+                    <PlanBillingEventSimulation
+                      simulation={plan.billing_event_simulation}
+                      t={(key, values) => t(`plans.${key}` as any, values as any)}
+                      formatDate={(date) => fmtTimelineDate(date, locale)}
+                    />
 
                   </div>
                 )}

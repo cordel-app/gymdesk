@@ -1111,7 +1111,20 @@
     "item_action_waive": "Gratuït",
     "item_action_percentage_discount": "% Descompte",
     "item_action_value_percentage_discount": "Descompte (%)",
-    "benefit_value_required": "Introdueix un valor per al benefici aplicat a «{item}»."
+    "benefit_value_required": "Introdueix un valor per al benefici aplicat a «{item}».",
+    "section_billing_event_simulation": "Simulació d'esdeveniments de facturació",
+    "simulation_example_note": "Exemple: un membre que comença el {date}",
+    "simulation_unavailable": "Configura una freqüència de facturació i un preu per previsualitzar els esdeveniments de facturació.",
+    "simulation_mandatory": "Obligatori",
+    "simulation_total": "Total",
+    "simulation_regular_was": "Preu regular {amount}",
+    "simulation_price_regular": "Preu regular",
+    "simulation_price_waived": "Exempt",
+    "simulation_price_percentage": "{value}% de descompte",
+    "simulation_price_fixed_discount": "{amount} de descompte",
+    "simulation_price_fixed_price": "Preu fix {amount}",
+    "simulation_disclaimer": "Només és un exemple. Les dates i els imports són il·lustratius i es recalcularan a partir de la data real d'inscripció de cada membre; no s'hi inclouen les promocions.",
+    "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors."
   },
   "prices": {
     "title": "Preus",

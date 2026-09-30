@@ -10,6 +10,11 @@ import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigne
 import { computePriceFields, validateTaxRateId } from './sellable-items';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
+import {
+  PlanSimulationItem,
+  computePlanBillingEventSimulation,
+} from '../domain/planBillingEventSimulation';
+import { SellableItemFrequency } from '../domain/billingSimulation';
 import { BillingDateUnit } from '../domain/billingDate';
 import { DEFAULT_PLAN_DURATION_CADENCE, toPlanDuration } from '../domain/planDuration';
 import {
@@ -34,6 +39,7 @@ import {
   SellableItemBenefit,
   parseSellableItemBenefitInput,
   shapeSellableItemBenefitRow,
+  toSellableItemBenefit,
 } from '../domain/sellableItemBenefitActions';
 
 interface PlanRow {
@@ -133,6 +139,66 @@ interface SellableItemRow {
   is_system: boolean | number;
   // #893: whether every Membership Plan must carry this item.
   mandatory: boolean | number;
+  // #915 — what the item's gross price is computed from (`computePriceFields`).
+  tax_behavior?: string | null;
+  tax_rate_percent?: string | null;
+}
+
+/**
+ * #915 — one Plan benefit row, as the Billing Event Simulation reads it. The
+ * price columns come either from the row's own join (a stored row) or from the
+ * active catalogue (a Mandatory item the Plan has no row for yet), which is why
+ * they are optional here.
+ */
+interface BenefitPricingRow extends PlanBenefitRow {
+  gym_charge_amount?: string | number | null;
+  gym_charge_tax_behavior?: string | null;
+  gym_charge_tax_rate_percent?: string | null;
+}
+
+/**
+ * The Plan's three Benefit sections as `PlanSimulationItem`s: the quantity and
+ * `(action, value)` pair each row configures, and the item's **gross** unit
+ * price, which is what makes the whole projection VAT-inclusive (#915, and #817
+ * for why the arithmetic is the server's).
+ *
+ * An item with no tax rate configured contributes its stored amount — exactly
+ * how `formatPlanCurrentPrice()` falls back for the Plan's own price, and the
+ * only honest answer when there is no tax to include.
+ *
+ * The category is the section the row is in, never a re-classification: #550's
+ * `classifySellableItem()` is what put it there, and asking twice is how a row
+ * ends up billed as a different kind of benefit than it is stored as.
+ */
+function planSimulationItems(
+  sections: { category: SellableItemBenefitCategory; rows: (PlanBenefitRow | BenefitPricingRow)[] }[],
+  catalogue: SellableItemRow[],
+): PlanSimulationItem[] {
+  const byId = new Map(catalogue.map((item) => [Number(item.id), item]));
+  const items: PlanSimulationItem[] = [];
+  for (const { category, rows } of sections) {
+    for (const row of rows as BenefitPricingRow[]) {
+      const fallback = byId.get(Number(row.gym_charge_id));
+      const amount = row.gym_charge_amount ?? fallback?.amount ?? null;
+      if (amount == null) continue; // an item with no price bills nothing
+      const gross = computePriceFields({
+        amount,
+        tax_rate_percent: row.gym_charge_tax_rate_percent ?? fallback?.tax_rate_percent ?? null,
+        tax_behavior: row.gym_charge_tax_behavior ?? fallback?.tax_behavior ?? 'inclusive',
+      }).amount_incl_tax ?? Number(amount);
+      items.push({
+        gymChargeId: Number(row.gym_charge_id),
+        name: row.gym_charge_name,
+        category,
+        billingFrequency: (row.gym_charge_billing_frequency as SellableItemFrequency | null) ?? null,
+        unitPriceInclTax: gross,
+        quantity: Number(row.quantity) || 1,
+        benefit: toSellableItemBenefit('plan', row.action, row.value),
+        mandatory: row.gym_charge_mandatory === true || Number(row.gym_charge_mandatory) === 1,
+      });
+    }
+  }
+  return items;
 }
 
 export const membershipPlansRouter = Router();
@@ -201,12 +267,19 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     ).then(r => Number(r.rows[0].n)),
     // Full catalog of active sellable items for this gym, so the admin UI can
     // populate the Benefit selectors without a separate round trip.
+    // #915 also reads `tax_behavior` + the joined rate from here: a Mandatory
+    // item this Plan has no stored benefit row for yet (#893's `implicit: true`)
+    // has no row to carry its price, so the Billing Event Simulation grosses it
+    // up from the catalogue entry. Every implicit item is by definition active
+    // and non-deleted, which is exactly what this query already selects.
     db.query<SellableItemRow>(
       `SELECT gc.id, gc.gym_id, gc.name, gc.type, gc.amount, gc.currency, gc.billing_frequency,
               gc.status, gc.availability, gc.enrollment_status, gc.is_system, gc.mandatory,
+              gc.tax_behavior, tr.rate_percent AS tax_rate_percent,
               ct.code AS charge_type_code, ct.name AS charge_type_name
        FROM gym_charges gc
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+       LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
        WHERE gc.gym_id = ? AND gc.deleted_at IS NULL AND gc.status = 'active'
        ORDER BY gc.is_system DESC, gc.name ASC`,
       [gymId],
@@ -275,6 +348,22 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   });
 
   const billingPolicy = bpRows[0] ?? null;
+  // The Plan's stored cadence, resolved once: #818's Example timeline and #915's
+  // Billing Event Simulation must step by the same pair, and re-deriving it per
+  // projection is how two previews of one Plan come to disagree.
+  const planCadence = billingPolicy
+    ? {
+        interval: Number(billingPolicy.recurring_billing_interval),
+        unit: billingPolicy.recurring_billing_unit as BillingDateUnit,
+      }
+    : null;
+  // #892 — the durations are counts of this Plan's own Billing Frequency
+  // periods; each projection re-binds them to the cadence it steps by, so the
+  // rows and their statuses can never be stepped differently.
+  const exampleTimelineDuration = toPlanDuration(
+    plan.free_periods, plan.paid_periods, plan.bonus_periods, plan.pay_beforehand_periods,
+    planCadence ?? DEFAULT_PLAN_DURATION_CADENCE,
+  );
   // #818: the Example timeline replaces #485's Billing Events Forecast. One row
   // per billing period of the Plan's own cadence, each classified by the Plan's
   // Billing & Duration through `classifyPlanDurationPeriod()` — the same rule
@@ -284,24 +373,8 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   // with no tax rate at all, exactly as `formatPlanCurrentPrice()` falls back);
   // no tax arithmetic happens in the projection or in the frontend (#817).
   const exampleTimeline = computePlanExampleTimeline({
-    // #892 — the durations are counts of this Plan's own Billing Frequency
-    // periods; `computePlanExampleTimeline` re-binds them to the cadence below,
-    // so the rows and their statuses can never be stepped differently.
-    duration: toPlanDuration(
-      plan.free_periods, plan.paid_periods, plan.bonus_periods, plan.pay_beforehand_periods,
-      billingPolicy
-        ? {
-            interval: Number(billingPolicy.recurring_billing_interval),
-            unit: billingPolicy.recurring_billing_unit as BillingDateUnit,
-          }
-        : DEFAULT_PLAN_DURATION_CADENCE,
-    ),
-    cadence: billingPolicy
-      ? {
-          interval: Number(billingPolicy.recurring_billing_interval),
-          unit: billingPolicy.recurring_billing_unit as BillingDateUnit,
-        }
-      : null,
+    duration: exampleTimelineDuration,
+    cadence: planCadence,
     priceInclTax: priceFields.amount_incl_tax
       ?? (currentPrice ? parseFloat(currentPrice.price) : null),
   });
@@ -317,6 +390,33 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       : 'inactive',
   }));
 
+  // #893: a Mandatory Sellable Item is part of every Plan, so each section is
+  // the stored rows plus the mandatory items this Plan has no row for yet.
+  // `sellableItems` above is already the gym's active, non-deleted catalogue —
+  // exactly the candidate set the rule takes — so no extra round trip.
+  const sessionSection = mergeMandatoryBenefits(sessionBenefits, mandatoryItemsForCategory(sellableItems, 'session'));
+  const oneoffSection = mergeMandatoryBenefits(oneoffBenefits, mandatoryItemsForCategory(sellableItems, 'oneoff'));
+  const periodicalSection = mergeMandatoryBenefits(periodicalBenefits, mandatoryItemsForCategory(sellableItems, 'periodical'));
+
+  // #915: the Billing Event Simulation — the same three sections the card
+  // renders, projected into the billing events a member enrolling today would
+  // be charged, grouped by date. A projection over the Billing Simulation
+  // engine, so it cannot price a cycle differently from the nightly run; the
+  // durations, the cadence and the price are the ones the Example Timeline
+  // above already read.
+  const billingEventSimulation = computePlanBillingEventSimulation({
+    planName: plan.name,
+    duration: exampleTimelineDuration,
+    cadence: planCadence,
+    membershipFeeInclTax: priceFields.amount_incl_tax
+      ?? (currentPrice ? parseFloat(currentPrice.price) : null),
+    items: planSimulationItems([
+      { category: 'oneoff', rows: oneoffSection },
+      { category: 'session', rows: sessionSection },
+      { category: 'periodical', rows: periodicalSection },
+    ], sellableItems),
+  });
+
   return {
     ...plan,
     current_price: currentPrice ? currentPrice.price : null,
@@ -325,19 +425,17 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     centers,
     member_count: memberCount,
     promotion_count: promotionCount,
-    // #893: a Mandatory Sellable Item is part of every Plan, so each section is
-    // the stored rows plus the mandatory items this Plan has no row for yet.
-    // `sellableItems` above is already the gym's active, non-deleted catalogue —
-    // exactly the candidate set the rule takes — so no extra round trip.
-    session_benefits: mergeMandatoryBenefits(sessionBenefits, mandatoryItemsForCategory(sellableItems, 'session')),
-    oneoff_benefits: mergeMandatoryBenefits(oneoffBenefits, mandatoryItemsForCategory(sellableItems, 'oneoff')),
-    periodical_benefits: mergeMandatoryBenefits(periodicalBenefits, mandatoryItemsForCategory(sellableItems, 'periodical')),
+    session_benefits: sessionSection,
+    oneoff_benefits: oneoffSection,
+    periodical_benefits: periodicalSection,
     sellable_items: sellableItems,
     tax_rate_name: taxRate ? taxRate.name : null,
     tax_rate_percent: taxRate ? taxRate.rate_percent : null,
     ...priceFields,
     // #485/#818: read-only, dynamically computed — never persisted (see docs/architecture.md).
     example_timeline: exampleTimeline,
+    // #915: the same — computed on every read, persisted nowhere, charges nothing.
+    billing_event_simulation: billingEventSimulation,
   };
 }
 
@@ -907,6 +1005,23 @@ membershipPlansRouter.get('/:id/example-timeline', async (req, res) => {
   res.json(enriched.example_timeline);
 });
 
+// ─── Billing Event Simulation (#915) ──────────────────────────────────────────
+// Read-only, dynamically calculated — never persisted, and it creates no billing
+// event, invoice or payment record. Reuses the same calculation `enrichPlan`
+// embeds as `billing_event_simulation` on every Plan, exactly as the Example
+// timeline route above does, so the card and this endpoint cannot disagree.
+
+membershipPlansRouter.get('/:id/billing-event-simulation', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query<PlanRow>(
+    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  if (!rows[0]) return res.status(404).json({ error: 'Plan not found' });
+  const enriched = await enrichPlan(rows[0], gymId) as { billing_event_simulation: unknown };
+  res.json(enriched.billing_event_simulation);
+});
+
 // ─── Centers ──────────────────────────────────────────────────────────────────
 
 membershipPlansRouter.get('/:id/centers', async (req, res) => {
@@ -1277,11 +1392,18 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 // rather than to the Plan — see the note in that migration's header.
 
 function selectPlanSellableItemBenefits(table: string): string {
+  // #915: the price columns are here so the Billing Event Simulation can gross
+  // up a configured line without a second round trip — and from the benefit
+  // row's own join rather than the active catalogue, since a Plan may still
+  // carry (and still bill) an item that has since been deactivated.
   return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
                  gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status,
-                 gc.mandatory AS gym_charge_mandatory
+                 gc.mandatory AS gym_charge_mandatory,
+                 gc.amount AS gym_charge_amount, gc.tax_behavior AS gym_charge_tax_behavior,
+                 tr.rate_percent AS gym_charge_tax_rate_percent
           FROM ${table} b
           JOIN gym_charges gc ON gc.id = b.gym_charge_id
+          LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
           WHERE b.membership_plan_id = ? AND b.gym_id = ?
           ORDER BY gym_charge_name ASC`;
 }

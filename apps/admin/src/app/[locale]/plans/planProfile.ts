@@ -57,6 +57,10 @@ export const PLAN_SECTION_ORDER = [
   'section_plan_period_benefits',
   'section_centers',
   'section_example_timeline',
+  // #915 — the Billing Event Simulation sits after the Example Timeline: the
+  // timeline answers "what does each billing *period* do to the Membership
+  // Fee", this answers "what is billed, in full, on each *date*".
+  'section_billing_event_simulation',
 ] as const;
 
 export type PlanSectionKey = (typeof PLAN_SECTION_ORDER)[number];
@@ -475,4 +479,77 @@ export function planTimelineRowTone(status: PlanTimelineStatus): 'free' | 'regul
   if (status === 'free_plan' || status === 'bonus_plan' || status === 'prepaid_plan') return 'free';
   if (status === 'pay_regular') return 'regular';
   return 'benefit';
+}
+
+/* ── Billing Event Simulation (#915) ──────────────────────────────────────── */
+//
+// The wire shape of `billing_event_simulation`
+// (`api/src/domain/planBillingEventSimulation.ts`) plus how one line reads. Every
+// amount is the server's, VAT included: which events exist, which date each falls
+// on, which benefit applies and what it costs are billing rules and are never
+// re-derived here (CLAUDE.md: no business logic duplicated in the frontend).
+
+/** Why a line's charge differs from its regular price. */
+export interface PlanSimulationBenefit {
+  source: 'promotion' | 'membership_plan' | 'personal';
+  name: string | null;
+  action: 'no_benefit' | 'waive' | 'percentage_discount' | 'fixed_discount' | 'fixed_price' | 'included';
+  value: number | null;
+  period_status: PlanTimelineStatus | string | null;
+}
+
+export interface PlanSimulationLine {
+  kind: 'membership_fee' | 'sellable_item';
+  label: string;
+  gym_charge_id: number | null;
+  /** #832 — the line exists because the Sellable Item is Mandatory. */
+  mandatory: boolean;
+  quantity: number;
+  unit_price: number;
+  regular_price: number;
+  actual_charge: number;
+  benefits: PlanSimulationBenefit[];
+}
+
+export interface PlanSimulationDate {
+  date: string;
+  lines: PlanSimulationLine[];
+  total: number;
+}
+
+export interface PlanBillingEventSimulation {
+  available: boolean;
+  reason: string | null;
+  currency: string;
+  anchor_date: string | null;
+  horizon_date: string | null;
+  tax_included: boolean;
+  truncated: boolean;
+  dates: PlanSimulationDate[];
+  total: number;
+}
+
+/**
+ * The `plans.*` key describing what a line's price is. The ticket's own
+ * vocabulary: a line at its regular price reads "Regular price", a waived one
+ * reads "Waived", and a discounted one names the discount.
+ *
+ * A Plan may only configure `no_benefit`, `waive` and `percentage_discount` on a
+ * Sellable Item (#896 §16) and its Billing & Duration only ever waives, so the
+ * other actions are unreachable from a Plan — they are mapped anyway rather than
+ * left to fall through to a missing key, since the shape is the shared engine's.
+ */
+export function planSimulationPriceLabelKey(
+  benefit: PlanSimulationBenefit | undefined,
+): string {
+  switch (benefit?.action) {
+    case undefined:
+    case 'no_benefit': return 'simulation_price_regular';
+    case 'waive':
+    case 'included': return 'simulation_price_waived';
+    case 'percentage_discount': return 'simulation_price_percentage';
+    case 'fixed_discount': return 'simulation_price_fixed_discount';
+    case 'fixed_price': return 'simulation_price_fixed_price';
+    default: return 'simulation_price_regular';
+  }
 }
