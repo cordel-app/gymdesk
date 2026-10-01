@@ -47,6 +47,7 @@ function line(over: Partial<PlanSimulationLine> = {}): PlanSimulationLine {
     unit_price: 15,
     regular_price: 15,
     actual_charge: 15,
+    prepaid_periods: null,
     benefits: [],
     ...over,
   };

@@ -1276,9 +1276,12 @@ describe('GET /membership-plans/:id/example-timeline', () => {
     expect(res.body.periods.map((p: any) => p.status)).toEqual([
       'free_plan', 'prepaid_plan', 'pay_plan', 'bonus_plan', 'pay_regular', 'pay_regular',
     ]);
-    // Only a charged period quotes a price; a waived one says so.
-    expect(res.body.periods.map((p: any) => p.amount)).toEqual([null, null, 60, null, 60, 60]);
-    expect(res.body.periods.map((p: any) => p.waived)).toEqual([true, true, false, true, false, false]);
+    // Only a charged period quotes a price; a waived one says so. #946 — the
+    // single Pre-paid period charges: it is where the Pre-paid Duration is
+    // collected, one period's worth of it here.
+    expect(res.body.periods.map((p: any) => p.amount)).toEqual([null, 60, 60, null, 60, 60]);
+    expect(res.body.periods.map((p: any) => p.waived)).toEqual([true, false, false, true, false, false]);
+    expect(res.body.periods.map((p: any) => p.prepaidPeriods)).toEqual([null, 1, null, null, null, null]);
     // The rows tile the calendar: each one ends the day before the next begins,
     // starting from the hypothetical enrollment date the response names.
     expect(res.body.periods[0].startsOn).toBe(res.body.anchorDate);

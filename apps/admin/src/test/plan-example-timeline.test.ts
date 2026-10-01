@@ -150,7 +150,9 @@ describe('Example timeline: how a Plan’s row reads', () => {
 
   it('tints a period that charges nothing green, the regular ones grey', () => {
     const tones = Object.fromEntries(
-      PLAN_TIMELINE_STATUSES.map((s: PlanTimelineStatus) => [s, planTimelineRowTone(s)]),
+      PLAN_TIMELINE_STATUSES.map((s: PlanTimelineStatus) => [
+        s, planTimelineRowTone({ status: s, waived: s !== 'pay_plan' && s !== 'pay_regular' }),
+      ]),
     );
     expect(tones).toEqual({
       free_plan: 'free',
@@ -159,5 +161,13 @@ describe('Example timeline: how a Plan’s row reads', () => {
       pay_plan: 'benefit',
       pay_regular: 'regular',
     });
+  });
+
+  // #946 — the first Pre-paid period collects the whole Pre-paid Duration, so it
+  // charges: green is this table's "no charge" tone and would read as a free
+  // period beside an amount.
+  it('tints a charged Pre-paid period amber, not green', () => {
+    expect(planTimelineRowTone({ status: 'prepaid_plan', waived: false })).toBe('benefit');
+    expect(planTimelineRowTone({ status: 'prepaid_plan', waived: true })).toBe('free');
   });
 });

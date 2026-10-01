@@ -75,8 +75,41 @@ describe('computePlanExampleTimeline', () => {
 
   it('charges only the periods the durations do not waive, at the price given', () => {
     const result = timeline({ free: 1, paid: 2, prepaid: 1, bonus: 1 });
-    expect(result.periods.map((p) => p.amount)).toEqual([null, null, 60, null, 60, 60]);
-    expect(result.periods.map((p) => p.waived)).toEqual([true, true, false, true, false, false]);
+    // #946 — the single Pre-paid period (row 2) is paid, not waived: it is where
+    // the Pre-paid Duration is collected, one period's worth of it here.
+    expect(result.periods.map((p) => p.amount)).toEqual([null, 60, 60, null, 60, 60]);
+    expect(result.periods.map((p) => p.waived)).toEqual([true, false, false, true, false, false]);
+  });
+
+  // ── #946 — the Pre-paid Duration is collected up front ─────────────────────
+
+  it('charges the whole Pre-paid Duration on the first of its periods', () => {
+    const result = timeline({ free: 0, paid: 3, prepaid: 3, bonus: 0 });
+    expect(statuses(result)).toEqual([
+      'prepaid_plan', 'prepaid_plan', 'prepaid_plan', 'pay_regular', 'pay_regular',
+    ]);
+    // 3 x €60, then nothing until the Paid Duration is over.
+    expect(result.periods.map((p) => p.amount)).toEqual([180, null, null, 60, 60]);
+    expect(result.periods.map((p) => p.waived)).toEqual([false, true, true, false, false]);
+    expect(result.periods.map((p) => p.prepaidPeriods)).toEqual([3, null, null, null, null]);
+  });
+
+  it('counts the prepaid periods from the end of the Free Period', () => {
+    const result = timeline({ free: 2, paid: 4, prepaid: 2, bonus: 0 });
+    expect(result.periods.map((p) => p.prepaidPeriods)).toEqual([
+      null, null, 2, null, null, null, null, null,
+    ]);
+    expect(result.periods.map((p) => p.amount)).toEqual([
+      null, null, 120, null, 60, 60, 60, 60,
+    ]);
+  });
+
+  it('quotes nothing for a prepaid period when the Plan has no price', () => {
+    const result = timeline({ paid: 2, prepaid: 2 }, MONTHLY, null);
+    expect(result.periods.map((p) => p.amount)).toEqual([null, null, null, null]);
+    // Not a waiver — the Plan simply has no price to multiply (#818).
+    expect(result.periods[0].waived).toBe(false);
+    expect(result.periods[0].prepaidPeriods).toBe(2);
   });
 
   it('quotes nothing for a Plan with no price, and says that is not a waiver', () => {
