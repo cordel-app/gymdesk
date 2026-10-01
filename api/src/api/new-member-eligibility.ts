@@ -88,3 +88,65 @@ export async function isNewMemberForNewAssignment(
   };
   return qualifiesAsNewMember([...assignments, pending], newMemberCutoff(now), PENDING_ASSIGNMENT_ID);
 }
+
+/**
+ * #927 — the Member's own `New Member` status, for one Member and for a page of
+ * them.
+ *
+ * Nothing is stored: the status is derived on every read, so it tracks both the
+ * Member's Membership history and the passing of the window with no writer at
+ * all (§3's last bullet, §4 — it cannot be edited because there is nothing to
+ * edit). And it is derived by `qualifiesAsNewMember()`, the same pure rule the
+ * four Promotion apply paths run, so §5's "avoid implementing a separate New
+ * Member calculation inside Promotions" holds in the other direction too —
+ * there is no second SQL copy of the rule here, the mistake
+ * `latestEnrollmentStatusSql()` exists to prevent.
+ *
+ * Nothing is excluded either: a Member-level answer has no assignment being
+ * configured, so a Member with a live plan reads as not new.
+ */
+export async function isNewMemberStatus(
+  exec: Queryable, gymId: string, memberId: number, now: Date = new Date(),
+): Promise<boolean> {
+  const assignments = await loadMemberAssignments(exec, gymId, memberId);
+  return qualifiesAsNewMember(assignments, newMemberCutoff(now), null);
+}
+
+/**
+ * The same answer for every Member of a list, in **one** query rather than one
+ * per row — `GET /members` returns a page of Members and a per-row round trip
+ * would make the list's cost linear in its length.
+ *
+ * A Member with no assignments has no row here at all, which is exactly the
+ * ticket's first example: never had a Membership Plan ⇒ New Member. So the map
+ * answers `true` for an id it never saw, and callers may read it for any Member
+ * of the gym.
+ */
+export async function newMemberStatusByMember(
+  exec: Queryable, gymId: string, memberIds: readonly number[], now: Date = new Date(),
+): Promise<Map<number, boolean>> {
+  const flags = new Map<number, boolean>();
+  const ids = Array.from(new Set(memberIds.map((id) => Number(id)))).filter((id) => Number.isFinite(id));
+  if (ids.length === 0) return flags;
+
+  const { rows } = await exec.query(
+    `SELECT member_id, id, status, starts_at, ends_at, closed_at, created_at
+     FROM user_memberships
+     WHERE gym_id = ? AND member_id IN (${ids.map(() => '?').join(',')})`,
+    [gymId, ...ids],
+  );
+
+  const byMember = new Map<number, NewMemberAssignment[]>();
+  for (const row of rows as (NewMemberAssignment & { member_id: number })[]) {
+    const memberId = Number(row.member_id);
+    const list = byMember.get(memberId);
+    if (list) list.push(row);
+    else byMember.set(memberId, [row]);
+  }
+
+  const cutoff = newMemberCutoff(now);
+  for (const id of ids) {
+    flags.set(id, qualifiesAsNewMember(byMember.get(id) ?? [], cutoff, null));
+  }
+  return flags;
+}

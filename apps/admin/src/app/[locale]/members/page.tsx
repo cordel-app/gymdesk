@@ -13,7 +13,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import {
   LIST_PADDING_X, listCellStyle, listExpandedStyle, listHeaderCellStyle,
-  listHeaderRowStyle, listRowDividerStyle, listSurfaceStyle,
+  listHeaderRowStyle, listNameBadgeAccentStyle, listRowDividerStyle, listSurfaceStyle,
 } from '@/components/listChrome';
 import { btnStyle } from '@/components/ui';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -484,7 +484,18 @@ export default function MembersPage() {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
           }}
         >
-          <div style={nameCellStyle}>{m.name}</div>
+          <div style={nameCellStyle}>
+            {m.name}
+            {/* #927 §2: the calculated New Member status, so a member can be
+                identified without expanding them. Read-only, and read from the
+                same `is_new_member` the PROFILE section below shows (§5) —
+                never from a second calculation in the page. The accent pill
+                (#913), because it is the row's attention-worthy metadata
+                rather than a quiet statement of what kind of row it is. */}
+            {m.is_new_member && (
+              <span style={listNameBadgeAccentStyle}>{t('members.new_member_badge')}</span>
+            )}
+          </div>
           {/* The track is fixed now, so an over-long address ellipsises inside
               its own column; `title` keeps the whole of it reachable. */}
           <div style={cellStyle} title={m.email}>{m.email}</div>
@@ -516,6 +527,7 @@ export default function MembersPage() {
             {editingId === m.id && (
               <MemberEditForm
                 form={editForm}
+                isNewMember={m.is_new_member}
                 error={editError}
                 saving={editSaving}
                 showCenters={showCenters}

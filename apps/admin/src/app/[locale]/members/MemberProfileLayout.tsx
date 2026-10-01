@@ -2,7 +2,12 @@
 
 import React from 'react';
 import { formFieldLabelStyle, formValueStyle } from '@/components/formChrome';
-import { MEMBER_PROFILE_FIELDS, type MemberProfileFieldSpec } from './memberProfile';
+import {
+  MEMBER_PROFILE_FIELDS,
+  newMemberCheckbox,
+  type MemberEditableFieldSpec,
+  type MemberProfileFieldSpec,
+} from './memberProfile';
 
 /**
  * #882 — the one layout of the Member Profile.
@@ -20,6 +25,12 @@ import { MEMBER_PROFILE_FIELDS, type MemberProfileFieldSpec } from './memberProf
  * no knowledge of a Member: it cannot make a read-only Profile editable, and it
  * cannot make the Edit form read a second copy of the row.
  *
+ * #927 — a field the system calculates (`New Member`) is part of this one
+ * field set, so both modes place it in the same cell; its contents come from
+ * `renderCalculated` rather than `renderField`, which is what makes it
+ * read-only by construction rather than by the Edit form remembering to skip
+ * it.
+ *
  * #929 — and the label and the value box are the app's own
  * (`components/formChrome.ts`), so a field sits at the same inset in both
  * modes: the read-only value used to be flush with the label while the input
@@ -30,12 +41,20 @@ import { MEMBER_PROFILE_FIELDS, type MemberProfileFieldSpec } from './memberProf
 export function MemberProfileLayout({
   fieldLabel,
   renderField,
+  renderCalculated,
   centers,
 }: {
   /** The label for a field in this mode (the Edit form marks required ones). */
   fieldLabel: (field: MemberProfileFieldSpec) => string;
   /** The cell under that label: an input, or the persisted value. */
-  renderField: (field: MemberProfileFieldSpec) => React.ReactNode;
+  renderField: (field: MemberEditableFieldSpec) => React.ReactNode;
+  /**
+   * #927 — the cell of a field the system calculates (`calculated: true`). It
+   * is called in both modes and `renderField` is not, so a calculated field is
+   * laid out with the rest of the Profile while the Edit form has no way to
+   * put a control under its label.
+   */
+  renderCalculated: (field: MemberProfileFieldSpec) => React.ReactNode;
   /**
    * Assigned Centers and Default Center, in the one position both modes place
    * them. `null` where the gym has a single center and the page hides them.
@@ -53,7 +72,7 @@ export function MemberProfileLayout({
         {MEMBER_PROFILE_FIELDS.map((field) => (
           <div key={field.key} style={field.kind === 'multiline' ? fullWidthCellStyle : undefined}>
             <label style={profileFieldLabelStyle}>{fieldLabel(field)}</label>
-            {renderField(field)}
+            {field.calculated ? renderCalculated(field) : renderField(field as MemberEditableFieldSpec)}
           </div>
         ))}
       </div>
@@ -71,6 +90,23 @@ export function MemberProfileLayout({
         </div>
       )}
     </>
+  );
+}
+
+/**
+ * #927 §5 — the `New Member` cell, rendered by both modes from one place so the
+ * read-only Profile and the Edit form cannot draw the same calculated value two
+ * ways. It is a value, not a control: there is no `<input type="checkbox">` to
+ * tick, because there is nothing a staff member could tick it to.
+ *
+ * The glyph carries the meaning, so it is announced by `aria-label` rather than
+ * left to a screen reader to read out as "ballot box".
+ */
+export function NewMemberValue({ isNewMember, label }: { isNewMember: boolean; label: string }) {
+  return (
+    <p style={profileValueStyle}>
+      <span role="img" aria-label={label}>{newMemberCheckbox(isNewMember)}</span>
+    </p>
   );
 }
 

@@ -1,8 +1,9 @@
 /**
- * #634 §3 — "Only applicable for new members".
+ * #634 §3 — "Only applicable for new members"; #927 — the Member's own
+ * `New Member` status.
  *
  * `promotions.only_applicable_for_new_members` has been stored since #633
- * (migration 163) and read by nothing. The definition of "new", from the
+ * (migration 163) and read by nothing. The definition of "new", from the #634
  * issue thread:
  *
  *   "We must understand 'new user' as a member that books his/her first
@@ -10,9 +11,20 @@
  *    ago and now is coming back, the flag only applicable to new users will
  *    apply."
  *
+ * #927 made that status a Member-level, read-only field of the Member Profile
+ * and shortened the window to **six** months — "A member is considered a New
+ * Member when they have not had an active Membership Plan during the previous
+ * 6 months" — and the answer on its thread settled that the same number
+ * governs Promotions: *"6 months here and in promotions"*. There is therefore
+ * one window, not two: the badge the Members list shows and the window the
+ * four Promotion apply paths enforce are the same `NEW_MEMBER_WINDOW_MONTHS`,
+ * which is what §5 ("avoid implementing a separate New Member calculation
+ * inside Promotions") asks for. A member who left between 6 and 12 months ago
+ * reads as new, and a new-members-only Promotion now applies to them.
+ *
  * So the rule is about the Member's *recent* history, not their first-ever
  * assignment: a Member qualifies when none of their other Assigned Plans puts
- * them inside the gym during the trailing 12 months. An Assigned Plan counts
+ * them inside the gym during the trailing window. An Assigned Plan counts
  * against the Member when any of these holds:
  *
  *   - it is still live (active / paused) — they
@@ -21,12 +33,12 @@
  *   - it ended on or after the cutoff — they were still a member inside it.
  *
  * Pure on purpose — every date comparison lives here, so the rule can be
- * unit-tested without a database and the callers (the promotion apply paths
- * and the Member configuration read) can never drift apart.
+ * unit-tested without a database and the callers (the promotion apply paths,
+ * the Member configuration read and the Members list) can never drift apart.
  */
 
-/** The trailing window, in months, a Member must have been away for. */
-export const NEW_MEMBER_WINDOW_MONTHS = 12;
+/** The trailing window, in months, a Member must have been away for (#927). */
+export const NEW_MEMBER_WINDOW_MONTHS = 6;
 
 /**
  * The statuses that mean the Member holds the plan right now. Same list as
@@ -131,7 +143,10 @@ export function countsAsRecentMembership(
 
 /**
  * `excludeUserMembershipId` is the assignment the Promotion is about to be
- * applied to — it must never count against its own Member. Assigning a plan
+ * applied to — it must never count against its own Member. Pass `null` for the
+ * Member's own `New Member` status (#927): a Member-level answer has no
+ * assignment being configured, so a Member holding a live plan reads as not
+ * new, which is the ticket's fourth example. Assigning a plan
  * creates the assignment first and applies the Promotions right after
  * (assign-new-plan, POST /membership-plans/:id/assign), so without the
  * exclusion a brand-new Member would be disqualified by the very plan the

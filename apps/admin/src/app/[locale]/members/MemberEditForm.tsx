@@ -16,8 +16,8 @@ import {
 } from '@/components/formChrome';
 import type { CenterOption } from '@/context/CenterContext';
 import { validateDocumentId } from '@/lib/documentId';
-import type { MemberEditFormValues, MemberProfileFieldSpec } from './memberProfile';
-import { MemberProfileLayout } from './MemberProfileLayout';
+import type { MemberEditableFieldSpec, MemberEditFormValues } from './memberProfile';
+import { MemberProfileLayout, NewMemberValue } from './MemberProfileLayout';
 
 // #797: the field set itself lives in memberProfile.ts, shared with the
 // read-only PROFILE section of the expanded row so the two cannot drift apart.
@@ -32,12 +32,18 @@ import { MemberProfileLayout } from './MemberProfileLayout';
 export type { MemberEditFormValues };
 
 export function MemberEditForm({
-  form, error, saving,
+  form, isNewMember, error, saving,
   showCenters, centers, assignedCenterIds, defaultCenterId,
   onChange, onToggleCenter, onDefaultCenterChange,
   onSave, onCancel,
 }: {
   form: MemberEditFormValues;
+  /**
+   * #927 §4/§5 — the Member's calculated `New Member` status, shown here
+   * exactly as the read-only Profile shows it. It is not form state: there is
+   * no value to change, so it is never submitted and the `PUT` is untouched.
+   */
+  isNewMember: boolean;
   error: string | null;
   saving: boolean;
   showCenters: boolean;
@@ -54,7 +60,7 @@ export function MemberEditForm({
   const docCheck = validateDocumentId(form.nif_nie_passport);
   const showDocError = form.nif_nie_passport !== '' && !docCheck.valid;
 
-  const renderField = (field: MemberProfileFieldSpec) => {
+  const renderField = (field: MemberEditableFieldSpec) => {
     const placeholder = field.placeholderKey ? t(field.placeholderKey) : undefined;
     const value = form[field.key];
     const update = (next: string) => onChange({ ...form, [field.key]: next });
@@ -99,6 +105,12 @@ export function MemberEditForm({
         <MemberProfileLayout
           fieldLabel={(field) => t(field.editLabelKey)}
           renderField={renderField}
+          renderCalculated={() => (
+            <NewMemberValue
+              isNewMember={isNewMember}
+              label={t(isNewMember ? 'new_member_yes' : 'new_member_no')}
+            />
+          )}
           centers={
             showCenters
               ? {

@@ -1025,3 +1025,127 @@ describe('PUT /members/:id — nif_nie_passport', () => {
     expect(rows[0].nif_nie_passport).toBeNull();
   });
 });
+
+// ─── is_new_member (#927) ─────────────────────────────────────────────────────
+//
+// The Member's own `New Member` status: calculated on every read from their
+// Membership history, never stored, and never editable. The window arithmetic
+// is unit-tested in new-member-eligibility.test.ts; here: that both reads
+// report it, that they agree (§5), and that the four examples in §3 come out
+// the way the ticket draws them.
+
+describe('GET /members — is_new_member (#927)', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Members New Member Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  const list = () => request
+    .get('/members')
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+
+  const detail = (memberId: number) => request
+    .get(`/members/${memberId}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+
+  /** A terminal assignment that stopped covering the Member `monthsAgo` ago. */
+  async function createLapsedMembership(memberId: number, monthsAgo: number): Promise<void> {
+    const { insertId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at, ends_at)
+       VALUES (?, ?, 'expired', CURDATE() - INTERVAL 36 MONTH, CURDATE() - INTERVAL ? MONTH)`,
+      [gymId, memberId, monthsAgo],
+    );
+    // Created long ago too, so nothing dates it by a successor.
+    await db.query(
+      'UPDATE user_memberships SET created_at = CURDATE() - INTERVAL 36 MONTH WHERE id = ?',
+      [insertId],
+    );
+  }
+
+  it('is true for a Member who never had a Membership Plan', async () => {
+    const memberId = await createMember(gymId);
+    const res = await list();
+    expect(res.status).toBe(200);
+    expect(res.body.find((m: any) => m.id === memberId).is_new_member).toBe(true);
+  });
+
+  it('is false for a Member who currently holds a Membership Plan', async () => {
+    const memberId = await createMember(gymId);
+    await createUserMembership(gymId, memberId, 'active');
+    const res = await list();
+    expect(res.body.find((m: any) => m.id === memberId).is_new_member).toBe(false);
+  });
+
+  it('is false for a Member whose plan ended inside the window', async () => {
+    const memberId = await createMember(gymId);
+    await createLapsedMembership(memberId, 3);
+    const res = await list();
+    expect(res.body.find((m: any) => m.id === memberId).is_new_member).toBe(false);
+  });
+
+  it('is true again for a Member whose plan ended before the window', async () => {
+    const memberId = await createMember(gymId);
+    await createLapsedMembership(memberId, 18);
+    const res = await list();
+    expect(res.body.find((m: any) => m.id === memberId).is_new_member).toBe(true);
+  });
+
+  it('reports the same value from GET /members/:id (§5)', async () => {
+    const newMemberId = await createMember(gymId);
+    const enrolledId = await createMember(gymId);
+    await createUserMembership(gymId, enrolledId, 'active');
+
+    const rows = (await list()).body;
+    for (const id of [newMemberId, enrolledId]) {
+      const one = await detail(id);
+      expect(one.status).toBe(200);
+      expect(one.body.is_new_member).toBe(rows.find((m: any) => m.id === id).is_new_member);
+    }
+    expect((await detail(newMemberId)).body.is_new_member).toBe(true);
+    expect((await detail(enrolledId)).body.is_new_member).toBe(false);
+  });
+
+  it('answers per Member rather than once for the page', async () => {
+    const newMemberId = await createMember(gymId);
+    const enrolledId = await createMember(gymId);
+    await createUserMembership(gymId, enrolledId, 'paused');
+
+    const byId = new Map<number, boolean>(
+      (await list()).body.map((m: any) => [m.id, m.is_new_member]),
+    );
+    expect(byId.get(newMemberId)).toBe(true);
+    expect(byId.get(enrolledId)).toBe(false);
+  });
+
+  it('is not writable — PUT /members/:id leaves it calculated', async () => {
+    const memberId = await createMember(gymId);
+    await createUserMembership(gymId, memberId, 'active');
+
+    const res = await request
+      .put(`/members/${memberId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Test Member', is_new_member: true, new_member: true });
+    expect(res.status).toBe(200);
+    expect((await detail(memberId)).body.is_new_member).toBe(false);
+  });
+
+  it('ignores another gym\'s assignments', async () => {
+    // The status is derived from the Member's own gym-scoped history; a row in
+    // another gym must not reach it (and cannot, since the loader filters on
+    // gym_id — this is the regression test for that filter).
+    const otherGym = await createTestGym('Members New Member Other Gym');
+    const memberId = await createMember(gymId);
+    await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at)
+       VALUES (?, ?, 'active', CURDATE())`,
+      [otherGym, memberId],
+    );
+    const res = await list();
+    expect(res.body.find((m: any) => m.id === memberId).is_new_member).toBe(true);
+  });
+});

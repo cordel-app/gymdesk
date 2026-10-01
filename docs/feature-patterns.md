@@ -1489,6 +1489,22 @@ Reference implementation: `api/src/domain/mandatoryPlanBenefits.ts` + the `PLAN_
 
 ---
 
+## A Derived Status Shown Beside Editable Fields (#927)
+
+When a ticket asks for a value the *system* decides — "New Member", a computed tier, an expiry countdown — shown next to fields a person edits, two things decide whether it stays honest: where it is calculated, and how the form is stopped from offering it.
+
+- **Derive it on read; add no column.** The status is a question about other rows, so it has no writer and no migration: it tracks the history it reads *and* the passing of time on its own. A stored copy needs a sweep to keep it true, and the first ticket that forgets the sweep ships a badge that lies. `GET /members` projects `is_new_member`; nothing persists it.
+- **One rule, and reuse the one that already exists.** If an apply path, a validator or another screen already answers the question, call *that* — don't write a second SQL copy for the list (the mistake `latestEnrollmentStatusSql()` exists to prevent). And if the ticket changes the rule's parameters, change them in the one place: a display window that differs from the enforcement window is a support ticket the first time someone compares the two screens.
+- **One query for the page.** A per-row round trip makes the list's cost linear in its length. Load every listed row's dependencies in one query, group them in memory and evaluate the *pure* rule per row (`newMemberStatusByMember()`); a row with no dependencies is answered by the rule's own empty case, not by a special branch.
+- **Declare it as a field of the shared field set, flagged.** `calculated: true` on the spec (`MEMBER_PROFILE_FIELDS`), and the shared layout renders a calculated field through a *separate* callback (`renderCalculated`) in both modes. That is what makes it read-only by construction rather than by the Edit form remembering to skip it: `renderField` is never called for it, so there is no place an input could appear.
+- **Subtract it from the form's types.** The form values are `Record<EditableKey, string>` with the calculated keys excluded, so the field has no form state, cannot be typed into and cannot reach the `PUT` payload. The server's own explicit field list is the second half of that guard.
+- **Render it as a value, never as a disabled control.** A ticked box the ticket draws is a glyph with an `aria-label`, not `<input type="checkbox" disabled>` — the same rule as "a whole catalogue, assigned ones highlighted" renders spans (#799).
+- **The same value in both places.** The list badge and the field read one field off one row (`listNameBadgeStyle`/`listNameBadgeAccentStyle` for the badge, #913's two voices — never a look of its own), so no second fetch and no frontend arithmetic. A source-scanning test that the page contains no month arithmetic is what keeps it that way.
+
+Reference implementation: `api/src/domain/newMemberEligibility.ts` + `api/src/api/new-member-eligibility.ts` (`newMemberStatusByMember`, `isNewMemberStatus`), `apps/admin/src/app/[locale]/members/memberProfile.ts` + `MemberProfileLayout.tsx`.
+
+---
+
 ## Two Screens, One Read-Only Summary (#879)
 
 When a ticket asks that one card's section "look like" another card's — same information, two presentations — the answer is the **same component**, not a second stylesheet that happens to agree today:
