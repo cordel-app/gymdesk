@@ -111,6 +111,8 @@
     "error_no_center": "Un miembro debe pertenecer al menos a un centro.",
     "error_default_not_assigned": "El centro predeterminado debe ser uno de los centros asignados.",
     "filter_center": "Centro",
+    "filter_search": "Buscar",
+    "filter_document": "NIF/NIE/Pasaporte",
     "all_centers": "Todos los centros",
     "clerk_section_title": "Clerk",
     "clerk_status_label": "Estado",

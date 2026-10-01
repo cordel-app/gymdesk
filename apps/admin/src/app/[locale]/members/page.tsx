@@ -8,9 +8,14 @@ import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
-import { DataTable, Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
+import {
+  LIST_PADDING_X, listCellStyle, listExpandedStyle, listHeaderCellStyle,
+  listHeaderRowStyle, listRowDividerStyle, listSurfaceStyle,
+} from '@/components/listChrome';
+import { btnStyle } from '@/components/ui';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MemberExpandedRow } from './MemberExpandedRow';
@@ -54,6 +59,50 @@ const emptyForm = {
 
 const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'expired'] as const;
 const ENROLLMENT_STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
+
+// ─── List columns (#928, the #637/#724 column rule) ──────────────────────────
+// The column titles and every collapsed row are laid out from this one
+// definition, so a long name or a long email can never push a row's values out
+// of line with its header. Every column is a fixed track except the name, which
+// is the only one allowed to absorb the leftover width; when the viewport is
+// narrower than the sum of the tracks the list scrolls horizontally instead of
+// dropping or squeezing columns.
+//
+// Same columns, same order and same values as the `DataTable` this replaces —
+// #928 is presentation only.
+
+interface ListColumn {
+  key: string;
+  /** Column title, a key in the `members` namespace. */
+  labelKey: string;
+  /** Fixed track width in px — also the minimum for the flexible column. */
+  width: number;
+  /** Set on the one flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 180, grow: 2 },
+  { key: 'email', labelKey: 'col_email', width: 200 },
+  { key: 'document', labelKey: 'col_document', width: 150 },
+  { key: 'payment_status', labelKey: 'col_payment_status', width: 110 },
+  { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 110 },
+  // Wide enough for the longest translated title ("ACCIONES") next to the
+  // chevron and the ⋮ menu the cell also holds.
+  { key: 'actions', labelKey: 'col_actions', width: 84 },
+];
+
+const LIST_COLUMN_GAP = 10;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + LIST_PADDING_X * 2;
 
 export default function MembersPage() {
   const t = useTranslations();
@@ -410,113 +459,60 @@ export default function MembersPage() {
     return items;
   }
 
-  const columns: Column<Member>[] = [
-    {
-      header: t('members.col_name'),
-      render: (m) => (
-        <div style={{ fontWeight: 500 }}>{m.name}</div>
-      ),
-    },
-    {
-      header: t('members.col_email'),
-      // Natural width like System → Users; on narrow screens it may only break
-      // after the @ (break-all squeezed the column to one character wide).
-      render: (m) => {
-        const at = m.email.indexOf('@');
-        return at < 0 ? m.email : <>{m.email.slice(0, at + 1)}<wbr />{m.email.slice(at + 1)}</>;
-      },
-    },
-    {
-      header: t('members.col_document'),
-      render: (m) => m.nif_nie_passport || '—',
-    },
-    {
-      header: t('members.col_payment_status'),
-      width: 120,
-      render: (m) => m.payment_status
-        ? <StatusBadge status={m.payment_status} label={t(`members.payment_status_${m.payment_status}`) || m.payment_status} />
-        : <span style={{ color: '#bbb' }}>{t('members.payment_status_none')}</span>,
-    },
-    {
-      header: t('members.col_enrollment_status'),
-      width: 120,
-      render: (m) => m.enrollment_status
-        ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
-        : <span style={{ color: '#bbb' }}>{t('members.enrollment_status_none')}</span>,
-    },
-    {
-      header: t('members.col_actions'),
-      width: 60,
-      render: (m) => (
-        <ContextMenu
-          items={buildActions(m)}
-          ariaLabel={`${t('members.col_actions')} — ${m.name}`}
-        />
-      ),
-    },
-  ];
+  /**
+   * One member: the collapsed row, then — while expanded — the recessed body
+   * the Edit form and the member's sections sit in.
+   *
+   * #928: the row is one cell per LIST_COLUMNS entry, in the same order, so a
+   * title always sits over its own values. The whole row is the expand control
+   * (as on Sellable Items and Training Plans), with the ⋮ menu stopping the
+   * click so acting on a member never also expands it.
+   */
+  function renderRow(m: Member) {
+    const isExpanded = expandedMemberIds.has(m.id);
+    const toggle = () => guardUnsaved(() => toggleExpand(m));
 
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h1 style={{ margin: 0 }}>{t('members.title')}</h1>
-        <button onClick={() => guardUnsaved(openAdd)} style={btnStyle('#6c63ff')}>{t('members.add')}</button>
-      </div>
+    return (
+      <div key={m.id} style={listRowDividerStyle}>
+        <div
+          style={headerRowStyle}
+          onClick={toggle}
+          role="button"
+          tabIndex={0}
+          aria-expanded={isExpanded}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+          }}
+        >
+          <div style={nameCellStyle}>{m.name}</div>
+          {/* The track is fixed now, so an over-long address ellipsises inside
+              its own column; `title` keeps the whole of it reachable. */}
+          <div style={cellStyle} title={m.email}>{m.email}</div>
+          <div style={mutedCellStyle}>{m.nif_nie_passport || '—'}</div>
+          <div style={badgeCellStyle}>
+            {m.payment_status
+              ? <StatusBadge status={m.payment_status} label={t(`members.payment_status_${m.payment_status}`) || m.payment_status} />
+              : <span style={noStatusStyle}>{t('members.payment_status_none')}</span>}
+          </div>
+          <div style={badgeCellStyle}>
+            {m.enrollment_status
+              ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
+              : <span style={noStatusStyle}>{t('members.enrollment_status_none')}</span>}
+          </div>
+          <div style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
+            {/* Decorative: the row itself carries the expanded state and the
+                keyboard affordance, so a second control would only be a nested
+                button inside it. */}
+            <span aria-hidden="true" style={chevronStyle(isExpanded)}>▾</span>
+            <ContextMenu
+              items={buildActions(m)}
+              ariaLabel={`${t('members.col_actions')} — ${m.name}`}
+            />
+          </div>
+        </div>
 
-      {/* Toolbar: search + filters */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <input
-          type="search"
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder={t('members.placeholder_search')}
-          style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 200 }}
-        />
-        <input
-          type="search"
-          value={documentFilter}
-          onChange={(e) => handleDocumentFilter(e.target.value)}
-          placeholder={t('members.label_document')}
-          aria-label={t('members.label_document')}
-          style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 160 }}
-        />
-        {showCenters && (
-          <select
-            value={centerFilter}
-            onChange={(e) => handleCenterFilter(e.target.value)}
-            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff' }}
-          >
-            <option value="">{t('members.all_centers')}</option>
-            {centers.map((c) => (
-              <option key={c.id} value={String(c.id)}>{c.name}</option>
-            ))}
-          </select>
-        )}
-        <StatusFilter
-          value={paymentStatusFilter}
-          onChange={handlePaymentFilter}
-          allLabel={t('members.all_payment_statuses')}
-          options={PAYMENT_STATUSES.map((s) => ({ value: s, label: t(`members.payment_status_${s}`) }))}
-        />
-        <StatusFilter
-          value={enrollmentStatusFilter}
-          onChange={handleEnrollmentFilter}
-          allLabel={t('members.all_enrollment_statuses')}
-          options={ENROLLMENT_STATUSES.map((s) => ({ value: s, label: t(`members.enrollment_status_${s}`) }))}
-        />
-      </div>
-
-      <DataTable
-        columns={columns}
-        rows={members}
-        rowKey={(m) => m.id}
-        loading={loading}
-        loadingText={t('members.loading')}
-        emptyText={t('members.empty')}
-        expandedRowKeys={expandedMemberIds}
-        onToggleExpand={(m) => guardUnsaved(() => toggleExpand(m))}
-        renderExpanded={(m) => (
-          <>
+        {isExpanded && (
+          <div style={listExpandedStyle}>
             {editingId === m.id && (
               <MemberEditForm
                 form={editForm}
@@ -543,9 +539,102 @@ export default function MembersPage() {
               isAdmin={isAdmin}
               plans={plans}
             />
-          </>
+          </div>
         )}
-      />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <h1 style={{ margin: 0 }}>{t('members.title')}</h1>
+        <button onClick={() => guardUnsaved(openAdd)} style={btnStyle('#6c63ff')}>{t('members.add')}</button>
+      </div>
+
+      {/* Filters — the same labelled bar every other list wears (#724). The
+          same five filters as before, same behaviour; each one now carries its
+          label instead of relying on a placeholder. */}
+      <FilterBar>
+        <FilterField label={t('members.filter_search')} htmlFor="members-filter-search">
+          <input
+            id="members-filter-search"
+            type="search"
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder={t('members.placeholder_search')}
+            style={{ ...filterControlStyle, minWidth: 200 }}
+          />
+        </FilterField>
+        <FilterField label={t('members.filter_document')} htmlFor="members-filter-document">
+          <input
+            id="members-filter-document"
+            type="search"
+            value={documentFilter}
+            onChange={(e) => handleDocumentFilter(e.target.value)}
+            placeholder={t('members.label_document')}
+            style={{ ...filterControlStyle, minWidth: 160 }}
+          />
+        </FilterField>
+        {showCenters && (
+          <FilterField label={t('members.filter_center')} htmlFor="members-filter-center">
+            <select
+              id="members-filter-center"
+              value={centerFilter}
+              onChange={(e) => handleCenterFilter(e.target.value)}
+              style={filterControlStyle}
+            >
+              <option value="">{t('members.all_centers')}</option>
+              {centers.map((c) => (
+                <option key={c.id} value={String(c.id)}>{c.name}</option>
+              ))}
+            </select>
+          </FilterField>
+        )}
+        <FilterField label={t('members.filter_payment_status')} htmlFor="members-filter-payment-status">
+          <StatusFilter
+            id="members-filter-payment-status"
+            value={paymentStatusFilter}
+            onChange={handlePaymentFilter}
+            allLabel={t('members.all_payment_statuses')}
+            options={PAYMENT_STATUSES.map((s) => ({ value: s, label: t(`members.payment_status_${s}`) }))}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <FilterField label={t('members.filter_enrollment_status')} htmlFor="members-filter-enrollment-status">
+          <StatusFilter
+            id="members-filter-enrollment-status"
+            value={enrollmentStatusFilter}
+            onChange={handleEnrollmentFilter}
+            allLabel={t('members.all_enrollment_statuses')}
+            options={ENROLLMENT_STATUSES.map((s) => ({ value: s, label: t(`members.enrollment_status_${s}`) }))}
+            style={filterControlStyle}
+          />
+        </FilterField>
+      </FilterBar>
+
+      {loading ? (
+        <p style={mutedTextStyle}>{t('members.loading')}</p>
+      ) : members.length === 0 ? (
+        <p style={mutedTextStyle}>{t('members.empty')}</p>
+      ) : (
+        /* The header band and the rows are one list surface (#724): they share
+           LIST_GRID_COLUMNS and scroll together, so they cannot fall out of
+           line, and a narrow viewport scrolls the list instead of the page. */
+        <div style={listSurfaceStyle}>
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ minWidth: LIST_MIN_WIDTH }}>
+              <div style={colHeaderStyle}>
+                {LIST_COLUMNS.map((col) => (
+                  <div key={col.key} style={cellStyle}>{t(`members.${col.labelKey}`)}</div>
+                ))}
+              </div>
+
+              {members.map(renderRow)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add modal (editing a member happens inline on the expanded row — #365) */}
       {modalOpen && (
@@ -644,8 +733,44 @@ export default function MembersPage() {
   );
 }
 
-function btnStyle(bg: string): React.CSSProperties {
-  return { background: bg, color: '#fff', border: 'none', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
+// ─── List styles (#928) ───────────────────────────────────────────────────────
+// The surface, the header band, the cell insets and the dividers are the ones
+// `DataTable` is built from (`listChrome`, #724), so this list cannot drift
+// away from the tables that still use it. What belongs to this page is the
+// grid its own columns describe, and nothing else.
+
+/** The grid the column titles and every collapsed row share. */
+const listGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center',
+  gap: LIST_COLUMN_GAP,
+};
+const colHeaderStyle: React.CSSProperties = {
+  ...listGridStyle, ...listHeaderRowStyle, ...listHeaderCellStyle,
+};
+const headerRowStyle: React.CSSProperties = {
+  ...listGridStyle, ...listCellStyle, cursor: 'pointer', userSelect: 'none',
+};
+/** Keeps an over-long value inside its track instead of widening the row. */
+const cellStyle: React.CSSProperties = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+};
+const nameCellStyle: React.CSSProperties = { ...cellStyle, fontWeight: 600, fontSize: 15 };
+const mutedCellStyle: React.CSSProperties = { ...cellStyle, fontSize: 13, color: '#555' };
+/** Badges size themselves, so this cell only needs to not stretch them. */
+const badgeCellStyle: React.CSSProperties = { minWidth: 0, display: 'flex', alignItems: 'center' };
+const actionsCellStyle: React.CSSProperties = {
+  minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6,
+};
+/** A status column with nothing in it yet — the same grey it has always been. */
+const noStatusStyle: React.CSSProperties = { color: '#bbb' };
+const mutedTextStyle: React.CSSProperties = { color: 'var(--gd-text-muted, #6b7280)' };
+function chevronStyle(expanded: boolean): React.CSSProperties {
+  return {
+    fontSize: 14, color: '#aaa',
+    transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s',
+  };
 }
 const overlayStyle: React.CSSProperties = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 };
 const modalStyle: React.CSSProperties = { background: '#fff', borderRadius: 12, padding: 32, width: 460, maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' };

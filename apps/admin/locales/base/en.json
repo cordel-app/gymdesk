@@ -111,6 +111,8 @@
     "error_no_center": "A member must belong to at least one center.",
     "error_default_not_assigned": "Default center must be one of the assigned centers.",
     "filter_center": "Center",
+    "filter_search": "Search",
+    "filter_document": "NIF/NIE/Passport",
     "all_centers": "All centers",
     "clerk_section_title": "Clerk",
     "clerk_status_label": "Status",
