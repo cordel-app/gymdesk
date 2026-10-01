@@ -15,10 +15,11 @@
 // itself is #631's `AdditionalPeriodicServices`, reused unchanged: one editor,
 // one set of rules, wherever services are managed.
 
-import React, { type CSSProperties } from 'react';
+import React from 'react';
 import { useTranslations } from 'next-intl';
 import { AdditionalPeriodicServices } from '../financials/assigned-plans/AdditionalPeriodicServices';
 import type { MemberPlanRow, MemberServiceRow } from './membershipConfiguration';
+import { cardMutedTextStyle, cardSubLabelStyle } from '@/components/formChrome';
 
 interface Props {
   plans: MemberPlanRow[];
@@ -62,8 +63,6 @@ export function MemberAdditionalServices({ plans, services, canWrite, onChanged 
   );
 }
 
-const dim: CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
-const subLabel: CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase',
-  letterSpacing: '0.05em', marginBottom: 4,
-};
+// #929: shared with the Member card's other sections (`components/formChrome.ts`).
+const dim = cardMutedTextStyle;
+const subLabel = cardSubLabelStyle;

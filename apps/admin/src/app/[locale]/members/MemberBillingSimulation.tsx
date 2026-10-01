@@ -16,6 +16,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import { cardMutedTextStyle, cardSubLabelStyle, innerCardStyle } from '@/components/formChrome';
 
 type BenefitAction = 'no_benefit' | 'waive' | 'percentage_discount' | 'fixed_discount' | 'fixed_price' | 'included';
 type PeriodStatus = 'free_promotion' | 'pay_promotion' | 'prepaid_promotion' | 'bonus_promotion' | 'pay_regular';
@@ -236,22 +237,19 @@ export function MemberBillingSimulation({ memberId }: { memberId: number }) {
   );
 }
 
-const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
-const card: React.CSSProperties = {
-  background: '#fff', border: '1px solid #e8e8ed', borderRadius: 6,
-  padding: '8px 12px', marginBottom: 6,
-};
-const subLabelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase',
-  letterSpacing: '0.05em', marginBottom: 4,
-};
+// #929: shared with the Member card's other sections (`components/formChrome.ts`).
+// The simulation's own rows — a billing event's header, its lines and its totals
+// — stay here: they are this section's structure, not the card's chrome.
+const dim = cardMutedTextStyle;
+const card: React.CSSProperties = { ...innerCardStyle, padding: '8px 12px', marginBottom: 6 };
+const subLabelStyle = cardSubLabelStyle;
 const eventHeader: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', gap: 8,
   fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4,
 };
 const lineRow: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-  gap: 12, padding: '4px 0', borderTop: '1px solid #f4f4f6',
+  gap: 12, padding: '4px 0', borderTop: '1px solid var(--gd-card-border, #e8e8ed)',
 };
 const sectionTotalRow: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', gap: 8,
@@ -259,7 +257,7 @@ const sectionTotalRow: React.CSSProperties = {
 };
 const totalRow: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', gap: 8,
-  fontSize: 14, fontWeight: 700, borderTop: '1px solid #e8e8ed',
+  fontSize: 14, fontWeight: 700, borderTop: '1px solid var(--gd-card-border, #e8e8ed)',
   paddingTop: 8, marginTop: 4,
 };
 const footnote: React.CSSProperties = { color: '#888', fontSize: 12, margin: '8px 0 0' };

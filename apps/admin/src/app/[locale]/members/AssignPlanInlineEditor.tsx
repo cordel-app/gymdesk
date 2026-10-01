@@ -3,6 +3,16 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import {
+  cardHintStyle,
+  cardSectionLabelStyle,
+  formControlStyle,
+  formFieldLabelStyle,
+  inlineEditorStyle,
+  inlineEditorTitleStyle,
+  secondaryBtnSmall,
+} from '@/components/formChrome';
+import { primaryBtnSmall } from '@/components/ui';
 
 interface Membership {
   id: number;
@@ -197,26 +207,15 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
   );
 }
 
-const editorStyle: CSSProperties = {
-  background: '#f8f8fb', border: '1px solid #e8e8ed', borderRadius: 6,
-  padding: '12px 14px', marginTop: 10,
-};
-const editorTitleStyle: CSSProperties = { fontSize: 13, fontWeight: 600, marginBottom: 2 };
-const labelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#555', display: 'block' };
-const selectStyle: CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 6,
-  border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box', background: '#fff',
-  margin: '6px 0 12px',
-};
-const inputStyle: CSSProperties = {
-  width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6,
-  border: '1px solid #d1d5db', fontSize: 13, margin: '6px 0 12px',
-};
-const sectionLabelStyle: CSSProperties = {
-  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
-  letterSpacing: '0.07em', marginBottom: 8,
-};
-const hintStyle: CSSProperties = { color: '#888', fontSize: 13, margin: '0 0 12px' };
+// #929: the look is `components/formChrome.ts` — one editor box, one field
+// label, one control, one section header, shared with the card this opens in.
+const editorStyle: CSSProperties = { ...inlineEditorStyle, marginTop: 10 };
+const editorTitleStyle: CSSProperties = { ...inlineEditorTitleStyle, marginBottom: 2 };
+const labelStyle = formFieldLabelStyle;
+const selectStyle: CSSProperties = { ...formControlStyle, margin: '6px 0 12px' };
+const inputStyle: CSSProperties = { ...formControlStyle, margin: '6px 0 12px' };
+const sectionLabelStyle = cardSectionLabelStyle;
+const hintStyle = cardHintStyle;
 
 function promotionRowStyle(checked: boolean, disabled: boolean): CSSProperties {
   return {
@@ -239,11 +238,5 @@ function stackTagStyle(stackable: boolean): CSSProperties {
   };
 }
 
-const saveBtnStyle: CSSProperties = {
-  background: '#6c63ff', color: '#fff', border: 'none', borderRadius: 4,
-  padding: '6px 14px', fontSize: 13, cursor: 'pointer',
-};
-const cancelBtnStyle: CSSProperties = {
-  background: 'none', border: '1px solid #d0d0d0', borderRadius: 4,
-  padding: '6px 14px', fontSize: 13, cursor: 'pointer', color: '#444',
-};
+const saveBtnStyle = primaryBtnSmall();
+const cancelBtnStyle = secondaryBtnSmall;

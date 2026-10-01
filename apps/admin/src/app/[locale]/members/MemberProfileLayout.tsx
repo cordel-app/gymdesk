@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { formFieldLabelStyle, formValueStyle } from '@/components/formChrome';
 import { MEMBER_PROFILE_FIELDS, type MemberProfileFieldSpec } from './memberProfile';
 
 /**
@@ -18,6 +19,13 @@ import { MEMBER_PROFILE_FIELDS, type MemberProfileFieldSpec } from './memberProf
  * the `centers` block are for. The layout itself holds no state, no control and
  * no knowledge of a Member: it cannot make a read-only Profile editable, and it
  * cannot make the Edit form read a second copy of the row.
+ *
+ * #929 — and the label and the value box are the app's own
+ * (`components/formChrome.ts`), so a field sits at the same inset in both
+ * modes: the read-only value used to be flush with the label while the input
+ * under the same label was inset by 10px, which moved every value sideways as
+ * Edit opened. The row rhythm is the grid's `rowGap` alone, so the fields of a
+ * row share one baseline instead of each label adding a margin of its own.
  */
 export function MemberProfileLayout({
   fieldLabel,
@@ -51,17 +59,23 @@ export function MemberProfileLayout({
       </div>
 
       {centers && (
-        <div style={{ marginTop: 14 }}>
-          <label style={profileFieldLabelStyle}>{centers.assignedLabel}</label>
-          {centers.assigned}
-
-          <label style={profileFieldLabelStyle}>{centers.defaultLabel}</label>
-          {centers.default}
+        <div style={{ ...profileGridStyle, marginTop: PROFILE_ROW_GAP }}>
+          <div>
+            <label style={profileFieldLabelStyle}>{centers.assignedLabel}</label>
+            {centers.assigned}
+          </div>
+          <div>
+            <label style={profileFieldLabelStyle}>{centers.defaultLabel}</label>
+            {centers.default}
+          </div>
         </div>
       )}
     </>
   );
 }
+
+/** The vertical rhythm of the Profile: one gap, between rows and before the centers. */
+export const PROFILE_ROW_GAP = 14;
 
 /**
  * One column per ~200px of available width, so the Profile reflows the same way
@@ -70,32 +84,20 @@ export function MemberProfileLayout({
 export const profileGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-  gap: 12,
+  columnGap: 16,
+  rowGap: PROFILE_ROW_GAP,
 };
 
 /** Notes: free text of any length, so it spans the grid in both modes (§4). */
 export const fullWidthCellStyle: React.CSSProperties = { gridColumn: '1 / -1' };
 
-export const profileFieldLabelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 12.5,
-  fontWeight: 600,
-  color: '#555',
-  marginBottom: 4,
-  marginTop: 10,
-};
+/** The app's field label (#929), re-exported so neither half restates it. */
+export const profileFieldLabelStyle = formFieldLabelStyle;
 
 /**
- * A value in read-only mode. It occupies the same box the input does, so a
- * field does not move when Edit opens; Notes keeps the author's line breaks and
- * wraps instead of stretching the card sideways.
+ * A value in read-only mode. It occupies the same box the input does — same
+ * padding, same border width, same type — so a field does not move when Edit
+ * opens; Notes keeps the author's line breaks and wraps instead of stretching
+ * the card sideways.
  */
-export const profileValueStyle: React.CSSProperties = {
-  margin: 0,
-  padding: '8px 0',
-  fontSize: 14,
-  color: '#222',
-  minHeight: 20,
-  whiteSpace: 'pre-wrap',
-  overflowWrap: 'anywhere',
-};
+export const profileValueStyle = formValueStyle;

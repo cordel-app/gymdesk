@@ -30,6 +30,14 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import {
+  cardMutedTextStyle,
+  cardSubLabelStyle,
+  inlineActionsRowStyle,
+  innerCardStyle,
+  secondaryBtnSmall,
+} from '@/components/formChrome';
+import { primaryBtnSmall } from '@/components/ui';
 
 type SlotDateStatus = 'available' | 'no_occurrence' | 'not_scheduled' | 'full' | 'already_booked';
 
@@ -377,21 +385,18 @@ export function MemberPersonalTrainingSlots({ memberId }: { memberId: number }) 
   );
 }
 
-const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: '0 0 8px' };
+// #929: the card, the muted text, the column headings and the Book/Cancel pair
+// are `components/formChrome.ts`'s — what stays here is the weekly grid itself.
+const dim: React.CSSProperties = { ...cardMutedTextStyle, margin: '0 0 8px' };
 const warn: React.CSSProperties = { color: '#a06000', fontSize: 12, margin: '0 0 8px' };
 const grid: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))',
   gap: 8, overflowX: 'auto',
 };
 const column: React.CSSProperties = { minWidth: 120 };
-const columnHeader: React.CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase',
-  letterSpacing: '0.05em', marginBottom: 6, textAlign: 'center',
-};
+const columnHeader: React.CSSProperties = { ...cardSubLabelStyle, marginBottom: 6, textAlign: 'center' };
 const emptyCell: React.CSSProperties = { color: '#ccc', fontSize: 12, textAlign: 'center', padding: '8px 0' };
-const slotCard: React.CSSProperties = {
-  background: '#fff', border: '1px solid #e8e8ed', borderRadius: 6, marginBottom: 6,
-};
+const slotCard: React.CSSProperties = { ...innerCardStyle, padding: 0, marginBottom: 6 };
 const slotCardBlocked: React.CSSProperties = { ...slotCard, background: '#fafafa', borderStyle: 'dashed' };
 const pickRow: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 0', cursor: 'pointer',
@@ -405,24 +410,18 @@ const slotMeta: React.CSSProperties = { fontSize: 12, color: '#888' };
 const countFull: React.CSSProperties = { fontSize: 11, color: '#2e7d32', marginTop: 2 };
 const countPartial: React.CSSProperties = { fontSize: 11, color: '#a06000', marginTop: 2 };
 const dateList: React.CSSProperties = {
-  listStyle: 'none', margin: 0, padding: '0 8px 8px', borderTop: '1px solid #f4f4f6',
+  listStyle: 'none', margin: 0, padding: '0 8px 8px', borderTop: '1px solid var(--gd-card-border, #e8e8ed)',
 };
 const dateRow: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, padding: '2px 0',
 };
 const dateOk: React.CSSProperties = { color: '#2e7d32' };
 const dateBlocked: React.CSSProperties = { color: '#888' };
-const actions: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, marginTop: 10,
-};
-const primaryButton: React.CSSProperties = {
-  padding: '6px 14px', borderRadius: 6, border: '1px solid #2e7d32',
-  background: '#2e7d32', color: '#fff', fontSize: 13, cursor: 'pointer',
-};
-const secondaryButton: React.CSSProperties = {
-  padding: '6px 14px', borderRadius: 6, border: '1px solid #ddd',
-  background: '#fff', color: '#333', fontSize: 13, cursor: 'pointer',
-};
+const actions: React.CSSProperties = { ...inlineActionsRowStyle, alignItems: 'center' };
+// Book is this section's primary action, so it takes the Theme's primary-button
+// colours (#912) rather than a green of its own.
+const primaryButton = primaryBtnSmall();
+const secondaryButton = secondaryBtnSmall;
 const reportBox: React.CSSProperties = {
   marginTop: 10, padding: '8px 10px', background: '#fafafa',
   border: '1px solid #eee', borderRadius: 6,

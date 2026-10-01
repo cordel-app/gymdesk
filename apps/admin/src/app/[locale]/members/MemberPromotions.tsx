@@ -20,6 +20,21 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import type { MemberPlanRow, MemberPromotionRow } from './membershipConfiguration';
+import {
+  cardHintStyle,
+  cardMutedTextStyle,
+  cardSubLabelStyle,
+  dashedAddBtnStyle,
+  formControlStyle,
+  formErrorStyle,
+  formFieldLabelStyle,
+  inlineActionsRowStyle,
+  inlineEditorStyle,
+  inlineEditorTitleStyle,
+  innerCardStyle,
+  secondaryBtnSmall,
+} from '@/components/formChrome';
+import { primaryBtnSmall } from '@/components/ui';
 
 interface EligiblePromotion {
   id: number;
@@ -225,7 +240,7 @@ export function MemberPromotions({ plans, promotions, canWrite, onChanged }: Pro
 
           {error && <p style={errorStyle}>{error}</p>}
 
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={actionsRow}>
             <button onClick={save} disabled={saving} style={saveBtn}>
               {saving ? t('saving') : t('promotions_submit')}
             </button>
@@ -258,43 +273,22 @@ export function MemberPromotions({ plans, promotions, canWrite, onChanged }: Pro
   );
 }
 
-const dim: CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
-const hint: CSSProperties = { color: '#888', fontSize: 13, margin: '0 0 12px' };
-const card: CSSProperties = {
-  background: '#fff', border: '1px solid #e8e8ed', borderRadius: 6,
-  padding: '10px 14px', marginBottom: 8,
-};
-const subLabel: CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase',
-  letterSpacing: '0.05em', marginBottom: 4,
-};
-const addBtn: CSSProperties = {
-  background: 'none', border: '1px dashed #c8c8d0', borderRadius: 6,
-  padding: '6px 12px', fontSize: 13, cursor: 'pointer', color: '#444', marginTop: 2,
-};
-const removeBtn: CSSProperties = {
-  background: 'none', border: '1px solid #d0d0d0', borderRadius: 4,
-  padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: '#444', flexShrink: 0,
-};
-const editorStyle: CSSProperties = {
-  background: '#f8f8fb', border: '1px solid #e8e8ed', borderRadius: 6,
-  padding: '12px 14px', marginTop: 8,
-};
-const editorTitle: CSSProperties = { fontSize: 13, fontWeight: 600, marginBottom: 8 };
-const labelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: '#555' };
-const selectStyle: CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 6, background: '#fff',
-  border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box', margin: '6px 0 12px',
-};
-const errorStyle: CSSProperties = { color: '#c0392b', fontSize: 13, margin: '0 0 10px' };
-const saveBtn: CSSProperties = {
-  background: '#6c63ff', color: '#fff', border: 'none', borderRadius: 4,
-  padding: '6px 14px', fontSize: 13, cursor: 'pointer',
-};
-const cancelBtn: CSSProperties = {
-  background: 'none', border: '1px solid #d0d0d0', borderRadius: 4,
-  padding: '6px 14px', fontSize: 13, cursor: 'pointer', color: '#444',
-};
+// #929: the look is `components/formChrome.ts`, shared with the Member card's
+// other sections — not a second set of numbers for the same controls.
+const dim = cardMutedTextStyle;
+const hint = cardHintStyle;
+const card = innerCardStyle;
+const subLabel = cardSubLabelStyle;
+const addBtn = dashedAddBtnStyle;
+const removeBtn: CSSProperties = { ...secondaryBtnSmall, flexShrink: 0 };
+const editorStyle = inlineEditorStyle;
+const editorTitle = inlineEditorTitleStyle;
+const labelStyle = formFieldLabelStyle;
+const selectStyle: CSSProperties = { ...formControlStyle, margin: '6px 0 12px' };
+const errorStyle: CSSProperties = { ...formErrorStyle, margin: '0 0 10px' };
+const saveBtn = primaryBtnSmall();
+const cancelBtn = secondaryBtnSmall;
+const actionsRow = inlineActionsRowStyle;
 
 function optionRow(checked: boolean, disabled: boolean): CSSProperties {
   return {
