@@ -2,6 +2,10 @@ import { db, Tx } from '../infra/db';
 import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { SellableItemBenefit, toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
 import {
+  SessionBenefitFrequency,
+  toSessionBenefitFrequency,
+} from '../domain/sessionBenefitFrequency';
+import {
   SellableItemBenefitCategory,
   planBenefitTableForCategory,
 } from '../domain/sellableItemClassification';
@@ -82,6 +86,12 @@ export interface AssignedPlanBenefitRow {
    */
   action: SellableItemBenefit['action'];
   value: number | null;
+  /**
+   * #918 — a **Session** Benefit's renewal Frequency, as it was agreed. `null`
+   * for the other two sections, which have no such column, and for a session
+   * row the Plan never configured one on (the dropdown's `—`).
+   */
+  frequency: SessionBenefitFrequency | null;
 }
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
@@ -138,6 +148,9 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     // A snapshot row came from a Membership Plan section, so it is read with
     // the Plan's option set — the three of §16 and no more.
     ...toSellableItemBenefit('plan', row.action, row.value),
+    // #918 — only `user_membership_session` has the column; the other two read
+    // `undefined`, which normalizes to `null`.
+    frequency: toSessionBenefitFrequency(row.frequency),
   };
 }
 
@@ -196,14 +209,22 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
   for (const category of CATEGORIES) {
     const target = BENEFIT_TABLE_BY_CATEGORY[category];
     const source = planBenefitTableForCategory(category);
+    // #918: the Session Benefit's renewal Frequency is copied with everything
+    // else, because billing and every display read the snapshot and never the
+    // live Plan — a Plan switched from Weekly to Monthly afterwards must not
+    // change what an existing member was agreed. Only the session tables carry
+    // the column.
+    const sessionFrequency = category === 'session';
     await tx.query(
       `INSERT INTO ${target}
          (gym_id, user_membership_id, gym_charge_id, quantity,
-          item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`)
+          item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`
+          ${sessionFrequency ? ', frequency' : ''})
        SELECT ?, ?, b.gym_charge_id, b.quantity,
               ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
               gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
               b.\`action\`, b.\`value\`
+              ${sessionFrequency ? ', b.frequency' : ''}
        FROM ${source} b
        JOIN gym_charges gc ON gc.id = b.gym_charge_id
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -340,6 +361,12 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
 }): Promise<void> {
   const { gymId, userMembershipId, category, items } = params;
   const table = BENEFIT_TABLE_BY_CATEGORY[category];
+  // #918: a kept session line keeps its agreed renewal Frequency for the same
+  // reason it keeps its frozen price — this edit did not mention it, and the
+  // section's `PUT` takes quantity alone. A line added here has none: it was
+  // agreed on the assignment rather than copied from a Plan section, so there
+  // is no configured Frequency to carry.
+  const sessionFrequency = category === 'session';
 
   const { rows: existing } = await tx.query(
     `SELECT * FROM ${table} WHERE user_membership_id = ? AND gym_id = ? FOR UPDATE`,
@@ -356,8 +383,8 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
         `INSERT INTO ${table}
            (gym_id, user_membership_id, gym_charge_id, quantity,
             item_name, item_type, item_billing_frequency, unit_price, currency,
-            \`action\`, \`value\`)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            \`action\`, \`value\`${sessionFrequency ? ', frequency' : ''})
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
         [
           gymId, userMembershipId, item.gym_charge_id, item.quantity,
           previous.item_name, previous.item_type, previous.item_billing_frequency,
@@ -365,6 +392,7 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
           // #896 stage 1: a kept line keeps its pricing treatment for the same
           // reason it keeps its frozen price — this edit did not mention it.
           previous.action, previous.value,
+          ...(sessionFrequency ? [previous.frequency ?? null] : []),
         ],
       );
       continue;
@@ -439,7 +467,8 @@ export async function loadPlanBenefitsForSimulation(
   const { rows } = await db.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, user_membership_id, gym_charge_id, quantity,
-             item_name, item_billing_frequency, unit_price, \`action\`, \`value\`
+             item_name, item_billing_frequency, unit_price, \`action\`, \`value\`,
+             ${category === 'session' ? 'frequency' : 'NULL'} AS session_frequency
       FROM ${BENEFIT_TABLE_BY_CATEGORY[category]}
       WHERE gym_id = ? AND user_membership_id IN (${marks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...ids]),
@@ -453,6 +482,9 @@ export async function loadPlanBenefitsForSimulation(
       billingFrequency: toFrequency(row.item_billing_frequency),
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
       quantity: positiveQuantity(row.quantity),
+      // #918 — the Session Benefit's renewal Frequency, as agreed. What makes
+      // the projection report "8 sessions every 4 weeks" rather than 2 once.
+      sessionFrequency: toSessionBenefitFrequency(row.session_frequency),
       // #896 stage 3 — the Plan's own treatment of this line, as frozen with
       // it. Read through `toSellableItemBenefit('plan', …)`, so a value stored
       // as mysql2's DECIMAL string arrives as a number and an action a Plan may
@@ -473,7 +505,8 @@ export async function loadPlanBenefitsForSimulation(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, b.membership_plan_id, b.gym_charge_id, b.quantity,
              ${ITEM_NAME_EXPR} AS item_name, gc.billing_frequency, gc.amount,
-             b.\`action\`, b.\`value\`
+             b.\`action\`, b.\`value\`,
+             ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
       FROM ${planBenefitTableForCategory(category)} b
       JOIN gym_charges gc ON gc.id = b.gym_charge_id
       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -490,6 +523,7 @@ export async function loadPlanBenefitsForSimulation(
       billingFrequency: toFrequency(row.billing_frequency),
       unitPrice: row.amount != null ? Number(row.amount) : 0,
       quantity: positiveQuantity(row.quantity),
+      sessionFrequency: toSessionBenefitFrequency(row.session_frequency),
       benefit: toSellableItemBenefit('plan', row.action, row.value),
     });
     livePerPlan.set(row.membership_plan_id, list);

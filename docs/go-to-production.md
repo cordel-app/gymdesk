@@ -119,6 +119,19 @@ Tick items off in the PR that completes them.
       promotion-side row holding anything other than `waive`: after stage 2 makes
       the pair writable, a rollback-and-re-apply would otherwise re-run the
       one-shot `waive` backfill over configured data.
+- [ ] **Run migration 205 in a maintenance window** (#918). `membership_plan_session`
+      (per-gym catalogue, small) and `user_membership_session` (grows with every
+      assignment) each gain a nullable `frequency VARCHAR(20)` — the add itself is
+      INSTANT — plus a `chk_<table>_frequency` CHECK, which MySQL 8 applies with
+      ALGORITHM=COPY, exactly as migration 203's does on these same two tables. One
+      rebuild per table; time the `user_membership_session` one against a copy
+      first, and if 203 has not run in production yet, schedule the two together
+      since they rebuild the same tables back to back. Every statement is guarded,
+      so re-running after it lands is a no-op. Its `down` deliberately **refuses**
+      to drop `user_membership_session.frequency` while any row holds one: that
+      column is what a member was *agreed*, and a re-apply would reinstate it empty
+      — which reads as a one-time allowance and would under-report every renewing
+      one.
 - [ ] **Time migration 175's backfill before running it** (#635 stage 2). The DDL is
       cheap — six nullable column adds on `user_memberships` plus three new tables —
       but the file ends with data statements that touch every existing row: one

@@ -40,6 +40,7 @@
 
 import { SellableItemBenefitCategory, classifySellableItem } from './sellableItemClassification';
 import { DEFAULT_BENEFIT_ACTION, SellableItemBenefit } from './sellableItemBenefitActions';
+import { SessionBenefitFrequency } from './sessionBenefitFrequency';
 
 /**
  * The quantity a mandatory item is added with when a Plan does not have it
@@ -140,6 +141,9 @@ export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
       gym_charge_billing_frequency: item.billing_frequency,
       gym_charge_status: item.status,
       gym_charge_mandatory: 1,
+      // #918: no row exists, so no renewal Frequency was configured — the
+      // allowance is a one-time one until someone saves the section and sets one.
+      frequency: null,
       // #916: the same three price columns a stored row carries from its own
       // join, under the same names, so one pricing pass serves both kinds of
       // row and an implicit item cannot end up quoted differently.
@@ -169,6 +173,13 @@ export interface PlanBenefitWrite {
    * what it costs, so preserving it can never change what it was agreed at.
    */
   benefit?: SellableItemBenefit | null;
+  /**
+   * #918 — the Session Benefit's renewal Frequency the request named, with the
+   * same three-way encoding as `benefit`: absent means the request named none
+   * and the line keeps what it is stored with, `null` is the explicit `—`. Only
+   * the session section has the column; the other two ignore it.
+   */
+  frequency?: SessionBenefitFrequency | null;
 }
 
 /**

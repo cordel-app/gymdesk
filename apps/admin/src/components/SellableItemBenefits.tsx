@@ -30,6 +30,12 @@ import {
   benefitActionsFor,
   isPercentageBenefitAction,
 } from '@/lib/sellableItemBenefitActions';
+import {
+  SESSION_BENEFIT_FREQUENCIES,
+  SessionBenefitFrequency,
+  sessionFrequencyLabelKey,
+  toSessionBenefitFrequency,
+} from '@/lib/sessionBenefitFrequency';
 
 /** One saved/drafted benefit row. `gym_charge_*` is joined server-side, so an
  *  item that has since gone inactive still renders with its real name. */
@@ -69,6 +75,16 @@ export interface SellableItemBenefitRow {
    * API normalizes and the page refuses an empty one before saving.
    */
   value?: number | string | null;
+  /**
+   * #918 — a **Session** Benefit's own renewal Frequency: how often the
+   * included sessions come back ("2 per week"). Optional, and the key's absence
+   * is load-bearing: the section `PUT`s are replace-all and the API keeps a
+   * line's stored Frequency when the request does not mention it, so a caller
+   * that does not configure it (the other two Plan sections, every Promotion
+   * section, the Assigned Plan snapshot editor) must keep submitting payloads
+   * without the key. `null` is the explicit `—`.
+   */
+  frequency?: SessionBenefitFrequency | null;
   /**
    * #916 — what the row costs, VAT included, as the server computed it
    * (`domain/planBenefitPrices.ts` over `applyLineBenefit()`): the Sellable
@@ -179,7 +195,11 @@ export function updateBenefitRow(
  */
 export const toBenefitItems = (draft: SellableItemBenefitRow[]) =>
   draft.map((b) => {
-    const line = { gym_charge_id: b.gym_charge_id, quantity: b.quantity };
+    // #918: the Frequency travels under the same rule as the pair — only when
+    // the draft row actually carries the key, so a section that does not
+    // configure it cannot clear what is stored.
+    const line: Record<string, unknown> = { gym_charge_id: b.gym_charge_id, quantity: b.quantity };
+    if ('frequency' in b) line.frequency = b.frequency ?? null;
     if (b.action === undefined) return line;
     return {
       ...line,
@@ -339,6 +359,21 @@ export const SELLABLE_ITEM_BENEFIT_COLUMNS: readonly SellableItemBenefitColumn[]
   { key: 'final_price', labelKey: 'col_final_price', width: 130, align: 'right' },
 ];
 
+/**
+ * #918 — *which* Frequency the shared Frequency column shows.
+ *
+ *   `item`    — the Sellable Item's own `billing_frequency`, read-only. How
+ *               often the item is priced; the answer for every section but one.
+ *   `benefit` — the benefit row's own renewal Frequency, editable in the
+ *               editor. How often the allowance comes back, which only a
+ *               Membership Plan's Session Benefits configure.
+ *
+ * It is one column either way — the ticket's "the Frequency column must align
+ * with the Frequency column used by the other Sellable Item sections" is why a
+ * second column was not added beside it.
+ */
+export type BenefitFrequencyColumn = 'item' | 'benefit';
+
 /** How little the flexible name column may be squeezed to before the table scrolls. */
 export const BENEFIT_ITEM_COLUMN_MIN_WIDTH = 180;
 
@@ -373,7 +408,7 @@ export function formatBenefitPrice(amount: number): string {
 /** The editable grid: item picker + quantity (+ the item's own, read-only frequency). */
 export function SellableItemBenefitEditor({
   t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
-  benefitContext,
+  benefitContext, frequencyColumn = 'item',
 }: {
   t: Translate;
   addKey: string;
@@ -381,6 +416,12 @@ export function SellableItemBenefitEditor({
   setDraft: SetDraft;
   categoryItems: SellableItemOption[];
   showFrequency: boolean;
+  /**
+   * #918: `'benefit'` turns the Frequency column into the row's own renewal
+   * Frequency and makes it editable. Defaults to `'item'`, so every caller that
+   * predates the ticket keeps the read-only item frequency it had.
+   */
+  frequencyColumn?: BenefitFrequencyColumn;
   /**
    * #896 stage 4: which option set the line's pricing treatment is chosen
    * from — `'promotion'` for all five, `'plan'` for the three a Membership Plan
@@ -455,11 +496,27 @@ export function SellableItemBenefitEditor({
                   onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { quantity: parseInt(e.target.value, 10) || 1 })}
                   style={{ ...inlineSelectSt, width: '100%' }}
                 />
-                {showFrequency && (
+                {showFrequency && (frequencyColumn === 'benefit' ? (
+                  // #918: the one editable Frequency — how often this benefit's
+                  // sessions are renewed. `—` is a real stored value (no
+                  // frequency, a one-time allowance), not a placeholder.
+                  <select
+                    value={row.frequency ?? ''}
+                    onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, {
+                      frequency: toSessionBenefitFrequency(e.target.value),
+                    })}
+                    style={inlineSelectSt}
+                  >
+                    <option value="">{t(sessionFrequencyLabelKey(null))}</option>
+                    {SESSION_BENEFIT_FREQUENCIES.map((f) => (
+                      <option key={f} value={f}>{t(sessionFrequencyLabelKey(f))}</option>
+                    ))}
+                  </select>
+                ) : (
                   <span style={{ fontSize: 13, color: '#666' }}>
                     {row.gym_charge_billing_frequency ? t(`frequency_${row.gym_charge_billing_frequency}`) : '—'}
                   </span>
-                )}
+                ))}
                 {benefitContext && action && (
                   <select
                     value={action}
@@ -509,6 +566,12 @@ export function SellableItemBenefitEditor({
         </div>
       )}
       {hasMandatory && <p style={{ ...hintSt, marginBottom: 8 }}>{t('mandatory_benefit_hint')}</p>}
+      {/* #918: what the Frequency column means, and that `—` and `Once` are the
+          same one-time allowance. A form's explanatory sentence stays in the
+          form (#797), so it is never rendered beside the read-only values. */}
+      {frequencyColumn === 'benefit' && showFrequency && (
+        <p style={{ ...hintSt, marginBottom: 8 }}>{t('session_frequency_hint')}</p>
+      )}
       {hasMoreToAdd && (
         <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={btnSmall('#6c63ff')}>{t(addKey)}</button>
       )}
@@ -550,12 +613,14 @@ function BenefitPriceCell({
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
 export function SellableItemBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
-  showPrices = false,
+  showPrices = false, frequencyColumn = 'item',
 }: {
   t: Translate;
   emptyKey: string;
   rows: SellableItemBenefitRow[];
   showFrequency: boolean;
+  /** #918 — see `BenefitFrequencyColumn`. The read-only half of the same column. */
+  frequencyColumn?: BenefitFrequencyColumn;
   /**
    * #896 stage 4: renders the line's configured treatment as a column of its
    * own, so the read-only half of the card says exactly what the editor behind
@@ -595,7 +660,10 @@ export function SellableItemBenefitView({
       case 'quantity':
         return row.quantity;
       case 'frequency':
-        // An item with no frequency of its own keeps its cell and says "—".
+        // #918: a Session Benefit section shows the renewal Frequency the Plan
+        // configured; every other section shows the item's own. Either way the
+        // cell stays, and a row with no frequency reads "—".
+        if (frequencyColumn === 'benefit') return t(sessionFrequencyLabelKey(row.frequency));
         return row.gym_charge_billing_frequency
           ? t(`frequency_${row.gym_charge_billing_frequency}`)
           : '—';

@@ -41,6 +41,11 @@ import {
   shapeSellableItemBenefitRow,
   toSellableItemBenefit,
 } from '../domain/sellableItemBenefitActions';
+import {
+  SessionBenefitFrequency,
+  parseSessionBenefitFrequencyInput,
+  toSessionBenefitFrequency,
+} from '../domain/sessionBenefitFrequency';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
 import {
   grossBenefitUnitPrice,
@@ -121,6 +126,12 @@ interface PlanSellableItemBenefitRow extends PlanBenefitRow {
   gym_charge_type: string;
   gym_charge_billing_frequency: string | null;
   gym_charge_status: string;
+  /**
+   * #918 — the Session Benefit's renewal Frequency. Present on the session
+   * section only (`membership_plan_session`), `null` for a row configured with
+   * none; the other two sections never carry the key.
+   */
+  frequency?: SessionBenefitFrequency | null;
   // #893: joined so the editor can hide Remove on a mandatory item and say why.
   gym_charge_mandatory: boolean | number;
   // #896 stage 2: the line's own pricing treatment, normalized by the loader.
@@ -210,6 +221,11 @@ function planSimulationItems(
         billingFrequency: (row.gym_charge_billing_frequency as SellableItemFrequency | null) ?? null,
         unitPriceInclTax: gross,
         quantity: Number(row.quantity) || 1,
+        // #918 — the Session Benefit's own renewal Frequency. The column only
+        // exists on the session section, so every other row reads `null` and
+        // keeps the single charge it has always had.
+        sessionFrequency: category === 'session'
+          ? toSessionBenefitFrequency(row.frequency) : null,
         benefit: toSellableItemBenefit('plan', row.action, row.value),
         mandatory: row.gym_charge_mandatory === true || Number(row.gym_charge_mandatory) === 1,
       });
@@ -877,18 +893,26 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
       for (const category of ['session', 'oneoff', 'periodical'] as SellableItemBenefitCategory[]) {
         const table = planBenefitTableForCategory(category);
         // #896 stage 2: the `(action, value)` pricing treatment travels with the
-        // quantity — Duplicate is a copy, not a re-configuration.
+        // quantity — Duplicate is a copy, not a re-configuration. #918: so does
+        // a Session Benefit's renewal Frequency, for the same reason — a copy of
+        // a Plan granting 2 sessions a week must not read as a one-time 2.
+        const sessionFrequency = category === 'session';
         const { rows: benefits } = await tx.query(
-          `SELECT gym_charge_id, quantity, \`action\`, \`value\` FROM ${table}
+          `SELECT gym_charge_id, quantity, \`action\`, \`value\`${sessionFrequency ? ', frequency' : ''}
+             FROM ${table}
             WHERE membership_plan_id = ? AND gym_id = ?`,
           [req.params.id, gymId],
         );
         for (const b of benefits) {
           await tx.query(
             `INSERT INTO ${table}
-               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`, created_by_membership_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, insertId, b.gym_charge_id, b.quantity, b.action, b.value, callerMemberId],
+               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`,
+                created_by_membership_id${sessionFrequency ? ', frequency' : ''})
+             VALUES (?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
+            [
+              gymId, insertId, b.gym_charge_id, b.quantity, b.action, b.value, callerMemberId,
+              ...(sessionFrequency ? [b.frequency ?? null] : []),
+            ],
           );
         }
       }
@@ -1443,7 +1467,13 @@ async function loadPlanBenefits(
   const { rows } = await db.query<PlanSellableItemBenefitRow>(
     selectPlanSellableItemBenefits(table), [planId, gymId],
   );
-  return rows.map((row) => shapeSellableItemBenefitRow('plan', row) as PlanSellableItemBenefitRow);
+  return rows.map((row) => {
+    const shaped = shapeSellableItemBenefitRow('plan', row) as PlanSellableItemBenefitRow;
+    // #918: `b.*` brings the column along raw; normalize it so the wire shape is
+    // a known frequency or `null`, exactly as the snapshot's reader does.
+    if ('frequency' in row) shaped.frequency = toSessionBenefitFrequency(row.frequency);
+    return shaped;
+  });
 }
 
 /**
@@ -1477,6 +1507,8 @@ const PLAN_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory
 
 for (const { path, category } of PLAN_BENEFIT_ROUTES) {
   const table = planBenefitTableForCategory(category);
+  // #918: only `membership_plan_session` carries a renewal Frequency.
+  const isSessionSection = category === 'session';
 
   membershipPlansRouter.get(`/:id/${path}`, async (req, res, next) => {
     const { gymId } = getTenantContext(req);
@@ -1520,9 +1552,22 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       // in SQL, so the dropdown is never what enforces it.
       const parsed = parseSellableItemBenefitInput('plan', item);
       if (parsed.error) return res.status(400).json({ error: parsed.error });
+      // #918 — the Session Benefit's renewal Frequency, on the one section that
+      // has the column. A value sent to the other two is ignored rather than
+      // refused: the editor is shared, and no row there could store one.
+      const frequency = category === 'session'
+        ? parseSessionBenefitFrequencyInput(item)
+        : { keep: true as const };
+      if (frequency.error) return res.status(400).json({ error: frequency.error });
       seen.add(gymChargeId);
       gymChargeIds.push(gymChargeId);
-      submitted.push({ gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit });
+      submitted.push({
+        gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit,
+        // Absent means the request named none, which is *keep what is stored* —
+        // the same rule the `(action, value)` pair follows, and what stops a
+        // quantity-only save clearing a configured Frequency.
+        ...(frequency.keep ? {} : { frequency: frequency.frequency }),
+      });
     }
 
     if (gymChargeIds.length > 0) {
@@ -1574,21 +1619,34 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         // `withMandatoryBenefits()` gets, so preserving an item can never
         // change what it costs.
         const { rows: stored } = await tx.query(
-          `SELECT gym_charge_id, \`action\`, \`value\` FROM ${table}
+          `SELECT gym_charge_id, \`action\`, \`value\`${isSessionSection ? ', frequency' : ''} FROM ${table}
             WHERE membership_plan_id = ? AND gym_id = ? FOR UPDATE`,
           [planId, gymId],
         );
         const kept = new Map<number, SellableItemBenefit>(
           stored.map((r: any) => [Number(r.gym_charge_id), shapeSellableItemBenefitRow('plan', r)]),
         );
+        // #918: and the Frequency it is stored with, for the same replace-all
+        // reason — a save that never mentions it must not clear it.
+        const keptFrequency = new Map<number, SessionBenefitFrequency | null>(
+          stored.map((r: any) => [Number(r.gym_charge_id), toSessionBenefitFrequency(r.frequency)]),
+        );
         await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
         for (const item of toWrite) {
           const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_SELLABLE_ITEM_BENEFIT;
+          const frequency = item.frequency !== undefined
+            ? item.frequency
+            : (keptFrequency.get(item.gym_charge_id) ?? null);
           await tx.query(
             `INSERT INTO ${table}
-               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`, created_by_membership_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, planId, item.gym_charge_id, item.quantity, benefit.action, benefit.value, callerMemberId],
+               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`,
+                created_by_membership_id${isSessionSection ? ', frequency' : ''})
+             VALUES (?, ?, ?, ?, ?, ?, ?${isSessionSection ? ', ?' : ''})`,
+            [
+              gymId, planId, item.gym_charge_id, item.quantity, benefit.action, benefit.value,
+              callerMemberId,
+              ...(isSessionSection ? [frequency] : []),
+            ],
           );
         }
       });

@@ -29,6 +29,8 @@ function item(over: Partial<PlanSimulationItem> = {}): PlanSimulationItem {
     billingFrequency: 'month',
     unitPriceInclTax: 20,
     quantity: 1,
+    // #918 — no renewal Frequency unless a case configures one.
+    sessionFrequency: null,
     benefit: NO_SELLABLE_ITEM_BENEFIT,
     mandatory: false,
     ...over,
@@ -187,5 +189,38 @@ describe('computePlanBillingEventSimulation', () => {
     expect(result.tax_included).toBe(true);
     expect(result.currency).toBe('EUR');
     expect(result.truncated).toBe(false);
+  });
+
+  // #918 — a Session Benefit with a renewal Frequency. The ticket thread's own
+  // worked example, on the card the gym actually reads: 4-weekly billing, 2
+  // Personal Training Classes per week at 50% off, EUR 50 each.
+  it('summarises a weekly session allowance onto each 4-weekly billing date', () => {
+    const result = simulate({
+      items: [item({
+        gymChargeId: 9, name: 'Personal Training Class', category: 'session',
+        billingFrequency: 'per_session', unitPriceInclTax: 50, quantity: 2,
+        sessionFrequency: 'week', benefit: { action: 'percentage_discount', value: 50 },
+      })],
+    });
+    expect(dates(result)).toEqual(['2026-09-30', '2026-10-28', '2026-11-25']);
+    for (const date of dates(result)) {
+      const line = result.dates.find((g) => g.date === date)!
+        .lines.find((l) => l.gym_charge_id === 9)!;
+      // 4 weekly renewals x 2 = 8 sessions; 8 x EUR 50 less 50% of the line.
+      expect(line).toMatchObject({ quantity: 8, regular_price: 400, actual_charge: 200 });
+    }
+  });
+
+  it('keeps a session benefit with no Frequency on the enrollment date alone', () => {
+    const result = simulate({
+      items: [item({
+        gymChargeId: 9, name: 'Personal Training Class', category: 'session',
+        billingFrequency: 'per_session', unitPriceInclTax: 50, quantity: 2,
+      })],
+    });
+    const sessionDates = result.dates
+      .filter((g) => g.lines.some((l) => l.gym_charge_id === 9))
+      .map((g) => g.date);
+    expect(sessionDates).toEqual(['2026-09-30']);
   });
 });

@@ -101,6 +101,9 @@ function planBenefit(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanB
     billingFrequency: 'month',
     unitPrice: 20,
     quantity: 1,
+    // #918 — no renewal Frequency, which is what every Session Benefit agreed
+    // before the ticket holds and what the other two sections always read.
+    sessionFrequency: null,
     // #896 stage 3 — a Plan benefit is charged at its own price unless someone
     // configures a treatment, which is the column's default.
     benefit: NO_SELLABLE_ITEM_BENEFIT,
@@ -952,5 +955,114 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
       });
       expect(result.horizon_date).toBe('2027-03-01');
     });
+  });
+});
+
+// #918 — a Session Benefit's renewal Frequency. "2 | Weekly" is not one charge
+// of 2 sessions on the start date, it is 2 sessions every week, summarised onto
+// the billing events the assignment already has (the ticket thread's Q1 answer:
+// "In the simulation I don't expect having one per every week, instead I'd like
+// to summarize it based on billing event frequency").
+describe('computeBillingSimulation — a renewing session allowance (#918)', () => {
+  function sessions(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanBenefit {
+    return planBenefit({
+      gymChargeId: 12, name: 'Personal Training Class', category: 'session',
+      billingFrequency: 'per_session', unitPrice: 50, quantity: 2,
+      ...over,
+    });
+  }
+
+  // The ticket thread's own worked example, to the cent:
+  // 4-weekly billing + 2 sessions per week at 50% off = 8 x EUR 50 x 50% = EUR 200.
+  it('summarises 2 per week onto a 4-weekly billing event as 8 sessions', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        recurringInterval: 4, recurringUnit: 'week',
+        planBenefits: [sessions({
+          sessionFrequency: 'week', benefit: { action: 'percentage_discount', value: 50 },
+        })],
+      })],
+    });
+    const events = section(result, 'session')!.events;
+    expect(events[0]).toMatchObject({ date: START });
+    expect(events[0].lines[0]).toMatchObject({
+      label: 'Personal Training Class', quantity: 8, unit_price: 50,
+      regular_price: 400, actual_charge: 200,
+    });
+    // One line per billing date, not one per week.
+    expect(events.every((e) => e.lines.length === 1)).toBe(true);
+  });
+
+  it('reports the renewals that really fall in each cycle, never a fractional month', () => {
+    const result = computeBillingSimulation({
+      // Monthly billing from 1 Sep, weekly renewals on the one series 1 Sep +
+      // 7k: September holds 5 of them (1, 8, 15, 22, 29), October 4 (6, 13, 20,
+      // 27) and November 4 (3, 10, 17, 24).
+      assignments: [assignment({ planBenefits: [sessions({ sessionFrequency: 'week' })] })],
+      minimumCycles: 2,
+    });
+    const events = section(result, 'session')!.events;
+    expect(events.map((e) => e.date)).toEqual(['2026-09-01', '2026-10-01', '2026-11-01']);
+    expect(events.map((e) => e.lines[0].quantity)).toEqual([10, 8, 8]);
+    expect(events[0].lines[0]).toMatchObject({ regular_price: 500, actual_charge: 500 });
+  });
+
+  it('keeps `once` and no frequency as the single charge they have always been', () => {
+    for (const sessionFrequency of ['once', null] as const) {
+      const result = computeBillingSimulation({
+        assignments: [assignment({ planBenefits: [sessions({ sessionFrequency })] })],
+        minimumCycles: 2,
+      });
+      const events = section(result, 'session')!.events;
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ date: START });
+      expect(events[0].lines[0]).toMatchObject({ quantity: 2, actual_charge: 100 });
+    }
+  });
+
+  it('spends a Promotion grant once rather than renewing it with the allowance', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        recurringInterval: 4, recurringUnit: 'week',
+        planBenefits: [sessions({ sessionFrequency: 'week' })],
+        // 10 granted sessions against an allowance of 8 per cycle: the whole
+        // first cycle is covered, 2 units of the second, and nothing after.
+        promotions: [promotion({
+          grants: [grant({
+            gymChargeId: 12, name: 'Personal Training Class', category: 'session',
+            billingFrequency: 'per_session', unitPrice: 50, quantity: 10,
+          })],
+        })],
+      })],
+    });
+    const events = section(result, 'session')!.events;
+    expect(events.map((e) => e.lines[0].actual_charge)).toEqual([0, 300, 400]);
+    expect(events[0].lines[0].benefits[0]).toMatchObject({ action: 'waive', name: 'October Promotion' });
+    // The last cycle is the regular charge, so the projection stops there.
+    expect(events).toHaveLength(3);
+  });
+
+  it('shows no line on a billing cycle the allowance does not renew in', () => {
+    const result = computeBillingSimulation({
+      // A yearly allowance on monthly billing renews in one cycle out of twelve;
+      // the others carry no session line at all rather than "0 sessions, EUR 0".
+      assignments: [assignment({ planBenefits: [sessions({ sessionFrequency: 'year' })] })],
+      minimumCycles: 2,
+    });
+    const events = section(result, 'session')!.events;
+    expect(events.map((e) => e.date)).toEqual([START]);
+    expect(events[0].lines[0].quantity).toBe(2);
+  });
+
+  it('falls back to the single charge when the assignment has no cadence to summarise onto', () => {
+    const result = computeBillingSimulation({
+      assignments: [assignment({
+        membershipFeePrice: null, recurringInterval: null, recurringUnit: null,
+        planBenefits: [sessions({ sessionFrequency: 'week' })],
+      })],
+    });
+    const events = section(result, 'session')!.events;
+    expect(events).toHaveLength(1);
+    expect(events[0].lines[0]).toMatchObject({ quantity: 2, actual_charge: 100 });
   });
 });

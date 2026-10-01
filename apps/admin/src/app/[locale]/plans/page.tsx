@@ -24,6 +24,7 @@ import {
   SellableItemBenefitEditor,
   SellableItemBenefitView,
   SellableItemBenefitRow,
+  BenefitFrequencyColumn,
   SellableItemOption,
   invalidBenefitValueRow,
   toBenefitItems,
@@ -184,15 +185,22 @@ const BENEFIT_SECTIONS: {
   emptyKey: string;
   addKey: string;
   showFrequency: boolean;
+  /**
+   * #918: the Session Benefits section's Frequency column is the *benefit's*
+   * own renewal Frequency ("2 sessions per week") and is editable; the other two
+   * keep showing the Sellable Item's read-only billing frequency. One column
+   * either way, so the three sections stay the one table #916 made them.
+   */
+  frequencyColumn: BenefitFrequencyColumn;
 }[] = [
   // #916: `showFrequency` is true for all three sections, not only the
   // recurring one. The column is what a One-off or Session item has no value
   // for, and the ticket is explicit that it must still occupy its place (with a
   // "—") rather than disappear and shift every column after it — the three
   // sections have to read as one table.
-  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: true },
-  { section: 'session', endpoint: 'session-benefits', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: true },
-  { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'section_plan_period_benefits', emptyKey: 'no_plan_period_benefits', addKey: 'add_period_benefit', showFrequency: true },
+  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: true, frequencyColumn: 'item' },
+  { section: 'session', endpoint: 'session-benefits', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: true, frequencyColumn: 'benefit' },
+  { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'section_plan_period_benefits', emptyKey: 'no_plan_period_benefits', addKey: 'add_period_benefit', showFrequency: true, frequencyColumn: 'item' },
 ];
 
 function savedBenefits(plan: Plan, section: BenefitSection): SellableItemBenefitRow[] {
@@ -1292,7 +1300,7 @@ export default function PlansPage() {
                         its own independent Save/Cancel (§10) and no modal (§15).
                         #816 §6–§8: the Plan keeps these names — never the
                         Promotion's, which #815 renamed. */}
-                    {BENEFIT_SECTIONS.map(({ section, endpoint, titleKey, emptyKey, addKey, showFrequency }) => (
+                    {BENEFIT_SECTIONS.map(({ section, endpoint, titleKey, emptyKey, addKey, showFrequency, frequencyColumn }) => (
                       <div key={section}>
                         <SectionHeader
                           title={t(`plans.${titleKey}`)}
@@ -1314,6 +1322,7 @@ export default function PlansPage() {
                               setDraft={setBenefitDraft}
                               categoryItems={categoryItems(section)}
                               showFrequency={showFrequency}
+                              frequencyColumn={frequencyColumn}
                               enforceMandatory
                               benefitContext="plan"
                             />
@@ -1330,6 +1339,7 @@ export default function PlansPage() {
                             emptyKey={emptyKey}
                             rows={savedBenefits(plan, section)}
                             showFrequency={showFrequency}
+                            frequencyColumn={frequencyColumn}
                             enforceMandatory
                             benefitContext="plan"
                             /* #916: the Original and Final Price the server
