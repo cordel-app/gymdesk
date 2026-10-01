@@ -112,6 +112,8 @@
     "error_no_center": "Un membre ha de pertànyer almenys a un centre.",
     "error_default_not_assigned": "El centre predeterminat ha de ser un dels centres assignats.",
     "filter_center": "Centre",
+    "filter_search": "Cercar",
+    "filter_document": "NIF/NIE/Passaport",
     "all_centers": "Tots els centres",
     "clerk_section_title": "Clerk",
     "clerk_status_label": "Estat",
