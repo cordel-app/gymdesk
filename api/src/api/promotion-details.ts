@@ -13,6 +13,7 @@ import {
   parseSellableItemBenefitInput,
   shapeSellableItemBenefitRow,
 } from '../domain/sellableItemBenefitActions';
+import { withSellableItemBenefitPrices } from './sellable-item-benefit-pricing';
 
 export const promotionDetailsRouter = Router({ mergeParams: true });
 
@@ -234,12 +235,38 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
 // Membership Fee Benefit, migrated into its own table above.
 
 function selectSellableItemBenefits(table: string): string {
+  // #920: the price columns come from the benefit row's own join rather than
+  // the active catalogue, since a Promotion may still carry (and still grant) an
+  // item that has since been deactivated — the same reason #915 joins them on
+  // the Plan side.
   return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
-                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status
+                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status,
+                 gc.amount AS gym_charge_amount, gc.tax_behavior AS gym_charge_tax_behavior,
+                 tr.rate_percent AS gym_charge_tax_rate_percent
           FROM ${table} b
           JOIN gym_charges gc ON gc.id = b.gym_charge_id
+          LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
           WHERE b.promotion_id = ? AND b.gym_id = ?
           ORDER BY gym_charge_name ASC`;
+}
+
+/**
+ * One stored benefit row as the section's read selects it: the relationship's
+ * own columns plus the Sellable Item's name, classification and — since #920 —
+ * the three price columns the VAT-inclusive gross-up needs.
+ */
+interface PromotionBenefitRow {
+  gym_charge_id: number;
+  quantity: number;
+  action: string | null;
+  value: string | number | null;
+  gym_charge_name: string;
+  gym_charge_type: string;
+  gym_charge_billing_frequency: string | null;
+  gym_charge_status: string;
+  gym_charge_amount: string | null;
+  gym_charge_tax_behavior: string | null;
+  gym_charge_tax_rate_percent: string | null;
 }
 
 /**
@@ -247,10 +274,22 @@ function selectSellableItemBenefits(table: string): string {
  * `(action, value)` pair normalized — `value` a number rather than mysql2's
  * `DECIMAL` string, and an action outside what a Promotion may configure read
  * back as the neutral default.
+ *
+ * #920 adds the Regular / Final Price pair beside it, VAT included, computed by
+ * the one module the Membership Plan sections use (`withSellableItemBenefitPrices`,
+ * over `applyLineBenefit()`): the ticket's requirement is that the Promotion UI
+ * introduce no pricing logic of its own, so the amounts a Promotion section
+ * quotes and the amounts the billing engine applies come from the same place.
+ * Nothing is stored — they are computed on every read.
  */
 async function loadPromotionBenefits(table: string, promotionId: unknown, gymId: string) {
-  const { rows } = await db.query(selectSellableItemBenefits(table), [promotionId, gymId]);
-  return rows.map((row: any) => shapeSellableItemBenefitRow('promotion', row));
+  const { rows } = await db.query<PromotionBenefitRow>(
+    selectSellableItemBenefits(table), [promotionId, gymId],
+  );
+  return withSellableItemBenefitPrices(
+    'promotion',
+    rows.map((row) => shapeSellableItemBenefitRow('promotion', row)),
+  );
 }
 
 const CATEGORY_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [

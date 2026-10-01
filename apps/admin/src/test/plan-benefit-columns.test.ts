@@ -210,16 +210,20 @@ describe('#916: the Plans card', () => {
   });
 });
 
-describe('#916: the Promotions card is untouched', () => {
-  // A Promotion's grants are priced against the assignment they are applied to,
-  // not against the Promotion — its columns are #919/#920's question, not this
-  // ticket's.
-  it('does not ask for the Plan price columns', () => {
-    expect(promotionsSrc).not.toContain('showPrices');
+describe('#919/#920: the Promotions card shares the same declaration', () => {
+  // #916 left the Promotion sections alone and said so here, because their
+  // columns were this pair of tickets' question. They answered it: the three
+  // Promotion sections read as one table too, with a Regular / Final Price pair
+  // of their own — the same `SELLABLE_ITEM_BENEFIT_COLUMNS` above, labelled from
+  // the `promotions` namespace. See promotion-benefit-columns.test.ts for the
+  // rest of it.
+  it('asks for the price columns', () => {
+    expect(promotionsSrc).toContain('showPrices');
   });
 
-  it('keeps its Frequency column on the Period section alone', () => {
-    expect(promotionsSrc).toContain('showFrequency: false');
+  it('shows the Frequency column in all three sections, so they line up', () => {
+    expect(promotionsSrc.match(/showFrequency: true/g) ?? []).toHaveLength(3);
+    expect(promotionsSrc).not.toContain('showFrequency: false');
   });
 });
 

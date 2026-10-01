@@ -41,7 +41,11 @@ import {
   shapeSellableItemBenefitRow,
   toSellableItemBenefit,
 } from '../domain/sellableItemBenefitActions';
-import { PlanBenefitPrices, planBenefitPrices } from '../domain/planBenefitPrices';
+import { PlanBenefitPrices } from '../domain/planBenefitPrices';
+import {
+  grossBenefitUnitPrice,
+  withSellableItemBenefitPrices,
+} from './sellable-item-benefit-pricing';
 
 interface PlanRow {
   id: number;
@@ -158,51 +162,19 @@ interface BenefitPricingRow extends PlanBenefitRow {
 }
 
 /**
- * One benefit row's item price, **grossed up** — the amount every Plan-side
- * projection is denominated in (#915's tax note, #817 for why the arithmetic is
- * the server's and never the page's). `null` for an item that carries no price
- * at all, which is not the same as €0.00: a priced-at-nothing row bills nothing
- * and reads as "—".
- *
- * The rate may be missing while the amount is not (a gym with no tax rate
- * configured), and the stored amount is then the honest gross — exactly how
- * `formatPlanCurrentPrice()` falls back for the Plan's own price.
- */
-function grossBenefitUnitPrice(
-  row: BenefitPricingRow, fallback?: SellableItemRow,
-): number | null {
-  const amount = row.gym_charge_amount ?? fallback?.amount ?? null;
-  if (amount == null) return null;
-  return computePriceFields({
-    amount,
-    tax_rate_percent: row.gym_charge_tax_rate_percent ?? fallback?.tax_rate_percent ?? null,
-    tax_behavior: row.gym_charge_tax_behavior ?? fallback?.tax_behavior ?? 'inclusive',
-  }).amount_incl_tax ?? Number(amount);
-}
-
-/**
  * #916 — the section as the card renders it: every row plus the Original and
  * Final Price it must show, VAT included.
  *
- * The amounts are `domain/planBenefitPrices.ts`'s, over the same
- * `applyLineBenefit()` the Billing Simulation's charge builders use, so the
- * Benefit sections and the Billing Event Simulation beside them on the very
- * same card cannot quote one line two ways. Nothing is stored: like
- * `example_timeline` and `billing_event_simulation`, these are computed on
- * every read.
+ * Since #920 the wiring is `api/sellable-item-benefit-pricing.ts`'s, because the
+ * Promotion card's three sections now report the same pair and a second copy of
+ * the gross-up is exactly what would let the two screens price one item two
+ * ways. This wrapper is only the Plan's `context`.
  */
 function withPlanBenefitPrices<T extends PlanBenefitRow>(
   rows: (T | PlanBenefitRow)[], catalogue?: SellableItemRow[],
 ): ((T | PlanBenefitRow) & PlanBenefitPrices)[] {
-  const byId = new Map((catalogue ?? []).map((item) => [Number(item.id), item]));
-  return rows.map((row) => ({
-    ...row,
-    ...planBenefitPrices(
-      grossBenefitUnitPrice(row as BenefitPricingRow, byId.get(Number(row.gym_charge_id))),
-      Number(row.quantity) || 1,
-      toSellableItemBenefit('plan', row.action, row.value),
-    ),
-  }));
+  return withSellableItemBenefitPrices('plan', rows as BenefitPricingRow[], catalogue) as
+    ((T | PlanBenefitRow) & PlanBenefitPrices)[];
 }
 
 /**

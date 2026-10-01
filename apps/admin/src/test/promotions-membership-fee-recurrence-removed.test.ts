@@ -115,7 +115,11 @@ describe('Promotions: Membership Fee recurrence fields removed (#814)', () => {
   it('keeps Duration, Action, Value and Enabled in the section', () => {
     const editor = blocks['the section editor']();
     const view = blocks['the read-only section']();
-    for (const key of ['col_duration_months', 'col_action', 'col_value', 'col_enabled']) {
+    // #919/#920 renamed the column key: the duration is a count of membership
+    // periods, so it is labelled `Duration` (`col_duration`) rather than
+    // `Duration (months)`. The column itself is still here, which is what this
+    // asserts.
+    for (const key of ['col_duration', 'col_action', 'col_value', 'col_enabled']) {
       expect(editor, `the section editor no longer renders "${key}"`).toContain(`'${key}'`);
       expect(view, `the read-only section no longer renders "${key}"`).toContain(`'${key}'`);
     }
