@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// Structural test for #634 — the Member's Membership experience as four
+// Structural test for #634 — the Member's Membership experience as
 // independent sections.
+//
+// #931 removed the PROMOTIONS section: a Promotion applies to a Membership Plan
+// or a Sellable Item, never to a Member. What is left of §13 is three siblings,
+// and member-promotions-removed.test.ts is what pins the removal down.
 //
 // This repo has no component-test infra for apps/admin (see
 // docs/architecture.md's TL;DR), so — like assign-plan-inline.test.ts (#628)
 // and member-billing-simulation.test.ts (#629) — this pins down what the ticket
 // settled by scanning the source and the locale files:
-//   - MEMBERSHIP PLANS / PROMOTIONS / ADDITIONAL SERVICES / BILLING SIMULATION
-//     are four siblings, none nested inside a Membership Plan card (§13);
+//   - MEMBERSHIP PLANS / ADDITIONAL SERVICES / BILLING SIMULATION are three
+//     siblings, none nested inside a Membership Plan card (§13);
 //   - adding a plan is additive and never supersedes another (§14);
 //   - only Active + Public plans are offered (§2), picked with radio buttons;
 //   - everything is inline — no CrudModal, no modal, no wizard (§15);
@@ -30,13 +34,11 @@ function read(file: string): string {
 
 const expandedRowSrc = read('MemberExpandedRow.tsx');
 const plansSrc = read('MemberMembershipPlans.tsx');
-const promotionsSrc = read('MemberPromotions.tsx');
 const servicesSrc = read('MemberAdditionalServices.tsx');
 const simulationSrc = read('MemberBillingSimulation.tsx');
 
 const SECTION_KEYS = [
   'section_membership_plans',
-  'section_promotions',
   'section_additional_services',
   'section_billing_simulation',
 ];
@@ -52,44 +54,26 @@ const PLAN_KEYS = [
   'add_membership_plan_error_no_plan',
 ];
 
-const PROMOTION_KEYS = [
-  'promotions_none',
-  'promotions_add',
-  'promotions_add_title',
-  'promotions_submit',
-  'promotions_remove',
-  'promotions_history',
-  'promotions_on_plan',
-  'promotions_label_plan',
-  'promotions_label_promotion',
-  'promotions_pick_plan',
-  'promotions_pick_plan_first',
-  'promotions_already_applied',
-  'promotions_blocked_new_members_only',
-  'promotions_error_no_plan',
-  'promotions_error_no_promotion',
-  'promotions_needs_plan',
+const SERVICE_KEYS = [
   'additional_services_needs_plan',
 ];
 
 describe('Member Membership sections (#634)', () => {
-  it('renders the four sections as siblings, in the ticket\'s order', () => {
+  it('renders the sections as siblings, in the ticket\'s order', () => {
     const order = SECTION_KEYS.map((key) => expandedRowSrc.indexOf(`t('members.${key}')`));
     expect(order.every((i) => i > -1), 'every section label is rendered').toBe(true);
     expect(order).toEqual([...order].sort((a, b) => a - b));
   });
 
-  it('feeds the three configuration sections from one Member-level read', () => {
+  it('feeds the two configuration sections from one Member-level read', () => {
     expect(expandedRowSrc).toContain('/user-memberships/member/${memberId}/configuration');
     expect(expandedRowSrc).toContain('<MemberMembershipPlans');
-    expect(expandedRowSrc).toContain('<MemberPromotions');
     expect(expandedRowSrc).toContain('<MemberAdditionalServices');
     expect(expandedRowSrc).toContain('<MemberBillingSimulation');
   });
 
-  it('never nests Promotions, Additional Services or the Simulation in a plan card (§13)', () => {
+  it('never nests Additional Services or the Simulation in a plan card (§13)', () => {
     for (const src of [plansSrc]) {
-      expect(src).not.toContain('MemberPromotions');
       expect(src).not.toContain('AdditionalPeriodicServices');
       expect(src).not.toContain('MemberBillingSimulation');
     }
@@ -114,27 +98,6 @@ describe('Member Membership sections (#634)', () => {
     expect(plansSrc).toContain('live.map(');
   });
 
-  it('keeps Promotions at Member level, each row naming its plan (§3)', () => {
-    expect(promotionsSrc).toContain("t('promotions_on_plan'");
-    expect(promotionsSrc).toContain('/user-memberships/${targetPlanId}/promotions');
-    // Compatibility with the chosen plan is what scopes the picker.
-    expect(promotionsSrc).toContain('membership_plan_id=${target.membership_plan_id}');
-  });
-
-  it('applies the stacking rules to the Promotion picker', () => {
-    expect(promotionsSrc).toContain('nonStackableApplied');
-    expect(promotionsSrc).toContain('appliedIdsOnTarget');
-    expect(promotionsSrc).toContain('disabled={saving || blocked !== null}');
-  });
-
-  it('respects "Only applicable for new members" in the picker (§3)', () => {
-    // The API is the enforcement point; the picker disables the option and says
-    // why, using the server's own per-plan answer.
-    expect(promotionsSrc).toContain('p.only_applicable_for_new_members');
-    expect(promotionsSrc).toContain('target.new_member_eligible');
-    expect(promotionsSrc).toContain("t('promotions_blocked_new_members_only')");
-  });
-
   it('reuses the #631 inline editor for Additional Services, once per live plan (§4)', () => {
     expect(servicesSrc).toContain('<AdditionalPeriodicServices');
     expect(servicesSrc).toContain('plans.filter((p) => p.is_live');
@@ -144,7 +107,7 @@ describe('Member Membership sections (#634)', () => {
   it('re-runs the Billing Simulation whenever the configuration changes (§12)', () => {
     expect(expandedRowSrc).toContain('setSimulationKey((k) => k + 1)');
     expect(expandedRowSrc).toContain('key={simulationKey}');
-    for (const src of [plansSrc, promotionsSrc, servicesSrc]) {
+    for (const src of [plansSrc, servicesSrc]) {
       expect(src).toContain('onChanged');
     }
   });
@@ -154,7 +117,7 @@ describe('Member Membership sections (#634)', () => {
   });
 
   it('introduces no modal anywhere in the four sections (§15)', () => {
-    for (const src of [plansSrc, promotionsSrc, servicesSrc, simulationSrc]) {
+    for (const src of [plansSrc, servicesSrc, simulationSrc]) {
       expect(src).not.toContain('CrudModal');
       expect(src).not.toMatch(/<\w*Modal[\s/>]/);
     }
@@ -162,7 +125,7 @@ describe('Member Membership sections (#634)', () => {
 
   it('never recomputes money in the frontend', () => {
     // Every amount rendered by these sections comes from the server.
-    for (const src of [plansSrc, promotionsSrc]) {
+    for (const src of [plansSrc, servicesSrc]) {
       expect(src).not.toMatch(/\*\s*quantity|regular_price\s*[-*]/);
     }
   });
@@ -170,7 +133,7 @@ describe('Member Membership sections (#634)', () => {
   it('defines every new key in all locales', () => {
     for (const code of LOCALE_CODES) {
       const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
-      for (const key of [...SECTION_KEYS, ...PLAN_KEYS, ...PROMOTION_KEYS]) {
+      for (const key of [...SECTION_KEYS, ...PLAN_KEYS, ...SERVICE_KEYS]) {
         expect(messages.members?.[key], `${code}.json is missing members.${key}`).toBeTruthy();
       }
     }

@@ -35,7 +35,6 @@ const CARD_FILES = [
   'MemberEditForm.tsx',
   'MemberProfileLayout.tsx',
   'MemberMembershipPlans.tsx',
-  'MemberPromotions.tsx',
   'MemberAdditionalServices.tsx',
   'MemberBillingSimulation.tsx',
   'MemberPersonalTrainingSlots.tsx',
@@ -46,8 +45,8 @@ const sources = new Map(CARD_FILES.map((f) => [f, read(f)] as const));
 
 describe('Member card: one declaration of the chrome (#929)', () => {
   it('covers every file the card is built from', () => {
-    // A tenth section file added later must be listed above, or it can quietly
-    // grow a tenth copy of the same input and never be noticed.
+    // A section file added later must be listed above, or it can quietly grow
+    // another copy of the same input and never be noticed.
     const present = readdirSync(MEMBERS_DIR).filter((f) => f.startsWith('Member') || f.startsWith('AssignPlan'));
     const unlisted = present.filter((f) => f.endsWith('.tsx') && !f.endsWith('Modal.tsx') && !CARD_FILES.includes(f as any));
     expect(unlisted, 'Member card file not covered by this test').toEqual([]);
