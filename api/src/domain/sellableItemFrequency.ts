@@ -1,40 +1,61 @@
-// #821: a Sellable Item's **Billing Frequency** is one of five choices.
+// #821 / #945: a Sellable Item's **Billing Frequency** is one of four choices.
 //
 // `gym_charges.billing_frequency` has carried six values since migration 123
-// (`once`, `per_session`, `four_weeks`, `week`, `month`, `year`). `week` is the
-// one nobody sells — a weekly locker rental or a weekly fee is not something
-// the product offers — so #821 removes it from the *product* surface while
-// leaving every stored row exactly as it is.
+// (`once`, `per_session`, `four_weeks`, `week`, `month`, `year`). Two of them
+// are not things the product sells:
 //
-// That split is the whole point of this module, and it is the same shape #820
+//   `week`        — #821. A weekly locker rental or a weekly fee is not
+//                   something the product offers.
+//   `per_session` — #945. A session package's size is its **Units** and its
+//                   Billing Frequency is when the whole package is billed
+//                   (`10 units / €500 / Once` = €500 for the ten). "Per
+//                   Session" implies usage-based billing, which the Sellable
+//                   Item model does not have: `cadenceForSellableItem()`
+//                   already gives it no schedule, so it has always billed
+//                   exactly like `once`.
+//
+// Both leave the *product* surface while every stored row stays exactly as it
+// is, and that split is the whole point of this module — the same shape #820
 // gave a Membership Plan's cadence:
 //
 //   OFFERED — what a Sellable Item may be *configured* with, in the order the
 //             dropdown lists them. `POST /sellable-items` accepts only these.
 //   LEGACY  — stored, read, classified (`isRecurringFrequency()`), displayed
-//             and billed exactly as before, but never selectable. `week` is
-//             the only member, and a `PUT` may carry it through **unchanged**
-//             so that editing another field of a legacy item neither 400s nor
-//             quietly rewrites its frequency (§"handled safely so that their
-//             existing data is not silently corrupted or changed").
+//             and billed exactly as before, but never selectable. A `PUT` may
+//             carry one through **unchanged** so that editing another field of
+//             a legacy item neither 400s nor quietly rewrites its frequency
+//             (#945 §3, #821 §"handled safely so that their existing data is
+//             not silently corrupted or changed").
 //
 // No migration: `gym_charges_billing_frequency_check` (migration 123) keeps
-// permitting all six, because the rows that hold `week` must stay valid and
-// the route — not the CHECK — is what refuses a new one. There is deliberately
-// no backfill and no coercion to `month`/`four_weeks`: a weekly item is a real
-// price a gym agreed, and the two are not the same period.
+// permitting all six, because the rows that hold a legacy value must stay valid
+// and the route — not the CHECK — is what refuses a new one. There is
+// deliberately no backfill and no coercion:
+//
+//   * a weekly item is a real price a gym agreed, and `week` is neither a month
+//     nor 28 days;
+//   * `per_session` bills like `once` today, but what a gym *meant* by it is
+//     not knowable from the row — a 10-session package billed once, or a
+//     usage-based model the product never had — so #945 §3's second sentence
+//     applies: flag the value for correction rather than guessing. The editor
+//     renders it disabled with `frequency_legacy_notice` beside it, which is
+//     that flag, and correcting it never moves the item between benefit
+//     sections (`classifySellableItem()` counts both `once` and `per_session`
+//     as non-recurring).
 
 /** What a Sellable Item may be configured with, in dropdown order. */
 export const OFFERED_SELLABLE_ITEM_FREQUENCIES = [
   'once',
-  'per_session',
   'four_weeks',
   'month',
   'year',
 ] as const;
 
-/** Stored by rows written before #821; readable and billable, never selectable. */
-export const LEGACY_SELLABLE_ITEM_FREQUENCIES = ['week'] as const;
+/**
+ * Stored by rows written before the ticket that retired them; readable and
+ * billable, never selectable. `week` left with #821, `per_session` with #945.
+ */
+export const LEGACY_SELLABLE_ITEM_FREQUENCIES = ['per_session', 'week'] as const;
 
 export type OfferedSellableItemFrequency = (typeof OFFERED_SELLABLE_ITEM_FREQUENCIES)[number];
 export type LegacySellableItemFrequency = (typeof LEGACY_SELLABLE_ITEM_FREQUENCIES)[number];
@@ -61,7 +82,7 @@ export function isStoredSellableItemFrequency(value: unknown): value is Sellable
   return isOfferedSellableItemFrequency(value) || isLegacySellableItemFrequency(value);
 }
 
-/** `once, per_session, four_weeks, month, year` — for the routes' 400 message. */
+/** `once, four_weeks, month, year` — for the routes' 400 message. */
 export function describeOfferedFrequencies(): string {
   return OFFERED_SELLABLE_ITEM_FREQUENCIES.join(', ');
 }
@@ -75,9 +96,9 @@ export function describeOfferedFrequencies(): string {
  * `null` when the write may proceed.
  *
  * A legacy value passes only when it is what the row already holds: that is
- * how an existing weekly item stays editable — its form submits `week` back
- * untouched — while a new one can never be created and an item on another
- * frequency can never be moved onto it.
+ * how an existing weekly or per-session item stays editable — its form submits
+ * the stored value back untouched — while a new one can never be created and
+ * an item on another frequency can never be moved onto it.
  */
 export function sellableItemFrequencyWriteError(next: unknown, current: unknown): string | null {
   if (next === undefined || next === null || next === '') return null;

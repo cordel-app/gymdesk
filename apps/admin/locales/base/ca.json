@@ -3272,7 +3272,7 @@
     "frequency_week": "Setmana",
     "frequency_month": "Mes",
     "frequency_year": "Any",
-    "frequency_legacy_notice": "Aquest article es factura setmanalment, una freqüència que ja no està disponible. Si trieu una altra, la substituireu i no la podreu tornar a seleccionar.",
+    "frequency_legacy_notice": "Aquest article es factura «{frequency}», una freqüència que ja no està disponible. Si trieu una altra, la substituireu i no la podreu tornar a seleccionar.",
     "system_badge": "Sistema",
     "mandatory_badge": "Obligatori",
     "section_general": "General",

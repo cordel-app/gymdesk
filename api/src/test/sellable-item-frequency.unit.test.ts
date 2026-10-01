@@ -1,5 +1,6 @@
-// #821: the Sellable Item Billing Frequency rule — five offered choices, and
-// 'week' readable but never configurable. Pure module, no DB and no HTTP.
+// #821 / #945: the Sellable Item Billing Frequency rule — four offered
+// choices, and the two retired values ('week', 'per_session') readable but
+// never configurable. Pure module, no DB and no HTTP.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -14,19 +15,23 @@ import {
 } from '../domain/sellableItemFrequency';
 
 describe('the offered set', () => {
-  it('is exactly the five choices, in the order the dropdown lists them', () => {
-    expect(OFFERED_SELLABLE_ITEM_FREQUENCIES).toEqual(['once', 'per_session', 'four_weeks', 'month', 'year']);
+  it('is exactly the four choices, in the order the dropdown lists them', () => {
+    expect(OFFERED_SELLABLE_ITEM_FREQUENCIES).toEqual(['once', 'four_weeks', 'month', 'year']);
   });
 
-  it('does not offer week', () => {
+  it('does not offer week or per_session', () => {
     expect(isOfferedSellableItemFrequency('week')).toBe(false);
+    expect(isOfferedSellableItemFrequency('per_session')).toBe(false);
     expect(OFFERED_SELLABLE_ITEM_FREQUENCIES).not.toContain('week');
+    expect(OFFERED_SELLABLE_ITEM_FREQUENCIES).not.toContain('per_session');
   });
 
-  it('keeps week as a stored value, so existing rows stay known', () => {
-    expect(LEGACY_SELLABLE_ITEM_FREQUENCIES).toEqual(['week']);
-    expect(isLegacySellableItemFrequency('week')).toBe(true);
-    expect(isStoredSellableItemFrequency('week')).toBe(true);
+  it('keeps both retired values as stored ones, so existing rows stay known', () => {
+    expect([...LEGACY_SELLABLE_ITEM_FREQUENCIES].sort()).toEqual(['per_session', 'week']);
+    for (const legacy of ['week', 'per_session']) {
+      expect(isLegacySellableItemFrequency(legacy)).toBe(true);
+      expect(isStoredSellableItemFrequency(legacy)).toBe(true);
+    }
   });
 
   it('stores the six values migration 123 permits — the CHECK is unchanged', () => {
@@ -41,7 +46,7 @@ describe('the offered set', () => {
   });
 
   it('names the offered set for the 400 message', () => {
-    expect(describeOfferedFrequencies()).toBe('once, per_session, four_weeks, month, year');
+    expect(describeOfferedFrequencies()).toBe('once, four_weeks, month, year');
   });
 });
 
@@ -59,28 +64,37 @@ describe('sellableItemFrequencyWriteError', () => {
     expect(sellableItemFrequencyWriteError('', 'month')).toBeNull();
   });
 
-  it('refuses week on create', () => {
-    const err = sellableItemFrequencyWriteError('week', null);
-    expect(err).toContain('no longer offered');
-    expect(err).toContain('once, per_session, four_weeks, month, year');
+  it('refuses a retired frequency on create', () => {
+    for (const legacy of ['week', 'per_session']) {
+      const err = sellableItemFrequencyWriteError(legacy, null);
+      expect(err).toContain('no longer offered');
+      expect(err).toContain('once, four_weeks, month, year');
+    }
   });
 
-  it('refuses moving an item onto week', () => {
+  it('refuses moving an item onto a retired frequency', () => {
     expect(sellableItemFrequencyWriteError('week', 'month')).toContain('no longer offered');
+    expect(sellableItemFrequencyWriteError('per_session', 'month')).toContain('no longer offered');
+    // Neither retired value is a route onto the other.
+    expect(sellableItemFrequencyWriteError('per_session', 'week')).toContain('no longer offered');
+    expect(sellableItemFrequencyWriteError('week', 'per_session')).toContain('no longer offered');
   });
 
-  it('carries week through unchanged on an item that already stores it', () => {
+  it('carries a retired frequency through unchanged on an item that already stores it', () => {
     expect(sellableItemFrequencyWriteError('week', 'week')).toBeNull();
+    expect(sellableItemFrequencyWriteError('per_session', 'per_session')).toBeNull();
   });
 
-  it('lets a weekly item move to an offered frequency', () => {
+  it('lets a legacy item move to an offered frequency', () => {
     expect(sellableItemFrequencyWriteError('four_weeks', 'week')).toBeNull();
+    // #945: the correction a per-session package is expected to make.
+    expect(sellableItemFrequencyWriteError('once', 'per_session')).toBeNull();
   });
 
   it('refuses an unknown value with the offered list, whatever the row stores', () => {
     expect(sellableItemFrequencyWriteError('fortnight', null))
-      .toBe('billing_frequency must be one of: once, per_session, four_weeks, month, year');
-    expect(sellableItemFrequencyWriteError('fortnight', 'week'))
-      .toBe('billing_frequency must be one of: once, per_session, four_weeks, month, year');
+      .toBe('billing_frequency must be one of: once, four_weeks, month, year');
+    expect(sellableItemFrequencyWriteError('fortnight', 'per_session'))
+      .toBe('billing_frequency must be one of: once, four_weeks, month, year');
   });
 });

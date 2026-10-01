@@ -597,8 +597,43 @@ describe('POST /sellable-items', () => {
     expect(rows).toHaveLength(0);
   });
 
+  // #945: 'per_session' left the product surface for the reason 'week' did —
+  // a session package's size is its Units and its frequency is when the whole
+  // package is billed, so "Per Session" names a usage-based model the Sellable
+  // Item does not have.
+  it('returns 400 for billing_frequency = per_session and writes nothing', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'PT Per Session', type: 'sessions', units: 10, amount: 500, billing_frequency: 'per_session' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('no longer offered');
+    const { rows } = await db.query(
+      'SELECT id FROM gym_charges WHERE gym_id = ? AND name = ?',
+      [gymId, 'PT Per Session'],
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  // #945 §4: the Sessions model itself is untouched — the package the ticket's
+  // own example describes is still exactly what a gym creates.
+  it('creates the ticket\'s 10-session package on billing_frequency = once', async () => {
+    const res = await request
+      .post('/sellable-items')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: 'Personal Training Package', type: 'sessions', units: 10, amount: 500, billing_frequency: 'once' });
+    expect(res.status).toBe(201);
+    expect(res.body.type).toBe('sessions');
+    expect(res.body.units).toBe(10);
+    expect(parseFloat(res.body.amount)).toBeCloseTo(500, 2);
+    expect(res.body.billing_frequency).toBe('once');
+    expect(res.body.benefit_category).toBe('session');
+  });
+
   it('creates an item on each offered billing_frequency', async () => {
-    for (const freq of ['once', 'per_session', 'four_weeks', 'month', 'year']) {
+    for (const freq of ['once', 'four_weeks', 'month', 'year']) {
       const res = await request
         .post('/sellable-items')
         .set('Authorization', TEST_AUTH_HEADER)
@@ -702,6 +737,148 @@ describe('#821 legacy week frequency', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(201);
     expect(res.body.billing_frequency).toBe('week');
+  });
+});
+
+// ─── #945 — a Sellable Item stored on the retired 'per_session' frequency ───────
+//
+// The same shape as the #821 block above, because it is the same rule: the
+// value is retired from the product surface, not deleted from the data. What
+// differs is that #945 deliberately does **no** backfill — a per-session item
+// bills exactly like a `once` one today (`cadenceForSellableItem()` gives
+// neither a schedule), but what the gym meant by it is not knowable from the
+// row, so the ticket's §3 "flag the value for correction rather than guessing"
+// applies and the row keeps its value until someone edits it.
+
+describe('#945 legacy per_session frequency', () => {
+  let gymId: string;
+  let perSessionId: number;
+  let onceId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym();
+    await createTestMembership(gymId, 'admin');
+    // Written directly, the way a pre-#945 item exists in a real gym: the API
+    // refuses to create one now, which is the point of the ticket.
+    const perSession = await db.query(
+      `INSERT INTO gym_charges (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
+       VALUES (?, 'Legacy PT Pack', 'sessions', 10, 500.00, 'EUR', 'per_session', 'active', 'public', 0)`,
+      [gymId],
+    );
+    perSessionId = perSession.insertId as number;
+    const once = await db.query(
+      `INSERT INTO gym_charges (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
+       VALUES (?, 'Once PT Pack', 'sessions', 5, 250.00, 'EUR', 'once', 'active', 'public', 0)`,
+      [gymId],
+    );
+    onceId = once.insertId as number;
+  });
+
+  const put = (id: number, body: Record<string, unknown>) => request
+    .put(`/sellable-items/${id}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send(body);
+
+  const get = (id: number) => request
+    .get(`/sellable-items/${id}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+
+  it('still reads the stored frequency back', async () => {
+    const res = await get(perSessionId);
+    expect(res.status).toBe(200);
+    expect(res.body.billing_frequency).toBe('per_session');
+  });
+
+  it('keeps its units and its price — nothing was migrated', async () => {
+    const { rows } = await db.query(
+      'SELECT billing_frequency, units, amount FROM gym_charges WHERE id = ?', [perSessionId],
+    );
+    expect(rows[0].billing_frequency).toBe('per_session');
+    expect(rows[0].units).toBe(10);
+    expect(parseFloat(rows[0].amount)).toBeCloseTo(500, 2);
+  });
+
+  it('still classifies as a session benefit', async () => {
+    const res = await get(perSessionId);
+    expect(res.body.benefit_category).toBe('session');
+  });
+
+  /** A fresh pre-#945 row, so the mutating cases below do not depend on order. */
+  const newLegacyItem = async (name: string): Promise<number> => {
+    const { insertId } = await db.query(
+      `INSERT INTO gym_charges (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
+       VALUES (?, ?, 'sessions', 10, 500.00, 'EUR', 'per_session', 'active', 'public', 0)`,
+      [gymId, name],
+    );
+    return insertId as number;
+  };
+
+  it('lets another field be edited with the frequency submitted back unchanged', async () => {
+    const id = await newLegacyItem(`Legacy PT Edit ${Date.now()}`);
+    const res = await put(id, { name: 'Legacy PT Edited', amount: 550, billing_frequency: 'per_session' });
+    expect(res.status).toBe(200);
+    expect(res.body.billing_frequency).toBe('per_session');
+    expect(parseFloat(res.body.amount)).toBeCloseTo(550, 2);
+  });
+
+  it('duplicates it faithfully, frequency included', async () => {
+    const id = await newLegacyItem(`Legacy PT Duplicate ${Date.now()}`);
+    const res = await request
+      .post(`/sellable-items/${id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(201);
+    expect(res.body.billing_frequency).toBe('per_session');
+  });
+
+  it('lets it be corrected to Once, which changes no benefit section', async () => {
+    const id = await newLegacyItem(`Legacy PT Correct ${Date.now()}`);
+    const before = await get(id);
+    const res = await put(id, { name: 'Legacy PT Corrected', billing_frequency: 'once' });
+    expect(res.status).toBe(200);
+    expect(res.body.billing_frequency).toBe('once');
+    expect(res.body.benefit_category).toBe(before.body.benefit_category);
+    // …and cannot come back once it has moved.
+    const back = await put(id, { name: 'Legacy PT Corrected', billing_frequency: 'per_session' });
+    expect(back.status).toBe(400);
+    expect(back.body.error).toContain('no longer offered');
+    const { rows } = await db.query(
+      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [id],
+    );
+    expect(rows[0].billing_frequency).toBe('once');
+  });
+
+  // Pre-existing route behaviour, pinned here so #945 is not read as having
+  // changed it: `PUT /sellable-items/:id` assigns `billing_frequency` directly
+  // rather than COALESCE-ing it (exactly as it does `amount`), so a request
+  // that omits the field **clears** the column. That is the dropdown's `—`,
+  // which the rule allows — it is not a legacy value being coerced to
+  // something else — and the editor always submits the frequency back, which
+  // is what keeps a legacy item's value where it is.
+  it('clears the frequency when a write omits it, as it always has', async () => {
+    const id = await newLegacyItem(`Legacy PT Omitted ${Date.now()}`);
+    const res = await put(id, { name: 'Legacy PT Omitted', notes: 'bought in 2024' });
+    expect(res.status).toBe(200);
+    expect(res.body.notes).toBe('bought in 2024');
+    expect(res.body.billing_frequency).toBeNull();
+  });
+
+  it('refuses to move an item that never was per-session onto it', async () => {
+    const res = await put(onceId, { name: 'Once PT Pack', billing_frequency: 'per_session' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('no longer offered');
+    const { rows } = await db.query(
+      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [onceId],
+    );
+    expect(rows[0].billing_frequency).toBe('once');
+  });
+
+  it('names the four offered values in the refusal, and neither retired one', async () => {
+    const res = await put(onceId, { name: 'Once PT Pack', billing_frequency: 'fortnight' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('billing_frequency must be one of: once, four_weeks, month, year');
   });
 });
 
