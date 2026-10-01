@@ -1124,7 +1124,12 @@
     "simulation_price_fixed_discount": "{amount} de descompte",
     "simulation_price_fixed_price": "Preu fix {amount}",
     "simulation_disclaimer": "Només és un exemple. Les dates i els imports són il·lustratius i es recalcularan a partir de la data real d'inscripció de cada membre; no s'hi inclouen les promocions.",
-    "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors."
+    "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
+    "col_original_price": "Preu original",
+    "col_final_price": "Preu final",
+    "benefit_total_price": "Total {amount}",
+    "frequency_once": "Un cop",
+    "frequency_per_session": "Per sessió"
   },
   "prices": {
     "title": "Preus",

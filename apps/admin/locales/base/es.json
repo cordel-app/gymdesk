@@ -1124,7 +1124,12 @@
     "simulation_price_fixed_discount": "{amount} de descuento",
     "simulation_price_fixed_price": "Precio fijo {amount}",
     "simulation_disclaimer": "Solo es un ejemplo. Las fechas y los importes son ilustrativos y se recalcularán a partir de la fecha real de inscripción de cada miembro; no se incluyen las promociones.",
-    "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores."
+    "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores.",
+    "col_original_price": "Precio original",
+    "col_final_price": "Precio final",
+    "benefit_total_price": "Total {amount}",
+    "frequency_once": "Una vez",
+    "frequency_per_session": "Por sesión"
   },
   "prices": {
     "title": "Precios",

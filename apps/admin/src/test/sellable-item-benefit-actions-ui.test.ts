@@ -239,7 +239,15 @@ describe('the shared editor renders the treatment', () => {
   });
 
   it('shows the configured treatment in the read-only half too', () => {
-    expect(componentSrc).toContain('<td style={tdSt}>{benefitTreatmentLabel(t, benefitContext, r)}</td>');
+    // #916 put the read-only cells behind the shared column declaration, so the
+    // treatment is rendered by the `action` column instead of its own inline
+    // `<td>`. The rule is unchanged: still `benefitTreatmentLabel`, still shown
+    // only where the caller named a context.
+    expect(componentSrc).toContain("case 'action':");
+    expect(componentSrc).toContain(
+      'benefitContext ? benefitTreatmentLabel(t, benefitContext, row) : null',
+    );
+    expect(componentSrc).toContain('showAction: benefitContext != null');
   });
 });
 

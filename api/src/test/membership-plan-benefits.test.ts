@@ -769,3 +769,213 @@ describe('Membership Plan benefit actions', () => {
     expect(row).toMatchObject({ action: 'waive', value: null });
   });
 });
+
+// ─── #916: the Original / Final Price a Benefit row reports ───────────────────
+//
+// The card must show what a Sellable Item normally costs and what it costs
+// inside this Plan, both VAT-inclusive, and the ticket forbids a second pricing
+// implementation for the UI: "the Membership Plan details page cannot show a
+// different amount from the amount that would actually be billed". These
+// exercise the real router, so the gross-up (`computePriceFields`) and the
+// treatment (`applyLineBenefit`) are the ones the Plan actually serves — the
+// pure arithmetic is `plan-benefit-prices.unit.test.ts`.
+
+describe('Membership Plan Benefit prices (#916)', () => {
+  let gymId: string;
+  let planId: number;
+  let taxRateId: number;
+
+  async function createPricedItem(opts: {
+    name: string;
+    type: 'sessions' | 'service' | 'fee' | 'other';
+    frequency: string | null;
+    amount: string | null;
+    taxRateId?: number | null;
+    taxBehavior?: 'inclusive' | 'exclusive';
+  }): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO gym_charges
+         (gym_id, name, type, billing_frequency, status, is_system, currency,
+          amount, tax_rate_id, tax_behavior)
+       VALUES (?, ?, ?, ?, 'active', 0, 'EUR', ?, ?, ?)`,
+      [gymId, opts.name, opts.type, opts.frequency, opts.amount,
+       opts.taxRateId ?? null, opts.taxBehavior ?? 'inclusive'],
+    );
+    return insertId;
+  }
+
+  async function putSection(section: string, items: unknown[]) {
+    return request
+      .put(`/membership-plans/${planId}/${section}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items });
+  }
+
+  async function getSection(section: string) {
+    return request
+      .get(`/membership-plans/${planId}/${section}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+  }
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MPB Prices Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, 'MPB Prices Plan');
+    // A price and a cadence, so the Billing Event Simulation beside the
+    // sections is available and the cross-check at the bottom has something to
+    // compare to.
+    await db.query(
+      `INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
+       VALUES (?, ?, 100, '2025-01-01', 'active')`,
+      [gymId, planId],
+    );
+    await db.query(
+      `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
+       VALUES (?, ?, 1, 'month')`,
+      [gymId, planId],
+    );
+    const { insertId } = await db.query(
+      `INSERT INTO tax_rates (gym_id, name, rate_percent, is_system, status) VALUES (?, 'VAT 10%', 10, 0, 'active')`,
+      [gymId],
+    );
+    taxRateId = insertId;
+  });
+
+  it('quotes a row at the item price when the Plan configures no benefit', async () => {
+    const classId = await createPricedItem({
+      name: 'Prices Class', type: 'sessions', frequency: null, amount: '25.00',
+    });
+    const res = await putSection('session-benefits', [{ gym_charge_id: classId, quantity: 1 }]);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === classId);
+    expect(row.original_price_incl_tax).toBe(25);
+    expect(row.final_price_incl_tax).toBe(25);
+  });
+
+  it('keeps the original price visible for a waived item, whose final price is 0', async () => {
+    const insuranceId = await createPricedItem({
+      name: 'Prices Insurance', type: 'fee', frequency: 'year', amount: '20.00',
+    });
+    const res = await putSection('periodical-benefits', [
+      { gym_charge_id: insuranceId, quantity: 1, action: 'waive' },
+    ]);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === insuranceId);
+    expect(row.original_price_incl_tax).toBe(20);
+    expect(row.final_price_incl_tax).toBe(0);
+  });
+
+  it('applies a percentage discount to the item price', async () => {
+    const packageId = await createPricedItem({
+      name: 'Prices Package', type: 'fee', frequency: 'once', amount: '70.00',
+    });
+    const res = await putSection('oneoff-benefits', [
+      { gym_charge_id: packageId, quantity: 1, action: 'percentage_discount', value: 20 },
+    ]);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === packageId);
+    expect(row.original_price_incl_tax).toBe(70);
+    expect(row.final_price_incl_tax).toBe(56);
+  });
+
+  it('reports the line beside the unit, so a quantity cannot hide what is billed', async () => {
+    const classId = await createPricedItem({
+      name: 'Prices Bulk Class', type: 'sessions', frequency: null, amount: '25.00',
+    });
+    const res = await putSection('session-benefits', [
+      { gym_charge_id: classId, quantity: 5, action: 'percentage_discount', value: 10 },
+    ]);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === classId);
+    expect(row.original_price_incl_tax).toBe(25);
+    expect(row.final_price_incl_tax).toBe(22.5);
+    expect(row.original_line_price_incl_tax).toBe(125);
+    expect(row.final_line_price_incl_tax).toBe(112.5);
+  });
+
+  it('grosses up a tax-exclusive item — the amounts are VAT-inclusive', async () => {
+    const lockerId = await createPricedItem({
+      name: 'Prices Locker', type: 'service', frequency: 'month', amount: '15.00',
+      taxRateId, taxBehavior: 'exclusive',
+    });
+    const res = await putSection('periodical-benefits', [{ gym_charge_id: lockerId, quantity: 1 }]);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === lockerId);
+    expect(row.original_price_incl_tax).toBe(16.5);
+    expect(row.final_price_incl_tax).toBe(16.5);
+  });
+
+  it('reports no price at all for an item that carries none — never €0.00', async () => {
+    const unpricedId = await createPricedItem({
+      name: 'Prices Unpriced', type: 'other', frequency: null, amount: null,
+    });
+    const res = await putSection('oneoff-benefits', [{ gym_charge_id: unpricedId, quantity: 2 }]);
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === unpricedId);
+    expect(row.original_price_incl_tax).toBeNull();
+    expect(row.final_price_incl_tax).toBeNull();
+    expect(row.original_line_price_incl_tax).toBeNull();
+    expect(row.final_line_price_incl_tax).toBeNull();
+  });
+
+  it('embeds the same amounts in the Plan itself, which is what the card renders', async () => {
+    const itemId = await createPricedItem({
+      name: 'Prices Embedded', type: 'service', frequency: 'month', amount: '30.00',
+    });
+    await putSection('periodical-benefits', [
+      { gym_charge_id: itemId, quantity: 2, action: 'percentage_discount', value: 50 },
+    ]);
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const row = res.body.periodical_benefits.find((r: any) => r.gym_charge_id === itemId);
+    expect(row.original_price_incl_tax).toBe(30);
+    expect(row.final_price_incl_tax).toBe(15);
+    expect(row.original_line_price_incl_tax).toBe(60);
+    expect(row.final_line_price_incl_tax).toBe(30);
+  });
+
+  // #893: a mandatory item the Plan has no row for yet is part of the section,
+  // so it must be quoted like any other row rather than reading "—".
+  it('prices an implicit mandatory item too', async () => {
+    const mandatoryId = await createPricedItem({
+      name: 'Prices Mandatory', type: 'fee', frequency: 'year', amount: '40.00',
+    });
+    await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
+    const res = await getSection('periodical-benefits');
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.gym_charge_id === mandatoryId);
+    expect(row.implicit).toBe(true);
+    expect(row.original_price_incl_tax).toBe(40);
+    expect(row.final_price_incl_tax).toBe(40);
+    await db.query('UPDATE gym_charges SET mandatory = 0 WHERE id = ?', [mandatoryId]);
+  });
+
+  // The ticket's central requirement: the section and the Billing Event
+  // Simulation on the same card are two projections of one calculation, so the
+  // line they both describe must carry the same amount.
+  it('agrees with the Billing Event Simulation about what the line bills', async () => {
+    const itemId = await createPricedItem({
+      name: 'Prices Agreement', type: 'service', frequency: 'month', amount: '12.50',
+    });
+    await putSection('periodical-benefits', [
+      { gym_charge_id: itemId, quantity: 4, action: 'percentage_discount', value: 25 },
+    ]);
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    const row = res.body.periodical_benefits.find((r: any) => r.gym_charge_id === itemId);
+    const line = res.body.billing_event_simulation.dates
+      .flatMap((g: any) => g.lines)
+      .find((l: any) => l.gym_charge_id === itemId);
+    expect(line).toBeDefined();
+    expect(line.regular_price).toBe(row.original_line_price_incl_tax);
+    expect(line.actual_charge).toBe(row.final_line_price_incl_tax);
+    expect(line.unit_price).toBe(row.original_price_incl_tax);
+  });
+});

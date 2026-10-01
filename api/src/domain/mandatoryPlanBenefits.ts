@@ -64,6 +64,16 @@ export interface MandatorySellableItem {
   billing_frequency: string | null;
   status: string;
   mandatory: boolean | number;
+  /**
+   * #916 — the item's price columns, so an implicit row quotes its Original and
+   * Final Price like a stored one. Optional because a caller that does not
+   * price the section (the write path's own validation) has no reason to read
+   * them; a row built without them reports no price, which reads as "—" rather
+   * than as €0.00.
+   */
+  amount?: string | number | null;
+  tax_behavior?: string | null;
+  tax_rate_percent?: string | number | null;
 }
 
 /** `tinyint(1)` from MySQL, `boolean` from a literal — one place to read it. */
@@ -130,6 +140,12 @@ export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
       gym_charge_billing_frequency: item.billing_frequency,
       gym_charge_status: item.status,
       gym_charge_mandatory: 1,
+      // #916: the same three price columns a stored row carries from its own
+      // join, under the same names, so one pricing pass serves both kinds of
+      // row and an implicit item cannot end up quoted differently.
+      gym_charge_amount: item.amount ?? null,
+      gym_charge_tax_behavior: item.tax_behavior ?? null,
+      gym_charge_tax_rate_percent: item.tax_rate_percent ?? null,
       implicit: true,
       // #896 stage 2: no row exists, so nothing was configured — the item is
       // included at its own price until someone saves the section and edits it.

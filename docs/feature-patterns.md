@@ -1485,6 +1485,20 @@ Reference implementation: `apps/admin/src/components/BillingDurationSummary.tsx`
 
 ---
 
+## Sections That Must Read as One Table (#916)
+
+When one card carries several sections listing the *same kind of row* — a Membership Plan's One-off / Session / Period Benefits — they are one data set split by meaning, not three tables. Three independently laid-out tables put `QUANTITY` at a different horizontal position in each section, which is what makes them unreadable together.
+
+- **Declare the columns once, and take the flags from the page.** `SELLABLE_ITEM_BENEFIT_COLUMNS` in `apps/admin/src/components/SellableItemBenefits.tsx` is the whole grid — key, label key, width, alignment, in the order a ticket fixes — and `sellableItemBenefitColumns({ showFrequency, showAction, showPrices })` is called with the *page's* flags rather than the section's. Called the same way three times it can only answer the same grid, which is what makes the positions identical; a per-section flag is how they drift apart again.
+- **A column a section has no value for keeps its cell.** Render `—`, never `showFrequency: false` for the two sections whose items have no frequency: dropping the column shifts every column after it and the sections stop lining up. Adding the column also means adding the locale keys the newly visible values need (`frequency_once`, `frequency_per_session`) — next-intl prints a missing key verbatim.
+- **`table-layout: fixed` is what makes the declaration hold.** Without it a long name widens its own cell and the section falls out of line with the one above it. One `<colgroup>` from the declaration, `minWidth` from the sum of the fixed widths, and an `overflow-x: auto` wrapper so a narrow viewport scrolls instead of squashing (#637's answer for a list page).
+- **Money in such a table is the server's.** Two amounts per row — what the item normally costs and what it costs here — are computed once, server-side, over the *existing* pricing function (`applyLineBenefit()` through `api/src/domain/planBenefitPrices.ts`), so the table cannot quote a line differently from the simulation beside it; the page formats and does no arithmetic, tax least of all (#817). An item with no price reads `—`; €0.00 would claim it is free.
+- **Report the unit and the line, when a quantity can make them differ.** "The item's price" and "what the line bills" are two questions. Quote the item's own price as the column figure and the line total under it only when the quantity makes the two differ, so a quantity-5 row can never quote €25 next to a billing event charging €125.
+
+Reference implementation: `apps/admin/src/components/SellableItemBenefits.tsx` (`SELLABLE_ITEM_BENEFIT_COLUMNS`, `SellableItemBenefitView`) + `api/src/domain/planBenefitPrices.ts`.
+
+---
+
 ## Two Screens, One Themed Action Button (#901)
 
 The control half of the same problem: when two cards carry the *same action* and it looks different on each (the subsection `Edit` button — a filled `btnSmall('#6c63ff')` on Promotions, a bare brand-coloured text link on Plans), extract the button, not a second stylesheet.
