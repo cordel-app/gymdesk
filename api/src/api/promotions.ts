@@ -6,6 +6,11 @@ import { insertAndFetch } from '../infra/db-helpers';
 import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
 import { PromotionBenefitAction } from '../domain/promotionBenefits';
 import { PROMOTION_LIFECYCLE_STATUSES } from '../domain/promotionLifecycle';
+import {
+  DEFAULT_PROMOTION_TARGET,
+  describePromotionTargets,
+  isPromotionTarget,
+} from '../domain/promotionTarget';
 
 const MEMBERSHIP_FEE_ACTIONS: PromotionBenefitAction[] = ['no_benefit', 'waive', 'percentage_discount', 'fixed_discount', 'fixed_price'];
 
@@ -82,6 +87,7 @@ promotionsRouter.get('/', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT p.id, p.gym_id, p.name, p.description, p.starts_at, p.ends_at,
               p.stackable, p.only_applicable_for_new_members,
+              p.applies_to,
               p.lifecycle_status, p.created_at, p.deleted_at,
               p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
               p.created_by_membership_id,
@@ -207,13 +213,19 @@ function validateBody(body: any) {
   if (body.lifecycle_status && !LIFECYCLE_STATUSES.includes(body.lifecycle_status)) {
     return `lifecycle_status must be one of: ${LIFECYCLE_STATUSES.join(', ')}`;
   }
+  // #926: an absent `applies_to` means the default (every client that predates
+  // the column), but a value that is present has to be one of the two — the
+  // CHECK would otherwise answer with a 500 from the database.
+  if (body.applies_to != null && !isPromotionTarget(body.applies_to)) {
+    return `applies_to must be one of: ${describePromotionTargets()}`;
+  }
   return null;
 }
 
 promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
-          lifecycle_status, free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
+          applies_to, lifecycle_status, free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
   if (!name?.trim() || !starts_at || !ends_at) {
     return res.status(400).json({ error: 'name, starts_at and ends_at are required' });
   }
@@ -224,8 +236,9 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const row = await insertAndFetch(
       `INSERT INTO promotions
          (gym_id, name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
-          lifecycle_status, created_by_membership_id, free_months, paid_months, bonus_months, pay_beforehand_months)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          applies_to, lifecycle_status, created_by_membership_id, free_months, paid_months, bonus_months,
+          pay_beforehand_months)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         gymId, name.trim(), description ?? null,
         new Date(starts_at), new Date(ends_at),
@@ -234,6 +247,9 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
         // API client that predates the flag creates promotions restricted to
         // new members, the same value the migration backfilled onto existing rows.
         (only_applicable_for_new_members ?? true) ? 1 : 0,
+        // #926: omitted means a Membership Plan Promotion — what every
+        // Promotion was before the column existed, and the column's own DEFAULT.
+        applies_to ?? DEFAULT_PROMOTION_TARGET,
         lifecycle_status ?? 'active',
         gymMembershipId ?? null,
         free_months ?? null,
@@ -253,7 +269,7 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const err = validateBody(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
-          lifecycle_status, free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
+          applies_to, lifecycle_status, free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
   try {
     const { rows: existingRows } = await db.query(
       "SELECT paid_months, pay_beforehand_months FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
@@ -274,6 +290,12 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         ends_at               = COALESCE(?, ends_at),
         stackable             = IF(?, ?, stackable),
         only_applicable_for_new_members = IF(?, ?, only_applicable_for_new_members),
+        -- #926: keyed on whether the request supplied the field, not on the
+        -- value, so a client that never names the target cannot move it.
+        -- Switching it writes this column and nothing else: the Membership Fee
+        -- Benefit row and the promotion_membership_plans rows stay exactly as
+        -- stored (§4), so switching back shows what was there before.
+        applies_to            = IF(?, ?, applies_to),
         lifecycle_status      = COALESCE(?, lifecycle_status),
         free_months           = IF(?, ?, free_months),
         paid_months           = IF(?, ?, paid_months),
@@ -287,6 +309,7 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         ends_at ? new Date(ends_at) : null,
         'stackable' in req.body ? 1 : 0, stackable ? 1 : 0,
         'only_applicable_for_new_members' in req.body ? 1 : 0, only_applicable_for_new_members ? 1 : 0,
+        applies_to != null ? 1 : 0, applies_to ?? DEFAULT_PROMOTION_TARGET,
         lifecycle_status ?? null,
         'free_months' in req.body ? 1 : 0, free_months ?? null,
         'paid_months' in req.body ? 1 : 0, paid_months ?? null,
@@ -343,11 +366,16 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       const { insertId } = await tx.query(
         `INSERT INTO promotions
            (gym_id, name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
-            lifecycle_status, created_by_membership_id, free_months, paid_months, bonus_months, pay_beforehand_months)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            applies_to, lifecycle_status, created_by_membership_id, free_months, paid_months, bonus_months,
+            pay_beforehand_months)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId, copyName, src.description, src.starts_at, src.ends_at,
           src.stackable, src.only_applicable_for_new_members,
+          // #926: Duplicate is a copy, not a re-configuration — the target
+          // comes along with the Membership Fee Benefit and the Suitable
+          // Membership Plans rows below it.
+          src.applies_to,
           src.lifecycle_status, gymMembershipId ?? null,
           src.free_months, src.paid_months, src.bonus_months, src.pay_beforehand_months,
         ],

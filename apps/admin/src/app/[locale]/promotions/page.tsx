@@ -29,6 +29,13 @@ import {
 import { PromotionDetailModal } from './PromotionDetailModal';
 import { mfDurationOptions, promotionTimelineMonths } from './membershipFeeDuration';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
+import {
+  DEFAULT_PROMOTION_TARGET,
+  PROMOTION_TARGET_OPTIONS,
+  PromotionTarget,
+  promotionTargetOrDefault,
+  targetsMembershipPlan,
+} from '@/lib/promotionTargets';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +47,9 @@ interface Promo {
   ends_at: string;
   stackable: number;
   only_applicable_for_new_members: number;
+  // #926: which of the two things this Promotion is about. Membership Plan for
+  // every Promotion that predates the column (migration 204's default).
+  applies_to: PromotionTarget;
   lifecycle_status: PromotionLifecycleStatus;
   created_at: string;
   created_by_name: string | null;
@@ -220,6 +230,9 @@ function emptyEditForm(promo?: Promo) {
     stackable: promo ? !!promo.stackable : false,
     // #633: checked by default on create; on edit it mirrors the stored value.
     only_applicable_for_new_members: promo ? !!promo.only_applicable_for_new_members : true,
+    // #926: a new Promotion starts on Membership Plan, which is the behaviour
+    // every Promotion had before the target existed.
+    applies_to: promo ? promotionTargetOrDefault(promo.applies_to) : DEFAULT_PROMOTION_TARGET,
     lifecycle_status: (promo?.lifecycle_status ?? 'active') as PromotionLifecycleStatus,
     free_months: promo?.free_months != null ? String(promo.free_months) : '',
     paid_months: promo?.paid_months != null ? String(promo.paid_months) : '',
@@ -600,6 +613,27 @@ export default function PromotionsPage() {
 
   // ─── Save ────────────────────────────────────────────────────────────────────
 
+  // #926: the target the card is currently showing — the radio's value while
+  // the main configuration is being edited, the stored one otherwise. Both
+  // halves of the card ask this, so a section can never be visible in one and
+  // missing from the other, and switching the radio updates the card at once
+  // (§4) without saving anything.
+  function cardTargetsMembershipPlan(promo: Promo) {
+    return targetsMembershipPlan(isEditingCard(promo.id) ? editForm.applies_to : promo.applies_to);
+  }
+
+  // Picking a target also closes the Membership Fee editor when that section is
+  // the one the switch hides — leaving it open would keep an editor on screen
+  // for a section the Promotion no longer shows. The draft is discarded, not
+  // saved: nothing about the benefit is written by switching the target.
+  function selectTarget(target: PromotionTarget) {
+    setEditForm({ ...editForm, applies_to: target });
+    if (!targetsMembershipPlan(target) && openSection === 'membership_fee') {
+      setOpenSection(null);
+      setSectionError(null);
+    }
+  }
+
   function validateMainForm(): string | null {
     if (!editForm.name.trim() || !editForm.starts_at || !editForm.ends_at) return t('error_required');
     if (new Date(editForm.starts_at) > new Date(editForm.ends_at)) return t('error_dates');
@@ -614,6 +648,7 @@ export default function PromotionsPage() {
       ends_at: editForm.ends_at,
       stackable: editForm.stackable,
       only_applicable_for_new_members: editForm.only_applicable_for_new_members,
+      applies_to: editForm.applies_to,
       lifecycle_status: editForm.lifecycle_status,
       free_months: editForm.free_months !== '' ? parseInt(editForm.free_months, 10) : null,
       paid_months: editForm.paid_months !== '' ? parseInt(editForm.paid_months, 10) : null,
@@ -635,10 +670,17 @@ export default function PromotionsPage() {
       const id = created.id;
       setHasNewRow(false);
 
-      await apiFetch(`/promotions/${id}/plans`, {
-        method: 'PUT',
-        body: JSON.stringify({ membership_plan_ids: plansDraft }),
-      });
+      // #926: the two Membership-Plan-specific sub-resources are written only
+      // while the Promotion targets a Membership Plan — the sections the form
+      // did not show are not configuration the save may invent.
+      const forPlan = targetsMembershipPlan(editForm.applies_to);
+
+      if (forPlan) {
+        await apiFetch(`/promotions/${id}/plans`, {
+          method: 'PUT',
+          body: JSON.stringify({ membership_plan_ids: plansDraft }),
+        });
+      }
 
       // #550: Session / One-off / Periodical Benefits, keyed to a real
       // Sellable Item — server-side classification (classifySellableItem())
@@ -656,7 +698,7 @@ export default function PromotionsPage() {
         body: JSON.stringify({ items: toBenefitItems(periodicalDraft) }),
       });
 
-      if (mfDraft) {
+      if (forPlan && mfDraft) {
         await apiFetch(`/promotions/${id}/membership-fee-benefit`, {
           method: 'PUT',
           body: JSON.stringify(membershipFeeBody(mfDraft, mfDraft.duration_months)),
@@ -682,11 +724,18 @@ export default function PromotionsPage() {
     setEditError(null);
     try {
       await apiFetch(`/promotions/${promoId}`, { method: 'PUT', body: JSON.stringify(mainBody()) });
-      await apiFetch(`/promotions/${promoId}/plans`, {
-        method: 'PUT',
-        body: JSON.stringify({ membership_plan_ids: plansDraft }),
-      });
-      await clampSavedMembershipFeeDuration(promoId);
+      // #926: while the target is a Sellable Item neither Membership-Plan-specific
+      // sub-resource is written. The Suitable Membership Plans `PUT` is
+      // replace-all, so sending the (hidden, unedited) draft would be the
+      // silent migration §4 forbids — switching the target back has to show the
+      // plans that were selected before it.
+      if (targetsMembershipPlan(editForm.applies_to)) {
+        await apiFetch(`/promotions/${promoId}/plans`, {
+          method: 'PUT',
+          body: JSON.stringify({ membership_plan_ids: plansDraft }),
+        });
+        await clampSavedMembershipFeeDuration(promoId);
+      }
       // #897: saving leaves Edit mode but keeps the card open, so the staff
       // member lands on the read-only view of what they just saved. The
       // sub-resources are reloaded because that view renders off their caches.
@@ -1109,10 +1158,40 @@ export default function PromotionsPage() {
           </div>
         </div>
 
+        {/* Applies To (#926) — the two targets are mutually exclusive, so this
+            is a radio group and not two checkboxes. It decides which
+            configuration below is relevant: a Promotion on a Sellable Item has
+            no membership fee and no Plan eligibility, so the Membership Fee
+            Promotion and Suitable Membership Plans sections are not shown for
+            it. Switching back shows them again with what was stored — nothing
+            is migrated or cleared on a switch (§4), which is also why
+            `handleSaveMain` leaves `promotion_membership_plans` alone while the
+            target is `sellable_item` instead of writing an empty list. */}
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_applies_to')}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {PROMOTION_TARGET_OPTIONS.map((opt) => (
+              <label key={opt.value} style={{ ...checkboxLabelSt, cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="promotion-applies-to"
+                  value={opt.value}
+                  checked={editForm.applies_to === opt.value}
+                  onChange={() => selectTarget(opt.value)}
+                />
+                {t(opt.labelKey as any)}
+              </label>
+            ))}
+          </div>
+        </div>
+
         {/* Suitable Membership Plans (#554) — which active plans this promotion
             can be applied to. Backed by promotion_membership_plans; eligibility
             is enforced server-side both here (active-plan validation on save)
-            and at apply-time (membership-promotions.ts checks this same table). */}
+            and at apply-time (membership-promotions.ts checks this same table).
+            #926: Membership-Plan-specific, so it is not shown while the target
+            is a Sellable Item. */}
+        {targetsMembershipPlan(editForm.applies_to) && (
         <div style={subSectionSt}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <p style={sectionLabelSt}>{t('section_suitable_plans')}</p>
@@ -1151,6 +1230,7 @@ export default function PromotionsPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* Billing & Duration */}
         <div style={subSectionSt}>
@@ -1397,7 +1477,11 @@ export default function PromotionsPage() {
             editor. Promotion benefits are configured only through the
             Session / One-off / Periodical and Membership Fee sections below. */}
         {SELLABLE_BENEFIT_SECTIONS.map((cfg) => renderSellableBenefitSection(promo, cfg))}
-        {renderMembershipFeeSection(promo)}
+        {/* #926: the membership fee belongs to a Membership Plan, so this
+            section is absent — not disabled — for a Sellable Item Promotion.
+            The stored benefit row is untouched and comes back with the section
+            if the target is switched back. */}
+        {cardTargetsMembershipPlan(promo) && renderMembershipFeeSection(promo)}
 
         {/* The two projections, always read-only and kept last. They answer
             different questions: the Example Timeline is one row per period of
@@ -1429,10 +1513,12 @@ export default function PromotionsPage() {
             })}
           </div>
         ))}
-        <div style={subSectionSt}>
-          {renderSectionHeader('section_membership_fee_benefits', null)}
-          {renderMembershipFeeEditor(NEW_ID)}
-        </div>
+        {targetsMembershipPlan(editForm.applies_to) && (
+          <div style={subSectionSt}>
+            {renderSectionHeader('section_membership_fee_benefits', null)}
+            {renderMembershipFeeEditor(NEW_ID)}
+          </div>
+        )}
         {renderTimeline()}
         {renderSectionActions(handleCreate)}
       </div>
@@ -1441,6 +1527,8 @@ export default function PromotionsPage() {
 
   function renderMainView(promo: Promo) {
     const associatedPlans = cachedPlans[promo.id] ?? [];
+    const target = promotionTargetOrDefault(promo.applies_to);
+    const targetLabelKey = PROMOTION_TARGET_OPTIONS.find((o) => o.value === target)!.labelKey;
 
     const free = promo.free_months ?? 0;
     const paid = promo.paid_months ?? 0;
@@ -1449,6 +1537,14 @@ export default function PromotionsPage() {
 
     return (
       <>
+
+        {/* #926: read-only, because `⋮ → Edit` is the single entry point into
+            everything this card configures — the same field the radio group
+            writes, shown as a value. */}
+        <div style={subSectionSt}>
+          <p style={sectionLabelSt}>{t('section_applies_to')}</p>
+          <p style={{ margin: '2px 0', fontSize: 13 }}>{t(targetLabelKey as any)}</p>
+        </div>
 
         {/* Billing & Duration summary */}
         {(free > 0 || paid > 0 || bonus > 0) && (
@@ -1469,6 +1565,9 @@ export default function PromotionsPage() {
           </div>
         )}
 
+        {/* #926: Membership-Plan-specific, so absent for a Sellable Item
+            Promotion exactly as it is in the form above. */}
+        {targetsMembershipPlan(target) && (
         <div style={subSectionSt}>
           <p style={sectionLabelSt}>{t('section_suitable_plans')}</p>
           {associatedPlans.length === 0
@@ -1481,6 +1580,7 @@ export default function PromotionsPage() {
                 <p key={p.id} style={{ margin: '2px 0', fontSize: 13 }}>{p.name}</p>
               ))}
         </div>
+        )}
 
       </>
     );

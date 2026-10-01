@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { PROMOTION_TARGET_OPTIONS, promotionTargetOrDefault } from '@/lib/promotionTargets';
 
 interface PromoDetail {
   id: number;
@@ -14,6 +15,8 @@ interface PromoDetail {
   ends_at: string;
   stackable: number;
   only_applicable_for_new_members: number;
+  // #926: a Promotion applies to a Membership Plan or to a Sellable Item.
+  applies_to: string | null;
   lifecycle_status: string;
   created_at: string;
   created_by_name: string | null;
@@ -64,6 +67,10 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
             {field(t('detail_description'), detail.description)}
             {field(t('detail_starts'), detail.starts_at?.slice(0, 10))}
             {field(t('detail_ends'), detail.ends_at?.slice(0, 10))}
+            {field(
+              t('detail_applies_to'),
+              t(PROMOTION_TARGET_OPTIONS.find((o) => o.value === promotionTargetOrDefault(detail.applies_to))!.labelKey as any),
+            )}
             {field(t('detail_lifecycle_status'), detail.lifecycle_status ? tStatus(detail.lifecycle_status as any) : null)}
             {field(t('detail_stackable'), detail.stackable ? t('yes') : t('no'))}
             {field(t('detail_only_applicable_for_new_members'), detail.only_applicable_for_new_members ? t('yes') : t('no'))}
