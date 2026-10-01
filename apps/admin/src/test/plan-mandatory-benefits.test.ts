@@ -98,8 +98,9 @@ describe('the shared benefit editor', () => {
     // The picker is the other half of that ternary, so there is exactly one of
     // it. #896 stage 4 added a second <select> to the grid — the line's pricing
     // treatment — which a mandatory row *does* get: Mandatory says the item must
-    // exist, never what it costs.
-    expect(componentSrc.match(/<select/g) ?? []).toHaveLength(2);
+    // exist, never what it costs. #918 added a third, the Session Benefit's
+    // renewal Frequency, which a mandatory row gets for the same reason.
+    expect(componentSrc.match(/<select/g) ?? []).toHaveLength(3);
     expect(componentSrc).toContain('{benefitActionsFor(benefitContext).map((a) => (');
   });
 
