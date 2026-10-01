@@ -24,6 +24,23 @@ A list page has two pieces of chrome, and neither is written per page any more.
 
 Combine it with the #637 column rule above (Inline row CRUD): a card list's header cells and row cells spread one `LIST_COLUMNS`-derived grid, both live inside one `overflow-x: auto` wrapper so they scroll together, and the header band is the list's own first row rather than a page-level toolbar above it. Training Plans (#724) is the worked example, and Members (#928) is the same conversion done a second time — a page whose rows were `DataTable` rows becomes cards wearing the identical chrome, with the whole collapsed row as the expand control (`role="button"`, `aria-expanded`, Enter/Space) and a decorative chevron beside the ⋮ menu in the Actions cell, never a second control nested inside it: filters below the page header, a list header that belongs to the list, a secondary line inside a cell (member + description under the plan name, the end date under the start date) where the row carries more values than the ticket's column set — never a column the header does not name.
 
+## A card's own field chrome (#929)
+
+`listChrome.ts` stops at the row. What a page still had to invent for itself was the *inside* of an expanded card: its section headers, its label/value pairs, its inputs, its help and error lines, its Save/Cancel pair. The Member card had nine files doing exactly that, each with slightly different numbers — a 13px input on a 6px radius in one section and a 14px one on a 4px radius in the next, two spellings of the same uppercase section header, and a `#6c63ff` Save button no Theme could reach.
+
+**`apps/admin/src/components/formChrome.ts` is the one declaration.** A card spreads its objects instead of restating them: `cardSectionLabelStyle` / `cardSubLabelStyle` (the two heading levels), `cardSectionStyle` / `cardSectionDividedStyle` (a section's spacing, and the hairline that separates it from the one above — the first section takes the undivided one), `innerCardStyle`, `inlineEditorStyle` / `inlineEditorTitleStyle`, `cardMutedTextStyle` / `cardHintStyle`, `formFieldLabelStyle`, `formControlStyle` (the one box an `<input>`, a `<select>` and a `<textarea>` all wear), `formValueStyle`, `formCheckboxLabelStyle`, `formHelpTextStyle` / `formFieldErrorStyle` / `formErrorStyle`, `formActionsRowStyle` / `inlineActionsRowStyle`, `secondaryBtnStyle` / `secondaryBtnSmall`, `dashedAddBtnStyle`, `cardTextLinkStyle`.
+
+Four rules come with it:
+
+- **A read-only value occupies its input's box.** `formValueStyle` carries `formControlStyle`'s padding, type size and border *width* (transparent), because a value flush against the label under a label whose input is inset by 10px moves every field sideways the moment `⋮ → Edit` opens. Pin it in the test by comparing the two objects, not by eyeballing the page.
+- **Both modes render the same card.** The read-only section and the inline form put their fields in the same `innerCardStyle`, inside the same section header, laid out by the same layout module (`MemberProfileLayout`, #882) — the mode swaps the contents of a cell and nothing else.
+- **A primary action is the Theme's.** Save/Book/Add take `primaryBtnStyle()`/`primaryBtnSmall()` (#912) and the button beside them takes `secondaryBtnStyle`/`secondaryBtnSmall`, which is the same geometry in neutral colours, so a pair is one pair. A hardcoded hex (a lilac Save, a black one, a green Book) is the drift this removes.
+- **Keep what is genuinely the section's.** A Billing Events ledger row, a weekly slot grid, a simulation's totals line are structure, not chrome — they stay in their own file. Only the things *every* card has move here, and a borrowed object that needs one tweak is spread (`{ ...innerCardStyle, padding: '8px 12px' }`), never re-declared.
+
+**Source-scanning test, the shape #879/#901 use.** `apps/admin/src/test/member-card-chrome.test.ts` lists every file the card is built from, fails if the directory grows a tenth one that is not listed, asserts none of them restates a section header, an input border, a card border or a primary colour, and asserts the shared objects' own relationships directly.
+
+Reference implementation: `apps/admin/src/components/formChrome.ts` + `apps/admin/src/app/[locale]/members/`.
+
 ---
 
 ## Standard Error Response

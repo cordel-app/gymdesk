@@ -7,6 +7,22 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { primaryBtnSmall } from '@/components/ui';
+import {
+  cardHintStyle,
+  cardMutedTextStyle,
+  cardSectionDividedStyle,
+  cardSectionLabelStyle,
+  cardSectionStyle,
+  cardSubLabelStyle,
+  cardTextLinkStyle,
+  formControlStyle,
+  formFieldErrorStyle,
+  formFieldLabelStyle,
+  inlineActionsRowStyle,
+  innerCardStyle,
+  secondaryBtnSmall,
+} from '@/components/formChrome';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { MemberBillingSimulation } from './MemberBillingSimulation';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
@@ -277,7 +293,7 @@ export function MemberExpandedRow({
           While that form is open above, this section steps aside rather than
           showing the same Profile a second time. */}
       {!editing && (
-        <Section label={t('members.section_profile')}>
+        <Section label={t('members.section_profile')} divider={false}>
           <div style={card}>
             <MemberProfileLayout
               fieldLabel={(f) => t(`members.${f.labelKey}`)}
@@ -303,7 +319,7 @@ export function MemberExpandedRow({
 
       {/* Account (Clerk status) */}
       {clerkStatus && (
-        <Section label={t('members.section_account')}>
+        <Section label={t('members.section_account')} divider={!editing}>
           <StatusBadge
             status={clerkStatus.status}
             label={
@@ -476,25 +492,27 @@ export function MemberExpandedRow({
                     </div>
                   </div>
                   {extendingId === pkg.id && (
-                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f0f0f0' }}>
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--gd-card-border, #e8e8ed)' }}>
                       <div style={fieldLabelStyle}>{t('members.extend_expiration_title')}</div>
                       <Field label={t('members.extend_expiration_current')}>{fmtDate(pkg.expires_at)}</Field>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                        <span style={{ color: '#888', minWidth: 120, fontSize: 13 }}>{t('members.extend_expiration_new')}</span>
+                        <span style={{ ...cardHintStyle, margin: 0, minWidth: 120 }}>{t('members.extend_expiration_new')}</span>
                         <input
                           type="date"
                           value={extendValue}
                           onChange={(e) => setExtendValue(e.target.value)}
-                          style={{ padding: '4px 8px', fontSize: 13, border: '1px solid #d0d0d0', borderRadius: 4 }}
+                          style={{ ...formControlStyle, width: 'auto' }}
                         />
                       </div>
-                      {extendError && <p style={{ color: '#c0392b', fontSize: 12, margin: '6px 0 0' }}>{extendError}</p>}
-                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                        <button onClick={cancelExtend} disabled={extendSaving} style={editBtnStyle}>{t('members.cancel')}</button>
+                      {extendError && <p style={formFieldErrorStyle}>{extendError}</p>}
+                      {/* The section's own Save is a primary action and takes the
+                          Theme's primary-button colours (#912), not a black box. */}
+                      <div style={inlineActionsRowStyle}>
+                        <button onClick={cancelExtend} disabled={extendSaving} style={secondaryBtnSmall}>{t('members.cancel')}</button>
                         <button
                           onClick={() => saveExtend(pkg)}
                           disabled={extendSaving || !extendValue}
-                          style={{ ...editBtnStyle, background: '#111', color: '#fff', borderColor: '#111' }}
+                          style={primaryBtnSmall()}
                         >
                           {extendSaving ? t('members.saving') : t('members.save_changes')}
                         </button>
@@ -587,10 +605,19 @@ export function MemberExpandedRow({
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * One section of the Member card: its header, then its contents.
+ *
+ * #929 §4 — the sections are separated by the card's own hairline rather than by
+ * whitespace alone, and the first one carries none (`divider={false}`), so the
+ * card reads as one structure instead of a stack of independent fields. The
+ * header, the spacing and the rule are `formChrome`'s, shared with the Edit
+ * form above and with every other card.
+ */
+function Section({ label, children, divider = true }: { label: string; children: React.ReactNode; divider?: boolean }) {
   return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={sectionLabelStyle}>{label}</div>
+    <div style={divider ? cardSectionDividedStyle : cardSectionStyle}>
+      <div style={cardSectionLabelStyle}>{label}</div>
       {children}
     </div>
   );
@@ -599,7 +626,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 function Field({ label, children, multiline }: { label: string; children: React.ReactNode; multiline?: boolean }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: multiline ? 'flex-start' : 'center', fontSize: 14, marginBottom: 4 }}>
-      <span style={{ color: '#888', minWidth: 120, fontSize: 13, flexShrink: 0 }}>{label}</span>
+      <span style={{ ...cardMutedTextStyle, minWidth: 120, flexShrink: 0 }}>{label}</span>
       {/* #797: Notes is free text of any length — it wraps and keeps the author's
           line breaks instead of stretching the expanded card sideways. */}
       <span style={multiline ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', minWidth: 0 } : undefined}>
@@ -664,37 +691,25 @@ function fmtDate(iso: string): string {
 /** #797: the empty-value convention of the Members screens (see the list columns). */
 const EMPTY_VALUE = '\u2014';
 
+// #929: the card's chrome is `components/formChrome.ts` — this file aliases the
+// shared objects rather than restating them, so the Member card, the Edit form
+// above it and every other card share one look. Only what is genuinely this
+// card's own (the body inset, the Billing Events ledger rows) is declared here.
 const panel: React.CSSProperties = { padding: '16px 24px' };
-const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
-const card: React.CSSProperties = {
-  background: '#fff', border: '1px solid #e8e8ed', borderRadius: 6,
-  padding: '10px 14px', marginBottom: 8,
-};
-const sectionLabelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
-  letterSpacing: '0.07em', marginBottom: 8,
-};
-const subLabelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase',
-  letterSpacing: '0.05em', marginBottom: 4,
-};
-const fieldLabelStyle: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 2 };
-const editBtnStyle: React.CSSProperties = {
-  background: 'none', border: '1px solid #d0d0d0', borderRadius: 4,
-  padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: '#444', flexShrink: 0,
-};
-const retryBtn: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer',
-  fontSize: 13, padding: 0, textDecoration: 'underline',
-};
+const dim = cardMutedTextStyle;
+const card = innerCardStyle;
+const subLabelStyle = cardSubLabelStyle;
+const fieldLabelStyle = formFieldLabelStyle;
+const editBtnStyle: React.CSSProperties = { ...secondaryBtnSmall, flexShrink: 0 };
+const retryBtn = cardTextLinkStyle;
 const eventRow: React.CSSProperties = {
   display: 'flex', alignItems: 'flex-start', gap: 6,
-  borderBottom: '1px solid #ebebef', paddingBottom: 8, marginBottom: 8,
+  borderBottom: '1px solid var(--gd-card-border, #e8e8ed)', paddingBottom: 8, marginBottom: 8,
 };
 const chevronBtn: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer', color: '#888',
   fontSize: 10, padding: '2px 4px', lineHeight: 1, flexShrink: 0, marginTop: 2,
 };
 const eventDetail: React.CSSProperties = {
-  marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0',
+  marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--gd-card-border, #e8e8ed)',
 };

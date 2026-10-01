@@ -48,7 +48,9 @@ const pageSrc = read('page.tsx');
  * control" is asserted about this section, not about the whole card.
  */
 function profileSection(): string {
-  const start = expandedSrc.indexOf("<Section label={t('members.section_profile')}>");
+  // The opening tag carries props now (#929 gave the first section
+  // `divider={false}`), so match up to the label rather than the whole tag.
+  const start = expandedSrc.indexOf("<Section label={t('members.section_profile')}");
   expect(start, 'no PROFILE section in the expanded Member row').toBeGreaterThan(-1);
   const end = expandedSrc.indexOf('</Section>', start);
   expect(end).toBeGreaterThan(start);
