@@ -139,8 +139,14 @@ const SELLABLE_BENEFIT_SECTIONS: {
   addKey: string;
   showFrequency: boolean;
 }[] = [
-  { section: 'session', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: false },
-  { section: 'oneoff', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: false },
+  // #919/#920: `showFrequency` is true for all three, not only the Periodical
+  // section. The flag is the *page's* now rather than the section's — one grid
+  // for the three, so `QUANTITY`, `FREQUENCY` and `PROMOTION` sit at the same
+  // horizontal position in each, and a Session or One-off item whose Sellable
+  // Item carries no frequency keeps its cell with a "—" instead of letting the
+  // columns after it shift. Same answer #916 gave the Membership Plan card.
+  { section: 'session', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: true },
+  { section: 'oneoff', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: true },
   { section: 'periodical', titleKey: 'section_period_benefits', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', showFrequency: true },
 ];
 
@@ -935,6 +941,12 @@ export default function PromotionsPage() {
         rows={rows}
         showFrequency={showFrequency}
         benefitContext="promotion"
+        // #920: Regular Price and Final Price, both VAT-inclusive and both the
+        // server's (`withSellableItemBenefitPrices`) — the page does no
+        // arithmetic of its own (#817). The two columns are labelled from the
+        // `promotions` namespace, which is why the shared `col_original_price`
+        // reads *Regular Price* here and *Original price* on the Plans card.
+        showPrices
       />
     );
   }
@@ -1144,7 +1156,7 @@ export default function PromotionsPage() {
       {mfDraft && (
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 70px 120px 80px 55px', gap: '3px 8px', alignItems: 'center' }}>
           <span style={colHeaderSt}>{t('col_benefit_type')}</span>
-          <span style={colHeaderSt}>{t('col_duration_months')}</span>
+          <span style={colHeaderSt}>{t('col_duration')}</span>
           <span style={colHeaderSt}>{t('col_action')}</span>
           <span style={colHeaderSt}>{t('col_value')}</span>
           <span style={colHeaderSt}>{t('col_enabled')}</span>
@@ -1214,7 +1226,7 @@ export default function PromotionsPage() {
         <thead>
           <tr>
             <th style={thSt}>{t('col_benefit_type')}</th>
-            <th style={thSt}>{t('col_duration_months')}</th>
+            <th style={thSt}>{t('col_duration')}</th>
             <th style={thSt}>{t('col_action')}</th>
             <th style={thSt}>{t('col_value')}</th>
             <th style={thSt}>{t('col_enabled')}</th>
