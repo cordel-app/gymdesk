@@ -309,6 +309,11 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         ends_at ? new Date(ends_at) : null,
         'stackable' in req.body ? 1 : 0, stackable ? 1 : 0,
         'only_applicable_for_new_members' in req.body ? 1 : 0, only_applicable_for_new_members ? 1 : 0,
+        // Keyed on the value rather than on `'applies_to' in req.body` like its
+        // siblings, deliberately: the column is NOT NULL, so an explicit
+        // `applies_to: null` can only mean "not supplied" — reading it as
+        // "supplied" would write the default and silently re-target a Sellable
+        // Item Promotion as a Membership Plan one.
         applies_to != null ? 1 : 0, applies_to ?? DEFAULT_PROMOTION_TARGET,
         lifecycle_status ?? null,
         'free_months' in req.body ? 1 : 0, free_months ?? null,

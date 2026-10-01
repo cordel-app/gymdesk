@@ -10,6 +10,7 @@ import {
   createTestMembership,
   request,
 } from './helpers';
+import { PROMOTION_TARGETS } from '../domain/promotionTarget';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -1514,10 +1515,15 @@ describe('applies_to', () => {
     expect(res.body.applies_to).toBe('membership_plan');
   });
 
-  it('POST stores sellable_item when asked for it', async () => {
-    const res = await post({ applies_to: 'sellable_item' });
-    expect(res.status).toBe(201);
-    expect(res.body.applies_to).toBe('sellable_item');
+  // Every accepted target, not just the new one: this is the only test that
+  // exercises `chk_promotions_applies_to` itself, so a value the domain module
+  // accepts and the CHECK does not has to fail here rather than in production.
+  it('POST stores every target the domain module accepts', async () => {
+    for (const target of PROMOTION_TARGETS) {
+      const res = await post({ applies_to: target });
+      expect(res.status, `${target}: ${JSON.stringify(res.body)}`).toBe(201);
+      expect(res.body.applies_to).toBe(target);
+    }
   });
 
   it('POST rejects a target outside the accepted set', async () => {

@@ -43,6 +43,14 @@ const TARGET_CHECK = 'chk_promotions_applies_to';
 /** Mirrors PROMOTION_TARGETS in api/src/domain/promotionTarget.ts. */
 const TARGETS = ['membership_plan', 'sellable_item'];
 
+// Exported so `promotion-target.unit.test.ts` can `require()` this file and
+// assert the CHECK admits exactly what the domain module accepts, the way
+// migration 203 exports its own action sets. Without it the "two places" rule
+// has no drift guard: a third target added to `PROMOTION_TARGETS` and to the
+// admin mirror would pass every test and surface as a 500 on save.
+exports.TARGETS = TARGETS;
+exports.TARGET_CHECK = TARGET_CHECK;
+
 exports.up = async (knex) => {
   if (!(await knex.schema.hasColumn('promotions', 'applies_to'))) {
     await knex.schema.alterTable('promotions', (t) => {
@@ -80,10 +88,29 @@ exports.up = async (knex) => {
 };
 
 exports.down = async (knex) => {
+  // Dropping the column would take every configured target with it, and a
+  // Promotion a gym configured as `sellable_item` would come back as a
+  // Membership Plan Promotion — Plan sections visible again, with no record that
+  // it was ever anything else. That is the silent reinterpretation `up`'s note
+  // refuses, so this refuses too, as migration 203's `down` refuses while a
+  // configured benefit action exists: the target is configuration nobody can
+  // reconstruct, and `down` is operator-invoked (`npm run db:migrate:down`),
+  // never run by CI, so a refusal is read by the person who can act on it.
+  if (await knex.schema.hasColumn('promotions', 'applies_to')) {
+    const [[configured]] = await knex.raw(
+      'SELECT COUNT(*) AS cnt FROM promotions WHERE applies_to <> ?',
+      ['membership_plan'],
+    );
+    if (Number(configured.cnt) > 0) {
+      throw new Error(
+        `promotions holds ${configured.cnt} Promotion(s) targeting a Sellable Item — refusing to drop ` +
+        '`applies_to`, because rolling back would silently turn them back into Membership Plan ' +
+        'Promotions. Re-target them deliberately first, then re-run this rollback.',
+      );
+    }
+  }
   // The CHECK goes first: dropping the column it constrains while it exists is
-  // refused by MySQL. Dropping the column takes the stored targets with it,
-  // which is the only thing it can mean — a Promotion with no target column is
-  // a Membership Plan Promotion, exactly as it was before this migration.
+  // refused by MySQL.
   await knex.raw(`ALTER TABLE promotions DROP CHECK ${TARGET_CHECK}`).catch((err) => {
     if (err.errno !== ER_CHECK_CONSTRAINT_NOT_FOUND) throw err;
   });

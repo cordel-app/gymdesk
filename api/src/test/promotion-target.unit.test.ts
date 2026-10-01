@@ -1,13 +1,16 @@
 // #926: what a Promotion applies to — a Membership Plan or a Sellable Item.
 // Pure module, no DB and no HTTP.
 //
-// The value crosses the wire three ways, so this file asserts all three agree:
+// The value crosses the wire four ways, so this file asserts all four agree:
 // the accepted set here, the radio group's mirror in
-// `apps/admin/src/lib/promotionTargets.ts`, and the `applies_to_<target>` locale
-// keys the mirror interpolates (next-intl prints a missing key verbatim). The
-// fourth place is the `chk_promotions_applies_to` CHECK in migration 204, which
-// SQL has to enforce and a unit test cannot see.
+// `apps/admin/src/lib/promotionTargets.ts`, the `applies_to_<target>` locale
+// keys the mirror interpolates (next-intl prints a missing key verbatim), and
+// the set migration 204's `chk_promotions_applies_to` admits — which the
+// migration exports for exactly this reason, as migration 203 exports its own
+// action sets. Without that last assertion a third target added here and to the
+// mirror would pass every test and surface as a 500 from the database on save.
 
+import { createRequire } from 'module';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { describe, expect, it } from 'vitest';
@@ -18,6 +21,11 @@ import {
   isPromotionTarget,
   targetsMembershipPlan,
 } from '../domain/promotionTarget';
+
+const migration = createRequire(__filename)('../infra/migrations/204_promotion_applies_to.js') as {
+  TARGETS: string[];
+  TARGET_CHECK: string;
+};
 
 const ADMIN_SRC = join(__dirname, '..', '..', '..', 'apps', 'admin', 'src', 'lib', 'promotionTargets.ts');
 const LOCALES = ['en', 'es', 'ca'] as const;
@@ -40,6 +48,16 @@ describe('PROMOTION_TARGETS', () => {
 
   it('names the accepted set for the 400 message', () => {
     expect(describePromotionTargets()).toBe('membership_plan, sellable_item');
+  });
+});
+
+describe('migration 204\'s CHECK', () => {
+  it('admits exactly the targets this module accepts, in the same order', () => {
+    expect(migration.TARGETS).toEqual([...PROMOTION_TARGETS]);
+  });
+
+  it('is the constraint the router\'s 400 keeps the database from having to answer', () => {
+    expect(migration.TARGET_CHECK).toBe('chk_promotions_applies_to');
   });
 });
 
