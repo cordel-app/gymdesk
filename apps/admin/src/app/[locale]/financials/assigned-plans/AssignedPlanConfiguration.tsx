@@ -23,8 +23,10 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import {
+  BenefitFrequencyColumn,
   SellableItemBenefitEditor,
   SellableItemBenefitRow,
+  SellableItemBenefitView,
   SellableItemOption,
   toBenefitItems,
 } from '@/components/SellableItemBenefits';
@@ -59,11 +61,29 @@ const BENEFIT_SECTIONS: {
   emptyKey: string;
   addKey: string;
   snapshotKey: keyof Pick<AssignedPlanSnapshot, 'oneoff_benefits' | 'session_benefits' | 'periodical_benefits'>;
+  /**
+   * #924 stage 1: true for all three sections, as on the Membership Plan card
+   * (#916). The column is what a One-off line has no value for, and it must
+   * still occupy its place with a "—" rather than disappear and shift every
+   * column after it — the three sections have to read as one table.
+   */
   showFrequency: boolean;
+  /**
+   * #918/#924 §5 — *which* Frequency the read-only column shows. The Session
+   * section shows the renewal Frequency this assignment was agreed
+   * ("2 sessions every week"), which the snapshot carries; the other two show
+   * the Sellable Item's own billing frequency, as frozen on the line.
+   *
+   * The **editor** stays on the item frequency (the prop's default) whichever
+   * section is open: the assignment's section `PUT` takes `gym_charge_id` +
+   * `quantity` alone and deliberately keeps a kept line's agreed Frequency
+   * (#918), so a control here would be one that changes nothing.
+   */
+  viewFrequencyColumn: BenefitFrequencyColumn;
 }[] = [
-  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'benefits_oneoff', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', snapshotKey: 'oneoff_benefits', showFrequency: false },
-  { section: 'session', endpoint: 'session-benefits', titleKey: 'benefits_session', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', snapshotKey: 'session_benefits', showFrequency: false },
-  { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'benefits_period', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', snapshotKey: 'periodical_benefits', showFrequency: true },
+  { section: 'oneoff', endpoint: 'oneoff-benefits', titleKey: 'benefits_oneoff', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', snapshotKey: 'oneoff_benefits', showFrequency: true, viewFrequencyColumn: 'item' },
+  { section: 'session', endpoint: 'session-benefits', titleKey: 'benefits_session', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', snapshotKey: 'session_benefits', showFrequency: true, viewFrequencyColumn: 'benefit' },
+  { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'benefits_period', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', snapshotKey: 'periodical_benefits', showFrequency: true, viewFrequencyColumn: 'item' },
 ];
 
 interface FeeBenefitForm {
@@ -113,6 +133,30 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): SellableItemBenefitRow {
     gym_charge_type: b.item_type,
     gym_charge_billing_frequency: b.item_billing_frequency,
     gym_charge_status: 'active',
+  };
+}
+
+/**
+ * #924 stage 1 — the same frozen line as the shared read-only grid's row.
+ *
+ * Everything the card shows is the snapshot's: the agreed treatment, the agreed
+ * renewal Frequency and the two prices the server computed from the frozen
+ * price (§17). It is built on `toDraftRow()` rather than beside it, so the half
+ * that reads and the half that writes cannot disagree about what a line is
+ * (#797) — what the editor adds to it is nothing, and what it leaves out of the
+ * payload is the point: `toBenefitItems()` sends only the keys a draft row
+ * carries, and the assignment's `PUT` takes quantity alone.
+ */
+function toViewRow(b: AssignedPlanSnapshotBenefit): SellableItemBenefitRow {
+  return {
+    ...toDraftRow(b),
+    action: b.action,
+    value: b.value,
+    frequency: b.frequency,
+    original_price_incl_tax: b.original_price_incl_tax,
+    final_price_incl_tax: b.final_price_incl_tax,
+    original_line_price_incl_tax: b.original_line_price_incl_tax,
+    final_line_price_incl_tax: b.final_line_price_incl_tax,
   };
 }
 
@@ -411,7 +455,9 @@ export function AssignedPlanConfiguration({
 
       {/* §3–§5/§9 — the three Sellable-Item-keyed sections, in the order the
           Plans page lists them so both surfaces read the same way. */}
-      {BENEFIT_SECTIONS.map(({ section, endpoint, titleKey, emptyKey, addKey, snapshotKey, showFrequency }) => {
+      {BENEFIT_SECTIONS.map(({
+        section, endpoint, titleKey, emptyKey, addKey, snapshotKey, showFrequency, viewFrequencyColumn,
+      }) => {
         const rows = snapshot[snapshotKey] ?? [];
         return (
           <div key={section} style={{ marginBottom: 14 }}>
@@ -433,52 +479,32 @@ export function AssignedPlanConfiguration({
                 <SaveCancel saving={saving} onSave={() => saveBenefits(endpoint)} onCancel={cancelEdit} t={t} />
               </div>
             ) : (
-              <SnapshotBenefitView rows={rows} emptyLabel={t(emptyKey as any)} showFrequency={showFrequency} t={t} />
+              /* #924 stage 1 — the one shared grid every Sellable Item section
+                 of every card renders from (#916/#919): Sellable Item,
+                 Quantity, Frequency, Benefit, Agreed Price, Final Price, in
+                 that order and at the same horizontal positions as the
+                 Membership Plan it came from. The hand-rolled table this
+                 replaced had its own columns and its own widths, which is the
+                 separate visual system §1 forbids.
+
+                 `benefitContext="plan"` is the Plan's option set, which is
+                 where these lines came from — it renders the agreed treatment
+                 as a column here and stays absent from the editor, whose
+                 endpoint takes quantity alone (#896 stage 4). */
+              <SellableItemBenefitView
+                t={(key, values) => t(key as any, values as any)}
+                emptyKey={emptyKey}
+                rows={rows.map(toViewRow)}
+                showFrequency={showFrequency}
+                frequencyColumn={viewFrequencyColumn}
+                benefitContext="plan"
+                showPrices
+              />
             )}
           </div>
         );
       })}
     </div>
-  );
-}
-
-/**
- * The read-only view of a section. Unlike the Plan's own (which reads the live
- * catalogue), every column here comes from the frozen line — including the
- * price, which is the whole point of the snapshot (§17).
- */
-function SnapshotBenefitView({ rows, emptyLabel, showFrequency, t }: {
-  rows: AssignedPlanSnapshotBenefit[];
-  emptyLabel: string;
-  showFrequency: boolean;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  if (rows.length === 0) return <p style={emptySt}>{emptyLabel}</p>;
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-      <thead>
-        <tr>
-          <th style={thSt}>{t('col_sellable_item')}</th>
-          <th style={thSt}>{t('col_quantity')}</th>
-          {showFrequency && <th style={thSt}>{t('col_frequency')}</th>}
-          <th style={thSt}>{t('col_snapshot_price')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.id}>
-            <td style={tdSt}>{r.item_name}</td>
-            <td style={tdSt}>{r.quantity}</td>
-            {showFrequency && (
-              <td style={tdSt}>
-                {r.item_billing_frequency ? t(`frequency_${r.item_billing_frequency}` as any) : '—'}
-              </td>
-            )}
-            <td style={tdSt}>{fmtMoney(r.unit_price)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -533,10 +559,4 @@ const linkBtn: React.CSSProperties = {
   background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer',
   fontSize: 12, padding: 0,
 };
-const emptySt: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
 const hintSt: React.CSSProperties = { color: '#888', fontSize: 12, margin: '8px 0 0' };
-const thSt: React.CSSProperties = {
-  textAlign: 'left', padding: '4px 8px 4px 0', fontSize: 11, fontWeight: 600,
-  color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
-};
-const tdSt: React.CSSProperties = { padding: '4px 8px 4px 0', fontSize: 13 };

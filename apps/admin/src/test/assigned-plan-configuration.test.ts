@@ -112,9 +112,14 @@ describe('Assigned Plan: One-off / Session / Period Benefits (#635 §3–§5/§9
     expect(src).toContain('/user-memberships/${assignedPlanId}/${endpoint}');
   });
 
-  it('shows the price frozen on the line, not the catalogue price (§17)', () => {
-    expect(src).toContain('col_snapshot_price');
-    expect(src).toContain('r.unit_price');
+  // #924 stage 1: the hand-rolled table this section used to render — its own
+  // columns, its own widths, its own single money column — is gone, replaced by
+  // the shared grid every Sellable Item section of every card renders from. The
+  // prices are still the frozen ones; where they come from is asserted in
+  // assigned-plan-benefit-columns.test.ts.
+  it('shows the frozen line through the shared read-only grid (#916/§4)', () => {
+    expect(src).toContain('SellableItemBenefitView');
+    expect(src, 'a second benefit table is still rendered here').not.toContain('<table');
   });
 });
 
@@ -171,6 +176,12 @@ describe('Assigned Plan configuration: locales', () => {
     'not_configured', 'snapshot_edit_hint',
     'col_sellable_item', 'col_quantity', 'col_frequency', 'col_snapshot_price',
     'inactive_item_tag',
+    // #924 stage 1 — the three columns the shared grid added to these sections,
+    // and the labels their cells resolve.
+    'col_item_action', 'col_original_price', 'col_final_price', 'benefit_total_price',
+    'item_action_no_benefit', 'item_action_waive', 'item_action_percentage_discount',
+    'session_frequency_none', 'session_frequency_once', 'session_frequency_week',
+    'session_frequency_four_weeks', 'session_frequency_month', 'session_frequency_year',
     'no_oneoff_benefits', 'no_session_benefits', 'no_period_benefits',
     'add_oneoff_benefit', 'add_session_benefit', 'add_period_benefit',
     'unit_day', 'unit_week', 'unit_month', 'unit_year',

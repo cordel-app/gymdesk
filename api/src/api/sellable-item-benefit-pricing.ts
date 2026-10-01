@@ -13,7 +13,9 @@
 //   > system wherever possible.
 //
 // So the wiring moves here rather than being copied: one gross-up, one amount
-// decider, two callers (`membership-plans.ts` and `promotion-details.ts`). The
+// decider, three callers (`membership-plans.ts`, `promotion-details.ts` and —
+// since #924 stage 1 — `assigned-plan-snapshot.ts`, which prices an
+// assignment's frozen lines through `sellableItemBenefitPrices()` below). The
 // only thing a caller supplies beyond its rows is its **context** — a Plan may
 // configure three of the five actions and a Promotion all five (#896 §16) — and
 // `toSellableItemBenefit()` is what keeps a pair from being read in the wrong
@@ -87,6 +89,31 @@ export function grossBenefitUnitPrice(
 }
 
 /**
+ * One row's four amounts — the single-row entry point every caller of this
+ * module ends up at.
+ *
+ * #924 stage 1 is why it is exported: an Assigned Plan's benefit sections are
+ * not a section-shaped list of catalogue joins but a *snapshot*, whose price is
+ * the one frozen on the line (`user_membership_{session,oneoff,periodical}`.
+ * `unit_price`) rather than the Sellable Item's current `amount`. It passes that
+ * frozen figure as the row's own amount and gets the same pair of prices every
+ * other surface quotes, which is the ticket's requirement — "the same shared
+ * grid/layout should be reused rather than implementing an Assigned Plan-specific
+ * version", and no third pricing implementation.
+ */
+export function sellableItemBenefitPrices(
+  context: SellableItemBenefitContext,
+  row: BenefitPricingRow,
+  fallback?: BenefitPricingFallback,
+): PlanBenefitPrices {
+  return planBenefitPrices(
+    grossBenefitUnitPrice(row, fallback),
+    Number(row.quantity) || 1,
+    toSellableItemBenefit(context, row.action, row.value),
+  );
+}
+
+/**
  * A section as its card renders it: every row plus the Original/Regular and
  * Final Price it must show, VAT included.
  *
@@ -105,10 +132,6 @@ export function withSellableItemBenefitPrices<T extends BenefitPricingRow>(
   const byId = new Map((catalogue ?? []).map((item) => [Number(item.id), item]));
   return rows.map((row) => ({
     ...row,
-    ...planBenefitPrices(
-      grossBenefitUnitPrice(row, byId.get(Number(row.gym_charge_id))),
-      Number(row.quantity) || 1,
-      toSellableItemBenefit(context, row.action, row.value),
-    ),
+    ...sellableItemBenefitPrices(context, row, byId.get(Number(row.gym_charge_id))),
   }));
 }

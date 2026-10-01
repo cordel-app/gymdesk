@@ -1,5 +1,7 @@
 import { db, Tx } from '../infra/db';
 import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
+import { PlanBenefitPrices } from '../domain/planBenefitPrices';
+import { sellableItemBenefitPrices } from './sellable-item-benefit-pricing';
 import { SellableItemBenefit, toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
 import {
   SessionBenefitFrequency,
@@ -67,8 +69,17 @@ export const BENEFIT_TABLE_BY_CATEGORY: Record<SellableItemBenefitCategory, stri
   periodical: 'user_membership_periodical',
 };
 
-/** One snapshotted benefit row, as the API serves it. */
-export interface AssignedPlanBenefitRow {
+/**
+ * One snapshotted benefit row, as the API serves it.
+ *
+ * #924 stage 1 adds `PlanBenefitPrices` — the Original/Agreed and Final Price
+ * pair, VAT included, that the Membership Plan and Promotion cards already
+ * report (#916, #919/#920), so the Assigned Plan's three sections can render
+ * from the one shared column grid instead of their own table. The amounts are
+ * the *snapshot's*: the frozen `unit_price` and the frozen `(action, value)`
+ * pair, through the same `applyLineBenefit()` the billing engine uses.
+ */
+export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
   id: number;
   user_membership_id: number;
   gym_charge_id: number;
@@ -134,7 +145,34 @@ export interface AssignedPlanSnapshot extends AssignedPlanBillingSnapshot {
 
 const CATEGORIES: SellableItemBenefitCategory[] = ['session', 'oneoff', 'periodical'];
 
+/**
+ * The three snapshot sections' own read.
+ *
+ * `b.*` is the agreement: every commercial fact of the line was frozen onto it
+ * at assignment time (§17). The two joined columns are the one thing the
+ * snapshot never captured and never could — the Sellable Item's **tax
+ * treatment**, which is a statutory rate rather than a term of this contract.
+ * #924 §4 asks the card to quote these lines tax-included, so the rate is read
+ * live (LEFT JOIN: an item deleted since leaves the frozen amount as the honest
+ * gross, exactly as `grossBenefitUnitPrice()` falls back for a gym with no rate
+ * configured). The frozen *price* is still the frozen price — nothing here
+ * reaches for `gym_charges.amount`.
+ */
+function selectSnapshotSection(table: string): string {
+  return `SELECT b.*, gc.tax_behavior AS gym_charge_tax_behavior,
+                 tr.rate_percent AS gym_charge_tax_rate_percent
+          FROM ${table} b
+          LEFT JOIN gym_charges gc ON gc.id = b.gym_charge_id AND gc.gym_id = b.gym_id
+          LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
+          WHERE b.user_membership_id = ? AND b.gym_id = ?
+          ORDER BY b.item_name ASC, b.id ASC`;
+}
+
 function shapeBenefit(row: any): AssignedPlanBenefitRow {
+  const unitPrice = row.unit_price != null ? Number(row.unit_price) : 0;
+  // A snapshot row came from a Membership Plan section, so it is read with
+  // the Plan's option set — the three of §16 and no more.
+  const benefit = toSellableItemBenefit('plan', row.action, row.value);
   return {
     id: row.id,
     user_membership_id: row.user_membership_id,
@@ -143,14 +181,29 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     item_name: row.item_name,
     item_type: row.item_type,
     item_billing_frequency: row.item_billing_frequency ?? null,
-    unit_price: row.unit_price != null ? Number(row.unit_price) : 0,
+    unit_price: unitPrice,
     currency: row.currency ?? null,
-    // A snapshot row came from a Membership Plan section, so it is read with
-    // the Plan's option set — the three of §16 and no more.
-    ...toSellableItemBenefit('plan', row.action, row.value),
+    ...benefit,
     // #918 — only `user_membership_session` has the column; the other two read
     // `undefined`, which normalizes to `null`.
     frequency: toSessionBenefitFrequency(row.frequency),
+    /**
+     * #924 stage 1 — what this line costs before and after its own treatment,
+     * VAT included, from the one module the Plan and Promotion sections price
+     * through. The amount handed over is the **frozen** one, so a Sellable Item
+     * repriced since cannot move what this member was agreed (§17), and the
+     * figures cannot disagree with what the assignment bills: both end at
+     * `applyLineBenefit()`.
+     */
+    ...sellableItemBenefitPrices('plan', {
+      gym_charge_id: row.gym_charge_id,
+      quantity: row.quantity,
+      action: benefit.action,
+      value: benefit.value,
+      gym_charge_amount: row.unit_price,
+      gym_charge_tax_behavior: row.gym_charge_tax_behavior,
+      gym_charge_tax_rate_percent: row.gym_charge_tax_rate_percent,
+    }),
   };
 }
 
@@ -298,8 +351,7 @@ export async function loadAssignedPlanSnapshot(
       [umId, gymId],
     ),
     ...CATEGORIES.map((category) => db.query(
-      `SELECT * FROM ${BENEFIT_TABLE_BY_CATEGORY[category]}
-       WHERE user_membership_id = ? AND gym_id = ? ORDER BY item_name ASC, id ASC`,
+      selectSnapshotSection(BENEFIT_TABLE_BY_CATEGORY[category]),
       [umId, gymId],
     )),
   ]);
@@ -334,9 +386,7 @@ export async function loadAssignedPlanBenefitSection(
   gymId: string, umId: number, category: SellableItemBenefitCategory,
 ): Promise<AssignedPlanBenefitRow[]> {
   const { rows } = await db.query(
-    `SELECT * FROM ${BENEFIT_TABLE_BY_CATEGORY[category]}
-     WHERE user_membership_id = ? AND gym_id = ? ORDER BY item_name ASC, id ASC`,
-    [umId, gymId],
+    selectSnapshotSection(BENEFIT_TABLE_BY_CATEGORY[category]), [umId, gymId],
   );
   return rows.map(shapeBenefit);
 }
