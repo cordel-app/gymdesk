@@ -3300,6 +3300,8 @@
     "tax_behavior_inclusive": "Inclusive (price includes tax)",
     "tax_behavior_exclusive": "Exclusive (tax added on top)",
     "taxIncluded": "(tax included)",
+    "price_total_for_sessions": "Total price for {count, plural, one {# session} other {# sessions}}",
+    "price_total_for_package": "Total price for the complete package",
     "taxExcluded": "(tax excluded)",
     "exempt": "Exempt",
     "section_professional_services": "Professional Services",

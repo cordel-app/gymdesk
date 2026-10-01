@@ -3286,6 +3286,8 @@
     "tax_behavior_inclusive": "Inclusivo (el precio incluye el impuesto)",
     "tax_behavior_exclusive": "Exclusivo (el impuesto se suma al precio)",
     "taxIncluded": "(IVA incluido)",
+    "price_total_for_sessions": "Precio total por {count, plural, one {# sesión} other {# sesiones}}",
+    "price_total_for_package": "Precio total del paquete completo",
     "taxExcluded": "(IVA no incluido)",
     "exempt": "Exento",
     "section_professional_services": "Servicios Profesionales",
