@@ -63,6 +63,7 @@ import { PlanDuration, withDurationCadence } from './planDuration';
 import { PlanTimelineCadence } from './planExampleTimeline';
 import { NO_PERSONAL_FEE_BENEFIT } from './personalFeeBenefit';
 import { SellableItemBenefit } from './sellableItemBenefitActions';
+import { SessionBenefitFrequency } from './sessionBenefitFrequency';
 import { SellableItemBenefitCategory } from './sellableItemClassification';
 
 // The horizon floor and the result shape are the shared projection's (#922);
@@ -85,6 +86,12 @@ export interface PlanSimulationItem {
   /** The item's unit price including VAT (see the tax note in the header). */
   unitPriceInclTax: number;
   quantity: number;
+  /**
+   * #918 — a Session Benefit's own renewal Frequency ("2 sessions per week"),
+   * `null` for every other section and for a session row configured with none.
+   * The engine is what turns it into one summarised line per billing date.
+   */
+  sessionFrequency: SessionBenefitFrequency | null;
   /** The Plan benefit row's own `(action, value)` pair (#896). */
   benefit: SellableItemBenefit;
   /** `gym_charges.mandatory` — the ticket labels such a line "(Mandatory)". */
@@ -155,6 +162,7 @@ export function computePlanBillingEventSimulation(
       billingFrequency: item.billingFrequency,
       unitPrice: item.unitPriceInclTax,
       quantity: item.quantity,
+      sessionFrequency: item.sessionFrequency,
       benefit: item.benefit,
     })),
     // #892 — the durations count periods of the very cadence the fee is billed at.

@@ -538,3 +538,86 @@ describe('attaching an Additional Periodic Service snapshots its price', () => {
     expect(row.unit_price).toBe(20);
   });
 });
+
+// ─── #918: a Session Benefit's renewal Frequency is part of the agreement ─────
+//
+// Billing and every display read the assignment's own snapshot and never the
+// live Plan (§13–§17), so the Frequency has to be copied with the rest of the
+// line: a Plan switched from Weekly to Monthly afterwards must not change what
+// an existing member was agreed.
+describe('POST /user-memberships — freezes the Session Benefit Frequency (#918)', () => {
+  let gymId: string;
+  let planId: number;
+  let sessionItem: number;
+  let memberId: number;
+  let umId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('APS Session Frequency Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId);
+    await setPlanPrice(gymId, planId, 75);
+    await setBillingPolicy(gymId, planId, 4, 'week');
+    sessionItem = await createSellableItem(gymId, {
+      type: 'sessions', billingFrequency: 'per_session', amount: 50,
+      name: `APS-PT-${uniq()}`,
+    });
+    await addPlanBenefit(gymId, 'membership_plan_session', planId, sessionItem, 2);
+    await db.query(
+      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      ['week', planId, sessionItem],
+    );
+    memberId = await createMember(gymId);
+    const res = await assign(gymId, {
+      member_id: memberId,
+      membership_plan_id: planId,
+      starts_at: dayOffset(0),
+    });
+    expect(res.status).toBe(201);
+    umId = res.body.id;
+  });
+
+  it('copies the Frequency onto the assignment', async () => {
+    const { body } = await getAssignment(gymId, umId);
+    expect(body.snapshot.session_benefits[0]).toMatchObject({
+      gym_charge_id: sessionItem, quantity: 2, frequency: 'week',
+    });
+  });
+
+  it('does not move when the Plan is reconfigured afterwards', async () => {
+    await db.query(
+      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      ['month', planId, sessionItem],
+    );
+    const { body } = await getAssignment(gymId, umId);
+    expect(body.snapshot.session_benefits[0].frequency).toBe('week');
+  });
+
+  it('keeps the agreed Frequency when the section is edited on the assignment', async () => {
+    // The assignment's own section `PUT` takes quantity alone, so — exactly like
+    // the frozen price and the `(action, value)` pair — a kept line keeps it.
+    const res = await request
+      .put(`/user-memberships/${umId}/session-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: sessionItem, quantity: 3 }] });
+    expect(res.status).toBe(200);
+    const { body } = await getAssignment(gymId, umId);
+    expect(body.snapshot.session_benefits[0]).toMatchObject({ quantity: 3, frequency: 'week' });
+  });
+
+  it('reports the renewing allowance in the Billing Simulation', async () => {
+    // 4-weekly billing + 3 sessions per week (the quantity the edit above left)
+    // = 12 sessions on each billing date, at the item's own EUR 50 price.
+    const res = await request
+      .get(`/user-memberships/member/${memberId}/billing-simulation`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const sessions = res.body.sections.find((s: any) => s.section === 'session');
+    expect(sessions, 'no session section in the simulation').toBeTruthy();
+    expect(sessions.events[0].lines[0]).toMatchObject({
+      gym_charge_id: sessionItem, quantity: 12, unit_price: 50, regular_price: 600,
+    });
+  });
+});

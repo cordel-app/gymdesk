@@ -416,6 +416,8 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
         items: [{
           gym_charge_id: sessionItemId, quantity: 4,
           action: 'percentage_discount', value: 15,
+          // #918: and the renewal Frequency, which Duplicate must carry too.
+          frequency: 'week',
         }],
       });
   });
@@ -435,6 +437,9 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
     // #896 stage 2: Duplicate is a copy, so the pricing treatment travels too.
     expect(dup.body.session_benefits[0].action).toBe('percentage_discount');
     expect(dup.body.session_benefits[0].value).toBe(15);
+    // #918: and so does the renewal Frequency — a copy of a Plan granting 2
+    // sessions a week must not read as a one-time allowance.
+    expect(dup.body.session_benefits[0].frequency).toBe('week');
 
     // Editing the copy must not reach back into the original.
     await request
@@ -977,5 +982,129 @@ describe('Membership Plan Benefit prices (#916)', () => {
     expect(line.regular_price).toBe(row.original_line_price_incl_tax);
     expect(line.actual_charge).toBe(row.final_line_price_incl_tax);
     expect(line.unit_price).toBe(row.original_price_incl_tax);
+  });
+});
+
+// ─── #918: a Session Benefit's renewal Frequency ──────────────────────────────
+//
+// The field is the Session section's alone (migration 205 puts the column on
+// `membership_plan_session` and the assignment's `user_membership_session`, and
+// on nothing else), so these cases are not part of the `describe.each` above:
+// the other two sections' behaviour is that they ignore it.
+describe('Membership Plan Session Benefit Frequency (#918)', () => {
+  let gymId: string;
+  let planId: number;
+  let sessionItemId: number;
+  let secondSessionItemId: number;
+  let periodicalItemId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MPB Session Frequency Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, 'MPB Session Frequency Plan');
+    sessionItemId = await createSellableItem(gymId, 'Personal Training Class', 'sessions', null);
+    secondSessionItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+    periodicalItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
+  });
+
+  const putSession = (items: unknown[]) => request
+    .put(`/membership-plans/${planId}/session-benefits`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ items });
+
+  const getSession = () => request
+    .get(`/membership-plans/${planId}/session-benefits`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+
+  it('stores and reports a Frequency beside the quantity', async () => {
+    const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' });
+
+    const read = await getSession();
+    expect(read.body[0]).toMatchObject({ quantity: 2, frequency: 'week' });
+  });
+
+  it('configures it per benefit, not per section', async () => {
+    const res = await putSession([
+      { gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' },
+      { gym_charge_id: secondSessionItemId, quantity: 5, frequency: 'month' },
+    ]);
+    expect(res.status).toBe(200);
+    const byItem = Object.fromEntries(res.body.map((r: any) => [r.gym_charge_id, r.frequency]));
+    expect(byItem[sessionItemId]).toBe('week');
+    expect(byItem[secondSessionItemId]).toBe('month');
+  });
+
+  it('keeps a stored Frequency when the request does not mention it', async () => {
+    // The section `PUT` is replace-all, so a quantity-only save — which is what
+    // every client written before #918 sends — must not clear the Frequency.
+    const res = await putSession([
+      { gym_charge_id: sessionItemId, quantity: 4 },
+      { gym_charge_id: secondSessionItemId, quantity: 5 },
+    ]);
+    expect(res.status).toBe(200);
+    const byItem = Object.fromEntries(res.body.map((r: any) => [r.gym_charge_id, r.frequency]));
+    expect(byItem[sessionItemId]).toBe('week');
+    expect(byItem[secondSessionItemId]).toBe('month');
+    expect(res.body.find((r: any) => r.gym_charge_id === sessionItemId).quantity).toBe(4);
+  });
+
+  it('clears it for an explicit null — the dropdown\'s `—`', async () => {
+    const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 4, frequency: null }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0].frequency).toBeNull();
+  });
+
+  it('accepts the empty string as the same `—`', async () => {
+    await putSession([{ gym_charge_id: sessionItemId, quantity: 4, frequency: 'month' }]);
+    const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 4, frequency: '' }]);
+    expect(res.status).toBe(200);
+    expect(res.body[0].frequency).toBeNull();
+  });
+
+  it('reads back as null for a benefit that never configured one', async () => {
+    await putSession([{ gym_charge_id: secondSessionItemId, quantity: 1 }]);
+    const res = await getSession();
+    expect(res.body.find((r: any) => r.gym_charge_id === secondSessionItemId).frequency).toBeNull();
+  });
+
+  it('accepts every offered period', async () => {
+    for (const frequency of ['once', 'week', 'four_weeks', 'month', 'year']) {
+      const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 1, frequency }]);
+      expect(res.status, `frequency ${frequency}`).toBe(200);
+      expect(res.body[0].frequency).toBe(frequency);
+    }
+  });
+
+  it('→ 400 for a value outside the set, rather than coercing it', async () => {
+    for (const frequency of ['per_session', 'weekly', 'day']) {
+      const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 1, frequency }]);
+      expect(res.status, `frequency ${frequency}`).toBe(400);
+      expect(res.body.error).toMatch(/frequency must be one of/);
+    }
+  });
+
+  it('leaves the other sections unaffected — they have no such column', async () => {
+    const res = await request
+      .put(`/membership-plans/${planId}/periodical-benefits`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ items: [{ gym_charge_id: periodicalItemId, quantity: 1, frequency: 'week' }] });
+    expect(res.status).toBe(200);
+    expect(res.body[0].frequency).toBeUndefined();
+  });
+
+  it('embeds the Frequency in the Plan the card reads', async () => {
+    await putSession([{ gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' }]);
+    const res = await request
+      .get(`/membership-plans/${planId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.session_benefits.find((b: any) => b.gym_charge_id === sessionItemId))
+      .toMatchObject({ quantity: 2, frequency: 'week' });
   });
 });

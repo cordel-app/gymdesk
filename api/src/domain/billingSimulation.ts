@@ -92,6 +92,11 @@ import {
   computePromotionTimeline,
 } from './promotionTimeline';
 import { SellableItemBenefitCategory } from './sellableItemClassification';
+import {
+  SessionBenefitFrequency,
+  isRenewingSessionFrequency,
+  renewalsInPeriod,
+} from './sessionBenefitFrequency';
 
 export type BillingUnit = 'day' | 'week' | 'month' | 'year';
 
@@ -194,6 +199,19 @@ export interface SimulationPlanBenefit {
   unitPrice: number;
   /** Units billed — per period for a Period Benefit, once for the other two. */
   quantity: number;
+  /**
+   * #918 — a **Session** Benefit's own renewal Frequency ("2 sessions per
+   * week"), frozen onto the assignment with the rest of the line. `null` and
+   * `once` both mean the allowance is granted once, on the assignment's start
+   * date, which is what every Session Benefit agreed before #918 means.
+   *
+   * Required rather than optional, for the reason `benefit` and
+   * `personalFeeBenefit` are: it changes how many units the projection reports
+   * on each billing date, so a loader that forgot it would quietly show a
+   * member 2 sessions where their contract entitles them to 8. Not meaningful
+   * for the other two categories, which carry `null`.
+   */
+  sessionFrequency: SessionBenefitFrequency | null;
   /**
    * #896 stage 3 — the Plan's own pricing treatment of this line, frozen onto
    * the assignment with it. `no_benefit` (the column default, and what every
@@ -640,6 +658,18 @@ export interface ResolvedCharge {
    * still ahead of it.
    */
   pending: boolean;
+  /**
+   * #918 — how many units this occurrence covers, for the one stream whose
+   * quantity is not the same every time: a Session Benefit's renewing
+   * allowance grants `quantity x renewals in this billing cycle`, which on
+   * monthly billing is 5 weeks in one cycle and 4 in the next.
+   *
+   * Absent on every other stream, which bills the item's own quantity each
+   * time. `0` means the cycle contains no renewal at all — `walkStream()`
+   * emits no event for it, because an allowance of nothing is not a billing
+   * event.
+   */
+  quantity?: number;
 }
 
 /**
@@ -745,6 +775,13 @@ interface BillableItem {
   /** Units billed each occurrence (Period Benefit) or once (one-off/session). */
   quantity: number;
   /**
+   * #918 — the Session Benefit's renewal Frequency, when the Plan configured
+   * one. A renewing frequency turns this item into a stream at the
+   * assignment's own billing cadence (`buildSessionAllowanceStream`); `null`
+   * and `once` keep the single charge on the start date.
+   */
+  sessionFrequency: SessionBenefitFrequency | null;
+  /**
    * #896 — the item's own treatment: the Plan benefit's `(action, value)` pair
    * when the Plan carries it, and the neutral default for an item that exists
    * only because a Promotion granted it (there is no Plan row to configure one
@@ -779,6 +816,9 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
       billingFrequency: benefit.billingFrequency,
       unitPrice: benefit.unitPrice,
       quantity: Math.max(1, Math.trunc(benefit.quantity) || 1),
+      // #918: only a Session Benefit carries one; the other two sections are
+      // `null` whatever their row holds.
+      sessionFrequency: benefit.category === 'session' ? benefit.sessionFrequency : null,
       benefit: benefit.benefit,
       coverage: [],
     });
@@ -798,6 +838,10 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
         billingFrequency: grant.billingFrequency,
         unitPrice: grant.unitPrice,
         quantity: grant.category === 'periodical' ? 1 : Math.max(1, Math.trunc(grant.quantity) || 1),
+        // #918 is a Membership Plan field: a Promotion's session grant has no
+        // renewal Frequency of its own, so an item that exists only because a
+        // Promotion granted it keeps the single charge it has always been.
+        sessionFrequency: null,
         // The item is the Promotion's alone — no Plan row configures it, so the
         // line prices at the catalogue price and the grant's own pair is what
         // changes it for the units/periods it covers.
@@ -964,23 +1008,48 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
  * Promotions granting 4 sessions each on a 6-session Plan discount 4 and 2, not
  * 8 of 6.
  */
-function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): SingleCharge {
-  const unit = round2(item.unitPrice);
-  const regular = round2(unit * item.quantity);
+/**
+ * `quantity` units of a one-off/session line, priced — with `offset` saying how
+ * many units of the same line earlier occurrences have already consumed.
+ *
+ * The allocation is interval arithmetic over the line's units: the first grant
+ * owns units `[0, q1)`, the second `[q1, q1+q2)`, and everything past the last
+ * grant is priced by the item's own treatment. For a single charge (`offset =
+ * 0`, `quantity` = the whole line) that is exactly the rule #896 stage 3
+ * described, to the cent.
+ *
+ * `offset` is what makes a **renewing** allowance (#918) keep the same meaning:
+ * a Promotion granting 4 sessions grants 4 sessions in total, not 4 every
+ * cycle, so once the first cycles have used them up the later ones price at the
+ * Plan's own treatment.
+ */
+function allocateSessionUnits(
+  item: BillableItem, unit: number, offset: number, quantity: number,
+): { amount: number; benefits: SimulationBenefit[]; promotional: boolean } {
   const benefits: SimulationBenefit[] = [];
-  let remaining = item.quantity;
   let amount = 0;
+  let covered = 0;
+  let promotional = false;
+  let cursor = 0;
   for (const c of item.coverage) {
-    if (remaining <= 0) break;
-    const units = Math.min(remaining, Math.max(0, Math.trunc(c.grant.quantity) || 0));
+    const granted = Math.max(0, Math.trunc(c.grant.quantity) || 0);
+    const start = cursor;
+    cursor += granted;
+    if (granted <= 0) continue;
+    const units = Math.min(offset + quantity, cursor) - Math.max(offset, start);
     if (units <= 0) continue;
-    remaining -= units;
+    covered += units;
     amount += applyLineBenefit(unit, units, c.grant.benefit);
     const { action, value } = c.grant.benefit;
+    // A grant that covers units without changing their price explains nothing,
+    // and — as in `buildItemStream` — does not make the charge promotional:
+    // the horizon asks whether a charge differs from the regular one.
     if (action !== 'no_benefit') {
       benefits.push({ source: 'promotion', name: c.promo.name, action, value, period_status: null });
+      promotional = true;
     }
   }
+  const remaining = quantity - covered;
   if (remaining > 0) {
     amount += applyLineBenefit(unit, remaining, item.benefit);
     if (item.benefit.action !== 'no_benefit') {
@@ -990,6 +1059,12 @@ function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): Sin
       });
     }
   }
+  return { amount: round2(amount), benefits, promotional };
+}
+
+function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): SingleCharge {
+  const unit = round2(item.unitPrice);
+  const { amount, benefits } = allocateSessionUnits(item, unit, 0, item.quantity);
   return {
     section: item.category === 'session' ? 'session' : 'one_off',
     date: a.startsAt,
@@ -1001,10 +1076,84 @@ function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): Sin
       gym_charge_id: item.gymChargeId > 0 ? item.gymChargeId : null,
       quantity: item.quantity,
       unit_price: unit,
-      regular_price: regular,
+      regular_price: round2(unit * item.quantity),
       benefits,
-      actual_charge: round2(amount),
+      actual_charge: amount,
       price_may_change: false,
+    },
+  };
+}
+
+/**
+ * #918 — a Session Benefit whose Frequency renews it: `2 | Weekly` is not one
+ * charge of 2 sessions on the start date, it is 2 sessions every week for the
+ * life of the assignment.
+ *
+ * The projection does **not** list one line per week. The #918 thread's Q1
+ * answer is explicit that the allowance is summarised on the billing event it
+ * falls in — "if 4 weeks → 4x2 sessions | 50% Discount | 200€ (8 x 50€ x 50%)",
+ * "if 1 month → num_weeks_month x 2" — so the stream runs at the **assignment's
+ * own billing cadence** (`ASSIGNMENT_CADENCE`, the cadence the Membership Fee
+ * is billed at) and each occurrence reports `quantity x` the renewals that fall
+ * inside that cycle (`renewalsInPeriod()`). The renewals are one schedule from
+ * the assignment's start date, so a weekly allowance reports the 5 renewals of
+ * a 31-day cycle beginning on the 1st and the 4 of the next, rather than a
+ * fractional 4.35.
+ *
+ * It keeps the `session` section rather than the cadence's, because what it
+ * projects is still the Session Benefit the Plan configured — only its dates
+ * come from the fee's cadence.
+ *
+ * An assignment with no cadence at all (no `billing_policies` pair and nothing
+ * frozen) has no billing events to summarise onto, so the allowance falls back
+ * to the single charge it was before this ticket rather than inventing a
+ * schedule of its own.
+ *
+ * Nothing here is a new charge the gym was not already making: a Session
+ * Benefit is a line of the contract, and this is the simulation reporting what
+ * the configured Frequency says it grants. The ticket's "this is not a billing
+ * event" is about the *allowance renewal* not being an extra event of its own —
+ * which is exactly why the renewals are summarised onto the billing dates that
+ * already exist instead of generating weekly ones.
+ */
+function buildSessionAllowanceStream(a: SimulationAssignment, item: BillableItem): Stream | null {
+  const frequency = item.sessionFrequency;
+  if (item.category !== 'session' || !isRenewingSessionFrequency(frequency)) return null;
+  if (a.recurringInterval == null || a.recurringUnit == null) return null;
+  const cadence = cadenceForBillingPolicy(a.recurringInterval, a.recurringUnit);
+  const unit = round2(item.unitPrice);
+  const unitsIn = (from: string, to: string) =>
+    item.quantity * renewalsInPeriod(a.startsAt, from, to, frequency);
+
+  return {
+    cadence,
+    section: 'session',
+    start: a.startsAt,
+    end: a.endsAt,
+    resolve: (date) => {
+      const quantity = unitsIn(date, cadence.advance(date));
+      if (quantity <= 0) return { amount: 0, benefits: [], promotional: false, pending: false, quantity };
+      // The units this cycle grants come after everything the earlier cycles
+      // granted, so a Promotion's session grant is spent once rather than
+      // renewed with the allowance.
+      const allocated = allocateSessionUnits(item, unit, unitsIn(a.startsAt, date), quantity);
+      return { ...allocated, pending: false, quantity };
+    },
+    line: (date, resolved) => {
+      const quantity = resolved.quantity ?? item.quantity;
+      return {
+        kind: 'sellable_item',
+        label: item.name,
+        user_membership_id: a.userMembershipId,
+        plan_name: a.planName,
+        gym_charge_id: item.gymChargeId > 0 ? item.gymChargeId : null,
+        quantity,
+        unit_price: unit,
+        regular_price: round2(unit * quantity),
+        benefits: resolved.benefits,
+        actual_charge: resolved.amount,
+        price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
+      };
     },
   };
 }
@@ -1034,12 +1183,17 @@ function walkStream(
     if (stream.end != null && cursor > stream.end) return { events, capped: false };
     const resolved = stream.resolve(cursor, occurrence);
     const next = stream.cadence.advance(cursor);
-    events.push({
-      section: stream.section,
-      date: cursor,
-      period_end: stream.cadence.ranged ? dayBefore(next) : null,
-      line: stream.line(cursor, resolved),
-    });
+    // #918: a renewing session allowance whose cycle contains no renewal has
+    // nothing to show — a line reading "0 sessions, €0.00" is not a billing
+    // event. Every other stream leaves `quantity` unset and always emits.
+    if (resolved.quantity == null || resolved.quantity > 0) {
+      events.push({
+        section: stream.section,
+        date: cursor,
+        period_end: stream.cadence.ranged ? dayBefore(next) : null,
+        line: stream.line(cursor, resolved),
+      });
+    }
     if (stopAt(cursor, resolved)) return { events, capped: false };
     // A cadence that doesn't advance would loop forever — treat as capped.
     if (next <= cursor) return { events, capped: true };
@@ -1075,7 +1229,12 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
         const s = buildItemStream(a, item);
         if (s) streams.push(s);
       } else {
-        singles.push(buildItemSingleCharge(a, item));
+        // #918: a Session Benefit with a renewing Frequency is projected over
+        // the assignment's billing dates; everything else is one charge on the
+        // start date, exactly as before.
+        const renewing = buildSessionAllowanceStream(a, item);
+        if (renewing) streams.push(renewing);
+        else singles.push(buildItemSingleCharge(a, item));
       }
     }
     for (const service of a.services) {
