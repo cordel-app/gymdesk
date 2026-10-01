@@ -1,3 +1,6 @@
+import type { SellableItemBenefitAction } from '@/lib/sellableItemBenefitActions';
+import type { SessionBenefitFrequency } from '@/lib/sessionBenefitFrequency';
+
 export interface AssignedPlanMember {
   member_id: number;
   is_owner: number | boolean;
@@ -25,6 +28,28 @@ export interface AssignedPlanSnapshotBenefit {
   item_billing_frequency: string | null;
   unit_price: number;
   currency: string | null;
+  /**
+   * #896 — the pricing treatment this line was agreed with, frozen beside the
+   * price. Read in the Membership Plan's option set, which is where the line
+   * came from: `no_benefit`, `waive` or `percentage_discount` (§16).
+   */
+  action: SellableItemBenefitAction;
+  value: number | null;
+  /**
+   * #918 — a Session line's agreed renewal Frequency ("2 sessions every week").
+   * `null` for the other two sections, which have no such column, and for a
+   * session line the Plan never configured one on.
+   */
+  frequency: SessionBenefitFrequency | null;
+  /**
+   * #924 stage 1 — what the line costs before and after its own treatment, VAT
+   * included, as the server computed it from the **frozen** price (§17). The
+   * page formats these; it never prices (#817).
+   */
+  original_price_incl_tax: number | null;
+  final_price_incl_tax: number | null;
+  original_line_price_incl_tax: number | null;
+  final_line_price_incl_tax: number | null;
 }
 
 /** The assignment's frozen commercial configuration (#635 §11–§17). */

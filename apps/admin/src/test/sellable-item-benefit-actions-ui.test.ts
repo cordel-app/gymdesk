@@ -267,7 +267,17 @@ describe('who names a context', () => {
   it('the Assigned Plan snapshot editor does not', () => {
     // Its `PUT` takes quantity alone (#635 stage 6), so a dropdown there would
     // be a control that silently changes nothing.
-    expect(assignedPlanSrc).not.toContain('benefitContext');
+    const editor = (assignedPlanSrc.match(/<SellableItemBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
+    expect(editor, 'the Assigned Plan editor offers an action dropdown').not.toContain('benefitContext');
+  });
+
+  it("the Assigned Plan's read-only sections do, to *show* what was agreed (#924)", () => {
+    // The other half of the same rule: the pair is frozen on the line (#896
+    // stage 2), so the card has a real treatment to report — as a column of the
+    // shared grid, in the Plan's own option set, which is where the line came
+    // from. Reading it is not configuring it.
+    const view = (assignedPlanSrc.match(/<SellableItemBenefitView[\s\S]*?\/>/) ?? [''])[0];
+    expect(view).toContain('benefitContext="plan"');
   });
 
   it('both pages refuse a Save that the API would 400 (§6)', () => {
