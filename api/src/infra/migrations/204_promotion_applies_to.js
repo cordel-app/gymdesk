@@ -36,9 +36,6 @@
  * table once under a metadata lock; the column add itself is INSTANT.
  */
 
-/** MySQL: ER_CHECK_CONSTRAINT_NOT_FOUND — the only error a DROP CHECK may swallow. */
-const ER_CHECK_CONSTRAINT_NOT_FOUND = 3940;
-
 const TARGET_CHECK = 'chk_promotions_applies_to';
 /** Mirrors PROMOTION_TARGETS in api/src/domain/promotionTarget.ts. */
 const TARGETS = ['membership_plan', 'sellable_item'];
@@ -51,17 +48,17 @@ const TARGETS = ['membership_plan', 'sellable_item'];
 exports.TARGETS = TARGETS;
 exports.TARGET_CHECK = TARGET_CHECK;
 
-exports.up = async (knex) => {
-  if (!(await knex.schema.hasColumn('promotions', 'applies_to'))) {
-    await knex.schema.alterTable('promotions', (t) => {
-      t.string('applies_to', 32).notNullable().defaultTo('membership_plan');
-    });
-  }
-
-  // Guarded by name so a crash between the two ALTERs still resumes, and
-  // re-created rather than skipped when the clause has drifted from the set
-  // above — a widening of an `IN` list cannot fail on existing rows, and every
-  // row holds the default until something writes another value.
+/**
+ * The target CHECK's clause with MySQL's escaping removed, or null when the
+ * table has none. MySQL stores each literal with a charset prefix and escaped
+ * quotes (`_utf8mb4\'sellable_item\'`), so the backslashes come off before
+ * matching. This is also how both halves of the migration know whether there is
+ * anything to drop: MySQL's `DROP CHECK` has no `IF EXISTS`, and this CHECK —
+ * unlike the one migration 202 widens — does not exist yet on a fresh database,
+ * so the DROP has to be asked for only when the constraint is really there
+ * rather than attempted and have its error swallowed by errno.
+ */
+const targetCheckClause = async (knex) => {
   const [[existing]] = await knex.raw(
     `SELECT cc.CHECK_CLAUSE AS clause
        FROM information_schema.CHECK_CONSTRAINTS cc
@@ -73,14 +70,24 @@ exports.up = async (knex) => {
         AND cc.CONSTRAINT_NAME = ?`,
     [TARGET_CHECK],
   );
-  // MySQL stores each literal with a charset prefix and escaped quotes
-  // (`_utf8mb4\'sellable_item\'`), so the backslashes come off before matching.
-  const clause = existing?.clause == null ? null : String(existing.clause).replace(/\\/g, '');
+  return existing?.clause == null ? null : String(existing.clause).replace(/\\/g, '');
+};
+
+exports.up = async (knex) => {
+  if (!(await knex.schema.hasColumn('promotions', 'applies_to'))) {
+    await knex.schema.alterTable('promotions', (t) => {
+      t.string('applies_to', 32).notNullable().defaultTo('membership_plan');
+    });
+  }
+
+  // Guarded by name so a crash between the two ALTERs still resumes, and
+  // re-created rather than skipped when the clause has drifted from the set
+  // above — a widening of an `IN` list cannot fail on existing rows, and every
+  // row holds the default until something writes another value.
+  const clause = await targetCheckClause(knex);
   if (clause != null && TARGETS.every((v) => clause.includes(`'${v}'`))) return;
 
-  await knex.raw(`ALTER TABLE promotions DROP CHECK ${TARGET_CHECK}`).catch((err) => {
-    if (err.errno !== ER_CHECK_CONSTRAINT_NOT_FOUND) throw err;
-  });
+  if (clause != null) await knex.raw(`ALTER TABLE promotions DROP CHECK ${TARGET_CHECK}`);
   await knex.raw(
     `ALTER TABLE promotions ADD CONSTRAINT ${TARGET_CHECK} ` +
     `CHECK (applies_to IN (${TARGETS.map((v) => `'${v}'`).join(',')}))`,
@@ -110,10 +117,10 @@ exports.down = async (knex) => {
     }
   }
   // The CHECK goes first: dropping the column it constrains while it exists is
-  // refused by MySQL.
-  await knex.raw(`ALTER TABLE promotions DROP CHECK ${TARGET_CHECK}`).catch((err) => {
-    if (err.errno !== ER_CHECK_CONSTRAINT_NOT_FOUND) throw err;
-  });
+  // refused by MySQL. Asked for only when it is there, for `up`'s reason.
+  if ((await targetCheckClause(knex)) != null) {
+    await knex.raw(`ALTER TABLE promotions DROP CHECK ${TARGET_CHECK}`);
+  }
   if (await knex.schema.hasColumn('promotions', 'applies_to')) {
     await knex.schema.alterTable('promotions', (t) => { t.dropColumn('applies_to'); });
   }
