@@ -1,28 +1,47 @@
 'use client';
 
-// #915 — the Membership Plan card's **Billing Event Simulation**.
+// A **Billing Event Simulation**: one group per billing date, listing every line
+// that falls on it.
 //
-// One group per billing date, listing every line that falls on it, so an admin
-// can see exactly what a member enrolling today would be billed and when, before
-// the Plan is assigned to anybody.
+// #915 built this for the Membership Plan card — what a member enrolling today
+// would be billed and when, before the Plan is assigned to anybody. #922 asks
+// the Promotion card for the same thing over the items a Promotion affects, and
+// asks for it to *look* the same, so this is one component rendered by both
+// cards (CLAUDE.md: a read-only section two different cards present the same way
+// is one component). It holds no entity knowledge: the labels come from the
+// page's own namespace, exactly as `ExampleTimeline` and
+// `BillingDurationSummary` take theirs.
 //
 // It formats, it never recomputes: which events exist, which date each falls on,
 // which benefit applies, what it costs and whether tax is included are all
-// decided by `api/src/domain/planBillingEventSimulation.ts` over the shared
-// Billing Simulation engine (CLAUDE.md: no business logic duplicated in the
-// frontend, and #817 — no tax arithmetic in a page). Read-only by nature: the
-// server computes it on every read, persists nothing and charges nothing.
+// decided by `api/src/domain/billingEventSimulation.ts` and the two adapters
+// over the shared Billing Simulation engine (CLAUDE.md: no business logic
+// duplicated in the frontend, and #817 — no tax arithmetic in a page).
+// Read-only by nature: the server computes it on every read, persists nothing
+// and charges nothing.
 
 import React from 'react';
+
 import {
-  PlanBillingEventSimulation as Simulation,
-  PlanSimulationLine,
-  planSimulationPriceLabelKey,
-} from './planProfile';
+  BillingEventSimulationBenefit,
+  BillingEventSimulationData,
+  BillingEventSimulationLine,
+  simulationPriceLabelKey,
+} from '@/lib/billingEventSimulation';
+
+type Simulation = BillingEventSimulationData;
+
+export type {
+  BillingEventSimulationBenefit,
+  BillingEventSimulationData,
+  BillingEventSimulationDate,
+  BillingEventSimulationLine,
+} from '@/lib/billingEventSimulation';
+export { simulationPriceLabelKey } from '@/lib/billingEventSimulation';
 
 interface Props {
   simulation: Simulation | null | undefined;
-  /** `plans.*` translator, so the labels stay the page's (#901's rule for shared UI). */
+  /** The page's own translator, so the labels stay the page's (#901's rule for shared UI). */
   t: (key: string, values?: Record<string, string | number>) => string;
   /** Formats a `YYYY-MM-DD` in the viewer's locale — the page's own helper. */
   formatDate: (date: string) => string;
@@ -33,22 +52,22 @@ function fmtMoney(amount: number): string {
 }
 
 /**
- * What the line's price *is*, in the ticket's own words: "Regular price",
- * "Waived", or the discount that was applied. A line carries at most one benefit
- * from a Plan (no Promotion is involved), so the first is the one that explains
- * it; any further ones are appended rather than dropped.
+ * What the line's price *is*: "Regular price", "Waived", or the discount that
+ * was applied. A line usually carries one benefit, but two can apply to the
+ * same occurrence (two Promotions covering one period), so every one of them is
+ * named rather than dropped.
  */
-function priceLabel(line: PlanSimulationLine, t: Props['t']): string {
+function priceLabel(line: BillingEventSimulationLine, t: Props['t']): string {
   if (line.benefits.length === 0) return t('simulation_price_regular');
   return line.benefits
-    .map((b) => t(planSimulationPriceLabelKey(b), {
+    .map((b) => t(simulationPriceLabelKey(b), {
       value: b.value ?? 0,
       amount: fmtMoney(b.value ?? 0),
     }))
     .join(' · ');
 }
 
-export function PlanBillingEventSimulation({ simulation, t, formatDate }: Props) {
+export function BillingEventSimulation({ simulation, t, formatDate }: Props) {
   // The server's `reason` is one of two known conditions (no billing frequency,
   // nothing priced to bill), so it is said in the viewer's language rather than
   // relayed in English — the same choice the Example Timeline makes.

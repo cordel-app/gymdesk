@@ -16,6 +16,10 @@ import { SectionEditButton } from '@/components/SectionEditButton';
 import { ExampleTimeline, ExampleTimelineTone } from '@/components/ExampleTimeline';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
+  BillingEventSimulation,
+  BillingEventSimulationData,
+} from '@/components/BillingEventSimulation';
+import {
   SellableItemBenefitEditor,
   SellableItemBenefitRow,
   SellableItemBenefitView,
@@ -276,6 +280,13 @@ export default function PromotionsPage() {
   const [cachedSessionB, setCachedSessionB] = useState<Record<number, SellableItemBenefit[]>>({});
   const [cachedOneoffB, setCachedOneoffB] = useState<Record<number, SellableItemBenefit[]>>({});
   const [cachedPeriodicalB, setCachedPeriodicalB] = useState<Record<number, SellableItemBenefit[]>>({});
+  // #922 — the Billing Event Simulation, computed by the server on every read
+  // (GET /promotions/:id/billing-event-simulation) and persisted nowhere. Cached
+  // per Promotion like the sections above it, and reloaded with them whenever a
+  // Benefit section is saved, so the projection always reflects the grants the
+  // card is showing.
+  const [cachedSimulation, setCachedSimulation] =
+    useState<Record<number, BillingEventSimulationData | null>>({});
 
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [plansDraft, setPlansDraft] = useState<number[]>([]);
@@ -476,18 +487,24 @@ export default function PromotionsPage() {
 
   async function loadSubResources(promoId: number) {
     try {
-      const [ap, mf, sessionB, oneoffB, periodicalB] = await Promise.all([
+      const [ap, mf, sessionB, oneoffB, periodicalB, simulation] = await Promise.all([
         apiFetch<AssociatedPlan[]>(`/promotions/${promoId}/plans`),
         apiFetch<MembershipFeeBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/session-benefits`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/oneoff-benefits`),
         apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/periodical-benefits`),
+        // Its own failure handling: a projection that cannot be loaded leaves
+        // that one section saying so, rather than blanking the card's five
+        // configured sections with it.
+        apiFetch<BillingEventSimulationData>(`/promotions/${promoId}/billing-event-simulation`)
+          .catch(() => null),
       ]);
       setCachedPlans((prev) => ({ ...prev, [promoId]: ap }));
       setCachedMf((prev) => ({ ...prev, [promoId]: mf }));
       setCachedSessionB((prev) => ({ ...prev, [promoId]: sessionB }));
       setCachedOneoffB((prev) => ({ ...prev, [promoId]: oneoffB }));
       setCachedPeriodicalB((prev) => ({ ...prev, [promoId]: periodicalB }));
+      setCachedSimulation((prev) => ({ ...prev, [promoId]: simulation }));
       return { ap, mf, sessionB, oneoffB, periodicalB };
     } catch {
       return {
@@ -1001,6 +1018,29 @@ export default function PromotionsPage() {
     );
   }
 
+  // #922 — the Billing Event Simulation: one group per billing date, listing
+  // every line the Promotion affects on it, with what each would otherwise have
+  // cost. Always read-only, and the same component the Membership Plan card
+  // renders — only the labels are this page's (a Promotion says *Promotion*
+  // where a Plan says *Benefit* for the very same stored action).
+  //
+  // Every date, amount and treatment is the server's
+  // (`domain/promotionBillingEventSimulation.ts` over the Billing Simulation
+  // engine): nothing here is recomputed, and no tax arithmetic reaches the page
+  // (#817).
+  function renderBillingEventSimulation(promo: Promo) {
+    return (
+      <div style={subSectionSt}>
+        <p style={sectionLabelSt}>{t('section_billing_event_simulation')}</p>
+        <BillingEventSimulation
+          simulation={cachedSimulation[promo.id]}
+          t={(key, values) => t(key as any, values as any)}
+          formatDate={(date) => fmtDate(parseDateStr(date), locale)}
+        />
+      </div>
+    );
+  }
+
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
   // #627: the editable main Promotion configuration — General, Suitable
@@ -1359,8 +1399,14 @@ export default function PromotionsPage() {
         {SELLABLE_BENEFIT_SECTIONS.map((cfg) => renderSellableBenefitSection(promo, cfg))}
         {renderMembershipFeeSection(promo)}
 
-        {/* Example Timeline — always read-only, kept last. */}
+        {/* The two projections, always read-only and kept last. They answer
+            different questions: the Example Timeline is one row per period of
+            the Promotion's own Free / Paid / Bonus timeline (the Membership Fee
+            Promotion's own span), while the Billing Event Simulation below it
+            is one group per billing *date* over the Sellable Items the
+            Promotion affects. Neither replaces the other (#922). */}
         {renderTimeline()}
+        {renderBillingEventSimulation(promo)}
       </div>
     );
   }

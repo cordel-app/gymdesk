@@ -19,7 +19,8 @@ import {
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
-const COMPONENT = join(__dirname, '..', 'app', '[locale]', 'plans', 'PlanBillingEventSimulation.tsx');
+// #922: one component for both cards that render the section.
+const COMPONENT = join(__dirname, '..', 'components', 'BillingEventSimulation.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 function stripComments(src: string): string {
@@ -65,7 +66,7 @@ describe('Plans: Billing Event Simulation', () => {
   });
 
   it('renders through the shared component, from the server-embedded field', () => {
-    expect(plansSrc).toContain('<PlanBillingEventSimulation');
+    expect(plansSrc).toContain('<BillingEventSimulation');
     expect(plansSrc).toContain('plan.billing_event_simulation');
     expect(plansSrc).toContain("t('plans.section_billing_event_simulation')");
   });

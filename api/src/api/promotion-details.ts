@@ -12,8 +12,17 @@ import {
   SellableItemBenefit,
   parseSellableItemBenefitInput,
   shapeSellableItemBenefitRow,
+  toSellableItemBenefit,
 } from '../domain/sellableItemBenefitActions';
-import { withSellableItemBenefitPrices } from './sellable-item-benefit-pricing';
+import {
+  grossBenefitUnitPrice,
+  withSellableItemBenefitPrices,
+} from './sellable-item-benefit-pricing';
+import { SellableItemFrequency } from '../domain/billingSimulation';
+import {
+  PromotionSimulationGrant,
+  computePromotionBillingEventSimulation,
+} from '../domain/promotionBillingEventSimulation';
 
 export const promotionDetailsRouter = Router({ mergeParams: true });
 
@@ -406,3 +415,81 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     } catch (err) { next(err); }
   });
 }
+
+/* ---------- Billing Event Simulation (#922) ---------- */
+
+/**
+ * The billing events this Promotion affects, grouped by the date each falls on —
+ * the Promotion card's counterpart to the Membership Plan's own Billing Event
+ * Simulation (#915), computed by the same projection over the same billing
+ * engine (`domain/promotionBillingEventSimulation.ts`).
+ *
+ * A read, always: nothing is persisted, nothing is charged, and no Promotion is
+ * applied to anybody. It is a route of its own rather than a field on the
+ * Promotion row because the Promotion list is a list — the card loads its
+ * sub-resources when it expands, exactly as it loads the three Benefit sections
+ * beside it.
+ *
+ * The amounts are VAT-inclusive, grossed up once by `grossBenefitUnitPrice()` —
+ * the same gross-up the Benefit sections' own Regular / Final Price pair uses
+ * (#919/#920), so the two halves of one card cannot quote an item two ways, and
+ * no tax arithmetic reaches the page (#817).
+ */
+promotionDetailsRouter.get('/billing-event-simulation', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const promotionId = (req.params as any).id;
+  try {
+    const { rows: promos } = await db.query(
+      `SELECT name, starts_at, free_months, paid_months, pay_beforehand_months, bonus_months
+       FROM promotions WHERE id = ? AND gym_id = ?`,
+      [promotionId, gymId],
+    );
+    if (promos.length === 0) return res.status(404).json({ error: 'Promotion not found' });
+    const promo = promos[0] as {
+      name: string | null;
+      starts_at: string | Date | null;
+      free_months: number | null;
+      paid_months: number | null;
+      pay_beforehand_months: number | null;
+      bonus_months: number | null;
+    };
+
+    const grants: PromotionSimulationGrant[] = [];
+    for (const { category } of CATEGORY_BENEFIT_ROUTES) {
+      const { rows } = await db.query<PromotionBenefitRow>(
+        selectSellableItemBenefits(benefitTableForCategory(category)), [promotionId, gymId],
+      );
+      for (const row of rows) {
+        const gross = grossBenefitUnitPrice(row);
+        // An item carrying no price at all bills nothing — which is not €0.00,
+        // and is the same answer the Plan's own simulation gives (#915).
+        if (gross == null) continue;
+        grants.push({
+          gymChargeId: Number(row.gym_charge_id),
+          name: row.gym_charge_name,
+          // The section the row is stored in, never a re-classification: #550's
+          // `classifySellableItem()` is what put it there.
+          category,
+          billingFrequency: (row.gym_charge_billing_frequency as SellableItemFrequency | null) ?? null,
+          unitPriceInclTax: gross,
+          quantity: Number(row.quantity) || 1,
+          benefit: toSellableItemBenefit('promotion', row.action, row.value),
+        });
+      }
+    }
+
+    res.json(computePromotionBillingEventSimulation({
+      promotionName: promo.name,
+      startsAt: promo.starts_at == null
+        ? null
+        : (promo.starts_at instanceof Date
+          ? promo.starts_at.toISOString().slice(0, 10)
+          : String(promo.starts_at).slice(0, 10)),
+      freeMonths: promo.free_months,
+      paidMonths: promo.paid_months,
+      payBeforehandMonths: promo.pay_beforehand_months,
+      bonusMonths: promo.bonus_months,
+      grants,
+    }));
+  } catch (err) { next(err); }
+});

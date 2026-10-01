@@ -23,6 +23,11 @@
 //   1. supplies the `minimumCycles` floor the ticket's horizon rule needs, and
 //   2. re-groups the engine's cadence sections by date.
 //
+// Since #922 both of those belong to `domain/billingEventSimulation.ts`, which
+// the Promotion card's own simulation adapts the same engine through: what is
+// left here is only the Plan's **context** — how a Membership Plan becomes that
+// hypothetical assignment.
+//
 // Nothing here decides which period is Free / Pre-paid / Pay / Bonus (that is
 // `classifyPlanDurationPeriod()`, reached through the engine), what a benefit
 // pair does to a line (`applyLineBenefit()`), or when the next charge falls
@@ -41,31 +46,31 @@
 // price.
 
 import {
-  BillingSimulationResult,
   SimulationAssignment,
-  SimulationBenefit,
   SellableItemFrequency,
   computeBillingSimulation,
 } from './billingSimulation';
+import {
+  BillingEventDate,
+  BillingEventLine,
+  BillingEventSimulationResult,
+  SIMULATED_CYCLES,
+  emptyBillingEventSimulation,
+  groupBillingEventsByDate,
+  todayUtc,
+} from './billingEventSimulation';
 import { PlanDuration, withDurationCadence } from './planDuration';
 import { PlanTimelineCadence } from './planExampleTimeline';
 import { NO_PERSONAL_FEE_BENEFIT } from './personalFeeBenefit';
 import { SellableItemBenefit } from './sellableItemBenefitActions';
 import { SellableItemBenefitCategory } from './sellableItemClassification';
 
-/**
- * How many complete cycles of every recurring billing frequency the simulation
- * spans. Two, per the ticket: "the simulation must be long enough to show two
- * complete cycles of the yearly event", so a Plan carrying a yearly item runs
- * two years and drags the 4-weekly ones along with it, and the length is
- * derived from the frequencies present rather than being a fixed number of
- * months.
- *
- * Because an event lands on the horizon itself, the fastest stream shows three
- * charges — the Sep 30 / Oct 28 / Nov 25 shape the ticket's own example has for
- * a lone 4-weekly Membership Fee.
- */
-export const SIMULATED_CYCLES = 2;
+// The horizon floor and the result shape are the shared projection's (#922);
+// re-exported so #915's own importers and tests keep reading them from here.
+export { SIMULATED_CYCLES };
+export type PlanSimulationLine = BillingEventLine;
+export type PlanSimulationDate = BillingEventDate;
+export type PlanBillingEventSimulationResult = BillingEventSimulationResult;
 
 /**
  * One Sellable Item the Plan carries, as this projection needs it: the item's
@@ -106,56 +111,10 @@ export interface PlanBillingEventSimulationInput {
   maxMonths?: number;
 }
 
-/** One line of one billing event. The money fields are the engine's, verbatim. */
-export interface PlanSimulationLine {
-  kind: 'membership_fee' | 'sellable_item';
-  label: string;
-  gym_charge_id: number | null;
-  /** True when this line exists because the Sellable Item is Mandatory (#832). */
-  mandatory: boolean;
-  quantity: number;
-  unit_price: number;
-  /** Before the Plan's own treatment — what the ticket calls "Regular price". */
-  regular_price: number;
-  /** After it. `0` for a waived line, which is still shown (the ticket's §Waive). */
-  actual_charge: number;
-  /** Why `actual_charge` differs from `regular_price`; empty at the regular price. */
-  benefits: SimulationBenefit[];
-}
-
-/** Every line that falls on one billing date, and what that date costs. */
-export interface PlanSimulationDate {
-  date: string;
-  lines: PlanSimulationLine[];
-  total: number;
-}
-
-export interface PlanBillingEventSimulationResult {
-  available: boolean;
-  /** Why there is nothing to simulate, for the caller to render in its own words. */
-  reason: string | null;
-  currency: 'EUR';
-  /** The hypothetical enrollment date the dates were counted from. */
-  anchor_date: string | null;
-  /** The last date the projection runs to. */
-  horizon_date: string | null;
-  /** The amounts are gross (see the tax note in the header). */
-  tax_included: boolean;
-  /** True when the engine's safety cap was reached before the horizon rule was met. */
-  truncated: boolean;
-  dates: PlanSimulationDate[];
-  total: number;
-}
-
 const NO_CADENCE_REASON = 'Configure a billing frequency to preview the billing events.';
 const NOTHING_TO_BILL_REASON = 'Configure a plan price or a benefit to preview the billing events.';
 
-const round2 = (n: number): number => Math.round(n * 100) / 100;
-
-const empty = (reason: string | null): PlanBillingEventSimulationResult => ({
-  available: false, reason, currency: 'EUR', anchor_date: null, horizon_date: null,
-  tax_included: true, truncated: false, dates: [], total: 0,
-});
+const empty = emptyBillingEventSimulation;
 
 /**
  * Projects the Plan as the assignment a member enrolling on `anchorDate` would
@@ -177,7 +136,7 @@ export function computePlanBillingEventSimulation(
     return empty(NO_CADENCE_REASON);
   }
 
-  const anchor = (input.anchorDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const anchor = (input.anchorDate ?? todayUtc()).slice(0, 10);
   const assignment: SimulationAssignment = {
     // The Plan is not assigned to anybody; the id only keys the engine's lines.
     userMembershipId: 0,
@@ -223,56 +182,6 @@ export function computePlanBillingEventSimulation(
     horizon_date: simulation.horizon_date,
     tax_included: true,
     truncated: simulation.truncated,
-    ...groupByDate(simulation, mandatoryByCharge),
+    ...groupBillingEventsByDate(simulation, mandatoryByCharge),
   };
-}
-
-/**
- * Re-groups the engine's cadence sections into one group per billing date — the
- * ticket's central rule: "the grouping is by **actual billing date**, while the
- * recurrence of each billing event remains independent".
- *
- * Independence is the engine's, not this function's: each item is its own stream
- * advancing at its own frequency, so nothing is converted to a common cadence or
- * merged into a single recurring definition. Two streams whose dates happen to
- * coincide simply land in the same group — which is exactly what the ticket's
- * "Membership Fee (every 4 weeks) + Insurance Fee (monthly) on Jan 20" example
- * asks for.
- *
- * Within a date the lines keep the engine's section order (one-off first, then
- * year, month, 4 weeks, …), so a one-off Registration Fee heads the first group.
- */
-function groupByDate(
-  simulation: BillingSimulationResult,
-  mandatoryByCharge: Map<number, boolean>,
-): { dates: PlanSimulationDate[]; total: number } {
-  const byDate = new Map<string, PlanSimulationDate>();
-  for (const section of simulation.sections) {
-    for (const event of section.events) {
-      let group = byDate.get(event.date);
-      if (!group) {
-        group = { date: event.date, lines: [], total: 0 };
-        byDate.set(event.date, group);
-      }
-      for (const line of event.lines) {
-        group.lines.push({
-          kind: line.kind,
-          label: line.label,
-          gym_charge_id: line.gym_charge_id,
-          mandatory: line.gym_charge_id != null && mandatoryByCharge.get(line.gym_charge_id) === true,
-          quantity: line.quantity,
-          unit_price: line.unit_price,
-          regular_price: line.regular_price,
-          actual_charge: line.actual_charge,
-          benefits: line.benefits,
-        });
-      }
-    }
-  }
-
-  const dates = [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  for (const group of dates) {
-    group.total = round2(group.lines.reduce((sum, line) => sum + line.actual_charge, 0));
-  }
-  return { dates, total: round2(dates.reduce((sum, group) => sum + group.total, 0)) };
 }

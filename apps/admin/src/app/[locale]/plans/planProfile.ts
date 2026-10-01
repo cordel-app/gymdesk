@@ -1,4 +1,11 @@
 import type { CSSProperties } from 'react';
+import {
+  BillingEventSimulationBenefit,
+  BillingEventSimulationData,
+  BillingEventSimulationDate,
+  BillingEventSimulationLine,
+  simulationPriceLabelKey,
+} from '@/lib/billingEventSimulation';
 
 /**
  * #816 — the single declaration of the Membership Plan's expanded-card shape.
@@ -483,73 +490,16 @@ export function planTimelineRowTone(status: PlanTimelineStatus): 'free' | 'regul
 
 /* ── Billing Event Simulation (#915) ──────────────────────────────────────── */
 //
-// The wire shape of `billing_event_simulation`
-// (`api/src/domain/planBillingEventSimulation.ts`) plus how one line reads. Every
-// amount is the server's, VAT included: which events exist, which date each falls
-// on, which benefit applies and what it costs are billing rules and are never
-// re-derived here (CLAUDE.md: no business logic duplicated in the frontend).
+// The wire shape and the price label are the shared projection's since #922 —
+// the Promotion card renders the same section off the same types (see
+// `lib/billingEventSimulation.ts` and the component beside it). Re-exported
+// under the names this page already used, so the Plan keeps its own vocabulary
+// (the keys resolve in the `plans.*` namespace) without a second declaration of
+// the shape. A row's `period_status` is a `PlanTimelineStatus` here but typed as
+// a plain string there, because the shared shape is both cards'.
 
-/** Why a line's charge differs from its regular price. */
-export interface PlanSimulationBenefit {
-  source: 'promotion' | 'membership_plan' | 'personal';
-  name: string | null;
-  action: 'no_benefit' | 'waive' | 'percentage_discount' | 'fixed_discount' | 'fixed_price' | 'included';
-  value: number | null;
-  period_status: PlanTimelineStatus | string | null;
-}
-
-export interface PlanSimulationLine {
-  kind: 'membership_fee' | 'sellable_item';
-  label: string;
-  gym_charge_id: number | null;
-  /** #832 — the line exists because the Sellable Item is Mandatory. */
-  mandatory: boolean;
-  quantity: number;
-  unit_price: number;
-  regular_price: number;
-  actual_charge: number;
-  benefits: PlanSimulationBenefit[];
-}
-
-export interface PlanSimulationDate {
-  date: string;
-  lines: PlanSimulationLine[];
-  total: number;
-}
-
-export interface PlanBillingEventSimulation {
-  available: boolean;
-  reason: string | null;
-  currency: string;
-  anchor_date: string | null;
-  horizon_date: string | null;
-  tax_included: boolean;
-  truncated: boolean;
-  dates: PlanSimulationDate[];
-  total: number;
-}
-
-/**
- * The `plans.*` key describing what a line's price is. The ticket's own
- * vocabulary: a line at its regular price reads "Regular price", a waived one
- * reads "Waived", and a discounted one names the discount.
- *
- * A Plan may only configure `no_benefit`, `waive` and `percentage_discount` on a
- * Sellable Item (#896 §16) and its Billing & Duration only ever waives, so the
- * other actions are unreachable from a Plan — they are mapped anyway rather than
- * left to fall through to a missing key, since the shape is the shared engine's.
- */
-export function planSimulationPriceLabelKey(
-  benefit: PlanSimulationBenefit | undefined,
-): string {
-  switch (benefit?.action) {
-    case undefined:
-    case 'no_benefit': return 'simulation_price_regular';
-    case 'waive':
-    case 'included': return 'simulation_price_waived';
-    case 'percentage_discount': return 'simulation_price_percentage';
-    case 'fixed_discount': return 'simulation_price_fixed_discount';
-    case 'fixed_price': return 'simulation_price_fixed_price';
-    default: return 'simulation_price_regular';
-  }
-}
+export type PlanSimulationBenefit = BillingEventSimulationBenefit;
+export type PlanSimulationLine = BillingEventSimulationLine;
+export type PlanSimulationDate = BillingEventSimulationDate;
+export type PlanBillingEventSimulation = BillingEventSimulationData;
+export const planSimulationPriceLabelKey = simulationPriceLabelKey;
