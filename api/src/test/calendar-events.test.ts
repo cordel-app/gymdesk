@@ -472,3 +472,79 @@ describe('professional_service_id (#647)', () => {
     });
   });
 });
+
+// ── GET ?center_id — the Calendar's own Center filter (#930) ──────────────────
+
+describe('GET /calendar-events?center_id (#930)', () => {
+  let secondCenterId: number;
+  let atCenterId: number;
+  let atOtherCenterId: number;
+  let gymWideId: number;
+
+  const WINDOW = { from: '2026-03-01T00:00:00', to: '2026-03-31T23:59:59' };
+
+  beforeAll(async () => {
+    const { insertId } = await db.query(
+      `INSERT INTO centers (gym_id, name, status) VALUES (?, 'Q Sport Norte', 'active')`,
+      [gymId],
+    );
+    secondCenterId = insertId;
+
+    async function create(body: Record<string, unknown>): Promise<number> {
+      const res = await request.post(BASE).set(headers()).send({
+        title: 'Center filter event',
+        starts_at: '2026-03-10T09:00:00',
+        ends_at: '2026-03-10T10:00:00',
+        ...body,
+      });
+      expect(res.status).toBe(201);
+      return res.body.id;
+    }
+
+    atCenterId      = await create({ center_id: centerId });
+    atOtherCenterId = await create({ center_id: secondCenterId });
+    // A manual event may belong to no center at all — a gym-wide event.
+    gymWideId       = await create({});
+  });
+
+  async function list(params = ''): Promise<number[]> {
+    const res = await request
+      .get(`${BASE}?from=${WINDOW.from}&to=${WINDOW.to}${params}`)
+      .set(headers());
+    expect(res.status).toBe(200);
+    return res.body.map((e: any) => e.id);
+  }
+
+  it('returns every center with no filter', async () => {
+    const ids = await list();
+    expect(ids).toContain(atCenterId);
+    expect(ids).toContain(atOtherCenterId);
+    expect(ids).toContain(gymWideId);
+  });
+
+  it('narrows to the selected center', async () => {
+    const ids = await list(`&center_id=${centerId}`);
+    expect(ids).toContain(atCenterId);
+    expect(ids).not.toContain(atOtherCenterId);
+  });
+
+  it('keeps a gym-wide (center_id IS NULL) event visible under every center', async () => {
+    // #478's rule for a member's schedule: an event belonging to no single
+    // center belongs to all of them, so a center filter must not hide it.
+    expect(await list(`&center_id=${centerId}`)).toContain(gymWideId);
+    expect(await list(`&center_id=${secondCenterId}`)).toContain(gymWideId);
+  });
+
+  it('combines with the other filters rather than replacing them', async () => {
+    const withSpace = await list(`&center_id=${centerId}&space_id=${spaceId}`);
+    expect(withSpace).not.toContain(atCenterId); // the event has no space
+  });
+
+  it('never reaches another gym through the filter', async () => {
+    const res = await request
+      .get(`${BASE}?from=${WINDOW.from}&to=${WINDOW.to}&center_id=${centerId}`)
+      .set(headers(otherGymId));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+});

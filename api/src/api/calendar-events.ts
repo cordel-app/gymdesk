@@ -771,13 +771,23 @@ export const calendarEventsRouter = Router();
 
 calendarEventsRouter.get('/', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { from, to, space_id, activity_type_id, trainer_membership_id } = req.query;
+  const { from, to, center_id, space_id, activity_type_id, trainer_membership_id } = req.query;
 
   const params: any[] = [gymId];
   let sql = `${EVENT_SELECT} WHERE ce.gym_id = ? AND ce.activity_type_id IS NULL AND ce.deleted_at IS NULL`;
 
   if (from)                 { sql += ' AND ce.ends_at >= ?';              params.push(from); }
   if (to)                   { sql += ' AND ce.starts_at <= ?';            params.push(to); }
+  // #930 — what the Calendar's own Center filter narrows by. It is a query
+  // param, like every other filter on this route: `x-center-id` has never
+  // filtered a read here, it only defaults the center of a write
+  // (`resolveCenterId`), so a read that wants one center has to say so.
+  // A manual event's `center_id` is nullable — a gym-wide event belongs to no
+  // single center — and such a row stays visible under every center, mirroring
+  // #478's rule for a member's schedule. A class session's center is mandatory,
+  // so `GET /class-sessions` filters strictly: the asymmetry is the column's,
+  // not the filter's.
+  if (center_id)            { sql += ' AND (ce.center_id = ? OR ce.center_id IS NULL)'; params.push(center_id); }
   if (space_id)             { sql += ' AND ce.space_id = ?';              params.push(space_id); }
   if (activity_type_id)     { sql += ' AND ce.activity_type_id = ?';      params.push(activity_type_id); }
   if (trainer_membership_id){ sql += ' AND ce.trainer_membership_id = ?'; params.push(trainer_membership_id); }

@@ -3072,6 +3072,8 @@
     "filter_activity_type": "Actividad",
     "filter_trainer": "Entrenador",
     "filter_select_placeholder": "Seleccionar…",
+    "filter_center": "Centro",
+    "filter_center_all": "Todos los centros",
     "today": "Hoy",
     "view_day": "Día",
     "view_week": "Semana",
