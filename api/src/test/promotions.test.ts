@@ -10,6 +10,7 @@ import {
   createTestMembership,
   request,
 } from './helpers';
+import { PROMOTION_TARGETS } from '../domain/promotionTarget';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -1481,5 +1482,177 @@ describe('Promotion benefit actions', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(after.body).toEqual(before.body);
+  });
+});
+
+// ─── Applies To (#926) ───────────────────────────────────────────────────────
+
+// `promotions.applies_to` (migration 204) is configuration and nothing else in
+// this ticket: no apply, pricing or snapshot path reads it. It decides which
+// sections the Promotion editor shows, so these tests assert persistence, the
+// create-time default, the accepted set — and, most importantly, that switching
+// the target reinterprets none of the Membership-Plan-specific configuration
+// already stored (§4).
+describe('applies_to', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Applies To Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  function post(body: Record<string, unknown>) {
+    return request
+      .post('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name: `AT ${Date.now()}-${Math.random()}`, starts_at: '2026-08-01', ends_at: '2026-08-31', ...body });
+  }
+
+  it('POST defaults to membership_plan when the field is omitted', async () => {
+    const res = await post({});
+    expect(res.status).toBe(201);
+    expect(res.body.applies_to).toBe('membership_plan');
+  });
+
+  // Every accepted target, not just the new one: this is the only test that
+  // exercises `chk_promotions_applies_to` itself, so a value the domain module
+  // accepts and the CHECK does not has to fail here rather than in production.
+  it('POST stores every target the domain module accepts', async () => {
+    for (const target of PROMOTION_TARGETS) {
+      const res = await post({ applies_to: target });
+      expect(res.status, `${target}: ${JSON.stringify(res.body)}`).toBe(201);
+      expect(res.body.applies_to).toBe(target);
+    }
+  });
+
+  it('POST rejects a target outside the accepted set', async () => {
+    const res = await post({ applies_to: 'bundle' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('applies_to');
+  });
+
+  it('GET list and GET /:id both report the stored target', async () => {
+    const created = await post({ applies_to: 'sellable_item' });
+    const id = created.body.id;
+
+    const list = await request
+      .get('/promotions')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(list.status).toBe(200);
+    expect(list.body.find((p: any) => p.id === id)?.applies_to).toBe('sellable_item');
+
+    const one = await request
+      .get(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(one.status).toBe(200);
+    expect(one.body.applies_to).toBe('sellable_item');
+  });
+
+  it('PUT switches the target, and rejects an unknown one', async () => {
+    const created = await post({});
+    const id = created.body.id;
+
+    const bad = await request
+      .put(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ applies_to: 'nonsense' });
+    expect(bad.status).toBe(400);
+
+    const ok = await request
+      .put(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ applies_to: 'sellable_item' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.applies_to).toBe('sellable_item');
+  });
+
+  it('PUT leaves the target alone when the body does not name it', async () => {
+    const created = await post({ applies_to: 'sellable_item' });
+    const id = created.body.id;
+    const res = await request
+      .put(`/promotions/${id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ description: 'renamed, target untouched' });
+    expect(res.status).toBe(200);
+    expect(res.body.applies_to).toBe('sellable_item');
+  });
+
+  // §4: "Changing the target should not silently migrate or reinterpret
+  // existing configuration." The two Membership-Plan-specific sub-resources are
+  // the Membership Fee Benefit and Suitable Membership Plans, and a round trip
+  // through sellable_item has to leave both exactly as they were — that is what
+  // makes hiding the sections safe rather than destructive.
+  it('switching the target keeps the Membership-Plan-specific configuration', async () => {
+    const created = await post({ paid_months: 3 });
+    const id = created.body.id;
+    const planId = await createPlan(gymId, `AT Plan ${Date.now()}`, 'active');
+
+    const plans = await request
+      .put(`/promotions/${id}/plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ membership_plan_ids: [planId] });
+    expect(plans.status).toBe(200);
+
+    const mf = await request
+      .put(`/promotions/${id}/membership-fee-benefit`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ duration_months: 2, enabled: true, action: 'percentage_discount', value: 25 });
+    expect(mf.status).toBe(200);
+
+    for (const target of ['sellable_item', 'membership_plan']) {
+      const res = await request
+        .put(`/promotions/${id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ applies_to: target });
+      expect(res.status).toBe(200);
+      expect(res.body.applies_to).toBe(target);
+
+      const { rows: planRows } = await db.query(
+        'SELECT membership_plan_id FROM promotion_membership_plans WHERE promotion_id = ? AND gym_id = ?',
+        [id, gymId],
+      );
+      expect(planRows.map((r: any) => r.membership_plan_id)).toEqual([planId]);
+
+      const { rows: mfRows } = await db.query(
+        'SELECT action, value, duration_months FROM promotion_membership_fee_benefits WHERE promotion_id = ? AND gym_id = ?',
+        [id, gymId],
+      );
+      expect(mfRows).toHaveLength(1);
+      expect(mfRows[0].action).toBe('percentage_discount');
+      expect(Number(mfRows[0].value)).toBe(25);
+      expect(mfRows[0].duration_months).toBe(2);
+    }
+  });
+
+  it('POST /:id/duplicate copies the target verbatim', async () => {
+    const created = await post({ applies_to: 'sellable_item' });
+    const res = await request
+      .post(`/promotions/${created.body.id}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(201);
+    expect(res.body.applies_to).toBe('sellable_item');
+  });
+
+  it('refuses a target the CHECK would reject, rather than letting the database answer', async () => {
+    // The 400 above is the router's; this asserts the other half of the pair —
+    // the CHECK migration 204 adds — so a future writer that skipped the
+    // validation still cannot store a third value.
+    await expect(
+      db.query(
+        `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status, applies_to)
+         VALUES (?, ?, '2026-08-01', '2026-08-31', 'active', 'bundle')`,
+        [gymId, `AT Check ${Date.now()}`],
+      ),
+    ).rejects.toThrow();
   });
 });
