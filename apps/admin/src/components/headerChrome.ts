@@ -15,10 +15,12 @@ import React from 'react';
 // carries the header's colours itself, and reads them from here rather than
 // restating them — the same reason `listChrome.ts` exists for a list page.
 //
-// `GymSelector` and `CenterSelector` style their own options with the
-// pre-token pair (`--chrome` / `#fff`), which stays readable under every
-// theme; #808 §6 scopes the change to the language selector, so they are left
-// exactly as they were and adopting this pair there is a ticket of its own.
+// `GymSelector` styles its own options with the pre-token pair (`--chrome` /
+// `#fff`), which stays readable under every theme; #808 §6 scopes the change to
+// the language selector, so it is left exactly as it was and adopting this pair
+// there is a ticket of its own. (`CenterSelector` was the other such control
+// until #930 moved center selection into the Calendar's own filter bar, where a
+// page control wears `filterControlStyle` and none of this applies.)
 
 /** The header band's own background. */
 export const HEADER_BG = 'var(--gd-header-bg, var(--chrome, #1a1a2e))';

@@ -3099,6 +3099,8 @@
     "filter_activity_type": "Activitat",
     "filter_trainer": "Entrenador",
     "filter_select_placeholder": "Seleccionar…",
+    "filter_center": "Centre",
+    "filter_center_all": "Tots els centres",
     "today": "Avui",
     "view_day": "Dia",
     "view_week": "Setmana",

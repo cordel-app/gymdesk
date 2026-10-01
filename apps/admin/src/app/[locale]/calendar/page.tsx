@@ -9,6 +9,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { btnStyle } from '@/components/ui';
 import { useModuleAccess } from '@/lib/useModuleAccess';
@@ -18,6 +19,7 @@ import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
+import { CalendarCenterFilter } from './CalendarCenterFilter';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -67,6 +69,10 @@ export default function CalendarPage() {
   const locale = useLocale();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
+  // #930 — the Center filter lives in this page's filter bar now, over the same
+  // center context the header dropdown used to drive. Reading it here is what
+  // makes the selection narrow the calendar, which it never did before.
+  const { activeCenterId } = useCenter();
   const { toast } = useToast();
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
   const dblClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -142,6 +148,7 @@ export default function CalendarPage() {
     (info: any, successCb: (events: any[]) => void, failureCb: (err: Error) => void) => {
       if (!activeGymId) return;
       const params = new URLSearchParams({ from: info.startStr, to: info.endStr });
+      if (activeCenterId) params.set('center_id', String(activeCenterId));
       if (filterMode === 'space'         && filterId) params.set('space_id', filterId);
       if (filterMode === 'activity_type' && filterId) params.set('activity_type_id', filterId);
       if (filterMode === 'trainer'       && filterId) params.set('trainer_membership_id', filterId);
@@ -179,7 +186,7 @@ export default function CalendarPage() {
         })
         .catch(failureCb);
     },
-    [activeGymId, filterMode, filterId, apiFetch, holidays],
+    [activeGymId, activeCenterId, filterMode, filterId, apiFetch, holidays],
   );
 
   function refetch() {
@@ -408,7 +415,8 @@ export default function CalendarPage() {
       </div>
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', flexShrink: 0 }}>
+        <CalendarCenterFilter />
         {(['all', 'space', 'activity_type', 'trainer'] as FilterMode[]).map((mode) => (
           <button
             key={mode}

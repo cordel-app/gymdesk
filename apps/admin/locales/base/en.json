@@ -3086,6 +3086,8 @@
     "filter_activity_type": "Activity",
     "filter_trainer": "Trainer",
     "filter_select_placeholder": "Select…",
+    "filter_center": "Center",
+    "filter_center_all": "All centers",
     "today": "Today",
     "view_day": "Day",
     "view_week": "Week",

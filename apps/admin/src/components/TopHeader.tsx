@@ -6,7 +6,6 @@ import { useTranslations } from 'next-intl';
 import { useUser } from '@clerk/nextjs';
 import { LanguagePicker } from './LanguagePicker';
 import { GymSelector } from './GymSelector';
-import { CenterSelector } from './CenterSelector';
 import { ImpersonationDialog } from './ImpersonationDialog';
 import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -75,7 +74,11 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
       <style>{`@media (max-width: 768px) { .hamburger-btn { display: flex !important; } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         {showSelector && <GymSelector />}
-        <CenterSelector />
+        {/* #930 — no Center selector here. Center selection is a Calendar
+            concern, so its one control lives in that page's filter bar
+            (`[locale]/calendar/CalendarCenterFilter.tsx`); a gym-wide header
+            dropdown made it look like a selection every section obeyed, which
+            Members never did. */}
         <LanguagePicker />
         {isSuperadmin && !isImpersonating && (
           <button
