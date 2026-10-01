@@ -19,7 +19,20 @@ export type MemberProfileFieldKey =
   | 'address'
   | 'emergency_contact'
   | 'nif_nie_passport'
-  | 'notes';
+  | 'notes'
+  | 'new_member';
+
+/**
+ * #927 — a Profile field the system calculates. It is part of the Profile's one
+ * field set (so both halves place it identically) but it is not part of the
+ * Member's editable columns: it has no form value, it is never submitted, and
+ * the layout renders it through its own callback so the Edit form cannot grow
+ * an input for it. Declared as a union of its own rather than a boolean flag on
+ * the spec alone, so the types below can subtract it.
+ */
+export type MemberCalculatedFieldKey = 'new_member';
+
+export type MemberEditableFieldKey = Exclude<MemberProfileFieldKey, MemberCalculatedFieldKey>;
 
 export interface MemberProfileFieldSpec {
   key: MemberProfileFieldKey;
@@ -40,6 +53,12 @@ export interface MemberProfileFieldSpec {
    * fill the field in, so it is never shown beside a value you cannot change.
    */
   helpKey?: string;
+  /**
+   * #927 §4 — the system calculates this field and nobody may change it. The
+   * layout renders it through `renderCalculated` in *both* modes, so the Edit
+   * form never sees it and the read-only view and the form show one value.
+   */
+  calculated?: true;
 }
 
 export const MEMBER_PROFILE_FIELDS: readonly MemberProfileFieldSpec[] = [
@@ -68,20 +87,54 @@ export const MEMBER_PROFILE_FIELDS: readonly MemberProfileFieldSpec[] = [
     kind: 'multiline',
     placeholderKey: 'placeholder_notes',
   },
+  // #927 §1 — last in the Profile, as the ticket's layout shows it. One label
+  // for both modes: the Edit form marks what it requires, and a value nobody
+  // can supply is neither required nor optional.
+  {
+    key: 'new_member',
+    labelKey: 'label_new_member',
+    editLabelKey: 'label_new_member',
+    calculated: true,
+  },
 ];
+
+/**
+ * A spec the Edit form may render a control for. Narrowing the key is what lets
+ * both halves index the Member (and the form values) by it: a calculated field
+ * has no column and no form value, and it never reaches `renderField`.
+ */
+export interface MemberEditableFieldSpec extends MemberProfileFieldSpec {
+  key: MemberEditableFieldKey;
+}
+
+/** The Profile's editable fields — everything the Edit form submits. */
+export const MEMBER_EDITABLE_PROFILE_FIELDS: readonly MemberEditableFieldSpec[] =
+  MEMBER_PROFILE_FIELDS.filter((f) => !f.calculated) as MemberEditableFieldSpec[];
 
 /**
  * The persisted Profile, exactly as `GET /members` and `GET /members/:id` return
  * it. `name` is the one NOT NULL column of the set; every other field is
  * optional and may come back null.
  */
-export type MemberProfile = { [K in Exclude<MemberProfileFieldKey, 'name'>]: string | null } & { name: string };
+export type MemberProfile =
+  { [K in Exclude<MemberEditableFieldKey, 'name'>]: string | null }
+  & { name: string }
+  /**
+   * #927 — calculated by the server on every read (`GET /members`,
+   * `GET /members/:id`) from the Member's Membership history, so the Members
+   * list, the Profile and the Promotion apply paths all answer with one rule.
+   * There is no column and nothing to submit.
+   */
+  & { is_new_member: boolean };
 
-/** The same fields as form state: every value is a string, never null. */
-export type MemberEditFormValues = Record<MemberProfileFieldKey, string>;
+/**
+ * The same fields as form state: every value is a string, never null — and only
+ * the editable ones, so a calculated field cannot be typed into or submitted.
+ */
+export type MemberEditFormValues = Record<MemberEditableFieldKey, string>;
 
 export const emptyMemberEditForm: MemberEditFormValues = Object.fromEntries(
-  MEMBER_PROFILE_FIELDS.map((f) => [f.key, '']),
+  MEMBER_EDITABLE_PROFILE_FIELDS.map((f) => [f.key, '']),
 ) as MemberEditFormValues;
 
 /**
@@ -92,10 +145,10 @@ export function toMemberEditFormValues(member: MemberProfile): MemberEditFormVal
   return {
     ...emptyMemberEditForm,
     ...(Object.fromEntries(
-      MEMBER_PROFILE_FIELDS.map((f) => [
-        f.key,
-        f.kind === 'date' ? dateInputValue(member[f.key]) : member[f.key] ?? '',
-      ]),
+      MEMBER_EDITABLE_PROFILE_FIELDS.map((f) => {
+        const key = f.key as MemberEditableFieldKey;
+        return [key, f.kind === 'date' ? dateInputValue(member[key]) : member[key] ?? ''];
+      }),
     ) as MemberEditFormValues),
   };
 }
@@ -116,4 +169,16 @@ export function formatProfileDate(value: string | null | undefined): string | nu
   const [y, m, d] = dateOnly.split('-').map(Number);
   if (!y || !m || !d) return dateOnly;
   return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/**
+ * #927 §1/§3 — the `New Member` status as the ticket draws it: a checkbox,
+ * ticked or not, beside the Profile's other values. The glyph is the value, so
+ * both halves of the card render it from here rather than each choosing one.
+ */
+export const NEW_MEMBER_CHECKED = '\u2611';
+export const NEW_MEMBER_UNCHECKED = '\u2610';
+
+export function newMemberCheckbox(isNewMember: boolean): string {
+  return isNewMember ? NEW_MEMBER_CHECKED : NEW_MEMBER_UNCHECKED;
 }

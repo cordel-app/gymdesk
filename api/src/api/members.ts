@@ -9,6 +9,7 @@ import { validateDocumentId, maskDocumentId } from '../domain/documentId';
 import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
 import { classifyAccount, loadAccountLinksFor } from '../infra/clerk-account-links';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
+import { isNewMemberStatus, newMemberStatusByMember } from './new-member-eligibility';
 
 /**
  * #513: never write the raw nif_nie_passport value into audit_logs — mask it
@@ -125,7 +126,14 @@ membersRouter.get('/', async (req, res) => {
      ${limitClause}`,
     params,
   );
-  res.json(rows);
+  // #927: the Member's `New Member` status — derived, never stored, so it
+  // tracks the Membership history and the passing of the 6-month window with
+  // no writer at all. One query for the whole page (never one per row), and
+  // the same pure rule the Promotion apply paths run, so the badge this list
+  // shows can never disagree with what a new-members-only Promotion enforces
+  // (§5). The Member Profile reads the very same field off this row.
+  const newMemberFlags = await newMemberStatusByMember(db, gymId, rows.map((r: any) => Number(r.id)));
+  res.json(rows.map((r: any) => ({ ...r, is_new_member: newMemberFlags.get(Number(r.id)) ?? true })));
 });
 
 membersRouter.get('/count', async (req, res) => {
@@ -150,7 +158,10 @@ membersRouter.get('/:id', async (req, res) => {
     [req.params.id, gymId],
   );
   if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
-  res.json(rows[0]);
+  // #927 §5: the same calculated status as the list, from the same rule — a
+  // second reader of a Member must not be able to answer it differently.
+  const isNewMember = await isNewMemberStatus(db, gymId, Number(rows[0].id));
+  res.json({ ...rows[0], is_new_member: isNewMember });
 });
 
 membersRouter.get('/:id/clerk-status', async (req, res, next) => {

@@ -641,7 +641,7 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
     expect(eligibility.get(secondUm)).toBe(false);
   });
 
-  it('is true again for a Member coming back after more than 12 months away', async () => {
+  it('is true again for a Member coming back after more than 6 months away', async () => {
     const memberId = await createMember(gymId);
     const oldPlan = await createPlan(gymId, `NME Lapsed ${uniq()}`);
     const newPlan = await createPlan(gymId, `NME Returning ${uniq()}`);
@@ -654,7 +654,7 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
     expect(eligibility.get(returningUm)).toBe(true);
   });
 
-  it('is false when the previous plan ended inside the last 12 months', async () => {
+  it('is false when the previous plan ended inside the last 6 months', async () => {
     const memberId = await createMember(gymId);
     const oldPlan = await createPlan(gymId, `NME Recent Lapse ${uniq()}`);
     const newPlan = await createPlan(gymId, `NME Rejoin ${uniq()}`);

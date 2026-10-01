@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  MEMBER_EDITABLE_PROFILE_FIELDS,
   MEMBER_PROFILE_FIELDS,
   emptyMemberEditForm,
   formatProfileDate,
@@ -136,6 +137,9 @@ describe('Members: the Profile field definition is shared (#797)', () => {
       'emergency_contact',
       'nif_nie_passport',
       'notes',
+      // #927 — calculated, and part of the same declaration so both halves
+      // place it identically.
+      'new_member',
     ]);
   });
 
@@ -144,10 +148,13 @@ describe('Members: the Profile field definition is shared (#797)', () => {
     // hand-written input per field, so a new field cannot reach only one half.
     expect(editFormSrc).toContain('onChange({ ...form, [field.key]: next })');
     expect(editFormSrc).toContain('const value = form[field.key];');
-    for (const field of MEMBER_PROFILE_FIELDS) {
+    for (const field of MEMBER_EDITABLE_PROFILE_FIELDS) {
       expect(pageSrc, `saveEdit does not submit ${field.key}`).toContain(`${field.key}:`);
     }
-    expect(Object.keys(emptyMemberEditForm).sort()).toEqual(MEMBER_PROFILE_FIELDS.map((f) => f.key).sort());
+    // #927: a calculated field has no form value and is never submitted.
+    expect(Object.keys(emptyMemberEditForm).sort())
+      .toEqual(MEMBER_EDITABLE_PROFILE_FIELDS.map((f) => f.key).sort());
+    expect(Object.keys(emptyMemberEditForm)).not.toContain('new_member');
     expect(editFormSrc).toContain("from './memberProfile'");
   });
 
@@ -182,6 +189,7 @@ describe('Members: Profile value formatting (#797)', () => {
         emergency_contact: null,
         nif_nie_passport: '12345678Z',
         notes: null,
+        is_new_member: true,
       }),
     ).toEqual({
       name: 'Test1',

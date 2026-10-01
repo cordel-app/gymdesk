@@ -66,7 +66,8 @@ async function createUserMembership(gymId: string, memberId: number, planId: num
 // `only_applicable_for_new_members` is explicit (and off by default here)
 // because the column defaults to 1 in the schema (#633, migration 163) and,
 // since #634 §3, that flag refuses the apply for a Member who held another
-// Membership Plan in the trailing 12 months. Promotions that are not about
+// Membership Plan in the trailing window (six months since #927). Promotions
+// that are not about
 // that rule opt out; the rule's own tests below pass `newMembersOnly`.
 // `paid_months` is set because a Membership Fee Benefit lives *inside* the
 // Promotion's own Free/Paid/Bonus timeline and ends with it (#635 stage 12's
@@ -461,6 +462,11 @@ describe('POST /user-memberships/:id/promotions — auth', () => {
 // was member of the gym 12 months ago and now is coming back, the flag only
 // applicable to new users will apply." (issue thread)
 //
+// #927 shortened that window to six months, for the Member's own `New Member`
+// status and for this rule alike ("6 months here and in promotions"), so the
+// cases below are written against a 3-month and an 18-month absence — either
+// side of both windows.
+//
 // The window arithmetic itself is covered by the unit tests in
 // new-member-eligibility.test.ts; these check that the rule actually gates the
 // apply paths, and that the assignment being configured never disqualifies its
@@ -521,7 +527,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     expect(res.body.error).toMatch(/new members/i);
   });
 
-  it('refuses a Member whose previous plan ended inside the last 12 months', async () => {
+  it('refuses a Member whose previous plan ended inside the last 6 months', async () => {
     const memberId = await createMember(gymId, 'NM Recent');
     await createAssignment(memberId, otherPlanId, {
       status: 'expired',
@@ -539,7 +545,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     expect(res.status).toBe(400);
   });
 
-  it('applies for a Member coming back more than 12 months later', async () => {
+  it('applies for a Member coming back more than 6 months later', async () => {
     const memberId = await createMember(gymId, 'NM Returning');
     const lapsedId = await createAssignment(memberId, otherPlanId, {
       status: 'expired',
