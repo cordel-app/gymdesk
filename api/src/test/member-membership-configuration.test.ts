@@ -1,8 +1,12 @@
 // Tests for member-membership-configuration.ts router
 //
 // #634 (stage 3) — GET /user-memberships/member/:memberId/configuration, the
-// Member's MEMBERSHIP PLANS / PROMOTIONS / ADDITIONAL SERVICES sections read in
-// one call. Mounted in app.ts behind requireAuth + tenantContext +
+// Member's MEMBERSHIP PLANS / ADDITIONAL SERVICES sections read in one call.
+//
+// #931 removed the Member-level PROMOTIONS section: a Promotion applies to a
+// Membership Plan or a Sellable Item, never to a Member, so this payload reports
+// no promotions at all. The fixtures still *apply* promotions — that is what
+// makes the absence a regression test rather than a coincidence of empty data. Mounted in app.ts behind requireAuth + tenantContext +
 // requireModuleAccess('PAYMENTS') + requireFeatureEnabled('payments.transactions').
 //
 // The route is read-only, so every fixture is inserted directly with db.query
@@ -202,7 +206,7 @@ describe('GET /user-memberships/member/:memberId/configuration — auth', () => 
 
     const res = await getConfiguration(readOnlyGym, readOnlyMember);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], promotions: [], services: [] });
+    expect(res.body).toEqual({ plans: [], services: [] });
   });
 });
 
@@ -266,14 +270,14 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     await createTestMembership(gymId, 'admin');
   });
 
-  it('returns three empty sections for a member with no assignments', async () => {
+  it('returns two empty sections for a member with no assignments', async () => {
     const memberId = await createMember(gymId);
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], promotions: [], services: [] });
+    expect(res.body).toEqual({ plans: [], services: [] });
   });
 
-  it('returns the plan, its promotions and its services', async () => {
+  it('returns the plan and its services, and never its promotions (#931)', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId, 'Shape Standard');
     const umId = await createAssignment(gymId, memberId, planId, {
@@ -291,7 +295,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(['plans', 'promotions', 'services']);
+    expect(Object.keys(res.body).sort()).toEqual(['plans', 'services']);
 
     // ── MEMBERSHIP PLANS ──
     expect(res.body.plans).toHaveLength(1);
@@ -312,15 +316,15 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     // longer reports the Plan's activity allowances.
     expect(plan.activity_allowances).toBeUndefined();
 
-    // ── PROMOTIONS (Member level, each row carrying its Assigned Plan) ──
-    expect(res.body.promotions).toHaveLength(1);
-    expect(res.body.promotions[0]).toMatchObject({
-      user_membership_id: umId,
-      plan_name: 'Shape Standard',
-      promotion_id: promoId,
-      status: 'applied',
-    });
-    expect(String(res.body.promotions[0].promotion_name)).toContain('Shape Spring');
+    // ── PROMOTIONS — #931: not part of a Member's configuration, even though
+    //    this assignment carries one. It is read from the Assigned Plan instead.
+    expect(res.body.promotions).toBeUndefined();
+    const { rows: stillApplied } = await db.query(
+      "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'",
+      [umId],
+    );
+    expect(stillApplied).toHaveLength(1);
+    expect(promoId).toBeGreaterThan(0);
 
     // ── ADDITIONAL SERVICES (Member level, same carrying rule) ──
     expect(res.body.services).toHaveLength(1);
@@ -338,7 +342,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     expect(Number(res.body.services[0].unit_price)).toBe(12.5);
   });
 
-  it("does not leak another member's plans, promotions or services", async () => {
+  it("does not leak another member's plans or services", async () => {
     const mine = await createMember(gymId, 'MMC Mine');
     const theirs = await createMember(gymId, 'MMC Theirs');
     const planId = await createPlan(gymId, 'Shape Shared Plan');
@@ -349,7 +353,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
 
     const res = await getConfiguration(gymId, mine);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], promotions: [], services: [] });
+    expect(res.body).toEqual({ plans: [], services: [] });
   });
 });
 
@@ -421,17 +425,17 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
     expect(res.body.plans.map((p: any) => Number(p.membership_fee))).toEqual([100, 75]);
   });
 
-  it('lists the promotions of both plans, each carrying its Assigned Plan', async () => {
+  it('reports no promotions, though both plans carry one (#931)', async () => {
     const res = await getConfiguration(gymId, memberId);
-    expect(res.body.promotions).toHaveLength(2);
-
-    const byUm = new Map(res.body.promotions.map((p: any) => [p.user_membership_id, p]));
-    expect(byUm.get(standardUm)).toMatchObject({
-      promotion_id: standardPromo, plan_name: 'Parallel Standard', status: 'applied',
-    });
-    expect(byUm.get(premiumUm)).toMatchObject({
-      promotion_id: premiumPromo, plan_name: 'Parallel Premium', status: 'applied',
-    });
+    expect(res.body.promotions).toBeUndefined();
+    // Both applications are untouched in the database — only the read changed.
+    const { rows } = await db.query(
+      `SELECT user_membership_id, promotion_id FROM user_membership_promotions
+       WHERE user_membership_id IN (?, ?) AND status = 'applied'`,
+      [standardUm, premiumUm],
+    );
+    expect(rows.map((r: any) => Number(r.promotion_id)).sort(byNumber))
+      .toEqual([standardPromo, premiumPromo].sort(byNumber));
   });
 
   it('lists the services of both plans, each carrying its Assigned Plan', async () => {
@@ -500,7 +504,7 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
     expect(dateOnly(res.body.plans[1].ends_at)).toBe('2026-05-31');
   });
 
-  it('excludes the promotions and services of cancelled and expired assignments', async () => {
+  it('excludes the services of cancelled and expired assignments', async () => {
     const memberId = await createMember(gymId);
     const livePlan = await createPlan(gymId, `Excluded Live ${uniq()}`);
     const deadPlan = await createPlan(gymId, `Excluded Dead ${uniq()}`);
@@ -526,25 +530,34 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
     expect(res.status).toBe(200);
     // Both plans are still listed …
     expect(res.body.plans.map((p: any) => p.id)).toEqual([liveUm, deadUm]);
-    // … but only the live one contributes promotions and services.
-    expect(res.body.promotions.map((p: any) => p.user_membership_id)).toEqual([liveUm]);
-    expect(res.body.promotions[0].promotion_id).toBe(livePromo);
+    // … but only the live one contributes services, and neither contributes a
+    // promotion: #931 took the section away entirely.
+    expect(res.body.promotions).toBeUndefined();
+    expect(livePromo).toBeGreaterThan(0);
+    expect(deadPromo).toBeGreaterThan(0);
     expect(res.body.services.map((s: any) => s.id)).toEqual([liveService]);
     expect(res.body.services[0].user_membership_id).toBe(liveUm);
   });
 });
 
-// ─── PROMOTIONS section details (#634 §13) ────────────────────────────────────
+// ─── No Member-level promotions (#931) ────────────────────────────────────────
+//
+// The section is gone, so what is asserted here is the *absence* of the field
+// under the cases that used to populate it — an applied application, a revoked
+// one, and several on one assignment — together with the rows surviving
+// untouched in the database ("No Promotion data is deleted as part of this UI
+// change"). Applying, revoking and re-applying stay covered by
+// membership-promotions.test.ts, against the Assigned Plan's own routes.
 
-describe('GET /user-memberships/member/:memberId/configuration — promotions section', () => {
+describe('GET /user-memberships/member/:memberId/configuration — no promotions (#931)', () => {
   let gymId: string;
 
   beforeAll(async () => {
-    gymId = await createTestGym('MMC Promotions Gym');
+    gymId = await createTestGym('MMC No Promotions Gym');
     await createTestMembership(gymId, 'admin');
   });
 
-  it('lists revoked promotions alongside applied ones', async () => {
+  it('reports no promotions for an assignment carrying an applied and a revoked one', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId, `Promo Revoked Plan ${uniq()}`);
     const umId = await createAssignment(gymId, memberId, planId, { startsAt: '2026-03-01' });
@@ -558,30 +571,23 @@ describe('GET /user-memberships/member/:memberId/configuration — promotions se
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(res.body.promotions).toHaveLength(2);
+    expect(Object.keys(res.body).sort()).toEqual(['plans', 'services']);
+    expect(res.body.plans).toHaveLength(1);
 
-    const byPromo = new Map(res.body.promotions.map((p: any) => [p.promotion_id, p]));
-    expect(byPromo.get(appliedPromo)).toMatchObject({ status: 'applied', user_membership_id: umId });
-    expect(byPromo.get(revokedPromo)).toMatchObject({ status: 'revoked', user_membership_id: umId });
+    // Both applications are still there, exactly as they were.
+    const { rows } = await db.query(
+      `SELECT promotion_id, status, revoked_at FROM user_membership_promotions
+       WHERE user_membership_id = ? ORDER BY promotion_id`,
+      [umId],
+    );
+    expect(rows).toHaveLength(2);
+    const byPromo = new Map(rows.map((r: any) => [Number(r.promotion_id), r]));
+    expect(byPromo.get(appliedPromo)).toMatchObject({ status: 'applied' });
+    expect(byPromo.get(revokedPromo)).toMatchObject({ status: 'revoked' });
     expect((byPromo.get(revokedPromo) as any).revoked_at).not.toBeNull();
   });
 
-  it('orders a plan\'s promotions newest applied_at first', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId, `Promo Order Plan ${uniq()}`);
-    const umId = await createAssignment(gymId, memberId, planId, { startsAt: '2026-03-01' });
-
-    const older = await createPromotion(gymId, planId, `Promo Older ${uniq()}`);
-    const newer = await createPromotion(gymId, planId, `Promo Newer ${uniq()}`);
-    // Inserted oldest-first on purpose — the order must come from applied_at.
-    await applyPromotion(gymId, umId, older, { appliedAt: '2026-03-01 08:00:00' });
-    await applyPromotion(gymId, umId, newer, { appliedAt: '2026-04-01 08:00:00' });
-
-    const res = await getConfiguration(gymId, memberId);
-    expect(res.body.promotions.map((p: any) => p.promotion_id)).toEqual([newer, older]);
-  });
-
-  it('returns an empty promotions section for a live plan with none applied', async () => {
+  it('reports no promotions for a live plan with none applied either', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId, `Promo None Plan ${uniq()}`);
     await createAssignment(gymId, memberId, planId);
@@ -589,7 +595,7 @@ describe('GET /user-memberships/member/:memberId/configuration — promotions se
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
     expect(res.body.plans).toHaveLength(1);
-    expect(res.body.promotions).toEqual([]);
+    expect(res.body.promotions).toBeUndefined();
   });
 });
 

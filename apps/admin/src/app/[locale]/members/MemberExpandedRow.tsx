@@ -27,7 +27,6 @@ import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { MemberBillingSimulation } from './MemberBillingSimulation';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
-import { MemberPromotions } from './MemberPromotions';
 import { MemberAdditionalServices } from './MemberAdditionalServices';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import { formatProfileDate, type MemberProfile } from './memberProfile';
@@ -123,13 +122,13 @@ export function MemberExpandedRow({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // #634 — the Member's Membership configuration: plans, promotions and
-  // additional services in one read, feeding three of the four sections.
+  // #634 — the Member's Membership configuration: the Member's plans and their
+  // additional services in one read, feeding two of the sections below.
   const [configuration, setConfiguration] = useState<MemberConfiguration>(EMPTY_CONFIGURATION);
   const [cancelling, setCancelling] = useState<MemberPlanRow | null>(null);
   const [assigningFor, setAssigningFor] = useState<MemberPlanRow | null>(null);
   // #629/#634 §12: the simulation must always reflect the current configuration,
-  // so remounting it is how a change in any of the three sections above re-runs it.
+  // so remounting it is how a change in either section above re-runs it.
   const [simulationKey, setSimulationKey] = useState(0);
 
   const [centers, setCenters] = useState<MemberCenter[]>([]);
@@ -197,9 +196,9 @@ export function MemberExpandedRow({
     }
   }
 
-  // #634 §12: every change in the MEMBERSHIP PLANS, PROMOTIONS or ADDITIONAL
-  // SERVICES sections lands here — it re-reads the configuration all three are
-  // rendered from and remounts the Billing Simulation, so the simulation always
+  // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL SERVICES
+  // sections lands here — it re-reads the configuration both are rendered from
+  // and remounts the Billing Simulation, so the simulation always
   // shows the Member's current complete configuration. The other expanded-row
   // sections (training plans, packages, billing events) are left alone.
   async function reloadConfiguration() {
@@ -333,10 +332,18 @@ export function MemberExpandedRow({
         </Section>
       )}
 
-      {/* #634 §13 — the Member's Membership configuration as four independent
-          sections. Promotions, Additional Services and the Billing Simulation
-          are siblings of MEMBERSHIP PLANS, never nested inside a plan card, and
-          each one has its own editing controls. */}
+      {/* #634 §13 — the Member's Membership configuration as independent
+          sections. Additional Services and the Billing Simulation are siblings
+          of MEMBERSHIP PLANS, never nested inside a plan card, and each one has
+          its own editing controls.
+
+          #931 — there is no PROMOTIONS section here. A Promotion belongs to the
+          target it applies to (a Membership Plan or a Sellable Item), never to a
+          Member, so it is configured from the Promotions page and applied with
+          the Membership Plan the Member is assigned — which is what the Billing
+          Simulation below already reflects. The applications an Assigned Plan
+          was agreed with stay on the Assigned Plans card, from that
+          application's own snapshot (#635 §16). */}
 
       {/* 1. MEMBERSHIP PLANS — the Member's plans, several of which may be
           active at once (§6). Adding one never replaces another (§14). */}
@@ -365,17 +372,7 @@ export function MemberExpandedRow({
         />
       </Section>
 
-      {/* 2. PROMOTIONS — managed independently of the plans they apply to (§3). */}
-      <Section label={t('members.section_promotions')}>
-        <MemberPromotions
-          plans={configuration.plans}
-          promotions={configuration.promotions}
-          canWrite={isAdmin}
-          onChanged={reloadConfiguration}
-        />
-      </Section>
-
-      {/* 3. ADDITIONAL SERVICES — recurring Sellable Items, added and removed at
+      {/* 2. ADDITIONAL SERVICES — recurring Sellable Items, added and removed at
           any time, independent from plans and promotions (§4). */}
       <Section label={t('members.section_additional_services')}>
         <MemberAdditionalServices

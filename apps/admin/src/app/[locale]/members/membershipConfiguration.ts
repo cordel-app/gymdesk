@@ -1,10 +1,15 @@
 // #634 — the shapes returned by GET /user-memberships/member/:id/configuration.
 //
-// One read backs the three configuration sections of the Member → Membership
-// experience (MEMBERSHIP PLANS, PROMOTIONS, ADDITIONAL SERVICES); the fourth,
-// BILLING SIMULATION, has its own endpoint from #629. Promotions and Services
-// are Member-level lists, never nested inside a Membership Plan card (§13), so
-// each row carries the Assigned Plan it belongs to.
+// One read backs the two configuration sections of the Member → Membership
+// experience (MEMBERSHIP PLANS, ADDITIONAL SERVICES); the third, BILLING
+// SIMULATION, has its own endpoint from #629. Services are a Member-level list,
+// never nested inside a Membership Plan card (§13), so each row carries the
+// Assigned Plan it belongs to.
+//
+// #931 — Promotions are not part of a Member's configuration: a Promotion
+// applies to a Membership Plan or a Sellable Item, never to a Member, so neither
+// this payload nor the Member card carries them. The applications an Assigned
+// Plan was agreed with are read from the Assigned Plans card instead.
 
 import type { AssignedPlanService } from '../financials/assigned-plans/types';
 
@@ -29,30 +34,18 @@ export interface MemberPlanRow {
    * would be accepted on this plan: the Member held no other Membership Plan
    * in the trailing 12 months. Reported per plan because the plan a Promotion
    * is attached to never counts against its own Member, so a Member's first
-   * plan and their second can differ. Server-computed; the API enforces it.
+   * plan and their second can differ. Server-computed, and the API is the
+   * enforcement point — the #931 removal of the PROMOTIONS section took away
+   * the picker that read it here, not the rule.
    */
   new_member_eligible: boolean;
-}
-
-export interface MemberPromotionRow {
-  id: number;
-  user_membership_id: number;
-  plan_name: string | null;
-  promotion_id: number;
-  promotion_name: string | null;
-  status: string;
-  applied_at: string | null;
-  revoked_at: string | null;
-  /** MySQL TINYINT(1), i.e. 0/1 over JSON. */
-  stackable: boolean | number;
 }
 
 export type MemberServiceRow = AssignedPlanService & { plan_name: string | null };
 
 export interface MemberConfiguration {
   plans: MemberPlanRow[];
-  promotions: MemberPromotionRow[];
   services: MemberServiceRow[];
 }
 
-export const EMPTY_CONFIGURATION: MemberConfiguration = { plans: [], promotions: [], services: [] };
+export const EMPTY_CONFIGURATION: MemberConfiguration = { plans: [], services: [] };

@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
-import { fetchAppliedPromotions } from './membership-promotions';
 import { loadServicesForAssignments } from './user-membership-services';
 import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
 import { currentMembershipFees } from './membership-fee-pricing';
@@ -9,27 +8,35 @@ import { currentMembershipFees } from './membership-fee-pricing';
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
  *
- * #634 §13 splits the Member → Membership experience into four independent
- * sections: MEMBERSHIP PLANS, PROMOTIONS, ADDITIONAL SERVICES and BILLING
- * SIMULATION. The simulation already has its own endpoint (#629,
- * billing-simulation.ts); this one feeds the other three.
+ * #634 §13 split the Member → Membership experience into independent sections:
+ * MEMBERSHIP PLANS, ADDITIONAL SERVICES and BILLING SIMULATION. The simulation
+ * already has its own endpoint (#629, billing-simulation.ts); this one feeds the
+ * other two.
  *
- * They are served together rather than as three endpoints because they are one
- * consistent picture of the same Member — the Promotions and Services sections
- * exist at Member level (never nested inside a Membership Plan card, §13), so
- * each row has to carry the Assigned Plan it belongs to, and fetching them per
- * plan from the browser would be an N+1 that could also tear: a plan added
- * between two requests would show with no promotions. Read-only end to end; it
- * writes nothing and persists nothing.
+ * They are served together rather than as two endpoints because they are one
+ * consistent picture of the same Member — the Services section exists at Member
+ * level (never nested inside a Membership Plan card, §13), so each row has to
+ * carry the Assigned Plan it belongs to, and fetching them per plan from the
+ * browser would be an N+1 that could also tear. Read-only end to end; it writes
+ * nothing and persists nothing.
+ *
+ * #931 — it reports **no** Promotions. A Promotion applies to a Membership Plan
+ * or a Sellable Item, never to a Member, so there is no Member-level Promotions
+ * section to feed: the applications an Assigned Plan was agreed with are read
+ * from that assignment's own routes (GET /user-memberships/:id/promotions) and
+ * displayed on the Assigned Plans card, from each application's own snapshot
+ * (#635 §16). Nothing about applying, revoking or pricing a Promotion changed —
+ * `new_member_eligible` below is still reported per plan, and the apply paths
+ * are still the enforcement point.
  *
  * Writes stay on the existing per-Assigned-Plan routes — POST
- * /user-memberships (add a plan), POST/DELETE /user-memberships/:id/promotions,
- * POST/DELETE /user-memberships/:id/services — so there is exactly one
- * enforcement point per rule and this module holds no business logic.
+ * /user-memberships (add a plan), POST/DELETE /user-memberships/:id/services —
+ * so there is exactly one enforcement point per rule and this module holds no
+ * business logic.
  */
 
 // The statuses that still have billing ahead of them, and therefore the
-// assignments whose Promotions and Services are part of the Member's *current*
+// assignments whose Services are part of the Member's *current*
 // configuration. Deliberately the same list the Billing Simulation consolidates
 // (SIMULATED_STATUSES in billing-simulation.ts), so the three configuration
 // sections and the simulation below them can never disagree about which plans
@@ -68,7 +75,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
 
   // Every assignment, newest first — the Member page has shown the full plan
   // history since #412 and #634 §14 does not retire it; `is_live` marks the
-  // ones the Promotions/Services sections and the simulation act on.
+  // ones the Services section and the simulation act on.
   const { rows: plans } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at, um.next_billing_date,
@@ -86,31 +93,15 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   const planNameById = new Map<number, string | null>(livePlans.map((p: any) => [p.id, p.plan_name]));
   const liveIds = livePlans.map((p: any) => p.id as number);
 
-  // fetchAppliedPromotions() is the same helper GET /user-memberships/:id and
-  // GET /user-memberships/:id/promotions answer with, so a promotion reads
-  // identically whichever surface lists it. One call per live assignment: a
-  // Member has a handful of plans, not a page of them.
-  const [promotionsPerPlan, services] = await Promise.all([
-    Promise.all(liveIds.map((id) => fetchAppliedPromotions(gymId, id))),
-    loadServicesForAssignments(gymId, liveIds),
-  ]);
-
-  const promotions = promotionsPerPlan.flatMap((rows, i) =>
-    rows.map((row: any) => ({
-      ...row,
-      user_membership_id: liveIds[i],
-      plan_name: planNameById.get(liveIds[i]) ?? null,
-    })),
-  );
+  const services = await loadServicesForAssignments(gymId, liveIds);
 
   // #634 §3 — whether a Promotion flagged "Only applicable for new members"
   // would be accepted on each plan. It is a property of the *Member*, but it is
   // reported per Assigned Plan because the plan a Promotion is attached to
   // never counts against its own Member (see new-member-eligibility.ts) — so
   // the answer differs between a Member's first plan and their second. The
-  // enforcement point stays POST /user-memberships/:id/promotions; this only
-  // lets the PROMOTIONS section say why an option is unavailable instead of
-  // offering it and surfacing a 400.
+  // enforcement point is and stays the apply path; this is the same answer, read
+  // without attempting one.
   const cutoff = newMemberCutoff(new Date());
 
   // #635 stage 15 — what each plan costs is resolved per assignment on the cycle
@@ -131,7 +122,6 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       is_live: Number(p.is_live) === 1,
       new_member_eligible: qualifiesAsNewMember(plans as any, cutoff, Number(p.id)),
     })),
-    promotions,
     services: services.map((s) => ({ ...s, plan_name: planNameById.get(s.user_membership_id) ?? null })),
   });
 });
