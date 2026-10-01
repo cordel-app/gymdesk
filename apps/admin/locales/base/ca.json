@@ -3313,6 +3313,8 @@
     "tax_behavior_inclusive": "Inclusiu (el preu inclou l'impost)",
     "tax_behavior_exclusive": "Exclusiu (l'impost s'afegeix al preu)",
     "taxIncluded": "(IVA inclòs)",
+    "price_total_for_sessions": "Preu total per {count, plural, one {# sessió} other {# sessions}}",
+    "price_total_for_package": "Preu total del paquet complet",
     "taxExcluded": "(IVA no inclòs)",
     "exempt": "Exempt",
     "section_professional_services": "Serveis Professionals",

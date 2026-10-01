@@ -16,7 +16,15 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { listNameBadgeAccentStyle, listNameBadgeStyle } from '@/components/listChrome';
+import { formHelpTextStyle } from '@/components/formChrome';
 import { Frequency, frequencyOptions, isLegacyFrequency } from './sellableItemFrequency';
+import {
+  SESSION_ITEM_TYPE,
+  SessionPackageNote,
+  sessionPackageNote,
+  sessionPackageNoteForForm,
+  taxNoteKey,
+} from './sellableItemPriceNotes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +37,10 @@ type ItemStatus = typeof STATUSES[number];
 type EnrollmentStatus = typeof ENROLLMENT_STATUSES[number];
 
 // #546: Professional Services only apply to Session-type ('sessions') items.
-const SESSION_TYPE: ItemType = 'sessions';
+// #942: the literal itself lives in `sellableItemPriceNotes.ts`, which is what
+// decides the "total price for N sessions" line, so the page cannot ask one
+// question of one spelling and another of a second.
+const SESSION_TYPE: ItemType = SESSION_ITEM_TYPE;
 
 // ─── List columns (#637) ──────────────────────────────────────────────────────
 // The column headers and every collapsed row are laid out from this one
@@ -53,7 +64,10 @@ const LIST_COLUMNS: ListColumn[] = [
   { labelKey: 'col_name', width: 180, grow: 2 },
   { labelKey: 'col_type', width: 100 },
   { labelKey: 'col_units', width: 70, align: 'right' },
-  { labelKey: 'col_price', width: 150 },
+  // #942: the Price cell carries the "Total price for N sessions" line under
+  // the figure, and every cell on this grid is nowrap-and-ellipsis (#637). 200
+  // is what the longest of those sentences needs in en/es/ca without being cut.
+  { labelKey: 'col_price', width: 200 },
   { labelKey: 'col_tax_rate', width: 80 },
   { labelKey: 'col_frequency', width: 110 },
   { labelKey: 'col_created_by', width: 100 },
@@ -257,6 +271,22 @@ export default function SellableItemsPage() {
       .catch(() => setProfessionalServices([]))
       .finally(() => setProfessionalServicesLoading(false));
   }, [activeGymId, gymLoading, isAdmin]);
+
+  // #942: the one place a `SessionPackageNote` becomes a sentence. The label is
+  // decided before `t()` is called — never with a `defaultValue` option, which
+  // next-intl has no such thing as (it would print the key).
+  function noteText(note: SessionPackageNote | null): string | null {
+    if (!note) return null;
+    return note.key === 'price_total_for_sessions'
+      ? t('price_total_for_sessions', { count: note.count })
+      : t('price_total_for_package');
+  }
+
+  /** A displayed price plus the `(tax …)` suffix that says what it includes. */
+  function withTaxNote(price: string, item: { tax_behavior: 'inclusive' | 'exclusive'; applied_tax_rate: number | null }): string {
+    const key = taxNoteKey(item);
+    return key ? `${price} ${t(key)}` : price;
+  }
 
   function taxRateOptions(currentId: string) {
     const options = taxRates.filter((tr) => tr.status === 'active');
@@ -479,6 +509,9 @@ export default function SellableItemsPage() {
 
   function renderInlineNewRow() {
     if (!inlineNew) return null;
+    // #942: off the draft's live Type and Units, so the sentence appears the
+    // moment Sessions is chosen and follows the count as it is typed.
+    const draftSessionNote = noteText(sessionPackageNoteForForm(inlineNew));
     return (
       <div style={cardStyle}>
         <div style={{ padding: '16px 20px' }}>
@@ -522,6 +555,9 @@ export default function SellableItemsPage() {
                 placeholder="0.00"
                 style={inlineInputStyle}
               />
+              {/* #942: the person typing the figure is the one who most needs
+                  to know it buys the whole package. */}
+              {draftSessionNote && <p style={formHelpTextStyle}>{draftSessionNote}</p>}
             </div>
             <div>
               <label style={inlineLabelStyle}>{t('label_frequency')}</label>
@@ -591,6 +627,13 @@ export default function SellableItemsPage() {
     const isEditing = editingId === item.id;
     const isSystem = Boolean(item.is_system);
     const isMandatory = Boolean(item.mandatory);
+    // #942: resolved once per row, for the collapsed Price cell and the
+    // expanded card's Price row — one rule, so the two cannot disagree about
+    // whether this item's price is a package total. The editor's own note comes
+    // from the form instead, so it tracks a Type or Units the user has changed
+    // but not yet saved.
+    const sessionNote = noteText(sessionPackageNote(item));
+    const editSessionNote = editForm ? noteText(sessionPackageNoteForForm(editForm)) : null;
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetails(item) },
@@ -634,6 +677,11 @@ export default function SellableItemsPage() {
             {item.amount_incl_tax != null
               ? `${item.currency === 'EUR' ? '€' : item.currency}${item.amount_incl_tax.toFixed(2)} ${t(item.tax_behavior === 'exclusive' ? 'taxExcluded' : 'taxIncluded')}`
               : fmtAmount(item.amount, item.currency)}
+            {/* #942: the figure above is the whole package, not one session.
+                The number it shows is unchanged — this line only says what it
+                covers, so `5` in the Units column beside `€50.00` can no longer
+                be read as €250.00. */}
+            {sessionNote && <span style={listHintStyle} title={sessionNote}>{sessionNote}</span>}
           </div>
           <div style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
             {item.applied_tax_rate != null
@@ -762,6 +810,9 @@ export default function SellableItemsPage() {
                   placeholder="0.00"
                   style={inlineInputStyle}
                 />
+                {/* #942, as in the create card — the same note from the same
+                    rule, off this form's live Type and Units. */}
+                {editSessionNote && <p style={formHelpTextStyle}>{editSessionNote}</p>}
               </div>
               <div>
                 <label style={inlineLabelStyle}>{t('label_frequency')}</label>
@@ -864,7 +915,11 @@ export default function SellableItemsPage() {
             <DetailRow label={t('label_mandatory')} value={item.mandatory ? t('yes') : t('no')} />
 
             <SectionHeader title={t('section_billing')} />
-            <DetailRow label={t('label_price')} value={fmtAmount(item.amount, item.currency)} />
+            <DetailRow
+              label={t('label_price')}
+              value={withTaxNote(fmtAmount(item.amount, item.currency), item)}
+              hint={sessionNote}
+            />
             <DetailRow label={t('label_frequency')} value={item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'} />
             {!isSystem && <DetailRow label={t('label_validity_days')} value={item.validity_days != null ? String(item.validity_days) : '—'} />}
             <DetailRow
@@ -994,7 +1049,11 @@ export default function SellableItemsPage() {
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <ModalSection title={t('section_billing')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <ModalField label={t('label_price')} value={fmtAmount(details.amount, details.currency)} />
+              <ModalField
+                label={t('label_price')}
+                value={withTaxNote(fmtAmount(details.amount, details.currency), details)}
+                hint={noteText(sessionPackageNote(details))}
+              />
               <ModalField label={t('label_frequency')} value={details.billing_frequency ? t(`frequency_${details.billing_frequency}`) : '—'} />
               <ModalField label={t('label_validity_days')} value={details.validity_days != null ? String(details.validity_days) : '—'} />
               <ModalField
@@ -1067,11 +1126,18 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+// `hint` (#942) is the sentence that explains the value rather than the field —
+// *Total price for 5 sessions* under a session package's Price. It sits under
+// the value, not under the label, because it qualifies the figure; a field's
+// own explanatory sentence belongs to the form behind `⋮ → Edit` (#797).
+function DetailRow({ label, value, hint }: { label: string; value: string; hint?: string | null }) {
   return (
     <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13 }}>
       <span style={{ width: 160, flexShrink: 0, color: '#666' }}>{label}</span>
-      <span style={{ color: '#111', flex: 1, whiteSpace: 'pre-wrap' }}>{value}</span>
+      <span style={{ color: '#111', flex: 1, whiteSpace: 'pre-wrap' }}>
+        {value}
+        {hint && <span style={detailHintStyle}>{hint}</span>}
+      </span>
     </div>
   );
 }
@@ -1080,16 +1146,37 @@ function ModalSection({ title }: { title: string }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</div>;
 }
 
-function ModalField({ label, value }: { label: string; value: string }) {
+function ModalField({ label, value, hint }: { label: string; value: string; hint?: string | null }) {
   return (
     <div>
       {label && <span style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>}
       <p style={{ margin: '2px 0 0', fontSize: 14, whiteSpace: 'pre-wrap' }}>{value}</p>
+      {hint && <p style={valueHintStyle}>{hint}</p>}
     </div>
   );
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+
+// #942: the clarification line beside a displayed price. One base plus the one
+// tweak each surface needs, rather than three looks — `formHelpTextStyle` is the
+// help line's chrome and a page does not restate it (#929). Italic, so the line
+// reads as a gloss on the figure above it rather than as a second value.
+const valueHintStyle: React.CSSProperties = {
+  ...formHelpTextStyle, fontStyle: 'italic',
+};
+
+// Inside the read-only card's Price row, where the value is a flex item: the
+// hint has to claim a line of its own.
+const detailHintStyle: React.CSSProperties = {
+  ...valueHintStyle, display: 'block',
+};
+
+// Inside a collapsed row's Price cell, where the figure above it is 13px and the
+// row has no vertical room to spare.
+const listHintStyle: React.CSSProperties = {
+  ...valueHintStyle, display: 'block', margin: '2px 0 0', fontSize: 11,
+};
 
 const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
 
