@@ -1319,7 +1319,21 @@
     "item_action_value_percentage_discount": "Promoció (%)",
     "item_action_value_fixed_discount": "Import de la promoció",
     "item_action_value_fixed_price": "Preu de la promoció",
-    "benefit_value_required": "Introdueix un valor per a la promoció aplicada a «{item}»."
+    "benefit_value_required": "Introdueix un valor per a la promoció aplicada a «{item}».",
+    "section_billing_event_simulation": "Simulació d'esdeveniments de facturació",
+    "simulation_example_note": "Exemple: un client a qui s'aplica aquesta promoció el {date}",
+    "simulation_unavailable": "Afegeix un article venible promocionat per previsualitzar els esdeveniments de facturació que afecta aquesta promoció.",
+    "simulation_mandatory": "Obligatori",
+    "simulation_total": "Total",
+    "simulation_regular_was": "Preu habitual {amount}",
+    "simulation_price_regular": "Preu habitual",
+    "simulation_price_waived": "Exempt",
+    "simulation_price_percentage": "{value}% de descompte",
+    "simulation_price_fixed_discount": "{amount} de descompte",
+    "simulation_price_fixed_price": "Preu fix {amount}",
+    "simulation_disclaimer": "Només és un exemple. Les dates i els imports són il·lustratius i es recalcularan a partir de la data real d'inscripció de cada client. No es mostra la quota de soci: depèn del pla de membresia al qual s'apliqui aquesta promoció.",
+    "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
+    "tax_included_suffix": "IVA inclòs"
   },
   "audit": {
     "title": "Registre d'auditoria",

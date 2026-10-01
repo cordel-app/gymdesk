@@ -18,7 +18,7 @@ import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
-import { PlanBillingEventSimulation } from './PlanBillingEventSimulation';
+import { BillingEventSimulation } from '@/components/BillingEventSimulation';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
   SellableItemBenefitEditor,
@@ -1451,7 +1451,7 @@ export default function PlansPage() {
                         the run does not make. Nothing is persisted and nothing
                         is charged. */}
                     <SectionHeader title={t('plans.section_billing_event_simulation')} />
-                    <PlanBillingEventSimulation
+                    <BillingEventSimulation
                       simulation={plan.billing_event_simulation}
                       t={(key, values) => t(`plans.${key}` as any, values as any)}
                       formatDate={(date) => fmtTimelineDate(date, locale)}

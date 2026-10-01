@@ -1333,7 +1333,21 @@
     "item_action_value_percentage_discount": "Promotion (%)",
     "item_action_value_fixed_discount": "Promotion amount",
     "item_action_value_fixed_price": "Promotion price",
-    "benefit_value_required": "Enter a value for the promotion applied to \"{item}\"."
+    "benefit_value_required": "Enter a value for the promotion applied to \"{item}\".",
+    "section_billing_event_simulation": "Billing Event Simulation",
+    "simulation_example_note": "Example: a customer given this Promotion on {date}",
+    "simulation_unavailable": "Add a promoted Sellable Item to preview the billing events this Promotion affects.",
+    "simulation_mandatory": "Mandatory",
+    "simulation_total": "Total",
+    "simulation_regular_was": "Regular price {amount}",
+    "simulation_price_regular": "Regular price",
+    "simulation_price_waived": "Waived",
+    "simulation_price_percentage": "{value}% off",
+    "simulation_price_fixed_discount": "{amount} off",
+    "simulation_price_fixed_price": "Fixed price {amount}",
+    "simulation_disclaimer": "Example only. Dates and amounts are illustrative and will be recalculated from each customer's actual enrollment date. The Membership Fee is not shown: it belongs to the Membership Plan this Promotion is applied to.",
+    "simulation_truncated": "The projection was cut short at its safety limit — later billing events are not shown.",
+    "tax_included_suffix": "VAT included"
   },
   "audit": {
     "title": "Audit log",
