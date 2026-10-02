@@ -83,3 +83,70 @@ export function simulationPriceLabelKey(
   }
 }
 
+
+/* ── Collapsible billing-period cards (#955) ──────────────────────────────── */
+//
+// The section is one collapsible card per billing *date*, so the three pure
+// decisions that layout needs live here rather than inside the component: which
+// of the Example Timeline's three tones a line reads in, which cards start
+// open, and whether the global control currently says *Expand all* or
+// *Collapse all*. None of them touches an amount, a date or a treatment — those
+// are the server's and are only formatted.
+
+/**
+ * The Example Timeline's three tones (`ExampleTimelineTone`), spelled here so
+ * this module stays JSX-free; the component maps them onto that table's own
+ * exported colours rather than declaring any of its own (#955: "do not
+ * introduce new colors specifically for this component").
+ */
+export type SimulationLineTone = 'free' | 'benefit' | 'regular';
+
+/**
+ * What a line's row is drawn in, in the Example Timeline's own semantics: green
+ * for an occurrence that charges nothing, amber for one a benefit or a Pre-paid
+ * Duration changed, grey for an ordinary charge.
+ *
+ * It reads the treatment the server already reported — a `waive`d (or the
+ * pre-#896 `included`) line is free, a line carrying any other action or the
+ * `prepaid_periods` count of #946's lump is the promotional tone — and never
+ * compares amounts, because €0.00 is also what an item with no price costs.
+ */
+export function simulationLineTone(line: BillingEventSimulationLine): SimulationLineTone {
+  const actions = line.benefits.map((b) => b.action);
+  if (actions.some((a) => a === 'waive' || a === 'included')) return 'free';
+  if (actions.some((a) => a !== 'no_benefit')) return 'benefit';
+  if (line.prepaid_periods != null) return 'benefit';
+  return 'regular';
+}
+
+/**
+ * The initial state of the cards: the **first** billing period open and every
+ * other one closed (#955 — "the first billing period should be expanded by
+ * default"), keyed by the group's own date.
+ */
+export function initialExpandedPeriods(
+  dates: readonly BillingEventSimulationDate[],
+): Record<string, boolean> {
+  return Object.fromEntries(dates.map((group, i) => [group.date, i === 0]));
+}
+
+/** Every card open or closed — what the global control applies. */
+export function allExpandedPeriods(
+  dates: readonly BillingEventSimulationDate[],
+  expanded: boolean,
+): Record<string, boolean> {
+  return Object.fromEntries(dates.map((group) => [group.date, expanded]));
+}
+
+/**
+ * Whether every card is currently open, which is what the global control
+ * reflects ("the global control always reflects whether all cards are currently
+ * expanded"). A section with no periods is not "all expanded" — its control is
+ * not rendered at all.
+ */
+export function everyPeriodExpanded(
+  dates: readonly BillingEventSimulationDate[],
+  expanded: Record<string, boolean>,
+): boolean {
+  return dates.length > 0 && dates.every((group) => expanded[group.date] === true);
+}
