@@ -3,10 +3,12 @@
  * the two kinds, their endpoints, their locale keys, the persisted shape, the
  * values the Edit form is seeded from and the payloads it submits.
  *
- * Both libraries import it — `nutrition/nutrition-library` for a gym's and
- * `cordel/nutrition-library` for the platform's — so the list row, the read-only
- * expanded row, the Details modal and the Edit form cannot drift apart into four
- * field lists (#799 §26), exactly as `nutritionItemProfile.ts` does for Foods.
+ * Every screen that renders a goal catalogue imports it — the Nutrition Goals tab
+ * of `nutrition/nutrition-library` and `cordel/nutrition-library`, and since #948
+ * the Personal Goals sections of `personal-goals` and `cordel/personal-goals` — so
+ * the list row, the read-only expanded row, the Details modal and the Edit form
+ * cannot drift apart into four field lists (#799 §26), exactly as
+ * `nutritionItemProfile.ts` does for Foods.
  * There is one editor for the pair as well (`GoalLibrarySection`), which names no
  * endpoint: the router root is a prop, which is what keeps the gym's module
  * permissions and `requireSuperadmin` out of the shared UI (#806).
@@ -39,10 +41,21 @@ export const GOAL_AUDIT_ENTITIES: Record<GoalKind, string> = {
 };
 
 /**
- * The three tabs the Nutrition Library is organised into (§1, §2), in order. The
+ * The tabs the Nutrition Library is organised into (#947 §1/§2), in order. The
  * same declaration drives both libraries, so neither page can offer a different
  * set of tabs or order them differently — which is also why a tab id is either
  * `'foods'` or a `GoalKind`, so a tab cannot name a catalogue that does not exist.
+ *
+ * **Personal Goals is no longer one of them** (#948 §3/§9): it is its own section,
+ * at `/{locale}/personal-goals` and `/{locale}/cordel/personal-goals`, because a
+ * Personal Goal does not depend on Nutrition and is a different entity (§8). What
+ * is left here is Foods and Nutrition Goals, which stay exactly as #947 shipped
+ * them — the goal catalogue that *is* a nutrition concept keeps its tab.
+ *
+ * A tab is still a `GoalKind` or `'foods'` rather than a free string, so removing
+ * Personal Goals from the strip could not leave a tab pointing at nothing; the
+ * *kinds* are unchanged, since `GoalLibrarySection` serves the Personal Goals
+ * section from the very same declaration.
  *
  * Each tab's `+ Add` label (§7) belongs to whatever renders that tab: the Foods
  * button is the page's existing one, and a goal section renders its own
@@ -51,14 +64,19 @@ export const GOAL_AUDIT_ENTITIES: Record<GoalKind, string> = {
  */
 export const LIBRARY_TABS = [
   { id: 'foods', labelKey: 'tab_foods' },
-  { id: 'personal', labelKey: 'tab_personal_goals' },
   { id: 'nutrition', labelKey: 'tab_nutrition_goals' },
 ] as const;
 
 export type LibraryTabId = (typeof LIBRARY_TABS)[number]['id'];
 
-/** Whether a tab is one of the two goal catalogues rather than Foods. */
-export function isGoalTab(tab: LibraryTabId): tab is GoalKind {
+/**
+ * Whether a tab is a goal catalogue rather than Foods.
+ *
+ * The predicate narrows to the goal *tabs*, not to every `GoalKind`: `personal`
+ * is a kind the Personal Goals section renders and no longer a tab, so promising
+ * `tab is GoalKind` here would be a type the parameter can never hold.
+ */
+export function isGoalTab(tab: LibraryTabId): tab is Exclude<LibraryTabId, 'foods'> {
   return tab !== 'foods';
 }
 

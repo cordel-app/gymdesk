@@ -19,11 +19,13 @@ import {
   toNutritionItemFormValues,
 } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
-// #947: the library is three tabs now — Foods (this page's own body), Personal
-// Goals and Nutrition Goals. Which tabs exist and their order are declared once,
-// in `goalProfile.ts`, and shared with Cordel's Base library; the goal sections are
-// one component serving both pages, handed this page's API root and its own
-// namespace to resolve labels in.
+// #947: the library is tabbed — Foods (this page's own body) and Nutrition Goals.
+// Which tabs exist and their order are declared once, in `goalProfile.ts`, and
+// shared with Cordel's Base library; the goal section is one component serving
+// both pages, handed this page's API root and its own namespace to resolve labels
+// in. #948 moved **Personal Goals** out of the strip to its own section
+// (`/{locale}/personal-goals`), which renders that very same component — a
+// Personal Goal does not depend on Nutrition and is a different entity (§8).
 import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
@@ -54,9 +56,9 @@ const LIMIT = 20;
 
 export default function NutritionLibraryPage() {
   const t = useTranslations();
-  // The goal tabs' labels live in their own namespace, shared with Cordel's Base
-  // library so the same section cannot read one way on one page and another on the
-  // other (#806).
+  // The goal tab's labels live in their own namespace, shared with Cordel's Base
+  // library and with both Personal Goals sections, so the same section cannot read
+  // one way on one page and another on the other (#806).
   const tGoals = useTranslations('goal_library');
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading } = useGym();
@@ -384,8 +386,8 @@ export default function NutritionLibraryPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('nutrition_library.title')}</h1>
-        {/* The Foods tab's own `+ Add` (§7). Each goals tab renders its own, which
-            is why this one is absent rather than relabelled while one is open. */}
+        {/* The Foods tab's own `+ Add` (§7). The goals tab renders its own, which
+            is why this one is absent rather than relabelled while it is open. */}
         {tab === 'foods' && (
           <button style={readOnlyStyle(btnStyle(), !canWrite)} onClick={openInlineNew} disabled={!canWrite || creating} title={readOnlyTitle}>{t('nutrition_library.add_new')}</button>
         )}
@@ -393,6 +395,8 @@ export default function NutritionLibraryPage() {
 
       <LibraryTabs active={tab} onChange={setTab} label={(key) => tGoals(key as any)} />
 
+      {/* The Nutrition Goals tab. Personal Goals is its own section since #948,
+          rendering this same component with `kind="personal"`. */}
       {isGoalTab(tab) && (
         <GoalLibrarySection
           kind={tab}

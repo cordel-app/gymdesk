@@ -1,7 +1,8 @@
 // Tests for goal-library.ts router
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { invalidateFeatureFlagsCache } from '../infra/featureFlags';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -622,3 +623,73 @@ for (const kind of KINDS) {
     });
   });
 }
+
+/**
+ * #948 §3/§8/§9 — Personal Goals is its own admin section now, not a tab of the
+ * Nutrition Library, so it is gated by its own feature flag. The two keys have to
+ * be independent in **both** directions: hiding Foods must not 403 a section of a
+ * different domain, and hiding Personal Goals must not take the Nutrition Library
+ * down with it.
+ *
+ * The caller is a gym admin rather than a superadmin, since a superadmin acting as
+ * themselves bypasses every flag.
+ */
+describe('#948 — Personal Goals has its own feature flag', () => {
+  const LIBRARY_KEY = 'nutrition.nutrition_library';
+  const PERSONAL_KEY = 'nutrition.personal_goals';
+  let original: Record<string, number> = {};
+
+  beforeAll(async () => {
+    const { rows } = await db.query<{ feature_key: string; enabled: number }>(
+      'SELECT feature_key, enabled FROM feature_flags WHERE feature_key IN (?, ?)',
+      [LIBRARY_KEY, PERSONAL_KEY],
+    );
+    original = Object.fromEntries(rows.map((r) => [r.feature_key, r.enabled]));
+  });
+
+  afterEach(async () => {
+    for (const [key, enabled] of Object.entries(original)) {
+      await db.query('UPDATE feature_flags SET enabled = ? WHERE feature_key = ?', [enabled, key]);
+    }
+    invalidateFeatureFlagsCache();
+  });
+
+  async function setFlag(key: string, enabled: boolean) {
+    await db.query('UPDATE feature_flags SET enabled = ? WHERE feature_key = ?', [enabled ? 1 : 0, key]);
+    invalidateFeatureFlagsCache();
+  }
+
+  it('seeds the key migration 211 adds, so it is switchable on Cordel → Feature Flags', () => {
+    // A missing key already counts as enabled, so the row exists to make the flag
+    // visible — and its absence would mean the migration never ran.
+    expect(Object.keys(original).sort()).toEqual([LIBRARY_KEY, PERSONAL_KEY].sort());
+  });
+
+  it('is enabled by default, so an existing platform sees the new section', async () => {
+    expect((await listGoals('/personal-goals')).status).toBe(200);
+  });
+
+  it('hiding the Nutrition Library leaves Personal Goals readable', async () => {
+    await setFlag(LIBRARY_KEY, false);
+    expect((await listGoals('/nutrition-goals')).status).toBe(403);
+    expect((await listGoals('/personal-goals')).status).toBe(200);
+  });
+
+  it('hiding Personal Goals leaves the Nutrition Library readable', async () => {
+    await setFlag(PERSONAL_KEY, false);
+    expect((await listGoals('/personal-goals')).status).toBe(403);
+    expect((await listGoals('/nutrition-goals')).status).toBe(200);
+  });
+
+  it('the Nutrition group flag still blocks both', async () => {
+    await db.query("UPDATE feature_flags SET enabled = 0 WHERE feature_key = 'nutrition'");
+    invalidateFeatureFlagsCache();
+    try {
+      expect((await listGoals('/personal-goals')).status).toBe(403);
+      expect((await listGoals('/nutrition-goals')).status).toBe(403);
+    } finally {
+      await db.query("UPDATE feature_flags SET enabled = 1 WHERE feature_key = 'nutrition'");
+      invalidateFeatureFlagsCache();
+    }
+  });
+});

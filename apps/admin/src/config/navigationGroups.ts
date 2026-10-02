@@ -141,6 +141,11 @@ export const navigationGroups: NavGroup[] = [
     ],
   },
   {
+    // #948 §1: the group reads **Nutrition & Goals**. It is a navigation label and
+    // nothing else — the id, the module, the feature keys and every existing
+    // item's href are deliberately unchanged (§2), and Personal Goals shares the
+    // group for navigation only: there is no business relationship between the two
+    // domains (§8).
     id: 'nutrition',
     labelKey: 'nav.groups.nutrition',
     icon: 'apple',
@@ -165,6 +170,16 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/nutrition/nutrition-plans',
         labelKey: 'nav.nutrition_plans',
         featureKey: 'nutrition.nutrition_plans',
+        separatorAbove: true,
+      },
+      {
+        // #948 §3/§9: its own section rather than a tab of the Nutrition Library.
+        // The href is **not** under `/nutrition/` — a Personal Goal does not depend
+        // on Nutrition and is a different entity (§8) — and its feature key is its
+        // own, so hiding the Nutrition Library cannot hide it.
+        href: '/{{locale}}/personal-goals',
+        labelKey: 'nav.personal_goals',
+        featureKey: 'nutrition.personal_goals',
         separatorAbove: true,
       },
     ],
@@ -306,6 +321,15 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/cordel/nutrition-plan-templates',
         labelKey: 'nav.base_nutrition_plan_templates',
+      },
+      {
+        // #948 §5: Base Personal Goals, the System-level catalogue the gym-level
+        // Personal Goals library reads — its own Cordel section, separated from
+        // the Base Nutrition pair above because the two are independent system
+        // entities (§8).
+        href: '/{{locale}}/cordel/personal-goals',
+        labelKey: 'nav.base_personal_goals',
+        separatorAbove: true,
       },
       {
         href: '/{{locale}}/cordel/exercises',

@@ -47,6 +47,10 @@ const tabsSrc = read('components', 'goalLibrary', 'LibraryTabs.tsx');
 const modalSrc = read('components', 'goalLibrary', 'GoalDetailsModal.tsx');
 const gymPageSrc = read('app', '[locale]', 'nutrition', 'nutrition-library', 'page.tsx');
 const cordelPageSrc = read('app', '[locale]', 'cordel', 'nutrition-library', 'page.tsx');
+// #948 — the two Personal Goals sections, which render the same shared component.
+const personalPageSrc = read('app', '[locale]', 'personal-goals', 'page.tsx');
+const cordelPersonalPageSrc = read('app', '[locale]', 'cordel', 'personal-goals', 'page.tsx');
+const navSrc = read('config', 'navigationGroups.ts');
 const apiAppSrc = readFileSync(join(__dirname, '..', '..', '..', '..', 'api', 'src', 'app.ts'), 'utf-8');
 
 function goalNamespace(code: string): Record<string, string> {
@@ -66,17 +70,29 @@ function slice(from: string, to: string, src: string): string {
 }
 
 describe('library tabs (§1, §2, §6)', () => {
-  it('declares exactly three tabs, Foods first', () => {
-    expect(LIBRARY_TABS.map((t) => t.id)).toEqual(['foods', 'personal', 'nutrition']);
+  // #948 §3/§9 moved Personal Goals out of the strip into its own section, so what
+  // is left is Foods and the goal catalogue that *is* a nutrition concept.
+  it('declares exactly two tabs, Foods first', () => {
+    expect(LIBRARY_TABS.map((t) => t.id)).toEqual(['foods', 'nutrition']);
   });
 
-  it('separates the goal tabs from Foods', () => {
+  it('separates the goal tab from Foods', () => {
     expect(isGoalTab('foods')).toBe(false);
-    expect(isGoalTab('personal')).toBe(true);
     expect(isGoalTab('nutrition')).toBe(true);
-    // A goal tab is a goal kind, so a tab can never name a catalogue that does
-    // not exist.
-    expect(LIBRARY_TABS.filter((t) => isGoalTab(t.id)).map((t) => t.id)).toEqual([...GOAL_KINDS]);
+    // A tab id is still either 'foods' or a goal kind, so no tab can name a
+    // catalogue that does not exist — the kinds themselves are unchanged, since
+    // the Personal Goals sections render the very same component.
+    const goalTabs = LIBRARY_TABS.filter((t) => isGoalTab(t.id)).map((t) => t.id as string);
+    expect(goalTabs).toEqual(['nutrition']);
+    for (const id of goalTabs) expect(GOAL_KINDS as readonly string[]).toContain(id);
+  });
+
+  it('no longer offers a Personal Goals tab on either library page', () => {
+    for (const src of [gymPageSrc, cordelPageSrc]) {
+      expect(src).not.toContain('tab_personal_goals');
+      expect(src).not.toContain("kind=\"personal\"");
+    }
+    expect(Object.keys(locales.en)).not.toContain('tab_personal_goals');
   });
 
   it('is one component, rendered by both libraries', () => {
@@ -100,7 +116,7 @@ describe('library tabs (§1, §2, §6)', () => {
     expect(tabsSrc).toContain('aria-selected={selected}');
   });
 
-  it('shows the goal sections for both kinds, with each library\'s own scope', () => {
+  it('shows the goal tab\'s section with each library\'s own scope', () => {
     expect(gymPageSrc).toMatch(/isGoalTab\(tab\)[\s\S]*kind=\{tab\}[\s\S]*scope="gym"/);
     expect(cordelPageSrc).toMatch(/isGoalTab\(tab\)[\s\S]*kind=\{tab\}[\s\S]*scope="platform"/);
   });
@@ -299,7 +315,8 @@ describe('locale keys', () => {
   // Every key the three components resolve, beyond the per-slug ones asserted
   // above. `<kind>_` keys are per catalogue (§7's add button among them).
   const SHARED_KEYS = [
-    'tab_foods', 'tab_personal_goals', 'tab_nutrition_goals',
+    'tab_foods', 'tab_nutrition_goals',
+    'title_personal_goals', 'title_base_personal_goals',
     'search', 'search_placeholder', 'label_name', 'label_description',
     'col_type', 'col_status', 'status_active', 'status_deleted',
     'ownership', 'ownership_system', 'ownership_gym',
@@ -337,5 +354,105 @@ describe('locale keys', () => {
     for (const code of ['es', 'ca'] as const) {
       expect(Object.keys(locales[code]).sort(), code).toEqual(en);
     }
+  });
+});
+
+describe('Personal Goals is its own section (#948 §1, §3, §5, §6, §8, §9)', () => {
+  it('renders the shared section rather than a second goals editor', () => {
+    for (const [name, src] of [['gym', personalPageSrc], ['cordel', cordelPersonalPageSrc]] as const) {
+      expect(src, `${name} page does not render GoalLibrarySection`).toContain('<GoalLibrarySection');
+      expect(src).toContain("from '@/components/goalLibrary/GoalLibrarySection'");
+      expect(src).toContain('kind="personal"');
+      // The whole point of the move is that nothing about the catalogue changed:
+      // the list, the search, the `+ Add`, the inline forms and the `⋮` menu are
+      // the component's, so neither page may grow one of its own.
+      for (const control of ['<input', '<select', '<textarea', 'DataTable', 'ContextMenu']) {
+        expect(src, `${name} page restates ${control}`).not.toContain(control);
+      }
+    }
+  });
+
+  it('supplies the scope each side talks to, and no endpoint of its own', () => {
+    expect(personalPageSrc).toContain('scope="gym"');
+    expect(cordelPersonalPageSrc).toContain('scope="platform"');
+    for (const src of [personalPageSrc, cordelPersonalPageSrc]) {
+      expect(src).not.toContain('/personal-goals');
+      expect(src).not.toContain('apiFetch');
+    }
+  });
+
+  it('keeps the gym page on the NUTRITION module and the platform page on none', () => {
+    // #806: the permission is the page's, never the shared section's.
+    expect(personalPageSrc).toContain("useModuleAccess('NUTRITION')");
+    expect(personalPageSrc).toContain('canWrite={canWrite}');
+    expect(cordelPersonalPageSrc).not.toContain('useModuleAccess');
+    expect(cordelPersonalPageSrc).toMatch(/canWrite\s*$/m);
+  });
+
+  it('resolves its labels in the shared goal_library namespace', () => {
+    for (const src of [personalPageSrc, cordelPersonalPageSrc]) {
+      expect(src).toContain("useTranslations('goal_library')");
+    }
+    expect(personalPageSrc).toContain("tGoals('title_personal_goals')");
+    expect(cordelPersonalPageSrc).toContain("tGoals('title_base_personal_goals')");
+    for (const [code, ns] of Object.entries(locales)) {
+      for (const key of ['title_personal_goals', 'title_base_personal_goals']) {
+        expect(ns[key], `${code}.json goal_library.${key} is missing`).toBeTruthy();
+      }
+    }
+  });
+
+  it('names the group Nutrition & Goals in every language (§1)', () => {
+    const group = (code: string) =>
+      JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')).nav.groups.nutrition as string;
+    expect(group('en')).toBe('Nutrition & Goals');
+    for (const code of LOCALE_CODES) {
+      // A rename, not a removal: the word for Nutrition stays in the label.
+      expect(group(code), code).toMatch(/Nutri/);
+      expect(group(code), code).not.toBe('Nutrition');
+    }
+  });
+
+  it('adds the two nav items and keeps every existing Nutrition item (§2)', () => {
+    expect(navSrc).toContain("href: '/{{locale}}/personal-goals'");
+    expect(navSrc).toContain("labelKey: 'nav.personal_goals'");
+    expect(navSrc).toContain("href: '/{{locale}}/cordel/personal-goals'");
+    expect(navSrc).toContain("labelKey: 'nav.base_personal_goals'");
+    // §2 — nothing under Nutrition was removed or re-pointed.
+    for (const href of [
+      "'/{{locale}}/nutrition'",
+      "'/{{locale}}/nutrition/nutrition-library'",
+      "'/{{locale}}/nutrition/nutrition-plan-templates'",
+      "'/{{locale}}/nutrition/nutrition-plans'",
+      "'/{{locale}}/cordel/nutrition-library'",
+      "'/{{locale}}/cordel/nutrition-plan-templates'",
+    ]) {
+      expect(navSrc, `${href} is gone`).toContain(`href: ${href}`);
+    }
+    for (const [code, ns] of Object.entries(
+      Object.fromEntries(LOCALE_CODES.map((c) => [
+        c, JSON.parse(readFileSync(join(LOCALES_DIR, `${c}.json`), 'utf-8')).nav as Record<string, string>,
+      ])),
+    )) {
+      for (const key of ['personal_goals', 'base_personal_goals']) {
+        expect(ns[key], `${code}.json nav.${key} is missing`).toBeTruthy();
+      }
+    }
+  });
+
+  it('does not nest the route under /nutrition (§8)', () => {
+    expect(navSrc).not.toContain("'/{{locale}}/nutrition/personal-goals'");
+  });
+
+  it('gates the gym list on its own feature flag, not the Nutrition Library\'s', () => {
+    // A section of a different domain must not be hidden by hiding Foods.
+    expect(apiAppSrc).toContain(
+      "app.use('/personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.personal_goals')",
+    );
+    expect(navSrc).toContain("featureKey: 'nutrition.personal_goals'");
+    // Nutrition Goals is still a tab of the Nutrition Library, so it keeps its key.
+    expect(apiAppSrc).toContain(
+      "app.use('/nutrition-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library')",
+    );
   });
 });
