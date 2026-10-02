@@ -17,7 +17,8 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
-import { btnStyle } from '@/components/ui';
+import { primaryBtnStyle } from '@/components/ui';
+import { weekdayChipStyle } from '@/components/workoutChrome';
 import { HierBlock, blockSummary, exerciseSummary } from '../workout-templates/summaries';
 
 /* Shapes returned by GET /training-plan-templates/:id/hierarchy */
@@ -146,7 +147,7 @@ export function TrainingPlanTree({
             <option value="">{t('training_plan_templates.tree_no_weekday')}</option>
             {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`workouts.weekday_${d}`)}</option>)}
           </select>
-          <button onClick={addWorkout} disabled={adding} style={btnStyle()}>
+          <button onClick={addWorkout} disabled={adding} style={primaryBtnStyle()}>
             {adding ? t('training_plan_templates.saving') : t('training_plan_templates.tree_add_workout')}
           </button>
         </div>
@@ -237,7 +238,7 @@ function WorkoutRow({
           <button
             onClick={() => canWrite && setEditingWeekday(true)}
             title={canWrite ? t('training_plan_templates.tree_edit_weekday') : undefined}
-            style={{ ...weekdayBadge, cursor: canWrite ? 'pointer' : 'default' }}
+            style={{ ...weekdayChipStyle, cursor: canWrite ? 'pointer' : 'default' }}
           >
             🗓 {workout.scheduled_weekday != null ? t(`workouts.weekday_${workout.scheduled_weekday}`) : t('training_plan_templates.tree_no_weekday')}
           </button>
@@ -293,8 +294,10 @@ function BlockRow({ block }: { block: HierBlock }) {
   );
 }
 
-const selectStyle: React.CSSProperties = { padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff' };
-const weekdayBadge: React.CSSProperties = {
-  background: '#eef0ff', color: '#4b45c6', border: 'none', borderRadius: 999,
-  padding: '3px 10px', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap',
+const selectStyle: React.CSSProperties = {
+  padding: '7px 10px', borderRadius: 6, fontSize: 14,
+  border: '1px solid var(--gd-input-border, #ccc)', background: 'var(--gd-input-bg, #ffffff)',
 };
+// #971: the weekday chip this page used to declare for itself — the same pill
+// the Assigned Training Plans card had, both in a lilac (`#eef0ff` /
+// `#4b45c6`) no Theme setting reaches — is `workoutChrome`'s.

@@ -16,6 +16,8 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
+import { cardSurfaceStyle } from '@/components/ui';
+import { treeAddBtnStyle } from '@/components/workoutChrome';
 import { HierBlock, HierExercise } from './summaries';
 import { exerciseMatchesQuery, exerciseName } from '@/lib/exerciseNames';
 import {
@@ -102,7 +104,7 @@ function ExerciseCombobox({ value, options, placeholder, onChange }: {
               <li
                 key={opt.id}
                 onMouseDown={() => pick(opt)}
-                style={{ ...comboItem, background: opt.id === value ? '#f0eeff' : undefined }}
+                style={{ ...comboItem, background: opt.id === value ? comboItemSelectedBg : undefined }}
               >
                 {exerciseName(opt)}
               </li>
@@ -171,11 +173,9 @@ function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplica
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.6 : 1,
-    border: '1px solid #ececf0',
-    borderRadius: 8,
+    ...cardSurfaceStyle,
     padding: '10px 14px',
     marginBottom: 10,
-    background: 'var(--gd-card-bg, #ffffff)',
   };
 
   const config = getBlockConfig(type);
@@ -325,7 +325,7 @@ function ExerciseTable({ workoutKey, blocksUrl, block, canWrite, exercises, atLi
       <>
         <p style={{ color: '#bbb', fontSize: 12.5, margin: '4px 0 4px' }}>{t('workout_templates.tree_no_exercises')}</p>
         {canWrite && !atLimit && (
-          <button onClick={() => setPendingRows((p) => [...p, Date.now()])} style={inlineAddStyle}>
+          <button onClick={() => setPendingRows((p) => [...p, Date.now()])} style={treeAddBtnStyle}>
             {t('workout_templates.tree_add_exercise')}
           </button>
         )}
@@ -383,7 +383,7 @@ function ExerciseTable({ workoutKey, blocksUrl, block, canWrite, exercises, atLi
       {canWrite && !atLimit && (
         <button
           onClick={() => setPendingRows((p) => [...p, Date.now()])}
-          style={{ ...inlineAddStyle, marginTop: 6 }}
+          style={{ ...treeAddBtnStyle, marginTop: 6 }}
         >
           {t('workout_templates.tree_add_exercise')}
         </button>
@@ -739,7 +739,7 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       {canWrite && (
-        <button onClick={addBlock} style={inlineAddStyle}>
+        <button onClick={addBlock} style={treeAddBtnStyle}>
           {t('workout_templates.tree_add_block')}
         </button>
       )}
@@ -789,19 +789,31 @@ export function WorkoutBlockBuilder({ workoutKey, blocksUrl, blocks, canWrite, o
 }
 
 /* ---- Styles ---- */
-const inlineAddStyle: React.CSSProperties = {
-  background: 'none', border: '1px dashed #b9b5ee', color: '#6c63ff', borderRadius: 6,
-  padding: '3px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginBottom: 6,
+/**
+ * The option under the cursor in the exercise picker — the Theme's app
+ * background rather than the lilac tint (`#f0eeff`) it was, so it stays legible
+ * on a themed surface instead of going light-on-light.
+ */
+const comboItemSelectedBg = 'var(--gd-app-bg, #f0f0f0)';
+
+/**
+ * #971 §1: the tree's compact controls keep their own dense geometry — a block
+ * header is not a form field — but their border and background are the Theme's
+ * input pair (`--gd-input-border` / `--gd-input-bg`, what `formChrome` dresses
+ * every full-size control from) rather than a grey of this file's own.
+ */
+const treeControlBox: React.CSSProperties = {
+  borderRadius: 5,
+  border: '1px solid var(--gd-input-border, #ddd)',
+  background: 'var(--gd-input-bg, #fafafa)',
 };
 
 const headerInput: React.CSSProperties = {
-  padding: '4px 8px', borderRadius: 5, border: '1px solid #ddd', fontSize: 13.5,
-  background: '#fafafa', minWidth: 90, maxWidth: 200,
+  ...treeControlBox, padding: '4px 8px', fontSize: 13.5, minWidth: 90, maxWidth: 200,
 };
 
 const headerSelect: React.CSSProperties = {
-  padding: '4px 8px', borderRadius: 5, border: '1px solid #ddd', fontSize: 13,
-  background: '#fafafa', cursor: 'pointer',
+  ...treeControlBox, padding: '4px 8px', fontSize: 13, cursor: 'pointer',
 };
 
 const tableStyle: React.CSSProperties = {
@@ -818,20 +830,19 @@ const tdStyle: React.CSSProperties = {
 };
 
 const cellInput: React.CSSProperties = {
-  padding: '4px 6px', borderRadius: 5, border: '1px solid #ddd', fontSize: 13,
-  background: '#fafafa', width: 56, boxSizing: 'border-box',
+  ...treeControlBox, padding: '4px 6px', fontSize: 13, width: 56, boxSizing: 'border-box',
 };
 
 const comboTrigger: React.CSSProperties = {
+  ...treeControlBox,
   display: 'inline-flex', alignItems: 'center', gap: 4,
-  padding: '4px 8px', borderRadius: 5, border: '1px solid #ddd',
-  background: '#fafafa', fontSize: 13.5, cursor: 'pointer',
+  padding: '4px 8px', fontSize: 13.5, cursor: 'pointer',
   whiteSpace: 'nowrap', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis',
 };
 
 const comboDropdown: React.CSSProperties = {
   position: 'absolute', top: '100%', left: 0, zIndex: 200,
-  background: '#fff', border: '1px solid #ddd', borderRadius: 7,
+  background: 'var(--gd-card-bg, #ffffff)', border: '1px solid var(--gd-input-border, #ddd)', borderRadius: 7,
   boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 220, marginTop: 2,
 };
 
