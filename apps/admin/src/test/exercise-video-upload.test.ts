@@ -22,7 +22,9 @@ const SRC = join(__dirname, '..');
 const LIB = join(SRC, 'lib', 'exerciseVideoUpload.ts');
 const COMPONENT = join(SRC, 'components', 'ExerciseVideoField.tsx');
 const PAGE = join(SRC, 'app', '[locale]', 'exercises', 'page.tsx');
-const DETAIL_MODAL = join(SRC, 'app', '[locale]', 'exercises', 'ExerciseDetailModal.tsx');
+// #965: the poster-never-the-MP4 rule moved out of both pages and out of the
+// Details modal into the one read-only media preview the two pages share.
+const MEDIA_PREVIEW = join(SRC, 'components', 'exercises', 'ExerciseMediaPreview.tsx');
 const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
@@ -38,7 +40,7 @@ const read = (path: string) => stripComments(readFileSync(path, 'utf-8'));
 const libSrc = read(LIB);
 const componentSrc = read(COMPONENT);
 const pageSrc = read(PAGE);
-const detailSrc = read(DETAIL_MODAL);
+const mediaPreviewSrc = read(MEDIA_PREVIEW);
 
 const originalMaxMb = process.env.NEXT_PUBLIC_EXERCISE_VIDEO_MAX_MB;
 
@@ -182,8 +184,10 @@ describe('Exercises page', () => {
 
   it('reads both references from the API and draws the poster, never the MP4', () => {
     expect(pageSrc).toContain('video_url: string | null; video_thumbnail_url: string | null;');
-    expect(pageSrc).toContain('src={ex.video_thumbnail_url}');
-    expect(detailSrc).toContain('src={detail.video_thumbnail_url}');
+    // #965: one preview draws it for both pages — the poster is what the frame
+    // shows, and no `<video>` exists until the player is asked for.
+    expect(mediaPreviewSrc).toContain('const poster = exercise.video_thumbnail_url;');
+    expect(mediaPreviewSrc).toMatch(/src=\{`\$\{poster\}\?v=\$\{version\}`\}/);
   });
 });
 

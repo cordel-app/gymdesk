@@ -24,13 +24,17 @@ import { ExerciseEditor, ExerciseMediaPair } from '@/components/exercises/Exerci
 import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/useExerciseEditorState';
 import {
   EXERCISE_STATUSES,
-  resultTypeLabel,
   toExerciseCreatePayload,
   toExerciseUpdatePayload,
   type MuscleRole,
   type ResultTypeRow,
 } from '@/components/exercises/exerciseForm';
-import { ExerciseDetailModal } from './ExerciseDetailModal';
+// #965: the expanded card is the editor's read-only counterpart and `⋮ → Details`
+// carries the technical metadata — both shared with the Base Exercises page, for
+// the reason the editor itself is (#806).
+import { ExerciseReadOnlyView } from '@/components/exercises/ExerciseReadOnlyView';
+import { ExerciseMediaPreview } from '@/components/exercises/ExerciseMediaPreview';
+import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal';
 import { ImportExercisesModal } from './ImportExercisesModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -99,6 +103,9 @@ export default function ExercisesPage() {
 
   // Details, delete, dependency
   const [detailFor, setDetailFor] = useState<Exercise | null>(null);
+  // Which exercise has a `<video>` mounted (#717 §9). Nothing is mounted until
+  // someone asks to play one, and only one plays at a time.
+  const [playingId, setPlayingId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<Exercise | null>(null);
   const [depDialog, setDepDialog] = useState<{ action: 'edit' | 'delete'; entity: Exercise; refs: ReferenceReport } | null>(null);
   const [depBusy, setDepBusy] = useState(false);
@@ -439,74 +446,32 @@ export default function ExercisesPage() {
     );
   }
 
+  /**
+   * The read-only body of an expanded card (#965): the editor's own five
+   * sections, with the controls replaced by values.
+   *
+   * Until #965 this page rendered its own list of whichever sections happened to
+   * be non-empty, while the Base Exercises page rendered a flat table of rows —
+   * two read-only views of one entity, neither of them the Edit view's shape. Both
+   * are `ExerciseReadOnlyView` now, so the section order, the labels and the media
+   * presentation are the editor's and cannot drift (§14, §15).
+   */
   function renderViewSection(ex: Exercise) {
-    const principal = (ex.muscles ?? []).filter((m) => m.role === 'principal');
-    const secondary = (ex.muscles ?? []).filter((m) => m.role === 'secondary');
-    const rts = ex.allowed_result_types ?? [];
-
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
-
-        {rts.length > 0 && (
-          <div style={subSectionSt}>
-            <p style={sectionLabelSt}>{t('label_result_types')}</p>
-            <p style={{ margin: 0, fontSize: 13, color: '#444' }}>{rts.map((rt) => resultTypeLabel(rt, (key) => t(key as any))).join(', ')}</p>
-          </div>
-        )}
-
-        <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_configuration')}</p>
-          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13, color: '#444' }}>
-            {ex.min_reps_default != null && <span><strong>{t('label_min_reps_default')}:</strong> {ex.min_reps_default}</span>}
-            {ex.max_reps_default != null && <span><strong>{t('label_max_reps_default')}:</strong> {ex.max_reps_default}</span>}
-            {ex.sets_default != null && <span><strong>{t('label_sets_default')}:</strong> {ex.sets_default}</span>}
-            {ex.rest_default_seconds != null && <span><strong>{t('label_rest_default_seconds')}:</strong> {ex.rest_default_seconds}s</span>}
-            {!ex.min_reps_default && !ex.max_reps_default && !ex.sets_default && !ex.rest_default_seconds && <span style={{ color: '#aaa' }}>—</span>}
-          </div>
-          {ex.notes_default && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#666' }}>{ex.notes_default}</p>}
-        </div>
-
-        {(principal.length > 0 || secondary.length > 0) && (
-          <div style={subSectionSt}>
-            <p style={sectionLabelSt}>{t('section_muscles')}</p>
-            {principal.length > 0 && (
-              <p style={{ margin: '0 0 4px', fontSize: 13 }}>
-                <strong>{t('role_principal')}:</strong> {principal.map((m) => muscleLabel(m.key)).join(', ')}
-              </p>
-            )}
-            {secondary.length > 0 && (
-              <p style={{ margin: 0, fontSize: 13 }}>
-                <strong>{t('role_secondary')}:</strong> {secondary.map((m) => muscleLabel(m.key)).join(', ')}
-              </p>
-            )}
-          </div>
-        )}
-
-        {(ex.video_url || ex.image_url) && (
-          <div style={subSectionSt}>
-            <p style={sectionLabelSt}>{t('section_media')}</p>
-            {ex.video_url && <p style={{ margin: '0 0 4px', fontSize: 13 }}><strong>{t('label_video_url')}:</strong> {ex.video_url}</p>}
-            {ex.video_thumbnail_url && (
-              <div style={{ marginBottom: 8 }}>
-                <strong style={{ fontSize: 13 }}>{t('label_video')}:</strong>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {/* #719 §17: the stored poster — the MP4 itself is never
-                    downloaded to draw a preview. */}
-                <img src={ex.video_thumbnail_url} alt="" loading="lazy" style={{ display: 'block', marginTop: 4, maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'cover' }} />
-              </div>
-            )}
-            {ex.image_url && (
-              <div>
-                <strong style={{ fontSize: 13 }}>{t('label_image')}:</strong>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {/* #719 §17: the 512×512 thumbnail when there is one — the
-                    2048×2048 master is never downloaded to fill a 160px box. */}
-                <img src={ex.image_thumbnail_url ?? ex.image_url} alt="" loading="lazy" style={{ display: 'block', marginTop: 4, maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #ddd', objectFit: 'contain' }} />
-              </div>
-            )}
-          </div>
-        )}
-
+        <ExerciseReadOnlyView
+          exercise={ex}
+          muscleKeys={muscleKeys}
+          muscleLabel={muscleLabel}
+          resultTypes={resultTypes}
+          media={
+            <ExerciseMediaPreview
+              exercise={ex}
+              playing={playingId === ex.id}
+              onPlay={() => setPlayingId(ex.id)}
+            />
+          }
+        />
       </div>
     );
   }
@@ -661,11 +626,7 @@ export default function ExercisesPage() {
       />
 
       {detailFor && (
-        <ExerciseDetailModal
-          exerciseId={detailFor.id}
-          exerciseName={detailFor.name}
-          onClose={() => setDetailFor(null)}
-        />
+        <ExerciseDetailModal exercise={detailFor} onClose={() => setDetailFor(null)} />
       )}
 
       {/* ── Import Exercises modal (#718) ── */}
@@ -684,5 +645,3 @@ export default function ExercisesPage() {
 
 const cardSt: React.CSSProperties = { ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' };
 const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '12px 20px', gap: 12, cursor: 'pointer' };
-const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
-const sectionLabelSt: React.CSSProperties = { margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
