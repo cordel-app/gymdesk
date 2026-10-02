@@ -59,10 +59,15 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
     // itself, and the order, are the shared declaration's.
     expect(configSrc).toContain('showPrices');
     expect(configSrc).toContain('benefitContext="plan"');
+    // #959's Requirement is a *Promotion* line's flag, so these Plan-side
+    // snapshot sections do not opt in and their grid is the six columns it was.
+    expect(configSrc).not.toContain('showRequirement');
     expect(
       sellableItemBenefitColumns({ showFrequency: true, showAction: true, showPrices: true })
         .map((c) => c.key),
-    ).toEqual(SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => c.key));
+    ).toEqual(
+      SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => k !== 'requirement'),
+    );
   });
 
   it('keeps the Frequency column in all three sections, as the Plan card does', () => {
