@@ -27,6 +27,13 @@
 //
 // Nothing is computed here (CLAUDE.md: no business logic in the frontend);
 // `display_status` is decided server-side by `promotionApplicationStatus()`.
+//
+// #924 stage 5 — the checkbox is the only write control on this card, so it
+// exists only while the card is in Edit mode (#797/#897): expanding the row
+// *reads* what the member was agreed, and the revoke/re-apply affordance is
+// absent rather than disabled until `⋮ → Edit`. Expanding one application's own
+// card is reading and stays available in both modes, as the Membership Plan
+// card's collapsible Price History does.
 
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -34,7 +41,12 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { cardSurfaceStyle } from '@/components/ui';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import {
+  cardMutedTextStyle,
+  cardSubLabelStyle,
+  innerCardStyle,
+} from '@/components/formChrome';
 import {
   SellableItemBenefitRow,
   SellableItemBenefitView,
@@ -80,6 +92,11 @@ const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
 interface Props {
   assignedPlanId: number;
   promotions: AppliedPromotion[];
+  /**
+   * Whether the card is in Edit mode (#797/#897) — the revoke / re-apply
+   * checkbox is rendered only inside it.
+   */
+  cardEditing: boolean;
   canWrite: boolean;
   readOnlyTitle?: string;
   /** Re-reads the expanded card, and with it the Billing Events section. */
@@ -91,7 +108,7 @@ function fmtDate(iso: string | null) {
 }
 
 export function AssignedPlanPromotions({
-  assignedPlanId, promotions, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, promotions, cardEditing, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
@@ -152,20 +169,22 @@ export function AssignedPlanPromotions({
         const standing = p.display_status !== 'inactive';
         const isOpen = expanded === p.id;
         return (
-          <div key={p.id} style={cardSt}>
+          <div key={p.id} style={innerCardStyle}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input
-                type="checkbox"
-                checked={standing}
-                disabled={!canWrite || (!standing && !p.can_reapply)}
-                title={!canWrite
-                  ? readOnlyTitle
-                  : standing
-                    ? t('promo_revoke_hint')
-                    : p.can_reapply ? t('promo_reapply_hint') : t('promo_reapply_unavailable')}
-                aria-label={t('promo_toggle_label', { promotion: p.promotion_name })}
-                onChange={() => (standing ? setRevoking(p) : setReapplying(p))}
-              />
+              {cardEditing && (
+                <input
+                  type="checkbox"
+                  checked={standing}
+                  disabled={!canWrite || (!standing && !p.can_reapply)}
+                  title={!canWrite
+                    ? readOnlyTitle
+                    : standing
+                      ? t('promo_revoke_hint')
+                      : p.can_reapply ? t('promo_reapply_hint') : t('promo_reapply_unavailable')}
+                  aria-label={t('promo_toggle_label', { promotion: p.promotion_name })}
+                  onChange={() => (standing ? setRevoking(p) : setReapplying(p))}
+                />
+              )}
               <button
                 onClick={() => setExpanded(isOpen ? null : p.id)}
                 disabled={!standing}
@@ -187,16 +206,16 @@ export function AssignedPlanPromotions({
                 {/* The window and durations this member's Promotion was agreed
                     with — the Promotion's own dates may have moved since. */}
                 <SubSection title={t('section_billing_duration')}>
-                  <DetailRow label={t('label_start_date')} value={fmtDate(p.starts_at ?? null)} />
-                  <DetailRow label={t('label_end_date')} value={fmtDate(p.ends_at ?? null)} />
+                  <CardDetailRow label={t('label_start_date')} value={fmtDate(p.starts_at ?? null)} />
+                  <CardDetailRow label={t('label_end_date')} value={fmtDate(p.ends_at ?? null)} />
                   {DURATION_FIELDS.map((field) => (
-                    <DetailRow
+                    <CardDetailRow
                       key={field}
                       label={t(`label_${field}` as any)}
                       value={p[field] != null ? t('months_value', { n: p[field] as number }) : t('not_configured')}
                     />
                   ))}
-                  {p.revoked_at && <DetailRow label={t('promo_revoked_at')} value={fmtDate(p.revoked_at)} />}
+                  {p.revoked_at && <CardDetailRow label={t('promo_revoked_at')} value={fmtDate(p.revoked_at)} />}
                 </SubSection>
 
                 {/* §6 keeps Membership Fee Benefits off Plans and Assigned
@@ -209,12 +228,12 @@ export function AssignedPlanPromotions({
                   ) : (
                     p.membership_fee_benefits.map((b, i) => (
                       <div key={i}>
-                        <DetailRow
+                        <CardDetailRow
                           label={t('promo_action')}
                           value={b.action ? t(`promo_action_${b.action}` as any) : t('not_configured')}
                         />
-                        <DetailRow label={t('promo_value')} value={b.value != null ? String(b.value) : '—'} />
-                        <DetailRow
+                        <CardDetailRow label={t('promo_value')} value={b.value != null ? String(b.value) : '—'} />
+                        <CardDetailRow
                           label={t('promo_duration')}
                           value={b.duration_months != null
                             ? t('months_value', { n: b.duration_months })
@@ -314,6 +333,11 @@ function toGrantRow(g: AppliedPromotionGrant): SellableItemBenefitRow {
 }
 
 
+/**
+ * One grouping *inside* an application's card — a level below the card's own
+ * sections, so it wears `cardSubLabelStyle` rather than the section heading
+ * (#929).
+ */
 function SubSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 12 }}>
@@ -323,27 +347,13 @@ function SubSection({ title, children }: { title: string; children: React.ReactN
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginBottom: 4 }}>
-      <span style={{ color: '#888', minWidth: 140, fontSize: 13 }}>{label}</span>
-      <span>{value}</span>
-    </div>
-  );
-}
-
-const cardSt: React.CSSProperties = {
-  ...cardSurfaceStyle,
-  padding: '10px 14px', marginBottom: 8,
-};
+// The card an application sits in is #929's `innerCardStyle`, used directly:
+// the same one the Member card's plans and the Plan card's nested cards wear.
 const titleBtnSt: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 6, background: 'none',
   border: 'none', padding: 0, textAlign: 'left', flex: 1, color: 'inherit',
 };
 const metaSt: React.CSSProperties = { color: '#888', fontSize: 12, whiteSpace: 'nowrap' };
 const descSt: React.CSSProperties = { color: '#666', fontSize: 13, margin: '0 0 10px' };
-const dimSt: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
-const subLabelSt: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
-  letterSpacing: '0.07em', marginBottom: 6,
-};
+const dimSt = cardMutedTextStyle;
+const subLabelSt = cardSubLabelStyle;
