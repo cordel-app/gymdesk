@@ -1,6 +1,12 @@
 'use client';
 
-// #634 §4 — ADDITIONAL SERVICES, a section of its own.
+// #634 §4 — ADDITIONAL PRODUCTS, a section of its own.
+//
+// #957: the section's copy is the final Product terminology (the Service →
+// Product rename, #949, lands the identifiers), and the add action belongs to
+// Edit mode — `canAdd={editing}` is passed down to the shared editor, so the
+// read-only view carries no Add affordance at all rather than a disabled one
+// (#797: expanding reads, `⋮ → Edit` writes).
 //
 // Independent from Membership Plans, Promotions and Promotion Benefits (§4):
 // services can be added and removed at any time without touching any of them.
@@ -25,11 +31,13 @@ interface Props {
   plans: MemberPlanRow[];
   services: MemberServiceRow[];
   canWrite: boolean;
+  /** #882/#957: the Member's inline Edit form is open — the add action is its. */
+  editing: boolean;
   /** Re-reads the configuration and re-runs the Billing Simulation (§12). */
   onChanged: () => void;
 }
 
-export function MemberAdditionalServices({ plans, services, canWrite, onChanged }: Props) {
+export function MemberAdditionalServices({ plans, services, canWrite, editing, onChanged }: Props) {
   const t = useTranslations('members');
 
   // Only a plan that still bills can carry a service; a cancelled or expired
@@ -55,6 +63,7 @@ export function MemberAdditionalServices({ plans, services, canWrite, onChanged 
             planStatus={plan.status}
             services={services.filter((s) => s.user_membership_id === plan.id)}
             canWrite={canWrite}
+            canAdd={editing}
             onChanged={onChanged}
           />
         </div>
