@@ -135,7 +135,10 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   ] as const) {
     const values = listParam(value);
     if (!values) continue;
-    sql += ` AND LOWER(e.${column}) IN (${values.map(() => '?').join(', ')})`;
+    // The column itself, not `LOWER(e.<column>)`: the table's collation is
+    // `utf8mb4_0900_ai_ci`, so the comparison is already case-insensitive, and
+    // wrapping the column in a function only makes any index on it unusable.
+    sql += ` AND e.${column} IN (${values.map(() => '?').join(', ')})`;
     params.push(...values);
   }
   for (const [role, value] of [

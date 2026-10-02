@@ -152,6 +152,35 @@ describe('the list carries the provenance and metadata columns', () => {
   });
 });
 
+describe('migration 207 — what the unique keys actually enforce', () => {
+  it('refuses a second Base Exercise with the same (source, source_id)', async () => {
+    await expect(db.query(
+      `INSERT INTO exercises (gym_id, name, slug, source, source_id)
+       VALUES (NULL, ?, ?, ?, ?)`,
+      [`Duplicate provenance ${suffix}`, `duplicate-provenance-${suffix}`,
+       FREE_EXERCISE_DB_SOURCE, `barbell-bench-press-${suffix}-source`],
+    )).rejects.toThrow();
+  });
+
+  it('refuses a second live Base Exercise with the same slug', async () => {
+    await expect(db.query(
+      'INSERT INTO exercises (gym_id, name, slug) VALUES (NULL, ?, ?)',
+      [`Duplicate slug ${suffix}`, `barbell-bench-press-${suffix}`],
+    )).rejects.toThrow();
+  });
+
+  it('leaves a gym’s own copy outside both keys — it may carry the same pair', async () => {
+    const { insertId } = await db.query(
+      `INSERT INTO exercises (gym_id, name, slug, source, source_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [gymId, `Imported copy ${suffix}`, `barbell-bench-press-${suffix}`,
+       FREE_EXERCISE_DB_SOURCE, `barbell-bench-press-${suffix}-source`],
+    );
+    expect(Number(insertId)).toBeGreaterThan(0);
+    await db.query('DELETE FROM exercises WHERE id = ?', [insertId]);
+  });
+});
+
 describe('§18 — search and filtering', () => {
   it('q matches the name', async () => {
     const res = await list(`?q=Treadmill Interval ${suffix}`);

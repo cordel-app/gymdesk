@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EXERCISE_SLUG_MAX,
   ExistingBaseExercise,
+  SOURCE_ID_MAX,
   FREE_EXERCISE_DB_DEFAULT_URL,
   FREE_EXERCISE_DB_MUSCLE_ALIASES,
   FREE_EXERCISE_DB_SOURCE,
@@ -406,10 +407,40 @@ describe('§12 — matching, and what a match does', () => {
 });
 
 describe('migration 207 mirrors what the importer writes', () => {
-  const migration = readFileSync(
-    join(__dirname, '../infra/migrations/207_exercise_source_provenance.js'),
-    'utf8',
-  );
+  const path = join(__dirname, '../infra/migrations/207_exercise_source_provenance.js');
+  const migration = readFileSync(path, 'utf8');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const declared = require(path) as {
+    COLUMNS: [string, string][];
+    KEYS: { column: string; definition: string; index: string }[];
+  };
+  const width = (column: string) => {
+    const entry = declared.COLUMNS.find(([name]) => name === column);
+    return Number(/VARCHAR\((\d+)\)/.exec(entry![1])![1]);
+  };
+
+  it('declares the same widths the mapping module clamps to', () => {
+    expect(width('slug')).toBe(EXERCISE_SLUG_MAX);
+    expect(width('source_id')).toBe(SOURCE_ID_MAX);
+    // The five metadata columns, whose clamps live beside them in the module.
+    expect(width('equipment')).toBe(60);
+    expect(width('category')).toBe(60);
+    expect(width('level')).toBe(30);
+    expect(width('mechanic')).toBe(30);
+    expect(width('force_type')).toBe(30);
+    const metadata = sourceMetadata(parsed({ equipment: 'x'.repeat(200) }));
+    expect(metadata.equipment!.length).toBe(width('equipment'));
+  });
+
+  it('indexes the source id case-sensitively, as the matcher compares it', () => {
+    const sourceKey = declared.KEYS.find((key) => key.column === 'base_source_key')!;
+    expect(sourceKey.definition).toContain('utf8mb4_bin');
+  });
+
+  it('refuses a down() that would strip provenance from imported rows', () => {
+    expect(migration).toContain('refusing to drop it');
+    expect(migration).toContain('WHERE gym_id IS NULL AND source_id IS NOT NULL');
+  });
 
   it('declares every column the plan can write', () => {
     for (const column of ['source', 'source_id', 'slug', 'equipment', 'category', 'level', 'mechanic', 'force_type']) {
