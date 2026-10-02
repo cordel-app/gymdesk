@@ -13,6 +13,7 @@ import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
+import { BillingEventSimulation } from '@/components/BillingEventSimulation';
 import {
   exampleTimelineRowTone,
   formatExampleTimelineBilling,
@@ -291,6 +292,28 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           // rather than relayed in English.
           <p style={dim}>{t('timeline_unavailable')}</p>
         )}
+      </Section>
+
+      {/* #924 stage 4 (§8/§9/§10) — the BILLING EVENT FORECAST: one group per
+          billing *date*, listing every line that falls on it — the Membership
+          Fee plus each Sellable Item and Additional Periodic Service this
+          contract carries — where the Membership Fee Simulation above is one
+          row per billing *period* about the fee alone. Neither replaces the
+          other and neither may grow into the other.
+
+          It is the Membership Plan card's own Billing Event Simulation, over
+          the same engine and rendered by the same component, with this
+          assignment as the context: its real `starts_at`, its applied
+          Promotions, its frozen benefit lines and its Personal Membership Fee
+          Benefit are all in the server's numbers. The page formats, it never
+          prices (#817). Read-only: computed on every read, persisted nowhere,
+          and it charges nothing. */}
+      <Section label={t('section_billing_forecast')}>
+        <BillingEventSimulation
+          simulation={detail.billing_event_simulation}
+          t={(key, values) => t(key as any, values as any)}
+          formatDate={(date) => fmtTimelineDate(date, locale)}
+        />
       </Section>
 
       {/* #631: Additional Periodic Services belong to the Assigned Plan itself —

@@ -4,6 +4,7 @@ import type {
   ExampleTimelineProjection,
   ExampleTimelineStatus,
 } from '@/lib/exampleTimeline';
+import type { BillingEventSimulationData } from '@/lib/billingEventSimulation';
 
 export interface AssignedPlanMember {
   member_id: number;
@@ -274,4 +275,13 @@ export interface AssignedPlanDetail {
    * frequency.
    */
   example_timeline: ExampleTimelineProjection | null;
+  /**
+   * #924 stage 4 — the Billing Event Forecast: one group per billing *date*,
+   * listing every line that falls on it. The same wire shape the Membership
+   * Plan and Promotion cards render (`@/lib/billingEventSimulation`), because
+   * it is the same projection over the same engine — only the context differs
+   * (§8: no second simulation engine for Assigned Plans). `null` only for a
+   * response written before the projection existed.
+   */
+  billing_event_simulation: BillingEventSimulationData | null;
 }
